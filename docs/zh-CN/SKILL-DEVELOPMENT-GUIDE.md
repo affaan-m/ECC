@@ -908,11 +908,11 @@ npm run test:e2e
 
 ## 其他资源
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - 通用贡献指南
-- [project-guidelines-template](./examples/project-guidelines-template.md) - 项目专属 Skill 模板
-- [coding-standards](../skills/coding-standards/SKILL.md) - 标准 Skill 示例
-- [tdd-workflow](../skills/tdd-workflow/SKILL.md) - 工作流 Skill 示例
-- [security-review](../skills/security-review/SKILL.md) - 领域知识 Skill 示例
+- [CONTRIBUTING.md](CONTRIBUTING.md) - 通用贡献指南
+- [project-guidelines-template](../examples/project-guidelines-template.md) - 项目专属 Skill 模板
+- [coding-standards](../../skills/coding-standards/SKILL.md) - 标准 Skill 示例
+- [tdd-workflow](../../skills/tdd-workflow/SKILL.md) - 工作流 Skill 示例
+- [security-review](../../skills/security-review/SKILL.md) - 领域知识 Skill 示例
 
 ---
 
