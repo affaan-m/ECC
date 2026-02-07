@@ -110,6 +110,9 @@ copy_dir() {
     fi
 }
 
+# jq filter for merging hooks (single line to avoid multiline quoting issues)
+JQ_MERGE_HOOKS='{ "$schema": .[0]["$schema"], "hooks": (reduce .[] as $item ({}; reduce ($item.hooks | keys[]) as $key (.; .[$key] = ((.[$key] // []) + $item.hooks[$key])))) }'
+
 # Merge multiple hooks.json files into settings.json using jq
 merge_hooks() {
     local -a hooks_files=("$@")
@@ -159,24 +162,10 @@ merge_hooks() {
 
     # Build jq merge: for each hook event, concatenate arrays
     local merged
-    merged=$(jq -s '
-        {
-            "$schema": .[0]["$schema"],
-            "hooks": (
-                reduce .[] as $item ({};
-                    reduce ($item.hooks | keys[]) as $key (.;
-                        .[$key] = ((.[$key] // []) + $item.hooks[$key])
-                    )
-                )
-            }
-        }
-    ' "${hooks_files[@]}")
+    merged=$(jq -s "$JQ_MERGE_HOOKS" "${hooks_files[@]}")
 
     echo "$merged" > "$dest"
 
-    local labels
-    labels=$(printf ", %s" "${hooks_files[@]/#/hooks/}")
-    labels="${labels:2}"
     log_copy "${#hooks_files[@]} hooks files (merged)" "settings.json"
     copied=$((copied + 1))
 }
