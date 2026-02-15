@@ -140,34 +140,36 @@ merge_hooks() {
         return
     fi
 
+    local content
     if [[ ${#hooks_files[@]} -eq 1 ]]; then
-        cp "${hooks_files[0]}" "$dest"
+        content=$(cat "${hooks_files[0]}")
         local rel
         rel=$(realpath --relative-to="$REPO_ROOT" "${hooks_files[0]}")
         log_copy "$rel" "settings.json"
         copied=$((copied + 1))
-        return
+    else
+        # Multiple hooks files: merge with jq
+        if ! command -v jq &>/dev/null; then
+            log_warn "jq not found. Cannot merge multiple hooks files."
+            log_warn "Install jq or specify only one language with hooks."
+            log_warn "Hooks files to merge:"
+            for f in "${hooks_files[@]}"; do
+                log_warn "  - $(realpath --relative-to="$REPO_ROOT" "$f")"
+            done
+            return
+        fi
+
+        # Build jq merge: for each hook event, concatenate arrays
+        content=$(jq -s "$JQ_MERGE_HOOKS" "${hooks_files[@]}")
+
+        log_copy "${#hooks_files[@]} hooks files (merged)" "settings.json"
+        copied=$((copied + 1))
     fi
 
-    # Multiple hooks files: merge with jq
-    if ! command -v jq &>/dev/null; then
-        log_warn "jq not found. Cannot merge multiple hooks files."
-        log_warn "Install jq or specify only one language with hooks."
-        log_warn "Hooks files to merge:"
-        for f in "${hooks_files[@]}"; do
-            log_warn "  - $(realpath --relative-to="$REPO_ROOT" "$f")"
-        done
-        return
-    fi
+    # Replace ${CLAUDE_PLUGIN_ROOT} with actual ~/.claude path
+    content="${content//\$\{CLAUDE_PLUGIN_ROOT\}/$CLAUDE_DIR}"
 
-    # Build jq merge: for each hook event, concatenate arrays
-    local merged
-    merged=$(jq -s "$JQ_MERGE_HOOKS" "${hooks_files[@]}")
-
-    echo "$merged" > "$dest"
-
-    log_copy "${#hooks_files[@]} hooks files (merged)" "settings.json"
-    copied=$((copied + 1))
+    echo "$content" > "$dest"
 }
 
 # Parse options
@@ -271,6 +273,33 @@ for category in "${CATEGORIES[@]}"; do
         echo ""
     fi
 done
+
+# Copy hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/hooks/)
+has_hook_scripts=false
+for lang in "${LANGUAGES[@]}"; do
+    scripts_dir="${REPO_ROOT}/scripts/${lang}/hooks"
+    [[ -d "$scripts_dir" ]] || continue
+
+    dest_scripts="${CLAUDE_DIR}/scripts/hooks"
+    mkdir -p "$dest_scripts"
+
+    for script in "$scripts_dir"/*; do
+        [[ -f "$script" ]] || continue
+        filename=$(basename "$script")
+
+        if ! $has_hook_scripts; then
+            echo -e "${CYAN}[hook scripts]${NC}"
+            has_hook_scripts=true
+        fi
+
+        copy_file "$script" "${dest_scripts}/${filename}" \
+            "scripts/${lang}/hooks/${filename}" "scripts/hooks/${filename}"
+    done
+done
+
+if $has_hook_scripts; then
+    echo ""
+fi
 
 # Collect and merge hooks
 hooks_to_merge=()

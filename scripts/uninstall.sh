@@ -219,6 +219,43 @@ for category in "${CATEGORIES[@]}"; do
     fi
 done
 
+# Remove hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/hooks/)
+has_hook_scripts=false
+for lang in "${LANGUAGES[@]}"; do
+    scripts_dir="${REPO_ROOT}/scripts/${lang}/hooks"
+    [[ -d "$scripts_dir" ]] || continue
+
+    for script in "$scripts_dir"/*; do
+        [[ -f "$script" ]] || continue
+        filename=$(basename "$script")
+
+        if ! $has_hook_scripts; then
+            echo -e "${CYAN}[hook scripts]${NC}"
+            has_hook_scripts=true
+        fi
+
+        remove_file "${CLAUDE_DIR}/scripts/hooks/${filename}" "scripts/hooks/${filename}"
+    done
+done
+
+# Clean up empty scripts/hooks directory
+if ! $DRY_RUN && [[ -d "${CLAUDE_DIR}/scripts/hooks" ]]; then
+    if [[ -z "$(ls -A "${CLAUDE_DIR}/scripts/hooks" 2>/dev/null)" ]]; then
+        rmdir "${CLAUDE_DIR}/scripts/hooks"
+        echo -e "  ${YELLOW}RMDIR${NC} scripts/hooks/ (empty)"
+    fi
+fi
+if ! $DRY_RUN && [[ -d "${CLAUDE_DIR}/scripts" ]]; then
+    if [[ -z "$(ls -A "${CLAUDE_DIR}/scripts" 2>/dev/null)" ]]; then
+        rmdir "${CLAUDE_DIR}/scripts"
+        echo -e "  ${YELLOW}RMDIR${NC} scripts/ (empty)"
+    fi
+fi
+
+if $has_hook_scripts; then
+    echo ""
+fi
+
 # Remove hooks (settings.json)
 has_hooks=false
 for lang in "${LANGUAGES[@]}"; do
