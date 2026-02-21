@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"cargo run\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import os, sys; not os.environ.get('TMUX') and (sys.stderr.write('[Hook] BLOCKED: Dev server must run in tmux for log access\\n[Hook] Use: tmux new-session -d -s dev \\\"cargo run\\\"\\n[Hook] Then: tmux attach -t dev\\n') or sys.exit(1))\""
+          }
+        ],
+        "description": "Block cargo run outside tmux - ensures you can access logs"
+      },
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"(cargo (build|test|bench|clippy)|make|docker)\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import os, sys; not os.environ.get('TMUX') and sys.stderr.write('[Hook] Consider running in tmux for session persistence\\n[Hook] tmux new -s dev  |  tmux attach -t dev\\n')\""
+          }
+        ],
+        "description": "Reminder to use tmux for long-running commands"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.rs$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); p and subprocess.run(['cargo','fmt','--','--edition','2021'],capture_output=True); print(d,end='')\""
+          }
+        ],
+        "description": "Auto-format Rust files with cargo fmt after edits"
+      },
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.rs$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys, json, subprocess, os; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['cargo','clippy','--message-format=short','--','- D','warnings'],capture_output=True,text=True,cwd=os.path.dirname(p) or '.') if p else None; lines=[l for l in (r.stdout if r else '').split('\\n') if p and os.path.basename(p) in l]; lines and sys.stderr.write('\\n'.join(lines[:10])+'\\n'); print(d,end='')\""
+          }
+        ],
+        "description": "Lint Rust files with clippy after edits"
+      },
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"cargo test\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys, json; d=sys.stdin.read(); sys.stderr.write('[Hook] Test run completed - review results above\\n'); print(d,end='')\"",
+            "async": true,
+            "timeout": 30
+          }
+        ],
+        "description": "Notification after cargo test completion"
+      }
+    ]
+  }
+}
