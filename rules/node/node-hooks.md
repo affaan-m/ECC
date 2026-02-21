@@ -5,21 +5,49 @@
 - **PreToolUse**: Before tool execution (validation, parameter modification)
 - **PostToolUse**: After tool execution (auto-format, checks)
 - **Stop**: When session ends (final verification)
+- **PreCompact**: Before context compaction
+- **SessionStart**: When a new session begins
+- **SessionEnd**: When a session ends
 
-## Current Hooks (in ~/.claude/settings.json)
+## Hook Scope: Global vs Project
 
-### PreToolUse
-- **tmux reminder**: Suggests tmux for long-running commands (bun, npm, pnpm, yarn, cargo, etc.)
-- **git push review**: Opens Zed for review before push
+Hooks are split into two scopes to prevent cross-language pollution:
+
+### Global Hooks (in ~/.claude/settings.json)
+
+Applied to ALL projects. Contains language-agnostic and infrastructure hooks:
+
+**Common (language-agnostic):**
+- **git push review**: Reminder to review changes before push
 - **doc blocker**: Blocks creation of unnecessary .md/.txt files
+- **PR creation**: Logs PR URL and provides review command
+- **markdownlint**: Lints .md files after edits
 
-### PostToolUse
-- **PR creation**: Logs PR URL and GitHub Actions status
-- **Prettier**: Auto-formats JS/TS files after edit
+**Node infrastructure (bun, safety-wrapped):**
+- **suggest-compact**: Suggests manual compaction at logical intervals
+- **pre-compact**: Saves state before context compaction
+- **session-start**: Loads previous context and detects package manager
+- **session-end**: Persists session state
+- **evaluate-session**: Evaluates session for extractable patterns
+
+### Project Hooks (in .claude/settings.json per project)
+
+Applied only to the current project. Initialize with:
+```bash
+~/.claude/scripts/../init-project.sh node
+```
+
+#### PreToolUse
+- **dev server blocker**: Blocks dev servers outside tmux
+- **tmux reminder**: Suggests tmux for long-running commands (bun, npm, pnpm, yarn, cargo, etc.)
+
+#### PostToolUse
+- **build analysis**: Async hook for build analysis (background)
+- **Prettier**: Auto-formats JS/TS/Svelte files after edit
 - **TypeScript check**: Runs tsc after editing .ts/.tsx files
 - **console.log warning**: Warns about console.log in edited files
 
-### Stop
+#### Stop
 - **console.log audit**: Checks all modified files for console.log before session ends
 
 ## Auto-Accept Permissions

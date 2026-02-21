@@ -49,7 +49,8 @@ Categories installed:
   skills/    Skill knowledge bases (directories with SKILL.md)
   commands/  Slash commands (.md)
   rules/     Rules and guidelines (.md)
-  hooks/     Hook configurations (merged into settings.json)
+  hooks/     Global hooks (merged into settings.json)
+             Project hooks (copied to project-hooks/ as templates)
 
 Options:
   -f    Force overwrite existing files
@@ -90,6 +91,29 @@ copy_file() {
     fi
 }
 
+# Copy a single file with ${CLAUDE_PLUGIN_ROOT} substitution
+copy_file_subst() {
+    local src="$1" dest="$2" label_src="$3" label_dest="$4"
+
+    if $DRY_RUN; then
+        log_dry "$label_src" "$label_dest"
+        copied=$((copied + 1))
+        return
+    fi
+
+    if [[ -f "$dest" ]] && ! $FORCE; then
+        log_skip "$label_dest"
+        skipped=$((skipped + 1))
+    else
+        local content
+        content=$(cat "$src")
+        content="${content//\$\{CLAUDE_PLUGIN_ROOT\}/$CLAUDE_DIR}"
+        echo "$content" > "$dest"
+        log_copy "$label_src" "$label_dest"
+        copied=$((copied + 1))
+    fi
+}
+
 # Copy a directory recursively
 copy_dir() {
     local src="$1" dest="$2" label_src="$3" label_dest="$4"
@@ -113,7 +137,7 @@ copy_dir() {
 # jq filter for merging hooks (single line to avoid multiline quoting issues)
 JQ_MERGE_HOOKS='{ "$schema": .[0]["$schema"], "hooks": (reduce .[] as $item ({}; reduce ($item.hooks | keys[]) as $key (.; .[$key] = ((.[$key] // []) + $item.hooks[$key])))) }'
 
-# Merge multiple hooks.json files into settings.json using jq
+# Merge multiple hooks files into settings.json using jq
 merge_hooks() {
     local -a hooks_files=("$@")
     local dest="${CLAUDE_DIR}/settings.json"
@@ -123,7 +147,7 @@ merge_hooks() {
     fi
 
     echo ""
-    echo -e "${CYAN}[hooks]${NC}"
+    echo -e "${CYAN}[global hooks]${NC}"
 
     if $DRY_RUN; then
         for f in "${hooks_files[@]}"; do
@@ -162,7 +186,7 @@ merge_hooks() {
         # Build jq merge: for each hook event, concatenate arrays
         content=$(jq -s "$JQ_MERGE_HOOKS" "${hooks_files[@]}")
 
-        log_copy "${#hooks_files[@]} hooks files (merged)" "settings.json"
+        log_copy "${#hooks_files[@]} global hooks files (merged)" "settings.json"
         copied=$((copied + 1))
     fi
 
@@ -301,15 +325,71 @@ if $has_hook_scripts; then
     echo ""
 fi
 
-# Collect and merge hooks
+# Copy hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/lib/)
+has_lib_files=false
+for lang in "${LANGUAGES[@]}"; do
+    lib_dir="${REPO_ROOT}/scripts/${lang}/lib"
+    [[ -d "$lib_dir" ]] || continue
+
+    dest_lib="${CLAUDE_DIR}/scripts/lib"
+    mkdir -p "$dest_lib"
+
+    for lib_file in "$lib_dir"/*; do
+        [[ -f "$lib_file" ]] || continue
+        filename=$(basename "$lib_file")
+
+        if ! $has_lib_files; then
+            echo -e "${CYAN}[hook libraries]${NC}"
+            has_lib_files=true
+        fi
+
+        copy_file "$lib_file" "${dest_lib}/${filename}" \
+            "scripts/${lang}/lib/${filename}" "scripts/lib/${filename}"
+    done
+done
+
+if $has_lib_files; then
+    echo ""
+fi
+
+# Collect global hooks: hooks/common/hooks.json + hooks/*/global-hooks.json
 hooks_to_merge=()
 for lang in "${LANGUAGES[@]}"; do
+    # hooks.json (used by common/)
     hooks_file="${REPO_ROOT}/hooks/${lang}/hooks.json"
     if [[ -f "$hooks_file" ]]; then
         hooks_to_merge+=("$hooks_file")
     fi
+    # global-hooks.json (used by language-specific dirs)
+    global_hooks_file="${REPO_ROOT}/hooks/${lang}/global-hooks.json"
+    if [[ -f "$global_hooks_file" ]]; then
+        hooks_to_merge+=("$global_hooks_file")
+    fi
 done
 merge_hooks "${hooks_to_merge[@]}"
+
+# Copy project hooks templates (hooks/*/project-hooks.json → ~/.claude/project-hooks/{lang}.json)
+has_project_hooks=false
+for lang in "${LANGUAGES[@]}"; do
+    project_hooks_file="${REPO_ROOT}/hooks/${lang}/project-hooks.json"
+    [[ -f "$project_hooks_file" ]] || continue
+
+    dest_project_hooks="${CLAUDE_DIR}/project-hooks"
+    mkdir -p "$dest_project_hooks"
+
+    if ! $has_project_hooks; then
+        echo ""
+        echo -e "${CYAN}[project hooks]${NC}"
+        has_project_hooks=true
+    fi
+
+    copy_file_subst "$project_hooks_file" "${dest_project_hooks}/${lang}.json" \
+        "hooks/${lang}/project-hooks.json" "project-hooks/${lang}.json"
+done
+
+if $has_project_hooks; then
+    echo ""
+fi
 
 # Summary
 echo ""
@@ -318,4 +398,11 @@ if $DRY_RUN; then
     echo -e "Would copy: ${GREEN}${copied}${NC} items"
 else
     echo -e "Copied: ${GREEN}${copied}${NC}, Skipped: ${YELLOW}${skipped}${NC}"
+fi
+
+if $has_project_hooks && ! $DRY_RUN; then
+    echo ""
+    echo -e "${CYAN}Project hooks installed as templates.${NC}"
+    echo -e "To initialize a project, run:"
+    echo -e "  ${GREEN}$(dirname "$0")/init-project.sh${NC} [language]"
 fi

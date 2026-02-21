@@ -49,7 +49,7 @@ Categories removed:
   skills/    Skill knowledge bases (directories)
   commands/  Slash commands (.md)
   rules/     Rules and guidelines (.md)
-  hooks/     Hook configurations (settings.json)
+  hooks/     Global hooks (settings.json) and project hook templates
 
 Options:
   -n    Dry run (show what would be removed without removing)
@@ -114,6 +114,17 @@ remove_dir() {
     else
         log_not_found "$label"
         not_found=$((not_found + 1))
+    fi
+}
+
+# Remove empty directory if it exists
+cleanup_empty_dir() {
+    local dir="$1" label="$2"
+    if ! $DRY_RUN && [[ -d "$dir" ]]; then
+        if [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
+            rmdir "$dir"
+            echo -e "  ${YELLOW}RMDIR${NC} ${label} (empty)"
+        fi
     fi
 }
 
@@ -207,12 +218,7 @@ for category in "${CATEGORIES[@]}"; do
     done
 
     # Clean up empty category directory
-    if ! $DRY_RUN && [[ -d "${CLAUDE_DIR}/${category}" ]]; then
-        if [[ -z "$(ls -A "${CLAUDE_DIR}/${category}" 2>/dev/null)" ]]; then
-            rmdir "${CLAUDE_DIR}/${category}"
-            echo -e "  ${YELLOW}RMDIR${NC} ${category}/ (empty)"
-        fi
-    fi
+    cleanup_empty_dir "${CLAUDE_DIR}/${category}" "${category}/"
 
     if $has_files; then
         echo ""
@@ -239,35 +245,72 @@ for lang in "${LANGUAGES[@]}"; do
 done
 
 # Clean up empty scripts/hooks directory
-if ! $DRY_RUN && [[ -d "${CLAUDE_DIR}/scripts/hooks" ]]; then
-    if [[ -z "$(ls -A "${CLAUDE_DIR}/scripts/hooks" 2>/dev/null)" ]]; then
-        rmdir "${CLAUDE_DIR}/scripts/hooks"
-        echo -e "  ${YELLOW}RMDIR${NC} scripts/hooks/ (empty)"
-    fi
-fi
-if ! $DRY_RUN && [[ -d "${CLAUDE_DIR}/scripts" ]]; then
-    if [[ -z "$(ls -A "${CLAUDE_DIR}/scripts" 2>/dev/null)" ]]; then
-        rmdir "${CLAUDE_DIR}/scripts"
-        echo -e "  ${YELLOW}RMDIR${NC} scripts/ (empty)"
-    fi
-fi
+cleanup_empty_dir "${CLAUDE_DIR}/scripts/hooks" "scripts/hooks/"
 
 if $has_hook_scripts; then
     echo ""
 fi
 
-# Remove hooks (settings.json)
+# Remove hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/lib/)
+has_lib_files=false
+for lang in "${LANGUAGES[@]}"; do
+    lib_dir="${REPO_ROOT}/scripts/${lang}/lib"
+    [[ -d "$lib_dir" ]] || continue
+
+    for lib_file in "$lib_dir"/*; do
+        [[ -f "$lib_file" ]] || continue
+        filename=$(basename "$lib_file")
+
+        if ! $has_lib_files; then
+            echo -e "${CYAN}[hook libraries]${NC}"
+            has_lib_files=true
+        fi
+
+        remove_file "${CLAUDE_DIR}/scripts/lib/${filename}" "scripts/lib/${filename}"
+    done
+done
+
+# Clean up empty scripts/lib and scripts directories
+cleanup_empty_dir "${CLAUDE_DIR}/scripts/lib" "scripts/lib/"
+cleanup_empty_dir "${CLAUDE_DIR}/scripts" "scripts/"
+
+if $has_lib_files; then
+    echo ""
+fi
+
+# Remove global hooks (settings.json)
 has_hooks=false
 for lang in "${LANGUAGES[@]}"; do
-    if [[ -f "${REPO_ROOT}/hooks/${lang}/hooks.json" ]]; then
+    if [[ -f "${REPO_ROOT}/hooks/${lang}/hooks.json" ]] || \
+       [[ -f "${REPO_ROOT}/hooks/${lang}/global-hooks.json" ]]; then
         has_hooks=true
         break
     fi
 done
 
 if $has_hooks; then
-    echo -e "${CYAN}[hooks]${NC}"
+    echo -e "${CYAN}[global hooks]${NC}"
     remove_file "${CLAUDE_DIR}/settings.json" "settings.json"
+    echo ""
+fi
+
+# Remove project hook templates (project-hooks/{lang}.json)
+has_project_hooks=false
+for lang in "${LANGUAGES[@]}"; do
+    if [[ -f "${REPO_ROOT}/hooks/${lang}/project-hooks.json" ]]; then
+        if ! $has_project_hooks; then
+            echo -e "${CYAN}[project hooks]${NC}"
+            has_project_hooks=true
+        fi
+
+        remove_file "${CLAUDE_DIR}/project-hooks/${lang}.json" "project-hooks/${lang}.json"
+    fi
+done
+
+# Clean up empty project-hooks directory
+cleanup_empty_dir "${CLAUDE_DIR}/project-hooks" "project-hooks/"
+
+if $has_project_hooks; then
     echo ""
 fi
 

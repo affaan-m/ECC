@@ -21,40 +21,6 @@
           }
         ],
         "description": "Reminder to use tmux for long-running commands"
-      },
-      {
-        "matcher": "tool == \"Edit\" || tool == \"Write\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/suggest-compact.js\""
-          }
-        ],
-        "description": "Suggest manual compaction at logical intervals"
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/pre-compact.js\""
-          }
-        ],
-        "description": "Save state before context compaction"
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-start.js\""
-          }
-        ],
-        "description": "Load previous context and detect package manager on new session"
       }
     ],
     "PostToolUse": [
@@ -111,28 +77,6 @@
           }
         ],
         "description": "Check for console.log in modified files after each response"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-end.js\""
-          }
-        ],
-        "description": "Persist session state on end"
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/evaluate-session.js\""
-          }
-        ],
-        "description": "Evaluate session for extractable patterns"
       }
     ]
   }

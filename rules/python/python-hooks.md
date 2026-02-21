@@ -6,24 +6,38 @@
 - **PostToolUse**: After tool execution (auto-format, checks)
 - **Stop**: When session ends (final verification)
 
-## Current Hooks (in hooks/python/hooks.json)
+## Hook Scope: Global vs Project
 
-### PreToolUse
+Hooks are split into two scopes to prevent cross-language pollution:
+
+### Global Hooks (in ~/.claude/settings.json)
+
+Applied to ALL projects. Contains language-agnostic hooks only:
+- **git push review**: Reminder to review changes before push
+- **doc blocker**: Blocks creation of unnecessary .md/.txt files
+- **PR creation**: Logs PR URL and provides review command
+- **markdownlint**: Lints .md files after edits
+
+### Project Hooks (in .claude/settings.json per project)
+
+Applied only to the current project. Initialize with:
+```bash
+~/.claude/scripts/../init-project.sh python
+```
+
+#### PreToolUse
 - **tmux blocker**: Blocks dev servers (uvicorn, gunicorn, manage.py runserver) outside tmux
 - **pip blocker**: Blocks pip install - enforces uv sync instead
 - **tmux reminder**: Suggests tmux for long-running commands (uv sync, pytest, docker, make)
-- **git push review**: Reminder to review changes before push
-- **doc blocker**: Blocks creation of unnecessary .md/.txt files
 
-### PostToolUse
-- **PR creation**: Logs PR URL and provides review command
+#### PostToolUse
 - **ruff format**: Auto-formats .py files after edit
 - **ruff check**: Lints .py files after edit
 - **ty check**: Type checks .py files after edit
 - **print() warning**: Warns about print() in edited files
 - **test notification**: Notification after pytest/manage.py test completion
 
-### Stop
+#### Stop
 - **print() audit**: Checks all modified .py files for print() before session ends
 
 ## Package Management
