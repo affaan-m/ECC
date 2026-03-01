@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
     "PreToolUse": [
       {
@@ -13,7 +12,7 @@
         "description": "Block cargo run outside tmux - ensures you can access logs"
       },
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(cargo (build|test|bench|clippy)|make|docker)\"",
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"(cargo (build|test|bench|clippy|doc)|make|docker)\"",
         "hooks": [
           {
             "type": "command",
@@ -29,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); p and subprocess.run(['cargo','fmt','--','--edition','2021'],capture_output=True); print(d,end='')\""
+            "command": "python3 -c \"import sys, json, subprocess, os; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); dir=os.path.dirname(os.path.abspath(p)) if p else ''; found=False; [found:=True for _ in [0] if dir]; exec('while dir and dir != os.path.dirname(dir):\\n if os.path.exists(os.path.join(dir,\\\"Cargo.toml\\\")):\\n  break\\n dir=os.path.dirname(dir)') if found else None; (p and os.path.exists(os.path.join(dir,'Cargo.toml'))) and subprocess.run(['cargo','fmt'],capture_output=True,cwd=dir); print(d,end='')\""
           }
         ],
         "description": "Auto-format Rust files with cargo fmt after edits"
@@ -39,10 +38,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import sys, json, subprocess, os; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['cargo','clippy','--message-format=short','--','- D','warnings'],capture_output=True,text=True,cwd=os.path.dirname(p) or '.') if p else None; lines=[l for l in (r.stdout if r else '').split('\\n') if p and os.path.basename(p) in l]; lines and sys.stderr.write('\\n'.join(lines[:10])+'\\n'); print(d,end='')\""
+            "command": "python3 -c \"import sys, json, subprocess, os; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); dir=os.path.dirname(os.path.abspath(p)) if p else ''; exec('while dir and dir != os.path.dirname(dir):\\n if os.path.exists(os.path.join(dir,\\\"Cargo.toml\\\")):\\n  break\\n dir=os.path.dirname(dir)') if dir else None; r=subprocess.run(['cargo','clippy','--message-format=short','--','-D','warnings'],capture_output=True,text=True,cwd=dir) if (p and os.path.exists(os.path.join(dir,'Cargo.toml'))) else None; lines=[l for l in (r.stdout if r else '').split('\\n') if p and os.path.basename(p) in l]; lines and sys.stderr.write('\\n'.join(lines[:10])+'\\n'); print(d,end='')\""
           }
         ],
-        "description": "Lint Rust files with clippy after edits"
+        "description": "Lint Rust files with cargo clippy after edits"
+      },
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.rs$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); lines=open(p).readlines() if p else []; matches=[(n+1,l.strip()) for n,l in enumerate(lines) if re.search(r'\\bdbg!\\s*\\(',l) and not re.search(r'//\\s*noqa',l)]; matches and (sys.stderr.write('[Hook] WARNING: dbg!() found in '+p+'\\n'), [sys.stderr.write(str(n)+': '+l+'\\n') for n,l in matches[:5]], sys.stderr.write('[Hook] Remove dbg!() before committing\\n')); print(d,end='')\""
+          }
+        ],
+        "description": "Warn about dbg!() macros after edits"
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"cargo test\"",
@@ -55,6 +64,18 @@
           }
         ],
         "description": "Notification after cargo test completion"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import subprocess, sys, re; r=subprocess.run(['git','diff','--name-only'],capture_output=True,text=True); files=[f for f in r.stdout.strip().split('\\n') if f.endswith('.rs')]; patterns=[('dbg!()',r'\\bdbg!\\s*\\('),('todo!()',r'\\btodo!\\s*\\('),('unimplemented!()',r'\\bunimplemented!\\s*\\(')]; [((matches:=[(n+1,l.strip(),name) for n,l in enumerate(open(f).readlines()) for name,pat in patterns if re.search(pat,l) and not re.search(r'//\\s*noqa',l)]) and sys.stderr.write('[Hook] Debug macros in '+f+':\\n') and False or [sys.stderr.write('  '+str(n)+': '+l+' ('+name+')\\n') for n,l,name in matches[:5]]) for f in files if f]; any(True for f in files if f and any(re.search(pat,l) for n,l in enumerate(open(f).readlines()) for _,pat in patterns if not re.search(r'//\\s*noqa',l))) and sys.stderr.write('[Hook] Remove debug macros before committing\\n')\""
+          }
+        ],
+        "description": "Check for dbg!()/todo!()/unimplemented!() in modified Rust files"
       }
     ]
   }
