@@ -5,9 +5,53 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
-const HOOKS_FILE = path.join(__dirname, '../../hooks/hooks.json');
+const HOOKS_FILE = path.join(__dirname, '../../../hooks/common/hooks.json');
 const VALID_EVENTS = ['PreToolUse', 'PostToolUse', 'PreCompact', 'SessionStart', 'SessionEnd', 'Stop', 'Notification', 'SubagentStop'];
+
+/**
+ * Validate a single hook entry has required fields and valid inline JS
+ * @param {object} hook - Hook object with type and command fields
+ * @param {string} label - Label for error messages (e.g., "PreToolUse[0].hooks[1]")
+ * @returns {boolean} true if errors were found
+ */
+function validateHookEntry(hook, label) {
+  let hasErrors = false;
+
+  if (!hook.type || typeof hook.type !== 'string') {
+    console.error(`ERROR: ${label} missing or invalid 'type' field`);
+    hasErrors = true;
+  }
+
+  // Validate optional async and timeout fields
+  if ('async' in hook && typeof hook.async !== 'boolean') {
+    console.error(`ERROR: ${label} 'async' must be a boolean`);
+    hasErrors = true;
+  }
+  if ('timeout' in hook && (typeof hook.timeout !== 'number' || hook.timeout < 0)) {
+    console.error(`ERROR: ${label} 'timeout' must be a non-negative number`);
+    hasErrors = true;
+  }
+
+  if (!hook.command || (typeof hook.command !== 'string' && !Array.isArray(hook.command)) || (typeof hook.command === 'string' && !hook.command.trim()) || (Array.isArray(hook.command) && (hook.command.length === 0 || !hook.command.every(s => typeof s === 'string' && s.length > 0)))) {
+    console.error(`ERROR: ${label} missing or invalid 'command' field`);
+    hasErrors = true;
+  } else if (typeof hook.command === 'string') {
+    // Validate inline JS syntax in node -e commands
+    const nodeEMatch = hook.command.match(/^node -e "(.*)"$/s);
+    if (nodeEMatch) {
+      try {
+        new vm.Script(nodeEMatch[1].replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t'));
+      } catch (syntaxErr) {
+        console.error(`ERROR: ${label} has invalid inline JS: ${syntaxErr.message}`);
+        hasErrors = true;
+      }
+    }
+  }
+
+  return hasErrors;
+}
 
 function validateHooks() {
   if (!fs.existsSync(HOOKS_FILE)) {
@@ -58,15 +102,8 @@ function validateHooks() {
           console.error(`ERROR: ${eventType}[${i}] missing 'hooks' array`);
           hasErrors = true;
         } else {
-          // Validate each hook entry
           for (let j = 0; j < matcher.hooks.length; j++) {
-            const hook = matcher.hooks[j];
-            if (!hook.type || typeof hook.type !== 'string') {
-              console.error(`ERROR: ${eventType}[${i}].hooks[${j}] missing or invalid 'type' field`);
-              hasErrors = true;
-            }
-            if (!hook.command || (typeof hook.command !== 'string' && !Array.isArray(hook.command))) {
-              console.error(`ERROR: ${eventType}[${i}].hooks[${j}] missing or invalid 'command' field`);
+            if (validateHookEntry(matcher.hooks[j], `${eventType}[${i}].hooks[${j}]`)) {
               hasErrors = true;
             }
           }
@@ -86,15 +123,8 @@ function validateHooks() {
         console.error(`ERROR: Hook ${i} missing 'hooks' array`);
         hasErrors = true;
       } else {
-        // Validate each hook entry
         for (let j = 0; j < hook.hooks.length; j++) {
-          const h = hook.hooks[j];
-          if (!h.type || typeof h.type !== 'string') {
-            console.error(`ERROR: Hook ${i}.hooks[${j}] missing or invalid 'type' field`);
-            hasErrors = true;
-          }
-          if (!h.command || (typeof h.command !== 'string' && !Array.isArray(h.command))) {
-            console.error(`ERROR: Hook ${i}.hooks[${j}] missing or invalid 'command' field`);
+          if (validateHookEntry(hook.hooks[j], `Hook ${i}.hooks[${j}]`)) {
             hasErrors = true;
           }
         }

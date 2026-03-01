@@ -5,7 +5,7 @@
  * Usage: node tests/run-all.js
  */
 
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,12 +13,21 @@ const testsDir = __dirname;
 const testFiles = [
   'lib/utils.test.js',
   'lib/package-manager.test.js',
-  'hooks/hooks.test.js'
+  'hooks/hooks.test.js',
+  'hooks/evaluate-session.test.js',
+  'hooks/suggest-compact.test.js',
+  'integration/hooks.test.js',
+  'ci/validators.test.js',
+  'scripts/setup-package-manager.test.js',
+  'scripts/skill-create-output.test.js'
 ];
 
-console.log('╔══════════════════════════════════════════════════════════╗');
-console.log('║           Everything Claude Code - Test Suite            ║');
-console.log('╚══════════════════════════════════════════════════════════╝');
+const BOX_W = 58; // inner width between delimiters
+const boxLine = (s) => `║${s.padEnd(BOX_W)}║`;
+
+console.log('╔' + '═'.repeat(BOX_W) + '╗');
+console.log(boxLine('           Everything Claude Code - Test Suite'));
+console.log('╚' + '═'.repeat(BOX_W) + '╝');
 console.log();
 
 let totalPassed = 0;
@@ -35,42 +44,35 @@ for (const testFile of testFiles) {
 
   console.log(`\n━━━ Running ${testFile} ━━━`);
 
-  try {
-    const output = execSync(`node "${testPath}"`, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    console.log(output);
+  const result = spawnSync('node', [testPath], {
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
 
-    // Parse results from output
-    const passedMatch = output.match(/Passed:\s*(\d+)/);
-    const failedMatch = output.match(/Failed:\s*(\d+)/);
+  const stdout = result.stdout || '';
+  const stderr = result.stderr || '';
 
-    if (passedMatch) totalPassed += parseInt(passedMatch[1], 10);
-    if (failedMatch) totalFailed += parseInt(failedMatch[1], 10);
+  // Show both stdout and stderr so hook warnings are visible
+  if (stdout) console.log(stdout);
+  if (stderr) console.log(stderr);
 
-  } catch (err) {
-    console.log(err.stdout || '');
-    console.log(err.stderr || '');
+  // Parse results from combined output
+  const combined = stdout + stderr;
+  const passedMatch = combined.match(/Passed:\s*(\d+)/);
+  const failedMatch = combined.match(/Failed:\s*(\d+)/);
 
-    // Parse results even on failure
-    const output = (err.stdout || '') + (err.stderr || '');
-    const passedMatch = output.match(/Passed:\s*(\d+)/);
-    const failedMatch = output.match(/Failed:\s*(\d+)/);
-
-    if (passedMatch) totalPassed += parseInt(passedMatch[1], 10);
-    if (failedMatch) totalFailed += parseInt(failedMatch[1], 10);
-  }
+  if (passedMatch) totalPassed += parseInt(passedMatch[1], 10);
+  if (failedMatch) totalFailed += parseInt(failedMatch[1], 10);
 }
 
 totalTests = totalPassed + totalFailed;
 
-console.log('\n╔══════════════════════════════════════════════════════════╗');
-console.log('║                     Final Results                        ║');
-console.log('╠══════════════════════════════════════════════════════════╣');
-console.log(`║  Total Tests: ${String(totalTests).padStart(4)}                                      ║`);
-console.log(`║  Passed:      ${String(totalPassed).padStart(4)}  ✓                                   ║`);
-console.log(`║  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}                                   ║`);
-console.log('╚══════════════════════════════════════════════════════════╝');
+console.log('\n╔' + '═'.repeat(BOX_W) + '╗');
+console.log(boxLine('                     Final Results'));
+console.log('╠' + '═'.repeat(BOX_W) + '╣');
+console.log(boxLine(`  Total Tests: ${String(totalTests).padStart(4)}`));
+console.log(boxLine(`  Passed:      ${String(totalPassed).padStart(4)}  ✓`));
+console.log(boxLine(`  Failed:      ${String(totalFailed).padStart(4)}  ${totalFailed > 0 ? '✗' : ' '}`));
+console.log('╚' + '═'.repeat(BOX_W) + '╝');
 
 process.exit(totalFailed > 0 ? 1 : 0);
