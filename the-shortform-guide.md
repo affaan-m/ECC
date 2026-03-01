@@ -394,7 +394,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
   code-reviewer.md     # Quality review
   security-reviewer.md # Vulnerability scan
   build-error-resolver.md
-  e2e-runner.md        # Playwright tests
+  e2e-runner.md        # Chrome DevTools MCP E2E tests
   refactor-cleaner.md  # Dead code removal
   doc-updater.md       # Keep docs synced
 ```

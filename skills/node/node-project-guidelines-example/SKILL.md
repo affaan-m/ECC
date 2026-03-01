@@ -25,7 +25,7 @@ Reference this skill when working on the specific project it's designed for. Pro
 - **Database**: Supabase (PostgreSQL)
 - **AI**: Claude API with tool calling and structured output
 - **Deployment**: Google Cloud Run
-- **Testing**: Playwright (E2E), pytest (backend), Svelte Testing Library
+- **Testing**: Chrome DevTools MCP (E2E), pytest (backend), Svelte Testing Library
 
 **Services:**
 ```

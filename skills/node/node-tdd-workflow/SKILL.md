@@ -40,11 +40,11 @@ ALWAYS write tests first, then implement code to make tests pass.
 - Service interactions
 - External API calls
 
-#### E2E Tests (Playwright)
+#### E2E Tests (Chrome DevTools MCP)
 - Critical user flows
 - Complete workflows
-- Browser automation
-- UI interactions
+- Browser automation via MCP tools
+- UI interactions and verification
 
 ## TDD Workflow Steps
 
@@ -175,57 +175,59 @@ describe('GET /api/markets', () => {
 })
 ```
 
-### E2E Test Pattern (Playwright)
-```typescript
-import { test, expect } from '@playwright/test'
+### E2E Test Pattern (Chrome DevTools MCP)
+```
+# Test: User can search and filter markets
 
-test('user can search and filter markets', async ({ page }) => {
-  // Navigate to markets page
-  await page.goto('/')
-  await page.click('a[href="/markets"]')
+# Navigate to markets page
+navigate_page(url: "http://localhost:3000/markets")
+wait_for(text: ["Markets"])
 
-  // Verify page loaded
-  await expect(page.locator('h1')).toContainText('Markets')
+# Take snapshot to find elements
+take_snapshot()
+# Found: heading "Markets", search input [uid="e1"], market cards
 
-  // Search for markets
-  await page.fill('input[placeholder="Search markets"]', 'election')
+# Search for markets
+fill(uid: "e1", value: "election")
+wait_for(text: ["results"])
 
-  // Wait for debounce and results
-  await page.waitForTimeout(600)
+# Verify search results
+take_snapshot()
+# Check: market cards contain election-related titles
 
-  // Verify search results displayed
-  const results = page.locator('[data-testid="market-card"]')
-  await expect(results).toHaveCount(5, { timeout: 5000 })
+# Click filter button
+click(uid: "<active-filter-uid>")
+wait_for(text: ["Active"])
 
-  // Verify results contain search term
-  const firstResult = results.first()
-  await expect(firstResult).toContainText('election', { ignoreCase: true })
+# Verify filtered results
+take_snapshot()
+# Check: only active markets shown
 
-  // Filter by status
-  await page.click('button:has-text("Active")')
+take_screenshot(filePath: "artifacts/filtered-results.png")
 
-  // Verify filtered results
-  await expect(results).toHaveCount(3)
-})
+# ---
 
-test('user can create a new market', async ({ page }) => {
-  // Login first
-  await page.goto('/creator-dashboard')
+# Test: User can create a new market
 
-  // Fill market creation form
-  await page.fill('input[name="name"]', 'Test Market')
-  await page.fill('textarea[name="description"]', 'Test description')
-  await page.fill('input[name="endDate"]', '2025-12-31')
+# Navigate to creator dashboard
+navigate_page(url: "http://localhost:3000/creator-dashboard")
+wait_for(text: ["Create"])
 
-  // Submit form
-  await page.click('button[type="submit"]')
+# Fill market creation form
+take_snapshot()
+fill_form(elements: [
+  { uid: "<name-uid>", value: "Test Market" },
+  { uid: "<desc-uid>", value: "Test description" },
+  { uid: "<date-uid>", value: "2026-12-31" }
+])
 
-  // Verify success message
-  await expect(page.locator('text=Market created successfully')).toBeVisible()
+# Submit form
+click(uid: "<submit-uid>")
 
-  // Verify redirect to market page
-  await expect(page).toHaveURL(/\/markets\/test-market/)
-})
+# Verify success
+wait_for(text: ["Market created successfully"])
+take_snapshot()
+take_screenshot(filePath: "artifacts/market-created.png")
 ```
 
 ## Test File Organization

@@ -5,7 +5,7 @@
 Test Types (ALL required):
 1. **Unit Tests** - Individual functions, utilities, components
 2. **Integration Tests** - API endpoints, database operations
-3. **E2E Tests** - Critical user flows (Playwright)
+3. **E2E Tests** - Critical user flows (Chrome DevTools MCP)
 
 ## Test-Driven Development
 
@@ -27,4 +27,4 @@ MANDATORY workflow:
 ## Agent Support
 
 - **tdd-guide** - Use PROACTIVELY for new features, enforces write-tests-first
-- **e2e-runner** - Playwright E2E testing specialist
+- **e2e-runner** - Chrome DevTools MCP E2E testing specialist

@@ -130,29 +130,37 @@ describe('GET /api/markets/search', () => {
 ```
 
 ### 3. E2E Tests (For Critical Flows)
-Test complete user journeys with Playwright:
+Test complete user journeys with Chrome DevTools MCP:
 
-```typescript
-import { test, expect } from '@playwright/test'
+```
+# Navigate to page
+navigate_page(url: "http://localhost:3000")
 
-test('user can search and view market', async ({ page }) => {
-  await page.goto('/')
+# Take snapshot to find elements
+take_snapshot()
+# Returns elements with uids, e.g. [uid="e1"] textbox "Search markets"
 
-  // Search for market
-  await page.fill('input[placeholder="Search markets"]', 'election')
-  await page.waitForTimeout(600) // Debounce
+# Fill search input
+fill(uid: "e1", value: "election")
 
-  // Verify results
-  const results = page.locator('[data-testid="market-card"]')
-  await expect(results).toHaveCount(5, { timeout: 5000 })
+# Wait for results to load
+wait_for(text: ["results"])
 
-  // Click first result
-  await results.first().click()
+# Verify results via snapshot
+take_snapshot()
+# Check: market cards are present with relevant titles
 
-  // Verify market page loaded
-  await expect(page).toHaveURL(/\/markets\//)
-  await expect(page.locator('h1')).toBeVisible()
-})
+# Click first result
+click(uid: "<market-card-uid>")
+
+# Verify market page loaded
+wait_for(text: ["Price", "Volume"])
+take_snapshot()
+# Check: heading visible, market details shown
+
+# Capture evidence
+take_screenshot(filePath: "artifacts/market-details.png")
+```
 ```
 
 ## Mocking External Dependencies

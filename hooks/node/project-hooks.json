@@ -12,7 +12,7 @@
         "description": "Block dev servers outside tmux - ensures you can access logs"
       },
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(bun (install|test)|make|docker|vitest|playwright)\"",
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"(bun (install|test)|make|docker|vitest)\"",
         "hooks": [
           {
             "type": "command",

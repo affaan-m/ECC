@@ -51,7 +51,7 @@ Located in `~/.claude/agents/`:
 | code-reviewer | Code review for quality/security |
 | security-reviewer | Security vulnerability analysis |
 | build-error-resolver | Build error resolution |
-| e2e-runner | Playwright E2E testing |
+| e2e-runner | Chrome DevTools MCP E2E testing |
 | refactor-cleaner | Dead code cleanup |
 | doc-updater | Documentation updates |
 
