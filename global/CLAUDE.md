@@ -24,7 +24,14 @@ Before choosing Simple vs Complex path:
 
 ## Simple Changes
 
-Trivial fixes (typos, single-line, obvious bugs): fix → verify → commit directly.
+Trivial fixes (typos, single-line, obvious bugs):
+
+1. Create branch (`<type>/<short-description>`) & worktree
+2. Fix → verify → commit
+3. PR/MR (with user confirmation)
+
+Worktree is **always required** — even for simple changes.
+Parallel sessions without isolation cause conflicts.
 
 ## Complex Changes Workflow
 
@@ -70,10 +77,8 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 
 Worktree policy:
 
-- Required for medium/large changes (multiple files,
-  cross-directory refactors, risky changes)
-- Optional for small scoped changes (single file, low
-  risk, easy rollback)
+- **Always required** for all changes to prevent
+  conflicts during parallel sessions
 
 ### 4. Implement
 
