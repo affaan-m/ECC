@@ -1,50 +1,53 @@
 ---
 name: node-frontend-patterns
-description: Frontend development patterns for Svelte 5, SvelteKit, Tailwind CSS 4, state management with runes, performance optimization, and UI best practices.
+description: Frontend development patterns for Svelte 5, SvelteKit, Tailwind CSS 4 with shadcn-svelte, state management with runes, performance optimization, and UI best practices.
 ---
 
 # Frontend Development Patterns
 
-Modern frontend patterns for Svelte 5, SvelteKit, and Tailwind CSS 4.
+Modern frontend patterns for Svelte 5, SvelteKit, Tailwind CSS 4 with shadcn-svelte.
 
 ## Svelte 5 Runes
 
 ### Component Props with $props
 
 ```svelte
-<!-- Card.svelte -->
+<!-- StatusBadge.svelte -->
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { Badge } from '$lib/components/ui/badge'
 
   interface Props {
-    variant?: 'default' | 'outlined'
-    children: Snippet
-    header?: Snippet
+    status: 'active' | 'resolved' | 'pending'
   }
 
-  let { variant = 'default', children, header }: Props = $props()
+  let { status }: Props = $props()
+
+  const variantMap = {
+    active: 'default',
+    resolved: 'secondary',
+    pending: 'outline',
+  } as const
 </script>
 
-<div class="card card-{variant}">
-  {#if header}
-    <div class="card-header">
-      {@render header()}
-    </div>
-  {/if}
-  <div class="card-body">
-    {@render children()}
-  </div>
-</div>
+<Badge variant={variantMap[status]}>{status}</Badge>
 ```
 
 ```svelte
-<!-- Usage -->
-<Card variant="outlined">
-  {#snippet header()}
-    <h2>Title</h2>
-  {/snippet}
-  <p>Content goes here</p>
-</Card>
+<!-- Usage with shadcn Card -->
+<script lang="ts">
+  import * as Card from '$lib/components/ui/card'
+  import StatusBadge from './StatusBadge.svelte'
+</script>
+
+<Card.Root>
+  <Card.Header>
+    <Card.Title>Market Name</Card.Title>
+    <StatusBadge status="active" />
+  </Card.Header>
+  <Card.Content>
+    <p>Content goes here</p>
+  </Card.Content>
+</Card.Root>
 ```
 
 ### Reactive State with $state and $derived
@@ -127,63 +130,33 @@ Modern frontend patterns for Svelte 5, SvelteKit, and Tailwind CSS 4.
 
 ## Component Patterns
 
-### Compound Components with Context
+### Compound Components with shadcn
+
+Use shadcn components instead of building from scratch:
 
 ```svelte
-<!-- Tabs.svelte -->
-<script lang="ts" module>
-  export interface TabsContext {
-    activeTab: string
-    setActiveTab: (tab: string) => void
-  }
-</script>
-
 <script lang="ts">
-  import { setContext } from 'svelte'
-  import type { Snippet } from 'svelte'
-
-  interface Props {
-    defaultTab: string
-    children: Snippet
-  }
-
-  let { defaultTab, children }: Props = $props()
-  let activeTab = $state(defaultTab)
-
-  setContext<TabsContext>('tabs', {
-    get activeTab() { return activeTab },
-    setActiveTab: (tab: string) => activeTab = tab
-  })
+  import * as Tabs from '$lib/components/ui/tabs'
+  import * as Card from '$lib/components/ui/card'
 </script>
 
-<div class="tabs">
-  {@render children()}
-</div>
-```
-
-```svelte
-<!-- Tab.svelte -->
-<script lang="ts">
-  import { getContext } from 'svelte'
-  import type { TabsContext } from './Tabs.svelte'
-  import type { Snippet } from 'svelte'
-
-  interface Props {
-    id: string
-    children: Snippet
-  }
-
-  let { id, children }: Props = $props()
-  const ctx = getContext<TabsContext>('tabs')
-  let isActive = $derived(ctx.activeTab === id)
-</script>
-
-<button
-  class:active={isActive}
-  onclick={() => ctx.setActiveTab(id)}
->
-  {@render children()}
-</button>
+<Tabs.Root value="overview">
+  <Tabs.List>
+    <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
+    <Tabs.Trigger value="analytics">Analytics</Tabs.Trigger>
+    <Tabs.Trigger value="settings">Settings</Tabs.Trigger>
+  </Tabs.List>
+  <Tabs.Content value="overview">
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Overview</Card.Title>
+      </Card.Header>
+      <Card.Content>Overview content here</Card.Content>
+    </Card.Root>
+  </Tabs.Content>
+  <Tabs.Content value="analytics">Analytics content</Tabs.Content>
+  <Tabs.Content value="settings">Settings content</Tabs.Content>
+</Tabs.Root>
 ```
 
 ### Generic Data Loader
@@ -240,9 +213,130 @@ Modern frontend patterns for Svelte 5, SvelteKit, and Tailwind CSS 4.
 </DataLoader>
 ```
 
-## Tailwind CSS 4 Patterns
+## shadcn-svelte + Tailwind CSS 4
 
-### CSS-First Configuration
+### Setup
+
+```bash
+# Initialize shadcn-svelte in your project
+bunx shadcn-svelte@latest init
+
+# Add components as needed
+bunx shadcn-svelte@latest add button card dialog input select tabs table badge
+```
+
+shadcn-svelte generates components into `$lib/components/ui/` that you own and can customize. Built on Bits UI (headless) + Tailwind CSS.
+
+### Using shadcn Components
+
+```svelte
+<script lang="ts">
+  import { Button } from '$lib/components/ui/button'
+  import * as Card from '$lib/components/ui/card'
+  import { Input } from '$lib/components/ui/input'
+  import { Label } from '$lib/components/ui/label'
+</script>
+
+<Card.Root>
+  <Card.Header>
+    <Card.Title>Create Market</Card.Title>
+    <Card.Description>Fill in the details below.</Card.Description>
+  </Card.Header>
+  <Card.Content class="space-y-4">
+    <div class="space-y-2">
+      <Label for="name">Name</Label>
+      <Input id="name" placeholder="Market name" />
+    </div>
+    <Button>Submit</Button>
+  </Card.Content>
+</Card.Root>
+```
+
+### Component Variants with tailwind-variants
+
+```typescript
+// $lib/components/ui/badge/index.ts
+import { tv, type VariantProps } from 'tailwind-variants'
+
+export const badgeVariants = tv({
+  base: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+  variants: {
+    variant: {
+      default: 'bg-primary text-primary-foreground',
+      secondary: 'bg-secondary text-secondary-foreground',
+      destructive: 'bg-destructive text-destructive-foreground',
+      outline: 'border text-foreground',
+    },
+  },
+  defaultVariants: {
+    variant: 'default',
+  },
+})
+
+export type BadgeVariant = VariantProps<typeof badgeVariants>
+```
+
+### Dialog / Modal Pattern
+
+```svelte
+<script lang="ts">
+  import * as Dialog from '$lib/components/ui/dialog'
+  import { Button } from '$lib/components/ui/button'
+
+  let open = $state(false)
+</script>
+
+<Dialog.Root bind:open>
+  <Dialog.Trigger asChild let:builder>
+    <Button builders={[builder]}>Open Dialog</Button>
+  </Dialog.Trigger>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>Confirm Action</Dialog.Title>
+      <Dialog.Description>This cannot be undone.</Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => open = false}>Cancel</Button>
+      <Button variant="destructive" onclick={handleConfirm}>Confirm</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+```
+
+### Data Table with shadcn
+
+```svelte
+<script lang="ts">
+  import * as Table from '$lib/components/ui/table'
+
+  interface Props {
+    markets: Market[]
+  }
+
+  let { markets }: Props = $props()
+</script>
+
+<Table.Root>
+  <Table.Header>
+    <Table.Row>
+      <Table.Head>Name</Table.Head>
+      <Table.Head>Status</Table.Head>
+      <Table.Head class="text-right">Volume</Table.Head>
+    </Table.Row>
+  </Table.Header>
+  <Table.Body>
+    {#each markets as market (market.id)}
+      <Table.Row>
+        <Table.Cell class="font-medium">{market.name}</Table.Cell>
+        <Table.Cell>{market.status}</Table.Cell>
+        <Table.Cell class="text-right">{market.volume}</Table.Cell>
+      </Table.Row>
+    {/each}
+  </Table.Body>
+</Table.Root>
+```
+
+### Tailwind CSS 4 Theme Configuration
 
 ```css
 /* app.css */
@@ -269,53 +363,39 @@ Modern frontend patterns for Svelte 5, SvelteKit, and Tailwind CSS 4.
 
 /* Custom variant */
 @variant dark (&:where(.dark, .dark *));
-
-/* Custom utility */
-@utility container-narrow {
-  max-width: 48rem;
-  margin-inline: auto;
-  padding-inline: 1rem;
-}
 ```
 
-### Dark Mode with Tailwind 4
+### Dark Mode Toggle
 
 ```svelte
-<!-- ThemeToggle.svelte -->
 <script lang="ts">
-  let isDark = $state(
-    typeof window !== 'undefined' &&
-    document.documentElement.classList.contains('dark')
-  )
-
-  function toggle() {
-    isDark = !isDark
-    document.documentElement.classList.toggle('dark', isDark)
-    localStorage.setItem('theme', isDark ? 'dark' : 'light')
-  }
+  import { Button } from '$lib/components/ui/button'
+  import { toggleMode } from 'mode-watcher'
 </script>
 
-<button
-  onclick={toggle}
-  class="rounded-lg bg-surface p-2 dark:bg-surface-dark"
->
-  {isDark ? 'Light' : 'Dark'}
-</button>
+<Button variant="outline" size="icon" onclick={toggleMode}>
+  <span class="dark:hidden">Dark</span>
+  <span class="hidden dark:inline">Light</span>
+</Button>
 ```
 
-### Responsive Layout
+### Responsive Layout with shadcn Cards
 
 ```svelte
+<script lang="ts">
+  import * as Card from '$lib/components/ui/card'
+</script>
+
 <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 3xl:grid-cols-4">
   {#each markets as market (market.id)}
-    <div class="rounded-xl bg-surface p-6 shadow-sm transition-shadow hover:shadow-md dark:bg-surface-dark">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-        {market.name}
-      </h3>
-      <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-        {market.description}
-      </p>
-    </div>
+    <Card.Root class="transition-shadow hover:shadow-md">
+      <Card.Header>
+        <Card.Title>{market.name}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <p class="text-sm text-muted-foreground">{market.description}</p>
+      </Card.Content>
+    </Card.Root>
   {/each}
 </div>
 ```
@@ -453,6 +533,8 @@ export const marketStore = createMarketStore()
 
 ```svelte
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input'
+
   let searchQuery = $state('')
   let debouncedQuery = $state('')
   let timer: ReturnType<typeof setTimeout>
@@ -472,21 +554,24 @@ export const marketStore = createMarketStore()
   })
 </script>
 
-<input
+<Input
   type="text"
   bind:value={searchQuery}
   placeholder="Search markets..."
-  class="w-full rounded-lg border px-4 py-2 focus:ring-2 focus:ring-brand"
 />
 ```
 
 ## Form Handling Patterns
 
-### Form with Validation
+### Form with shadcn + Validation
 
 ```svelte
 <script lang="ts">
   import { enhance } from '$app/forms'
+  import { Button } from '$lib/components/ui/button'
+  import { Input } from '$lib/components/ui/input'
+  import { Label } from '$lib/components/ui/label'
+  import { Textarea } from '$lib/components/ui/textarea'
 
   let name = $state('')
   let description = $state('')
@@ -507,6 +592,7 @@ export const marketStore = createMarketStore()
 <form
   method="POST"
   action="?/create"
+  class="space-y-4"
   use:enhance={() => {
     if (!validate()) return ({ cancel }) => cancel()
     return async ({ result, update }) => {
@@ -514,19 +600,25 @@ export const marketStore = createMarketStore()
     }
   }}
 >
-  <div>
-    <input bind:value={name} name="name" placeholder="Market name"
-      class="w-full rounded-lg border px-4 py-2"
-      class:border-red-500={errors.name}
+  <div class="space-y-2">
+    <Label for="name">Market Name</Label>
+    <Input id="name" bind:value={name} placeholder="Market name"
+      class={errors.name ? 'border-destructive' : ''}
     />
     {#if errors.name}
-      <span class="text-sm text-red-500">{errors.name}</span>
+      <p class="text-sm text-destructive">{errors.name}</p>
     {/if}
   </div>
 
-  <button type="submit" class="mt-4 rounded-lg bg-brand px-6 py-2 text-white">
-    Create Market
-  </button>
+  <div class="space-y-2">
+    <Label for="description">Description</Label>
+    <Textarea id="description" bind:value={description} placeholder="Describe the market" />
+    {#if errors.description}
+      <p class="text-sm text-destructive">{errors.description}</p>
+    {/if}
+  </div>
+
+  <Button type="submit">Create Market</Button>
 </form>
 ```
 
@@ -597,65 +689,32 @@ export const actions = {
   </div>
 {/each}
 
-<!-- Modal -->
-{#if isOpen}
-  <div transition:fade={{ duration: 200 }} class="fixed inset-0 bg-black/50"
-    onclick={close}
-  />
-  <div
-    transition:fly={{ y: 20, duration: 300 }}
-    class="fixed inset-x-4 top-1/4 mx-auto max-w-lg rounded-xl bg-white p-6 shadow-xl"
-  >
-    <slot />
-  </div>
-{/if}
+<!-- For modals, prefer shadcn Dialog over manual transitions -->
+<!-- See Dialog pattern in shadcn-svelte section above -->
 ```
 
-## Accessibility Patterns
+## Accessibility
 
-### Keyboard Navigation
+shadcn-svelte components (built on Bits UI) include keyboard navigation, ARIA attributes, and focus management out of the box. For custom interactive components, use Bits UI primitives:
 
 ```svelte
 <script lang="ts">
-  interface Props {
-    options: string[]
-    onselect: (option: string) => void
-  }
+  import * as Select from '$lib/components/ui/select'
 
-  let { options, onselect }: Props = $props()
-  let isOpen = $state(false)
-  let activeIndex = $state(0)
-
-  function handleKeydown(e: KeyboardEvent) {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        activeIndex = Math.min(activeIndex + 1, options.length - 1)
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        activeIndex = Math.max(activeIndex - 1, 0)
-        break
-      case 'Enter':
-        e.preventDefault()
-        onselect(options[activeIndex])
-        isOpen = false
-        break
-      case 'Escape':
-        isOpen = false
-        break
-    }
-  }
+  let selected = $state<string>()
 </script>
 
-<div
-  role="combobox"
-  aria-expanded={isOpen}
-  aria-haspopup="listbox"
-  onkeydown={handleKeydown}
->
-  <!-- Dropdown implementation -->
-</div>
+<!-- Select handles keyboard nav, ARIA, focus automatically -->
+<Select.Root bind:value={selected}>
+  <Select.Trigger>
+    <Select.Value placeholder="Choose status" />
+  </Select.Trigger>
+  <Select.Content>
+    <Select.Item value="active">Active</Select.Item>
+    <Select.Item value="resolved">Resolved</Select.Item>
+    <Select.Item value="pending">Pending</Select.Item>
+  </Select.Content>
+</Select.Root>
 ```
 
-**Remember**: Svelte 5 runes replace stores for local state. Use `$state` for reactive values, `$derived` for computed values, and `$effect` for side effects. Tailwind CSS 4 uses CSS-first configuration with `@theme` and `@import "tailwindcss"`.
+**Remember**: Use shadcn-svelte components for consistent, accessible UI. Svelte 5 runes replace stores for local state. Use `$state` for reactive values, `$derived` for computed values, and `$effect` for side effects. Tailwind CSS 4 uses CSS-first configuration with `@theme` and `@import "tailwindcss"`.

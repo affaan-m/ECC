@@ -166,7 +166,7 @@ User → Markets Page → API Route → Supabase → Redis (optional) → Respon
 - Next.js 15.1.4 - Framework
 - React 19.0.0 - UI library
 - Privy - Authentication
-- Tailwind CSS 3.4.1 - Styling
+- Tailwind CSS + shadcn - Styling
 ```
 
 ### Backend Codemap (docs/CODEMAPS/backend.md)

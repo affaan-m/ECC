@@ -20,7 +20,7 @@ Reference this skill when working on the specific project it's designed for. Pro
 ## Architecture Overview
 
 **Tech Stack:**
-- **Frontend**: SvelteKit 5, Svelte 5 (runes), TypeScript, Tailwind CSS 4
+- **Frontend**: SvelteKit 5, Svelte 5 (runes), TypeScript, Tailwind CSS 4 + shadcn-svelte
 - **Backend**: FastAPI (Python), Pydantic models
 - **Database**: Supabase (PostgreSQL)
 - **AI**: Claude API with tool calling and structured output
@@ -31,7 +31,7 @@ Reference this skill when working on the specific project it's designed for. Pro
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Frontend                            │
-│  SvelteKit 5 + Svelte 5 + TypeScript + Tailwind CSS 4      │
+│  SvelteKit 5 + Svelte 5 + TypeScript + shadcn-svelte        │
 │  Deployed: Vercel / Cloud Run                              │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -64,13 +64,13 @@ project/
 │       │   └── workspace/    # Main app workspace
 │       ├── lib/
 │       │   ├── components/   # Svelte components
-│       │   │   ├── ui/       # Base UI components
+│       │   │   ├── ui/       # shadcn-svelte components
 │       │   │   ├── forms/    # Form components
 │       │   │   └── layouts/  # Layout components
 │       │   ├── stores/       # Shared state (.svelte.ts)
 │       │   ├── utils/        # Utilities
 │       │   └── types/        # TypeScript definitions
-│       └── app.css           # Tailwind CSS 4 config
+│       └── app.css           # Tailwind CSS 4 + shadcn theme
 │
 ├── backend/
 │   ├── routers/              # FastAPI route handlers

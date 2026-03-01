@@ -311,13 +311,13 @@ src/
 │   └── (auth)/           # Route groups
 ├── lib/
 │   ├── components/       # Svelte components
-│   │   ├── ui/          # Generic UI components
+│   │   ├── ui/          # shadcn-svelte components
 │   │   ├── forms/       # Form components
 │   │   └── layouts/     # Layout components
 │   ├── stores/          # Shared state (.svelte.ts)
 │   ├── utils/           # Helper functions
 │   └── types/           # TypeScript types
-└── app.css              # Tailwind CSS 4 config + global styles
+└── app.css              # Tailwind CSS 4 + shadcn theme
 ```
 
 ### File Naming
