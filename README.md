@@ -1,23 +1,11 @@
-**Language:** English | [繁體中文](docs/zh-TW/README.md) | [한국어](docs/ko-KR/README.md)
-
 # Everything Claude Code
 
 [![Stars](https://img.shields.io/github/stars/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/stargazers)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white)
-![Go](https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
-
----
-
-<div align="center">
-
-**🌐 Language / 语言 / 語言 / 언어**
-
-[**English**](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [한국어](docs/ko-KR/README.md)
-
-</div>
 
 ---
 
@@ -146,88 +134,88 @@ everything-claude-code/
 |   |-- plugin.json         # Plugin metadata and component paths
 |   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
 |
+|-- global/           # Global CLAUDE.md (copied to ~/.claude/CLAUDE.md)
+|   |-- CLAUDE.md
+|
 |-- agents/           # Specialized subagents for delegation
-|   |-- planner.md           # Feature implementation planning
-|   |-- architect.md         # System design decisions
-|   |-- tdd-guide.md         # Test-driven development
-|   |-- code-reviewer.md     # Quality and security review
-|   |-- security-reviewer.md # Vulnerability analysis
-|   |-- build-error-resolver.md
-|   |-- e2e-runner.md        # Playwright E2E testing
-|   |-- refactor-cleaner.md  # Dead code cleanup
-|   |-- doc-updater.md       # Documentation sync
-|   |-- go-reviewer.md       # Go code review (NEW)
-|   |-- go-build-resolver.md # Go build error resolution (NEW)
+|   |-- common/              # Language-agnostic agents
+|   |   |-- planner.md           # Feature implementation planning
+|   |   |-- architect.md         # System design decisions
+|   |-- node/                # Node.js/TypeScript agents
+|   |   |-- node-code-reviewer.md
+|   |   |-- node-tdd-guide.md
+|   |   |-- node-build-error-resolver.md
+|   |   |-- node-e2e-runner.md
+|   |   |-- node-security-reviewer.md
+|   |   |-- node-refactor-cleaner.md
+|   |   |-- node-doc-updater.md
+|   |-- python/              # Python agents
+|       |-- python-code-reviewer.md
+|       |-- python-reviewer.md
+|       |-- python-tdd-guide.md
+|       |-- python-planner.md
+|       |-- python-refactor-cleaner.md
+|       |-- python-doc-updater.md
 |
 |-- skills/           # Workflow definitions and domain knowledge
-|   |-- coding-standards/           # Language best practices
-|   |-- backend-patterns/           # API, database, caching patterns
-|   |-- frontend-patterns/          # React, Next.js patterns
-|   |-- continuous-learning/        # Auto-extract patterns from sessions (Longform Guide)
-|   |-- continuous-learning-v2/     # Instinct-based learning with confidence scoring
-|   |-- iterative-retrieval/        # Progressive context refinement for subagents
-|   |-- strategic-compact/          # Manual compaction suggestions (Longform Guide)
-|   |-- tdd-workflow/               # TDD methodology
-|   |-- security-review/            # Security checklist
-|   |-- eval-harness/               # Verification loop evaluation (Longform Guide)
-|   |-- verification-loop/          # Continuous verification (Longform Guide)
-|   |-- golang-patterns/            # Go idioms and best practices (NEW)
-|   |-- golang-testing/             # Go testing patterns, TDD, benchmarks (NEW)
+|   |-- common/              # Language-agnostic skills
+|   |   |-- continuous-learning/
+|   |   |-- continuous-learning-v2/
+|   |   |-- eval-harness/
+|   |   |-- iterative-retrieval/
+|   |   |-- security-review/
+|   |   |-- strategic-compact/
+|   |-- node/                # Node.js/TypeScript skills
+|   |   |-- node-coding-standards/
+|   |   |-- node-backend-patterns/
+|   |   |-- node-frontend-patterns/
+|   |   |-- node-tdd-workflow/
+|   |   |-- node-verification-loop/
+|   |-- python/              # Python skills
+|       |-- python-patterns/
+|       |-- python-testing/
 |
 |-- commands/         # Slash commands for quick execution
-|   |-- tdd.md              # /tdd - Test-driven development
-|   |-- plan.md             # /plan - Implementation planning
-|   |-- e2e.md              # /e2e - E2E test generation
-|   |-- code-review.md      # /code-review - Quality review
-|   |-- build-fix.md        # /build-fix - Fix build errors
-|   |-- refactor-clean.md   # /refactor-clean - Dead code removal
-|   |-- learn.md            # /learn - Extract patterns mid-session (Longform Guide)
-|   |-- checkpoint.md       # /checkpoint - Save verification state (Longform Guide)
-|   |-- verify.md           # /verify - Run verification loop (Longform Guide)
-|   |-- setup-pm.md         # /setup-pm - Configure package manager
-|   |-- go-review.md        # /go-review - Go code review (NEW)
-|   |-- go-test.md          # /go-test - Go TDD workflow (NEW)
-|   |-- go-build.md         # /go-build - Fix Go build errors (NEW)
-|   |-- skill-create.md     # /skill-create - Generate skills from git history (NEW)
-|   |-- instinct-status.md  # /instinct-status - View learned instincts (NEW)
-|   |-- instinct-import.md  # /instinct-import - Import instincts (NEW)
-|   |-- instinct-export.md  # /instinct-export - Export instincts (NEW)
-|   |-- evolve.md           # /evolve - Cluster instincts into skills (NEW)
+|   |-- common/              # Language-agnostic commands
+|   |   |-- plan.md, code-review.md, learn.md, verify.md, ...
+|   |-- node/                # Node.js commands
+|   |   |-- node-tdd.md, node-build-fix.md, node-e2e.md, ...
+|   |-- python/              # Python commands
+|       |-- python-review.md
 |
 |-- rules/            # Always-follow guidelines (copy to ~/.claude/rules/)
-|   |-- security.md         # Mandatory security checks
-|   |-- coding-style.md     # Immutability, file organization
-|   |-- testing.md          # TDD, 80% coverage requirement
-|   |-- git-workflow.md     # Commit format, PR process
-|   |-- agents.md           # When to delegate to subagents
-|   |-- performance.md      # Model selection, context management
+|   |-- common/              # Language-agnostic rules
+|   |   |-- agents.md, performance.md
+|   |-- node/                # Node.js rules
+|   |   |-- node-coding-style.md, node-security.md, node-testing.md, ...
+|   |-- python/              # Python rules
+|       |-- python-coding-style.md, python-git-workflow.md, python-hooks.md
 |
 |-- hooks/            # Trigger-based automations
-|   |-- hooks.json                # All hooks config (PreToolUse, PostToolUse, Stop, etc.)
-|   |-- memory-persistence/       # Session lifecycle hooks (Longform Guide)
-|   |-- strategic-compact/        # Compaction suggestions (Longform Guide)
+|   |-- common/              # Language-agnostic hooks
+|   |   |-- hooks.json           # Git push review, doc blocker, PR logging
+|   |-- node/                # Node.js hooks
+|   |   |-- global-hooks.json    # Session lifecycle, compaction
+|   |   |-- project-hooks.json   # oxfmt, tsc, console.log warning
+|   |-- python/              # Python hooks
+|   |   |-- project-hooks.json   # ruff, ty check, print() warning
+|   |-- rust/                # Rust hooks
+|       |-- project-hooks.json   # cargo fmt, cargo clippy
 |
-|-- scripts/          # Cross-platform Node.js scripts (NEW)
-|   |-- lib/                     # Shared utilities
-|   |   |-- utils.js             # Cross-platform file/path/system utilities
-|   |   |-- package-manager.js   # Package manager detection and selection
-|   |-- hooks/                   # Hook implementations
-|   |   |-- session-start.js     # Load context on session start
-|   |   |-- session-end.js       # Save state on session end
-|   |   |-- pre-compact.js       # Pre-compaction state saving
-|   |   |-- suggest-compact.js   # Strategic compaction suggestions
-|   |   |-- evaluate-session.js  # Extract patterns from sessions
-|   |-- setup-package-manager.js # Interactive PM setup
+|-- scripts/          # Install/uninstall and hook scripts
+|   |-- install.sh           # Install configs to ~/.claude/
+|   |-- uninstall.sh         # Remove configs from ~/.claude/
+|   |-- init-project.sh      # Initialize project hooks
+|   |-- node/                # Node.js scripts
+|       |-- lib/                 # Shared utilities
+|       |-- hooks/               # Hook implementations
+|       |-- ci/                  # CI validation scripts
 |
-|-- tests/            # Test suite (NEW)
+|-- tests/            # Test suite
 |   |-- lib/                     # Library tests
 |   |-- hooks/                   # Hook tests
+|   |-- integration/             # Integration tests
 |   |-- run-all.js               # Run all tests
-|
-|-- contexts/         # Dynamic system prompt injection contexts (Longform Guide)
-|   |-- dev.md              # Development mode context
-|   |-- review.md           # Code review mode context
-|   |-- research.md         # Research/exploration mode context
 |
 |-- examples/         # Example configurations and sessions
 |   |-- CLAUDE.md           # Example project-level config
@@ -489,7 +477,7 @@ Please contribute! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Ideas for Contributions
 
-- Language-specific skills (Python, Rust patterns) - Go now included!
+- Language-specific skills (Rust patterns, etc.)
 - Framework-specific configs (Django, Rails, Laravel)
 - DevOps agents (Kubernetes, Terraform, AWS)
 - Testing strategies (different frameworks)
