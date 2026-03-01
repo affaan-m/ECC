@@ -131,9 +131,9 @@ Create/update `docs/DELETION_LOG.md` with this structure:
 Before removing ANYTHING:
 - [ ] Run detection tools
 - [ ] Grep for all references
-- [ ] Check dynamic imports (importlib, __import__, getattr)
+- [ ] Check dynamic imports (importlib, `__import__`, getattr)
 - [ ] Review git history
-- [ ] Check if part of public API (__all__)
+- [ ] Check if part of public API (`__all__`)
 - [ ] Run all tests
 - [ ] Create backup branch
 - [ ] Document in DELETION_LOG.md
@@ -270,7 +270,7 @@ If something breaks after removal:
 3. **Fix forward:**
    - Mark item as "DO NOT REMOVE" in notes
    - Document why detection tools missed it
-   - Add to __all__ or explicit reference if needed
+   - Add to `__all__` or explicit reference if needed
 
 4. **Update process:**
    - Add to "NEVER REMOVE" list

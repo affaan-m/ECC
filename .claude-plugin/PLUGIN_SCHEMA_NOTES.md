@@ -144,8 +144,8 @@ This has caused repeated fix/revert cycles in this repo:
 | `e3a1306` | REMOVE hooks | Users reported "duplicate hooks error" (#103) |
 
 **Root cause:** Claude Code CLI changed behavior between versions:
-- Pre-v2.1: Required explicit `hooks` declaration
-- v2.1+: Auto-loads by convention, errors on duplicate
+* Pre-v2.1: Required explicit `hooks` declaration
+* v2.1+: Auto-loads by convention, errors on duplicate
 
 ### Current Rule (Enforced by Test)
 

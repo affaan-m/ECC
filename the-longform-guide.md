@@ -40,7 +40,7 @@ With lazy loading, the context window issue is mostly solved. But token usage an
 For sharing memory across sessions, a skill or command that summarizes and checks in on progress then saves to a `.tmp` file in your `.claude` folder and appends to it until the end of your session is the best bet. The next day it can use that as context and pick up where you left off, create a new file for each session so you don't pollute old context into new work.
 
 ![Session Storage File Tree](./assets/images/longform/03-session-storage.png)
-*Example of session storage -> https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions*
+*Example of session storage -> <https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions>*
 
 Claude creates a file summarizing current state. Review it, ask for edits if needed, then start fresh. For the new conversation, just provide the file path. Particularly useful when you're hitting context limits and need to continue complex work. These files should contain:
 - What approaches worked (verifiably with evidence)
@@ -129,14 +129,14 @@ Default to Sonnet for 90% of coding tasks. Upgrade to Opus when first attempt fa
 **Pricing Reference:**
 
 ![Claude Model Pricing](./assets/images/longform/05-pricing-table.png)
-*Source: https://platform.claude.com/docs/en/about-claude/pricing*
+*Source: <https://platform.claude.com/docs/en/about-claude/pricing>*
 
 **Tool-Specific Optimizations:**
 
 Replace grep with mgrep - ~50% token reduction on average compared to traditional grep or ripgrep:
 
 ![mgrep Benchmark](./assets/images/longform/06-mgrep-benchmark.png)
-*In our 50-task benchmark, mgrep + Claude Code used ~2x fewer tokens than grep-based workflows at similar or better judged quality. Source: https://github.com/mixedbread-ai/mgrep*
+*In our 50-task benchmark, mgrep + Claude Code used ~2x fewer tokens than grep-based workflows at similar or better judged quality. Source: <https://github.com/mixedbread-ai/mgrep>*
 
 **Modular Codebase Benefits:**
 
@@ -292,7 +292,7 @@ Phase 5: VERIFY (use build-error-resolver if needed) → done or loop back
 
 You can set it using `/statusline` - then Claude will say you don't have one but can set it up for you and ask what you want in it.
 
-See also: https://github.com/sirmalloc/ccstatusline
+See also: <https://github.com/sirmalloc/ccstatusline>
 
 ### Voice Transcription
 
@@ -323,16 +323,16 @@ alias q='cd ~/Desktop/projects'
 
 **Agent Orchestration:**
 
-- https://github.com/ruvnet/claude-flow - Enterprise orchestration platform with 54+ specialized agents
+- <https://github.com/ruvnet/claude-flow> - Enterprise orchestration platform with 54+ specialized agents
 
 **Self-Improving Memory:**
 
-- https://github.com/affaan-m/everything-claude-code/tree/main/skills/continuous-learning
+- <https://github.com/affaan-m/everything-claude-code/tree/main/skills/continuous-learning>
 - rlancemartin.github.io/2025/12/01/claude_diary/ - Session reflection pattern
 
 **System Prompts Reference:**
 
-- https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools - Collection of system prompts (110k stars)
+- <https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools> - Collection of system prompts (110k stars)
 
 **Official:**
 

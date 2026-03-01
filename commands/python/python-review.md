@@ -280,7 +280,7 @@ The reviewer notes when code uses features from newer Python versions:
 | Walrus operator (`:=`) | 3.8+ |
 | Position-only parameters | 3.8+ |
 | Match statements | 3.10+ |
-| Type unions (`x | None`) | 3.10+ |
+| Type unions (`x \| None`) | 3.10+ |
 | `type` keyword | 3.12+ |
 
 Ensure your project's `pyproject.toml` specifies the correct `requires-python`.
