@@ -1,9 +1,8 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(npm run dev|pnpm( run)? dev|yarn dev|bun run dev)\"",
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"bun run dev\"",
         "hooks": [
           {
             "type": "command",
@@ -13,7 +12,7 @@
         "description": "Block dev servers outside tmux - ensures you can access logs"
       },
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(npm (install|test)|pnpm (install|test)|yarn (install|test)?|bun (install|test)|cargo build|make|docker|vitest|playwright)\"",
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"(bun (install|test)|make|docker|vitest|playwright)\"",
         "hooks": [
           {
             "type": "command",
@@ -25,7 +24,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(bun run build|npm run build|pnpm build|yarn build)\"",
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"bun run build\"",
         "hooks": [
           {
             "type": "command",
@@ -73,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/check-console-log.js\""
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/check-console-log.js\""
           }
         ],
         "description": "Check for console.log in modified files after each response"

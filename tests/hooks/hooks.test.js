@@ -321,7 +321,7 @@ async function runTests() {
     const checkHooks = (hookArray) => {
       for (const entry of hookArray) {
         for (const hook of entry.hooks) {
-          if (hook.type === 'command' && hook.command.includes('scripts/hooks/')) {
+          if (hook.type === 'command' && hook.command.includes('scripts/node/hooks/')) {
             const hasPluginRoot = hook.command.includes('${CLAUDE_PLUGIN_ROOT}');
             assert.ok(
               hasPluginRoot,

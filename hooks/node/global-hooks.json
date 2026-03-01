@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/suggest-compact.js\" || true"
+            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/suggest-compact.js\" || true"
           }
         ],
         "description": "Suggest manual compaction at logical intervals"
@@ -19,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/pre-compact.js\" || true"
+            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/pre-compact.js\" || true"
           }
         ],
         "description": "Save state before context compaction"
@@ -31,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-start.js\" || true"
+            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/session-start.js\" || true"
           }
         ],
         "description": "Load previous context and detect package manager on new session"
@@ -43,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-end.js\" || true"
+            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/session-end.js\" || true"
           }
         ],
         "description": "Persist session state on end"
@@ -53,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/evaluate-session.js\" || true"
+            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/evaluate-session.js\" || true"
           }
         ],
         "description": "Evaluate session for extractable patterns"
