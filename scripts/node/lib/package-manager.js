@@ -295,7 +295,7 @@ function getRunCommand(script, options = {}) {
 
 /**
  * Get the command to execute a package binary
- * @param {string} binary - Binary name (e.g., "prettier", "eslint")
+ * @param {string} binary - Binary name (e.g., "oxfmt", "eslint")
  * @param {string} args - Arguments to pass
  */
 function getExecCommand(binary, args = '', options = {}) {

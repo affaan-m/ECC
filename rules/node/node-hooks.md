@@ -43,7 +43,7 @@ Applied only to the current project. Initialize with:
 
 #### PostToolUse
 - **build analysis**: Async hook for build analysis (background)
-- **Prettier**: Auto-formats JS/TS/Svelte files after edit
+- **oxfmt**: Auto-formats JS/TS/Svelte files after edit
 - **TypeScript check**: Runs tsc after editing .ts/.tsx files
 - **console.log warning**: Warns about console.log in edited files
 

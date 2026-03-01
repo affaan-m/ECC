@@ -348,7 +348,7 @@ This is the key - I have 14 MCPs configured but only ~5-6 enabled per project. K
     { "matcher": "git push", "hooks": ["open editor for review"] }
   ],
   "PostToolUse": [
-    { "matcher": "Edit && .ts/.tsx/.js/.jsx", "hooks": ["prettier --write"] },
+    { "matcher": "Edit && .ts/.tsx/.js/.jsx", "hooks": ["oxfmt"] },
     { "matcher": "Edit && .ts/.tsx", "hooks": ["tsc --noEmit"] },
     { "matcher": "Edit", "hooks": ["grep console.log warning"] }
   ],

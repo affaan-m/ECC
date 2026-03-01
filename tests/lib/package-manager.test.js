@@ -282,8 +282,8 @@ function runTests() {
     const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
     try {
       process.env.CLAUDE_PACKAGE_MANAGER = 'npm';
-      const cmd = pm.getExecCommand('prettier', '--write .');
-      assert.strictEqual(cmd, 'npx prettier --write .');
+      const cmd = pm.getExecCommand('oxfmt', '.');
+      assert.strictEqual(cmd, 'npx oxfmt .');
     } finally {
       if (originalEnv !== undefined) {
         process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;

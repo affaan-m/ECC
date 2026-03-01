@@ -15,7 +15,7 @@
 
 ### PostToolUse
 - **PR 생성**: PR URL 및 GitHub Actions 상태 기록
-- **Prettier**: 편집 후 JS/TS 파일 자동 포맷팅
+- **oxfmt**: 편집 후 JS/TS 파일 자동 포맷팅
 - **TypeScript 검사**: .ts/.tsx 파일 편집 후 tsc 실행
 - **console.log 경고**: 편집된 파일의 console.log에 대해 경고
 

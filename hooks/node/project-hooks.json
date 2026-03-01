@@ -41,10 +41,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun -e \"const{execFileSync}=require('child_process');const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path;if(p&&fs.existsSync(p)){try{execFileSync('bunx',['prettier','--write',p],{stdio:['pipe','pipe','pipe']})}catch(e){}}console.log(d)})\""
+            "command": "bun -e \"const{execFileSync}=require('child_process');const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path;if(p&&fs.existsSync(p)){try{execFileSync('bunx',['oxfmt',p],{stdio:['pipe','pipe','pipe']})}catch(e){}}console.log(d)})\""
           }
         ],
-        "description": "Auto-format JS/TS/Svelte files with Prettier after edits"
+        "description": "Auto-format JS/TS/Svelte files with oxfmt after edits"
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx)$\"",

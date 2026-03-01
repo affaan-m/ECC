@@ -15,7 +15,7 @@
 
 ### PostToolUse
 - **PR 建立**：記錄 PR URL 和 GitHub Actions 狀態
-- **Prettier**：編輯後自動格式化 JS/TS 檔案
+- **oxfmt**：編輯後自動格式化 JS/TS 檔案
 - **TypeScript 檢查**：編輯 .ts/.tsx 檔案後執行 tsc
 - **console.log 警告**：警告編輯檔案中的 console.log
 
