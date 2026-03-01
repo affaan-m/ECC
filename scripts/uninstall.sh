@@ -179,6 +179,14 @@ fi
 echo -e "Uninstalling: ${RED}${LANGUAGES[*]}${NC} from ${CLAUDE_DIR}/"
 echo ""
 
+# Remove global CLAUDE.md
+global_claude="${REPO_ROOT}/global/CLAUDE.md"
+if [[ -f "$global_claude" ]]; then
+    echo -e "${CYAN}[global]${NC}"
+    remove_file "${CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
+    echo ""
+fi
+
 # Remove categories (agents, skills, commands, rules)
 for category in "${CATEGORIES[@]}"; do
     has_files=false

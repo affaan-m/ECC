@@ -250,6 +250,15 @@ fi
 echo -e "Installing: ${GREEN}${LANGUAGES[*]}${NC} → ${CLAUDE_DIR}/"
 echo ""
 
+# Install global CLAUDE.md
+global_claude="${REPO_ROOT}/global/CLAUDE.md"
+if [[ -f "$global_claude" ]]; then
+    echo -e "${CYAN}[global]${NC}"
+    copy_file "$global_claude" "${CLAUDE_DIR}/CLAUDE.md" \
+        "global/CLAUDE.md" "CLAUDE.md"
+    echo ""
+fi
+
 # Install categories (agents, skills, commands, rules)
 for category in "${CATEGORIES[@]}"; do
     has_files=false
