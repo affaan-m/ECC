@@ -48,7 +48,7 @@ Hooks are trigger-based automations that fire on specific events. Unlike skills,
 5. **PreCompact** - Before context compaction
 6. **Notification** - Permission requests
 
-**Example: tmux reminder before long-running commands**
+### Example: tmux reminder before long-running commands
 
 ```json
 {
@@ -134,7 +134,7 @@ MCPs connect Claude to external services directly. Not a replacement for APIs - 
 
 **Chrome in Claude:** is a built-in plugin MCP that lets Claude autonomously control your browser - clicking around to see how things work.
 
-**CRITICAL: Context Window Management**
+### CRITICAL: Context Window Management
 
 Be picky with MCPs. I keep all MCPs in user config but **disable everything unused**. Navigate to `/plugins` and scroll down or run `/mcp`.
 
@@ -365,14 +365,14 @@ Shows user, directory, git branch with dirty indicator, context remaining %, mod
 ![Custom status line](./assets/images/shortform/11-statusline.jpeg)
 *Example statusline in my Mac root directory*
 
-```
+```text
 affoon:~ ctx:65% Opus 4.5 19:52
 ▌▌ plan mode on (shift+tab to cycle)
 ```
 
 ### Rules Structure
 
-```
+```text
 ~/.claude/rules/
   security.md      # Mandatory security checks
   coding-style.md  # Immutability, file size limits
@@ -386,7 +386,7 @@ affoon:~ ctx:65% Opus 4.5 19:52
 
 ### Subagents
 
-```
+```text
 ~/.claude/agents/
   planner.md           # Break down features
   architect.md         # System design

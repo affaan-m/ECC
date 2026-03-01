@@ -18,9 +18,11 @@ This skill ensures all code development follows TDD principles with comprehensiv
 ## Core Principles
 
 ### 1. Tests BEFORE Code
+
 ALWAYS write tests first, then implement code to make tests pass.
 
 ### 2. Coverage Requirements
+
 - Minimum 80% coverage (unit + integration + E2E)
 - All edge cases covered
 - Error scenarios tested
@@ -29,18 +31,21 @@ ALWAYS write tests first, then implement code to make tests pass.
 ### 3. Test Types
 
 #### Unit Tests
+
 - Individual functions and utilities
 - Component logic
 - Pure functions
 - Helpers and utilities
 
 #### Integration Tests
+
 - API endpoints
 - Database operations
 - Service interactions
 - External API calls
 
 #### E2E Tests (Chrome DevTools MCP)
+
 - Critical user flows
 - Complete workflows
 - Browser automation via MCP tools
@@ -49,7 +54,8 @@ ALWAYS write tests first, then implement code to make tests pass.
 ## TDD Workflow Steps
 
 ### Step 1: Write User Journeys
-```
+
+```text
 As a [role], I want to [action], so that [benefit]
 
 Example:
@@ -58,6 +64,7 @@ so that I can find relevant markets even without exact keywords.
 ```
 
 ### Step 2: Generate Test Cases
+
 For each user journey, create comprehensive test cases:
 
 ```typescript
@@ -81,12 +88,14 @@ describe('Semantic Search', () => {
 ```
 
 ### Step 3: Run Tests (They Should Fail)
+
 ```bash
 bun test
 # Tests should fail - we haven't implemented yet
 ```
 
 ### Step 4: Implement Code
+
 Write minimal code to make tests pass:
 
 ```typescript
@@ -97,19 +106,23 @@ export async function searchMarkets(query: string) {
 ```
 
 ### Step 5: Run Tests Again
+
 ```bash
 bun test
 # Tests should now pass
 ```
 
 ### Step 6: Refactor
+
 Improve code quality while keeping tests green:
+
 - Remove duplication
 - Improve naming
 - Optimize performance
 - Enhance readability
 
 ### Step 7: Verify Coverage
+
 ```bash
 bun run test:coverage
 # Verify 80%+ coverage achieved
@@ -118,6 +131,7 @@ bun run test:coverage
 ## Testing Patterns
 
 ### Unit Test Pattern (Jest/Vitest)
+
 ```typescript
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Button } from './Button'
@@ -145,6 +159,7 @@ describe('Button Component', () => {
 ```
 
 ### API Integration Test Pattern
+
 ```typescript
 import { NextRequest } from 'next/server'
 import { GET } from './route'
@@ -176,7 +191,8 @@ describe('GET /api/markets', () => {
 ```
 
 ### E2E Test Pattern (Chrome DevTools MCP)
-```
+
+```text
 # Test: User can search and filter markets
 
 # Navigate to markets page
@@ -232,7 +248,7 @@ take_screenshot(filePath: "artifacts/market-created.png")
 
 ## Test File Organization
 
-```
+```text
 src/
 ├── components/
 │   ├── Button/
@@ -256,6 +272,7 @@ src/
 ## Mocking External Services
 
 ### Supabase Mock
+
 ```typescript
 jest.mock('@/lib/supabase', () => ({
   supabase: {
@@ -272,6 +289,7 @@ jest.mock('@/lib/supabase', () => ({
 ```
 
 ### Redis Mock
+
 ```typescript
 jest.mock('@/lib/redis', () => ({
   searchMarketsByVector: jest.fn(() => Promise.resolve([
@@ -282,6 +300,7 @@ jest.mock('@/lib/redis', () => ({
 ```
 
 ### OpenAI Mock
+
 ```typescript
 jest.mock('@/lib/openai', () => ({
   generateEmbedding: jest.fn(() => Promise.resolve(
@@ -293,11 +312,13 @@ jest.mock('@/lib/openai', () => ({
 ## Test Coverage Verification
 
 ### Run Coverage Report
+
 ```bash
 bun run test:coverage
 ```
 
 ### Coverage Thresholds
+
 ```json
 {
   "jest": {
@@ -316,24 +337,28 @@ bun run test:coverage
 ## Common Testing Mistakes to Avoid
 
 ### ❌ WRONG: Testing Implementation Details
+
 ```typescript
 // Don't test internal state
 expect(component.state.count).toBe(5)
 ```
 
 ### ✅ CORRECT: Test User-Visible Behavior
+
 ```typescript
 // Test what users see
 expect(screen.getByText('Count: 5')).toBeInTheDocument()
 ```
 
 ### ❌ WRONG: Brittle Selectors
+
 ```typescript
 // Breaks easily
 await page.click('.css-class-xyz')
 ```
 
 ### ✅ CORRECT: Semantic Selectors
+
 ```typescript
 // Resilient to changes
 await page.click('button:has-text("Submit")')
@@ -341,6 +366,7 @@ await page.click('[data-testid="submit-button"]')
 ```
 
 ### ❌ WRONG: No Test Isolation
+
 ```typescript
 // Tests depend on each other
 test('creates user', () => { /* ... */ })
@@ -348,6 +374,7 @@ test('updates same user', () => { /* depends on previous test */ })
 ```
 
 ### ✅ CORRECT: Independent Tests
+
 ```typescript
 // Each test sets up its own data
 test('creates user', () => {
@@ -364,18 +391,21 @@ test('updates user', () => {
 ## Continuous Testing
 
 ### Watch Mode During Development
+
 ```bash
 bun test -- --watch
 # Tests run automatically on file changes
 ```
 
 ### Pre-Commit Hook
+
 ```bash
 # Runs before every commit
 bun test && bun run lint
 ```
 
 ### CI/CD Integration
+
 ```yaml
 # GitHub Actions
 - name: Run Tests

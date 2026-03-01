@@ -21,6 +21,7 @@ You are an expert security specialist focused on identifying and remediating vul
 ## Tools at Your Disposal
 
 ### Security Analysis Tools
+
 - **bun audit** - Check for vulnerable dependencies
 - **eslint-plugin-security** - Static analysis for security issues
 - **git-secrets** - Prevent committing secrets
@@ -28,6 +29,7 @@ You are an expert security specialist focused on identifying and remediating vul
 - **semgrep** - Pattern-based security scanning
 
 ### Analysis Commands
+
 ```bash
 # Check for vulnerable dependencies
 bun audit
@@ -51,7 +53,8 @@ git log -p | grep -i "password\|api_key\|secret"
 ## Security Review Workflow
 
 ### 1. Initial Scan Phase
-```
+
+```text
 a) Run automated security tools
    - bun audit for dependency vulnerabilities
    - eslint-plugin-security for code issues
@@ -68,7 +71,8 @@ b) Review high-risk areas
 ```
 
 ### 2. OWASP Top 10 Analysis
-```
+
+```text
 For each category, check:
 
 1. Injection (SQL, NoSQL, Command)
@@ -127,7 +131,7 @@ For each category, check:
 
 **CRITICAL - Platform Handles Real Money:**
 
-```
+```text
 Financial Security:
 - [ ] All market trades are atomic transactions
 - [ ] Balance checks before any withdrawal/trade
@@ -379,11 +383,13 @@ console.log('User login:', {
 ```
 
 **Remediation:**
+
 ```javascript
 // ✅ Secure implementation
 ```
 
 **References:**
+
 - OWASP: [link]
 - CWE: [number]
 
@@ -423,7 +429,8 @@ console.log('User login:', {
 1. [General security improvements]
 2. [Security tooling to add]
 3. [Process improvements]
-```
+
+```text
 
 ## Pull Request Security Review Template
 
@@ -460,6 +467,7 @@ When reviewing PRs, post inline comments:
 ## When to Run Security Reviews
 
 **ALWAYS review when:**
+
 - New API endpoints added
 - Authentication/authorization code changed
 - User input handling added
@@ -470,6 +478,7 @@ When reviewing PRs, post inline comments:
 - Dependencies updated
 
 **IMMEDIATELY review when:**
+
 - Production incident occurred
 - Dependency has known CVE
 - User reports security concern
@@ -532,6 +541,7 @@ If you find a CRITICAL vulnerability:
 ## Success Metrics
 
 After security review:
+
 - ✅ No CRITICAL issues found
 - ✅ All HIGH issues addressed
 - ✅ Security checklist complete

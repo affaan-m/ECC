@@ -16,6 +16,7 @@ This command invokes the **planner** agent to create a comprehensive implementat
 ## When to Use
 
 Use `/plan` when:
+
 - Starting a new feature
 - Making significant architectural changes
 - Working on complex refactoring
@@ -35,7 +36,7 @@ The planner agent will:
 
 ## Example Usage
 
-```
+```text
 User: /plan I need to add real-time notifications when markets resolve
 
 Agent (planner):
@@ -96,6 +97,7 @@ Agent (planner):
 **CRITICAL**: The planner agent will **NOT** write any code until you explicitly confirm the plan with "yes" or "proceed" or similar affirmative response.
 
 If you want changes, respond with:
+
 - "modify: [your changes]"
 - "different approach: [alternative]"
 - "skip phase 2 and do phase 3 first"
@@ -103,6 +105,7 @@ If you want changes, respond with:
 ## Integration with Other Commands
 
 After planning:
+
 - Use `/tdd` to implement with test-driven development
 - Use `/build-and-fix` if build errors occur
 - Use `/code-review` to review completed implementation

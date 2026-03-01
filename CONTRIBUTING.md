@@ -7,6 +7,7 @@ Thanks for wanting to contribute. This repo is meant to be a community resource 
 ### Agents
 
 New agents that handle specific tasks well:
+
 - Language-specific reviewers (Python, Go, Rust)
 - Framework experts (Django, Rails, Laravel, Spring)
 - DevOps specialists (Kubernetes, Terraform, CI/CD)
@@ -15,6 +16,7 @@ New agents that handle specific tasks well:
 ### Skills
 
 Workflow definitions and domain knowledge:
+
 - Language best practices
 - Framework patterns
 - Testing strategies
@@ -24,6 +26,7 @@ Workflow definitions and domain knowledge:
 ### Commands
 
 Slash commands that invoke useful workflows:
+
 - Deployment commands
 - Testing commands
 - Documentation commands
@@ -32,6 +35,7 @@ Slash commands that invoke useful workflows:
 ### Hooks
 
 Useful automations:
+
 - Linting/formatting hooks
 - Security checks
 - Validation hooks
@@ -40,6 +44,7 @@ Useful automations:
 ### Rules
 
 Always-follow guidelines:
+
 - Security rules
 - Code style rules
 - Testing requirements
@@ -48,6 +53,7 @@ Always-follow guidelines:
 ### MCP Configurations
 
 New or improved MCP server configs:
+
 - Database integrations
 - Cloud provider MCPs
 - Monitoring tools
@@ -73,6 +79,7 @@ git checkout -b add-python-reviewer
 ### 3. Add your contribution
 
 Place files in the appropriate directory:
+
 - `agents/` for new agents
 - `skills/` for skills (can be single .md or directory)
 - `commands/` for slash commands
@@ -148,6 +155,7 @@ git push origin add-python-reviewer
 ```
 
 Then open a PR with:
+
 - What you added
 - Why it's useful
 - How you tested it

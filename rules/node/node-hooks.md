@@ -18,12 +18,14 @@ Hooks are split into two scopes to prevent cross-language pollution:
 Applied to ALL projects. Contains language-agnostic and infrastructure hooks:
 
 **Common (language-agnostic):**
+
 - **git push review**: Reminder to review changes before push
 - **doc blocker**: Blocks creation of unnecessary .md/.txt files
 - **PR creation**: Logs PR URL and provides review command
 - **markdownlint**: Lints .md files after edits
 
 **Node infrastructure (bun, safety-wrapped):**
+
 - **suggest-compact**: Suggests manual compaction at logical intervals
 - **pre-compact**: Saves state before context compaction
 - **session-start**: Loads previous context and detects package manager
@@ -33,26 +35,31 @@ Applied to ALL projects. Contains language-agnostic and infrastructure hooks:
 ### Project Hooks (in .claude/settings.json per project)
 
 Applied only to the current project. Initialize with:
+
 ```bash
 ~/.claude/scripts/../init-project.sh node
 ```
 
 #### PreToolUse
+
 - **dev server blocker**: Blocks dev servers outside tmux
 - **tmux reminder**: Suggests tmux for long-running commands (bun, npm, pnpm, yarn, cargo, etc.)
 
 #### PostToolUse
+
 - **build analysis**: Async hook for build analysis (background)
 - **oxfmt**: Auto-formats JS/TS/Svelte files after edit
 - **TypeScript check**: Runs tsc after editing .ts/.tsx files
 - **console.log warning**: Warns about console.log in edited files
 
 #### Stop
+
 - **console.log audit**: Checks all modified files for console.log before session ends
 
 ## Auto-Accept Permissions
 
 Use with caution:
+
 - Enable for trusted, well-defined plans
 - Disable for exploratory work
 - Never use dangerously-skip-permissions flag
@@ -61,12 +68,14 @@ Use with caution:
 ## TodoWrite Best Practices
 
 Use TodoWrite tool to:
+
 - Track progress on multi-step tasks
 - Verify understanding of instructions
 - Enable real-time steering
 - Show granular implementation steps
 
 Todo list reveals:
+
 - Out of order steps
 - Missing items
 - Extra unnecessary items

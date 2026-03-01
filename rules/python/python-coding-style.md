@@ -35,6 +35,7 @@ class User:
 ## File Organization
 
 MANY SMALL FILES > FEW LARGE FILES:
+
 - High cohesion, low coupling
 - 200-400 lines typical, 800 max
 - Extract utilities from large modules
@@ -106,6 +107,7 @@ def process_items(items: list[str], *, limit: int = 10) -> dict[str, int]:
 ## Ruff Lint Rules
 
 Key enabled rule categories:
+
 - **S**: Security (bandit) - SQL injection, eval, hardcoded passwords
 - **ANN**: Type annotations required
 - **D**: Docstrings (Google convention)
@@ -121,6 +123,7 @@ Key enabled rule categories:
 - **RUF**: Ruff-specific rules
 
 Per-file ignores:
+
 - `tests/**`: No annotations (ANN), no docstrings (D100/D103/D104), assert allowed (S101)
 - `__init__.py`: Unused imports (F401/F403), import order (E402) allowed
 - `configs/**`: Unused imports (F401), import order (E402) allowed
@@ -137,6 +140,7 @@ Per-file ignores:
 ## Code Quality Checklist
 
 Before marking work complete:
+
 - [ ] Code is readable and well-named (snake_case)
 - [ ] Functions are small (<50 lines), max complexity 18
 - [ ] Files are focused (<800 lines)

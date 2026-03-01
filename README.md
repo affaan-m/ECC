@@ -128,7 +128,7 @@ Or use the `/setup-pm` command in Claude Code.
 
 This repo is a **Claude Code plugin** - install it directly or copy components manually.
 
-```
+```text
 everything-claude-code/
 |-- .claude-plugin/   # Plugin and marketplace manifests
 |   |-- plugin.json         # Plugin metadata and component paths
@@ -260,6 +260,7 @@ For advanced features (10k+ commits, auto-PRs, team sharing):
 ```
 
 Both options create:
+
 - **SKILL.md files** - Ready-to-use skills for Claude Code
 - **Instinct collections** - For continuous-learning-v2
 - **Pattern extraction** - Learns from your commit history
@@ -283,11 +284,12 @@ See `skills/continuous-learning-v2/` for full documentation.
 
 ### Claude Code CLI Version
 
-**Minimum version: v2.1.0 or later**
+Minimum version: v2.1.0 or later.
 
 This plugin requires Claude Code CLI v2.1.0+ due to changes in how the plugin system handles hooks.
 
 Check your version:
+
 ```bash
 claude --version
 ```
@@ -298,7 +300,7 @@ claude --version
 
 Claude Code v2.1+ **automatically loads** `hooks/hooks.json` from any installed plugin by convention. Explicitly declaring it in `plugin.json` causes a duplicate detection error:
 
-```
+```text
 Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded file
 ```
 
@@ -393,7 +395,7 @@ Copy desired MCP servers from `mcp-configs/mcp-servers.json` to your `~/.claude.
 
 Subagents handle delegated tasks with limited scope. Example:
 
-```markdown
+```yaml
 ---
 name: code-reviewer
 description: Reviews code for quality, security, and maintainability
@@ -408,7 +410,7 @@ You are a senior code reviewer...
 
 Skills are workflow definitions invoked by commands or agents:
 
-```markdown
+```text
 # TDD Workflow
 
 1. Define interfaces first
@@ -436,7 +438,7 @@ Hooks fire on tool events. Example - warn about console.log:
 
 Rules are always-follow guidelines. Keep them modular:
 
-```
+```text
 ~/.claude/rules/
   security.md      # No hardcoded secrets
   coding-style.md  # Immutability, file limits
@@ -466,6 +468,7 @@ node tests/hooks/hooks.test.js
 **Contributions are welcome and encouraged.**
 
 This repo is meant to be a community resource. If you have:
+
 - Useful agents or skills
 - Clever hooks
 - Better MCP configurations
@@ -498,6 +501,7 @@ These configs are battle-tested across multiple production applications.
 **Critical:** Don't enable all MCPs at once. Your 200k context window can shrink to 70k with too many tools enabled.
 
 Rule of thumb:
+
 - Have 20-30 MCPs configured
 - Keep under 10 enabled per project
 - Under 80 tools active
@@ -507,6 +511,7 @@ Use `disabledMcpServers` in project config to disable unused ones.
 ### Customization
 
 These configs work for my workflow. You should:
+
 1. Start with what resonates
 2. Modify for your stack
 3. Remove what you don't use

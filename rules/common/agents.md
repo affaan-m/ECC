@@ -19,6 +19,7 @@ Located in `~/.claude/agents/`:
 ## Immediate Agent Usage
 
 No user prompt needed:
+
 1. Complex feature requests - Use **planner** agent
 2. Code just written/modified - Use **code-reviewer** agent
 3. Bug fix or new feature - Use **tdd-guide** agent
@@ -42,6 +43,7 @@ First agent 1, then agent 2, then agent 3
 ## Multi-Perspective Analysis
 
 For complex problems, use split role sub-agents:
+
 - Factual reviewer
 - Senior engineer
 - Security expert

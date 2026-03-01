@@ -41,7 +41,7 @@ This is an example project-level CLAUDE.md file. Place this in your project root
 
 ## File Structure
 
-```
+```text
 src/
 |-- app/              # Next.js app router
 |-- components/       # Reusable UI components

@@ -17,6 +17,7 @@ This command invokes the **e2e-runner** agent to test user flows via Chrome DevT
 ## When to Use
 
 Use `/e2e` when:
+
 - Testing critical user journeys (login, trading, payments)
 - Verifying multi-step flows work end-to-end
 - Testing UI interactions and navigation
@@ -36,7 +37,7 @@ The e2e-runner agent uses Chrome DevTools MCP to:
 
 ## Example Usage
 
-```
+```text
 User: /e2e Test the market search and view flow
 
 Agent (e2e-runner):
@@ -106,16 +107,19 @@ Artifacts:
 ## Chrome DevTools MCP Tools Reference
 
 **Navigation:**
+
 - `navigate_page` - Go to URL, back, forward, reload
 - `new_page` - Open new tab
 - `list_pages` / `select_page` - Manage tabs
 
 **Inspection:**
+
 - `take_snapshot` - Get accessibility tree with element uids
 - `take_screenshot` - Capture page or element image
 - `evaluate_script` - Execute JavaScript in page
 
 **Interaction:**
+
 - `click` - Click element by uid
 - `fill` - Fill input/select by uid
 - `fill_form` - Fill multiple fields at once
@@ -125,29 +129,35 @@ Artifacts:
 - `drag` - Drag and drop
 
 **Waiting:**
+
 - `wait_for` - Wait for text to appear on page
 
 **Monitoring:**
+
 - `list_network_requests` - View API calls
 - `get_network_request` - Inspect request/response details
 - `list_console_messages` - View console output
 - `get_console_message` - Get specific message
 
 **Device Emulation:**
+
 - `emulate` - Set viewport, dark mode, geolocation, network throttling
 - `resize_page` - Change window size
 
 **Performance:**
+
 - `performance_start_trace` - Start recording
 - `performance_stop_trace` - Stop and analyze
 
 **Other:**
+
 - `handle_dialog` - Accept/dismiss browser dialogs
 - `upload_file` - Upload file through input
 
 ## Best Practices
 
 **DO:**
+
 - Take snapshots before every interaction to get fresh uids
 - Use `wait_for` instead of arbitrary delays
 - Capture screenshots at critical checkpoints
@@ -155,6 +165,7 @@ Artifacts:
 - Verify network requests completed successfully
 
 **DON'T:**
+
 - Reuse stale uids from old snapshots
 - Skip verification after interactions
 - Ignore console errors or warnings

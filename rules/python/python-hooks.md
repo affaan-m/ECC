@@ -13,6 +13,7 @@ Hooks are split into two scopes to prevent cross-language pollution:
 ### Global Hooks (in ~/.claude/settings.json)
 
 Applied to ALL projects. Contains language-agnostic hooks only:
+
 - **git push review**: Reminder to review changes before push
 - **doc blocker**: Blocks creation of unnecessary .md/.txt files
 - **PR creation**: Logs PR URL and provides review command
@@ -21,16 +22,19 @@ Applied to ALL projects. Contains language-agnostic hooks only:
 ### Project Hooks (in .claude/settings.json per project)
 
 Applied only to the current project. Initialize with:
+
 ```bash
 ~/.claude/scripts/../init-project.sh python
 ```
 
 #### PreToolUse
+
 - **tmux blocker**: Blocks dev servers (uvicorn, gunicorn, manage.py runserver) outside tmux
 - **pip blocker**: Blocks pip install - enforces uv sync instead
 - **tmux reminder**: Suggests tmux for long-running commands (uv sync, pytest, docker, make)
 
 #### PostToolUse
+
 - **ruff format**: Auto-formats .py files after edit
 - **ruff check**: Lints .py files after edit
 - **ty check**: Type checks .py files after edit
@@ -38,11 +42,13 @@ Applied only to the current project. Initialize with:
 - **test notification**: Notification after pytest/manage.py test completion
 
 #### Stop
+
 - **print() audit**: Checks all modified .py files for print() before session ends
 
 ## Package Management
 
 Always use uv, never pip:
+
 - `uv sync --group docs --group dev` for dev setup
 - `uv sync --group docs --group dev --extra cu128` for CUDA support
 - `uv run <command>` to execute within venv
@@ -51,6 +57,7 @@ Always use uv, never pip:
 ## Auto-Accept Permissions
 
 Use with caution:
+
 - Enable for trusted, well-defined plans
 - Disable for exploratory work
 - Never use dangerously-skip-permissions flag
@@ -59,12 +66,14 @@ Use with caution:
 ## TodoWrite Best Practices
 
 Use TodoWrite tool to:
+
 - Track progress on multi-step tasks
 - Verify understanding of instructions
 - Enable real-time steering
 - Show granular implementation steps
 
 Todo list reveals:
+
 - Out of order steps
 - Missing items
 - Extra unnecessary items

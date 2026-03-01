@@ -126,7 +126,7 @@ Assume the validator is hostile and literal.
 
 Claude Code v2.1+ **automatically loads** `hooks/hooks.json` from any installed plugin by convention. If you also declare it in `plugin.json`, you get:
 
-```
+```text
 Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded file.
 The standard hooks/hooks.json is loaded automatically, so manifest.hooks should
 only reference additional hook files.
@@ -144,6 +144,7 @@ This has caused repeated fix/revert cycles in this repo:
 | `e3a1306` | REMOVE hooks | Users reported "duplicate hooks error" (#103) |
 
 **Root cause:** Claude Code CLI changed behavior between versions:
+
 * Pre-v2.1: Required explicit `hooks` declaration
 * v2.1+: Auto-loads by convention, errors on duplicate
 

@@ -20,12 +20,14 @@ You are a documentation specialist focused on keeping codemaps and documentation
 ## Tools at Your Disposal
 
 ### Analysis Tools
+
 - **ts-morph** - TypeScript AST analysis and manipulation
 - **TypeScript Compiler API** - Deep code structure analysis
 - **madge** - Dependency graph visualization
 - **jsdoc-to-markdown** - Generate docs from JSDoc comments
 
 ### Analysis Commands
+
 ```bash
 # Analyze TypeScript project structure (run custom script using ts-morph library)
 bunx tsx scripts/codemaps/generate.ts
@@ -40,7 +42,8 @@ bunx jsdoc2md src/**/*.ts
 ## Codemap Generation Workflow
 
 ### 1. Repository Structure Analysis
-```
+
+```text
 a) Identify all workspaces/packages
 b) Map directory structure
 c) Find entry points (apps/*, packages/*, services/*)
@@ -48,7 +51,8 @@ d) Detect framework patterns (Next.js, Node.js, etc.)
 ```
 
 ### 2. Module Analysis
-```
+
+```text
 For each module:
 - Extract exports (public API)
 - Map imports (dependencies)
@@ -58,7 +62,8 @@ For each module:
 ```
 
 ### 3. Generate Codemaps
-```
+
+```text
 Structure:
 docs/CODEMAPS/
 ├── INDEX.md              # Overview of all areas
@@ -70,6 +75,7 @@ docs/CODEMAPS/
 ```
 
 ### 4. Codemap Format
+
 ```markdown
 # [Area] Codemap
 
@@ -103,7 +109,8 @@ Links to other codemaps that interact with this area
 ## Documentation Update Workflow
 
 ### 1. Extract Documentation from Code
-```
+
+```text
 - Read JSDoc/TSDoc comments
 - Extract README sections from package.json
 - Parse environment variables from .env.example
@@ -111,7 +118,8 @@ Links to other codemaps that interact with this area
 ```
 
 ### 2. Update Documentation Files
-```
+
+```text
 Files to update:
 - README.md - Project overview, setup instructions
 - docs/GUIDES/*.md - Feature guides, tutorials
@@ -120,7 +128,8 @@ Files to update:
 ```
 
 ### 3. Documentation Validation
-```
+
+```text
 - Verify all mentioned files exist
 - Check all links work
 - Ensure examples are runnable
@@ -130,6 +139,7 @@ Files to update:
 ## Example Project-Specific Codemaps
 
 ### Frontend Codemap (docs/CODEMAPS/frontend.md)
+
 ```markdown
 # Frontend Architecture
 
@@ -170,6 +180,7 @@ User → Markets Page → API Route → Supabase → Redis (optional) → Respon
 ```
 
 ### Backend Codemap (docs/CODEMAPS/backend.md)
+
 ```markdown
 # Backend Architecture
 
@@ -198,6 +209,7 @@ API Route → Supabase Query → Redis (cache) → Response
 ```
 
 ### Integrations Codemap (docs/CODEMAPS/integrations.md)
+
 ```markdown
 # External Integrations
 
@@ -279,6 +291,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md)
 ## Scripts to Power Documentation
 
 ### scripts/codemaps/generate.ts
+
 ```typescript
 /**
  * Generate codemaps from repository structure
@@ -324,6 +337,7 @@ function findEntrypoints(files: SourceFile[]) {
 ```
 
 ### scripts/docs/update.ts
+
 ```typescript
 /**
  * Update documentation from code
@@ -394,17 +408,20 @@ See docs/CODEMAPS/INDEX.md for complete architecture overview.
 ## Maintenance Schedule
 
 **Weekly:**
+
 - Check for new files in src/ not in codemaps
 - Verify README.md instructions work
 - Update package.json descriptions
 
 **After Major Features:**
+
 - Regenerate all codemaps
 - Update architecture documentation
 - Refresh API reference
 - Update setup guides
 
 **Before Releases:**
+
 - Comprehensive documentation audit
 - Verify all examples work
 - Check all external links
@@ -413,6 +430,7 @@ See docs/CODEMAPS/INDEX.md for complete architecture overview.
 ## Quality Checklist
 
 Before committing documentation:
+
 - [ ] Codemaps generated from actual code
 - [ ] All file paths verified to exist
 - [ ] Code examples compile/run
@@ -436,6 +454,7 @@ Before committing documentation:
 ## When to Update Documentation
 
 **ALWAYS update documentation when:**
+
 - New major feature added
 - API routes changed
 - Dependencies added/removed
@@ -443,6 +462,7 @@ Before committing documentation:
 - Setup process modified
 
 **OPTIONALLY update when:**
+
 - Minor bug fixes
 - Cosmetic changes
 - Refactoring without API changes

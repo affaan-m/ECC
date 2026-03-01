@@ -18,6 +18,7 @@ You are a Test-Driven Development (TDD) specialist who ensures all code is devel
 ## TDD Workflow
 
 ### Step 1: Write Test First (RED)
+
 ```typescript
 // ALWAYS start with a failing test
 describe('searchMarkets', () => {
@@ -32,12 +33,14 @@ describe('searchMarkets', () => {
 ```
 
 ### Step 2: Run Test (Verify it FAILS)
+
 ```bash
 bun test
 # Test should fail - we haven't implemented yet
 ```
 
 ### Step 3: Write Minimal Implementation (GREEN)
+
 ```typescript
 export async function searchMarkets(query: string) {
   const embedding = await generateEmbedding(query)
@@ -47,18 +50,21 @@ export async function searchMarkets(query: string) {
 ```
 
 ### Step 4: Run Test (Verify it PASSES)
+
 ```bash
 bun test
 # Test should now pass
 ```
 
 ### Step 5: Refactor (IMPROVE)
+
 - Remove duplication
 - Improve names
 - Optimize performance
 - Enhance readability
 
 ### Step 6: Verify Coverage
+
 ```bash
 bun run test:coverage
 # Verify 80%+ coverage
@@ -67,6 +73,7 @@ bun run test:coverage
 ## Test Types You Must Write
 
 ### 1. Unit Tests (Mandatory)
+
 Test individual functions in isolation:
 
 ```typescript
@@ -91,6 +98,7 @@ describe('calculateSimilarity', () => {
 ```
 
 ### 2. Integration Tests (Mandatory)
+
 Test API endpoints and database operations:
 
 ```typescript
@@ -130,9 +138,10 @@ describe('GET /api/markets/search', () => {
 ```
 
 ### 3. E2E Tests (For Critical Flows)
+
 Test complete user journeys with Chrome DevTools MCP:
 
-```
+```text
 # Navigate to page
 navigate_page(url: "http://localhost:3000")
 
@@ -161,11 +170,11 @@ take_snapshot()
 # Capture evidence
 take_screenshot(filePath: "artifacts/market-details.png")
 ```
-```
 
 ## Mocking External Dependencies
 
 ### Mock Supabase
+
 ```typescript
 jest.mock('@/lib/supabase', () => ({
   supabase: {
@@ -182,6 +191,7 @@ jest.mock('@/lib/supabase', () => ({
 ```
 
 ### Mock Redis
+
 ```typescript
 jest.mock('@/lib/redis', () => ({
   searchMarketsByVector: jest.fn(() => Promise.resolve([
@@ -192,6 +202,7 @@ jest.mock('@/lib/redis', () => ({
 ```
 
 ### Mock OpenAI
+
 ```typescript
 jest.mock('@/lib/openai', () => ({
   generateEmbedding: jest.fn(() => Promise.resolve(
@@ -229,18 +240,21 @@ Before marking tests complete:
 ## Test Smells (Anti-Patterns)
 
 ### ❌ Testing Implementation Details
+
 ```typescript
 // DON'T test internal state
 expect(component.state.count).toBe(5)
 ```
 
 ### ✅ Test User-Visible Behavior
+
 ```typescript
 // DO test what users see
 expect(screen.getByText('Count: 5')).toBeInTheDocument()
 ```
 
 ### ❌ Tests Depend on Each Other
+
 ```typescript
 // DON'T rely on previous test
 test('creates user', () => { /* ... */ })
@@ -248,6 +262,7 @@ test('updates same user', () => { /* needs previous test */ })
 ```
 
 ### ✅ Independent Tests
+
 ```typescript
 // DO setup data in each test
 test('updates user', () => {
@@ -267,6 +282,7 @@ open coverage/lcov-report/index.html
 ```
 
 Required thresholds:
+
 - Branches: 80%
 - Functions: 80%
 - Lines: 80%

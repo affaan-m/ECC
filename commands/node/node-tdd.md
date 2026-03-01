@@ -17,6 +17,7 @@ This command invokes the **tdd-guide** agent to enforce test-driven development 
 ## When to Use
 
 Use `/tdd` when:
+
 - Implementing new features
 - Adding new functions/components
 - Fixing bugs (write test that reproduces bug first)
@@ -37,7 +38,7 @@ The tdd-guide agent will:
 
 ## TDD Cycle
 
-```
+```text
 RED → GREEN → REFACTOR → REPEAT
 
 RED:      Write a failing test
@@ -48,7 +49,7 @@ REPEAT:   Next feature/scenario
 
 ## Example Usage
 
-```
+```text
 User: /tdd I need a function to calculate market liquidity score
 
 Agent (tdd-guide):
@@ -251,11 +252,11 @@ Coverage: 100% ✅ (Target: 80%)
 ```
 
 ✅ TDD session complete!
-```
 
 ## TDD Best Practices
 
 **DO:**
+
 - ✅ Write the test FIRST, before any implementation
 - ✅ Run tests and verify they FAIL before implementing
 - ✅ Write minimal code to make tests pass
@@ -264,6 +265,7 @@ Coverage: 100% ✅ (Target: 80%)
 - ✅ Aim for 80%+ coverage (100% for critical code)
 
 **DON'T:**
+
 - ❌ Write implementation before tests
 - ❌ Skip running tests after each change
 - ❌ Write too much code at once
@@ -274,18 +276,21 @@ Coverage: 100% ✅ (Target: 80%)
 ## Test Types to Include
 
 **Unit Tests** (Function-level):
+
 - Happy path scenarios
 - Edge cases (empty, null, max values)
 - Error conditions
 - Boundary values
 
 **Integration Tests** (Component-level):
+
 - API endpoints
 - Database operations
 - External service calls
 - React components with hooks
 
 **E2E Tests** (use `/e2e` command):
+
 - Critical user flows
 - Multi-step processes
 - Full stack integration

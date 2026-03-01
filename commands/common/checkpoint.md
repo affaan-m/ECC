@@ -18,7 +18,7 @@ When creating a checkpoint:
 echo "$(date +%Y-%m-%d-%H:%M) | $CHECKPOINT_NAME | $(git rev-parse --short HEAD)" >> .claude/checkpoints.log
 ```
 
-4. Report checkpoint created
+1. Report checkpoint created
 
 ## Verify Checkpoint
 
@@ -32,7 +32,8 @@ When verifying against a checkpoint:
    - Coverage now vs then
 
 3. Report:
-```
+
+```text
 CHECKPOINT COMPARISON: $NAME
 ============================
 Files changed: X
@@ -44,6 +45,7 @@ Build: [PASS/FAIL]
 ## List Checkpoints
 
 Show all checkpoints with:
+
 - Name
 - Timestamp
 - Git SHA
@@ -53,7 +55,7 @@ Show all checkpoints with:
 
 Typical checkpoint flow:
 
-```
+```text
 [Start] --> /checkpoint create "feature-start"
    |
 [Implement] --> /checkpoint create "core-done"
@@ -68,6 +70,7 @@ Typical checkpoint flow:
 ## Arguments
 
 $ARGUMENTS:
+
 - `create <name>` - Create named checkpoint
 - `verify <name>` - Verify against named checkpoint
 - `list` - Show all checkpoints

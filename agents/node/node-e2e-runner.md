@@ -45,7 +45,7 @@ Chrome DevTools MCP provides direct browser control through MCP tool calls. It u
 
 ### Core Workflow
 
-```
+```text
 1. navigate_page → Navigate to the target URL
 2. take_snapshot → Get page elements with uids
 3. click/fill/press_key → Interact with elements
@@ -56,7 +56,7 @@ Chrome DevTools MCP provides direct browser control through MCP tool calls. It u
 
 ### Example: Login Flow
 
-```
+```text
 # Step 1: Navigate to login page
 navigate_page(url: "http://localhost:3000/login")
 
@@ -99,7 +99,8 @@ take_screenshot(filePath: "artifacts/after-login.png")
 ## E2E Testing Workflow
 
 ### 1. Test Planning Phase
-```
+
+```text
 a) Identify critical user journeys
    - Authentication flows (login, logout, registration)
    - Core features (browsing, searching, CRUD operations)
@@ -130,7 +131,8 @@ For each user journey:
 7. **Monitor** network requests and console messages
 
 ### 3. Verification Phase
-```
+
+```text
 a) After each action:
    - take_snapshot to verify DOM state
    - Check for expected text/elements
@@ -151,7 +153,7 @@ c) Error detection:
 
 ### 1. Market Browsing Flow
 
-```
+```text
 # Navigate to markets page
 navigate_page(url: "http://localhost:3000/markets")
 wait_for(text: ["Markets"])
@@ -178,7 +180,7 @@ take_screenshot(filePath: "artifacts/market-details.png")
 
 ### 2. Search Flow
 
-```
+```text
 # Navigate to markets
 navigate_page(url: "http://localhost:3000/markets")
 wait_for(text: ["Markets"])
@@ -203,7 +205,7 @@ take_screenshot(filePath: "artifacts/search-results.png")
 
 ### 3. Form Submission Flow
 
-```
+```text
 # Navigate to create form
 navigate_page(url: "http://localhost:3000/create")
 wait_for(text: ["Create"])
@@ -233,7 +235,7 @@ list_network_requests(resourceTypes: ["fetch"])
 
 ### 4. Authentication Flow
 
-```
+```text
 # Navigate to login
 navigate_page(url: "http://localhost:3000/login")
 wait_for(text: ["Sign In", "Log In"])
@@ -271,7 +273,7 @@ take_screenshot(filePath: "artifacts/logged-out.png")
 
 ### Network Monitoring
 
-```
+```text
 # Check all API calls made during test
 list_network_requests(resourceTypes: ["fetch", "xhr"])
 
@@ -285,7 +287,7 @@ get_network_request(reqid: 42, responseFilePath: "artifacts/api-response.json")
 
 ### Console Error Detection
 
-```
+```text
 # Check for errors after each action
 list_console_messages(types: ["error", "warn"])
 
@@ -295,7 +297,7 @@ get_console_message(msgid: 1)
 
 ### Performance Testing
 
-```
+```text
 # Navigate to page first
 navigate_page(url: "http://localhost:3000")
 
@@ -317,7 +319,7 @@ performance_start_trace(
 
 ### Responsive Testing
 
-```
+```text
 # Test mobile viewport
 emulate(viewport: {
   width: 375,
@@ -345,7 +347,7 @@ emulate(colorScheme: "auto")
 
 ### Network Throttling
 
-```
+```text
 # Test slow network
 emulate(networkConditions: "Slow 3G")
 navigate_page(url: "http://localhost:3000")
@@ -357,7 +359,7 @@ emulate(networkConditions: "No emulation")
 
 ### Multi-Page Testing
 
-```
+```text
 # Open second tab for comparison
 new_page(url: "http://localhost:3000/admin")
 
@@ -376,7 +378,7 @@ close_page(pageId: 1)
 
 ### Wait for Element, Then Interact
 
-```
+```text
 # Wait for dynamic content to load
 wait_for(text: ["Load More"])
 take_snapshot()
@@ -385,7 +387,7 @@ click(uid: "<load-more-uid>")
 
 ### Handle Browser Dialogs
 
-```
+```text
 # If action triggers a confirm dialog
 click(uid: "<delete-btn-uid>")
 handle_dialog(action: "accept")
@@ -394,14 +396,14 @@ handle_dialog(action: "accept")
 
 ### File Upload
 
-```
+```text
 take_snapshot()
 upload_file(uid: "<file-input-uid>", filePath: "/path/to/test-file.png")
 ```
 
 ### Execute Custom JavaScript
 
-```
+```text
 # Get computed values
 evaluate_script(function: "() => document.title")
 
@@ -419,7 +421,7 @@ evaluate_script(
 
 ### Screenshot Strategy
 
-```
+```text
 # Page screenshot
 take_screenshot(filePath: "artifacts/page.png")
 
@@ -436,7 +438,7 @@ take_screenshot(filePath: "artifacts/page.webp", format: "webp", quality: 90)
 
 ### Naming Convention
 
-```
+```text
 artifacts/
   {journey}-{step}.png           # e.g., login-form-filled.png
   {journey}-{step}-error.png     # e.g., login-invalid-creds.png
@@ -514,7 +516,8 @@ artifacts/
 
 ## Best Practices
 
-### DO:
+### DO
+
 - Take snapshots before every interaction to get fresh uids
 - Use `wait_for` instead of arbitrary delays
 - Capture screenshots at critical checkpoints
@@ -522,7 +525,8 @@ artifacts/
 - Verify network requests completed successfully
 - Test responsive layouts with `emulate`
 
-### DON'T:
+### DON'T
+
 - Reuse stale uids from old snapshots
 - Skip verification after interactions
 - Ignore console errors or warnings
@@ -532,6 +536,7 @@ artifacts/
 ## Success Metrics
 
 After E2E test run:
+
 - All critical journeys passing (100%)
 - Pass rate > 95% overall
 - No console errors in critical flows

@@ -43,6 +43,7 @@ For sharing memory across sessions, a skill or command that summarizes and check
 *Example of session storage -> <https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions>*
 
 Claude creates a file summarizing current state. Review it, ask for edits if needed, then start fresh. For the new conversation, just provide the file path. Particularly useful when you're hitting context limits and need to continue complex work. These files should contain:
+
 - What approaches worked (verifiably with evidence)
 - Which approaches were attempted but did not work
 - Which approaches have not been attempted and what's left to do
@@ -51,7 +52,7 @@ Claude creates a file summarizing current state. Review it, ask for edits if nee
 
 Once you have your plan set and context cleared (default option in plan mode in Claude Code now), you can work from the plan. This is useful when you've accumulated a lot of exploration context that's no longer relevant to execution. For strategic compacting, disable auto compact. Manually compact at logical intervals or create a skill that does so for you.
 
-**Advanced: Dynamic System Prompt Injection**
+#### Advanced: Dynamic System Prompt Injection
 
 One pattern I picked up: instead of solely putting everything in CLAUDE.md (user scope) or `.claude/rules/` (project scope) which loads every session, use CLI flags to inject context dynamically.
 
@@ -74,7 +75,7 @@ alias claude-review='claude --system-prompt "$(cat ~/.claude/contexts/review.md)
 alias claude-research='claude --system-prompt "$(cat ~/.claude/contexts/research.md)"'
 ```
 
-**Advanced: Memory Persistence Hooks**
+#### Advanced: Memory Persistence Hooks
 
 There are hooks most people don't know about that help with memory:
 
@@ -104,7 +105,7 @@ The key design decision is using a **Stop hook** instead of UserPromptSubmit. Us
 
 ### Token Optimization
 
-**Primary Strategy: Subagent Architecture**
+#### Primary Strategy: Subagent Architecture
 
 Optimize the tools you use and subagent architecture designed to delegate the cheapest possible model that is sufficient for the task.
 
@@ -159,7 +160,7 @@ Fork the conversation, initiate a new worktree in one of them without the skill,
 
 **Key Metrics:**
 
-```
+```text
 pass@k: At least ONE of k attempts succeeds
         k=1: 70%  k=3: 91%  k=5: 97%
 
@@ -221,12 +222,14 @@ When running multiple Claude Code instances, organize with a "cascade" pattern:
 
 For my own workflow management, I like to start an empty repo with 2 open Claude instances.
 
-**Instance 1: Scaffolding Agent**
+### Instance 1: Scaffolding Agent
+
 - Lays down the scaffold and groundwork
 - Creates project structure
 - Sets up configs (CLAUDE.md, rules, agents)
 
-**Instance 2: Deep Research Agent**
+### Instance 2: Deep Research Agent
+
 - Connects to all your services, web search
 - Creates the detailed PRD
 - Creates architecture mermaid diagrams
@@ -236,7 +239,7 @@ For my own workflow management, I like to start an empty repo with 2 open Claude
 
 If available, you can find an `llms.txt` on many documentation references by doing `/llms.txt` on them once you reach their docs page. This gives you a clean, LLM-optimized version of the documentation.
 
-**Philosophy: Build Reusable Patterns**
+### Philosophy: Build Reusable Patterns
 
 From @omarsar0: "Early on, I spent time building reusable workflows/patterns. Tedious to build, but this had a wild compounding effect as models and agent harnesses improved."
 

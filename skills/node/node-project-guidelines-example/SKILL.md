@@ -9,6 +9,7 @@ Based on a real production application: [Zenith](https://zenith.chat) - AI-power
 ## When to Use
 
 Reference this skill when working on the specific project it's designed for. Project skills contain:
+
 - Architecture overview
 - File structure
 - Code patterns
@@ -20,6 +21,7 @@ Reference this skill when working on the specific project it's designed for. Pro
 ## Architecture Overview
 
 **Tech Stack:**
+
 - **Frontend**: SvelteKit 5, Svelte 5 (runes), TypeScript, Tailwind CSS 4 + shadcn-svelte
 - **Backend**: FastAPI (Python), Pydantic models
 - **Database**: Supabase (PostgreSQL)
@@ -28,7 +30,8 @@ Reference this skill when working on the specific project it's designed for. Pro
 - **Testing**: Chrome DevTools MCP (E2E), pytest (backend), Svelte Testing Library
 
 **Services:**
-```
+
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                         Frontend                            │
 │  SvelteKit 5 + Svelte 5 + TypeScript + shadcn-svelte        │
@@ -54,7 +57,7 @@ Reference this skill when working on the specific project it's designed for. Pro
 
 ## File Structure
 
-```
+```text
 project/
 ├── frontend/
 │   └── src/
@@ -231,6 +234,7 @@ poetry run pytest tests/test_auth.py -v
 ```
 
 **Test structure:**
+
 ```python
 import pytest
 from httpx import AsyncClient
@@ -262,6 +266,7 @@ bun run test:e2e
 ```
 
 **Test structure:**
+
 ```typescript
 import { render, screen, fireEvent } from '@testing-library/svelte'
 import WorkspacePanel from './WorkspacePanel.svelte'

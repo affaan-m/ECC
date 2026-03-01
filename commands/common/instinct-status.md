@@ -24,7 +24,7 @@ python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py status
 
 ## Usage
 
-```
+```bash
 /instinct-status
 /instinct-status --domain code-style
 /instinct-status --low-confidence
@@ -38,7 +38,7 @@ python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py status
 
 ## Output Format
 
-```
+```text
 📊 Instinct Status
 ==================
 

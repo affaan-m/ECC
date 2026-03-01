@@ -7,13 +7,14 @@ command: /instinct-export
 # Instinct Export Command
 
 Exports instincts to a shareable format. Perfect for:
+
 - Sharing with teammates
 - Transferring to a new machine
 - Contributing to project conventions
 
 ## Usage
 
-```
+```bash
 /instinct-export                           # Export all personal instincts
 /instinct-export --domain testing          # Export only testing instincts
 /instinct-export --min-confidence 0.7      # Only export high-confidence instincts
@@ -70,6 +71,7 @@ instincts:
 ## Privacy Considerations
 
 Exports include:
+
 - ✅ Trigger patterns
 - ✅ Actions
 - ✅ Confidence scores
@@ -77,6 +79,7 @@ Exports include:
 - ✅ Observation counts
 
 Exports do NOT include:
+
 - ❌ Actual code snippets
 - ❌ File paths
 - ❌ Session transcripts
