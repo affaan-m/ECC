@@ -6,9 +6,6 @@
     "packageManager": {
       "type": "string",
       "enum": [
-        "npm",
-        "pnpm",
-        "yarn",
         "bun"
       ]
     }
