@@ -1,5 +1,5 @@
 ---
-name: frontend-patterns
+name: node-frontend-patterns
 description: Frontend development patterns for Svelte 5, SvelteKit, Tailwind CSS 4, state management with runes, performance optimization, and UI best practices.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: backend-patterns
+name: node-backend-patterns
 description: Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: coding-standards
+name: node-coding-standards
 description: Coding standards, best practices, and patterns for TypeScript, Svelte 5, SvelteKit, and Node.js development.
 ---
 
