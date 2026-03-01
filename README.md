@@ -222,7 +222,7 @@ everything-claude-code/
 |   |-- user-CLAUDE.md      # Example user-level config
 |
 |-- mcp-configs/      # MCP server configurations
-|   |-- mcp-servers.json    # GitHub, Supabase, Vercel, Railway, etc.
+|   |-- mcp-servers.json    # Chrome DevTools MCP
 |
 |-- marketplace.json  # Self-hosted marketplace config (for /plugin marketplace add)
 ```
@@ -384,8 +384,6 @@ Copy the hooks from `hooks/hooks.json` to your `~/.claude/settings.json`.
 #### Configure MCPs
 
 Copy desired MCP servers from `mcp-configs/mcp-servers.json` to your `~/.claude.json`.
-
-**Important:** Replace `YOUR_*_HERE` placeholders with your actual API keys.
 
 ---
 
