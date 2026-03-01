@@ -165,13 +165,14 @@ def db_session(engine):
 
 
 @pytest.fixture
-def async_client():
+async def async_client():
     """Create async HTTP client for API testing."""
     from httpx import ASGITransport, AsyncClient
     from app.main import app
 
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 ```
 
 ### Factory Fixtures

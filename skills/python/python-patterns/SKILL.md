@@ -57,6 +57,7 @@ Python prefers exception handling over checking conditions.
 ```python
 # Good: EAFP style
 def get_value(dictionary: dict, key: str) -> Any:
+    default_value = None
     try:
         return dictionary[key]
     except KeyError:
@@ -64,6 +65,7 @@ def get_value(dictionary: dict, key: str) -> Any:
 
 # Bad: LBYL (Look Before You Leap) style
 def get_value(dictionary: dict, key: str) -> Any:
+    default_value = None
     if key in dictionary:
         return dictionary[key]
     else:

@@ -25,7 +25,7 @@ If build fails, STOP and fix before continuing.
 # TypeScript projects
 bunx tsc --noEmit 2>&1 | head -30
 
-# Python projects
+# Optional: Python projects in polyglot repos
 pyright . 2>&1 | head -30
 ```
 
@@ -36,7 +36,7 @@ Report all type errors. Fix critical ones before continuing.
 # JavaScript/TypeScript
 bun run lint 2>&1 | head -30
 
-# Python
+# Optional: Python projects in polyglot repos
 ruff check . 2>&1 | head -30
 ```
 

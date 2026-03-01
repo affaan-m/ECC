@@ -168,7 +168,7 @@ API Security:
 - [ ] Rate limiting per user/IP
 - [ ] CORS properly configured
 - [ ] No sensitive data in URLs
-- [ ] Proper HTTP methods (GET safe, POST/PUT/DELETE idempotent)
+- [ ] Proper HTTP methods (GET safe; PUT/DELETE idempotent; POST non-idempotent by default)
 
 Search Security (Redis + OpenAI):
 - [ ] Redis connection uses TLS

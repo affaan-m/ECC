@@ -156,8 +156,10 @@ import { formatDate } from '@/lib/utils'
 // ✅ FIX 2: Use relative import
 import { formatDate } from '../lib/utils'
 
-// ✅ FIX 3: Install missing package
-bun install @/lib/utils
+// ✅ FIX 3: Ensure alias configuration and target file both exist
+// - Verify "baseUrl" and "paths" in tsconfig.json
+// - Verify src/lib/utils.{ts,js} exists
+// - Restart TypeScript server or rerun type check
 ```
 
 **Pattern 5: Type Mismatch**
