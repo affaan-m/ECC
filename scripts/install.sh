@@ -256,6 +256,12 @@ if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     copy_file "$global_claude" "${CLAUDE_DIR}/CLAUDE.md" \
         "global/CLAUDE.md" "CLAUDE.md"
+
+    # Also install as Codex AGENTS.md (~/.codex/AGENTS.md)
+    CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
+    mkdir -p "$CODEX_DIR"
+    copy_file "$global_claude" "${CODEX_DIR}/AGENTS.md" \
+        "global/CLAUDE.md" "~/.codex/AGENTS.md"
     echo ""
 fi
 

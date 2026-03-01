@@ -184,6 +184,11 @@ global_claude="${REPO_ROOT}/global/CLAUDE.md"
 if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     remove_file "${CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
+
+    # Also remove Codex AGENTS.md (~/.codex/AGENTS.md)
+    CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
+    remove_file "${CODEX_DIR}/AGENTS.md" "~/.codex/AGENTS.md"
+    cleanup_empty_dir "$CODEX_DIR" "~/.codex/"
     echo ""
 fi
 
