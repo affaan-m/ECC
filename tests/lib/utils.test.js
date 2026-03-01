@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Import the module
-const utils = require('../../scripts/lib/utils');
+const utils = require('../../scripts/node/lib/utils');
 
 // Test helper
 function test(name, fn) {

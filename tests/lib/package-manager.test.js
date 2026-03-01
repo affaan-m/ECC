@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 
 // Import the modules
-const pm = require('../../scripts/lib/package-manager');
+const pm = require('../../scripts/node/lib/package-manager');
 
 // Test helper
 function test(name, fn) {

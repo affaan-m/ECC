@@ -82,7 +82,7 @@ async function runTests() {
   let passed = 0;
   let failed = 0;
 
-  const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
+  const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'node', 'hooks');
 
   // session-start.js tests
   console.log('session-start.js:');
@@ -114,14 +114,12 @@ async function runTests() {
     await runScript(path.join(scriptsDir, 'session-end.js'));
 
     // Check if session file was created
-    // Note: Without CLAUDE_SESSION_ID, falls back to project name (not 'default')
-    // Use local time to match the script's getDateString() function
     const sessionsDir = path.join(os.homedir(), '.claude', 'sessions');
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Get the expected session ID (project name fallback)
-    const utils = require('../../scripts/lib/utils');
+    const utils = require('../../scripts/node/lib/utils');
     const expectedId = utils.getSessionIdShort();
     const sessionFile = path.join(sessionsDir, `${today}-${expectedId}-session.tmp`);
 
@@ -138,7 +136,6 @@ async function runTests() {
     });
 
     // Check if session file was created with session ID
-    // Use local time to match the script's getDateString() function
     const sessionsDir = path.join(os.homedir(), '.claude', 'sessions');
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -264,37 +261,49 @@ async function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
-  // hooks.json validation
-  console.log('\nhooks.json Validation:');
+  // hooks JSON validation (common + node global hooks)
+  console.log('\ncommon/hooks.json Validation:');
 
-  if (test('hooks.json is valid JSON', () => {
-    const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-    const content = fs.readFileSync(hooksPath, 'utf8');
+  const commonHooksPath = path.join(__dirname, '..', '..', 'hooks', 'common', 'hooks.json');
+
+  if (test('common/hooks.json is valid JSON', () => {
+    const content = fs.readFileSync(commonHooksPath, 'utf8');
     JSON.parse(content); // Will throw if invalid
   })) passed++; else failed++;
 
-  if (test('hooks.json has required event types', () => {
-    const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
-
+  if (test('common/hooks.json has PreToolUse and PostToolUse hooks', () => {
+    const hooks = JSON.parse(fs.readFileSync(commonHooksPath, 'utf8'));
     assert.ok(hooks.hooks.PreToolUse, 'Should have PreToolUse hooks');
     assert.ok(hooks.hooks.PostToolUse, 'Should have PostToolUse hooks');
+  })) passed++; else failed++;
+
+  console.log('\nnode/global-hooks.json Validation:');
+
+  const nodeHooksPath = path.join(__dirname, '..', '..', 'hooks', 'node', 'global-hooks.json');
+
+  if (test('node/global-hooks.json is valid JSON', () => {
+    const content = fs.readFileSync(nodeHooksPath, 'utf8');
+    JSON.parse(content); // Will throw if invalid
+  })) passed++; else failed++;
+
+  if (test('node/global-hooks.json has required event types', () => {
+    const hooks = JSON.parse(fs.readFileSync(nodeHooksPath, 'utf8'));
+    assert.ok(hooks.hooks.PreToolUse, 'Should have PreToolUse hooks');
     assert.ok(hooks.hooks.SessionStart, 'Should have SessionStart hooks');
-    assert.ok(hooks.hooks.Stop, 'Should have Stop hooks');
+    assert.ok(hooks.hooks.SessionEnd, 'Should have SessionEnd hooks');
     assert.ok(hooks.hooks.PreCompact, 'Should have PreCompact hooks');
   })) passed++; else failed++;
 
-  if (test('all hook commands use node', () => {
-    const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+  if (test('node/global-hooks.json commands use bun with safety wrapper', () => {
+    const hooks = JSON.parse(fs.readFileSync(nodeHooksPath, 'utf8'));
 
     const checkHooks = (hookArray) => {
       for (const entry of hookArray) {
         for (const hook of entry.hooks) {
           if (hook.type === 'command') {
             assert.ok(
-              hook.command.startsWith('node'),
-              `Hook command should start with 'node': ${hook.command.substring(0, 50)}...`
+              hook.command.includes('bun') || hook.command.startsWith('command -v bun'),
+              `Hook command should use bun: ${hook.command.substring(0, 50)}...`
             );
           }
         }
@@ -306,15 +315,13 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('script references use CLAUDE_PLUGIN_ROOT variable', () => {
-    const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-    const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+  if (test('node/global-hooks.json script references use CLAUDE_PLUGIN_ROOT variable', () => {
+    const hooks = JSON.parse(fs.readFileSync(nodeHooksPath, 'utf8'));
 
     const checkHooks = (hookArray) => {
       for (const entry of hookArray) {
         for (const hook of entry.hooks) {
           if (hook.type === 'command' && hook.command.includes('scripts/hooks/')) {
-            // Check for the literal string "${CLAUDE_PLUGIN_ROOT}" in the command
             const hasPluginRoot = hook.command.includes('${CLAUDE_PLUGIN_ROOT}');
             assert.ok(
               hasPluginRoot,
@@ -334,9 +341,6 @@ async function runTests() {
   console.log('\nplugin.json Validation:');
 
   if (test('plugin.json does NOT have explicit hooks declaration', () => {
-    // Claude Code automatically loads hooks/hooks.json by convention.
-    // Explicitly declaring it in plugin.json causes a duplicate detection error.
-    // See: https://github.com/affaan-m/everything-claude-code/issues/103
     const pluginPath = path.join(__dirname, '..', '..', '.claude-plugin', 'plugin.json');
     const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
 

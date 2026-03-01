@@ -12,19 +12,6 @@ const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
 
-// Test helper
-function _test(name, fn) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    return true;
-  } catch (err) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    Error: ${err.message}`);
-    return false;
-  }
-}
-
 // Async test helper
 async function asyncTest(name, fn) {
   try {
@@ -89,21 +76,32 @@ function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
 }
 
 /**
- * Run an inline hook command (like those in hooks.json)
- * @param {string} command - The node -e "..." command
+ * Run an inline hook command (bun -e "..." or python3 -c "..." or node -e "...")
+ * @param {string} command - The inline command
  * @param {object} input - Hook input object
  * @param {object} env - Environment variables
  */
-function _runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
+function runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
-    // Extract the code from node -e "..."
-    const match = command.match(/^node -e "(.+)"$/s);
-    if (!match) {
-      reject(new Error('Invalid inline hook command format'));
+    // Parse command: "bun -e '...'" or "python3 -c '...'" or "node -e '...'"
+    let runner, flag, code;
+    const bunMatch = command.match(/^bun -e "(.+)"$/s);
+    const nodeMatch = command.match(/^node -e "(.+)"$/s);
+    const pythonMatch = command.match(/^python3 -c "(.+)"$/s);
+
+    if (bunMatch) {
+      // bun -e can also run as node -e for testing
+      runner = 'node'; flag = '-e'; code = bunMatch[1];
+    } else if (nodeMatch) {
+      runner = 'node'; flag = '-e'; code = nodeMatch[1];
+    } else if (pythonMatch) {
+      runner = 'python3'; flag = '-c'; code = pythonMatch[1];
+    } else {
+      reject(new Error(`Unsupported inline hook command format: ${command.substring(0, 80)}...`));
       return;
     }
 
-    const proc = spawn('node', ['-e', match[1]], {
+    const proc = spawn(runner, [flag, code], {
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -162,9 +160,13 @@ async function runTests() {
   let passed = 0;
   let failed = 0;
 
-  const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'hooks');
-  const hooksJsonPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
-  const hooks = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'node', 'hooks');
+
+  // Load hook definitions from split files
+  const commonHooksPath = path.join(__dirname, '..', '..', 'hooks', 'common', 'hooks.json');
+  const projectHooksPath = path.join(__dirname, '..', '..', 'hooks', 'node', 'project-hooks.json');
+  const commonHooks = JSON.parse(fs.readFileSync(commonHooksPath, 'utf8'));
+  const projectHooks = JSON.parse(fs.readFileSync(projectHooksPath, 'utf8'));
 
   // ==========================================
   // Input Format Tests
@@ -197,11 +199,8 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('hooks parse valid tool_input correctly', async () => {
-    // Test the console.log warning hook with valid input
-    const command = 'node -e "const fs=require(\'fs\');let d=\'\';process.stdin.on(\'data\',c=>d+=c);process.stdin.on(\'end\',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||\'\';console.log(\'Path:\',p)})"';
-    const match = command.match(/^node -e "(.+)"$/s);
-
-    const proc = spawn('node', ['-e', match[1]], {
+    // Test parsing with a simple inline node script
+    const proc = spawn('node', ['-e', "const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';console.log('Path:',p)})"], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -236,29 +235,12 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('blocking hooks output BLOCKED message', async () => {
-    // Test the dev server blocking hook
-    const blockingCommand = hooks.hooks.PreToolUse[0].hooks[0].command;
-    const match = blockingCommand.match(/^node -e "(.+)"$/s);
+    // Test the dev server blocking hook from project-hooks.json
+    const blockingHook = projectHooks.hooks.PreToolUse[0];
+    const result = await runInlineHook(blockingHook.hooks[0].command);
 
-    const proc = spawn('node', ['-e', match[1]], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stderr = '';
-    let code = null;
-    proc.stderr.on('data', data => stderr += data);
-
-    proc.stdin.end();
-
-    await new Promise(resolve => {
-      proc.on('close', (c) => {
-        code = c;
-        resolve();
-      });
-    });
-
-    assert.ok(stderr.includes('BLOCKED'), 'Blocking hook should output BLOCKED');
-    assert.strictEqual(code, 1, 'Blocking hook should exit with code 1');
+    assert.ok(result.stderr.includes('BLOCKED'), 'Blocking hook should output BLOCKED');
+    assert.strictEqual(result.code, 1, 'Blocking hook should exit with code 1');
   })) passed++; else failed++;
 
   // ==========================================
@@ -273,24 +255,10 @@ async function runTests() {
 
   if (await asyncTest('blocking hooks exit with code 1', async () => {
     // The dev server blocker always blocks
-    const blockingCommand = hooks.hooks.PreToolUse[0].hooks[0].command;
-    const match = blockingCommand.match(/^node -e "(.+)"$/s);
+    const blockingHook = projectHooks.hooks.PreToolUse[0];
+    const result = await runInlineHook(blockingHook.hooks[0].command);
 
-    const proc = spawn('node', ['-e', match[1]], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let code = null;
-    proc.stdin.end();
-
-    await new Promise(resolve => {
-      proc.on('close', (c) => {
-        code = c;
-        resolve();
-      });
-    });
-
-    assert.strictEqual(code, 1, 'Blocking hook should exit 1');
+    assert.strictEqual(result.code, 1, 'Blocking hook should exit 1');
   })) passed++; else failed++;
 
   if (await asyncTest('hooks handle missing files gracefully', async () => {
@@ -368,33 +336,20 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('PostToolUse PR hook extracts PR URL', async () => {
-    // Find the PR logging hook
-    const prHook = hooks.hooks.PostToolUse.find(h =>
+    // Find the PR logging hook in common hooks
+    const prHook = commonHooks.hooks.PostToolUse.find(h =>
       h.description && h.description.includes('PR URL')
     );
 
-    assert.ok(prHook, 'PR hook should exist');
+    assert.ok(prHook, 'PR hook should exist in common/hooks.json');
 
-    const match = prHook.hooks[0].command.match(/^node -e "(.+)"$/s);
-
-    const proc = spawn('node', ['-e', match[1]], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stderr = '';
-    proc.stderr.on('data', data => stderr += data);
-
-    // Simulate gh pr create output
-    proc.stdin.write(JSON.stringify({
+    const result = await runInlineHook(prHook.hooks[0].command, {
       tool_input: { command: 'gh pr create --title "Test"' },
       tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
-    }));
-    proc.stdin.end();
-
-    await new Promise(resolve => proc.on('close', resolve));
+    });
 
     assert.ok(
-      stderr.includes('PR created') || stderr.includes('github.com'),
+      result.stderr.includes('PR created') || result.stderr.includes('github.com'),
       'Should extract and log PR URL'
     );
   })) passed++; else failed++;
