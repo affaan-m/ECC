@@ -1,0 +1,3 @@
+interface:
+  short_description: "Create commit messages from diff using repo style"
+  default_prompt: "Use $commit to inspect the current git diff, infer this repository's commit convention from recent logs, and create a commit with the required Codex co-author trailer."

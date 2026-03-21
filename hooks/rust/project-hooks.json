@@ -8,8 +8,7 @@
             "type": "command",
             "command": "#!/bin/bash\nif [ -z \"$TMUX\" ]; then echo '[Hook] BLOCKED: Dev server must run in tmux for log access' >&2; echo '[Hook] Use: tmux new-session -d -s dev \"cargo run\"' >&2; echo '[Hook] Then: tmux attach -t dev' >&2; exit 1; fi"
           }
-        ],
-        "description": "Block cargo run outside tmux - ensures you can access logs"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"(cargo (build|test|bench|clippy|doc)|make|docker)\"",
@@ -18,8 +17,7 @@
             "type": "command",
             "command": "#!/bin/bash\nif [ -z \"$TMUX\" ]; then echo '[Hook] Consider running in tmux for session persistence' >&2; echo '[Hook] tmux new -s dev  |  tmux attach -t dev' >&2; fi"
           }
-        ],
-        "description": "Reminder to use tmux for long-running commands"
+        ]
       }
     ],
     "PostToolUse": [
@@ -30,8 +28,7 @@
             "type": "command",
             "command": "#!/bin/bash\nd=$(cat); p=$(echo \"$d\" | grep -oP '\"file_path\"\\s*:\\s*\"\\K[^\"]+'); if [ -n \"$p\" ] && [ -f \"$p\" ]; then dir=$(dirname \"$(realpath \"$p\")\"); while [ \"$dir\" != \"/\" ]; do [ -f \"$dir/Cargo.toml\" ] && break; dir=$(dirname \"$dir\"); done; [ -f \"$dir/Cargo.toml\" ] && cargo fmt --manifest-path \"$dir/Cargo.toml\" 2>/dev/null; fi; printf '%s' \"$d\""
           }
-        ],
-        "description": "Auto-format Rust files with cargo fmt after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.rs$\"",
@@ -40,8 +37,7 @@
             "type": "command",
             "command": "#!/bin/bash\nd=$(cat); p=$(echo \"$d\" | grep -oP '\"file_path\"\\s*:\\s*\"\\K[^\"]+'); if [ -n \"$p\" ] && [ -f \"$p\" ]; then dir=$(dirname \"$(realpath \"$p\")\"); while [ \"$dir\" != \"/\" ]; do [ -f \"$dir/Cargo.toml\" ] && break; dir=$(dirname \"$dir\"); done; if [ -f \"$dir/Cargo.toml\" ]; then out=$(cargo clippy --manifest-path \"$dir/Cargo.toml\" --message-format=short -- -D warnings 2>&1); bn=$(basename \"$p\"); echo \"$out\" | grep \"$bn\" | head -10 >&2; fi; fi; printf '%s' \"$d\""
           }
-        ],
-        "description": "Lint Rust files with cargo clippy after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.rs$\"",
@@ -50,8 +46,7 @@
             "type": "command",
             "command": "#!/bin/bash\nd=$(cat); p=$(echo \"$d\" | grep -oP '\"file_path\"\\s*:\\s*\"\\K[^\"]+'); if [ -n \"$p\" ] && [ -f \"$p\" ]; then matches=$(grep -n 'dbg!(' \"$p\" | grep -v '//.*noqa' | head -5); if [ -n \"$matches\" ]; then echo \"[Hook] WARNING: dbg!() found in $p\" >&2; echo \"$matches\" >&2; echo '[Hook] Remove dbg!() before committing' >&2; fi; fi; printf '%s' \"$d\""
           }
-        ],
-        "description": "Warn about dbg!() macros after edits"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"cargo test\"",
@@ -62,8 +57,7 @@
             "async": true,
             "timeout": 30
           }
-        ],
-        "description": "Notification after cargo test completion"
+        ]
       }
     ],
     "Stop": [
@@ -74,8 +68,7 @@
             "type": "command",
             "command": "#!/bin/bash\nfiles=$(git diff --name-only 2>/dev/null | grep '\\.rs$'); if [ -n \"$files\" ]; then found=0; for f in $files; do [ -f \"$f\" ] || continue; matches=$(grep -nE '(dbg!|todo!|unimplemented!)\\(' \"$f\" | grep -v '//.*noqa' | head -5); if [ -n \"$matches\" ]; then echo \"[Hook] Debug macros in $f:\" >&2; echo \"$matches\" | sed 's/^/  /' >&2; found=1; fi; done; [ $found -eq 1 ] && echo '[Hook] Remove debug macros before committing' >&2; fi"
           }
-        ],
-        "description": "Check for dbg!()/todo!()/unimplemented!() in modified Rust files"
+        ]
       }
     ]
   }

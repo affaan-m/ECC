@@ -8,8 +8,7 @@
             "type": "command",
             "command": "bun -e \"console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');console.error('[Hook] Use: tmux new-session -d -s dev \\\"bun run dev\\\"');console.error('[Hook] Then: tmux attach -t dev');process.exit(1)\""
           }
-        ],
-        "description": "Block dev servers outside tmux - ensures you can access logs"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"(bun (install|test)|make|docker|vitest)\"",
@@ -18,8 +17,7 @@
             "type": "command",
             "command": "bun -e \"if(!process.env.TMUX){console.error('[Hook] Consider running in tmux for session persistence');console.error('[Hook] tmux new -s dev  |  tmux attach -t dev')}\""
           }
-        ],
-        "description": "Reminder to use tmux for long-running commands"
+        ]
       }
     ],
     "PostToolUse": [
@@ -32,8 +30,7 @@
             "async": true,
             "timeout": 30
           }
-        ],
-        "description": "Example: async hook for build analysis (runs in background without blocking)"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx|js|jsx|svelte)$\"",
@@ -42,8 +39,7 @@
             "type": "command",
             "command": "bun -e \"const{execFileSync}=require('child_process');const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path;if(p&&fs.existsSync(p)){try{execFileSync('bunx',['oxfmt',p],{stdio:['pipe','pipe','pipe']})}catch(e){}}console.log(d)})\""
           }
-        ],
-        "description": "Auto-format JS/TS/Svelte files with oxfmt after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx)$\"",
@@ -52,8 +48,7 @@
             "type": "command",
             "command": "bun -e \"const{execSync}=require('child_process');const fs=require('fs');const path=require('path');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path;if(p&&fs.existsSync(p)){let dir=path.dirname(p);while(dir!==path.dirname(dir)&&!fs.existsSync(path.join(dir,'tsconfig.json'))){dir=path.dirname(dir)}if(fs.existsSync(path.join(dir,'tsconfig.json'))){try{const r=execSync('bunx tsc --noEmit --pretty false 2>&1',{cwd:dir,encoding:'utf8',stdio:['pipe','pipe','pipe']});const lines=r.split('\\n').filter(l=>l.includes(p)).slice(0,10);if(lines.length)console.error(lines.join('\\n'))}catch(e){const lines=(e.stdout||'').split('\\n').filter(l=>l.includes(p)).slice(0,10);if(lines.length)console.error(lines.join('\\n'))}}}console.log(d)})\""
           }
-        ],
-        "description": "TypeScript check after editing .ts/.tsx files"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx|js|jsx|svelte)$\"",
@@ -62,8 +57,7 @@
             "type": "command",
             "command": "bun -e \"const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path;if(p&&fs.existsSync(p)){const c=fs.readFileSync(p,'utf8');const lines=c.split('\\n');const matches=[];lines.forEach((l,idx)=>{if(/console\\.log/.test(l))matches.push((idx+1)+': '+l.trim())});if(matches.length){console.error('[Hook] WARNING: console.log found in '+p);matches.slice(0,5).forEach(m=>console.error(m));console.error('[Hook] Remove console.log before committing')}}console.log(d)})\""
           }
-        ],
-        "description": "Warn about console.log statements after edits"
+        ]
       }
     ],
     "Stop": [
@@ -74,8 +68,7 @@
             "type": "command",
             "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/check-console-log.js\""
           }
-        ],
-        "description": "Check for console.log in modified files after each response"
+        ]
       }
     ]
   }

@@ -8,8 +8,7 @@
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/suggest-compact.js\" || true"
           }
-        ],
-        "description": "Suggest manual compaction at logical intervals"
+        ]
       }
     ],
     "PreCompact": [
@@ -20,8 +19,7 @@
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/pre-compact.js\" || true"
           }
-        ],
-        "description": "Save state before context compaction"
+        ]
       }
     ],
     "SessionStart": [
@@ -32,8 +30,7 @@
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/session-start.js\" || true"
           }
-        ],
-        "description": "Load previous context and detect package manager on new session"
+        ]
       }
     ],
     "SessionEnd": [
@@ -44,8 +41,7 @@
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/session-end.js\" || true"
           }
-        ],
-        "description": "Persist session state on end"
+        ]
       },
       {
         "matcher": "*",
@@ -54,8 +50,7 @@
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/evaluate-session.js\" || true"
           }
-        ],
-        "description": "Evaluate session for extractable patterns"
+        ]
       }
     ]
   }

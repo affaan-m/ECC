@@ -8,8 +8,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Dev server must run in tmux for log access\\n[Hook] Use: tmux new-session -d -s dev \\\"uv run manage.py runserver\\\"\\n[Hook] Then: tmux attach -t dev\\n'); sys.exit(1)\""
           }
-        ],
-        "description": "Block dev servers outside tmux - ensures you can access logs"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"pip install\"",
@@ -18,8 +17,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Use uv instead of pip install\\n[Hook] Use: uv sync --group <group> or uv sync --extra <extra>\\n[Hook] Example: uv sync --group docs --group dev\\n[Hook] Example: uv sync --group docs --group dev --extra cu128\\n'); sys.exit(1)\""
           }
-        ],
-        "description": "Block pip install - always use uv sync instead"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"(uv (sync|run pytest|run manage\\.py)|docker|make|pytest|tox)\"",
@@ -28,8 +26,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import os, sys; not os.environ.get('TMUX') and sys.stderr.write('[Hook] Consider running in tmux for session persistence\\n[Hook] tmux new -s dev  |  tmux attach -t dev\\n')\""
           }
-        ],
-        "description": "Reminder to use tmux for long-running commands"
+        ]
       }
     ],
     "PostToolUse": [
@@ -40,8 +37,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); p and subprocess.run(['ruff','format',p],capture_output=True); print(d,end='')\""
           }
-        ],
-        "description": "Auto-format Python files with ruff format after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.py$\"",
@@ -50,8 +46,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['ruff','check','--output-format=concise',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); print(d,end='')\""
           }
-        ],
-        "description": "Lint Python files with ruff check after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.py$\"",
@@ -60,8 +55,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['ty','check',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); print(d,end='')\""
           }
-        ],
-        "description": "Type check Python files with ty after edits"
+        ]
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.py$\"",
@@ -70,8 +64,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); lines=open(p).readlines() if p else []; matches=[(n+1,l.strip()) for n,l in enumerate(lines) if re.search(r'\\bprint\\s*\\(',l) and not re.search(r'#\\s*noqa',l)]; matches and (sys.stderr.write('[Hook] WARNING: print() found in '+p+'\\n'), [sys.stderr.write(str(n)+': '+l+'\\n') for n,l in matches[:5]], sys.stderr.write('[Hook] Remove print() before committing\\n')); print(d,end='')\""
           }
-        ],
-        "description": "Warn about print() statements after edits"
+        ]
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"(uv run pytest|pytest|uv run manage\\.py test)\"",
@@ -82,8 +75,7 @@
             "async": true,
             "timeout": 30
           }
-        ],
-        "description": "Notification after test run completion"
+        ]
       }
     ],
     "Stop": [
@@ -94,8 +86,7 @@
             "type": "command",
             "command": "uv run python3 -c \"import subprocess, sys, re; r=subprocess.run(['git','diff','--name-only'],capture_output=True,text=True); files=[f for f in r.stdout.strip().split('\\n') if f.endswith('.py')]; found=False; [((matches:=[(n+1,l.strip()) for n,l in enumerate(open(f).readlines()) if re.search(r'\\bprint\\s*\\(',l) and not re.search(r'#\\s*noqa',l)]) and (sys.stderr.write('[Hook] print() in '+f+':\\n') or True) and [sys.stderr.write('  '+str(n)+': '+l+'\\n') for n,l in matches[:3]]) for f in files if f]; any(True for f in files if f and [(n,l) for n,l in enumerate(open(f).readlines()) if re.search(r'\\bprint\\s*\\(',l) and not re.search(r'#\\s*noqa',l)]) and sys.stderr.write('[Hook] Remove print() statements before committing\\n')\""
           }
-        ],
-        "description": "Check for print() in modified Python files after each response"
+        ]
       }
     ]
   }

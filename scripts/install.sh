@@ -135,7 +135,7 @@ copy_dir() {
 }
 
 # jq filter for merging hooks (single line to avoid multiline quoting issues)
-JQ_MERGE_HOOKS='{ "$schema": .[0]["$schema"], "hooks": (reduce .[] as $item ({}; reduce ($item.hooks | keys[]) as $key (.; .[$key] = ((.[$key] // []) + $item.hooks[$key])))) }'
+JQ_MERGE_HOOKS='{ "$schema": ([.[]."$schema" // empty] | first // null), "hooks": (reduce .[] as $item ({}; reduce ($item.hooks | keys[]) as $key (.; .[$key] = ((.[$key] // []) + $item.hooks[$key])))) } | if ."$schema" == null then del(."$schema") else . end'
 
 # Merge multiple hooks files into settings.json using jq
 merge_hooks() {
