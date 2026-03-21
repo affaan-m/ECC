@@ -18,6 +18,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code local state
+.claude/
+
 # Node
 node_modules/
 
