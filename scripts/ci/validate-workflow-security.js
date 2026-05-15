@@ -25,6 +25,12 @@ const RULES = [
 ];
 
 const WRITE_PERMISSION_PATTERN = /^\s*(?:contents|issues|pull-requests|actions|checks|deployments|discussions|id-token|packages|pages|repository-projects|security-events|statuses):\s*write\b/m;
+// `permissions: write-all` is GitHub Actions' shorthand for granting every
+// scope write access. The named-scope pattern above misses it because there
+// is no scope name on the left of the colon — just the literal `write-all`
+// value at the permissions key. Treat both as equivalent for the purposes
+// of the persist-credentials and lifecycle-script gates below.
+const WRITE_ALL_PATTERN = /^\s*permissions:\s*write-all\b/m;
 const NPM_AUDIT_PATTERN = /\bnpm\s+audit\b(?!\s+signatures\b)/;
 const NPM_AUDIT_SIGNATURES_PATTERN = /\bnpm\s+audit\s+signatures\b/;
 const ACTIONS_CACHE_PATTERN = /uses:\s*['"]?actions\/cache@/m;
@@ -124,7 +130,7 @@ function findViolations(filePath, source) {
     }
   }
 
-  if (WRITE_PERMISSION_PATTERN.test(source)) {
+  if (WRITE_PERMISSION_PATTERN.test(source) || WRITE_ALL_PATTERN.test(source)) {
     for (const step of checkoutSteps) {
       if (!/persist-credentials:\s*['"]?false['"]?\b/m.test(step.text)) {
         violations.push({

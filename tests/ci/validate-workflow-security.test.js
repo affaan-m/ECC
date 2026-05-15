@@ -155,6 +155,34 @@ function run() {
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
 
+  // `permissions: write-all` is GitHub Actions' shorthand for granting every
+  // scope write access. The named-scope pattern only catches `contents: write`,
+  // `issues: write`, etc., so workflows that opt into write-all were silently
+  // exempted from the persist-credentials and --ignore-scripts gates.
+
+  if (test('rejects checkout credential persistence in workflows with permissions: write-all', () => {
+    const result = runValidator({
+      'unsafe-write-all-checkout.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions: write-all\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on write-all + credential-persisting checkout');
+    assert.match(result.stderr, /write permissions must disable checkout credential persistence/);
+  })) passed++; else failed++;
+
+  if (test('rejects npm ci without ignore-scripts in workflows with permissions: write-all', () => {
+    const result = runValidator({
+      'unsafe-write-all-install.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions: write-all\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          persist-credentials: false\n      - run: npm ci\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on write-all + npm ci without --ignore-scripts');
+    assert.match(result.stderr, /npm ci must include --ignore-scripts/);
+  })) passed++; else failed++;
+
+  if (test('allows compliant workflow with permissions: write-all', () => {
+    const result = runValidator({
+      'safe-write-all.yml': `name: Safe\non:\n  workflow_dispatch:\npermissions: write-all\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          persist-credentials: false\n      - run: npm ci --ignore-scripts\n`,
+    });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+  })) passed++; else failed++;
+
   if (test('rejects actions/cache in workflows with id-token write', () => {
     const result = runValidator({
       'unsafe-oidc-cache.yml': `name: Unsafe\non:\n  push:\npermissions:\n  contents: read\n  id-token: write\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache@v5\n        with:\n          path: ~/.npm\n          key: cache\n`,
