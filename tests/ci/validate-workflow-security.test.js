@@ -99,6 +99,34 @@ function run() {
     assert.match(result.stderr, /pull_request\.head\.sha/);
   })) passed++; else failed++;
 
+  // `refs/pull/<N>/{head,merge}` under `pull_request_target` is the canonical
+  // privilege-escalation pattern that the standard `github.event.pull_request.head.*`
+  // expression check did not cover. Either form pulls attacker-controlled code
+  // into a privileged workflow.
+
+  if (test('rejects pull_request_target checkout fetching refs/pull/N/merge', () => {
+    const result = runValidator({
+      'unsafe-pr-target-merge-ref.yml': `name: Unsafe\non:\n  pull_request_target:\n    types: [opened]\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: refs/pull/\${{ github.event.pull_request.number }}/merge\n          persist-credentials: false\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on refs/pull/N/merge under pull_request_target');
+    assert.match(result.stderr, /pull_request_target must not checkout an untrusted pull_request head ref/);
+  })) passed++; else failed++;
+
+  if (test('rejects pull_request_target checkout fetching hardcoded refs/pull/N/head', () => {
+    const result = runValidator({
+      'unsafe-pr-target-head-ref.yml': `name: Unsafe\non:\n  pull_request_target:\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: refs/pull/123/head\n          persist-credentials: false\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on hardcoded refs/pull/N/head');
+    assert.match(result.stderr, /pull_request_target must not checkout an untrusted pull_request head ref/);
+  })) passed++; else failed++;
+
+  if (test('allows pull_request_target checkout of the base ref (no with.ref)', () => {
+    const result = runValidator({
+      'safe-pr-target-base.yml': `name: Safe\non:\n  pull_request_target:\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          persist-credentials: false\n      - run: echo inspecting base\n`,
+    });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+  })) passed++; else failed++;
+
   if (test('rejects shared cache use in pull_request_target workflows', () => {
     const result = runValidator({
       'unsafe-pr-target-cache.yml': `name: Unsafe\non:\n  pull_request_target:\n    branches: [main]\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache@v5\n        with:\n          path: ~/.npm\n          key: cache\n      - run: echo inspect\n`,

@@ -21,6 +21,15 @@ const RULES = [
     eventPattern: /\bpull_request_target\s*:/m,
     description: 'pull_request_target must not checkout an untrusted pull_request head ref/repository',
     expressionPattern: /\$\{\{\s*github\.event\.pull_request\.head\.(?:ref|sha|repo\.full_name)\s*\}\}/g,
+    // Even without the standard `github.event.pull_request.head.*` expression,
+    // a checkout under `pull_request_target` that fetches a `refs/pull/<N>/{head,merge}`
+    // ref pulls attacker-controlled code into a workflow with write-scoped
+    // tokens. GitHub's security guidance treats both forms equivalently;
+    // we match the ref value directly so any interpolation that resolves
+    // to such a ref (`refs/pull/${{ github.event.pull_request.number }}/merge`,
+    // a hardcoded `refs/pull/123/head`, a `${{ env.X }}` that the maintainer
+    // assumes is safe, etc.) trips the same rule.
+    refPattern: /^\s*ref:\s*['"]?[^'"\n]*refs\/(?:remotes\/)?pull\/[^'"\n\s]+/m,
   },
 ];
 
@@ -126,6 +135,18 @@ function findViolations(filePath, source) {
           expression: match[0],
           line: step.startLine + getLineNumber(step.text, match.index) - 1,
         });
+      }
+      if (rule.refPattern) {
+        const refMatch = step.text.match(rule.refPattern);
+        if (refMatch) {
+          violations.push({
+            filePath,
+            event: rule.event,
+            description: rule.description,
+            expression: refMatch[0].trim(),
+            line: step.startLine + getLineNumber(step.text, refMatch.index) - 1,
+          });
+        }
       }
     }
   }
