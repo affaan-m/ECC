@@ -34,11 +34,15 @@
     "./agents/node/node-refactor-cleaner.md",
     "./agents/node/node-security-reviewer.md",
     "./agents/node/node-tdd-guide.md",
+    "./agents/python/fastapi-reviewer.md",
     "./agents/python/python-code-reviewer.md",
     "./agents/python/python-doc-updater.md",
     "./agents/python/python-planner.md",
     "./agents/python/python-refactor-cleaner.md",
     "./agents/python/python-reviewer.md",
-    "./agents/python/python-tdd-guide.md"
+    "./agents/python/python-tdd-guide.md",
+    "./agents/rust/rust-build-resolver.md",
+    "./agents/rust/rust-reviewer.md",
+    "./agents/typescript/typescript-reviewer.md"
   ]
 }

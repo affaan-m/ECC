@@ -215,8 +215,8 @@ The reviewer checks for:
 
 ## Related
 
-- Agent: `agents/python-reviewer.md`
-- Skills: `skills/python-patterns/`, `skills/python-testing/`
+- Agent: `agents/python/python-reviewer.md`
+- Skills: `skills/python/python-patterns/`, `skills/python/python-testing/`
 
 ## Common Fixes
 
