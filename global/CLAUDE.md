@@ -33,6 +33,13 @@ Trivial fixes (typos, single-line, obvious bugs):
 Worktree is **always required** — even for simple changes.
 Parallel sessions without isolation cause conflicts.
 
+## Git Workflow
+
+- Always create git worktrees inside `.claude/` and make all
+  edits in the worktree branch, never the main checkout.
+- Pull/rebase `origin/main` before starting doc or code work to
+  avoid redundant changes.
+
 ## Complex Changes Workflow
 
 ### 1. Plan
@@ -102,6 +109,32 @@ Commit at the end of **every stage**, not all at once at the end.
 
 - GitHub: `gh pr create`
 - GitLab: `glab mr create`
+
+## Testing
+
+- Run long-running test/check commands (`vitest`, `svelte-check`)
+  in background or with explicit single-run flags (for example,
+  `vitest run`), never in watch/foreground mode, to avoid
+  process/fork exhaustion.
+
+## Debugging
+
+- Base bug fixes on empirical evidence (logs, repro) before
+  proposing a root cause; explicitly state and test the hypothesis
+  before implementing.
+
+## Build & Tooling
+
+- Use the project's exact lint/format/test commands (project
+  scripts, not `npx oxfmt` on individual files or `bun test`).
+  Verify the whole project's quality gate, not single files.
+
+## Safety / Cleanup
+
+- Never include destructive commands (`rm -rf`,
+  `git worktree remove --force`) in subagent prompts or automated
+  steps; use safe verification and confirm with the user before any
+  cleanup/deletion.
 
 ## Definition of Done
 
