@@ -334,3 +334,7 @@ if $DRY_RUN; then
 else
     echo -e "Removed: ${RED}${removed}${NC}, Not found: ${YELLOW}${not_found}${NC}"
 fi
+
+echo ""
+echo -e "${CYAN}Note:${NC} To add Anthropic's official skills again later, run:"
+echo "  /plugin marketplace add anthropics/skills"
