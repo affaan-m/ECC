@@ -17,7 +17,7 @@ on:
         description: 'Package manager to use'
         required: false
         type: string
-        default: 'npm'
+        default: 'bun'
 
 jobs:
   test:
@@ -38,11 +38,13 @@ jobs:
         if: inputs.package-manager == 'pnpm'
         uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10.25.0
 
       - name: Setup Bun
         if: inputs.package-manager == 'bun'
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
 
       - name: Install dependencies
         shell: bash
