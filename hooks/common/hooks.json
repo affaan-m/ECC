@@ -23,6 +23,16 @@
     ],
     "PostToolUse": [
       {
+        "description": "Run Bun quality gate after file edits",
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run lint && bun run typecheck"
+          }
+        ]
+      },
+      {
         "description": "Log PR URL after gh pr create",
         "matcher": "tool == \"Bash\"",
         "hooks": [
