@@ -3,7 +3,8 @@
  * Validate command markdown files are non-empty, readable,
  * and have valid cross-references to other commands, agents, and skills.
  *
- * Supports nested directory layout: commands/{common,node,python}/*.md
+ * Supports nested directory layout:
+ * commands/{common,node,python,rust,typescript}/*.md
  */
 
 const fs = require('fs');
@@ -14,8 +15,8 @@ const COMMANDS_DIR = path.join(ROOT_DIR, 'commands');
 const AGENTS_DIR = path.join(ROOT_DIR, 'agents');
 const SKILLS_DIR = path.join(ROOT_DIR, 'skills');
 
-// Language prefixes used in nested directory layouts
-const LANG_PREFIXES = ['node-', 'python-'];
+// Language prefixes used in nested directory layouts.
+const LANG_PREFIXES = ['node-', 'python-', 'rust-', 'typescript-', 'fastapi-'];
 
 /**
  * Recursively collect .md filenames (without extension) from a directory.
@@ -31,7 +32,12 @@ function collectMdNames(dir) {
     try {
       if (fs.statSync(filePath).isFile()) {
         const basename = path.basename(f, '.md');
+        const normalized = f.replace(/\\/g, '/');
+        const dirname = path.dirname(normalized);
         names.add(basename);
+        if (dirname !== '.') {
+          names.add(`${dirname}/${basename}`);
+        }
         // Also add the short name without language prefix
         for (const prefix of LANG_PREFIXES) {
           if (basename.startsWith(prefix)) {
@@ -69,6 +75,7 @@ function collectSkillNames(dir) {
           // Nested layout: language group with skill subdirs
           for (const sub of subDirs) {
             names.add(sub.name);
+            names.add(`${entry.name}/${sub.name}`);
           }
         } else {
           // Flat layout without SKILL.md — still a valid reference target
@@ -145,8 +152,9 @@ function validateCommands() {
       }
     }
 
-    // Check agent references (e.g., "agents/planner.md")
-    const agentPathRefs = contentNoCodeBlocks.matchAll(/agents\/([a-z][-a-z0-9]*)\.md/g);
+    // Check agent references (e.g., "agents/planner.md" or
+    // "agents/python/python-reviewer.md")
+    const agentPathRefs = contentNoCodeBlocks.matchAll(/agents\/([a-z][-a-z0-9]*(?:\/[a-z][-a-z0-9]*)*)\.md/g);
     for (const match of agentPathRefs) {
       const refName = match[1];
       if (!validAgents.has(refName)) {
@@ -155,8 +163,9 @@ function validateCommands() {
       }
     }
 
-    // Check skill directory references (e.g., "skills/tdd-workflow/")
-    const skillRefs = contentNoCodeBlocks.matchAll(/skills\/([a-z][-a-z0-9]*)\//g);
+    // Check skill directory references (e.g., "skills/tdd-workflow/" or
+    // "skills/python/python-testing/")
+    const skillRefs = contentNoCodeBlocks.matchAll(/skills\/([a-z][-a-z0-9]*(?:\/[a-z][-a-z0-9]*)*)\//g);
     for (const match of skillRefs) {
       const refName = match[1];
       if (!validSkills.has(refName)) {
