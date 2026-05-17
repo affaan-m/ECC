@@ -350,6 +350,26 @@ async function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('plugin.json component paths match nested repository layout', () => {
+    const rootDir = path.join(__dirname, '..', '..');
+    const pluginPath = path.join(rootDir, '.claude-plugin', 'plugin.json');
+    const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
+
+    assert.deepStrictEqual(plugin.commands, ['./commands/']);
+    assert.deepStrictEqual(plugin.skills, ['./skills/']);
+
+    for (const agentPath of plugin.agents) {
+      assert.ok(
+        fs.existsSync(path.join(rootDir, agentPath)),
+        `Agent path should exist: ${agentPath}`
+      );
+      assert.ok(
+        agentPath.split('/').length > 3,
+        `Agent path should use nested language/common layout: ${agentPath}`
+      );
+    }
+  })) passed++; else failed++;
+
   // Summary
   console.log('\n=== Test Results ===');
   console.log(`Passed: ${passed}`);

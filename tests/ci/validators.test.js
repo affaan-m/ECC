@@ -558,6 +558,22 @@ function runTests() {
     cleanupTestDir(testDir); cleanupTestDir(agentsDir); cleanupTestDir(skillsDir);
   })) passed++; else failed++;
 
+  if (test('accepts nested agent path references', () => {
+    const testDir = createTestDir();
+    const agentsDir = createTestDir();
+    const skillsDir = createTestDir();
+    const pyDir = path.join(agentsDir, 'python');
+    fs.mkdirSync(pyDir);
+    fs.writeFileSync(path.join(pyDir, 'python-reviewer.md'), '---\nmodel: sonnet\ntools: Read\n---\n# Agent');
+    fs.writeFileSync(path.join(testDir, 'cmd.md'), '# Command\nAgent: `agents/python/python-reviewer.md`');
+
+    const result = runValidatorWithDirs('validate-commands', {
+      COMMANDS_DIR: testDir, AGENTS_DIR: agentsDir, SKILLS_DIR: skillsDir
+    });
+    assert.strictEqual(result.code, 0, 'Should accept nested agent path ref');
+    cleanupTestDir(testDir); cleanupTestDir(agentsDir); cleanupTestDir(skillsDir);
+  })) passed++; else failed++;
+
   if (test('skips references inside fenced code blocks', () => {
     const testDir = createTestDir();
     const agentsDir = createTestDir();
@@ -1163,6 +1179,24 @@ function runTests() {
       COMMANDS_DIR: testDir, AGENTS_DIR: agentsDir, SKILLS_DIR: skillsDir
     });
     assert.strictEqual(result.code, 0, 'Should pass on valid skill reference');
+    assert.ok(!result.stdout.includes('warning'), 'Should have no warnings');
+    cleanupTestDir(testDir); cleanupTestDir(agentsDir); cleanupTestDir(skillsDir);
+  })) passed++; else failed++;
+
+  if (test('accepts nested skill directory reference', () => {
+    const testDir = createTestDir();
+    const agentsDir = createTestDir();
+    const skillsDir = createTestDir();
+    const skillDir = path.join(skillsDir, 'python', 'fastapi-patterns');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# FastAPI Patterns');
+    fs.writeFileSync(path.join(testDir, 'cmd.md'),
+      '# Command\nSee skills/python/fastapi-patterns/ for details.');
+
+    const result = runValidatorWithDirs('validate-commands', {
+      COMMANDS_DIR: testDir, AGENTS_DIR: agentsDir, SKILLS_DIR: skillsDir
+    });
+    assert.strictEqual(result.code, 0, 'Should accept nested skill reference');
     assert.ok(!result.stdout.includes('warning'), 'Should have no warnings');
     cleanupTestDir(testDir); cleanupTestDir(agentsDir); cleanupTestDir(skillsDir);
   })) passed++; else failed++;

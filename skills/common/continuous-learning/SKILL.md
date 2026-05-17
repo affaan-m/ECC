@@ -107,4 +107,4 @@ Homunculus v2 takes a more sophisticated approach:
 4. **Domain tagging** - code-style, testing, git, debugging, etc.
 5. **Evolution path** - Cluster related instincts into skills/commands
 
-See: `/Users/affoon/Documents/tasks/12-continuous-learning-v2.md` for full spec.
+See: `/Users/you/Documents/tasks/12-continuous-learning-v2.md` for full spec.

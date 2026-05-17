@@ -25,16 +25,25 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Validate agents
-        run: node scripts/ci/validate-agents.js
+        run: node scripts/node/ci/validate-agents.js
 
       - name: Validate hooks
-        run: node scripts/ci/validate-hooks.js
+        run: node scripts/node/ci/validate-hooks.js
 
       - name: Validate commands
-        run: node scripts/ci/validate-commands.js
+        run: node scripts/node/ci/validate-commands.js
 
       - name: Validate skills
-        run: node scripts/ci/validate-skills.js
+        run: node scripts/node/ci/validate-skills.js
 
       - name: Validate rules
-        run: node scripts/ci/validate-rules.js
+        run: node scripts/node/ci/validate-rules.js
+
+      - name: Validate workflow security
+        run: node scripts/node/ci/validate-workflow-security.js
+
+      - name: Validate personal path hygiene
+        run: node scripts/node/ci/validate-no-personal-paths.js
+
+      - name: Scan supply-chain IOCs
+        run: node scripts/node/ci/scan-supply-chain-iocs.js

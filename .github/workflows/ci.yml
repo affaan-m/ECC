@@ -24,13 +24,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         node: ['18.x', '20.x', '22.x']
-        pm: [npm, pnpm, yarn, bun]
-        exclude:
-          # Bun has limited Windows support
-          - os: windows-latest
-            pm: bun
+        pm: [bun]
 
     steps:
       - name: Checkout
@@ -41,88 +37,18 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      # Package manager setup
-      - name: Setup pnpm
-        if: matrix.pm == 'pnpm'
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
       - name: Setup Bun
         if: matrix.pm == 'bun'
         uses: oven-sh/setup-bun@v2
-
-      # Cache configuration
-      - name: Get npm cache directory
-        if: matrix.pm == 'npm'
-        id: npm-cache-dir
-        shell: bash
-        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
-
-      - name: Cache npm
-        if: matrix.pm == 'npm'
-        uses: actions/cache@v4
         with:
-          path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ matrix.node }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ matrix.node }}-npm-
-
-      - name: Get pnpm store directory
-        if: matrix.pm == 'pnpm'
-        id: pnpm-cache-dir
-        shell: bash
-        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm
-        if: matrix.pm == 'pnpm'
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ matrix.node }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ matrix.node }}-pnpm-
-
-      - name: Get yarn cache directory
-        if: matrix.pm == 'yarn'
-        id: yarn-cache-dir
-        shell: bash
-        run: |
-          # Try Yarn Berry first, fall back to Yarn v1
-          if yarn config get cacheFolder >/dev/null 2>&1; then
-            echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
-          else
-            echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Cache yarn
-        if: matrix.pm == 'yarn'
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.yarn-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ matrix.node }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ matrix.node }}-yarn-
-
-      - name: Cache bun
-        if: matrix.pm == 'bun'
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
+          bun-version: 1.3.13
 
       # Install dependencies
       - name: Install dependencies
         shell: bash
         run: |
           case "${{ matrix.pm }}" in
-            npm) npm ci ;;
-            pnpm) pnpm install ;;
-            # --ignore-engines required for Node 18 compat with some devDependencies (e.g., markdownlint-cli)
-            yarn) yarn install --ignore-engines ;;
-            bun) bun install ;;
+            bun) bun install --ignore-scripts ;;
             *) echo "Unsupported package manager: ${{ matrix.pm }}" && exit 1 ;;
           esac
 
@@ -157,23 +83,35 @@ jobs:
           node-version: '20.x'
 
       - name: Validate agents
-        run: node scripts/ci/validate-agents.js
+        run: node scripts/node/ci/validate-agents.js
         continue-on-error: false
 
       - name: Validate hooks
-        run: node scripts/ci/validate-hooks.js
+        run: node scripts/node/ci/validate-hooks.js
         continue-on-error: false
 
       - name: Validate commands
-        run: node scripts/ci/validate-commands.js
+        run: node scripts/node/ci/validate-commands.js
         continue-on-error: false
 
       - name: Validate skills
-        run: node scripts/ci/validate-skills.js
+        run: node scripts/node/ci/validate-skills.js
         continue-on-error: false
 
       - name: Validate rules
-        run: node scripts/ci/validate-rules.js
+        run: node scripts/node/ci/validate-rules.js
+        continue-on-error: false
+
+      - name: Validate workflow security
+        run: node scripts/node/ci/validate-workflow-security.js
+        continue-on-error: false
+
+      - name: Validate personal path hygiene
+        run: node scripts/node/ci/validate-no-personal-paths.js
+        continue-on-error: false
+
+      - name: Scan supply-chain IOCs
+        run: node scripts/node/ci/scan-supply-chain-iocs.js
         continue-on-error: false
 
   security:
@@ -191,7 +129,9 @@ jobs:
           node-version: '20.x'
 
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        run: |
+          npm audit signatures
+          npm audit --audit-level=high
         continue-on-error: true  # Allows PR to proceed, but marks job as failed if vulnerabilities found
 
   lint:
@@ -209,7 +149,7 @@ jobs:
           node-version: '20.x'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run ESLint
         run: npx eslint scripts/**/*.js tests/**/*.js

@@ -150,12 +150,18 @@ everything-claude-code/
 |   |   |-- node-refactor-cleaner.md
 |   |   |-- node-doc-updater.md
 |   |-- python/              # Python agents
-|       |-- python-code-reviewer.md
-|       |-- python-reviewer.md
-|       |-- python-tdd-guide.md
-|       |-- python-planner.md
-|       |-- python-refactor-cleaner.md
-|       |-- python-doc-updater.md
+|   |   |-- fastapi-reviewer.md
+|   |   |-- python-code-reviewer.md
+|   |   |-- python-reviewer.md
+|   |   |-- python-tdd-guide.md
+|   |   |-- python-planner.md
+|   |   |-- python-refactor-cleaner.md
+|   |   |-- python-doc-updater.md
+|   |-- rust/                # Rust agents
+|   |   |-- rust-build-resolver.md
+|   |   |-- rust-reviewer.md
+|   |-- typescript/          # TypeScript/JavaScript agents
+|       |-- typescript-reviewer.md
 |
 |-- skills/           # Workflow definitions and domain knowledge
 |   |-- common/              # Language-agnostic skills
@@ -172,8 +178,12 @@ everything-claude-code/
 |   |   |-- node-tdd-workflow/
 |   |   |-- node-verification-loop/
 |   |-- python/              # Python skills
-|       |-- python-patterns/
-|       |-- python-testing/
+|   |   |-- fastapi-patterns/
+|   |   |-- python-patterns/
+|   |   |-- python-testing/
+|   |-- rust/                # Rust skills
+|       |-- rust-patterns/
+|       |-- rust-testing/
 |
 |-- commands/         # Slash commands for quick execution
 |   |-- common/              # Language-agnostic commands
@@ -181,15 +191,22 @@ everything-claude-code/
 |   |-- node/                # Node.js commands
 |   |   |-- node-tdd.md, node-build-fix.md, node-e2e.md, ...
 |   |-- python/              # Python commands
-|       |-- python-review.md
+|   |   |-- python-review.md
+|   |   |-- fastapi-review.md
+|   |-- rust/                # Rust commands
+|       |-- rust-build.md, rust-review.md, rust-test.md
 |
 |-- rules/            # Always-follow guidelines (copy to ~/.claude/rules/)
 |   |-- common/              # Language-agnostic rules
-|   |   |-- agents.md, performance.md
+|   |   |-- agents.md, coding-style.md, security.md, testing.md, ...
 |   |-- node/                # Node.js rules
 |   |   |-- node-coding-style.md, node-security.md, node-testing.md, ...
 |   |-- python/              # Python rules
-|       |-- python-coding-style.md, python-git-workflow.md, python-hooks.md
+|   |   |-- python-coding-style.md, python-fastapi.md, python-security.md, ...
+|   |-- rust/                # Rust rules
+|   |   |-- rust-coding-style.md, rust-security.md, rust-testing.md, ...
+|   |-- typescript/          # TypeScript/JavaScript rules
+|       |-- typescript-coding-style.md, typescript-security.md, ...
 |
 |-- hooks/            # Trigger-based automations
 |   |-- common/              # Language-agnostic hooks
@@ -210,6 +227,11 @@ everything-claude-code/
 |       |-- lib/                 # Shared utilities
 |       |-- hooks/               # Hook implementations
 |       |-- ci/                  # CI validation scripts
+|
+|-- docs/             # Repo structure and validation docs
+|   |-- COMMAND-AGENT-MAP.md
+|   |-- SECURITY-VALIDATION.md
+|   |-- SKILL-PLACEMENT-POLICY.md
 |
 |-- tests/            # Test suite
 |   |-- lib/                     # Library tests
