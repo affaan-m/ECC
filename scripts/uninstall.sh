@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
+CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
 CATEGORIES=(agents skills commands rules)
 
 # Colors
@@ -65,7 +66,20 @@ EOF
 
 log_rm()       { echo -e "  ${RED}RM${NC}    $1"; }
 log_dry()      { echo -e "  ${CYAN}DRY${NC}   $1"; }
+log_info()     { echo -e "  ${CYAN}INFO${NC}  $1"; }
 log_not_found() { echo -e "  ${YELLOW}MISS${NC}  $1 (not installed)"; }
+
+codex_agents_label() {
+    if [[ -n "${CODEX_HOME:-}" ]]; then
+        echo "${CODEX_DIR}/AGENTS.md"
+    else
+        echo "~/.codex/AGENTS.md"
+    fi
+}
+
+codex_is_available() {
+    [[ -n "${CODEX_HOME:-}" ]] || [[ -d "$CODEX_DIR" ]] || command -v codex &>/dev/null
+}
 
 # Remove a single file
 remove_file() {
@@ -185,10 +199,13 @@ if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     remove_file "${CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
 
-    # Also remove Codex AGENTS.md (~/.codex/AGENTS.md)
-    CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
-    remove_file "${CODEX_DIR}/AGENTS.md" "~/.codex/AGENTS.md"
-    cleanup_empty_dir "$CODEX_DIR" "~/.codex/"
+    # Also remove Codex AGENTS.md when Codex is installed/configured.
+    if codex_is_available; then
+        remove_file "${CODEX_DIR}/AGENTS.md" "$(codex_agents_label)"
+        cleanup_empty_dir "$CODEX_DIR" "$(dirname "$(codex_agents_label)")/"
+    else
+        log_info "Codex not detected; skipping Codex AGENTS.md"
+    fi
     echo ""
 fi
 

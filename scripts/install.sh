@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
+CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
 CATEGORIES=(agents skills commands rules)
 
 # Colors
@@ -69,7 +70,20 @@ EOF
 log_copy() { echo -e "  ${GREEN}COPY${NC}  $1 → $2"; }
 log_skip() { echo -e "  ${YELLOW}SKIP${NC}  $1 (already exists, use -f to overwrite)"; }
 log_dry()  { echo -e "  ${CYAN}DRY${NC}   $1 → $2"; }
+log_info() { echo -e "  ${CYAN}INFO${NC}  $1"; }
 log_warn() { echo -e "  ${RED}WARN${NC}  $1"; }
+
+codex_agents_label() {
+    if [[ -n "${CODEX_HOME:-}" ]]; then
+        echo "${CODEX_DIR}/AGENTS.md"
+    else
+        echo "~/.codex/AGENTS.md"
+    fi
+}
+
+codex_is_available() {
+    [[ -n "${CODEX_HOME:-}" ]] || [[ -d "$CODEX_DIR" ]] || command -v codex &>/dev/null
+}
 
 # Copy a single file
 copy_file() {
@@ -257,11 +271,16 @@ if [[ -f "$global_claude" ]]; then
     copy_file "$global_claude" "${CLAUDE_DIR}/CLAUDE.md" \
         "global/CLAUDE.md" "CLAUDE.md"
 
-    # Also install as Codex AGENTS.md (~/.codex/AGENTS.md)
-    CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
-    mkdir -p "$CODEX_DIR"
-    copy_file "$global_claude" "${CODEX_DIR}/AGENTS.md" \
-        "global/CLAUDE.md" "~/.codex/AGENTS.md"
+    # Also install as Codex AGENTS.md when Codex is installed/configured.
+    if codex_is_available; then
+        if ! $DRY_RUN; then
+            mkdir -p "$CODEX_DIR"
+        fi
+        copy_file "$global_claude" "${CODEX_DIR}/AGENTS.md" \
+            "global/CLAUDE.md" "$(codex_agents_label)"
+    else
+        log_info "Codex not detected; skipping Codex AGENTS.md"
+    fi
     echo ""
 fi
 
