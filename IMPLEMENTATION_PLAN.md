@@ -14,4 +14,4 @@
 **Goal**: Bring in selected upstream validation/security utilities and structure docs that support the curated language surface.
 **Success Criteria**: Security/verification additions are scoped to existing project tooling, docs describe the fork's nested layout, and references do not point to excluded upstream surfaces.
 **Tests**: Relevant validator/test suite and manual documentation reference check.
-**Status**: In Progress
+**Status**: Complete

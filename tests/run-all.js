@@ -18,6 +18,10 @@ const testFiles = [
   'hooks/suggest-compact.test.js',
   'integration/hooks.test.js',
   'ci/validators.test.js',
+  'ci/no-personal-paths.test.js',
+  'ci/validate-workflow-security.test.js',
+  'ci/scan-supply-chain-iocs.test.js',
+  'ci/supply-chain-advisory-sources.test.js',
   'scripts/setup-package-manager.test.js',
   'scripts/skill-create-output.test.js'
 ];

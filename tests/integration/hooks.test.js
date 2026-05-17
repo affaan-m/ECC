@@ -83,10 +83,12 @@ function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
  */
 function runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
-    // Parse command: "bun -e '...'" or "python3 -c '...'" or "node -e '...'"
+    // Parse command: "bun -e '...'", "uv run python3 -c '...'",
+    // "python3 -c '...'", or "node -e '...'"
     let runner, flag, code;
     const bunMatch = command.match(/^bun -e "(.+)"$/s);
     const nodeMatch = command.match(/^node -e "(.+)"$/s);
+    const uvPythonMatch = command.match(/^uv run python3 -c "(.+)"$/s);
     const pythonMatch = command.match(/^python3 -c "(.+)"$/s);
 
     if (bunMatch) {
@@ -94,6 +96,8 @@ function runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
       runner = 'node'; flag = '-e'; code = bunMatch[1];
     } else if (nodeMatch) {
       runner = 'node'; flag = '-e'; code = nodeMatch[1];
+    } else if (uvPythonMatch) {
+      runner = 'python3'; flag = '-c'; code = uvPythonMatch[1];
     } else if (pythonMatch) {
       runner = 'python3'; flag = '-c'; code = pythonMatch[1];
     } else {
