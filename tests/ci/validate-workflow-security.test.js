@@ -127,6 +127,22 @@ function run() {
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   })) passed++; else failed++;
 
+  // When a checkout step matches both the expression-based rule
+  // (`github.event.pull_request.head.sha`) and the refPattern fallback
+  // (`refs/pull/...`), only one violation should be emitted — the
+  // expression match is the more specific signal and printing both would
+  // duplicate an otherwise identical ERROR line.
+
+  if (test('emits a single violation when both expressionPattern and refPattern match the same step', () => {
+    const result = runValidator({
+      'unsafe-pr-target-both.yml': `name: Unsafe\non:\n  pull_request_target:\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: refs/pull/\${{ github.event.pull_request.head.sha }}/merge\n          persist-credentials: false\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail');
+    // Count ERROR: lines for this rule's description. Should be exactly 1.
+    const matches = (result.stderr || '').match(/ERROR:.*pull_request_target must not checkout an untrusted pull_request head ref/g) || [];
+    assert.strictEqual(matches.length, 1, `Expected exactly 1 violation, got ${matches.length}: ${result.stderr}`);
+  })) passed++; else failed++;
+
   if (test('rejects shared cache use in pull_request_target workflows', () => {
     const result = runValidator({
       'unsafe-pr-target-cache.yml': `name: Unsafe\non:\n  pull_request_target:\n    branches: [main]\njobs:\n  inspect:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache@v5\n        with:\n          path: ~/.npm\n          key: cache\n      - run: echo inspect\n`,
@@ -186,7 +202,10 @@ function run() {
   // `permissions: write-all` is GitHub Actions' shorthand for granting every
   // scope write access. The named-scope pattern only catches `contents: write`,
   // `issues: write`, etc., so workflows that opt into write-all were silently
-  // exempted from the persist-credentials and --ignore-scripts gates.
+  // exempted from the persist-credentials gate (the lifecycle-script gate
+  // already fires unconditionally for every workflow). The tests below
+  // exercise the persist-credentials path specifically — that's the gate the
+  // WRITE_ALL_PATTERN OR-clause newly activates.
 
   if (test('rejects checkout credential persistence in workflows with permissions: write-all', () => {
     const result = runValidator({
@@ -196,15 +215,27 @@ function run() {
     assert.match(result.stderr, /write permissions must disable checkout credential persistence/);
   })) passed++; else failed++;
 
-  if (test('rejects npm ci without ignore-scripts in workflows with permissions: write-all', () => {
+  // Quoted YAML forms (`"write-all"` and `'write-all'`) are valid YAML for the
+  // same scalar value. Verify the WRITE_ALL_PATTERN regex covers them — without
+  // the quote markers it silently slips the same persist-credentials gate.
+
+  if (test('rejects double-quoted permissions: "write-all"', () => {
     const result = runValidator({
-      'unsafe-write-all-install.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions: write-all\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          persist-credentials: false\n      - run: npm ci\n`,
+      'unsafe-write-all-double.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions: "write-all"\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci --ignore-scripts\n`,
     });
-    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on write-all + npm ci without --ignore-scripts');
-    assert.match(result.stderr, /npm ci must include --ignore-scripts/);
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on quoted write-all + credential-persisting checkout');
+    assert.match(result.stderr, /write permissions must disable checkout credential persistence/);
   })) passed++; else failed++;
 
-  if (test('allows compliant workflow with permissions: write-all', () => {
+  if (test('rejects single-quoted permissions: \'write-all\'', () => {
+    const result = runValidator({
+      'unsafe-write-all-single.yml': `name: Unsafe\non:\n  workflow_dispatch:\npermissions: 'write-all'\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci --ignore-scripts\n`,
+    });
+    assert.notStrictEqual(result.status, 0, 'Expected validator to fail on single-quoted write-all + credential-persisting checkout');
+    assert.match(result.stderr, /write permissions must disable checkout credential persistence/);
+  })) passed++; else failed++;
+
+  if (test('allows compliant workflow with permissions: write-all (persist-credentials: false)', () => {
     const result = runValidator({
       'safe-write-all.yml': `name: Safe\non:\n  workflow_dispatch:\npermissions: write-all\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          persist-credentials: false\n      - run: npm ci --ignore-scripts\n`,
     });
