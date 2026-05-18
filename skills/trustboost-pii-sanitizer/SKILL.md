@@ -96,11 +96,14 @@ def sanitize_before_llm(text: str, context: str = "general") -> str:
     try:
         r = requests.post(
             "https://api.trustboost.dev/sanitize/preview",
-            json={"text": text},
+            json={"text": text, "context": context},
             timeout=30
         )
         r.raise_for_status()
-        return r.json().get("sanitized_content", text)
+        result = r.json()
+        if "sanitized_content" not in result:
+            return "[BLOCKED: unexpected response shape]"
+        return result["sanitized_content"]
     except Exception:
         return "[BLOCKED: sanitization failed]"
 
