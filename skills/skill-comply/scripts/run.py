@@ -54,6 +54,16 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Canonicalize and validate skill path to prevent path traversal
+    base_dir = Path.cwd().resolve()
+    skill_path = args.skill.resolve()
+    try:
+        skill_path.relative_to(base_dir)
+    except ValueError:
+        logger.error("Error: Skill file path traverses outside working directory: %s", args.skill)
+        sys.exit(1)
+    args.skill = skill_path
+
     if not args.skill.is_file():
         logger.error("Error: Skill file not found: %s", args.skill)
         sys.exit(1)
