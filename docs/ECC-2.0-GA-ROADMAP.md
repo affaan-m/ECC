@@ -87,10 +87,13 @@ As of 2026-05-19:
   (`owner-approval-packet-2026-05-19.md`), preview-pack smoke digest
   `790430aef4a8`, local 2550-test suite, PR #2001 merge and GitHub Actions run
   `26102500291` success, PR #2002's owner-approval dashboard gate refresh and
-  GitHub Actions run `26103853507`, plus PR #2004's Linear readiness evidence
-  sync and GitHub Actions run `26105012698`. The May 19 Linear sync document
-  remains the current external project status surface, and the May 18 evidence
-  remains the detailed supply-chain and publication-path snapshot.
+  GitHub Actions run `26103853507`, PR #2004's Linear readiness evidence sync
+  and GitHub Actions run `26105012698`, plus PR #2005's post-PR #2004
+  evidence refresh and GitHub Actions run `26106321921`. The May 19 Linear
+  sync document remains the current external project status surface, and the
+  supply-chain gate now also records the `@types/node@25.7.0` pin and
+  `brace-expansion` lock refresh needed for current npm audit/signature
+  verification.
 - `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md`
   regenerates the ITO-44 prompt-to-artifact dashboard from live platform audit
   evidence: PR queue, issue queue, discussion queue, local worktree gate,
@@ -118,7 +121,7 @@ As of 2026-05-19:
   finding evidence paths, ECC-Tools #78 harness policy-route linking, PR #1947
   supply-chain protection, and May 16 release-evidence
   refresh.
-- `npm run harness:audit -- --format json` reports 70/70 on current `main`.
+- `npm run harness:audit -- --format json` reports 80/80 on current `main`.
 - `npm run observability:ready` reports 21/21 readiness on current `main`,
   including the GitHub/Linear/handoff/roadmap progress-sync contract.
 - GitHub CI run `26017368895` completed successfully for

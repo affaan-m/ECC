@@ -462,7 +462,7 @@ test('publication readiness checklist gates public release actions on evidence',
   assert.ok(source.includes('release-name-plugin-publication-checklist-2026-05-18.md'));
   assert.ok(source.includes('Release name and plugin publication checklist'));
   assert.ok(may15Evidence.includes('| Trunk discussions | GraphQL discussion count and maintainer-touch sweep | 58 total discussions;'));
-  assert.ok(source.includes('platform audit sampled 58 trunk discussions'));
+  assert.ok(source.includes('platform audit sampled 59 trunk discussions'));
   assert.ok(source.includes('0 needing maintainer touch'));
   assert.ok(source.includes('discussion-response-playbook.md'));
   for (const expected of [
