@@ -114,7 +114,15 @@ function isDangerousInvisibleCodePoint(codePoint) {
     (codePoint >= 0x202A && codePoint <= 0x202E) ||
     (codePoint >= 0x2066 && codePoint <= 0x2069) ||
     (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
-    (codePoint >= 0xE0100 && codePoint <= 0xE01EF)
+    (codePoint >= 0xE0100 && codePoint <= 0xE01EF) ||
+    // Unicode Tag block (U+E0000–U+E007F). Tag characters were proposed
+    // for language tagging in Unicode 3.1 and have been deprecated since
+    // Unicode 5.1, so no legitimate text uses them. They are the canonical
+    // vector for "ASCII smuggling" / "Tag smuggling" prompt injection:
+    // an attacker hides instructions inside ASCII-looking strings (PR
+    // bodies, SKILL.md, frontmatter), the LLM consumes the tag bytes,
+    // and the human reviewer sees nothing.
+    (codePoint >= 0xE0000 && codePoint <= 0xE007F)
   );
 }
 
