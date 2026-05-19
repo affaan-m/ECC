@@ -38,8 +38,9 @@ test('skill-health command uses shared inline resolver in all shell snippets', (
 });
 
 test('inline resolver covers current and legacy marketplace plugin roots', () => {
-  assert.ok(INLINE_RESOLVE.includes('"marketplaces","ecc"'));
-  assert.ok(INLINE_RESOLVE.includes('"marketplaces","everything-claude-code"'));
+  assert.ok(INLINE_RESOLVE.includes("'marketplaces','ecc'"));
+  assert.ok(INLINE_RESOLVE.includes("'marketplaces','everything-claude-code'"));
+  assert.ok(!INLINE_RESOLVE.includes('\\"'), 'Inline resolver should not require escaped double quotes');
 });
 
 console.log(`Passed: ${passed}`);

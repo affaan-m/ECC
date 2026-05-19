@@ -532,6 +532,10 @@ function runTests() {
         'hooks/hooks.json should point the Bash preflight contract at the consolidated dispatcher'
       );
       assert.ok(
+        !installedBashDispatcherEntry.hooks[0].command.includes('\\"'),
+        'hooks/hooks.json should avoid escaped double quotes that break Windows Git Bash parsing'
+      );
+      assert.ok(
         !installedBashDispatcherEntry.hooks[0].command.includes('${CLAUDE_PLUGIN_ROOT}'),
         'hooks/hooks.json should not retain raw CLAUDE_PLUGIN_ROOT shell placeholders after install'
       );

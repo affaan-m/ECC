@@ -2514,6 +2514,29 @@ async function runTests() {
   else failed++;
 
   if (
+    test('inline hook bootstraps avoid escaped double quotes for Git Bash', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          for (const hook of entry.hooks) {
+            const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
+            if (typeof commandText === 'string' && commandText.startsWith('node -e ')) {
+              assert.ok(
+                !commandText.includes('\\"'),
+                `${eventName}/${entry.id || entry.matcher || 'hook'} should not ship escaped double quotes in node -e payload`,
+              );
+            }
+          }
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('all hook commands use node or approved shell wrappers', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
