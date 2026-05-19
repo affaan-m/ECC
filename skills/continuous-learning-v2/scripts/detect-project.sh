@@ -75,16 +75,42 @@ _clv2_normalize_remote_url() {
   fi
 }
 
+_clv2_main_worktree_root() {
+  local root="$1"
+  [ -z "$root" ] && return 0
+  command -v git >/dev/null 2>&1 || return 0
+
+  git -C "$root" worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
+    case "$line" in
+      worktree\ *)
+        printf '%s\n' "${line#worktree }"
+        break
+        ;;
+    esac
+  done
+}
+
 _clv2_detect_project() {
   local project_root=""
   local project_name=""
   local project_id=""
   local source_hint=""
 
+  if [ "${CLV2_NO_PROJECT:-0}" = "1" ]; then
+    _CLV2_PROJECT_ID="global"
+    _CLV2_PROJECT_NAME="global"
+    _CLV2_PROJECT_ROOT=""
+    _CLV2_PROJECT_DIR="${_CLV2_HOMUNCULUS_DIR}"
+    mkdir -p "$_CLV2_PROJECT_DIR"
+    return 0
+  fi
+
   # 1. Try CLAUDE_PROJECT_DIR env var
-  if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
-    project_root="$CLAUDE_PROJECT_DIR"
-    source_hint="env"
+  if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ] && command -v git &>/dev/null; then
+    project_root=$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -n "$project_root" ]; then
+      source_hint="env"
+    fi
   fi
 
   # 2. Try git repo root from CWD (only if git is available)
@@ -101,6 +127,7 @@ _clv2_detect_project() {
     _CLV2_PROJECT_NAME="global"
     _CLV2_PROJECT_ROOT=""
     _CLV2_PROJECT_DIR="${_CLV2_HOMUNCULUS_DIR}"
+    mkdir -p "$_CLV2_PROJECT_DIR"
     return 0
   fi
 
@@ -133,7 +160,14 @@ _clv2_detect_project() {
     normalized_remote=$(_clv2_normalize_remote_url "$remote_url")
   fi
 
-  local hash_input="${normalized_remote:-${remote_url:-$project_root}}"
+  local fallback_root="$project_root"
+  if [ -z "$remote_url" ]; then
+    local main_worktree_root
+    main_worktree_root=$(_clv2_main_worktree_root "$project_root")
+    [ -n "$main_worktree_root" ] && fallback_root="$main_worktree_root"
+  fi
+
+  local hash_input="${normalized_remote:-${remote_url:-$fallback_root}}"
   # Prefer Python for consistent SHA256 behavior across shells/platforms.
   # Pass the value via env var and encode as UTF-8 inside Python so the hash
   # is locale-independent (shells vary between UTF-8 / CP932 / CP1252, which

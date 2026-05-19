@@ -116,7 +116,13 @@ except(KeyError, TypeError, ValueError):
 # If cwd was provided in stdin, use it for project detection
 if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
   _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
-  export CLAUDE_PROJECT_DIR="${_GIT_ROOT:-$STDIN_CWD}"
+  if [ -n "$_GIT_ROOT" ]; then
+    export CLAUDE_PROJECT_DIR="$_GIT_ROOT"
+    unset CLV2_NO_PROJECT
+  else
+    unset CLAUDE_PROJECT_DIR
+    export CLV2_NO_PROJECT=1
+  fi
 fi
 
 # ─────────────────────────────────────────────

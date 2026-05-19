@@ -135,8 +135,8 @@ test('observe.sh resolves cwd to git root before setting CLAUDE_PROJECT_DIR', ()
     'observe.sh should resolve STDIN_CWD to git repo root'
   );
   assert.ok(
-    content.includes('${_GIT_ROOT:-$STDIN_CWD}'),
-    'observe.sh should fall back to raw cwd when git root is unavailable'
+    content.includes('export CLV2_NO_PROJECT=1'),
+    'observe.sh should mark non-git cwd payloads as global instead of registering raw cwd'
   );
 });
 
@@ -250,7 +250,7 @@ test('observe.sh falls back to CLAUDE_HOOK_EVENT_NAME when no phase argument is 
   }
 });
 
-test('observe.sh keeps the raw cwd when the directory is not inside a git repo', () => {
+test('observe.sh records non-git cwd payloads globally without project registry side effects', () => {
   const testRoot = createTempDir();
 
   try {
@@ -262,12 +262,17 @@ test('observe.sh keeps the raw cwd when the directory is not inside a git repo',
     const result = runObserve({ homeDir, cwd: nonGitDir });
     assert.strictEqual(result.status, 0, result.stderr);
 
-    const { metadata } = readSingleProjectMetadata(homeDir);
-    assert.strictEqual(
-      normalizeComparablePath(metadata.root),
-      normalizeComparablePath(nonGitDir),
-      'project metadata root should stay on the non-git cwd'
+    const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+    const projectsDir = path.join(homunculusDir, 'projects');
+    const registryPath = path.join(homunculusDir, 'projects.json');
+    const observationsPath = path.join(homunculusDir, 'observations.jsonl');
+
+    assert.ok(!fs.existsSync(registryPath), 'non-git cwd should not create projects.json');
+    assert.ok(
+      !fs.existsSync(projectsDir) || fs.readdirSync(projectsDir).length === 0,
+      'non-git cwd should not create project directories'
     );
+    assert.ok(fs.existsSync(observationsPath), 'non-git cwd should still record a global observation');
   } finally {
     cleanupDir(testRoot);
   }

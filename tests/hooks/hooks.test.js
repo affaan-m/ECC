@@ -3300,11 +3300,14 @@ async function runTests() {
 
         assert.strictEqual(result.code, 0, `observe.sh should exit successfully, stderr: ${result.stderr}`);
 
-        const projectsDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus', 'projects');
-        const projectIds = fs.readdirSync(projectsDir);
-        assert.strictEqual(projectIds.length, 1, 'observe.sh should create one project-scoped observation directory');
+        const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+        const projectsDir = path.join(homunculusDir, 'projects');
+        assert.ok(
+          !fs.existsSync(projectsDir) || fs.readdirSync(projectsDir).length === 0,
+          'observe.sh should not create a project-scoped directory for a non-git cwd'
+        );
 
-        const observationsPath = path.join(projectsDir, projectIds[0], 'observations.jsonl');
+        const observationsPath = path.join(homunculusDir, 'observations.jsonl');
         const observations = fs.readFileSync(observationsPath, 'utf8').trim().split('\n').filter(Boolean);
         assert.ok(observations.length > 0, 'observe.sh should append at least one observation');
 

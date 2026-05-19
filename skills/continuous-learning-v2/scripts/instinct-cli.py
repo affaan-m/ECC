@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import re
+import shutil
 import urllib.request
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -194,26 +195,64 @@ def _yaml_quote(value: str) -> str:
 # Project Detection (Python equivalent of detect-project.sh)
 # ─────────────────────────────────────────────
 
+def _git_repo_root(cwd: Optional[str] = None) -> Optional[str]:
+    args = ["git"]
+    if cwd:
+        args.extend(["-C", cwd])
+    args.extend(["rev-parse", "--show-toplevel"])
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+def _main_worktree_root(project_root: str) -> str:
+    """Return the main worktree root when project_root is a linked worktree."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", project_root, "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=5
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return project_root
+
+    if result.returncode != 0:
+        return project_root
+
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            main_root = line.split(" ", 1)[1].strip()
+            return main_root or project_root
+    return project_root
+
+
 def detect_project() -> dict:
     """Detect current project context. Returns dict with id, name, root, project_dir."""
     project_root = None
 
+    if os.environ.get("CLV2_NO_PROJECT") == "1":
+        return {
+            "id": "global",
+            "name": "global",
+            "root": "",
+            "project_dir": HOMUNCULUS_DIR,
+            "instincts_personal": GLOBAL_PERSONAL_DIR,
+            "instincts_inherited": GLOBAL_INHERITED_DIR,
+            "evolved_dir": GLOBAL_EVOLVED_DIR,
+            "observations_file": GLOBAL_OBSERVATIONS_FILE,
+        }
+
     # 1. CLAUDE_PROJECT_DIR env var
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_dir and os.path.isdir(env_dir):
-        project_root = env_dir
+        project_root = _git_repo_root(env_dir)
 
     # 2. git repo root
     if not project_root:
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                project_root = result.stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+        project_root = _git_repo_root()
 
     # Normalize: strip trailing slashes to keep basename and hash stable
     if project_root:
@@ -250,9 +289,10 @@ def detect_project() -> dict:
     if remote_url:
         remote_url = _strip_remote_credentials(remote_url)
 
+    fallback_root = _main_worktree_root(project_root) if not remote_url else project_root
     legacy_hash_source = remote_url if remote_url else project_root
     normalized_remote = _normalize_remote_url(remote_url) if remote_url else ""
-    hash_source = normalized_remote if normalized_remote else legacy_hash_source
+    hash_source = normalized_remote if normalized_remote else (remote_url if remote_url else fallback_root)
     project_id = _project_hash(hash_source)
 
     project_dir = PROJECTS_DIR / project_id
@@ -352,6 +392,26 @@ def load_registry() -> dict:
         return {}
 
 
+def _write_registry(registry: dict) -> None:
+    """Write the project registry atomically."""
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(registry, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_file, REGISTRY_FILE)
+
+
+def _validate_project_id(project_id: str) -> bool:
+    if not project_id or len(project_id) > 128:
+        return False
+    if "/" in project_id or "\\" in project_id or ".." in project_id:
+        return False
+    return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", project_id))
+
+
 # ─────────────────────────────────────────────
 # Instinct Parser
 # ─────────────────────────────────────────────
@@ -434,6 +494,96 @@ def _load_instincts_from_dir(directory: Path, source_type: str, scope_label: str
         except Exception as e:
             print(f"Warning: Failed to parse {file}: {e}", file=sys.stderr)
     return instincts
+
+
+def _project_counts(project_id: str) -> dict:
+    project_dir = PROJECTS_DIR / project_id
+    personal_dir = project_dir / "instincts" / "personal"
+    inherited_dir = project_dir / "instincts" / "inherited"
+    observations_file = project_dir / "observations.jsonl"
+
+    personal_count = len(_load_instincts_from_dir(personal_dir, "personal", "project"))
+    inherited_count = len(_load_instincts_from_dir(inherited_dir, "inherited", "project"))
+    observations_count = 0
+    if observations_file.exists():
+        try:
+            with open(observations_file, encoding="utf-8") as f:
+                observations_count = sum(1 for _ in f)
+        except OSError:
+            observations_count = 0
+
+    return {
+        "personal": personal_count,
+        "inherited": inherited_count,
+        "observations": observations_count,
+        "total": personal_count + inherited_count + observations_count,
+    }
+
+
+def _remove_project_storage(project_id: str) -> None:
+    project_dir = PROJECTS_DIR / project_id
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+
+
+def _project_instinct_ids(project_dir: Path, source_type: str) -> set[str]:
+    instinct_dir = project_dir / "instincts" / source_type
+    return {
+        inst.get("id")
+        for inst in _load_instincts_from_dir(instinct_dir, source_type, "project")
+        if inst.get("id")
+    }
+
+
+def _merge_instinct_dir(from_dir: Path, into_dir: Path, existing_ids: set[str]) -> tuple[int, int]:
+    moved = 0
+    skipped = 0
+    if not from_dir.exists():
+        return moved, skipped
+
+    into_dir.mkdir(parents=True, exist_ok=True)
+    for file_path in sorted(from_dir.iterdir()):
+        if not file_path.is_file() or file_path.suffix.lower() not in ALLOWED_INSTINCT_EXTENSIONS:
+            continue
+        try:
+            instincts = parse_instinct_file(file_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            instincts = []
+        instinct_ids = [inst.get("id") for inst in instincts if inst.get("id")]
+        if any(instinct_id in existing_ids for instinct_id in instinct_ids):
+            skipped += 1
+            continue
+
+        target_path = into_dir / file_path.name
+        if target_path.exists():
+            target_path = into_dir / f"{file_path.stem}-{_project_hash(str(file_path))}{file_path.suffix}"
+        shutil.copy2(file_path, target_path)
+        existing_ids.update(instinct_ids)
+        moved += 1
+
+    return moved, skipped
+
+
+def _append_observations(from_project_dir: Path, into_project_dir: Path) -> int:
+    from_file = from_project_dir / "observations.jsonl"
+    if not from_file.exists():
+        return 0
+
+    into_file = into_project_dir / "observations.jsonl"
+    into_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lines = from_file.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return 0
+
+    if not lines:
+        return 0
+
+    with open(into_file, "a", encoding="utf-8") as f:
+        for line in lines:
+            if line.strip():
+                f.write(line.rstrip("\n") + "\n")
+    return len([line for line in lines if line.strip()])
 
 
 def load_all_instincts(project: dict, include_global: bool = True) -> list[dict]:
@@ -1180,7 +1330,14 @@ def _promote_auto(project: dict, force: bool, dry_run: bool) -> int:
 # ─────────────────────────────────────────────
 
 def cmd_projects(args) -> int:
-    """List all known projects and their instinct counts."""
+    """List or maintain known projects and their instinct counts."""
+    if getattr(args, "project_action", None) == "delete":
+        return _cmd_projects_delete(args)
+    if getattr(args, "project_action", None) == "merge":
+        return _cmd_projects_merge(args)
+    if getattr(args, "project_action", None) == "gc":
+        return _cmd_projects_gc(args)
+
     registry = load_registry()
 
     if not registry:
@@ -1222,6 +1379,143 @@ def cmd_projects(args) -> int:
     print(f"    Instincts: {global_personal} personal, {global_inherited} inherited")
 
     print(f"\n{'='*60}\n")
+    return 0
+
+
+def _cmd_projects_delete(args) -> int:
+    registry = load_registry()
+    project_id = args.project_id
+
+    if not _validate_project_id(project_id):
+        print(f"Invalid project ID: {project_id}", file=sys.stderr)
+        return 1
+    if project_id not in registry and not (PROJECTS_DIR / project_id).exists():
+        print(f"Project '{project_id}' not found.", file=sys.stderr)
+        return 1
+
+    counts = _project_counts(project_id)
+    print(f"Project: {project_id}")
+    print(f"  Instincts: {counts['personal']} personal, {counts['inherited']} inherited")
+    print(f"  Observations: {counts['observations']} events")
+
+    if args.dry_run:
+        print(f"\n[DRY RUN] Would delete project '{project_id}' from registry and storage.")
+        return 0
+
+    if not args.force:
+        if counts["total"] > 0:
+            print("\nWarning: this project has instincts or observations.")
+        response = input(f"Delete project '{project_id}'? [y/N] ")
+        if response.lower() != "y":
+            print("Cancelled.")
+            return 0
+
+    registry.pop(project_id, None)
+    _write_registry(registry)
+    _remove_project_storage(project_id)
+    print(f"\nDeleted project '{project_id}'.")
+    return 0
+
+
+def _cmd_projects_gc(args) -> int:
+    registry = load_registry()
+    candidates = [
+        project_id
+        for project_id in sorted(registry)
+        if _validate_project_id(project_id) and _project_counts(project_id)["total"] == 0
+    ]
+
+    if not candidates:
+        print("No zero-value project entries found.")
+        return 0
+
+    print(f"Zero-value project entries: {len(candidates)}")
+    for project_id in candidates:
+        pinfo = registry.get(project_id, {})
+        print(f"  - {pinfo.get('name', project_id)} [{project_id}]")
+
+    if args.dry_run:
+        print(f"\n[DRY RUN] Would delete {len(candidates)} project entr{'y' if len(candidates) == 1 else 'ies'}.")
+        return 0
+
+    if not args.force:
+        response = input(f"\nDelete {len(candidates)} zero-value project entr{'y' if len(candidates) == 1 else 'ies'}? [y/N] ")
+        if response.lower() != "y":
+            print("Cancelled.")
+            return 0
+
+    for project_id in candidates:
+        registry.pop(project_id, None)
+        _remove_project_storage(project_id)
+    _write_registry(registry)
+    print(f"\nDeleted {len(candidates)} zero-value project entr{'y' if len(candidates) == 1 else 'ies'}.")
+    return 0
+
+
+def _cmd_projects_merge(args) -> int:
+    from_id = args.from_id
+    into_id = args.into_id
+
+    if not _validate_project_id(from_id) or not _validate_project_id(into_id):
+        print("Invalid project ID.", file=sys.stderr)
+        return 1
+    if from_id == into_id:
+        print("Cannot merge a project into itself.", file=sys.stderr)
+        return 1
+
+    registry = load_registry()
+    if from_id not in registry:
+        print(f"Source project '{from_id}' not found.", file=sys.stderr)
+        return 1
+    if into_id not in registry:
+        print(f"Destination project '{into_id}' not found.", file=sys.stderr)
+        return 1
+
+    from_counts = _project_counts(from_id)
+    into_counts = _project_counts(into_id)
+    print(f"Merge: {from_id} -> {into_id}")
+    print(f"  Source: {from_counts['personal']} personal, {from_counts['inherited']} inherited, {from_counts['observations']} observations")
+    print(f"  Destination before merge: {into_counts['personal']} personal, {into_counts['inherited']} inherited, {into_counts['observations']} observations")
+
+    if args.dry_run:
+        print("\n[DRY RUN] Would merge source project into destination and remove source.")
+        return 0
+
+    if not args.force:
+        response = input(f"\nMerge '{from_id}' into '{into_id}' and remove source? [y/N] ")
+        if response.lower() != "y":
+            print("Cancelled.")
+            return 0
+
+    from_project_dir = PROJECTS_DIR / from_id
+    into_project_dir = PROJECTS_DIR / into_id
+    into_project_dir.mkdir(parents=True, exist_ok=True)
+
+    personal_existing = _project_instinct_ids(into_project_dir, "personal")
+    inherited_existing = _project_instinct_ids(into_project_dir, "inherited")
+    personal_moved, personal_skipped = _merge_instinct_dir(
+        from_project_dir / "instincts" / "personal",
+        into_project_dir / "instincts" / "personal",
+        personal_existing,
+    )
+    inherited_moved, inherited_skipped = _merge_instinct_dir(
+        from_project_dir / "instincts" / "inherited",
+        into_project_dir / "instincts" / "inherited",
+        inherited_existing,
+    )
+    observations_moved = _append_observations(from_project_dir, into_project_dir)
+
+    registry.pop(from_id, None)
+    destination = registry.get(into_id, {})
+    destination["last_seen"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    registry[into_id] = destination
+    _write_registry(registry)
+    _remove_project_storage(from_id)
+
+    print("\nMerged project registry entry.")
+    print(f"  Moved instincts: {personal_moved + inherited_moved}")
+    print(f"  Skipped duplicate instincts: {personal_skipped + inherited_skipped}")
+    print(f"  Appended observations: {observations_moved}")
     return 0
 
 
@@ -1486,6 +1780,19 @@ def main() -> int:
 
     # Projects (new in v2.1)
     projects_parser = subparsers.add_parser('projects', help='List known projects and instinct counts')
+    projects_subparsers = projects_parser.add_subparsers(dest='project_action')
+    projects_delete = projects_subparsers.add_parser('delete', help='Delete a project registry entry')
+    projects_delete.add_argument('project_id', help='Project ID to delete')
+    projects_delete.add_argument('--dry-run', action='store_true', help='Preview without deleting')
+    projects_delete.add_argument('--force', action='store_true', help='Skip confirmation')
+    projects_merge = projects_subparsers.add_parser('merge', help='Merge one project registry entry into another')
+    projects_merge.add_argument('from_id', help='Source project ID')
+    projects_merge.add_argument('into_id', help='Destination project ID')
+    projects_merge.add_argument('--dry-run', action='store_true', help='Preview without merging')
+    projects_merge.add_argument('--force', action='store_true', help='Skip confirmation')
+    projects_gc = projects_subparsers.add_parser('gc', help='Delete zero-value project registry entries')
+    projects_gc.add_argument('--dry-run', action='store_true', help='Preview without deleting')
+    projects_gc.add_argument('--force', action='store_true', help='Skip confirmation')
 
     # Prune (pending instinct TTL)
     prune_parser = subparsers.add_parser('prune', help='Delete pending instincts older than TTL')
