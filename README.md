@@ -1,8 +1,8 @@
 **Language:** English | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md) | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md)
 
-# Everything Claude Code
+# ECC
 
-![Everything Claude Code — the performance system for AI agent harnesses](assets/hero.png)
+![ECC - the harness-native operator system for agentic work](assets/hero.png)
 
 [![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
 [![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
@@ -34,7 +34,7 @@
 
 ---
 
-**The performance optimization system for AI agent harnesses. From an Anthropic hackathon winner.**
+**The harness-native operator system for agentic work. From an Anthropic hackathon winner.**
 
 Not just configs. A complete system: skills, instincts, memory optimization, continuous learning, security scanning, and research-first development. Production-ready agents, skills, hooks, rules, MCP configurations, and legacy command shims evolved over 10+ months of intensive daily use building real products.
 
@@ -1719,7 +1719,7 @@ These configs work for my workflow. You should:
 
 ## Community Projects
 
-Projects built on or inspired by Everything Claude Code:
+Projects built on or inspired by ECC:
 
 | Project | Description |
 |---------|-------------|

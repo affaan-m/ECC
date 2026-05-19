@@ -91,7 +91,7 @@ What stays local:
 2. Read the [Hermes setup guide](../../HERMES-SETUP.md).
 3. Review the [cross-harness architecture](../../architecture/cross-harness.md).
 4. Run the [observability readiness gate](../../architecture/observability-readiness.md).
-5. Check the [release URL ledger](release-url-ledger-2026-05-18.md) before
+5. Check the [release URL ledger](release-url-ledger-2026-05-19.md) before
    using any announcement links.
 6. Start with one workflow lane: engineering, research, content, or outreach.
 7. Import only sanitized operator patterns into ECC skills.

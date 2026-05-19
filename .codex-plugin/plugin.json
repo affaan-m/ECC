@@ -1,22 +1,22 @@
 {
   "name": "ecc",
   "version": "2.0.0-rc.1",
-  "description": "Battle-tested Codex workflows — 207 shared ECC skills, production-ready MCP configs, and selective-install-aligned conventions for TDD, security scanning, code review, and autonomous development.",
+  "description": "Harness-native ECC workflows for Codex: shared skills, production-ready MCP configs, and selective-install-aligned conventions for TDD, security scanning, code review, and autonomous development.",
   "author": {
     "name": "Affaan Mustafa",
     "email": "me@affaanmustafa.com",
     "url": "https://x.com/affaanmustafa"
   },
   "homepage": "https://ecc.tools",
-  "repository": "https://github.com/affaan-m/everything-claude-code",
+  "repository": "https://github.com/affaan-m/ECC",
   "license": "MIT",
   "keywords": ["codex", "agents", "skills", "tdd", "code-review", "security", "workflow", "automation"],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Everything Claude Code",
+    "displayName": "ECC",
     "shortDescription": "207 battle-tested ECC skills plus MCP configs for TDD, security, code review, and autonomous development.",
-    "longDescription": "Everything Claude Code (ECC) is a community-maintained collection of Codex-ready skills and MCP configs evolved over 10+ months of intensive daily use. It covers TDD workflows, security scanning, code review, architecture decisions, operator workflows, and more — all in one installable plugin.",
+    "longDescription": "ECC is a harness-native operator system for Codex and adjacent agent harnesses. It packages reusable skills, MCP configs, TDD workflows, security scanning, code review, architecture decisions, operator workflows, and release gates in one installable plugin.",
     "developerName": "Affaan Mustafa",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],

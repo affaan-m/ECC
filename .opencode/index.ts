@@ -1,5 +1,5 @@
 /**
- * Everything Claude Code (ECC) Plugin for OpenCode
+ * ECC Plugin for OpenCode
  *
  * This package provides the published ECC OpenCode plugin module:
  * - Plugin hooks (auto-format, TypeScript check, console.log warning, env injection, etc.)
@@ -26,8 +26,8 @@
  *
  * Option 2: Clone and use directly
  * ```bash
- * git clone https://github.com/affaan-m/everything-claude-code
- * cd everything-claude-code
+ * git clone https://github.com/affaan-m/ECC
+ * cd ECC
  * opencode
  * ```
  *
@@ -47,7 +47,7 @@ export const VERSION = "1.6.0"
 export const metadata = {
   name: "ecc-universal",
   version: VERSION,
-  description: "Everything Claude Code plugin for OpenCode",
+  description: "ECC plugin for OpenCode",
   author: "affaan-m",
   features: {
     agents: 13,

@@ -1,7 +1,7 @@
 {
   "name": "ecc-universal",
   "version": "2.0.0-rc.1",
-  "description": "Everything Claude Code (ECC) plugin for OpenCode - agents, commands, hooks, and skills",
+  "description": "ECC plugin for OpenCode - agents, commands, hooks, and skills",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -47,12 +47,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/affaan-m/everything-claude-code.git"
+    "url": "git+https://github.com/affaan-m/ECC.git"
   },
   "bugs": {
-    "url": "https://github.com/affaan-m/everything-claude-code/issues"
+    "url": "https://github.com/affaan-m/ECC/issues"
   },
-  "homepage": "https://github.com/affaan-m/everything-claude-code#readme",
+  "homepage": "https://github.com/affaan-m/ECC#readme",
   "publishConfig": {
     "access": "public"
   },

@@ -1,5 +1,5 @@
 /**
- * Everything Claude Code (ECC) Plugin Hooks for OpenCode
+ * ECC Plugin Hooks for OpenCode
  *
  * This plugin translates Claude Code hooks to OpenCode's plugin system.
  * OpenCode's plugin system is MORE sophisticated than Claude Code with 20+ events
@@ -453,7 +453,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       const contextBlock = [
         "# ECC Context (preserve across compaction)",
         "",
-        "## Active Plugin: Everything Claude Code v2.0.0-rc.1",
+        "## Active Plugin: ECC v2.0.0-rc.1",
         "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell.env, compacting, permission.ask",
         "- Tools: run-tests, check-coverage, security-audit, format-code, lint-check, git-summary, changed-files",
         "- Agents: 13 specialized (planner, architect, tdd-guide, code-reviewer, security-reviewer, build-error-resolver, e2e-runner, refactor-cleaner, doc-updater, go-reviewer, go-build-resolver, database-reviewer, python-reviewer)",

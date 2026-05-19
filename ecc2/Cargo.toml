@@ -5,7 +5,7 @@ edition = "2021"
 description = "ECC 2.0 — Agentic IDE control plane with TUI dashboard"
 license = "MIT"
 authors = ["Affaan Mustafa <me@affaanmustafa.com>"]
-repository = "https://github.com/affaan-m/everything-claude-code"
+repository = "https://github.com/affaan-m/ECC"
 
 [features]
 default = ["vendored-openssl"]

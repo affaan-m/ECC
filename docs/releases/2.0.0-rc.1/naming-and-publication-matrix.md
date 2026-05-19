@@ -1,17 +1,18 @@
 # ECC v2.0.0-rc.1 Naming And Publication Matrix
 
-Snapshot date: 2026-05-18.
+Snapshot date: 2026-05-19.
 
-This matrix answers the release question "ship as Everything Claude Code, ECC,
-or a renamed surface?" for the rc.1 lane. It is evidence for planning, not a
-publication action.
+This matrix records the rc.1 identity after the public repository rename to
+`affaan-m/ECC`. It is evidence for planning, not a publication action.
 
 ## Decision
 
-For `v2.0.0-rc.1`, keep the public identity as **Everything Claude Code (ECC)**.
-Use **ECC** as the short product name in copy, plugin slugs, status surfaces,
-and diagrams, but do not rename the GitHub repo, npm package, or package entry
-points before the rc.1 release.
+For `v2.0.0-rc.1`, ship the public identity as **ECC**.
+
+Use `affaan-m/ECC` as the canonical GitHub repo and `ECC` as the product name
+in copy, plugin slugs, status surfaces, diagrams, and release collateral. Keep
+the npm package and package entry points as `ecc-universal` until a separate
+post-rc migration plan exists.
 
 Reason:
 
@@ -19,21 +20,17 @@ Reason:
   plugin slug;
 - the exact npm package name `ecc` is already occupied by an unrelated elliptic
   curve cryptography package;
-- the repo name `affaan-m/ecc` is not present, but renaming
-  `affaan-m/everything-claude-code` before rc.1 would create avoidable URL,
-  package, docs, and marketplace churn;
+- `affaan-m/ECC` is the live public GitHub repo;
 - Claude and Codex plugin surfaces are already short enough as `ecc`;
 - rc.1 should prove the release, plugin, and publication pipeline before any
-  broader brand migration.
+  npm/package rename.
 
 ## Current Values
 
 | Surface | Current value | Evidence command | 2026-05-18 result | Release decision |
 | --- | --- | --- | --- | --- |
-| Product display name | `Everything Claude Code` | `rg -n "Everything Claude Code" README.md CHANGELOG.md docs/releases/2.0.0-rc.1` | Present across README, release notes, launch copy, and plugin manifests | Keep for rc.1 |
-| Short name | `ECC` | README/release docs | Used as the short cross-harness brand | Keep and prefer in tight copy |
-| GitHub repo | `affaan-m/everything-claude-code` | `git remote get-url origin` | `https://github.com/affaan-m/everything-claude-code.git` | Keep for rc.1 |
-| Possible short repo | `affaan-m/ecc` | `gh repo view affaan-m/ecc` | Not found with current auth | Candidate after rc.1 only |
+| Product display name | `ECC` | `rg -n "^# ECC\|displayName.*ECC\|affaan-m/ECC" README.md .codex-plugin/plugin.json docs/releases/2.0.0-rc.1` | Present across README, plugin manifests, release copy, and URL ledger | Keep for rc.1 and GA |
+| GitHub repo | `affaan-m/ECC` | `git remote get-url origin` | `https://github.com/affaan-m/ECC.git` | Keep for rc.1 and GA |
 | npm package | `ecc-universal` | `node -p "require('./package.json').name"` | `ecc-universal` | Keep for rc.1 |
 | npm package version | `2.0.0-rc.1` local, `1.10.0` registry latest | `node -p "require('./package.json').version"` and `npm view ecc-universal name version dist-tags --json` | Local rc.1 is ready; registry latest remains `1.10.0` and no `next` dist-tag exists yet | Publish rc as `next`, not `latest` |
 | Exact npm short name | `ecc` | `npm view ecc name version description repository.url --json` | Occupied by `ecc@0.0.2`, "Elliptic curve cryptography functions." | Do not use |
@@ -77,21 +74,18 @@ Reason:
 | Billing/native payments | Announcement remains blocked by ITO-61 | Marketplace Pro target readback, webhook provenance, `INTERNAL_API_SECRET`, announcement gate | ECC Tools owner | Do not include native-payments claim in rc.1 announcement |
 | Social/longform copy | Drafts exist | Final live GitHub, npm, Claude, Codex, billing URLs | Release owner | Publish only after release/package/plugin URLs exist |
 
-## Rename After rc.1
+## Package Rename After rc.1
 
-If the project moves from "Everything Claude Code" toward "ECC" after rc.1,
-do it as a staged migration:
+If the package layer moves from `ecc-universal` toward a shorter npm surface
+after rc.1, do it as a staged migration:
 
 1. Keep `ecc-universal` as the npm package until a replacement package has a
    verified owner, deprecation plan, and install migration.
-2. Keep `affaan-m/everything-claude-code` as the canonical repo until release
-   notes, docs, plugin marketplace entries, npm metadata, and external links
-   are prepared for redirects.
-3. Use `ECC` as the product name in new diagrams, status payloads, and
-   cross-harness docs immediately.
-4. Reserve or create any new GitHub/npm/package surfaces before announcing the
-   rename.
-5. Ship a compatibility guide that maps old commands, package names, plugin
+2. Keep `affaan-m/ECC` as the canonical repo for public docs, release notes,
+   plugin marketplace entries, npm metadata, and external links.
+3. Reserve or create any new npm/package surfaces before announcing the
+   package rename.
+4. Ship a compatibility guide that maps old commands, package names, plugin
    slugs, and docs URLs to the new names.
 
 ## Evidence Captured In This Pass
@@ -152,7 +146,7 @@ HOME="$(mktemp -d)" codex plugin marketplace add <local-checkout>
 Added marketplace ecc and recorded the installed marketplace root as
 <local-checkout> without touching the real Codex config.
 
-HOME="$(mktemp -d)" codex plugin marketplace add affaan-m/everything-claude-code --ref "$(git rev-parse HEAD)"
+HOME="$(mktemp -d)" codex plugin marketplace add affaan-m/ECC --ref "$(git rev-parse HEAD)"
 Added marketplace ecc from the GitHub repo pinned to
 67e63e63f9bfd074bd6a21bf6bac71f3dfefa58b without touching the real Codex
 config.

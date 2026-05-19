@@ -5,8 +5,8 @@ This path is for a new contributor who wants to verify the release surface befor
 ## Clone
 
 ```bash
-git clone https://github.com/affaan-m/everything-claude-code.git
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
 ```
 
 Start from a clean checkout. Do not copy private operator state, raw workspace exports, tokens, or local Hermes files into the repo.

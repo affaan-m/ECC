@@ -1,6 +1,6 @@
 # .codex-plugin — Codex Native Plugin for ECC
 
-This directory contains the **Codex plugin manifest** for Everything Claude Code.
+This directory contains the **Codex plugin manifest** for ECC.
 
 ## Structure
 
@@ -24,10 +24,10 @@ track that marketplace source from the CLI:
 
 ```bash
 # Add the public repo marketplace
-codex plugin marketplace add affaan-m/everything-claude-code
+codex plugin marketplace add affaan-m/ECC
 
 # Or add a local checkout while developing
-codex plugin marketplace add /absolute/path/to/everything-claude-code
+codex plugin marketplace add /absolute/path/to/ECC
 ```
 
 The marketplace entry points at the repository root so `.codex-plugin/plugin.json`,

@@ -71,13 +71,13 @@ The deeper local integrations stay local until they are sanitized, and publicati
 11/ Start here:
 
 Repo:
-<https://github.com/affaan-m/everything-claude-code>
+<https://github.com/affaan-m/ECC>
 
 Hermes x ECC setup:
-<https://github.com/affaan-m/everything-claude-code/blob/main/docs/HERMES-SETUP.md>
+<https://github.com/affaan-m/ECC/blob/main/docs/HERMES-SETUP.md>
 
 12/ Release notes:
-<https://github.com/affaan-m/everything-claude-code/blob/main/docs/releases/2.0.0-rc.1/release-notes.md>
+<https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md>
 
 URL ledger:
-<https://github.com/affaan-m/everything-claude-code/blob/main/docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-18.md>
+<https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md>

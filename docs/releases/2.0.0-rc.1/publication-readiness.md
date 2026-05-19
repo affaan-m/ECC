@@ -54,16 +54,16 @@ For the May 17 operator dashboard refresh, see
 [`operator-readiness-dashboard-2026-05-17.md`](operator-readiness-dashboard-2026-05-17.md).
 For the May 18 operator dashboard refresh, see
 [`operator-readiness-dashboard-2026-05-18.md`](operator-readiness-dashboard-2026-05-18.md).
-For the May 18 live/pending release URL ledger, see
-[`release-url-ledger-2026-05-18.md`](release-url-ledger-2026-05-18.md).
+For the May 19 live/pending release URL ledger after the public repo rename, see
+[`release-url-ledger-2026-05-19.md`](release-url-ledger-2026-05-19.md).
 
 ## Release Identity Matrix
 
 | Surface | Expected value | Source of truth | Fresh check | Evidence artifact | Owner | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Product name | Everything Claude Code / ECC | `README.md`, `CHANGELOG.md`, release notes | `rg -n "Everything Claude Code" README.md CHANGELOG.md docs/releases/2.0.0-rc.1` | `publication-evidence-2026-05-12.md` | Release owner | Evidence recorded |
-| GitHub repo | `affaan-m/everything-claude-code` | Git remote and release URLs | `git remote get-url origin` | `publication-evidence-2026-05-12.md` | Release owner | Evidence recorded |
-| Git tag | `v2.0.0-rc.1` | GitHub releases | `gh release view v2.0.0-rc.1 --repo affaan-m/everything-claude-code` | `release not found` | Release owner | Blocked until release approval |
+| Product name | ECC | `README.md`, plugin manifests, release notes | `rg -n "^# ECC\|displayName.*ECC\|affaan-m/ECC" README.md .codex-plugin/plugin.json docs/releases/2.0.0-rc.1` | `release-name-plugin-publication-checklist-2026-05-18.md` plus `release-url-ledger-2026-05-19.md` | Release owner | Evidence recorded |
+| GitHub repo | `affaan-m/ECC` | Git remote and release URLs | `git remote get-url origin` | `release-url-ledger-2026-05-19.md` | Release owner | Evidence recorded |
+| Git tag | `v2.0.0-rc.1` | GitHub releases | `gh release view v2.0.0-rc.1 --repo affaan-m/ECC` | `release not found` | Release owner | Blocked until release approval |
 | npm package | `ecc-universal` | `package.json` | `node -p "require('./package.json').name"` | `publication-evidence-2026-05-12.md` | Package owner | Evidence recorded |
 | npm version | `2.0.0-rc.1` | `VERSION`, `package.json`, lockfiles | `node -p "require('./package.json').version"` | `publication-evidence-2026-05-12.md` | Package owner | Evidence recorded |
 | npm dist-tag | `next` for rc, `latest` only for GA | npm registry | `npm view ecc-universal dist-tags --json` | Current registry only has `latest: 1.10.0`; `next` is pending publish | Package owner | Blocked until publish approval |
@@ -85,7 +85,7 @@ For the May 18 live/pending release URL ledger, see
 | Codex plugin | Manifest version matches package and docs, repo marketplace points at the plugin root, and OpenAI's current official Plugin Directory status is recorded | `node tests/docs/ecc2-release-surface.test.js`; `node tests/plugin-manifest.test.js`; `codex plugin marketplace add --help`; temp-home `codex plugin marketplace add <local-checkout>` | `Blocker: official Plugin Directory listing requires OpenAI submission/listing evidence` | Plugin owner | Repo-marketplace distribution verified; official directory pending |
 | OpenCode package | Build output is regenerated from source and package metadata is current | `npm run build:opencode` | `Blocker: none for local build; public distribution still follows npm/plugin release` | Package owner | Evidence recorded |
 | ECC Tools billing reference | Any billing claim links to verified Marketplace/App state | `env -u GITHUB_TOKEN gh repo view ECC-Tools/ECC-Tools --json nameWithOwner,isPrivate,viewerPermission` plus internal `/api/billing/readiness?accountLogin=<marketplace-test-account>` readback | `Blocker: ECC-Tools #73 added announcementGate; live Marketplace test-account readback must return announcementGate.ready === true before payment announcement` | ECC Tools owner | Code gate recorded; live billing readback pending |
-| Announcement copy | X, LinkedIn, GitHub release, and longform copy point to live URLs | placeholder-marker scan and `release-url-ledger-2026-05-18.md` | `Blocker: final live release/npm/plugin/billing URLs do not exist yet; live and pending URLs are separated in the May 18 ledger` | Release owner | URL ledger recorded; final URLs pending |
+| Announcement copy | X, LinkedIn, GitHub release, and longform copy point to live URLs | placeholder-marker scan and `release-url-ledger-2026-05-19.md` | `Blocker: final live release/npm/plugin/billing URLs do not exist yet; live and pending URLs are separated in the May 19 ledger` | Release owner | URL ledger recorded; final URLs pending |
 | Privileged workflow hardening | Release and maintenance workflows avoid persisted checkout tokens | `node scripts/ci/validate-workflow-security.js` | `Blocker:` | Release owner | Evidence recorded in post-hardening refresh |
 
 ## Required Command Evidence
@@ -110,8 +110,8 @@ Record the exact commit SHA and command output before any publication action:
 | Discussion baseline | `node scripts/platform-audit.js --json` and `node scripts/discussion-audit.js --json` | No unmanaged active discussion queue and no answerable Q&A missing an accepted answer | `4470e2e6`: platform audit sampled 58 trunk discussions, 0 needing maintainer touch, 0 answerable discussions missing accepted answer; `docs/architecture/discussion-response-playbook.md` records response templates and security escalation rules |
 | Linear roadmap | Linear project and issue readback | Detailed roadmap exists with release, security, AgentShield, ECC Tools, legacy, and observability lanes | May 18 Linear comments include ITO-57 `3fe5b2b7-c4fe-401c-a317-b40d72119cb3` and ITO-44 `fb4a4f33-6c2d-421a-bbdb-63cfad3e3ee4`; earlier evidence records the project and 16 issue lanes |
 | Operator readiness dashboard | `npm run operator:dashboard -- --json` | Current queue state mapped to macro-goal deliverables and incomplete gaps | `4470e2e6`: regenerated May 18 dashboard from current main; platform audit ready true, 0 open PRs, 0 open issues, 0 discussion gaps, 0 dirty files, and publication gates still approval-gated |
-| Release URL ledger | `docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-18.md` plus placeholder-marker scan | Live links and approval-gated links are separated before announcement copy is posted | Ledger records public repo/docs/CI/supply-chain/npm/OpenAI Codex documentation URLs and blocks GitHub release/npm/plugin/billing/social URLs until approval-gated checks pass |
-| Release name and plugin publication checklist | `docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md` | Name/package/plugin values are frozen, final-release commands are listed, and Claude/Codex publication paths cite current official docs | Checklist keeps `Everything Claude Code / ECC`, `ecc-universal`, and plugin slug `ecc` for rc.1; no rename, npm publish, plugin tag, official listing, billing claim, or announcement before final evidence |
+| Release URL ledger | `docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md` plus placeholder-marker scan | Live links and approval-gated links are separated before announcement copy is posted | Ledger records public repo/docs/npm/OpenAI Codex documentation URLs and blocks GitHub release/npm/plugin/billing/social URLs until approval-gated checks pass |
+| Release name and plugin publication checklist | `docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md` | Name/package/plugin values are frozen, final-release commands are listed, and Claude/Codex publication paths cite current official docs | Checklist keeps `ECC`, `ecc-universal`, and plugin slug `ecc` for rc.1; no npm rename, npm publish, plugin tag, official listing, billing claim, or announcement before final evidence |
 
 ## Do Not Publish If
 

@@ -102,10 +102,10 @@ function runTests() {
 
     try {
       const shimPath = writeGhShim(rootDir, {
-        [discussionEnabledGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionEnabledGhKey('affaan-m', 'ECC')]: {
           data: { repository: { hasDiscussionsEnabled: true } }
         },
-        [discussionGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionGhKey('affaan-m', 'ECC')]: {
           data: {
             repository: {
               hasDiscussionsEnabled: true,
@@ -142,7 +142,7 @@ function runTests() {
       const parsed = JSON.parse(run([
         '--json',
         '--repo',
-        'affaan-m/everything-claude-code'
+        'affaan-m/ECC'
       ], {
         cwd: rootDir,
         env: {
@@ -165,10 +165,10 @@ function runTests() {
 
     try {
       const shimPath = writeGhShim(rootDir, {
-        [discussionEnabledGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionEnabledGhKey('affaan-m', 'ECC')]: {
           data: { repository: { hasDiscussionsEnabled: true } }
         },
-        [discussionGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionGhKey('affaan-m', 'ECC')]: {
           data: {
             repository: {
               hasDiscussionsEnabled: true,
@@ -195,7 +195,7 @@ function runTests() {
       const result = runProcess([
         '--json',
         '--repo',
-        'affaan-m/everything-claude-code',
+        'affaan-m/ECC',
         '--exit-code'
       ], {
         cwd: rootDir,
@@ -220,10 +220,10 @@ function runTests() {
 
     try {
       const shimPath = writeGhShim(rootDir, {
-        [discussionEnabledGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionEnabledGhKey('affaan-m', 'ECC')]: {
           data: { repository: { hasDiscussionsEnabled: true } }
         },
-        [discussionGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionGhKey('affaan-m', 'ECC')]: {
           data: {
             repository: {
               hasDiscussionsEnabled: true,
@@ -237,7 +237,7 @@ function runTests() {
         '--write',
         outputPath,
         '--repo',
-        'affaan-m/everything-claude-code'
+        'affaan-m/ECC'
       ], {
         cwd: rootDir,
         env: { ECC_GH_SHIM: shimPath }

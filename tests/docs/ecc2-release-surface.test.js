@@ -175,6 +175,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'scripts/preview-pack-smoke.js',
     'docs/releases/2.0.0-rc.1/publication-readiness.md',
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
+    'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md',
   ]) {
     assert.ok(manifest.includes(artifact), `preview pack manifest missing ${artifact}`);
@@ -201,6 +202,8 @@ test('rc.1 quickstart gives a clone-to-cross-harness path', () => {
   for (const heading of ['Clone', 'Install', 'Verify', 'First Skill', 'Switch Harness']) {
     assert.ok(quickstart.includes(`## ${heading}`), `Missing ${heading} section`);
   }
+  assert.ok(quickstart.includes('git clone https://github.com/affaan-m/ECC.git'));
+  assert.ok(quickstart.includes('cd ECC'));
   assert.ok(quickstart.includes('node tests/run-all.js'));
   assert.ok(quickstart.includes('skills/hermes-imports/SKILL.md'));
 });
@@ -346,6 +349,35 @@ test('release name and plugin publication checklist freezes rc.1 surfaces', () =
 
   assert.ok(launchChecklist.includes('release-name-plugin-publication-checklist-2026-05-18.md'));
   assert.ok(referenceArchitecture.includes('Keep the release/name/plugin publication checklist current'));
+});
+
+test('active release identity surfaces use canonical ECC repo URLs', () => {
+  const activeFiles = [
+    'README.md',
+    '.codex-plugin/README.md',
+    '.codex-plugin/plugin.json',
+    '.opencode/README.md',
+    '.opencode/package.json',
+    'docs/business/metrics-and-sponsorship.md',
+    'docs/releases/2.0.0-rc.1/quickstart.md',
+    'docs/releases/2.0.0-rc.1/x-thread.md',
+    'docs/releases/2.0.0-rc.1/publication-readiness.md',
+    'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
+    'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
+    'ecc2/Cargo.toml',
+    'scripts/platform-audit.js',
+    'scripts/discussion-audit.js',
+  ];
+
+  const offenders = [];
+  for (const relativePath of activeFiles) {
+    const source = read(relativePath);
+    if (source.includes('affaan-m/everything-claude-code')) {
+      offenders.push(relativePath);
+    }
+  }
+
+  assert.deepStrictEqual(offenders, []);
 });
 
 test('release checklist and roadmap link to publication readiness evidence gate', () => {

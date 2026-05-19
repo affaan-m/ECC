@@ -177,7 +177,7 @@ function runTests() {
         `--root=${rootDir}`,
         '--json',
         '--repo',
-        'affaan-m/everything-claude-code',
+        'affaan-m/ECC',
         '--max-open-prs',
         '5',
         '--max-open-issues',
@@ -188,7 +188,7 @@ function runTests() {
 
       assert.strictEqual(parsed.format, 'json');
       assert.strictEqual(parsed.root, path.resolve(rootDir));
-      assert.deepStrictEqual(parsed.repos, ['affaan-m/everything-claude-code']);
+      assert.deepStrictEqual(parsed.repos, ['affaan-m/ECC']);
       assert.strictEqual(parsed.thresholds.maxOpenPrs, 5);
       assert.strictEqual(parsed.thresholds.maxOpenIssues, 6);
       assert.deepStrictEqual(parsed.allowUntracked, ['docs/drafts/']);
@@ -256,12 +256,12 @@ function runTests() {
     try {
       seedRepo(projectRoot);
       const shimPath = writeGhShim(projectRoot, {
-        'pr list --repo affaan-m/everything-claude-code --state open --json number,title,isDraft,mergeStateStatus,updatedAt,url,author': [],
-        'issue list --repo affaan-m/everything-claude-code --state open --json number,title,updatedAt,url,author,labels': [],
-        [discussionEnabledGhKey('affaan-m', 'everything-claude-code')]: {
+        'pr list --repo affaan-m/ECC --state open --json number,title,isDraft,mergeStateStatus,updatedAt,url,author': [],
+        'issue list --repo affaan-m/ECC --state open --json number,title,updatedAt,url,author,labels': [],
+        [discussionEnabledGhKey('affaan-m', 'ECC')]: {
           data: { repository: { hasDiscussionsEnabled: true } }
         },
-        [discussionGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionGhKey('affaan-m', 'ECC')]: {
           data: {
             repository: {
               hasDiscussionsEnabled: true,
@@ -289,7 +289,7 @@ function runTests() {
         '--format=json',
         `--root=${projectRoot}`,
         '--repo',
-        'affaan-m/everything-claude-code'
+        'affaan-m/ECC'
       ], {
         cwd: projectRoot,
         env: {
@@ -325,12 +325,12 @@ function runTests() {
         author: { login: 'contributor' }
       }));
       const shimPath = writeGhShim(projectRoot, {
-        'pr list --repo affaan-m/everything-claude-code --state open --json number,title,isDraft,mergeStateStatus,updatedAt,url,author': prs,
-        'issue list --repo affaan-m/everything-claude-code --state open --json number,title,updatedAt,url,author,labels': [],
-        [discussionEnabledGhKey('affaan-m', 'everything-claude-code')]: {
+        'pr list --repo affaan-m/ECC --state open --json number,title,isDraft,mergeStateStatus,updatedAt,url,author': prs,
+        'issue list --repo affaan-m/ECC --state open --json number,title,updatedAt,url,author,labels': [],
+        [discussionEnabledGhKey('affaan-m', 'ECC')]: {
           data: { repository: { hasDiscussionsEnabled: true } }
         },
-        [discussionGhKey('affaan-m', 'everything-claude-code')]: {
+        [discussionGhKey('affaan-m', 'ECC')]: {
           data: {
             repository: {
               hasDiscussionsEnabled: true,
@@ -358,7 +358,7 @@ function runTests() {
         '--format=json',
         `--root=${projectRoot}`,
         '--repo',
-        'affaan-m/everything-claude-code',
+        'affaan-m/ECC',
         '--max-open-prs',
         '2'
       ], {

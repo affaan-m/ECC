@@ -83,11 +83,12 @@ function seedRepo(rootDir, overrides = {}) {
     'docs/releases/2.0.0-rc.1/publication-readiness.md': 'Claude plugin Codex plugin release-name-plugin-publication-checklist-2026-05-18.md',
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md': 'Claude plugin Codex plugin npm package Publication Paths',
     'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md': [
-      'Everything Claude Code (ECC)',
+      'Ship `v2.0.0-rc.1` as **ECC**',
+      'affaan-m/ECC',
       'ecc-universal',
       'claude plugin tag .claude-plugin --dry-run',
       'codex plugin marketplace add',
-      'Do not rename the repo or package until rc.1 is published'
+      'Do not rename the npm package until rc.1 is published'
     ].join('\n'),
     'docs/releases/2.0.0-rc.1/preview-pack-manifest.md': [
       'publication-readiness.md release-notes.md quickstart.md',
@@ -228,7 +229,7 @@ function runTests() {
         '--allow-untracked',
         'docs/drafts/',
         '--repo',
-        'affaan-m/everything-claude-code',
+        'affaan-m/ECC',
         '--generated-at',
         '2026-05-15T00:00:00.000Z'
       ]);
@@ -237,7 +238,7 @@ function runTests() {
       assert.strictEqual(parsed.root, path.resolve(rootDir));
       assert.strictEqual(parsed.skipGithub, true);
       assert.deepStrictEqual(parsed.allowUntracked, ['docs/drafts/']);
-      assert.deepStrictEqual(parsed.repos, ['affaan-m/everything-claude-code']);
+      assert.deepStrictEqual(parsed.repos, ['affaan-m/ECC']);
       assert.strictEqual(parsed.generatedAt, '2026-05-15T00:00:00.000Z');
 
       assert.throws(() => parseArgs(['node', 'script', '--format', 'xml']), /Invalid format/);
