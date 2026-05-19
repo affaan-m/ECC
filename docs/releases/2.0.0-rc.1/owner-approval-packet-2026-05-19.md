@@ -8,7 +8,7 @@ release action after the final evidence commands are rerun from the intended
 release commit.
 
 Source commit for the clean evidence baseline this packet extends:
-`e7a7b2aaa33c0657cad9db3fa2ced0e636cd0f8c`.
+`ac7434ea8f39166b11e9d06ce64b38c4fb8d9202`.
 
 ## Current Evidence
 
@@ -19,7 +19,7 @@ Source commit for the clean evidence baseline this packet extends:
 | Video suite | ready true, 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates | yes |
 | Release surface tests | 27/27 passed after this packet was added | yes |
 | Full local suite | 2550/2550 passed after this packet was added | yes |
-| GitHub CI | PR #1998, PR #1999, PR #2000, and PR #2001 merged after green required checks | verify current head |
+| GitHub CI | PR #1998, PR #1999, PR #2000, PR #2001, PR #2002, and PR #2004 merged after green required checks | verify current head |
 
 ## Decision Register
 
