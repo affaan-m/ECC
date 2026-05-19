@@ -109,6 +109,74 @@ if (
   passed++;
 else failed++;
 
+// Invisible code points newly covered by the denylist. These were missing
+// from the previous denylist and silently passed through both detection and
+// `--write` mode. Each is a documented LLM-prompt-injection vector
+// (Tag block "ASCII smuggling"; the other invisibles are widely cited in
+// homograph / Discord / Twitter smuggling references).
+
+const NEWLY_COVERED_RANGES = [
+  { codePoint: 0xE0041, label: 'Tag block U+E0041 (TAG LATIN CAPITAL LETTER A)' },
+  { codePoint: 0xE007F, label: 'Tag block U+E007F (CANCEL TAG, range end)' },
+  { codePoint: 0x180E, label: 'U+180E MONGOLIAN VOWEL SEPARATOR' },
+  { codePoint: 0x115F, label: 'U+115F HANGUL CHOSEONG FILLER' },
+  { codePoint: 0x1160, label: 'U+1160 HANGUL JUNGSEONG FILLER' },
+  { codePoint: 0x2061, label: 'U+2061 FUNCTION APPLICATION' },
+  { codePoint: 0x2064, label: 'U+2064 INVISIBLE PLUS (range end)' },
+  { codePoint: 0x3164, label: 'U+3164 HANGUL FILLER' },
+];
+
+for (const { codePoint, label } of NEWLY_COVERED_RANGES) {
+  if (
+    test(`detects ${label}`, () => {
+      const root = makeTempRoot('ecc-unicode-newly-covered-');
+      fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+      const hex = codePoint.toString(16).toUpperCase().padStart(4, '0');
+      fs.writeFileSync(
+        path.join(root, 'docs', `probe-${hex}.md`),
+        `# Probe\n\nBenign${String.fromCodePoint(codePoint)}text\n`
+      );
+      const result = runCheck(root);
+      assert.notStrictEqual(result.status, 0,
+        `expected exit non-zero on U+${hex}, got ${result.status}: ${result.stderr}`);
+      assert.match(result.stderr, new RegExp(`dangerous-invisible U\\+${hex}`),
+        `expected violation message for U+${hex}, got: ${result.stderr}`);
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+if (
+  test('write mode strips newly-covered invisibles from markdown', () => {
+    const root = makeTempRoot('ecc-unicode-newly-covered-write-');
+    fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+    const tagHidden = [...Array(5)].map((_, i) => String.fromCodePoint(0xE0041 + i)).join('');
+    const mongolianHidden = String.fromCodePoint(0x180E);
+    const filePath = path.join(root, 'docs', 'mixed.md');
+    fs.writeFileSync(filePath, `# Title\n\nBenign${tagHidden}${mongolianHidden}text.\n`);
+
+    const writeResult = runCheck(root, ['--write']);
+    assert.strictEqual(writeResult.status, 0,
+      `expected --write to succeed, got ${writeResult.status}: ${writeResult.stderr}`);
+
+    const sanitized = fs.readFileSync(filePath, 'utf8');
+    assert.doesNotMatch(sanitized, /[\u{E0000}-\u{E007F}]/u,
+      'expected tag block characters stripped');
+    assert.doesNotMatch(sanitized, /\u{180E}/u,
+      'expected U+180E stripped');
+    assert.strictEqual(sanitized, '# Title\n\nBenigntext.\n',
+      'expected only the invisible characters removed, surrounding text preserved');
+
+    // Re-run without --write; should now pass cleanly.
+    const clean = runCheck(root);
+    assert.strictEqual(clean.status, 0,
+      `expected post-sanitize re-run to pass, got: ${clean.stderr}`);
+  })
+)
+  passed++;
+else failed++;
+
 if (
   test('skips Python virtual environments', () => {
     const root = makeTempRoot('ecc-unicode-venv-');
