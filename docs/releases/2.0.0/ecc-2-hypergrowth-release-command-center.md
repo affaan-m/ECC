@@ -100,6 +100,10 @@ Production steps:
 | Podcasts/talks | one-page pitch, demo outline, founder proof | bookings, partners |
 | Sponsor outbound | direct sponsor note and tier table | GitHub Sponsors or Pro |
 
+The source of truth for sponsor, partner, consulting, conference, podcast, and
+GitHub Discussion copy is
+`docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md`.
+
 ## Copy Rules
 
 Use direct product language:
@@ -130,7 +134,7 @@ Avoid:
    surfaces for b-roll.
 6. Render the primary launch video plus five short clips.
 7. Finalize GitHub release, X thread, LinkedIn post, Discussion announcement,
-   sponsor email copy, and podcast/talk pitch.
+   sponsor email copy, consulting intro, partner DM, and podcast/talk pitch.
 8. Publish only after npm, plugin, release URL, and billing-readback gates are
    either live or explicitly marked blocked.
 
@@ -143,4 +147,5 @@ These actions need a human approval or credential before they move:
 - wiring Discord with a bot token and guild ID;
 - publishing npm or creating plugin tags;
 - announcing billing/native payments;
+- sending partner, consulting, conference, podcast, or sponsor outreach;
 - posting final social copy from personal accounts.

@@ -30,6 +30,7 @@ const REQUIRED_ARTIFACTS = [
   `${RELEASE_DIR}/operator-readiness-dashboard-2026-05-18.md`,
   `${RELEASE_DIR}/release-url-ledger-2026-05-19.md`,
   `${RELEASE_DIR}/video-suite-production.md`,
+  `${RELEASE_DIR}/partner-sponsor-talks-pack.md`,
   `${RELEASE_DIR}/naming-and-publication-matrix.md`,
   `${RELEASE_DIR}/release-name-plugin-publication-checklist-2026-05-18.md`,
   `${RELEASE_DIR}/x-thread.md`,

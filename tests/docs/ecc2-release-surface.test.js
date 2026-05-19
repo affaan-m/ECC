@@ -53,6 +53,7 @@ const expectedReleaseFiles = [
   'preview-pack-manifest.md',
   'publication-readiness.md',
   'video-suite-production.md',
+  'partner-sponsor-talks-pack.md',
   'release-name-plugin-publication-checklist-2026-05-18.md',
 ];
 
@@ -128,6 +129,7 @@ test('business launch copy stays aligned with the rc.1 public surface', () => {
 test('announcement drafts avoid live-release claims before publication', () => {
   const announcementFiles = [
     'docs/releases/2.0.0-rc.1/linkedin-post.md',
+    'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md',
     'docs/business/social-launch-copy.md',
   ];
 
@@ -269,6 +271,43 @@ test('release video suite manifest gates the content launch lane', () => {
   assert.ok(hypergrowth.includes('Validate `video-suite-production.md`'));
   assert.strictEqual(packageJson.scripts['release:video-suite'], 'node scripts/release-video-suite.js');
   assert.ok(packageJson.files.includes('scripts/release-video-suite.js'));
+});
+
+test('partner sponsor talks pack gates the hypergrowth outbound lane', () => {
+  const partnerPack = read('docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md');
+  const manifest = read('docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
+  const releaseNotes = read('docs/releases/2.0.0-rc.1/release-notes.md');
+  const launchChecklist = read('docs/releases/2.0.0-rc.1/launch-checklist.md');
+  const hypergrowth = read('docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
+
+  for (const marker of [
+    'Partner, Sponsor, and Talks Pack',
+    '$1,728/mo',
+    '$10,000/mo',
+    '$8,272/mo',
+    'Pilot sponsor',
+    'Business sponsor',
+    'Strategic partner',
+    'Consulting sprint',
+    'Talk or podcast',
+    'Sponsor Outbound',
+    'Platform Partner DM',
+    'Consulting Intro',
+    'Talk And Podcast Pitch',
+    'GitHub Discussion Announcement',
+    'Video CTA Hooks',
+    'Do Not Send Or Publish If',
+    'The user has not approved outbound sponsor, partner, consulting, or media',
+  ]) {
+    assert.ok(partnerPack.includes(marker), `partner pack missing ${marker}`);
+  }
+
+  assert.ok(partnerPack.includes('SPONSORS.md'));
+  assert.ok(partnerPack.includes('SPONSORING.md'));
+  assert.ok(manifest.includes('partner-sponsor-talks-pack.md'));
+  assert.ok(releaseNotes.includes('partner/sponsor/talk outreach'));
+  assert.ok(launchChecklist.includes('partner-sponsor-talks-pack.md'));
+  assert.ok(hypergrowth.includes('partner-sponsor-talks-pack.md'));
 });
 
 test('release video suite public docs do not expose private media paths', () => {

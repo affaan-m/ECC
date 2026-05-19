@@ -46,8 +46,8 @@ feature branch:
 - documentation expansion, Japanese localization, zh-CN to ja-JP parity
   repair, and dependency readiness through TypeScript 6 and Node type updates;
 - launch collateral for GitHub release copy, X, LinkedIn, article outline,
-  Telegram/Hermes handoff, demo prompts, and the approval-gated launch
-  checklist.
+  Telegram/Hermes handoff, demo prompts, partner/sponsor/talk outreach, and
+  the approval-gated launch checklist.
 - a release URL ledger that separates links which already resolve from links
   that must wait for the GitHub release, npm rc package, plugin tag/directory,
   and ECC Tools billing readback.
