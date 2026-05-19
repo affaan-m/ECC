@@ -133,13 +133,15 @@ Use the same production shape as Video Use while keeping the ECC-specific media
 stack intact:
 
 1. Treat transcript and timeline data as the editing surface.
-2. Inspect filmstrip or frame samples only at ambiguous cut points.
-3. Keep an edit decision list before rendering.
+2. Keep visual inspection on demand: filmstrips, waveform/timeline composites,
+   or frame samples only at ambiguous cut points.
+3. Propose the edit strategy and EDL before rendering.
 4. Cut deterministically with FFmpeg.
 5. Add proof overlays with Remotion or Manim where product claims need visual
    evidence.
 6. Export the MP4 plus editable timeline and caption state.
-7. Run self-eval before any upload or social post.
+7. Run cut-boundary, audio, caption, black-frame, and product-claim self-eval
+   before any upload or social post.
 
 Do not dump frames into the repo. Frame samples used for self-eval belong in the
 local release suite workspace.

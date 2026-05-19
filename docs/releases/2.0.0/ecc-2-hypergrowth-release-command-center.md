@@ -42,6 +42,30 @@ MRR growth should come from four lanes at once:
 - consulting and implementation contracts;
 - talks, podcasts, conference demos, and partner webinars that create inbound.
 
+## Second Hypergrowth Phase
+
+The release should behave like a proof engine, not a name-change announcement.
+Every public surface should make the product obvious in the first screen,
+clip, paragraph, or demo:
+
+| Workstream | Public proof | Revenue path |
+| --- | --- | --- |
+| Product category | ECC as the harness-native operator system, not a Claude-only config pack | Converts confused OSS traffic into install, Pro, and sponsor intent |
+| Harness coverage | Claude Code, Codex, OpenCode, Cursor, Gemini, Zed, GitHub Copilot, and terminal workflows shown as execution surfaces | Partner conversations with tools, IDEs, model providers, and platform teams |
+| Control plane | `ecc2/` alpha dashboard/status/session surface and Hermes operator shell clearly framed as directionally live | Consulting and team implementation sprints |
+| Enterprise trust | AgentShield, supply-chain, release, observability, and CI gates shown as repeatable evidence | Security vendors, code-review vendors, platform sponsors, and enterprise pilots |
+| Media engine | Primary launch video, five proof clips, browser captures, transcripts, EDLs, captions, and editable timelines | Social reach, podcast/talk booking, sponsor proof, partner demos |
+| Community funnel | GitHub Discussions, Discord once approved, sponsor tiers, Pro, and consulting CTAs routed without clutter | Repeatable inbound, not one-off launch spikes |
+
+The operating rhythm after launch should be weekly:
+
+1. one product proof clip;
+2. one security or release-discipline proof clip;
+3. one partner/sponsor/talk outreach batch after owner approval;
+4. one public discussion or community prompt;
+5. one measurable funnel readback covering repo traffic, sponsor clicks, Pro
+   conversions, MRR movement, and inbound replies.
+
 ## Release Gates
 
 | Lane | Done when | Current action |
