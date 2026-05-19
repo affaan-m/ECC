@@ -54,7 +54,7 @@ function seedRepo(rootDir, overrides = {}) {
     ].join('\n'),
     'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md': [
       'Keep raw absolute paths out of public docs',
-      'Validate `video-suite-production.md`',
+      'Pick final video cuts, upload after approval, and attach public URLs',
     ].join('\n'),
     'docs/releases/2.0.0-rc.1/preview-pack-manifest.md': 'video-suite-production.md',
     'docs/releases/2.0.0-rc.1/launch-checklist.md': 'release video suite',

@@ -8,9 +8,9 @@ social announcement.
 
 | Field | Evidence |
 | --- | --- |
-| Upstream main | `855e8c8336e1c18523cbb31cb29f4ce96d7518a7` |
+| Upstream main | `3304848beb40f57043c2314c744b5ad6265aaa96` |
 | Git remote | `https://github.com/affaan-m/ECC.git` |
-| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, and PR #1997 publish-candidate gate |
+| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, and PR #1999 video dashboard evidence refresh |
 | Local status caveat | `git status --short --branch` was clean after pulling `origin/main`; generated evidence files are committed after the source snapshot they describe |
 
 The release operator must repeat all publish-facing checks from the exact final
@@ -46,6 +46,8 @@ Tracked repositories in the platform audit were:
 | PR #1995 | Merged the May 19 operator dashboard refresh with the `$1,728/mo` MRR baseline, `$10,000/mo` target, and release/video/outbound top actions |
 | PR #1996 | Merged the primary launch render self-eval gate for duration, size, resolution, video stream, and audio stream checks |
 | PR #1997 | Merged the publish-candidate gate for the primary launch MP4/captions plus five short clips in wide and vertical formats |
+| PR #1998 | Merged the release video visual QA gate for publish candidates and black-frame segment detection |
+| PR #1999 | Merged the operator dashboard refresh that moved the release video suite to current once publish-candidate evidence was recorded |
 
 ## Release And Growth Evidence
 
@@ -53,12 +55,13 @@ Tracked repositories in the platform audit were:
 | --- | --- | --- |
 | Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 25 passed, 0 failed |
 | Preview-pack smoke | `npm run preview-pack:smoke -- --format json` | Ready true; digest `bc2bf157616e`; 30 required artifacts; 5 passed, 0 failed |
-| Operator dashboard | `npm run operator:dashboard -- --markdown --write docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Generated May 19 dashboard with platform audit ready true, 0 tracked PRs, 0 tracked issues, 0 discussion gaps, `$1,728/mo` current MRR, `$10,000/mo` target MRR, and top actions for plugin publication, notifications, release video, outbound approval, AgentShield, and ECC Tools billing |
+| Operator dashboard | `npm run operator:dashboard -- --markdown --write docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Generated May 19 dashboard with platform audit ready true, 0 tracked PRs, 0 tracked issues, 0 discussion gaps, `$1,728/mo` current MRR, `$10,000/mo` target MRR, the release video suite marked current, and top actions for plugin publication, notifications, outbound approval, AgentShield, and ECC Tools billing |
 | Release video suite | `npm run release:video-suite -- --format json --summary` with `ECC_VIDEO_SOURCE_ROOT` and `ECC_VIDEO_RELEASE_SUITE_ROOT` | Ready true; 15/15 source assets present; 13/13 render, timeline, caption, EDL, and segment artifacts present; 12/12 publish-candidate outputs present with zero detected black-frame segments; primary rough render self-eval passed at 144.759 seconds, 1920x1080, 1 audio stream, and 106.78 MB |
-| Full local suite | `node tests/run-all.js` | 2545 passed, 0 failed |
-| PR #1997 CI | GitHub Actions run `26097832795` | Completed successfully for `855e8c8336e1c18523cbb31cb29f4ce96d7518a7`; all reported checks passed, including lint, validation, security scan, coverage, GitGuardian, CodeRabbit, Cubic, and the macOS/Ubuntu/Windows test matrix |
+| Full local suite | `node tests/run-all.js` | 2547 passed, 0 failed |
+| PR #1998 CI | GitHub Actions run `26099020341` | Completed successfully for `d500de1e9f11c0446b6a1349bd98b522d31f9125`; all reported checks passed, including lint, validation, security scan, coverage, GitGuardian, CodeRabbit, Cubic, and the macOS/Ubuntu/Windows test matrix |
+| PR #1999 CI | GitHub Actions run `26100148726` | Completed successfully for `90584b6d5e5814bc2ad9a4cd651bebd043de989d`; lint, validation, security scan, coverage, GitGuardian, CodeRabbit, and the macOS/Ubuntu/Windows test matrix passed; Cubic completed neutral and did not block merge |
 | Public-path sanitization | `node scripts/ci/validate-no-personal-paths.js` through local suite and CI | Passed |
-| Markdown and whitespace | `markdownlint` focused release docs plus `git diff --check` before PR #1993 | Passed |
+| Markdown and whitespace | `markdownlint` focused release docs plus `git diff --check` before PR #1999 | Passed |
 
 ## Product And Positioning Evidence
 
@@ -95,8 +98,8 @@ Tracked repositories in the platform audit were:
 The tracked public PR queue, issue queue, discussion queue, canonical ECC
 identity, release video suite, preview pack, and growth outreach packet are
 current on May 19, 2026 for `main` through
-`855e8c8336e1c18523cbb31cb29f4ce96d7518a7`, with the visual video QA gate
-staged for the next merge.
+`3304848beb40f57043c2314c744b5ad6265aaa96`. The remaining video work is
+owner approval, upload, and public URL attachment, not render or QA production.
 
 This improves publication readiness but does not replace the approval-gated
 release, package, plugin, billing, Discord, and announcement steps in

@@ -472,7 +472,7 @@ function buildLocalEvidenceChecks(rootDir) {
     ),
     buildCheck(
       'release-evidence-current',
-      includesAll(evidence, ['Release video suite', 'growth outreach', 'Operator dashboard', 'GitGuardian', 'macOS/Ubuntu/Windows test matrix', '2545 passed']) ? 'pass' : 'fail',
+      includesAll(evidence, ['Release video suite', 'growth outreach', 'Operator dashboard', 'GitGuardian', 'macOS/Ubuntu/Windows test matrix', '2547 passed']) ? 'pass' : 'fail',
       'rc.1 evidence includes current release, video, growth, and CI artifacts',
       { path: 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md' }
     ),

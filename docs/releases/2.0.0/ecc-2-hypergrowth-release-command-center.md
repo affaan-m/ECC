@@ -32,7 +32,7 @@ The release copy should show the 2.0 product shape directly.
 | MRR | `$1,728/mo` | `$10,000/mo` | `$8,272/mo` |
 | Sponsor motion | Active GitHub Sponsors plus open inbound | Repeatable sponsor close loop | Approval-gated outbound |
 | Consulting motion | Open, non-primary | Partner-ready packages | Public proof, talks, and intake |
-| Content motion | Raw ECC 2 media exists | Weekly launch clips and founder proof | Final video suite |
+| Content motion | Release video publish candidates ready | Weekly launch clips and founder proof | Owner approval, upload, and public URLs |
 | Community motion | Discord exists | Useful coding/operator community | Invite, channels, pins, moderation |
 
 MRR growth should come from four lanes at once:
@@ -50,7 +50,7 @@ MRR growth should come from four lanes at once:
 | Package and plugin publication | `ecc-universal@2.0.0-rc.1` dry-runs clean, npm `next` is approved, Claude plugin tag dry-runs, Codex repo marketplace smoke passes, OpenCode build passes | Refresh publication evidence from final commit |
 | Product proof | Quickstart, cross-harness architecture, demo prompts, `ecc2/` alpha boundary, AgentShield safety proof, and hosted ECC Tools links are consistent | Keep proof surfaces concrete |
 | Revenue proof | Sponsor tiers, Pro pricing, consulting CTA, partner CTA, and billing-readback language are current | Do not announce billing claims before live readback |
-| Content proof | Launch video, short-form clips, screenshots, release notes, GitHub Discussion, X, LinkedIn, and longform post are aligned | Validate `video-suite-production.md` and the local render suite |
+| Content proof | Launch video, short-form clips, screenshots, release notes, GitHub Discussion, X, LinkedIn, and longform post are aligned | Pick final video cuts, upload after approval, and attach public URLs |
 | Community proof | Discord invite, rules, channels, onboarding, and sponsor/community routing are ready | Needs invite/token decision before public links |
 
 ## Video Suite
@@ -128,11 +128,12 @@ Avoid:
 1. Land the public repo identity fixes.
 2. Refresh package, plugin, workflow, release, and launch-copy URLs.
 3. Record final publication evidence from the exact release commit.
-4. Produce the video suite manifest and transcripts from existing raw material;
-   gate it with `npm run release:video-suite -- --format json`.
+4. Keep the video suite manifest, transcripts, publish candidates, and visual QA
+   current with `npm run release:video-suite -- --format json`.
 5. Browser-capture the README, ECC Tools app, install flow, and relevant proof
    surfaces for b-roll.
-6. Render the primary launch video plus five short clips.
+6. Choose the owner-approved primary launch video and five short clips, then
+   upload and attach final public URLs.
 7. Finalize GitHub release, X thread, LinkedIn post, Discussion announcement,
    sponsor email copy, consulting intro, partner DM, and podcast/talk pitch.
 8. Publish only after npm, plugin, release URL, and billing-readback gates are

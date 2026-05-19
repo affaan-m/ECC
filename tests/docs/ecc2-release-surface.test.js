@@ -269,7 +269,7 @@ test('release video suite manifest gates the content launch lane', () => {
   }
 
   assert.ok(launchChecklist.includes('npm run release:video-suite -- --format json'));
-  assert.ok(hypergrowth.includes('Validate `video-suite-production.md`'));
+  assert.ok(hypergrowth.includes('Pick final video cuts, upload after approval, and attach public URLs'));
   assert.strictEqual(packageJson.scripts['release:video-suite'], 'node scripts/release-video-suite.js');
   assert.ok(packageJson.files.includes('scripts/release-video-suite.js'));
 });
