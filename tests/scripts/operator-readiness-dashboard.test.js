@@ -413,6 +413,44 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('release video suite moves current when publish-candidate evidence is recorded', () => {
+    const rootDir = createTempDir('operator-dashboard-video-current-');
+
+    try {
+      seedRepo(rootDir, {
+        'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md': [
+          'Release video suite',
+          'growth outreach',
+          'Operator dashboard',
+          'GitGuardian',
+          'macOS/Ubuntu/Windows test matrix',
+          '2545 passed',
+          'Business baseline',
+          '$1,728/mo',
+          '$8,272/mo',
+          'Ready true',
+          '15/15 source assets present',
+          '13/13 render, timeline, caption, EDL, and segment artifacts present',
+          '12/12 publish-candidate outputs present with zero detected black-frame segments',
+          'primary rough render self-eval passed'
+        ].join('\n')
+      });
+
+      const report = buildSeededReport(rootDir);
+      const releaseVideo = report.requirements.find(item => item.id === 'release-video-suite');
+
+      assert.strictEqual(releaseVideo.status, 'current');
+      assert.ok(releaseVideo.evidence.includes('15/15 source assets'));
+      assert.ok(releaseVideo.evidence.includes('12/12 publish candidates'));
+      assert.ok(releaseVideo.evidence.includes('zero detected black-frame segments'));
+      assert.strictEqual(releaseVideo.gap, 'final owner approval, upload, and public video URLs remain approval-gated');
+      assert.ok(!report.top_actions.some(item => item.id === 'release-video-suite'));
+      assert.ok(report.next_work_order.some(item => item.includes('Review the owner-approved primary launch video candidates')));
+    } finally {
+      cleanup(rootDir);
+    }
+  })) passed++; else failed++;
+
   if (test('Linear progress stays in progress until live sync evidence is mirrored', () => {
     const rootDir = createTempDir('operator-dashboard-linear-progress-');
 

@@ -641,6 +641,15 @@ function buildRequirements(rootDir, platformReport) {
       'video-source-assets-present',
       'video-release-artifacts-present',
     ]);
+  const releaseVideoPublishCandidatesReady = releaseVideoSuiteReady
+    && includesAll(publicationEvidenceMay19, [
+      'Ready true',
+      '15/15 source assets present',
+      '13/13 render, timeline, caption, EDL, and segment artifacts present',
+      '12/12 publish-candidate outputs present',
+      'zero detected black-frame segments',
+      'primary rough render self-eval passed',
+    ]);
   const partnerSponsorTalksReady = includesAll(partnerSponsorTalksPack, [
     'Sponsor Outbound',
     'Platform Partner DM',
@@ -802,11 +811,15 @@ function buildRequirements(rootDir, platformReport) {
       'release-video-suite',
       'Produce the ECC 2.0 release video suite',
       'docs/releases/2.0.0-rc.1/video-suite-production.md and npm run release:video-suite',
-      releaseVideoSuiteReady ? 'in_progress' : 'not_complete',
-      releaseVideoSuiteReady
+      releaseVideoPublishCandidatesReady ? 'current' : releaseVideoSuiteReady ? 'in_progress' : 'not_complete',
+      releaseVideoPublishCandidatesReady
+        ? 'video-suite gate is ready with 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates, primary self-eval, and zero detected black-frame segments recorded in May 19 evidence'
+        : releaseVideoSuiteReady
         ? 'video production manifest and deterministic video-suite gate are wired for launch video, short clips, captions, timeline, and self-eval evidence'
         : 'video production manifest or release:video-suite gate is incomplete',
-      releaseVideoSuiteReady
+      releaseVideoPublishCandidatesReady
+        ? 'final owner approval, upload, and public video URLs remain approval-gated'
+        : releaseVideoSuiteReady
         ? 'render final owner-approved MP4s, captions, platform reframes, and editable timeline before posting'
         : 'wire release:video-suite and production manifest before final content work'
     ),
@@ -911,6 +924,10 @@ function buildReport(options) {
   }));
   const head = runCommand('git', ['rev-parse', 'HEAD'], { cwd: rootDir });
   const growth = buildGrowthSummary(rootDir);
+  const releaseVideoRequirement = requirements.find(item => item.id === 'release-video-suite');
+  const releaseVideoWorkOrder = releaseVideoRequirement && releaseVideoRequirement.status === 'current'
+    ? 'Review the owner-approved primary launch video candidates, choose the final cuts, upload after approval, and attach public video URLs to the release pack.'
+    : 'Render the owner-approved primary launch video, short clips, captions, reframes, and editable timeline from the video-suite production manifest.';
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -937,7 +954,7 @@ function buildReport(options) {
     top_actions: topActions,
     next_work_order: [
       'Regenerate this dashboard from the final release commit before publication evidence is recorded.',
-      'Render the owner-approved primary launch video, short clips, captions, reframes, and editable timeline from the video-suite production manifest.',
+      releaseVideoWorkOrder,
       'Replace final release, npm, plugin, billing, and video URLs in the partner/sponsor/talk pack, then get explicit approval before outbound.',
       'Repeat ITO-57 Linear/project status sync after the next significant merge batch or advisory-source refresh.',
       'Create or verify Marketplace-managed Pro target billing-state with webhook provenance, configure the target account and INTERNAL_API_SECRET, then rerun target readback and the live announcement gate before publishing native-payments copy.',
