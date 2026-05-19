@@ -55,6 +55,9 @@ For the May 17 operator dashboard refresh, see
 [`operator-readiness-dashboard-2026-05-17.md`](operator-readiness-dashboard-2026-05-17.md).
 For the May 18 operator dashboard refresh, see
 [`operator-readiness-dashboard-2026-05-18.md`](operator-readiness-dashboard-2026-05-18.md).
+
+The current May 19 hypergrowth/operator dashboard is
+[`operator-readiness-dashboard-2026-05-19.md`](operator-readiness-dashboard-2026-05-19.md).
 For the May 19 live/pending release URL ledger after the public repo rename, see
 [`release-url-ledger-2026-05-19.md`](release-url-ledger-2026-05-19.md).
 
@@ -96,7 +99,7 @@ Record the exact commit SHA and command output before any publication action:
 | Evidence | Command | Required result | Recorded output |
 | --- | --- | --- | --- |
 | Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | `7a0645ed`: `## main...origin/main`; repeat from the exact final publication commit before release |
-| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `3bb55807407b`, 29 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `bc2bf157616e`, 30 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
 | Harness audit | `npm run harness:audit -- --format json` | 70/70 passing | `99e01ded`: 70/70, 0 top actions |
 | Adapter scorecard | `npm run harness:adapters -- --check` | PASS | `99e01ded`: PASS, 11 adapters |
 | Observability readiness | `npm run observability:ready` | 21/21 passing | `publication-evidence-2026-05-18.md`: 21/21, ready yes |

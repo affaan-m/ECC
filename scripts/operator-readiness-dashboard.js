@@ -543,15 +543,54 @@ function isCurrentOrComplete(status) {
   return status === 'current' || status === 'complete';
 }
 
+function extractGrowthBaseline(hypergrowth) {
+  const mrrMatch = hypergrowth.match(/\| MRR \| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|/);
+
+  if (!mrrMatch) {
+    return {
+      currentMrr: 'unknown',
+      targetMrr: 'unknown',
+      gapMrr: 'unknown',
+    };
+  }
+
+  return {
+    currentMrr: mrrMatch[1],
+    targetMrr: mrrMatch[2],
+    gapMrr: mrrMatch[3],
+  };
+}
+
+function buildGrowthSummary(rootDir) {
+  const hypergrowth = readText(rootDir, 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
+  const partnerPack = readText(rootDir, 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md');
+  const baseline = extractGrowthBaseline(hypergrowth || partnerPack);
+
+  return {
+    ...baseline,
+    lanes: [
+      'GitHub Sponsors and OSS partner sponsors',
+      'ECC Tools Pro subscriptions',
+      'consulting and implementation contracts',
+      'talks, podcasts, conference demos, and partner webinars',
+    ],
+  };
+}
+
 function buildRequirements(rootDir, platformReport) {
   const roadmap = readText(rootDir, 'docs/ECC-2.0-GA-ROADMAP.md');
   const publicationReadiness = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-readiness.md');
   const namingMatrix = readText(rootDir, 'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md');
   const releasePublicationChecklist = readText(rootDir, 'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md');
   const releaseUrlLedger = readText(rootDir, 'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md');
+  const publicationEvidenceMay19 = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md');
+  const hypergrowthCommandCenter = readText(rootDir, 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
+  const partnerSponsorTalksPack = readText(rootDir, 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md');
+  const releaseVideoProduction = readText(rootDir, 'docs/releases/2.0.0-rc.1/video-suite-production.md');
   const ownerQueueCleanup = readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-queue-cleanup-2026-05-18.md');
   const previewManifest = readText(rootDir, 'docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
   const previewPackSmoke = readText(rootDir, 'scripts/preview-pack-smoke.js');
+  const releaseVideoSuite = readText(rootDir, 'scripts/release-video-suite.js');
   const progressSync = readText(rootDir, 'docs/architecture/progress-sync-contract.md');
   const observabilityReadiness = readText(rootDir, 'docs/architecture/observability-readiness.md');
   const stalePrSalvage = readText(rootDir, 'docs/stale-pr-salvage-ledger.md');
@@ -577,6 +616,39 @@ function buildRequirements(rootDir, platformReport) {
     ]);
   const hermesArtifactsReady = fileExists(rootDir, 'docs/HERMES-SETUP.md')
     && fileExists(rootDir, 'skills/hermes-imports/SKILL.md');
+  const hypergrowthCommandCenterReady = includesAll(hypergrowthCommandCenter, [
+    'harness-native operator system',
+    '$1,728/mo',
+    '$10,000/mo',
+    'Video Suite',
+    'Distribution Plan',
+    'Owner Approvals',
+  ]) && includesAll(publicationEvidenceMay19, [
+    'Business baseline',
+    '$1,728/mo',
+    '$8,272/mo',
+  ]);
+  const releaseVideoSuiteReady = scripts['release:video-suite'] === 'node scripts/release-video-suite.js'
+    && fileExists(rootDir, 'scripts/release-video-suite.js')
+    && includesAll(releaseVideoProduction, [
+      'ECC 2.0 Video Suite Production Manifest',
+      'Primary launch video',
+      'Self-Eval Gate',
+      'timeline',
+    ])
+    && includesAll(releaseVideoSuite, [
+      'ecc.release-video-suite.v1',
+      'video-source-assets-present',
+      'video-release-artifacts-present',
+    ]);
+  const partnerSponsorTalksReady = includesAll(partnerSponsorTalksPack, [
+    'Sponsor Outbound',
+    'Platform Partner DM',
+    'Consulting Intro',
+    'Talk And Podcast Pitch',
+    'GitHub Discussion Announcement',
+    'Do Not Send Or Publish If',
+  ]);
 
   const githubLive = !platformReport.github.skipped && platformReport.github.totals.errors === 0;
   const ownerWideOpenPrs = extractLabeledCount(ownerQueueCleanup, 'Owner-wide open PRs after cleanup');
@@ -715,6 +787,42 @@ function buildRequirements(rootDir, platformReport) {
         : 'URL-backed refresh and publish approval still pending'
     ),
     buildRequirement(
+      'hypergrowth-command-center',
+      'Create a second-phase hypergrowth release command center',
+      'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md plus May 19 evidence',
+      hypergrowthCommandCenterReady ? 'current' : 'in_progress',
+      hypergrowthCommandCenterReady
+        ? 'current MRR, target MRR, gap, release claim, video lane, distribution plan, and approval boundaries are in-tree'
+        : 'hypergrowth command center or May 19 business baseline evidence is incomplete',
+      hypergrowthCommandCenterReady
+        ? 'refresh after every MRR, channel, or approval-state change before public launch'
+        : 'add current MRR, target gap, channel plan, video lane, and approval boundaries'
+    ),
+    buildRequirement(
+      'release-video-suite',
+      'Produce the ECC 2.0 release video suite',
+      'docs/releases/2.0.0-rc.1/video-suite-production.md and npm run release:video-suite',
+      releaseVideoSuiteReady ? 'in_progress' : 'not_complete',
+      releaseVideoSuiteReady
+        ? 'video production manifest and deterministic video-suite gate are wired for launch video, short clips, captions, timeline, and self-eval evidence'
+        : 'video production manifest or release:video-suite gate is incomplete',
+      releaseVideoSuiteReady
+        ? 'render final owner-approved MP4s, captions, platform reframes, and editable timeline before posting'
+        : 'wire release:video-suite and production manifest before final content work'
+    ),
+    buildRequirement(
+      'partner-sponsor-talks-pack',
+      'Prepare sponsor, partner, consulting, podcast, talk, and Discussion copy',
+      'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md',
+      partnerSponsorTalksReady ? 'in_progress' : 'not_complete',
+      partnerSponsorTalksReady
+        ? 'sponsor outbound, platform partner DM, consulting intro, talk/podcast pitch, GitHub Discussion announcement, CTA hooks, and do-not-send gate are drafted'
+        : 'partner, sponsor, consulting, talk, or discussion copy is missing',
+      partnerSponsorTalksReady
+        ? 'replace final URLs after publication gates, then get explicit approval before outbound or personal-account posts'
+        : 'draft the full outbound pack and approval gate'
+    ),
+    buildRequirement(
       'agentshield-enterprise-iteration',
       'Advance AgentShield enterprise iteration',
       'AgentShield PR evidence plus enterprise roadmap',
@@ -802,12 +910,14 @@ function buildReport(options) {
     fix: item.gap,
   }));
   const head = runCommand('git', ['rev-parse', 'HEAD'], { cwd: rootDir });
+  const growth = buildGrowthSummary(rootDir);
 
   return {
     schema_version: SCHEMA_VERSION,
     generatedAt,
     root: rootDir,
     head,
+    growth,
     ready: incompleteRequirements.length === 0,
     dashboardReady: platformReport.ready,
     publicationReady: false,
@@ -827,9 +937,10 @@ function buildReport(options) {
     top_actions: topActions,
     next_work_order: [
       'Regenerate this dashboard from the final release commit before publication evidence is recorded.',
+      'Render the owner-approved primary launch video, short clips, captions, reframes, and editable timeline from the video-suite production manifest.',
+      'Replace final release, npm, plugin, billing, and video URLs in the partner/sponsor/talk pack, then get explicit approval before outbound.',
       'Repeat ITO-57 Linear/project status sync after the next significant merge batch or advisory-source refresh.',
       'Create or verify Marketplace-managed Pro target billing-state with webhook provenance, configure the target account and INTERNAL_API_SECRET, then rerun target readback and the live announcement gate before publishing native-payments copy.',
-      'Resume ITO-45, ITO-46, and ITO-56 only after the generated dashboard and final release gates are refreshed.',
     ],
   };
 }
@@ -847,6 +958,9 @@ function renderText(report) {
     `Commit: ${report.head || 'unknown'}`,
     `Dashboard ready: ${report.dashboardReady}`,
     `Publication ready: ${report.publicationReady}`,
+    '',
+    'Growth baseline:',
+    `  MRR: ${report.growth ? report.growth.currentMrr : 'unknown'} -> ${report.growth ? report.growth.targetMrr : 'unknown'} (gap ${report.growth ? report.growth.gapMrr : 'unknown'})`,
     '',
     'Platform:',
     `  PRs: ${report.platform.openPrs}`,
@@ -894,6 +1008,14 @@ function renderMarkdown(report) {
     `| Local worktree | ${report.platform.blockingDirtyCount === 0 ? 'Current' : 'Needs work'} | ${report.platform.blockingDirtyCount} blocking dirty files; ${report.platform.ignoredDirtyCount} ignored dirty entries |`,
     `| Dashboard generation | ${report.dashboardReady ? 'Current' : 'Needs work'} | platform audit ready: ${report.platform.ready}; GitHub skipped: ${report.platform.githubSkipped} |`,
     `| Publication | ${report.publicationReady ? 'Ready' : 'Not complete'} | release, npm, plugin, billing, and announcement gates are tracked below |`,
+    '',
+    '## Growth Baseline',
+    '',
+    '| Metric | Current | Target | Gap |',
+    '| --- | ---: | ---: | ---: |',
+    `| MRR | ${markdownEscape(report.growth ? report.growth.currentMrr : 'unknown')} | ${markdownEscape(report.growth ? report.growth.targetMrr : 'unknown')} | ${markdownEscape(report.growth ? report.growth.gapMrr : 'unknown')} |`,
+    '',
+    'Growth lanes: GitHub Sponsors and OSS partner sponsors; ECC Tools Pro subscriptions; consulting and implementation contracts; talks, podcasts, conference demos, and partner webinars.',
     '',
     '## Prompt-To-Artifact Checklist',
     '',
