@@ -458,9 +458,12 @@ function supplyChainLocalProtectionGap({ roadmap, scripts }) {
 function hasCurrentLinearProgressSync({ roadmap, progressSync }) {
   const hasOperatorProgressSurface = roadmap.includes('operator progress snapshot')
     || roadmap.includes('operator progress comment');
+  const hasMay19ProgressSurface = roadmap.includes('ecc-may-19-post-pr-2002-sync-64cef8f668e0')
+    && roadmap.includes('a6411e3a-8c8e-4a58-adba-687e77d4c543')
+    && roadmap.includes('ITO-56');
 
   return roadmap.includes('Linear live sync is current')
-    && hasOperatorProgressSurface
+    && (hasOperatorProgressSurface || hasMay19ProgressSurface)
     && includesAll(progressSync, [
     'node scripts/work-items.js sync-github --repo <owner/repo>',
     'node scripts/status.js --json',
@@ -483,6 +486,10 @@ function linearProgressStatus(context) {
 
 function linearProgressEvidence(context) {
   if (hasCurrentLinearProgressSync(context)) {
+    if (context.roadmap.includes('ecc-may-19-post-pr-2002-sync-64cef8f668e0')) {
+      return 'Linear live sync is current with the May 19 post-PR #2002 sync document, project comment, and active issue-lane updates; progress-sync contract defines the file-backed work-items/status path';
+    }
+
     return 'Linear live sync and project progress surface are current; progress-sync contract defines the file-backed work-items/status path';
   }
 

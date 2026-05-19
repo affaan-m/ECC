@@ -259,6 +259,9 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
     'local 2550-test suite',
     'PR #2001',
     'GitHub Actions run `26102500291`',
+    'PR #2002',
+    'GitHub Actions run `26103853507`',
+    'ecc-may-19-post-pr-2002-sync-64cef8f668e0',
     'owner approval packet',
   ]) {
     assert.ok(roadmap.includes(marker), `GA roadmap missing current evidence marker ${marker}`);
