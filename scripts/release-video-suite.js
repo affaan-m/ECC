@@ -371,8 +371,12 @@ function probeMedia(filePath, skipProbe) {
   const result = {
     sizeBytes: stat.size,
     sizeMb: formatBytes(stat.size),
+    audioStreams: null,
     durationSeconds: null,
+    height: null,
     probe: skipProbe ? 'skipped' : 'unavailable',
+    videoStreams: null,
+    width: null,
   };
 
   if (skipProbe) {
@@ -383,7 +387,7 @@ function probeMedia(filePath, skipProbe) {
     '-v',
     'error',
     '-show_entries',
-    'format=duration',
+    'format=duration:stream=codec_type,width,height',
     '-of',
     'json',
     filePath,
@@ -407,8 +411,18 @@ function probeMedia(filePath, skipProbe) {
   const duration = Number(parsed && parsed.format && parsed.format.duration);
   if (Number.isFinite(duration)) {
     result.durationSeconds = Number(duration.toFixed(3));
-    result.probe = 'ok';
   }
+
+  const streams = Array.isArray(parsed && parsed.streams) ? parsed.streams : [];
+  const videoStreams = streams.filter(stream => stream.codec_type === 'video');
+  const audioStreams = streams.filter(stream => stream.codec_type === 'audio');
+  const firstVideo = videoStreams[0] || {};
+
+  result.audioStreams = audioStreams.length;
+  result.videoStreams = videoStreams.length;
+  result.width = Number.isFinite(Number(firstVideo.width)) ? Number(firstVideo.width) : null;
+  result.height = Number.isFinite(Number(firstVideo.height)) ? Number(firstVideo.height) : null;
+  result.probe = 'ok';
 
   return result;
 }
@@ -520,6 +534,69 @@ function inspectSuiteArtifacts(suiteRoot, skipProbe) {
   });
 }
 
+function evaluatePrimaryRender(suiteArtifacts, skipProbe) {
+  const primary = suiteArtifacts.find(artifact => artifact.id === 'primary-render-v1');
+
+  if (!primary || primary.status !== 'present') {
+    return {
+      status: 'fail',
+      summary: 'primary launch render is missing or outside the duration target',
+      fix: 'Render the primary launch video within the 90-150 second target before release review.',
+    };
+  }
+
+  if (skipProbe) {
+    return {
+      status: 'pass',
+      summary: 'primary launch render exists; stream self-eval skipped by --skip-probe',
+      fix: '',
+    };
+  }
+
+  const failures = [];
+
+  if (primary.probe !== 'ok') {
+    failures.push(`ffprobe ${primary.probe}`);
+  }
+
+  if (!Number.isFinite(primary.durationSeconds)
+    || primary.durationSeconds < 90
+    || primary.durationSeconds > 150) {
+    failures.push('duration outside 90-150 seconds');
+  }
+
+  if (!Number.isFinite(primary.sizeMb) || primary.sizeMb < 5) {
+    failures.push('render is unexpectedly small');
+  }
+
+  if (!Number.isFinite(primary.videoStreams) || primary.videoStreams < 1) {
+    failures.push('no video stream');
+  }
+
+  if (!Number.isFinite(primary.audioStreams) || primary.audioStreams < 1) {
+    failures.push('no audio stream');
+  }
+
+  if (!Number.isFinite(primary.width) || !Number.isFinite(primary.height)
+    || primary.width < 1280 || primary.height < 720) {
+    failures.push('resolution below 1280x720');
+  }
+
+  if (failures.length > 0) {
+    return {
+      status: 'fail',
+      summary: `primary launch render failed self-eval: ${failures.join(', ')}`,
+      fix: 'Regenerate the primary launch render with audio, HD video, valid duration, and non-empty output.',
+    };
+  }
+
+  return {
+    status: 'pass',
+    summary: `primary launch render self-eval passed: ${primary.durationSeconds}s, ${primary.width}x${primary.height}, ${primary.audioStreams} audio stream(s), ${primary.sizeMb} MB`,
+    fix: '',
+  };
+}
+
 function buildReport(options = {}) {
   const rootDir = path.resolve(options.root || process.cwd());
   const sourceRoot = options.sourceRoot ? path.resolve(options.sourceRoot) : '';
@@ -542,6 +619,7 @@ function buildReport(options = {}) {
   const suiteArtifacts = inspectSuiteArtifacts(suiteRoot, skipProbe);
   const missingSourceAssets = sourceAssets.filter(asset => asset.status !== 'present');
   const missingSuiteArtifacts = suiteArtifacts.filter(artifact => artifact.status !== 'present');
+  const primaryRenderSelfEval = evaluatePrimaryRender(suiteArtifacts, skipProbe);
 
   const checks = [
     makeCheck(
@@ -597,6 +675,12 @@ function buildReport(options = {}) {
         configured: Boolean(suiteRoot),
         missing: missingSuiteArtifacts.map(artifact => artifact.relativePath),
       }
+    ),
+    makeCheck(
+      'video-primary-render-self-eval',
+      primaryRenderSelfEval.status,
+      primaryRenderSelfEval.summary,
+      primaryRenderSelfEval.fix
     ),
   ];
 

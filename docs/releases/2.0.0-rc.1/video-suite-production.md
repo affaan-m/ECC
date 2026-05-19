@@ -153,6 +153,8 @@ npm run release:video-suite -- --format json
 
 Then manually check the final render for:
 
+- validator self-eval passes for the primary render: 90-150 seconds, at least
+  1280x720, video stream present, audio stream present, and non-empty output;
 - no blank frames or accidental desktop exposure;
 - no stale repo name, pivot, rename, or Claude-only framing in captions;
 - no captions that rewrite speech into a false claim;

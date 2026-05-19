@@ -169,6 +169,10 @@ function runTests() {
       assert.strictEqual(report.ready, true);
       assert.strictEqual(report.mediaPathsRedacted, true);
       assert.ok(report.checks.every(check => check.status === 'pass'));
+      assert.ok(report.checks.some(check => (
+        check.id === 'video-primary-render-self-eval'
+          && check.summary.includes('skipped by --skip-probe')
+      )));
       assert.strictEqual(report.sourceAssets.length, REQUIRED_SOURCE_ASSETS.length);
       assert.strictEqual(report.suiteArtifacts.length, REQUIRED_SUITE_ARTIFACTS.length);
       assert.ok(renderText(report).includes('Ready: yes'));
@@ -197,6 +201,7 @@ function runTests() {
       assert.ok(report.top_actions.some(action => action.includes('ECC_VIDEO_RELEASE_SUITE_ROOT')));
       assert.ok(report.checks.some(check => check.id === 'video-source-assets-present' && check.status === 'fail'));
       assert.ok(report.checks.some(check => check.id === 'video-release-artifacts-present' && check.status === 'fail'));
+      assert.ok(report.checks.some(check => check.id === 'video-primary-render-self-eval' && check.status === 'fail'));
     } finally {
       cleanup(rootDir);
     }
