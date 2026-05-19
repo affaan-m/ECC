@@ -8,9 +8,9 @@ social announcement.
 
 | Field | Evidence |
 | --- | --- |
-| Upstream main | `e7a7b2aaa33c0657cad9db3fa2ced0e636cd0f8c` |
+| Upstream main | `8148340ad14eb32c971346f0cb4cb9431ec0f5de` |
 | Git remote | `https://github.com/affaan-m/ECC.git` |
-| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, and the owner approval packet addition |
+| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, and PR #2001 owner approval packet addition |
 | Local status caveat | `git status --short --branch` was clean after pulling `origin/main`; generated evidence files are committed after the source snapshot they describe |
 
 The release operator must repeat all publish-facing checks from the exact final
@@ -49,19 +49,20 @@ Tracked repositories in the platform audit were:
 | PR #1998 | Merged the release video visual QA gate for publish candidates and black-frame segment detection |
 | PR #1999 | Merged the operator dashboard refresh that moved the release video suite to current once publish-candidate evidence was recorded |
 | PR #2000 | Merged the suite-count evidence refresh so the platform audit rejects stale local-suite totals |
-| Owner approval packet | Added the final human decision sheet for release, package, plugin, video, billing, social, and outbound approvals |
+| PR #2001 | Merged the final human decision sheet for release, package, plugin, video, billing, social, and outbound approvals; GitHub Actions run `26102500291` completed successfully |
 
 ## Release And Growth Evidence
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 26 passed, 0 failed |
+| Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 27 passed, 0 failed |
 | Preview-pack smoke | `npm run preview-pack:smoke -- --format json` | Ready true; digest `790430aef4a8`; 31 required artifacts; 5 passed, 0 failed |
 | Operator dashboard | `npm run operator:dashboard -- --markdown --write docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Generated May 19 dashboard with platform audit ready true, 0 tracked PRs, 0 tracked issues, 0 discussion gaps, `$1,728/mo` current MRR, `$10,000/mo` target MRR, the release video suite marked current, and top actions for plugin publication, notifications, outbound approval, AgentShield, and ECC Tools billing |
 | Release video suite | `npm run release:video-suite -- --format json --summary` with `ECC_VIDEO_SOURCE_ROOT` and `ECC_VIDEO_RELEASE_SUITE_ROOT` | Ready true; 15/15 source assets present; 13/13 render, timeline, caption, EDL, and segment artifacts present; 12/12 publish-candidate outputs present with zero detected black-frame segments; primary rough render self-eval passed at 144.759 seconds, 1920x1080, 1 audio stream, and 106.78 MB |
-| Full local suite | `node tests/run-all.js` | 2548 passed, 0 failed |
+| Full local suite | `node tests/run-all.js` | 2550 passed, 0 failed |
 | PR #1998 CI | GitHub Actions run `26099020341` | Completed successfully for `d500de1e9f11c0446b6a1349bd98b522d31f9125`; all reported checks passed, including lint, validation, security scan, coverage, GitGuardian, CodeRabbit, Cubic, and the macOS/Ubuntu/Windows test matrix |
 | PR #1999 CI | GitHub Actions run `26100148726` | Completed successfully for `90584b6d5e5814bc2ad9a4cd651bebd043de989d`; lint, validation, security scan, coverage, GitGuardian, CodeRabbit, and the macOS/Ubuntu/Windows test matrix passed; Cubic completed neutral and did not block merge |
+| PR #2001 CI | GitHub Actions run `26102500291` | Completed successfully for `8148340ad14eb32c971346f0cb4cb9431ec0f5de`; required checks passed before merge |
 | Public-path sanitization | `node scripts/ci/validate-no-personal-paths.js` through local suite and CI | Passed |
 | Markdown and whitespace | `markdownlint` focused release docs plus `git diff --check` before PR #1999 | Passed |
 

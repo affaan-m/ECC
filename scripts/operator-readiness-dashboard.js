@@ -588,6 +588,7 @@ function buildRequirements(rootDir, platformReport) {
   const partnerSponsorTalksPack = readText(rootDir, 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md');
   const releaseVideoProduction = readText(rootDir, 'docs/releases/2.0.0-rc.1/video-suite-production.md');
   const ownerQueueCleanup = readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-queue-cleanup-2026-05-18.md');
+  const ownerApprovalPacket = readText(rootDir, 'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md');
   const previewManifest = readText(rootDir, 'docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
   const previewPackSmoke = readText(rootDir, 'scripts/preview-pack-smoke.js');
   const releaseVideoSuite = readText(rootDir, 'scripts/release-video-suite.js');
@@ -658,6 +659,17 @@ function buildRequirements(rootDir, platformReport) {
     'GitHub Discussion Announcement',
     'Do Not Send Or Publish If',
   ]);
+  const ownerApprovalPacketReady = includesAll(ownerApprovalPacket, [
+    'Owner Approval Packet',
+    'Decision Register',
+    'GitHub prerelease',
+    'npm `next` publish',
+    'Claude plugin tag',
+    'Video upload',
+    'Final URL Fill-In',
+    'Do Not Approve If',
+    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement is authorized by this packet alone.'
+  ]) && includesAll(previewManifest, ['owner-approval-packet-2026-05-19.md']);
 
   const githubLive = !platformReport.github.skipped && platformReport.github.totals.errors === 0;
   const ownerWideOpenPrs = extractLabeledCount(ownerQueueCleanup, 'Owner-wide open PRs after cleanup');
@@ -794,6 +806,18 @@ function buildRequirements(rootDir, platformReport) {
       includesAll(releaseUrlLedger, ['Live Now', 'Approval-Gated URLs', 'Codex marketplace CLI docs'])
         ? 'final live release/npm/plugin/billing URLs and publish approval still pending'
         : 'URL-backed refresh and publish approval still pending'
+    ),
+    buildRequirement(
+      'owner-approval-packet',
+      'Prepare final owner approval packet',
+      'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md',
+      ownerApprovalPacketReady ? 'current' : 'not_complete',
+      ownerApprovalPacketReady
+        ? 'owner approval packet covers release, package, plugin, video, billing, social, and outbound decisions'
+        : 'owner approval packet is missing or incomplete',
+      ownerApprovalPacketReady
+        ? 'review owner approvals from the final release commit before any publication or outbound action'
+        : 'add the owner decision sheet before publication review'
     ),
     buildRequirement(
       'hypergrowth-command-center',
@@ -954,6 +978,7 @@ function buildReport(options) {
     top_actions: topActions,
     next_work_order: [
       'Regenerate this dashboard from the final release commit before publication evidence is recorded.',
+      'Review the owner approval packet from the final release commit and approve, defer, or block each publication and outbound lane.',
       releaseVideoWorkOrder,
       'Replace final release, npm, plugin, billing, and video URLs in the partner/sponsor/talk pack, then get explicit approval before outbound.',
       'Repeat ITO-57 Linear/project status sync after the next significant merge batch or advisory-source refresh.',

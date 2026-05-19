@@ -77,17 +77,19 @@ As of 2026-05-19:
   refreshed operator dashboard.
 - `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md` records the
   current May 19 queue-zero state, canonical ECC identity merge, release video
-  suite gate, partner/sponsor/talk outreach pack, preview-pack smoke digest
-  `bc2bf157616e`, local 2544-test suite, and PR #1993 CI success. The May 18
-  evidence remains the detailed supply-chain and publication-path snapshot.
+  suite gate, partner/sponsor/talk outreach pack, owner approval packet
+  (`owner-approval-packet-2026-05-19.md`), preview-pack smoke digest
+  `790430aef4a8`, local 2550-test suite, PR #2001 merge, and GitHub Actions run
+  `26102500291` success. The May 18 evidence remains the detailed supply-chain
+  and publication-path snapshot.
 - `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md`
   regenerates the ITO-44 prompt-to-artifact dashboard from live platform audit
   evidence: PR queue, issue queue, discussion queue, local worktree gate,
   dashboard generation, and supply-chain loop are current; the dashboard now
   also tracks the `$1,728/mo` to `$10,000/mo` hypergrowth baseline, release
-  video-suite lane, and partner/sponsor/talk outbound pack; publication,
-  plugin, billing, AgentShield, ECC Tools, and final outbound approval remain
-  the next work.
+  video-suite lane, partner/sponsor/talk outbound pack, and owner approval
+  packet; publication, plugin, billing, AgentShield, ECC Tools, and final
+  outbound approval remain the next work.
 - `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-17.md` records the
   May 17 queue-zero state, Japanese localization merge, Dependabot TypeScript
   and Node type merges, post-merge ja-JP lint repair, Mini Shai-Hulud/TanStack
@@ -732,12 +734,12 @@ is not complete unless the evidence column exists and has been freshly verified.
 
 | Prompt requirement | Required artifact or gate | Current evidence | Status |
 | --- | --- | --- | --- |
-| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-19 after merging PR #1993 and refreshing platform audit evidence | Complete |
+| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-19 after merging PR #2001 and refreshing platform audit evidence | Complete |
 | Keep public issues below 20 | Repo-family issue recheck | 0 open issues across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-19 after the live platform audit refresh | Complete |
 | Manage repository discussions | Repo-family discussion recheck plus response playbook | Platform audit reports 0 discussion maintainer-touch gaps and 0 answerable Q&A missing accepted answers; trunk still has 58 total discussions; `docs/architecture/discussion-response-playbook.md` distinguishes support, maintainer coordination, stale/concluded, release, informational, and security-sensitive response paths | Complete |
-| Manage PR discussions | PR review/comment closure plus merge/close state | ECC #1990-#1993 merged through the harness audit, canonical identity, release video suite, and growth outreach batch; no open tracked PRs remain | Complete |
+| Manage PR discussions | PR review/comment closure plus merge/close state | ECC #1990-#2001 merged through the harness audit, canonical identity, release video suite, growth outreach, evidence refresh, visual QA, suite-count, and owner-approval packet batch; no open tracked PRs remain | Complete |
 | Salvage useful stale work | `docs/stale-pr-salvage-ledger.md` plus `docs/legacy-artifact-inventory.md` | Ledger records salvaged, superseded, skipped, and manual-review tails; #1815-#1818 added cost tracking, skill scout, frontend design guidance, code-reviewer false-positive guardrails, and the May 12 gap pass; #1687, #1609, #1563, #1564, and #1565 localization tails are attached to Linear ITO-55 for language-owner review and no automatic import remains release-blocking | Complete; repeat legacy scan before release |
-| ECC 2.0 preview pack ready | Release docs, quickstart, publication readiness, release notes | `docs/releases/2.0.0-rc.1/` and readiness docs are in-tree; May 19 evidence records queue-zero state, canonical ECC identity, release video suite, growth outreach pack, local 2544-test suite, PR #1993 CI success, May 19 operator dashboard, and preview-pack smoke digest `bc2bf157616e` | Needs final release approval |
+| ECC 2.0 preview pack ready | Release docs, quickstart, publication readiness, release notes | `docs/releases/2.0.0-rc.1/` and readiness docs are in-tree; May 19 evidence records queue-zero state, canonical ECC identity, release video suite, growth outreach pack, owner approval packet, local 2550-test suite, PR #2001 merge, GitHub Actions run `26102500291` success, May 19 operator dashboard, `owner-approval-packet-2026-05-19.md`, and preview-pack smoke digest `790430aef4a8` | Needs final release approval |
 | Hermes specialized skills included safely | Hermes setup/import docs and sanitized skill surface | Hermes setup and import playbook are public; secrets stay local | Needs final release review |
 | Naming and rename readiness | Naming matrix across package/plugin/docs/social surfaces | `docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md` records current package, repo, Claude plugin, Codex plugin, OpenCode, and npm availability evidence | Complete for rc.1; post-rc rename remains future work |
 | Claude and Codex plugin publication | Contact/submission path with required artifacts and status | Publication readiness, naming matrix, and May 12 dry-run evidence document plugin validation, clean-checkout Claude tag/install smoke, and Codex marketplace CLI shape | Needs explicit approval for real tag/push and marketplace submission |

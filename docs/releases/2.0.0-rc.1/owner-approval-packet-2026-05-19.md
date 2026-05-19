@@ -17,9 +17,9 @@ Source commit for the clean evidence baseline this packet extends:
 | Platform audit | ready true, 0 open PRs, 0 open issues, 0 discussion gaps, 0 dirty files | yes |
 | Preview pack smoke | ready true, digest `790430aef4a8`, 5/5 checks | yes |
 | Video suite | ready true, 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates | yes |
-| Release surface tests | 26/26 passed after this packet was added | yes |
-| Full local suite | 2548/2548 passed after this packet was added | yes |
-| GitHub CI | PR #1998, PR #1999, and PR #2000 merged after green required checks | verify current head |
+| Release surface tests | 27/27 passed after this packet was added | yes |
+| Full local suite | 2550/2550 passed after this packet was added | yes |
+| GitHub CI | PR #1998, PR #1999, PR #2000, and PR #2001 merged after green required checks | verify current head |
 
 ## Decision Register
 

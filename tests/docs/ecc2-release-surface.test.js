@@ -250,6 +250,24 @@ test('owner approval packet consolidates the final gated decisions', () => {
   assert.ok(hypergrowth.includes('owner-approval-packet-2026-05-19.md'));
 });
 
+test('GA roadmap mirrors the current May 19 release evidence', () => {
+  const roadmap = read('docs/ECC-2.0-GA-ROADMAP.md');
+
+  for (const marker of [
+    'owner-approval-packet-2026-05-19.md',
+    'preview-pack smoke digest `790430aef4a8`',
+    'local 2550-test suite',
+    'PR #2001',
+    'GitHub Actions run `26102500291`',
+    'owner approval packet',
+  ]) {
+    assert.ok(roadmap.includes(marker), `GA roadmap missing current evidence marker ${marker}`);
+  }
+
+  assert.ok(!roadmap.includes('preview-pack smoke digest `bc2bf157616e`'));
+  assert.ok(!roadmap.includes('local 2544-test suite'));
+});
+
 test('rc.1 quickstart gives a clone-to-cross-harness path', () => {
   const quickstart = read('docs/releases/2.0.0-rc.1/quickstart.md');
   for (const heading of ['Clone', 'Install', 'Verify', 'First Skill', 'Switch Harness']) {
