@@ -13,7 +13,7 @@ Context-aware PII sanitization for autonomous AI agent pipelines. Sanitizes emai
 - Processing user-generated text that may contain personal data
 - Building APIs or agents that handle customer information
 - Preparing data for external LLM providers (Claude, GPT, Gemini)
-- Privacy compliance requirements (GDPR, HIPAA, LGPD, EU AI Act)
+- Privacy compliance requirements (GDPR, LGPD, EU AI Act) — see DPA note for HIPAA environments
 - Autonomous agent pipelines where human review is not possible
 - Files containing credentials, API keys, or secrets before sharing
 
