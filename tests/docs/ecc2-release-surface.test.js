@@ -259,7 +259,7 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
   for (const marker of [
     'owner-approval-packet-2026-05-19.md',
     'preview-pack smoke digest `531328aaaa53`',
-    'local 2560-test suite',
+    'local 2568-test suite',
     'PR #2001',
     'GitHub Actions run `26102500291`',
     'PR #2002',

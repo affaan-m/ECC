@@ -8,7 +8,7 @@ release action after the final evidence commands are rerun from the intended
 release commit.
 
 Source commit for the clean evidence baseline this packet extends:
-`14d88e517b0c56a80c1a6392b1cde2474948d29f`.
+`9819626459a662773be7d0b1c18d82c1316b8c36`.
 
 ## Current Evidence
 
@@ -19,8 +19,8 @@ Source commit for the clean evidence baseline this packet extends:
 | Release approval gate | ready false, digest `ef8f49f727b7`, 4/6 checks pass; owner decisions and live URL readbacks pending | yes |
 | Video suite | ready true, 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates | yes |
 | Release surface tests | 27/27 passed after this packet was added | yes |
-| Full local suite | 2560/2560 passed after PR #2011 was prepared; focused GateGuard regression passed 91/91 again on current `main` | yes |
-| GitHub CI | PR #1998, PR #1999, PR #2000, PR #2001, PR #2002, PR #2004, PR #2008, post-PR #2006 `main`, PR #2009, post-PR #2009 `main`, and post-PR #2011 `main` all merged or advanced after green required checks | verify current head |
+| Full local suite | 2568/2568 passed before PR #2013 merged; focused GateGuard regression passed 91/91 again before PR #2011 merged | yes |
+| GitHub CI | PR #1998, PR #1999, PR #2000, PR #2001, PR #2002, PR #2004, PR #2008, post-PR #2006 `main`, PR #2009, post-PR #2009 `main`, post-PR #2011 `main`, and post-PR #2013 `main` all merged or advanced after green required checks | verify current head |
 
 ## Decision Register
 
