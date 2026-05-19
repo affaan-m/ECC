@@ -111,12 +111,12 @@ test('business launch copy stays aligned with the rc.1 public surface', () => {
     'business launch copy should stay pre-publication until release URLs exist'
   );
   assert.ok(
-    source.includes('https://github.com/affaan-m/everything-claude-code'),
+    source.includes('https://github.com/affaan-m/ECC'),
     'business launch copy should include the public repo URL'
   );
   assert.ok(
     source.includes(
-      'https://github.com/affaan-m/everything-claude-code/blob/main/docs/releases/2.0.0-rc.1/release-notes.md'
+      'https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md'
     ),
     'business launch copy should link to the rc.1 release notes'
   );
@@ -320,15 +320,15 @@ test('release name and plugin publication checklist freezes rc.1 surfaces', () =
   const referenceArchitecture = read('docs/ECC-2.0-REFERENCE-ARCHITECTURE.md');
 
   for (const value of [
-    'Everything Claude Code (ECC)',
-    '`affaan-m/everything-claude-code`',
+    'Ship `v2.0.0-rc.1` as **ECC**',
+    '`affaan-m/ECC`',
     '`ecc-universal`',
     '`ecc` on npm is occupied',
     '`@affaan-m/ecc` is unclaimed on npm',
     'Claude plugin',
     'Codex plugin',
     'do not claim official directory listing until OpenAI publishing path is available',
-    'Do not rename the repo or package until rc.1 is published',
+    'Do not rename the npm package until rc.1 is published',
     'Do not announce billing, Marketplace, or native payments',
   ]) {
     assert.ok(checklist.includes(value), `release name/plugin checklist missing ${value}`);

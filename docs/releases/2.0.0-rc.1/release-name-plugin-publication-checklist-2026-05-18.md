@@ -1,6 +1,7 @@
 # ECC v2.0.0-rc.1 Release Name And Plugin Publication Checklist
 
-Snapshot date: 2026-05-18.
+Snapshot date: 2026-05-18. Canonical repo decision refreshed 2026-05-19
+after the public repo rename to `affaan-m/ECC`.
 
 This checklist is the operator gate for release naming, package publication,
 and Claude/Codex plugin distribution. It is not a publication action by itself.
@@ -9,20 +10,22 @@ submitting marketplace forms, or posting announcements.
 
 ## Fixed rc.1 Decision
 
-Ship `v2.0.0-rc.1` as **Everything Claude Code (ECC)**.
+Ship `v2.0.0-rc.1` as **ECC**.
 
-- Keep the GitHub repo at `affaan-m/everything-claude-code`.
+- Keep the GitHub repo at `affaan-m/ECC`.
 - Keep the npm package as `ecc-universal`.
 - Keep Claude and Codex plugin slugs as `ecc`.
 - Publish the npm prerelease on the `next` dist-tag, not `latest`.
-- Do not rename to `affaan-m/ecc`, `ecc`, or `@affaan-m/ecc` before rc.1.
+- Do not rename the npm package to `ecc` or `@affaan-m/ecc` before rc.1.
+- Treat `affaan-m/ECC` as the canonical public repo for rc.1 and GA release
+  copy.
 
 Reasons:
 
 - `ecc-universal` is the current working install and package surface.
 - `ecc` on npm is occupied by an unrelated elliptic-curve package.
 - `@affaan-m/ecc` is unclaimed on npm, but would require a migration plan.
-- `affaan-m/ecc` is not available to the current GitHub auth context.
+- `affaan-m/ECC` is now the live public GitHub repo.
 - Claude and Codex already expose the desired short namespace as `ecc`.
 
 ## Current Surface Evidence
@@ -30,8 +33,7 @@ Reasons:
 | Surface | Current value | Evidence command | 2026-05-18 result | Release action |
 | --- | --- | --- | --- | --- |
 | Git commit | `67e63e63f9bfd074bd6a21bf6bac71f3dfefa58b` | `git rev-parse HEAD` | Recorded from clean `main` before this ITO-46 evidence refresh | Re-run from final release commit |
-| GitHub repo | `affaan-m/everything-claude-code` | `git remote get-url origin` | `https://github.com/affaan-m/everything-claude-code.git` | Keep for rc.1 |
-| Possible short repo | `affaan-m/ecc` | `gh repo view affaan-m/ecc --json nameWithOwner,url,isPrivate` | GraphQL could not resolve repository | Do not depend on it for rc.1 |
+| GitHub repo | `affaan-m/ECC` | `git remote get-url origin` | `https://github.com/affaan-m/ECC.git` | Keep for rc.1 and GA |
 | npm package | `ecc-universal@2.0.0-rc.1` local, `1.10.0` registry latest | `node -p "require('./package.json').name + '@' + require('./package.json').version"` and `npm view ecc-universal name version dist-tags --json` | Local rc.1 ready; registry still latest `1.10.0` | Publish rc.1 with `--tag next` after approval |
 | Exact npm short name | `ecc` | `npm view ecc name version description repository.url --json` | Occupied by unrelated `ecc@0.0.2` | Do not use |
 | Scoped npm short name | `@affaan-m/ecc` | `npm view @affaan-m/ecc name version --json` | 404 | Candidate only after migration plan |
@@ -59,7 +61,7 @@ claude plugin validate .claude-plugin/plugin.json
 claude plugin tag .claude-plugin --dry-run
 codex plugin marketplace add --help
 HOME="$(mktemp -d)" codex plugin marketplace add ./
-HOME="$(mktemp -d)" codex plugin marketplace add affaan-m/everything-claude-code --ref "$(git rev-parse HEAD)"
+HOME="$(mktemp -d)" codex plugin marketplace add affaan-m/ECC --ref "$(git rev-parse HEAD)"
 npm pack --dry-run --json
 npm publish --tag next --dry-run
 npm run build:opencode
@@ -96,8 +98,8 @@ keep the related publication action blocked.
   documents a public submission path or confirms the plugin has been listed.
 - Do not announce billing, Marketplace, or native payments until ECC Tools live
   Marketplace account readback returns ready.
-- Do not rename the repo or package until rc.1 is published and a migration
-  guide maps old names to new names.
+- Do not rename the npm package until rc.1 is published and a migration guide
+  maps old install names to new names.
 - Do not post social copy while any release, npm, plugin, or billing URL is
   still approval-gated.
 

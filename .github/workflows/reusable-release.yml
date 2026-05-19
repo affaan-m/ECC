@@ -114,7 +114,7 @@ jobs:
 
           ### Package Notes
           - npm package: \`ecc-universal\`
-          - Claude marketplace/plugin identifier: \`everything-claude-code@everything-claude-code\`
+          - Claude marketplace/plugin identifier: \`ecc@ecc\`
           EOF
 
       - name: Pack npm artifact

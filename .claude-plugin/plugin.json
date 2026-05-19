@@ -1,13 +1,13 @@
 {
   "name": "ecc",
   "version": "2.0.0-rc.1",
-  "description": "Battle-tested Claude Code plugin for engineering teams — 60 agents, 232 skills, 75 legacy command shims, production-ready hooks, and selective install workflows evolved through continuous real-world use",
+  "description": "Harness-native ECC plugin for engineering teams - 60 agents, 232 skills, 75 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
   "author": {
     "name": "Affaan Mustafa",
     "url": "https://x.com/affaanmustafa"
   },
   "homepage": "https://ecc.tools",
-  "repository": "https://github.com/affaan-m/everything-claude-code",
+  "repository": "https://github.com/affaan-m/ECC",
   "license": "MIT",
   "keywords": [
     "claude-code",

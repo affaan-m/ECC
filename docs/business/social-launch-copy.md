@@ -7,7 +7,8 @@ Use these templates as launch-ready starting points. Review channel tone before 
 ```text
 ECC v2.0.0-rc.1 preview pack is ready for final release review.
 
-The repo is moving from a Claude Code config pack into a cross-harness operating system for agentic work.
+ECC 2.0 is the harness-native operator system for agentic work: skills, hooks,
+rules, MCP conventions, release gates, and an optional Hermes operator shell.
 
 What ships:
 - Hermes setup guide
@@ -15,8 +16,8 @@ What ships:
 - cross-harness architecture docs
 - Hermes import guidance for turning local operator workflows into public ECC skills
 
-Start here: https://github.com/affaan-m/everything-claude-code
-Release notes: https://github.com/affaan-m/everything-claude-code/blob/main/docs/releases/2.0.0-rc.1/release-notes.md
+Start here: https://github.com/affaan-m/ECC
+Release notes: https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md
 ```
 
 ## X Post: Proof + Metrics
@@ -57,7 +58,7 @@ ECC v2.0.0-rc.1 pushes that further: reusable skills, thin harness adapters, and
 ```text
 ECC v2.0.0-rc.1 preview pack is ready for final release review.
 
-The practical shift: ECC is no longer just a Claude Code config pack. It is becoming a cross-harness operating system for agentic work.
+ECC 2.0 is the harness-native operator system for agentic work. The same reusable layer now reaches Claude Code, Codex, OpenCode, Cursor, Gemini, Zed, GitHub Copilot workflows, and terminal-only operator lanes.
 
 This release-candidate surface includes:
 - sanitized Hermes setup documentation
@@ -67,6 +68,6 @@ This release-candidate surface includes:
 
 It does not include private workspace state, credentials, raw local exports, or personal datasets.
 
-Repo: https://github.com/affaan-m/everything-claude-code
-Release notes: https://github.com/affaan-m/everything-claude-code/blob/main/docs/releases/2.0.0-rc.1/release-notes.md
+Repo: https://github.com/affaan-m/ECC
+Release notes: https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md
 ```

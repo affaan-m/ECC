@@ -12,11 +12,29 @@ execution truth is split across:
 - merged PR evidence;
 - handoffs under `~/.cluster-swarm/handoffs/`.
 
+The May 19 release/growth execution map lives at
+[`docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md`](releases/2.0.0/ecc-2-hypergrowth-release-command-center.md).
+It is the operator surface for the final ECC 2.0 repo identity, video suite,
+partner/sponsor funnel, consulting/talk funnel, and social launch plan.
+
+## 2026-05-19 Delta
+
+- The public repo identity is now `affaan-m/ECC`; release, package, plugin,
+  workflow, and launch-copy surfaces should use that URL for current public
+  links.
+- The ECC 2.0 release story should lead with the product shape directly:
+  harness-native operator system, reusable skills/rules/hooks/MCP conventions,
+  `ecc2/` alpha control plane, Hermes as optional operator shell, and ECC Tools
+  Pro/Sponsors/consulting as the business surface.
+- Copy should avoid presenting this as a repo rename or config-pack migration.
+  The release proof should show the system through install flow, cross-harness
+  demos, security evidence, hosted product evidence, and the video suite.
+
 ## Current Evidence
 
 As of 2026-05-18:
 
-- GitHub queues are clean across `affaan-m/everything-claude-code`,
+- GitHub queues are clean across `affaan-m/ECC`,
   `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and
   `ECC-Tools/ECC-website`: the latest `platform-audit` sweep found 0 open PRs,
   0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A missing
@@ -33,7 +51,7 @@ As of 2026-05-18:
   now at 0 open PRs and 0 open issues by live `gh search`. Archived repos
   touched during closure were restored to archived state.
 - GitHub discussions are current across those tracked repos:
-  `affaan-m/everything-claude-code` has 58 total discussions and 0 without
+  `affaan-m/ECC` has 58 total discussions and 0 without
   maintainer touch after May 15 maintainer updates on #73 and #1239; AgentShield,
   JARVIS, ECC Tools, and the ECC Tools website have discussions disabled or 0
   total discussions. `docs/architecture/discussion-response-playbook.md` now
@@ -715,8 +733,8 @@ is not complete unless the evidence column exists and has been freshly verified.
 
 | Prompt requirement | Required artifact or gate | Current evidence | Status |
 | --- | --- | --- | --- |
-| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `everything-claude-code`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-18 after merging PR #1976 and refreshing platform audit evidence | Complete |
-| Keep public issues below 20 | Repo-family issue recheck | 0 open issues across `everything-claude-code`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-18 after the live platform audit refresh | Complete |
+| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-18 after merging PR #1976 and refreshing platform audit evidence | Complete |
+| Keep public issues below 20 | Repo-family issue recheck | 0 open issues across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-18 after the live platform audit refresh | Complete |
 | Manage repository discussions | Repo-family discussion recheck plus response playbook | Platform audit reports 0 discussion maintainer-touch gaps and 0 answerable Q&A missing accepted answers; trunk still has 58 total discussions; `docs/architecture/discussion-response-playbook.md` distinguishes support, maintainer coordination, stale/concluded, release, informational, and security-sensitive response paths | Complete |
 | Manage PR discussions | PR review/comment closure plus merge/close state | ECC #1976 merged after maintainer follow-up validation; no open tracked PRs remain | Complete |
 | Salvage useful stale work | `docs/stale-pr-salvage-ledger.md` plus `docs/legacy-artifact-inventory.md` | Ledger records salvaged, superseded, skipped, and manual-review tails; #1815-#1818 added cost tracking, skill scout, frontend design guidance, code-reviewer false-positive guardrails, and the May 12 gap pass; #1687, #1609, #1563, #1564, and #1565 localization tails are attached to Linear ITO-55 for language-owner review and no automatic import remains release-blocking | Complete; repeat legacy scan before release |
