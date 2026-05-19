@@ -1,12 +1,12 @@
 {
   "mcpServers": {
     "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"]
+      "command": "sh",
+      "args": ["-c", "GITHUB_PERSONAL_ACCESS_TOKEN=$(gh auth token) exec /opt/homebrew/bin/github-mcp-server stdio"]
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@2.1.4"]
+      "args": ["@upstash/context7-mcp@2.2.5"]
     },
     "exa": {
       "type": "http",
@@ -14,15 +14,15 @@
     },
     "memory": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"]
+      "args": ["@modelcontextprotocol/server-memory@2026.1.26"]
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@0.0.68", "--extension"]
+      "args": ["@playwright/mcp@0.0.75", "--extension"]
     },
     "sequential-thinking": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+      "args": ["@modelcontextprotocol/server-sequential-thinking@2025.12.18"]
     }
   }
 }
