@@ -158,6 +158,22 @@ except:
 - Set `wallet_address` to your agent ID for per-agent quota tracking
 - Treat TRIAL as evaluation only — use paid mode for production workloads
 
+## Data Handling & Vetting
+
+| Item | Details |
+|------|---------|
+| Retention policy | 90 days. Deleted on request via teodorofodocrispin@gmail.com |
+| Raw input stored | Never — only sanitized output + metadata logged |
+| License | MIT — github.com/teodorofodocrispin-cmyk/TrustBoost-PII-Sanitizer |
+| Infrastructure | FastAPI + Supabase + Render (AWS) — NOT Make.com (migrated v2.0, April 2026) |
+| Registry | Glama MCP registry + GitHub Marketplace Action |
+| Data sovereignty | Processed on Render (AWS us-east-1) |
+| Encryption | HTTPS in transit. Supabase at rest encryption. |
+| DPA | Not available — prototype stage. Not recommended for HIPAA zero-transmission environments. |
+| TRIAL quota exhaustion | After 50 requests, API returns 402 with payment instructions. Agent pipeline receives [BLOCKED: sanitization failed] — fail-closed, not silent degradation. Upgrade: send 149 USDC on Solana to obtain 10,000 sanitizations. |
+| Paid tier | 149 USDC on Solana mainnet → 10,000 sanitizations. tx_hash verified on-chain via Helius oracle. |
+| Fallback strategy | Use /sanitize/preview (3 req/IP/24h, no quota) for low-volume scenarios while upgrading. |
+
 ## Related Skills
 
 - `security-review` — comprehensive security audit workflow
