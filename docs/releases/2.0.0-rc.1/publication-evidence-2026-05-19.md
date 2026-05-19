@@ -8,9 +8,9 @@ social announcement.
 
 | Field | Evidence |
 | --- | --- |
-| Upstream main | `bc519e5b8ed42f26c0a5a611756e04351c323f21` |
+| Upstream main | `14d88e517b0c56a80c1a6392b1cde2474948d29f` |
 | Git remote | `https://github.com/affaan-m/ECC.git` |
-| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, PR #2001 owner approval packet addition, PR #2002 owner approval dashboard gate refresh, PR #2004 Linear readiness evidence sync, PR #2005 post-PR #2004 evidence refresh, PR #2008 release supply-chain evidence gate fix, PR #2006 per-project Claude Code adapter, and PR #2009 continuous-learning project registry hygiene fix |
+| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, PR #2001 owner approval packet addition, PR #2002 owner approval dashboard gate refresh, PR #2004 Linear readiness evidence sync, PR #2005 post-PR #2004 evidence refresh, PR #2008 release supply-chain evidence gate fix, PR #2006 per-project Claude Code adapter, PR #2009 continuous-learning project registry hygiene fix, and PR #2011 GateGuard quoted git introspection fix |
 | Local status caveat | `git status --short --branch` was clean after pulling `origin/main`; generated evidence files are committed after the source snapshot they describe |
 
 The release operator must repeat all publish-facing checks from the exact final
@@ -56,6 +56,7 @@ Tracked repositories in the platform audit were:
 | PR #2008 | Merged the release supply-chain evidence gate fix so platform-audit readiness keeps matching current publication evidence |
 | PR #2006 | Merged the `claude-project` install target for per-project Claude Code adapter support, then fixed the manifest schema enum on top of the feature branch before merge |
 | PR #2009 | Merged the continuous-learning project registry hygiene fix: non-git hook payloads stay global, no-remote linked worktrees migrate to the main worktree project ID, and `instinct-cli.py projects delete`, `merge`, and `gc` provide operator maintenance commands |
+| PR #2011 | Merged the GateGuard read-only git introspection tokenizer fix so quoted `git show` pathspecs with spaces are preserved while quoted shell separators stay outside the bypass |
 
 ## Release And Growth Evidence
 
@@ -67,6 +68,7 @@ Tracked repositories in the platform audit were:
 | Supply-chain verification | `npm audit --audit-level=moderate`; `npm audit signatures`; `yarn install --immutable --mode=skip-build` | Current supply-chain refresh found 0 npm vulnerabilities, verified 254 registry signatures and 30 attestations, and accepted the Yarn lock after pinning `@types/node@25.7.0` plus refreshing `brace-expansion` to `5.0.6` / `1.1.14` |
 | Release video suite | `npm run release:video-suite -- --format json --summary` with `ECC_VIDEO_SOURCE_ROOT` and `ECC_VIDEO_RELEASE_SUITE_ROOT` | Ready true; 15/15 source assets present; 13/13 render, timeline, caption, EDL, and segment artifacts present; 12/12 publish-candidate outputs present with zero detected black-frame segments; primary rough render self-eval passed at 144.759 seconds, 1920x1080, 1 audio stream, and 106.78 MB |
 | Focused post-merge regression set | `node tests/hooks/detect-project-worktree.test.js`; `node tests/hooks/observe-subdirectory-detection.test.js`; `node tests/scripts/instinct-cli-projects.test.js`; `node tests/hooks/hooks.test.js` | 10/10, 6/6, 5/5, and 237/237 passed after PR #2009 merged |
+| GateGuard PR #2011 regression | `node tests/hooks/gateguard-fact-force.test.js`; `npm test`; `git diff --check main...HEAD` | 91/91 passed on the PR branch; full local suite passed 2560/2560 before merge; whitespace check passed; focused GateGuard suite passed again on current `main` |
 | Full local suite | `node tests/run-all.js` | 2560 passed, 0 failed |
 | PR #1998 CI | GitHub Actions run `26099020341` | Completed successfully for `d500de1e9f11c0446b6a1349bd98b522d31f9125`; all reported checks passed, including lint, validation, security scan, coverage, GitGuardian, CodeRabbit, Cubic, and the macOS/Ubuntu/Windows test matrix |
 | PR #1999 CI | GitHub Actions run `26100148726` | Completed successfully for `90584b6d5e5814bc2ad9a4cd651bebd043de989d`; lint, validation, security scan, coverage, GitGuardian, CodeRabbit, and the macOS/Ubuntu/Windows test matrix passed; Cubic completed neutral and did not block merge |
@@ -78,6 +80,7 @@ Tracked repositories in the platform audit were:
 | Post-PR #2006 main CI | GitHub Actions run `26109953093` | Completed successfully with 37 completed jobs, 0 failed jobs, and `main` advanced to `98bd517451f38fa0150a53aab4234c2239a47b7e` |
 | PR #2009 CI | GitHub Actions run `26111313938` | Completed successfully with 37 completed jobs, 0 failed jobs after replacing the brittle fake-worktree regression fixture with a real `git worktree add` setup |
 | Post-PR #2009 main CI | GitHub Actions run `26111946778` | Completed successfully with 37 completed jobs, 0 failed jobs, and `main` advanced to `bc519e5b8ed42f26c0a5a611756e04351c323f21` |
+| Post-PR #2011 main CI | GitHub Actions run `26113695068` | Completed successfully with 37 completed jobs, 0 failed jobs, and `main` advanced to `14d88e517b0c56a80c1a6392b1cde2474948d29f` |
 | Linear sync | Linear document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` plus project comment `a6411e3a-8c8e-4a58-adba-687e77d4c543` | Project and issue lanes now record PR #2002 evidence, discussion #2003 routing, owner-approval dashboard gate, and In Progress status for ITO-47, ITO-48, ITO-49, ITO-51, ITO-54, and ITO-56 |
 | Public-path sanitization | `node scripts/ci/validate-no-personal-paths.js` through local suite and CI | Passed |
 | Markdown and whitespace | `markdownlint` focused release docs plus `git diff --check` before PR #1999 | Passed |
@@ -118,10 +121,10 @@ Tracked repositories in the platform audit were:
 
 The tracked public PR queue, issue queue, discussion queue, canonical ECC
 identity, release video suite, preview pack, growth outreach packet, per-project
-Claude Code adapter surface, and continuous-learning project registry hygiene
-are current on May 19, 2026 for `main` through
-`bc519e5b8ed42f26c0a5a611756e04351c323f21`. The remaining video work is owner
-approval, upload, and public URL attachment, not render or QA production.
+Claude Code adapter surface, continuous-learning project registry hygiene, and
+GateGuard quoted git introspection fix are current on May 19, 2026 for `main`
+through `14d88e517b0c56a80c1a6392b1cde2474948d29f`. The remaining video work is
+owner approval, upload, and public URL attachment, not render or QA production.
 
 This improves publication readiness but does not replace the approval-gated
 release, package, plugin, billing, Discord, and announcement steps in
