@@ -66,6 +66,7 @@ npm pack --dry-run --json
 npm publish --tag next --dry-run
 npm run build:opencode
 npm run preview-pack:smoke
+npm run release:approval-gate -- --format json
 ```
 
 If a command is unavailable on the release machine, record the exact error and

@@ -177,6 +177,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'skills/hermes-imports/SKILL.md',
     'docs/architecture/harness-adapter-compliance.md',
     'scripts/preview-pack-smoke.js',
+    'scripts/release-approval-gate.js',
     'docs/releases/2.0.0-rc.1/publication-readiness.md',
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
     'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
@@ -201,6 +202,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
   assert.ok(manifest.includes('no raw workspace exports'));
   assert.ok(manifest.includes('Final Verification Commands'));
   assert.ok(manifest.includes('npm run preview-pack:smoke'));
+  assert.ok(manifest.includes('npm run release:approval-gate -- --format json'));
   assert.ok(manifest.includes('npm run release:video-suite -- --format json'));
   assert.ok(manifest.includes('Reference-Inspired Adapter Direction'));
 });
@@ -229,6 +231,7 @@ test('owner approval packet consolidates the final gated decisions', () => {
   for (const command of [
     'node scripts/platform-audit.js --json',
     'npm run preview-pack:smoke -- --format json',
+    'npm run release:approval-gate -- --format json',
     'npm run release:video-suite -- --format json',
     'node tests/run-all.js',
   ]) {
@@ -255,7 +258,7 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
 
   for (const marker of [
     'owner-approval-packet-2026-05-19.md',
-    'preview-pack smoke digest `790430aef4a8`',
+    'preview-pack smoke digest `531328aaaa53`',
     'local 2560-test suite',
     'PR #2001',
     'GitHub Actions run `26102500291`',
@@ -342,6 +345,31 @@ test('release video suite manifest gates the content launch lane', () => {
   assert.ok(hypergrowth.includes('Pick final video cuts, upload after approval, and attach public URLs'));
   assert.strictEqual(packageJson.scripts['release:video-suite'], 'node scripts/release-video-suite.js');
   assert.ok(packageJson.files.includes('scripts/release-video-suite.js'));
+});
+
+test('release approval gate blocks publication until owner decisions and URLs are final', () => {
+  const manifest = read('docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
+  const packet = read('docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md');
+  const ledger = read('docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md');
+  const script = read('scripts/release-approval-gate.js');
+  const packageJson = JSON.parse(read('package.json'));
+
+  for (const marker of [
+    'ecc.release-approval-gate.v1',
+    'owner-decisions-approved',
+    'release-url-ledger-finalized',
+    'announcement-copy-finalized',
+    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement',
+  ]) {
+    assert.ok(script.includes(marker), `release approval gate missing ${marker}`);
+  }
+
+  assert.ok(manifest.includes('scripts/release-approval-gate.js'));
+  assert.ok(manifest.includes('npm run release:approval-gate -- --format json'));
+  assert.ok(packet.includes('npm run release:approval-gate -- --format json'));
+  assert.ok(ledger.includes('npm run release:approval-gate -- --format json'));
+  assert.strictEqual(packageJson.scripts['release:approval-gate'], 'node scripts/release-approval-gate.js');
+  assert.ok(packageJson.files.includes('scripts/release-approval-gate.js'));
 });
 
 test('partner sponsor talks pack gates the hypergrowth outbound lane', () => {
@@ -510,6 +538,7 @@ test('release name and plugin publication checklist freezes rc.1 surfaces', () =
     'codex plugin marketplace add --help',
     'npm publish --tag next --dry-run',
     'npm run preview-pack:smoke',
+    'npm run release:approval-gate -- --format json',
   ]) {
     assert.ok(checklist.includes(command), `release name/plugin checklist missing command ${command}`);
   }

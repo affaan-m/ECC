@@ -17,6 +17,7 @@ surfaces, or posting announcements.
 | `docs/architecture/observability-readiness.md` | Local operator-readiness gate | Verified by `npm run observability:ready` |
 | `docs/architecture/progress-sync-contract.md` | GitHub, Linear, handoff, roadmap, and work-item sync boundary | Checked by `node scripts/platform-audit.js --json` |
 | `scripts/preview-pack-smoke.js` | Deterministic preview-pack smoke gate | Verified by `npm run preview-pack:smoke` |
+| `scripts/release-approval-gate.js` | Final owner-decision, live-URL, and launch-copy gate | Must return ready true before any release publish, package publish, plugin tag, video upload, announcement, or outbound batch |
 | `docs/releases/2.0.0-rc.1/release-notes.md` | GitHub release copy source | Must be refreshed with final live release/package/plugin URLs before publication |
 | `docs/releases/2.0.0-rc.1/quickstart.md` | Clone-to-first-workflow path | Covers clone, install, verify, first skill, and harness switch |
 | `docs/releases/2.0.0-rc.1/launch-checklist.md` | Operator launch checklist | Must remain approval-gated for release, package, plugin, and announcement actions |
@@ -25,7 +26,7 @@ surfaces, or posting announcements.
 | `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-16.md` | Current May 16/17 queue cleanup, recsys skill merge, GateGuard triage, PR #1947 supply-chain protection, AgentShield #87 plugin-cache confidence evidence, AgentShield #88 evidence-pack inspect/readback, AgentShield #89 evidence-pack fleet routing, AgentShield #90 fleet review items, AgentShield #91 policy export, AgentShield #92 policy promotion, ECC-Tools #76 fleet-summary consumption, ECC-Tools #77 hosted finding evidence paths, ECC-Tools #78 harness policy-route linking, dashboard refresh, and combined Node/Rust/release-surface gate evidence through the May 16 mirror | Must still be repeated from a strict clean checkout before real publication |
 | `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-17.md` | May 17 queue-zero state, Japanese localization merge, Dependabot TypeScript and Node type merges, post-merge ja-JP lint repair, Mini Shai-Hulud/TanStack protection recheck, npm audit/signature checks, legacy and Linear progress routing, deterministic preview-pack smoke, operator dashboard refresh, Linear sync, and GitHub CI evidence for `27dc2918` | Superseded by the May 18 evidence snapshot; repeat from a strict clean checkout before real publication |
 | `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-18.md` | May 18 queue-zero state, #1970/#1971/#1972 merge batch, #1978 review/closure, supply-chain recheck, AgentShield evidence mirror, Linear sync, current-head CI/security scan success for `4470e2e6`, and ITO-46 naming/plugin publication closure | Superseded by the May 19 ECC identity, video, and growth evidence snapshot |
-| `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md` | Current May 19 evidence for canonical ECC identity, release video suite, partner/sponsor/talk outreach pack, owner approval packet, May 19 operator dashboard, preview-pack smoke digest `790430aef4a8`, 2560-test local suite, PR #1998 visual QA CI success, PR #1999 dashboard evidence CI success, PR #2000 suite-count evidence success, PR #2001 owner approval packet CI success, PR #2002 owner-approval dashboard gate CI success, PR #2004 Linear readiness evidence sync CI success, PR #2008 supply-chain evidence gate CI success, post-PR #2006 main CI success, PR #2009 project-registry hygiene CI success, post-PR #2009 main CI success, post-PR #2011 GateGuard CI success, and the May 19 Linear sync document | Current strongest readiness snapshot; must still be repeated from a strict clean checkout before real publication |
+| `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md` | Current May 19 evidence for canonical ECC identity, release video suite, partner/sponsor/talk outreach pack, owner approval packet, release approval gate, May 19 operator dashboard, preview-pack smoke digest `531328aaaa53`, 2560-test local suite, PR #1998 visual QA CI success, PR #1999 dashboard evidence CI success, PR #2000 suite-count evidence success, PR #2001 owner approval packet CI success, PR #2002 owner-approval dashboard gate CI success, PR #2004 Linear readiness evidence sync CI success, PR #2008 supply-chain evidence gate CI success, post-PR #2006 main CI success, PR #2009 project-registry hygiene CI success, post-PR #2009 main CI success, post-PR #2011 GateGuard CI success, and the May 19 Linear sync document | Current strongest readiness snapshot; must still be repeated from a strict clean checkout before real publication |
 | `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-17.md` | Previous prompt-to-artifact operator dashboard | Superseded by the May 18 generated dashboard |
 | `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-18.md` | Previous prompt-to-artifact operator dashboard | Superseded by the May 19 generated dashboard |
 | `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Current prompt-to-artifact operator dashboard | Shows PR/issue/discussion/platform/supply-chain gates current and adds the current `$1,728/mo` to `$10,000/mo` hypergrowth, video owner-approval, and outbound-pack operating lanes |
@@ -80,6 +81,7 @@ Run these from the exact release commit before publication:
 git status --short --branch
 node scripts/platform-audit.js --json
 npm run preview-pack:smoke
+npm run release:approval-gate -- --format json
 npm run release:video-suite -- --format json
 npm run harness:adapters -- --check
 npm run harness:audit -- --format json
@@ -98,6 +100,8 @@ The preview pack is assembled, but publication is still blocked until these live
 surfaces exist and are recorded in a final evidence file:
 
 - final release URL ledger regenerated from the intended release commit;
+- `npm run release:approval-gate -- --format json` returning ready true after
+  owner approvals and live URL readbacks are recorded;
 - final release name/plugin publication checklist rerun from the intended
   release commit;
 - GitHub prerelease `v2.0.0-rc.1`;

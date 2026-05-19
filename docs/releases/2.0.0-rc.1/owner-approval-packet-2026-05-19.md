@@ -15,7 +15,8 @@ Source commit for the clean evidence baseline this packet extends:
 | Evidence | Current recorded state | Repeat before approval |
 | --- | --- | --- |
 | Platform audit | ready true, 0 open PRs, 0 open issues, 0 discussion gaps, 0 dirty files | yes |
-| Preview pack smoke | ready true, digest `790430aef4a8`, 5/5 checks | yes |
+| Preview pack smoke | ready true, digest `531328aaaa53`, 5/5 checks | yes |
+| Release approval gate | ready false, digest `ef8f49f727b7`, 4/6 checks pass; owner decisions and live URL readbacks pending | yes |
 | Video suite | ready true, 15/15 source assets, 13/13 suite artifacts, 12/12 publish candidates | yes |
 | Release surface tests | 27/27 passed after this packet was added | yes |
 | Full local suite | 2560/2560 passed after PR #2011 was prepared; focused GateGuard regression passed 91/91 again on current `main` | yes |
@@ -56,6 +57,7 @@ Run these from the exact release commit before approving publication:
 git status --short --branch
 node scripts/platform-audit.js --json
 npm run preview-pack:smoke -- --format json
+npm run release:approval-gate -- --format json
 npm run release:video-suite -- --format json
 npm run harness:adapters -- --check
 npm run harness:audit -- --format json

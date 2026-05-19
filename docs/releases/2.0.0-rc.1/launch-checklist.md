@@ -21,6 +21,9 @@
 - verify package, plugin, marketplace, OpenCode, and agent metadata stays at `2.0.0-rc.1`
 - verify `ecc2/Cargo.toml` stays at `0.1.0` for rc.1; `ecc2/` remains an alpha control-plane scaffold
 - complete `publication-readiness.md` with fresh evidence before any GitHub release, npm publish, plugin submission, or announcement post
+- run `npm run release:approval-gate -- --format json` after owner approvals
+  and live URL readbacks are recorded; it must return ready true before any
+  publish, upload, social, or outbound action
 - rerun the release name/plugin publication checklist before creating a
   GitHub prerelease, publishing npm, pushing Claude plugin tags, recording the
   Codex marketplace path, or posting public copy

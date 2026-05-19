@@ -47,6 +47,7 @@ npm view ecc-universal name version dist-tags --json
 codex plugin marketplace add --help
 rg -n "TODO|TBD|PLACEHOLDER" docs/releases/2.0.0-rc.1
 npm run preview-pack:smoke
+npm run release:approval-gate -- --format json
 ```
 
 Do not post the social or notification copy until the approval-gated URLs above

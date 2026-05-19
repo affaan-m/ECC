@@ -102,7 +102,8 @@ Record the exact commit SHA and command output before any publication action:
 | Evidence | Command | Required result | Recorded output |
 | --- | --- | --- | --- |
 | Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | Current May 19 baseline `bc519e5b8ed42f26c0a5a611756e04351c323f21`: `## main...origin/main`; repeat from the exact final publication commit before release |
-| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `790430aef4a8`, 31 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `531328aaaa53`, 32 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Release approval gate | `npm run release:approval-gate -- --format json` | Ready true only after owner decision rows are approved, live release/package/plugin/video/billing URLs are recorded, and launch/outbound copy has no placeholders or private paths | Current May 19 state is intentionally blocked because owner decisions and live URL readbacks remain approval-gated |
 | Harness audit | `npm run harness:audit -- --format json` | 80/80 passing | Current release gate: 80/80 across 8 applicable categories, 0 top actions |
 | Adapter scorecard | `npm run harness:adapters -- --check` | PASS | Current release gate: PASS, 11 adapters |
 | Observability readiness | `npm run observability:ready` | 21/21 passing | Current release gate: 21/21, ready true |

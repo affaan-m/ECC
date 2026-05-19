@@ -63,7 +63,8 @@ Tracked repositories in the platform audit were:
 | Gate | Command | Result |
 | --- | --- | --- |
 | Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 27 passed, 0 failed |
-| Preview-pack smoke | `npm run preview-pack:smoke -- --format json` | Ready true; digest `790430aef4a8`; 31 required artifacts; 5 passed, 0 failed |
+| Preview-pack smoke | `npm run preview-pack:smoke -- --format json` | Ready true; digest `531328aaaa53`; 32 required artifacts; 5 passed, 0 failed |
+| Release approval gate | `npm run release:approval-gate -- --format json` | Expected blocked; digest `ef8f49f727b7`; 4 passed, 2 failed; owner decisions and live URL readbacks remain approval-gated |
 | Operator dashboard | `npm run operator:dashboard -- --write docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Regenerated from the May 19 `main` baseline with platform audit ready true, 0 tracked PRs, 0 tracked issues, 0 discussion gaps, `$1,728/mo` current MRR, `$10,000/mo` target MRR, the release video suite marked current, and top actions for plugin publication, notifications, outbound approval, AgentShield, and ECC Tools billing |
 | Supply-chain verification | `npm audit --audit-level=moderate`; `npm audit signatures`; `yarn install --immutable --mode=skip-build` | Current supply-chain refresh found 0 npm vulnerabilities, verified 254 registry signatures and 30 attestations, and accepted the Yarn lock after pinning `@types/node@25.7.0` plus refreshing `brace-expansion` to `5.0.6` / `1.1.14` |
 | Release video suite | `npm run release:video-suite -- --format json --summary` with `ECC_VIDEO_SOURCE_ROOT` and `ECC_VIDEO_RELEASE_SUITE_ROOT` | Ready true; 15/15 source assets present; 13/13 render, timeline, caption, EDL, and segment artifacts present; 12/12 publish-candidate outputs present with zero detected black-frame segments; primary rough render self-eval passed at 144.759 seconds, 1920x1080, 1 audio stream, and 106.78 MB |
