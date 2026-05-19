@@ -10,6 +10,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'release-video-suite.js');
 const {
+  REQUIRED_PUBLISH_CANDIDATES,
   REQUIRED_SOURCE_ASSETS,
   REQUIRED_SUITE_ARTIFACTS,
   buildReport,
@@ -74,6 +75,10 @@ function seedMedia(sourceRoot, suiteRoot) {
 
   for (const artifact of REQUIRED_SUITE_ARTIFACTS) {
     writeFile(suiteRoot, artifact.relativePath, `artifact ${artifact.id}`);
+  }
+
+  for (const candidate of REQUIRED_PUBLISH_CANDIDATES) {
+    writeFile(suiteRoot, candidate.relativePath, `candidate ${candidate.id}`);
   }
 }
 
@@ -175,8 +180,13 @@ function runTests() {
       )));
       assert.strictEqual(report.sourceAssets.length, REQUIRED_SOURCE_ASSETS.length);
       assert.strictEqual(report.suiteArtifacts.length, REQUIRED_SUITE_ARTIFACTS.length);
+      assert.strictEqual(report.publishCandidates.length, REQUIRED_PUBLISH_CANDIDATES.length);
       assert.ok(renderText(report).includes('Ready: yes'));
       assert.strictEqual(summarizeReport(report).sourceAssetSummary.present, REQUIRED_SOURCE_ASSETS.length);
+      assert.strictEqual(
+        summarizeReport(report).publishCandidateSummary.present,
+        REQUIRED_PUBLISH_CANDIDATES.length
+      );
     } finally {
       cleanup(rootDir);
       cleanup(sourceRoot);
@@ -202,6 +212,7 @@ function runTests() {
       assert.ok(report.checks.some(check => check.id === 'video-source-assets-present' && check.status === 'fail'));
       assert.ok(report.checks.some(check => check.id === 'video-release-artifacts-present' && check.status === 'fail'));
       assert.ok(report.checks.some(check => check.id === 'video-primary-render-self-eval' && check.status === 'fail'));
+      assert.ok(report.checks.some(check => check.id === 'video-publish-candidates-present' && check.status === 'fail'));
     } finally {
       cleanup(rootDir);
     }
@@ -269,6 +280,7 @@ function runTests() {
       assert.strictEqual(parsed.suiteRootConfigured, true);
       assert.strictEqual(parsed.sourceAssetSummary.present, REQUIRED_SOURCE_ASSETS.length);
       assert.strictEqual(parsed.suiteArtifactSummary.present, REQUIRED_SUITE_ARTIFACTS.length);
+      assert.strictEqual(parsed.publishCandidateSummary.present, REQUIRED_PUBLISH_CANDIDATES.length);
     } finally {
       cleanup(rootDir);
       cleanup(sourceRoot);
