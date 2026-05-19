@@ -54,6 +54,7 @@ const expectedReleaseFiles = [
   'publication-readiness.md',
   'video-suite-production.md',
   'partner-sponsor-talks-pack.md',
+  'owner-approval-packet-2026-05-19.md',
   'release-name-plugin-publication-checklist-2026-05-18.md',
 ];
 
@@ -179,6 +180,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'docs/releases/2.0.0-rc.1/publication-readiness.md',
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
     'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
+    'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/video-suite-production.md',
     'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md',
@@ -201,6 +203,51 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
   assert.ok(manifest.includes('npm run preview-pack:smoke'));
   assert.ok(manifest.includes('npm run release:video-suite -- --format json'));
   assert.ok(manifest.includes('Reference-Inspired Adapter Direction'));
+});
+
+test('owner approval packet consolidates the final gated decisions', () => {
+  const packet = read('docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md');
+  const manifest = read('docs/releases/2.0.0-rc.1/preview-pack-manifest.md');
+  const publicationReadiness = read('docs/releases/2.0.0-rc.1/publication-readiness.md');
+  const hypergrowth = read('docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
+
+  for (const marker of [
+    'Owner Approval Packet',
+    'Source commit',
+    'Decision Register',
+    'GitHub prerelease',
+    'npm `next` publish',
+    'Claude plugin tag',
+    'Video upload',
+    'Final URL Fill-In',
+    'Do Not Approve If',
+    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement is authorized by this packet alone.',
+  ]) {
+    assert.ok(packet.includes(marker), `owner approval packet missing ${marker}`);
+  }
+
+  for (const command of [
+    'node scripts/platform-audit.js --json',
+    'npm run preview-pack:smoke -- --format json',
+    'npm run release:video-suite -- --format json',
+    'node tests/run-all.js',
+  ]) {
+    assert.ok(packet.includes(command), `owner approval packet missing command ${command}`);
+  }
+
+  for (const urlSurface of [
+    'GitHub prerelease URL',
+    'npm rc package URL',
+    'Claude plugin tag URL',
+    'Primary launch video URL',
+    'ECC Tools billing/readiness URL',
+  ]) {
+    assert.ok(packet.includes(urlSurface), `owner approval packet missing ${urlSurface}`);
+  }
+
+  assert.ok(manifest.includes('owner-approval-packet-2026-05-19.md'));
+  assert.ok(publicationReadiness.includes('owner-approval-packet-2026-05-19.md'));
+  assert.ok(hypergrowth.includes('owner-approval-packet-2026-05-19.md'));
 });
 
 test('rc.1 quickstart gives a clone-to-cross-harness path', () => {

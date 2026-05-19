@@ -103,6 +103,9 @@ Production steps:
 The source of truth for sponsor, partner, consulting, conference, podcast, and
 GitHub Discussion copy is
 `docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md`.
+The source of truth for owner approval across release, package, plugin, video,
+billing, social, and outbound actions is
+`docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md`.
 
 ## Copy Rules
 

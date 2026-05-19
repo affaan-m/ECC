@@ -58,6 +58,9 @@ For the May 18 operator dashboard refresh, see
 
 The current May 19 hypergrowth/operator dashboard is
 [`operator-readiness-dashboard-2026-05-19.md`](operator-readiness-dashboard-2026-05-19.md).
+For the final owner decision sheet across release, npm, plugin, video, billing,
+social, and outbound approvals, see
+[`owner-approval-packet-2026-05-19.md`](owner-approval-packet-2026-05-19.md).
 For the May 19 live/pending release URL ledger after the public repo rename, see
 [`release-url-ledger-2026-05-19.md`](release-url-ledger-2026-05-19.md).
 
@@ -99,16 +102,16 @@ Record the exact commit SHA and command output before any publication action:
 | Evidence | Command | Required result | Recorded output |
 | --- | --- | --- | --- |
 | Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | `3304848b`: `## main...origin/main`; repeat from the exact final publication commit before release |
-| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `bc2bf157616e`, 30 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `790430aef4a8`, 31 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
 | Harness audit | `npm run harness:audit -- --format json` | 70/70 passing | `99e01ded`: 70/70, 0 top actions |
 | Adapter scorecard | `npm run harness:adapters -- --check` | PASS | `99e01ded`: PASS, 11 adapters |
 | Observability readiness | `npm run observability:ready` | 21/21 passing | `publication-evidence-2026-05-18.md`: 21/21, ready yes |
 | Release safety gate | `npm run observability:ready -- --format json` | Release Safety category passing with publication readiness, supply-chain, workflow security, package surface, and release-surface evidence | May 18 evidence keeps release safety passing; repeat the JSON gate from the exact final release commit |
 | Supply-chain verification | `npm audit --json`; `npm audit signatures`; `cd ecc2 && cargo audit -q`; Dependabot alerts; GitGuardian Security Checks | 0 vulnerabilities/alerts, registry signatures verified, GitGuardian clean | `publication-evidence-2026-05-19.md` plus CI `26093792219`: GitGuardian and security scan passed; prior May 18 npm registry signatures and IOC scans remain the latest detailed supply-chain evidence |
-| Root suite | `node tests/run-all.js` | 0 failures | `3304848b`: local `node tests/run-all.js` passed 2547/2547; PR #1999 CI `26100148726` passed the full OS/runtime/package-manager matrix for `90584b6d` |
+| Root suite | `node tests/run-all.js` | 0 failures | Current packet branch based on `e7a7b2a`: local `node tests/run-all.js` passed 2548/2548; PR #2000 CI `26101512088` passed the full OS/runtime/package-manager matrix |
 | Markdown lint | `npx markdownlint-cli '**/*.md' --ignore node_modules` | 0 failures | CI `26093792219`: markdownlint passed on the growth-pack PR; rerun after any release-copy edits |
 | Package surface | `node tests/scripts/npm-publish-surface.test.js` | 0 failures; no Python bytecode in npm tarball | `2/2` passed in May 12 evidence pass |
-| Release surface | `node tests/docs/ecc2-release-surface.test.js` | 0 failures | May 19 evidence refresh: 25/25 passed after adding the video suite and partner/sponsor/talk gates |
+| Release surface | `node tests/docs/ecc2-release-surface.test.js` | 0 failures | May 19 evidence refresh: 26/26 passed after adding the video suite, partner/sponsor/talk gates, and owner approval packet |
 | Optional Rust surface | `cd ecc2 && cargo test` | 0 failures or explicit deferral | `publication-evidence-2026-05-16.md`: 462/462 passed, existing warnings only |
 | Queue baseline | `node scripts/platform-audit.js --json` across trunk, AgentShield, JARVIS, ECC Tools, and ECC website | Under 20 open PRs and under 20 open issues | `3304848b`: platform audit ready, 0 open PRs, 0 open issues, 0 conflicting PRs, and 0 blocking dirty files |
 | Discussion baseline | `node scripts/platform-audit.js --json` and `node scripts/discussion-audit.js --json` | No unmanaged active discussion queue and no answerable Q&A missing an accepted answer | `3304848b`: platform audit sampled 58 trunk discussions, 0 needing maintainer touch, 0 answerable discussions missing accepted answer; `docs/architecture/discussion-response-playbook.md` records response templates and security escalation rules |
