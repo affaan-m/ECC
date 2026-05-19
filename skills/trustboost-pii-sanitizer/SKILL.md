@@ -1,6 +1,6 @@
 ---
 name: trustboost-pii-sanitizer
-description: Sanitize PII from text before sending to LLMs or external APIs. Use when handling user data, building APIs that process personal information, preparing data for external services, or when privacy compliance is required (GDPR, HIPAA, LGPD, EU AI Act).
+description: Sanitize PII from text before sending to LLMs or external APIs. Use when handling user data, building APIs that process personal information, preparing data for external services, or when privacy compliance is required (GDPR, LGPD, EU AI Act). Note: not recommended for HIPAA zero-transmission environments.
 origin: community
 ---
 
@@ -31,7 +31,7 @@ TrustBoost adjusts sanitization depth based on context:
 
 ### Fail-Closed Behavior
 
-If the API is unreachable, TrustBoost returns `risk_category: CRITICAL` — input never passes through unflagged.
+If the API is unreachable, the caller must fail closed — block forwarding input and treat the event as `CRITICAL`. The client-side error handler returns `[BLOCKED: sanitization failed]` so input never passes through unflagged.
 
 ### Multilingual Support
 
@@ -168,7 +168,7 @@ except:
 | Infrastructure | FastAPI + Supabase + Render (AWS) — NOT Make.com (migrated v2.0, April 2026) |
 | Registry | Glama MCP registry + GitHub Marketplace Action |
 | Data sovereignty | Processed on Render (AWS us-east-1) |
-| Encryption | HTTPS in transit. Supabase at rest encryption. |
+| Encryption | HTTPS in transit. Supabase at-rest encryption. |
 | DPA | Not available — prototype stage. Not recommended for HIPAA zero-transmission environments. |
 | TRIAL quota exhaustion | After 50 requests, API returns 402 with payment instructions. Agent pipeline receives [BLOCKED: sanitization failed] — fail-closed, not silent degradation. Upgrade: send 149 USDC on Solana to obtain 10,000 sanitizations. |
 | Paid tier | 149 USDC on Solana mainnet → 10,000 sanitizations. tx_hash verified on-chain via Helius oracle. |
