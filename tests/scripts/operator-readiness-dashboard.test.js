@@ -178,7 +178,7 @@ function seedRepo(rootDir, overrides = {}) {
       'Operator dashboard',
       'GitGuardian',
       'macOS/Ubuntu/Windows test matrix',
-      '2544 passed',
+      '2545 passed',
       'Business baseline',
       '$1,728/mo',
       '$8,272/mo'

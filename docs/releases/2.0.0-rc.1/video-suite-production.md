@@ -178,6 +178,8 @@ Then manually check the final render for:
   1280x720, video stream present, audio stream present, and non-empty output;
 - validator self-eval passes for the publish-candidate set: primary MP4 plus
   captions and five short clips in both wide and vertical formats;
+- validator visual QA reports zero detected black-frame segments for every
+  publish-candidate MP4;
 - no blank frames or accidental desktop exposure;
 - no stale repo name, pivot, rename, or Claude-only framing in captions;
 - no captions that rewrite speech into a false claim;

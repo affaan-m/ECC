@@ -310,7 +310,11 @@ const REQUIRED_PUBLISH_CANDIDATES = [
     minSizeMb: 2,
     requiresAudio: true,
   },
-];
+].map(candidate => (
+  candidate.kind === 'video'
+    ? { noBlackFrames: true, ...candidate }
+    : candidate
+));
 
 function usage() {
   console.log([
@@ -556,6 +560,55 @@ function probeMedia(filePath, skipProbe) {
   return result;
 }
 
+function detectBlackSegments(filePath, skipProbe) {
+  if (skipProbe) {
+    return {
+      blackFrameProbe: 'skipped',
+      blackSegments: null,
+    };
+  }
+
+  const result = {
+    blackFrameProbe: 'unavailable',
+    blackSegments: null,
+  };
+  const probe = spawnSync('ffmpeg', [
+    '-hide_banner',
+    '-nostats',
+    '-i',
+    filePath,
+    '-vf',
+    'blackdetect=d=0.5:pix_th=0.10',
+    '-an',
+    '-f',
+    'null',
+    '-',
+  ], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 120000,
+  });
+
+  if (probe.error) {
+    result.blackFrameProbe = `error: ${probe.error.message}`;
+    return result;
+  }
+
+  if (probe.status !== 0) {
+    result.blackFrameProbe = `failed: ${(probe.stderr || '').trim() || `exit ${probe.status}`}`;
+    return result;
+  }
+
+  const output = `${probe.stdout || ''}\n${probe.stderr || ''}`;
+  result.blackSegments = output
+    .split('\n')
+    .filter(line => line.includes('black_start'))
+    .length;
+  result.blackFrameProbe = 'ok';
+
+  return result;
+}
+
 function resolveSourceAssetPath(sourceRoot, fileName) {
   const candidates = [
     path.join(sourceRoot, fileName),
@@ -656,6 +709,14 @@ function validateVideoArtifact(artifact, media, skipProbe) {
     failures.push('audio stream missing');
   }
 
+  if (artifact.noBlackFrames) {
+    if (media.blackFrameProbe !== 'ok') {
+      failures.push(`blackdetect ${media.blackFrameProbe}`);
+    } else if (Number.isFinite(media.blackSegments) && media.blackSegments > 0) {
+      failures.push(`${media.blackSegments} black frame segment(s)`);
+    }
+  }
+
   return failures;
 }
 
@@ -680,12 +741,17 @@ function inspectArtifactCollection(rootDir, artifacts, skipProbe) {
       };
     }
 
-    const media = artifact.kind === 'video' ? probeMedia(filePath, skipProbe) : {
-      sizeBytes: fs.statSync(filePath).size,
-      sizeMb: formatBytes(fs.statSync(filePath).size),
-      durationSeconds: null,
-      probe: 'not-media',
-    };
+    const media = artifact.kind === 'video'
+      ? {
+        ...probeMedia(filePath, skipProbe),
+        ...(artifact.noBlackFrames ? detectBlackSegments(filePath, skipProbe) : {}),
+      }
+      : {
+        sizeBytes: fs.statSync(filePath).size,
+        sizeMb: formatBytes(fs.statSync(filePath).size),
+        durationSeconds: null,
+        probe: 'not-media',
+      };
     const validationFailures = validateVideoArtifact(artifact, media, skipProbe);
 
     return {
@@ -860,7 +926,7 @@ function buildReport(options = {}) {
       'video-publish-candidates-present',
       missingPublishCandidates.length === 0 ? 'pass' : 'fail',
       missingPublishCandidates.length === 0
-        ? `${publishCandidates.length} publish-candidate MP4/caption artifacts are present and self-evaluable`
+        ? `${publishCandidates.length} publish-candidate MP4/caption artifacts are present, self-evaluable, and free of detected black-frame segments`
         : `missing or invalid publish candidates: ${missingPublishCandidates.map(candidate => {
           const reason = candidate.validationFailures && candidate.validationFailures.length > 0
             ? ` (${candidate.validationFailures.join(', ')})`

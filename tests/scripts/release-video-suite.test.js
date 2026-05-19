@@ -194,6 +194,13 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('publish candidate videos require visual blank-frame QA', () => {
+    const publishVideos = REQUIRED_PUBLISH_CANDIDATES.filter(candidate => candidate.kind === 'video');
+
+    assert.ok(publishVideos.length > 0);
+    assert.ok(publishVideos.every(candidate => candidate.noBlackFrames === true));
+  })) passed++; else failed++;
+
   if (test('missing local roots keep the release video gate blocked', () => {
     const rootDir = createTempDir('release-video-missing-roots-');
 
