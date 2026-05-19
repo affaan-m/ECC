@@ -52,6 +52,7 @@ const expectedReleaseFiles = [
   'quickstart.md',
   'preview-pack-manifest.md',
   'publication-readiness.md',
+  'video-suite-production.md',
   'release-name-plugin-publication-checklist-2026-05-18.md',
 ];
 
@@ -176,6 +177,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'docs/releases/2.0.0-rc.1/publication-readiness.md',
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
     'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
+    'docs/releases/2.0.0-rc.1/video-suite-production.md',
     'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md',
   ]) {
     assert.ok(manifest.includes(artifact), `preview pack manifest missing ${artifact}`);
@@ -194,6 +196,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
   assert.ok(manifest.includes('no raw workspace exports'));
   assert.ok(manifest.includes('Final Verification Commands'));
   assert.ok(manifest.includes('npm run preview-pack:smoke'));
+  assert.ok(manifest.includes('npm run release:video-suite -- --format json'));
   assert.ok(manifest.includes('Reference-Inspired Adapter Direction'));
 });
 
@@ -229,6 +232,60 @@ test('launch checklist records the ecc2 alpha version policy', () => {
   assert.ok(cargoToml.includes('version = "0.1.0"'));
   assert.ok(launchChecklist.includes('`ecc2/Cargo.toml` stays at `0.1.0`'));
   assert.ok(!launchChecklist.includes('confirm whether `ecc2/Cargo.toml` moves'));
+});
+
+test('release video suite manifest gates the content launch lane', () => {
+  const videoManifest = read('docs/releases/2.0.0-rc.1/video-suite-production.md');
+  const launchChecklist = read('docs/releases/2.0.0-rc.1/launch-checklist.md');
+  const hypergrowth = read('docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md');
+  const packageJson = JSON.parse(read('package.json'));
+
+  for (const marker of [
+    'ECC 2.0 Video Suite Production Manifest',
+    'ECC_VIDEO_SOURCE_ROOT',
+    'ECC_VIDEO_RELEASE_SUITE_ROOT',
+    'video-use compatible workflow',
+    'Self-Eval Gate',
+    'Do Not Publish If',
+    'renders/ecc-2-primary-launch-rough-v1.mp4',
+    'timelines/primary-launch-v1.timeline.json',
+    'Primary launch video',
+  ]) {
+    assert.ok(videoManifest.includes(marker), `video suite manifest missing ${marker}`);
+  }
+
+  for (const asset of [
+    'longform-full-wide.mp4',
+    'sf-thread-2-whatisecc.mp4',
+    'thread-2-ghapp-money.mp4',
+    'coverage-montage-wide.mp4',
+    'star_history.png',
+    'x_analytics.png',
+  ]) {
+    assert.ok(videoManifest.includes(asset), `video suite manifest missing asset ${asset}`);
+  }
+
+  assert.ok(launchChecklist.includes('npm run release:video-suite -- --format json'));
+  assert.ok(hypergrowth.includes('Validate `video-suite-production.md`'));
+  assert.strictEqual(packageJson.scripts['release:video-suite'], 'node scripts/release-video-suite.js');
+  assert.ok(packageJson.files.includes('scripts/release-video-suite.js'));
+});
+
+test('release video suite public docs do not expose private media paths', () => {
+  const releaseVideoDocs = [
+    'docs/releases/2.0.0-rc.1/video-suite-production.md',
+    'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md',
+  ];
+
+  const offenders = [];
+  for (const relativePath of releaseVideoDocs) {
+    const source = read(relativePath);
+    if (/\/Users\/[A-Za-z0-9._-]+|\/home\/(?!user|runner)[A-Za-z0-9._-]+/.test(source)) {
+      offenders.push(relativePath);
+    }
+  }
+
+  assert.deepStrictEqual(offenders, []);
 });
 
 test('publication readiness checklist gates public release actions on evidence', () => {

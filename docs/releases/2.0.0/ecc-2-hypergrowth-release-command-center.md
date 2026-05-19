@@ -50,7 +50,7 @@ MRR growth should come from four lanes at once:
 | Package and plugin publication | `ecc-universal@2.0.0-rc.1` dry-runs clean, npm `next` is approved, Claude plugin tag dry-runs, Codex repo marketplace smoke passes, OpenCode build passes | Refresh publication evidence from final commit |
 | Product proof | Quickstart, cross-harness architecture, demo prompts, `ecc2/` alpha boundary, AgentShield safety proof, and hosted ECC Tools links are consistent | Keep proof surfaces concrete |
 | Revenue proof | Sponsor tiers, Pro pricing, consulting CTA, partner CTA, and billing-readback language are current | Do not announce billing claims before live readback |
-| Content proof | Launch video, short-form clips, screenshots, release notes, GitHub Discussion, X, LinkedIn, and longform post are aligned | Produce video suite from existing raw material |
+| Content proof | Launch video, short-form clips, screenshots, release notes, GitHub Discussion, X, LinkedIn, and longform post are aligned | Validate `video-suite-production.md` and the local render suite |
 | Community proof | Discord invite, rules, channels, onboarding, and sponsor/community routing are ready | Needs invite/token decision before public links |
 
 ## Video Suite
@@ -124,7 +124,8 @@ Avoid:
 1. Land the public repo identity fixes.
 2. Refresh package, plugin, workflow, release, and launch-copy URLs.
 3. Record final publication evidence from the exact release commit.
-4. Produce the video suite manifest and transcripts from existing raw material.
+4. Produce the video suite manifest and transcripts from existing raw material;
+   gate it with `npm run release:video-suite -- --format json`.
 5. Browser-capture the README, ECC Tools app, install flow, and relevant proof
    surfaces for b-roll.
 6. Render the primary launch video plus five short clips.

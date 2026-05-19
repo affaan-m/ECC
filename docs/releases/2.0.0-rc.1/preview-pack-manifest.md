@@ -28,6 +28,7 @@ surfaces, or posting announcements.
 | `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-17.md` | Previous prompt-to-artifact operator dashboard | Superseded by the May 18 generated dashboard |
 | `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-18.md` | Current prompt-to-artifact operator dashboard | Shows PR/issue/discussion/platform/supply-chain gates current and publication, plugin, billing, AgentShield, ECC Tools, legacy, and Linear productization gaps still open |
 | `docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md` | Live URL and approval-gated URL ledger for release copy | Must be regenerated from the final release commit before public announcements |
+| `docs/releases/2.0.0-rc.1/video-suite-production.md` | Release video production manifest | Gates local media inventory, rough primary render, captions, timeline, self-eval, and no-private-path publication rules |
 | `docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md` | Naming, slug, and publication-path decision record | Keeps `ECC`, npm `ecc-universal`, and plugin slug `ecc` for rc.1 |
 | `docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md` | Release name, package, Claude plugin, Codex plugin, and publication-order checklist | Freezes rc.1 identity and requires final commit evidence before release, npm, plugin, billing, or announcement actions |
 | `docs/releases/2.0.0-rc.1/x-thread.md` | X launch draft | Must replace placeholders with live URLs after release/package/plugin publication |
@@ -75,6 +76,7 @@ Run these from the exact release commit before publication:
 git status --short --branch
 node scripts/platform-audit.js --json
 npm run preview-pack:smoke
+npm run release:video-suite -- --format json
 npm run harness:adapters -- --check
 npm run harness:audit -- --format json
 npm run observability:ready
