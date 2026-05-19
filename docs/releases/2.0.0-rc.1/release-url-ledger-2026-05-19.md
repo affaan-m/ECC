@@ -17,7 +17,8 @@ with output from the exact release commit.
 | Release pack folder | <https://github.com/affaan-m/ECC/tree/main/docs/releases/2.0.0-rc.1> | In-tree release pack |
 | Release notes draft | <https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md> | In-tree release copy |
 | Hermes setup guide | <https://github.com/affaan-m/ECC/blob/main/docs/HERMES-SETUP.md> | In-tree sanitized Hermes guide |
-| May 18 evidence snapshot | <https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/publication-evidence-2026-05-18.md> | Current strongest pre-rename readiness evidence |
+| May 19 evidence snapshot | <https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md> | Current strongest identity, video, growth, and CI readiness evidence |
+| May 18 evidence snapshot | <https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/publication-evidence-2026-05-18.md> | Previous supply-chain and publication-path readiness evidence |
 | May 18 operator dashboard | <https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-18.md> | Prompt-to-artifact dashboard |
 | npm package page | <https://www.npmjs.com/package/ecc-universal> | `npm view ecc-universal name version dist-tags --json` returned `latest: 1.10.0`; rc.1 is not published yet |
 | Codex marketplace CLI docs | <https://developers.openai.com/codex/cli/reference#codex-plugin-marketplace> | Official docs list `codex plugin marketplace add` for GitHub shorthand, Git URLs, SSH URLs, and local marketplace roots |

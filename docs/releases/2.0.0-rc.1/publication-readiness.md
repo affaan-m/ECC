@@ -45,8 +45,9 @@ AgentShield project scan, AgentShield `840952a` enterprise/IOC evidence mirror,
 release OIDC publishing-scope hardening, workflow normalization, later
 dashboard/publication-readiness refreshes through `67e63e63`, work-items sync,
 Linear progress comments, ITO-46 closure, operator dashboard refresh, and
-current-head CI/security scan success for `4470e2e6`, see
-[`publication-evidence-2026-05-18.md`](publication-evidence-2026-05-18.md).
+current-head CI/security scan success through the May 19 identity, video, and
+growth-pack merge batch, see
+[`publication-evidence-2026-05-19.md`](publication-evidence-2026-05-19.md).
 For the operator-facing prompt-to-artifact readiness dashboard from the same
 May 16 pass, see
 [`operator-readiness-dashboard-2026-05-15.md`](operator-readiness-dashboard-2026-05-15.md).
@@ -94,20 +95,20 @@ Record the exact commit SHA and command output before any publication action:
 
 | Evidence | Command | Required result | Recorded output |
 | --- | --- | --- | --- |
-| Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | `4470e2e6`: `## main...origin/main`; repeat from the exact final publication commit before release |
-| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-18.md`: ready yes, digest `0ed831dbd0cf`, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | `7a0645ed`: `## main...origin/main`; repeat from the exact final publication commit before release |
+| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `3bb55807407b`, 29 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
 | Harness audit | `npm run harness:audit -- --format json` | 70/70 passing | `99e01ded`: 70/70, 0 top actions |
 | Adapter scorecard | `npm run harness:adapters -- --check` | PASS | `99e01ded`: PASS, 11 adapters |
 | Observability readiness | `npm run observability:ready` | 21/21 passing | `publication-evidence-2026-05-18.md`: 21/21, ready yes |
 | Release safety gate | `npm run observability:ready -- --format json` | Release Safety category passing with publication readiness, supply-chain, workflow security, package surface, and release-surface evidence | May 18 evidence keeps release safety passing; repeat the JSON gate from the exact final release commit |
-| Supply-chain verification | `npm audit --json`; `npm audit signatures`; `cd ecc2 && cargo audit -q`; Dependabot alerts; GitGuardian Security Checks | 0 vulnerabilities/alerts, registry signatures verified, GitGuardian clean | `publication-evidence-2026-05-18.md` plus CI `26057806361`: npm registry signatures and attestations verified in the evidence pass, 0 high-or-higher npm vulnerabilities, repo/home IOC scans clean, supply-chain IOC scan passed |
-| Root suite | `node tests/run-all.js` | 0 failures | `99e01ded`: local `node tests/run-all.js` passed 2512/2512; current-head CI `26057806361` passed the full OS/runtime/package-manager matrix for `4470e2e6` |
-| Markdown lint | `npx markdownlint-cli '**/*.md' --ignore node_modules` | 0 failures | CI `26057806361`: markdownlint passed on current head; rerun after any release-copy edits |
+| Supply-chain verification | `npm audit --json`; `npm audit signatures`; `cd ecc2 && cargo audit -q`; Dependabot alerts; GitGuardian Security Checks | 0 vulnerabilities/alerts, registry signatures verified, GitGuardian clean | `publication-evidence-2026-05-19.md` plus CI `26093792219`: GitGuardian and security scan passed; prior May 18 npm registry signatures and IOC scans remain the latest detailed supply-chain evidence |
+| Root suite | `node tests/run-all.js` | 0 failures | `7a0645ed`: local `node tests/run-all.js` passed 2544/2544; PR #1993 CI `26093792219` passed the full OS/runtime/package-manager matrix for `d9ac22c6` |
+| Markdown lint | `npx markdownlint-cli '**/*.md' --ignore node_modules` | 0 failures | CI `26093792219`: markdownlint passed on the growth-pack PR; rerun after any release-copy edits |
 | Package surface | `node tests/scripts/npm-publish-surface.test.js` | 0 failures; no Python bytecode in npm tarball | `2/2` passed in May 12 evidence pass |
-| Release surface | `node tests/docs/ecc2-release-surface.test.js` | 0 failures | May 18 evidence refresh: 21/21 passed after public-path sanitization, during the `0f1775e3` operator-readiness refresh, and again in the ITO-46 dry-run pass before `4470e2e6` |
+| Release surface | `node tests/docs/ecc2-release-surface.test.js` | 0 failures | May 19 evidence refresh: 25/25 passed after adding the video suite and partner/sponsor/talk gates |
 | Optional Rust surface | `cd ecc2 && cargo test` | 0 failures or explicit deferral | `publication-evidence-2026-05-16.md`: 462/462 passed, existing warnings only |
-| Queue baseline | `node scripts/platform-audit.js --json` across trunk, AgentShield, JARVIS, ECC Tools, and ECC website | Under 20 open PRs and under 20 open issues | `4470e2e6`: platform audit ready, 0 open PRs, 0 open issues, 0 conflicting PRs, and 0 blocking dirty files in the regenerated dashboard snapshot |
-| Discussion baseline | `node scripts/platform-audit.js --json` and `node scripts/discussion-audit.js --json` | No unmanaged active discussion queue and no answerable Q&A missing an accepted answer | `4470e2e6`: platform audit sampled 58 trunk discussions, 0 needing maintainer touch, 0 answerable discussions missing accepted answer; `docs/architecture/discussion-response-playbook.md` records response templates and security escalation rules |
+| Queue baseline | `node scripts/platform-audit.js --json` across trunk, AgentShield, JARVIS, ECC Tools, and ECC website | Under 20 open PRs and under 20 open issues | `7a0645ed`: platform audit ready, 0 open PRs, 0 open issues, 0 conflicting PRs, and 0 blocking dirty files |
+| Discussion baseline | `node scripts/platform-audit.js --json` and `node scripts/discussion-audit.js --json` | No unmanaged active discussion queue and no answerable Q&A missing an accepted answer | `7a0645ed`: platform audit sampled 58 trunk discussions, 0 needing maintainer touch, 0 answerable discussions missing accepted answer; `docs/architecture/discussion-response-playbook.md` records response templates and security escalation rules |
 | Linear roadmap | Linear project and issue readback | Detailed roadmap exists with release, security, AgentShield, ECC Tools, legacy, and observability lanes | May 18 Linear comments include ITO-57 `3fe5b2b7-c4fe-401c-a317-b40d72119cb3` and ITO-44 `fb4a4f33-6c2d-421a-bbdb-63cfad3e3ee4`; earlier evidence records the project and 16 issue lanes |
 | Operator readiness dashboard | `npm run operator:dashboard -- --json` | Current queue state mapped to macro-goal deliverables and incomplete gaps | `4470e2e6`: regenerated May 18 dashboard from current main; platform audit ready true, 0 open PRs, 0 open issues, 0 discussion gaps, 0 dirty files, and publication gates still approval-gated |
 | Release URL ledger | `docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md` plus placeholder-marker scan | Live links and approval-gated links are separated before announcement copy is posted | Ledger records public repo/docs/npm/OpenAI Codex documentation URLs and blocks GitHub release/npm/plugin/billing/social URLs until approval-gated checks pass |

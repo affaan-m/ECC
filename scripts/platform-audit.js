@@ -426,7 +426,7 @@ function buildLocalEvidenceChecks(rootDir) {
   const roadmap = readText(rootDir, 'docs/ECC-2.0-GA-ROADMAP.md');
   const progressSync = readText(rootDir, 'docs/architecture/progress-sync-contract.md');
   const supplyChain = readText(rootDir, 'docs/security/supply-chain-incident-response.md');
-  const evidence = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-18.md');
+  const evidence = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md');
   const operatorDashboard = readText(rootDir, 'docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-18.md');
 
   return [
@@ -472,9 +472,9 @@ function buildLocalEvidenceChecks(rootDir) {
     ),
     buildCheck(
       'release-evidence-current',
-      includesAll(evidence, ['TanStack', 'Mini Shai-Hulud', 'Home persistence IOC scan', 'Supply-Chain Watch', 'npm signatures']) ? 'pass' : 'fail',
-      'rc.1 evidence includes current supply-chain verification artifacts',
-      { path: 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-18.md' }
+      includesAll(evidence, ['Release video suite', 'growth outreach', 'GitGuardian', 'macOS/Ubuntu/Windows test matrix', '2544 passed']) ? 'pass' : 'fail',
+      'rc.1 evidence includes current release, video, growth, and CI artifacts',
+      { path: 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md' }
     ),
     buildCheck(
       'operator-readiness-dashboard',

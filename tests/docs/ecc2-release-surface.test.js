@@ -180,6 +180,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md',
     'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/video-suite-production.md',
+    'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md',
   ]) {
     assert.ok(manifest.includes(artifact), `preview pack manifest missing ${artifact}`);

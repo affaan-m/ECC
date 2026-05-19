@@ -153,6 +153,13 @@ function seedRepo(rootDir, overrides = {}) {
       'npm signatures',
       'Node IPC follow-up node-ipc IOC scan'
     ].join('\n'),
+    'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md': [
+      'Release video suite',
+      'growth outreach',
+      'GitGuardian',
+      'macOS/Ubuntu/Windows test matrix',
+      '2544 passed'
+    ].join('\n'),
     '.github/workflows/supply-chain-watch.yml': 'name: Supply-Chain Watch supply-chain-advisory-sources.js supply-chain-advisory-sources.json'
   };
 
