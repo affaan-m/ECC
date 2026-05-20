@@ -26,8 +26,9 @@ credentials:
   with historical malicious `node-ipc` versions also blocked by ECC because
   they carried destructive or unauthorized file-writing behavior.
 - The live IOC set includes persistence through Claude Code
-  `.claude/settings.json`, VS Code `.vscode/tasks.json`, and OS-level
-  `gh-token-monitor` LaunchAgent/systemd services. Some variants add
+  `.claude/settings.json`, VS Code `.vscode/tasks.json`, Zed
+  `.zed/tasks.json`, and OS-level `gh-token-monitor` LaunchAgent/systemd
+  services. Some variants add
   `~/.config/gh-token-monitor/token` plus a dead-man-switch token description
   `IfYouRevokeThisTokenItWillWipeTheComputerOfTheOwner`, malicious workflow
   files such as `.github/workflows/codeql_analysis.yml`, and Python runtime
@@ -179,7 +180,7 @@ Escalate to a maintainer security review before any release or merge if:
 
 - a dependency lockfile references a package named in an active advisory;
 - `node scripts/ci/scan-supply-chain-iocs.js --home` finds Claude Code,
-  VS Code, or OS-level persistence indicators;
+  VS Code, Zed, or OS-level persistence indicators;
 - a workflow combines `pull_request_target` with dependency installation,
   cache restore/save, PR-head checkout, or write permissions;
 - a release workflow combines `id-token: write` with shared cache usage;
