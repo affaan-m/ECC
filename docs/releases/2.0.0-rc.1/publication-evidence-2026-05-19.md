@@ -8,9 +8,9 @@ social announcement.
 
 | Field | Evidence |
 | --- | --- |
-| Upstream main | `3cb8c48e74d7ee9883fd2e6d94d8e5aea7421d8c` |
+| Upstream main | `906e06406e95742944ccb05065f95a7e4dd4a036` |
 | Git remote | `https://github.com/affaan-m/ECC.git` |
-| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, PR #2001 owner approval packet addition, PR #2002 owner approval dashboard gate refresh, PR #2004 Linear readiness evidence sync, PR #2005 post-PR #2004 evidence refresh, PR #2008 release supply-chain evidence gate fix, PR #2006 per-project Claude Code adapter, PR #2009 continuous-learning project registry hygiene fix, PR #2011 GateGuard quoted git introspection fix, PR #2013 deterministic release approval gate, ECC-Tools #80-#88 hosted observability/readback batch, and AgentShield #94 Zed/VS Code adapter coverage |
+| Evidence scope | Current `main` after PR #1990 harness-audit GitHub integration scoring, PR #1991 canonical ECC identity gate, PR #1992 release video-suite gate, PR #1993 growth outreach pack, PR #1994 May 19 publication evidence refresh, PR #1995 operator dashboard refresh, PR #1996 primary render self-eval gate, PR #1997 publish-candidate gate, PR #1998 visual QA gate, PR #1999 video dashboard evidence refresh, PR #2000 suite-count evidence refresh, PR #2001 owner approval packet addition, PR #2002 owner approval dashboard gate refresh, PR #2004 Linear readiness evidence sync, PR #2005 post-PR #2004 evidence refresh, PR #2008 release supply-chain evidence gate fix, PR #2006 per-project Claude Code adapter, PR #2009 continuous-learning project registry hygiene fix, PR #2011 GateGuard quoted git introspection fix, PR #2013 deterministic release approval gate, PR #2017 AgentShield adapter evidence sync, ECC-Tools #80-#88 hosted observability/readback batch, AgentShield #94 Zed/VS Code adapter coverage, and AgentShield #95 Dependabot alert closure |
 | Local status caveat | `git status --short --branch` was clean after pulling `origin/main`; generated evidence files are committed after the source snapshot they describe |
 
 The release operator must repeat all publish-facing checks from the exact final
@@ -23,7 +23,7 @@ release commit with a strictly clean checkout before publishing.
 | Platform audit | `node scripts/platform-audit.js --json` | Ready true; tracked repos report 0 open PRs, 0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A gaps, 0 conflicting PRs, and 0 blocking dirty files |
 | Trunk PRs | `gh pr list --repo affaan-m/ECC --state open --json number,title,url,author --limit 100` | `[]` |
 | Trunk issues | `gh issue list --repo affaan-m/ECC --state open --json number,title,url,author --limit 100` | `[]` |
-| Discussion audit through platform audit | `node scripts/platform-audit.js --json` | `affaan-m/ECC` discussions enabled; 59 sampled after #2003 AURA integration proposal; 0 needing maintainer touch; 0 answerable without accepted answer |
+| Discussion audit through platform audit | `node scripts/platform-audit.js --json` | `affaan-m/ECC` discussions enabled; 60 sampled after #2015 setup-location Q&A was answered and accepted; 0 needing maintainer touch; 0 answerable without accepted answer |
 | Worktree | `git status --short --branch` | `## main...origin/main` |
 
 Tracked repositories in the platform audit were:
@@ -58,6 +58,7 @@ Tracked repositories in the platform audit were:
 | PR #2009 | Merged the continuous-learning project registry hygiene fix: non-git hook payloads stay global, no-remote linked worktrees migrate to the main worktree project ID, and `instinct-cli.py projects delete`, `merge`, and `gc` provide operator maintenance commands |
 | PR #2011 | Merged the GateGuard read-only git introspection tokenizer fix so quoted `git show` pathspecs with spaces are preserved while quoted shell separators stay outside the bypass |
 | PR #2013 | Merged the deterministic `release:approval-gate` so final publication, package, plugin, video, billing, social, and outbound actions remain blocked until owner decisions and live URL readbacks are complete |
+| PR #2017 | Merged the AgentShield #94 evidence mirror as `906e06406e95742944ccb05065f95a7e4dd4a036`, syncing roadmap, publication evidence, preview-pack manifest, and supply-chain incident-response surfaces after full GitHub CI passed |
 
 ## Post-Queue-Zero Sync - 2026-05-19 Late Pass
 
@@ -82,13 +83,14 @@ Tracked repositories in the platform audit were:
 | ECC-Tools #85/#86/#87 | PR #85 merged hosted job observability events as `1637e0f2bfa0a889387f2c20675680ccc5528123`; PR #86 merged hosted status observability readback as `5a9e94d3ff860307c3e7fd9fd065f0de2bd633dd`; PR #87 merged hosted depth-plan observability readback as `508fbc02b63cf1fcb5af2f3624608fa66e53b5d4`. Local validation for the final depth-plan readback slice passed the focused hosted depth-plan route test, full route suite (89/89), typecheck, lint, full ECC-Tools Vitest suite (683/683), and `git diff --check`; GitHub Verify, Security Audit, and Workers Builds passed before merge. |
 | ECC-Tools #88 | PR #88 merged authenticated hosted observability API readback as `c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`. `GET /api/analysis/observability` now summarizes hosted events by event type and job for operator/dashboard readback, skips malformed stale KV records, and the deployment runbook includes the production smoke command. Local verification passed typecheck, lint, full ECC-Tools Vitest suite (686/686), and `git diff --check`; GitHub Verify, Security Audit, and Workers Builds passed before merge. |
 | AgentShield #94 | PR #94 merged Zed/VS Code adapter coverage as `4caee27acfadb50a4cd024e738b5c3cbd4b0bb03`. AgentShield now reports Zed and VS Code as first-class harness adapters, discovers `.zed/settings.json`, `.zed/tasks.json`, and `.zed` hook-code files, and flags `.zed/setup.mjs` in the AI-tool persistence IOC rule alongside `.vscode/setup.mjs`. Local verification passed typecheck, lint, focused scanner/rule tests, full `npm test` (1822 tests), `npm run build`, and `git diff --check`; GitHub checks passed across GitGuardian, scan suite, self-scan, self-scan examples, Node 18/20/22 CI, CodeRabbit, and Cubic after rerunning a transient artifact-upload failure. |
-| Linear roadmap sync | Linear ITO-54 comment `74dcc101-3be5-4173-be13-62b80d54f569` and ECC Platform Roadmap project comment `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5` record the May 20 hosted observability status/depth-plan readback batch; Linear comments `291e2a4b-06e3-4672-a057-cdb141478161` and `b2d35de0-ca49-44cb-982a-ddec229e7691` add the #88 observability API readback; Linear ITO-49 comment `faed69dd-35f5-469d-acb5-ddde6a70d6a1` and project comment `70187c1e-d481-4181-b418-09bd65d54b5e` add the #94 AgentShield Zed/VS Code adapter evidence; earlier comments on ITO-54, ITO-48, and the project record the #84 hosted remediation sync and #85 hosted observability event emission batches. |
+| AgentShield #95 | PR #95 merged the `brace-expansion` Dependabot fix as `25d91f0002214c408da4ceaac7def20bad40ca10`. The lockfile now resolves vulnerable transitive `brace-expansion` 5.x entries to `5.0.6`, local `npm audit --audit-level=moderate` returns 0 vulnerabilities, and `gh api repos/affaan-m/agentshield/dependabot/alerts?state=open` returns `[]`. Local validation passed typecheck, lint, full `npm test` (1822 tests), build, audit, and whitespace checks; GitHub checks passed across Verify Node 18/20/22, self-scan, self-scan examples, Test GitHub Action, GitGuardian, CodeRabbit, and Cubic. |
+| Linear roadmap sync | Linear ITO-54 comment `74dcc101-3be5-4173-be13-62b80d54f569` and ECC Platform Roadmap project comment `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5` record the May 20 hosted observability status/depth-plan readback batch; Linear comments `291e2a4b-06e3-4672-a057-cdb141478161` and `b2d35de0-ca49-44cb-982a-ddec229e7691` add the #88 observability API readback; Linear ITO-49 comment `faed69dd-35f5-469d-acb5-ddde6a70d6a1` and project comment `70187c1e-d481-4181-b418-09bd65d54b5e` add the #94 AgentShield Zed/VS Code adapter evidence; Linear ITO-49 comment `371fc3e4-611f-4d20-a23f-67db1260b418`, ITO-57 comment `bd06e252-15c1-4256-b667-caa3f64f5968`, and project comment `22c2c388-2fd1-4dea-a939-6141f40c9a21` add the #95 AgentShield Dependabot alert closure; earlier comments on ITO-54, ITO-48, and the project record the #84 hosted remediation sync and #85 hosted observability event emission batches. |
 
 ## Release And Growth Evidence
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 27 passed, 0 failed |
+| Release-surface tests | `node tests/docs/ecc2-release-surface.test.js` | 28 passed, 0 failed |
 | Preview-pack smoke | `npm run preview-pack:smoke -- --format json` | Ready true; digest `531328aaaa53`; 32 required artifacts; 5 passed, 0 failed |
 | Release approval gate | `npm run release:approval-gate -- --format json` | Expected blocked; digest `ef8f49f727b7`; 4 passed, 2 failed; owner decisions and live URL readbacks remain approval-gated |
 | Operator dashboard | `npm run operator:dashboard -- --write docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md` | Regenerated from the May 19 `main` baseline with platform audit ready true, 0 tracked PRs, 0 tracked issues, 0 discussion gaps, `$1,728/mo` current MRR, `$10,000/mo` target MRR, the release video suite marked current, and top actions for plugin publication, notifications, outbound approval, AgentShield, and ECC Tools billing |
@@ -125,7 +127,7 @@ Tracked repositories in the platform audit were:
 | Owner approval proof | `owner-approval-packet-2026-05-19.md` centralizes release, package, plugin, video, billing, social, and outbound decision gates |
 | Business baseline | Hypergrowth command center and partner pack use `$1,728/mo` current MRR, `$10,000/mo` target MRR, and `$8,272/mo` gap |
 | Operator dashboard | `operator-readiness-dashboard-2026-05-19.md` pulls the growth baseline into the same queue, publication, video, outbound, AgentShield, ECC Tools, Linear, and supply-chain control surface |
-| Linear progress proof | Linear project document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` mirrors the post-PR #2002 state and records active lanes for launch materials, AgentShield, ECC Tools deep analysis, observability, and final release publication; Linear document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f` adds the PR #2013 approval gate, ECC-Tools #79 redaction hardening, and JARVIS #15/#16 queue/deploy repair evidence; May 20 Linear comments `74dcc101-3be5-4173-be13-62b80d54f569`, `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5`, `291e2a4b-06e3-4672-a057-cdb141478161`, `b2d35de0-ca49-44cb-982a-ddec229e7691`, `faed69dd-35f5-469d-acb5-ddde6a70d6a1`, and `70187c1e-d481-4181-b418-09bd65d54b5e` add ECC-Tools #86/#87/#88 hosted observability readback evidence and AgentShield #94 adapter evidence to ITO-54, ITO-49, and the project |
+| Linear progress proof | Linear project document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` mirrors the post-PR #2002 state and records active lanes for launch materials, AgentShield, ECC Tools deep analysis, observability, and final release publication; Linear document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f` adds the PR #2013 approval gate, ECC-Tools #79 redaction hardening, and JARVIS #15/#16 queue/deploy repair evidence; May 20 Linear comments `74dcc101-3be5-4173-be13-62b80d54f569`, `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5`, `291e2a4b-06e3-4672-a057-cdb141478161`, `b2d35de0-ca49-44cb-982a-ddec229e7691`, `faed69dd-35f5-469d-acb5-ddde6a70d6a1`, `70187c1e-d481-4181-b418-09bd65d54b5e`, `371fc3e4-611f-4d20-a23f-67db1260b418`, `bd06e252-15c1-4256-b667-caa3f64f5968`, and `22c2c388-2fd1-4dea-a939-6141f40c9a21` add ECC-Tools #86/#87/#88 hosted observability readback evidence, AgentShield #94 adapter evidence, and AgentShield #95 Dependabot alert closure to ITO-54, ITO-49, ITO-57, and the project |
 
 ## Current Publication Blockers
 
@@ -153,11 +155,12 @@ identity, release video suite, preview pack, growth outreach packet, per-project
 Claude Code adapter surface, continuous-learning project registry hygiene,
 GateGuard quoted git introspection fix, deterministic release approval gate,
 ECC-Tools billing-announcement redaction hardening, ECC-Tools hosted
-observability readback, AgentShield Zed/VS Code adapter coverage, and JARVIS
+observability readback, AgentShield Zed/VS Code adapter coverage, AgentShield
+Dependabot alert closure, and JARVIS
 security/deploy queue repairs are current on May 20, 2026 for ECC `main`
-through `3cb8c48e74d7ee9883fd2e6d94d8e5aea7421d8c`, ECC-Tools `main`
+through `906e06406e95742944ccb05065f95a7e4dd4a036`, ECC-Tools `main`
 through `c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`, and AgentShield `main`
-through `4caee27acfadb50a4cd024e738b5c3cbd4b0bb03`. The remaining video work is owner
+through `25d91f0002214c408da4ceaac7def20bad40ca10`. The remaining video work is owner
 approval, upload, and public URL attachment, not render or QA production.
 
 This improves publication readiness but does not replace the approval-gated
