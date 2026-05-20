@@ -28,10 +28,12 @@ No user prompt needed:
 
 ## Parallel Task Execution
 
-ALWAYS use parallel Task execution for independent operations:
+**Scope:** parallel dispatch applies to **research, review, and analysis** agents whose outputs are independent reports. It does NOT apply to **implementation** agents that write to disk — those serialize to avoid merge conflicts on shared files.
+
+ALWAYS use parallel Task execution for independent **read-only** operations:
 
 ```markdown
-# GOOD: Parallel execution
+# GOOD: Parallel execution (reviewers / analyzers)
 Launch 3 agents in parallel:
 1. Agent 1: Security analysis of auth module
 2. Agent 2: Performance review of cache system
@@ -40,6 +42,19 @@ Launch 3 agents in parallel:
 # BAD: Sequential when unnecessary
 First agent 1, then agent 2, then agent 3
 ```
+
+```markdown
+# BAD: Parallel implementation agents on the same codebase
+Launch 2 agents in parallel:
+1. Agent 1: Implement endpoint X (modifies api.php)
+2. Agent 2: Implement endpoint Y (modifies api.php)
+# → merge conflict on api.php
+
+# GOOD: Serialize implementation agents, OR pre-partition the work
+# so each agent touches a disjoint file set.
+```
+
+This resolves the apparent conflict with `superpowers:subagent-driven-development`'s "never dispatch multiple implementation subagents in parallel" rule — both rules are now consistent: parallel reviewers yes, parallel implementers no.
 
 ## Multi-Perspective Analysis
 

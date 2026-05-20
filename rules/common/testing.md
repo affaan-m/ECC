@@ -2,10 +2,12 @@
 
 ## Minimum Test Coverage: 80%
 
-Test Types (ALL required):
+Test Types (applies if the project already has the corresponding test infrastructure):
 1. **Unit Tests** - Individual functions, utilities, components
 2. **Integration Tests** - API endpoints, database operations
 3. **E2E Tests** - Critical user flows (framework chosen per language)
+
+**Project-aware application:** If the project has no e2e harness configured (no Playwright/Cypress/etc.), do NOT block shipping on missing e2e tests — instead, flag the gap once per session and continue. The 80% target applies to whichever test types the project actually runs. Adding new test infrastructure is its own task and requires user approval, not a side effect of feature work.
 
 ## Test-Driven Development
 

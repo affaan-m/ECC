@@ -40,6 +40,8 @@ MANY SMALL FILES > FEW LARGE FILES:
 - Extract utilities from large modules
 - Organize by feature/domain, not by type
 
+**Existing-codebase precedence:** When working in a project whose existing files routinely exceed these limits (e.g., monolithic dispatchers, framework-defined large files), follow the in-file conventions. Do not unilaterally split a file you're modifying unless the user asks for it or the file's growth is directly caused by your change. The "follow existing patterns" rule below wins over the abstract size targets in that case.
+
 ## Error Handling
 
 ALWAYS handle errors comprehensively:
@@ -82,9 +84,9 @@ Split large functions into focused pieces with clear responsibilities.
 
 Before marking work complete:
 - [ ] Code is readable and well-named
-- [ ] Functions are small (<50 lines)
-- [ ] Files are focused (<800 lines)
-- [ ] No deep nesting (>4 levels)
+- [ ] Functions are small (<50 lines of executable code, excluding blank lines, comments, docstrings)
+- [ ] Files are focused (<800 lines, OR the file already exceeded this when you arrived)
+- [ ] No deep nesting (>4 levels of indentation in any one function body; each `if`/`for`/`while`/`try` block counts as one level)
 - [ ] Proper error handling
-- [ ] No hardcoded values (use constants or config)
-- [ ] No mutation (immutable patterns used)
+- [ ] No hardcoded values (use constants or config) — except trivial literals like `0`, `1`, port `8080`, etc.
+- [ ] No mutation (immutable patterns used) — see language-specific overrides where mutation is idiomatic

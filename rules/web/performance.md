@@ -14,6 +14,10 @@
 
 ## Bundle Budget
 
+These are targets for **new** projects and for projects that already enforce bundle budgets via tooling (`vite build --report`, `next build` size output, webpack-bundle-analyzer, etc.).
+
+For existing projects that have shipped without budgets — especially vanilla-JS monoliths or legacy SPAs — these numbers are aspirational, not gates. Do not block a feature ship on bundle size in a project that has never enforced one; flag the gap as a follow-up improvement.
+
 | Page Type | JS Budget (gzipped) | CSS Budget |
 |-----------|---------------------|------------|
 | Landing page | < 150kb | < 30kb |

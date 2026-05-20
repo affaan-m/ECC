@@ -10,7 +10,7 @@ paths:
 ## Standards
 
 - Follow **PSR-12** formatting and naming conventions.
-- Prefer `declare(strict_types=1);` in application code.
+- Prefer `declare(strict_types=1);` in **new files**. When editing an existing file that does not declare it, leave the file's existing convention intact — adding `declare(strict_types=1);` mid-file is itself a behavior change and out of scope for incidental edits. See `common/coding-style.md` "follow existing patterns" guidance.
 - Use scalar type hints, return types, and typed properties everywhere new code permits.
 
 ## Immutability

@@ -18,9 +18,9 @@ Code review ensures quality, security, and maintainability before code is merged
 
 Before requesting review, ensure:
 
-- All automated checks (CI/CD) are passing
+- All automated checks (CI/CD) are passing — if the project has CI/CD configured; otherwise: tests pass locally and linters report clean
 - Merge conflicts are resolved
-- Branch is up to date with target branch
+- Branch is up to date with target branch (skip if not using a branch-based workflow)
 
 ## Review Checklist
 
