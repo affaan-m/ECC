@@ -34,7 +34,7 @@ with output from the exact release commit.
 | npm rc package | <https://www.npmjs.com/package/ecc-universal/v/2.0.0-rc.1> | `npm publish --tag next` approval and post-publish `npm view ecc-universal dist-tags --json` |
 | Claude plugin tag | `claude plugin tag .claude-plugin --dry-run`, then real tag only after approval | Clean release commit and plugin tag/push approval |
 | Codex repo marketplace install | `codex plugin marketplace add affaan-m/ECC --ref v2.0.0-rc.1` | GitHub tag must exist; official Plugin Directory submission remains separate |
-| ECC Tools native-payments announcement | ECC Tools Marketplace/App URL plus billing readiness readback | Marketplace-managed test account must return `announcementGate.ready === true` |
+| ECC Tools native-payments announcement | ECC Tools Marketplace/App URL plus selected-target billing readiness readback, with bearer token supplied through exported env or ignored `--env-file` | Marketplace-managed selected target must return `announcementGate.ready === true` |
 | Public announcements | X, LinkedIn, GitHub release, and longform URLs | GitHub release, npm, plugin, and billing URLs must resolve first |
 
 ## Pre-Post Check

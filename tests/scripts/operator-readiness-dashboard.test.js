@@ -79,6 +79,8 @@ function seedRepo(rootDir, overrides = {}) {
       '632e059',
       'select-ready-target',
       'selected-target official announcement gate',
+      'billing gate env-file operator path',
+      '72119a1',
       '16a5bb3',
       'f14ed2fe-a219-470c-8119-63429e197027',
       'old "no Marketplace-managed Pro target billing-state" blocker is cleared',
@@ -368,10 +370,11 @@ function runTests() {
       )));
       assert.ok(report.requirements.some(item => (
         item.id === 'ecc-tools-next-level'
-          && item.gap === 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, then run the live selected-target billing announcement gate before publishing native-payments copy'
+          && item.gap === 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, via exported env or ignored --env-file, then run the live selected-target billing announcement gate before publishing native-payments copy'
           && item.evidence.includes('operator-visible promotion output details')
           && item.evidence.includes('hosted promotion judge audit traces')
           && item.evidence.includes('selected-target announcement gate')
+          && item.evidence.includes('billing gate env-file operator path')
           && item.evidence.includes('billing announcement preflight')
           && item.evidence.includes('aggregate production billing KV readback')
           && item.evidence.includes('Wrangler OAuth readback')
