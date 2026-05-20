@@ -70,6 +70,18 @@ Tracked repositories in the platform audit were:
 | JARVIS deploy repair | JARVIS PR #16 merged as `4369c34babd21d539c420866da51c7a8365f1c9e`; the deploy workflow no longer uses an invalid job-level `secrets.*` condition, Vercel deploy skips cleanly when secrets are absent, backend image build/push succeeds, and main CI, CodeQL, and Deploy runs `26129539376`, `26129539427`, and `26129539425` completed successfully |
 | Linear roadmap sync | Linear document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f`, project comment `d42bf0e2-7a8e-4934-9f3f-e281498ee805`, and issue comments on ITO-44, ITO-50, ITO-54, ITO-56, and ITO-61 record the late-pass queue-zero, release-gate, billing-safety, and progress-sync state. |
 
+## May 20 Hosted Observability Sync
+
+| Surface | Evidence |
+| --- | --- |
+| ECC discussion queue | Discussion #2015 was answered and marked accepted with conservative setup guidance: do not install in `C:\`; use a normal workspace; install `ecc@ecc` once through the Claude plugin marketplace; copy only needed rule folders when using manual rules; do not stack plugin plus full manual install. |
+| ECC platform audit | `node scripts/platform-audit.js --json` at `2026-05-20T00:25:38Z` returned ready true with 0 open PRs, 0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A gaps, 0 conflicting PRs, and 0 dirty blockers across `affaan-m/ECC`, `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website`. |
+| ECC-Tools #80/#81/#82 | PR #80 merged runtime-receipt failure-reason enforcement as `4efc8cc858022f84c844690f3298633b081c4398`; PR #81 preserved AgentShield fleet approval IDs as `1fbf635f492284f75ba7166c029c39eb8cc15794`; PR #82 rendered those approval IDs in hosted security review comments/check-runs as `7a7b4d096a176ae80b3a2076c09d45601e36013a`. |
+| ECC-Tools #83/#84 | PR #83 merged deterministic Linear external-ID reuse for deferred follow-ups as `b6b107f33961bef18a85fb619f3a976eb5d752dd`; PR #84 merged hosted AgentShield remediation sync to Linear as `73bac7058071c55cb30c6b8ac6db779b3660c02c`. Local validation covered focused route/client tests, typecheck, lint, full ECC-Tools test suite, and whitespace checks before merge; GitHub Verify, Security Audit, and Workers Builds passed. |
+| ECC-Tools #85/#86/#87 | PR #85 merged hosted job observability events as `1637e0f2bfa0a889387f2c20675680ccc5528123`; PR #86 merged hosted status observability readback as `5a9e94d3ff860307c3e7fd9fd065f0de2bd633dd`; PR #87 merged hosted depth-plan observability readback as `508fbc02b63cf1fcb5af2f3624608fa66e53b5d4`. Local validation for the final depth-plan readback slice passed the focused hosted depth-plan route test, full route suite (89/89), typecheck, lint, full ECC-Tools Vitest suite (683/683), and `git diff --check`; GitHub Verify, Security Audit, and Workers Builds passed before merge. |
+| ECC-Tools #88 | PR #88 merged authenticated hosted observability API readback as `c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`. `GET /api/analysis/observability` now summarizes hosted events by event type and job for operator/dashboard readback, skips malformed stale KV records, and the deployment runbook includes the production smoke command. Local verification passed typecheck, lint, full ECC-Tools Vitest suite (686/686), and `git diff --check`; GitHub Verify, Security Audit, and Workers Builds passed before merge. |
+| Linear roadmap sync | Linear ITO-54 comment `74dcc101-3be5-4173-be13-62b80d54f569` and ECC Platform Roadmap project comment `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5` record the May 20 hosted observability status/depth-plan readback batch; Linear comments `291e2a4b-06e3-4672-a057-cdb141478161` and `b2d35de0-ca49-44cb-982a-ddec229e7691` add the #88 observability API readback; earlier comments on ITO-54, ITO-48, and the project record the #84 hosted remediation sync and #85 hosted observability event emission batches. |
+
 ## Release And Growth Evidence
 
 | Gate | Command | Result |
@@ -111,7 +123,7 @@ Tracked repositories in the platform audit were:
 | Owner approval proof | `owner-approval-packet-2026-05-19.md` centralizes release, package, plugin, video, billing, social, and outbound decision gates |
 | Business baseline | Hypergrowth command center and partner pack use `$1,728/mo` current MRR, `$10,000/mo` target MRR, and `$8,272/mo` gap |
 | Operator dashboard | `operator-readiness-dashboard-2026-05-19.md` pulls the growth baseline into the same queue, publication, video, outbound, AgentShield, ECC Tools, Linear, and supply-chain control surface |
-| Linear progress proof | Linear project document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` mirrors the post-PR #2002 state and records active lanes for launch materials, AgentShield, ECC Tools deep analysis, observability, and final release publication; Linear document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f` adds the PR #2013 approval gate, ECC-Tools #79 redaction hardening, and JARVIS #15/#16 queue/deploy repair evidence |
+| Linear progress proof | Linear project document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` mirrors the post-PR #2002 state and records active lanes for launch materials, AgentShield, ECC Tools deep analysis, observability, and final release publication; Linear document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f` adds the PR #2013 approval gate, ECC-Tools #79 redaction hardening, and JARVIS #15/#16 queue/deploy repair evidence; May 20 Linear comments `74dcc101-3be5-4173-be13-62b80d54f569`, `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5`, `291e2a4b-06e3-4672-a057-cdb141478161`, and `b2d35de0-ca49-44cb-982a-ddec229e7691` add ECC-Tools #86/#87/#88 hosted observability readback evidence to ITO-54 and the project |
 
 ## Current Publication Blockers
 
@@ -138,9 +150,11 @@ The tracked public PR queue, issue queue, discussion queue, canonical ECC
 identity, release video suite, preview pack, growth outreach packet, per-project
 Claude Code adapter surface, continuous-learning project registry hygiene,
 GateGuard quoted git introspection fix, deterministic release approval gate,
-ECC-Tools billing-announcement redaction hardening, and JARVIS security/deploy
-queue repairs are current on May 19, 2026 for `main` through
-`9819626459a662773be7d0b1c18d82c1316b8c36`. The remaining video work is owner
+ECC-Tools billing-announcement redaction hardening, ECC-Tools hosted
+observability readback, and JARVIS security/deploy queue repairs are current on
+May 20, 2026 for ECC `main` through
+`b3c015c7443c6617f897654613c21eddc3d25764` plus ECC-Tools `main` through
+`c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`. The remaining video work is owner
 approval, upload, and public URL attachment, not render or QA production.
 
 This improves publication readiness but does not replace the approval-gated

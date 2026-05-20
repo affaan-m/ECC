@@ -17,6 +17,35 @@ The May 19 release/growth execution map lives at
 It is the operator surface for the final ECC 2.0 repo identity, video suite,
 partner/sponsor funnel, consulting/talk funnel, and social launch plan.
 
+## 2026-05-20 Delta
+
+- The tracked platform audit is still green on May 20 with 0 open PRs,
+  0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A gaps,
+  0 conflicting PRs, and 0 blocking dirty files across `affaan-m/ECC`,
+  `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and
+  `ECC-Tools/ECC-website`.
+- The new #2015 setup-location Q&A was answered and marked accepted. The
+  answer keeps install guidance conservative: do not install into `C:\`; use a
+  normal workspace, install the `ecc@ecc` Claude plugin once, copy only needed
+  rule folders when using manual rules, and avoid stacking plugin plus full
+  manual install.
+- ECC-Tools PRs #80-#88 landed the next hosted-platform batch: runtime
+  receipts now require failure reasons; AgentShield fleet approval IDs survive
+  hosted security review and render into comments/check-runs; Linear follow-up
+  sync reuses deterministic external IDs; hosted AgentShield remediation items
+  sync to Linear; hosted job observability events are emitted for queued,
+  completed, blocked, failed, and budget-blocked states; and both hosted job
+  status comments and hosted depth-plan check-runs read back recent
+  observability/budget events. PR #88 adds the authenticated observability API
+  readback for operator dashboards and production smoke tests.
+- Linear ITO-54 and the ECC Platform Roadmap now have the May 20 ECC-Tools
+  hosted observability update comments
+  `74dcc101-3be5-4173-be13-62b80d54f569` and
+  `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5`, after earlier PR #84/#85 comments
+  recorded remediation sync and hosted observability events. PR #88 is recorded
+  in Linear comments `291e2a4b-06e3-4672-a057-cdb141478161` and
+  `b2d35de0-ca49-44cb-982a-ddec229e7691`.
+
 ## 2026-05-19 Delta
 
 - The public repo identity is now `affaan-m/ECC`; release, package, plugin,
@@ -38,7 +67,7 @@ partner/sponsor funnel, consulting/talk funnel, and social launch plan.
 
 ## Current Evidence
 
-As of 2026-05-19:
+As of 2026-05-20:
 
 - GitHub queues are clean across `affaan-m/ECC`,
   `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and
@@ -56,9 +85,10 @@ As of 2026-05-19:
   now at 0 open PRs and 0 open issues by live `gh search`. Archived repos
   touched during closure were restored to archived state.
 - GitHub discussions are current across those tracked repos:
-  `affaan-m/ECC` has 59 total discussions and 0 without
+  `affaan-m/ECC` has 60 total discussions and 0 without
   maintainer touch after the May 19 #2003 AURA integration proposal was routed
-  as an external-adapter proposal, not core wallet/escrow coupling; AgentShield,
+  as an external-adapter proposal, not core wallet/escrow coupling, and the
+  May 20 #2015 setup-location Q&A was answered and accepted; AgentShield,
   JARVIS, ECC Tools, and the ECC Tools website have discussions disabled or 0
   total discussions. `docs/architecture/discussion-response-playbook.md` now
   supplies the ITO-59 response categories, public templates, security-escalation
@@ -108,6 +138,16 @@ As of 2026-05-19:
   comment `d42bf0e2-7a8e-4934-9f3f-e281498ee805`. The supply-chain gate now
   also records the `@types/node@25.7.0` pin and `brace-expansion` lock refresh
   needed for current npm audit/signature verification.
+- The May 20 ECC-Tools hosted-platform pass extends that evidence with PR #80
+  through PR #88, all merged after green GitHub Verify/Security Audit/Workers
+  Builds checks. Local validation for the final depth-plan observability slice
+  passed the focused hosted depth-plan route test, the full route suite
+  (89/89), typecheck, lint, full ECC-Tools Vitest suite (683/683), and
+  `git diff --check`. PR #88 additionally exposes authenticated hosted
+  observability readback at `/api/analysis/observability` for operator
+  dashboards and production smoke tests; its local verification passed
+  typecheck, lint, the full ECC-Tools Vitest suite (686/686), and
+  `git diff --check`.
 - `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md`
   regenerates the ITO-44 prompt-to-artifact dashboard from live platform audit
   evidence: PR queue, issue queue, discussion queue, local worktree gate,
@@ -662,6 +702,44 @@ As of 2026-05-19:
   fleet summaries are collected as harness evidence, target paths are mapped to
   Claude, Codex, OpenCode, MCP, plugin, and cross-harness owners, and routed
   findings carry source evidence paths for operator review.
+- ECC-Tools PR #79 merged as `67ee247ae1b7b50ecc1261ed5d62d65cc8390da8`
+  and redacts billing announcement gate account output: the billing preflight
+  and live readback now print stable account fingerprints and sanitized
+  readiness booleans instead of raw account logins or KV key names.
+- ECC-Tools PR #80 merged as `4efc8cc858022f84c844690f3298633b081c4398`
+  and requires runtime receipt failure reasons before harness runtime receipts
+  can count as hosted observability evidence.
+- ECC-Tools PR #81 merged as `1fbf635f492284f75ba7166c029c39eb8cc15794`
+  and preserves AgentShield fleet approval IDs through hosted security review
+  so policy-promotion follow-ups keep owner-review identity stable.
+- ECC-Tools PR #82 merged as `7a7b4d096a176ae80b3a2076c09d45601e36013a`
+  and renders AgentShield fleet approval IDs in hosted comments and check-runs,
+  giving operators a direct bridge from hosted security review back to
+  AgentShield policy-promotion review items.
+- ECC-Tools PR #83 merged as `b6b107f33961bef18a85fb619f3a976eb5d752dd`
+  and makes Linear follow-up sync reuse deterministic external IDs before title
+  fallback, preventing duplicate deferred backlog issues during repeated
+  `/ecc-tools followups sync-linear` runs.
+- ECC-Tools PR #84 merged as `73bac7058071c55cb30c6b8ac6db779b3660c02c`
+  and syncs hosted AgentShield remediation items to Linear when the workspace
+  token/team are configured; hosted result comments now include created/reused
+  Linear remediation links.
+- ECC-Tools PR #85 merged as `1637e0f2bfa0a889387f2c20675680ccc5528123`
+  and emits hosted job observability events for queued, completed, blocked,
+  failed, and budget-blocked states into `ANALYSIS_CACHE`, including budget
+  snapshots and result counts.
+- ECC-Tools PR #86 merged as `5a9e94d3ff860307c3e7fd9fd065f0de2bd633dd`
+  and reads recent hosted observability events in
+  `/ecc-tools analyze --job status`, so status comments show budget snapshots,
+  blocked results, and budget-blocked outcomes alongside latest job runs.
+- ECC-Tools PR #87 merged as `508fbc02b63cf1fcb5af2f3624608fa66e53b5d4`
+  and adds the same hosted observability readback to hosted depth-plan
+  check-runs, keeping the PR check surface aligned with status comments.
+- ECC-Tools PR #88 merged as `c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`
+  and exposes authenticated hosted observability API readback at
+  `/api/analysis/observability`, summarizing recent hosted events by event type
+  and job while skipping malformed stale KV records. The deployment runbook now
+  includes the production smoke command for operator/dashboard readback.
 - AgentShield PR #90 merged as `6d1c57c92000541d65a3b6bc366f0322d7d0dacc`
   and adds durable fleet `reviewItems`: `agentshield evidence-pack fleet --json`
   now returns owner-ready review items with route, severity, repository/target
@@ -1062,6 +1140,14 @@ Acceptance:
    ECC-Tools commit `632e059` adds sanitized target-account readback, so the
    final operator gate should verify the exact Marketplace test account without
    printing its login or raw KV key names.
+   ECC-Tools PR #79 redacts the billing announcement gate account output;
+   PR #80 requires failure reasons in runtime receipts; PRs #81/#82 preserve
+   and render AgentShield fleet approval IDs; PR #83 makes Linear follow-up
+   sync idempotent by external ID; PR #84 syncs hosted AgentShield
+   remediation items into Linear; PR #85 emits hosted job observability events
+   including budget-blocked outcomes; PRs #86/#87 read those events back into
+   hosted status comments and hosted depth-plan check-runs; and PR #88 exposes
+   authenticated hosted observability API readback for operator dashboards.
 2. Run `npm run billing:announcement-gate -- --preflight --account
    <github-login>`, then run the same command without `--preflight` against a
    Marketplace-managed test account and require `announcementGate.ready ===
