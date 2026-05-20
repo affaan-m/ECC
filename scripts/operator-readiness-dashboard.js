@@ -342,9 +342,11 @@ function agentShieldEnterpriseEvidence(roadmap) {
 }
 
 function eccToolsNextLevelEvidence(roadmap) {
-  if (roadmap.includes('select-ready-target')
+  if (roadmap.includes('selected-target official announcement gate')
+    || roadmap.includes('16a5bb3')
+    || roadmap.includes('select-ready-target')
     || roadmap.includes('f14ed2fe-a219-470c-8119-63429e197027')) {
-    return 'billing announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
+    return 'billing announcement gate, selected-target announcement gate, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler OAuth readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
   }
 
   if (roadmap.includes('69ca535')
@@ -392,10 +394,12 @@ function eccToolsNextLevelEvidence(roadmap) {
 }
 
 function eccToolsNextLevelGap(roadmap) {
-  if (roadmap.includes('select-ready-target')
+  if (roadmap.includes('selected-target official announcement gate')
+    || roadmap.includes('16a5bb3')
+    || roadmap.includes('select-ready-target')
     || roadmap.includes('f14ed2fe-a219-470c-8119-63429e197027')
     || roadmap.includes('old "no Marketplace-managed Pro target billing-state" blocker is cleared')) {
-    return 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, then run the live billing announcement gate for the selected Marketplace Pro target before publishing native-payments copy';
+    return 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, then run the live selected-target billing announcement gate before publishing native-payments copy';
   }
 
   if (roadmap.includes('1Password CLI authorization timed out')
@@ -472,9 +476,13 @@ function hasCurrentLinearProgressSync({ roadmap, progressSync }) {
   const hasMay19ProgressSurface = roadmap.includes('ecc-may-19-post-pr-2002-sync-64cef8f668e0')
     && roadmap.includes('a6411e3a-8c8e-4a58-adba-687e77d4c543')
     && roadmap.includes('ITO-56');
+  const hasMay20ReleaseGateSurface = roadmap.includes('467d148a-712a-4777-aad9-95593e9f1739')
+    && roadmap.includes('7642ee9c-3107-400c-a229-53e2895a8914')
+    && roadmap.includes('30f60710')
+    && roadmap.includes('26135974576');
 
   return roadmap.includes('Linear live sync is current')
-    && (hasOperatorProgressSurface || hasMay19ProgressSurface)
+    && (hasOperatorProgressSurface || hasMay19ProgressSurface || hasMay20ReleaseGateSurface)
     && includesAll(progressSync, [
     'node scripts/work-items.js sync-github --repo <owner/repo>',
     'node scripts/status.js --json',
@@ -497,6 +505,11 @@ function linearProgressStatus(context) {
 
 function linearProgressEvidence(context) {
   if (hasCurrentLinearProgressSync(context)) {
+    if (context.roadmap.includes('467d148a-712a-4777-aad9-95593e9f1739')
+      && context.roadmap.includes('7642ee9c-3107-400c-a229-53e2895a8914')) {
+      return 'Linear live sync is current with the May 20 Marketplace Pro release-gate comments on ITO-61 and the ECC platform roadmap; progress-sync contract defines the file-backed work-items/status path';
+    }
+
     if (context.roadmap.includes('ecc-may-19-post-pr-2002-sync-64cef8f668e0')) {
       return 'Linear live sync is current with the May 19 post-PR #2002 sync document, project comment, and active issue-lane updates; progress-sync contract defines the file-backed work-items/status path';
     }
@@ -1000,7 +1013,7 @@ function buildReport(options) {
       releaseVideoWorkOrder,
       'Replace final release, npm, plugin, billing, and video URLs in the partner/sponsor/talk pack, then get explicit approval before outbound.',
       'Repeat ITO-57 Linear/project status sync after the next significant merge batch or advisory-source refresh.',
-      'Obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, then run the live billing announcement gate for the selected Marketplace Pro target before publishing native-payments copy.',
+      'Obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, then run the live selected-target billing announcement gate before publishing native-payments copy.',
     ],
   };
 }

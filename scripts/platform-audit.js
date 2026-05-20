@@ -427,7 +427,7 @@ function buildLocalEvidenceChecks(rootDir) {
   const progressSync = readText(rootDir, 'docs/architecture/progress-sync-contract.md');
   const supplyChain = readText(rootDir, 'docs/security/supply-chain-incident-response.md');
   const evidence = readText(rootDir, 'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md');
-  const operatorDashboard = readText(rootDir, 'docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md');
+  const operatorDashboard = readText(rootDir, 'docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-20.md');
 
   return [
     buildCheck(
@@ -488,7 +488,7 @@ function buildLocalEvidenceChecks(rootDir) {
         'Next Work Order',
       ]) ? 'pass' : 'fail',
       'operator dashboard maps macro-goal requirements to current evidence and open gaps',
-      { path: 'docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-19.md' }
+      { path: 'docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-20.md' }
     ),
   ];
 }

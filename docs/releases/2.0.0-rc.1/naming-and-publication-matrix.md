@@ -71,7 +71,7 @@ Reason:
 | Codex repo marketplace | Local and GitHub-ref temp-home marketplace add smokes passed on Codex CLI `0.131.0` | `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`, repo/personal marketplace evidence | Plugin owner | Official Plugin Directory listing requires OpenAI submission/listing evidence |
 | Codex official Plugin Directory | OpenAI docs describe the curated official directory; ECC has not submitted or received listing evidence | Directory submission link or OpenAI approval path once available | Plugin owner | Track as an ITO-56/ITO-46 follow-up; do not claim an official listing |
 | OpenCode package | `npm run build:opencode` passed | Built `.opencode` package metadata inside npm tarball | Package owner | No separate public plugin channel identified; follows npm |
-| Billing/native payments | Marketplace Pro target readback passed; announcement remains blocked by ITO-61 | 2026-05-20 selected-target readback, webhook provenance, `INTERNAL_API_SECRET`, live announcement gate | ECC Tools owner | Do not include native-payments claim in rc.1 announcement until the live gate passes |
+| Billing/native payments | Marketplace Pro target readback and selected-target announcement preflight passed; live announcement remains blocked by ITO-61 | 2026-05-20 selected-target readback, webhook provenance, selected-target announcement gate, `INTERNAL_API_SECRET`, live announcement gate | ECC Tools owner | Do not include native-payments claim in rc.1 announcement until the live selected-target gate passes |
 | Social/longform copy | Drafts exist | Final live GitHub, npm, Claude, Codex, billing URLs | Release owner | Publish only after release/package/plugin URLs exist |
 
 ## Package Rename After rc.1

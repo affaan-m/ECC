@@ -258,7 +258,7 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
 
   for (const marker of [
     'owner-approval-packet-2026-05-19.md',
-    'preview-pack smoke digest `531328aaaa53`',
+    'preview-pack smoke digest `eebb8a66c33e`',
     'local 2568-test suite',
     'PR #2001',
     'GitHub Actions run `26102500291`',
@@ -266,6 +266,11 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
     'GitHub Actions run `26103853507`',
     'PR #2009',
     'GitHub Actions run `26111313938`',
+    'PR #2019',
+    '30f60710',
+    '26135974576',
+    '467d148a-712a-4777-aad9-95593e9f1739',
+    '7642ee9c-3107-400c-a229-53e2895a8914',
     'ecc-may-19-post-pr-2002-sync-64cef8f668e0',
     'owner approval packet',
   ]) {
@@ -273,6 +278,7 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
   }
 
   assert.ok(!roadmap.includes('preview-pack smoke digest `bc2bf157616e`'));
+  assert.ok(!roadmap.includes('preview-pack smoke digest `531328aaaa53`'));
   assert.ok(!roadmap.includes('local 2544-test suite'));
 });
 

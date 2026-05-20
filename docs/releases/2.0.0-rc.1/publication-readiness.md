@@ -56,8 +56,10 @@ For the May 17 operator dashboard refresh, see
 For the May 18 operator dashboard refresh, see
 [`operator-readiness-dashboard-2026-05-18.md`](operator-readiness-dashboard-2026-05-18.md).
 
-The current May 19 hypergrowth/operator dashboard is
+For the May 19 hypergrowth/operator dashboard, see
 [`operator-readiness-dashboard-2026-05-19.md`](operator-readiness-dashboard-2026-05-19.md).
+The current May 20 Marketplace Pro release-gate operator dashboard is
+[`operator-readiness-dashboard-2026-05-20.md`](operator-readiness-dashboard-2026-05-20.md).
 For the final owner decision sheet across release, npm, plugin, video, billing,
 social, and outbound approvals, see
 [`owner-approval-packet-2026-05-19.md`](owner-approval-packet-2026-05-19.md).
@@ -102,7 +104,7 @@ Record the exact commit SHA and command output before any publication action:
 | Evidence | Command | Required result | Recorded output |
 | --- | --- | --- | --- |
 | Clean release branch | `git status --short --branch` | On intended release commit; no unrelated files | Current May 19 baseline `bc519e5b8ed42f26c0a5a611756e04351c323f21`: `## main...origin/main`; repeat from the exact final publication commit before release |
-| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `531328aaaa53`, 32 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
+| Preview-pack smoke | `npm run preview-pack:smoke` | Preview pack artifacts, Hermes boundary, final verification command list, and publication blockers pass | `publication-evidence-2026-05-19.md`: ready yes, digest `eebb8a66c33e`, 33 artifacts, 5 passed, 0 failed; repeat in the final strict clean-checkout release pass |
 | Release approval gate | `npm run release:approval-gate -- --format json` | Ready true only after owner decision rows are approved, live release/package/plugin/video/billing URLs are recorded, and launch/outbound copy has no placeholders or private paths | Current May 19 state is intentionally blocked because owner decisions and live URL readbacks remain approval-gated |
 | Harness audit | `npm run harness:audit -- --format json` | 80/80 passing | Current release gate: 80/80 across 8 applicable categories, 0 top actions |
 | Adapter scorecard | `npm run harness:adapters -- --check` | PASS | Current release gate: PASS, 11 adapters |
