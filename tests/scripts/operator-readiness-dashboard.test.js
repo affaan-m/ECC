@@ -80,6 +80,9 @@ function seedRepo(rootDir, overrides = {}) {
       'select-ready-target',
       'selected-target official announcement gate',
       'billing gate env-file operator path',
+      'non-breaking operator bearer path',
+      'announcementGateReady` is `true',
+      'd3d62df83fa075660fa4530c3e0edc311a4355fe',
       '72119a1',
       '16a5bb3',
       'f14ed2fe-a219-470c-8119-63429e197027',
@@ -370,14 +373,15 @@ function runTests() {
       )));
       assert.ok(report.requirements.some(item => (
         item.id === 'ecc-tools-next-level'
-          && item.gap === 'obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, via exported env or ignored --env-file, then run the live selected-target billing announcement gate before publishing native-payments copy'
+          && item.gap === 'repeat KV readback and selected-target announcement gate immediately before launch; keep native-payments copy behind the final release, plugin, URL, and owner-approval gates'
           && item.evidence.includes('operator-visible promotion output details')
           && item.evidence.includes('hosted promotion judge audit traces')
           && item.evidence.includes('selected-target announcement gate')
           && item.evidence.includes('billing gate env-file operator path')
+          && item.evidence.includes('non-breaking operator bearer path')
           && item.evidence.includes('billing announcement preflight')
           && item.evidence.includes('aggregate production billing KV readback')
-          && item.evidence.includes('Wrangler OAuth readback')
+          && item.evidence.includes('Wrangler selected-target readback')
           && item.evidence.includes('target-account billing readback')
           && item.evidence.includes('provenance-aware Marketplace billing-state gates')
           && item.evidence.includes('ready Marketplace Pro target selection')

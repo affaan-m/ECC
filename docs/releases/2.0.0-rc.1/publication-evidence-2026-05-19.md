@@ -99,11 +99,13 @@ Tracked repositories in the platform audit were:
 | ECC-Tools #90 | PR #90 merged as `16a5bb33ee5ce7c31d2ad8d041e5afac03308f05` after Verify, Security Audit, and Workers Builds passed. It added the selected-target official announcement gate through `/api/billing/readiness?selectReadyTarget=1` and `npm run billing:announcement-gate -- --select-ready-target`, keeping the raw account login out of command logs. |
 | ECC #2020 | PR #2020 merged as `c2471fe5c535310f8a8008c9ed7ea9f6757b33f2`, syncing ECC-Tools #90 into the roadmap, publication evidence, naming matrix, preview manifest, publication readiness, release URL ledger, platform audit surfaces, and operator dashboard. |
 | ECC-Tools #91 | PR #91 merged as `72119a1acc6f5a0cd3bb5d90afd6e87fd1fefd05` after Verify, Security Audit, and Workers Builds passed. It added `--env-file` to the billing announcement and KV readback scripts for ignored local operator credential files, with tests proving sentinel secrets and account logins are not printed. |
-| May 20 live gate recheck | `npm run billing:announcement-gate -- --preflight --select-ready-target` exited 2 with only `INTERNAL_API_SECRET` missing. `npm run billing:kv-readback -- --wrangler --select-ready-target --require-ready` exited 1 with Cloudflare auth code `10000` on this machine. No live announcement gate passed. |
-| Post-merge main CI | ECC GitHub Actions runs `26135974576` and `26136949698` completed successfully on `main` for `30f60710d4e0424fc70d9bbdc105009db141d9d8` and `c2471fe5c535310f8a8008c9ed7ea9f6757b33f2` across lint, coverage, security, validation, and the full OS/package-manager matrix. ECC-Tools main CI run `26137280847` completed successfully for `72119a1acc6f5a0cd3bb5d90afd6e87fd1fefd05` across Verify, Security Audit, and Workers Builds. |
+| ECC-Tools #92 | PR #92 merged as `18d80197be779619283e0b37e2952bac53819a07` after Verify, Security Audit, and Workers Builds passed. It added the non-breaking `INTERNAL_OPERATOR_API_SECRET` bearer accepted by privileged internal API routes without rotating the primary `INTERNAL_API_SECRET`, and the merged Worker was deployed to `api.ecc.tools`. |
+| May 20 live selected-target gate | Vault-backed Wrangler readback passed with Marketplace Pro state, target fingerprint `e953a74209fe`, both key families, webhook evidence, seat readiness, no overage, and 0 blockers. After rotating the operator bearer, `npm run billing:announcement-gate -- --preflight --select-ready-target` returned ready and `npm run billing:announcement-gate -- --select-ready-target` returned `announcementGateReady: true`, 0 required actions, 0 blockers, and audit summary 6 pass / 1 warn / 0 fail. |
+| ECC-Tools #93 | PR #93 merged as `d3d62df83fa075660fa4530c3e0edc311a4355fe`, recording the live billing announcement gate pass in the launch checklist and distribution roadmap while preserving final release/plugin/URL approval gates. |
+| Post-merge main CI | ECC GitHub Actions runs `26135974576`, `26136949698`, and `26138015245` completed successfully on `main` for `30f60710d4e0424fc70d9bbdc105009db141d9d8`, `c2471fe5c535310f8a8008c9ed7ea9f6757b33f2`, and `6e25458dbc15cd07cfb7a4e1f0b06f3eda41a043` across lint, coverage, security, validation, and the full OS/package-manager matrix. ECC-Tools main CI runs `26137280847`, `26138403065`, and `26138669148` completed successfully for `72119a1acc6f5a0cd3bb5d90afd6e87fd1fefd05`, `18d80197be779619283e0b37e2952bac53819a07`, and `d3d62df83fa075660fa4530c3e0edc311a4355fe`. |
 | Post-merge local gates | `npm run platform:audit -- --json` returned ready true with 0 PRs, 0 issues, 0 discussion gaps, and 0 dirty blockers; `npm run preview-pack:smoke -- --format json` returned ready true with digest `531328aaaa53` before the May 20 dashboard rollover and `eebb8a66c33e` after adding the May 20 dashboard artifact; `git diff --check HEAD~1..HEAD` was clean. |
-| Linear roadmap sync | Linear ITO-61 comment `467d148a-712a-4777-aad9-95593e9f1739` and ECC Platform Roadmap project comment `7642ee9c-3107-400c-a229-53e2895a8914` record ECC-Tools #89, ECC #2019, the green post-merge CI run, and the remaining internal bearer-token gate; Linear ITO-44 comment `a9297467-208a-41e4-8dbb-35f0dad5fe2b`, ITO-56 comment `5008b70b-cf98-43cd-a8d4-f098ba9b9780`, ITO-61 comment `5ebf0aaf-e2d3-4537-878f-484f49dcf87a`, and project reply `1c74a3d0-f8ca-4306-997e-a37c53d49f97` record the ECC #2020 selected-target announcement-gate sync and remaining bearer-token/live-gate blocker. |
-| Remaining blocker | Native-payments announcement copy remains blocked until the local/internal `INTERNAL_API_SECRET` bearer-token path is available via exported env or ignored `--env-file`, Cloudflare/Wrangler auth is usable for repeat KV evidence, and `npm run billing:announcement-gate -- --select-ready-target` returns ready for the selected Marketplace Pro target. |
+| Linear roadmap sync | Linear ITO-61 comment `467d148a-712a-4777-aad9-95593e9f1739` and ECC Platform Roadmap project comment `7642ee9c-3107-400c-a229-53e2895a8914` record ECC-Tools #89, ECC #2019, the green post-merge CI run, and the earlier internal bearer-token gate; Linear ITO-44 comment `a9297467-208a-41e4-8dbb-35f0dad5fe2b`, ITO-56 comment `5008b70b-cf98-43cd-a8d4-f098ba9b9780`, ITO-61 comment `5ebf0aaf-e2d3-4537-878f-484f49dcf87a`, and project reply `1c74a3d0-f8ca-4306-997e-a37c53d49f97` record the ECC #2020 selected-target announcement-gate sync; a new Linear sync should record ECC-Tools #92/#93 and the live gate pass. |
+| Remaining blocker | Native-payments billing evidence is ready as of the May 20 selected-target gate pass. Repeat KV readback and `billing:announcement-gate -- --select-ready-target` immediately before launch, and keep native-payments copy behind the final release, plugin, live URL, and owner-approval gates. |
 
 ## Release And Growth Evidence
 
@@ -134,6 +136,8 @@ Tracked repositories in the platform audit were:
 | Post-PR #2019 main CI | GitHub Actions run `26135974576` | Completed successfully with `main` advanced to `30f60710d4e0424fc70d9bbdc105009db141d9d8` |
 | Post-PR #2020 main CI | GitHub Actions run `26136949698` | Completed successfully with `main` advanced to `c2471fe5c535310f8a8008c9ed7ea9f6757b33f2` |
 | ECC-Tools #91 main CI | GitHub Actions run `26137280847` | Completed successfully on ECC-Tools `main` with `72119a1acc6f5a0cd3bb5d90afd6e87fd1fefd05` after the env-file billing gate support merged |
+| ECC-Tools #92 main CI | GitHub Actions run `26138403065` | Completed successfully on ECC-Tools `main` with `18d80197be779619283e0b37e2952bac53819a07` after the operator bearer path merged |
+| ECC-Tools #93 main CI | GitHub Actions run `26138669148` | Completed successfully on ECC-Tools `main` with `d3d62df83fa075660fa4530c3e0edc311a4355fe` after the live billing announcement evidence merged |
 | Linear sync | Linear document `ecc-may-19-post-pr-2002-sync-64cef8f668e0` plus project comment `a6411e3a-8c8e-4a58-adba-687e77d4c543`; late-pass document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f` plus project comment `d42bf0e2-7a8e-4934-9f3f-e281498ee805`; May 20 ITO-61 comment `467d148a-712a-4777-aad9-95593e9f1739` plus project comment `7642ee9c-3107-400c-a229-53e2895a8914`; May 20 ITO-44 comment `a9297467-208a-41e4-8dbb-35f0dad5fe2b`, ITO-56 comment `5008b70b-cf98-43cd-a8d4-f098ba9b9780`, ITO-61 comment `5ebf0aaf-e2d3-4537-878f-484f49dcf87a`, and project reply `1c74a3d0-f8ca-4306-997e-a37c53d49f97` | Project and issue lanes record PR #2002 evidence, discussion #2003 routing, owner-approval dashboard gate, and In Progress status for ITO-47, ITO-48, ITO-49, ITO-51, ITO-54, and ITO-56; the late-pass sync attaches PR #2013, ECC-Tools #79, and JARVIS #15/#16 evidence to ITO-44, ITO-50, ITO-54, ITO-56, and ITO-61; the May 20 sync attaches ECC-Tools #89/#90, ECC #2019/#2020 Marketplace Pro selected-target and selected-target announcement-gate evidence, and the remaining env-file/bearer-token gate to ITO-44, ITO-56, ITO-61, and the project |
 | Public-path sanitization | `node scripts/ci/validate-no-personal-paths.js` through local suite and CI | Passed |
 | Markdown and whitespace | `markdownlint` focused release docs plus `git diff --check` before PR #1999 | Passed |
@@ -160,19 +164,21 @@ Tracked repositories in the platform audit were:
 - Codex repo-marketplace distribution is verified by prior evidence, but
   official Plugin Directory publishing remains blocked on OpenAI submission or
   listing evidence.
-- ECC Tools billing/native-payments copy remains blocked until the
-  local/internal `INTERNAL_API_SECRET` bearer-token path is available via
-  exported env or ignored `--env-file`, Cloudflare/Wrangler auth is usable for
-  repeat KV evidence, and the live `billing:announcement-gate --
-  --select-ready-target` check passes.
+- ECC Tools billing/native-payments evidence is no longer blocked by the
+  internal bearer-token path or selected-target announcement gate. Repeat
+  `billing:kv-readback -- --select-ready-target --require-ready` and
+  `billing:announcement-gate -- --select-ready-target` immediately before
+  launch, and keep the copy behind the final release, plugin, live URL, and
+  owner-approval gates.
   ECC-Tools PR #89 (`512bca6`) added `billing:kv-readback --
   --select-ready-target --require-ready`; its 2026-05-20 production run cleared
   the old missing-target-state blocker without printing the account login.
   ECC-Tools PR #90 (`16a5bb3`) added the selected-target official announcement
-  gate, so production preflight no longer needs a raw GitHub login and now
-  blocks only on the missing `INTERNAL_API_SECRET` input before live execution.
+  gate, so production preflight no longer needs a raw GitHub login.
   ECC-Tools PR #91 (`72119a1`) added `--env-file` support for ignored local
   billing credentials without printing loaded secrets or account logins.
+  ECC-Tools PR #92 (`18d8019`) added the non-breaking operator bearer path, and
+  ECC-Tools PR #93 (`d3d62df`) recorded the live gate pass.
 - Release notes, X, LinkedIn, GitHub release, GitHub Discussion, longform copy,
   sponsor outreach, partner outreach, consulting copy, conference pitches, and
   podcast pitches still need final live URLs plus human approval before posting

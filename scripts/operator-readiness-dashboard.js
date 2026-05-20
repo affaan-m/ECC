@@ -342,6 +342,12 @@ function agentShieldEnterpriseEvidence(roadmap) {
 }
 
 function eccToolsNextLevelEvidence(roadmap) {
+  if (roadmap.includes('announcementGateReady` is `true')
+    || roadmap.includes('Native GitHub payments announcement gate is ready')
+    || roadmap.includes('d3d62df83fa075660fa4530c3e0edc311a4355fe')) {
+    return 'billing announcement gate, selected-target announcement gate, billing gate env-file operator path, non-breaking operator bearer path, hosted analysis lanes, AgentShield fleet-summary consumption, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output telemetry, operator-visible promotion output details, hosted promotion judge audit traces, billing announcement preflight, aggregate production billing KV readback, Wrangler selected-target readback, target-account billing readback, provenance-aware Marketplace billing-state gates, sanitized Marketplace plan/action provenance counts, ready Marketplace Pro target selection, hosted team-learning feedback controls, and ECC-Tools Dependabot alert remediation are mirrored in the GA roadmap';
+  }
+
   if (roadmap.includes('selected-target official announcement gate')
     || roadmap.includes('billing gate env-file operator path')
     || roadmap.includes('72119a1')
@@ -396,6 +402,12 @@ function eccToolsNextLevelEvidence(roadmap) {
 }
 
 function eccToolsNextLevelGap(roadmap) {
+  if (roadmap.includes('announcementGateReady` is `true')
+    || roadmap.includes('Native GitHub payments announcement gate is ready')
+    || roadmap.includes('d3d62df83fa075660fa4530c3e0edc311a4355fe')) {
+    return 'repeat KV readback and selected-target announcement gate immediately before launch; keep native-payments copy behind the final release, plugin, URL, and owner-approval gates';
+  }
+
   if (roadmap.includes('selected-target official announcement gate')
     || roadmap.includes('billing gate env-file operator path')
     || roadmap.includes('72119a1')
@@ -1017,7 +1029,7 @@ function buildReport(options) {
       releaseVideoWorkOrder,
       'Replace final release, npm, plugin, billing, and video URLs in the partner/sponsor/talk pack, then get explicit approval before outbound.',
       'Repeat ITO-57 Linear/project status sync after the next significant merge batch or advisory-source refresh.',
-      'Obtain or rotate the local/internal INTERNAL_API_SECRET bearer-token path, via exported env or ignored --env-file, then run the live selected-target billing announcement gate before publishing native-payments copy.',
+      'Repeat KV readback and the selected-target billing announcement gate immediately before launch; keep native-payments copy behind the final release, plugin, URL, and owner-approval gates.',
     ],
   };
 }

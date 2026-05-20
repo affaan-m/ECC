@@ -41,7 +41,7 @@ Reasons:
 | Claude marketplace | `.claude-plugin/marketplace.json` | `claude plugin marketplace add --help`; Anthropic plugin marketplace docs | GitHub repo, git URL, remote marketplace JSON, and local path marketplace sources are supported | Verify post-tag marketplace install/update path after final evidence |
 | Codex plugin | `ecc@2.0.0-rc.1` | `node tests/plugin-manifest.test.js`; `codex plugin marketplace add --help`; OpenAI Codex plugin docs | Plugin manifest passed 54/54; local and GitHub-ref repo marketplace smokes passed on Codex CLI `0.131.0` | Use repo marketplace for rc.1; do not claim official directory listing until OpenAI publishing path is available |
 | OpenCode package | `ecc-universal@2.0.0-rc.1` | `node -p "require('./.opencode/package.json').name + '@' + require('./.opencode/package.json').version"` | Matches rc.1 package identity | Follow npm package publication |
-| Billing claim | Pending ECC Tools readiness | ECC Tools billing gate and Marketplace account readback | Code-side gate exists; live Marketplace account readback still pending | Do not announce native payments |
+| Billing claim | ECC Tools selected-target billing evidence ready | ECC Tools billing gate and Marketplace account readback | May 20 selected-target readback and live selected-target announcement gate passed with `announcementGateReady: true`; repeat immediately before announcement | Do not announce native payments until final release/plugin/live URL approvals are green |
 
 ## Required Gate
 

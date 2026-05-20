@@ -493,7 +493,8 @@ test('publication readiness checklist gates public release actions on evidence',
   assert.ok(may15Evidence.includes('codex plugin marketplace add <local-checkout>'));
   assert.ok(may15Evidence.includes('Plugin Directory publishing is still blocked'));
   assert.ok(may15Evidence.includes('announcementGate.ready === true'));
-  assert.ok(source.includes('ECC-Tools #91 added the env-file operator path'));
+  assert.ok(source.includes('ECC-Tools #92 main CI'));
+  assert.ok(source.includes('ECC-Tools #93 main CI'));
   assert.ok(source.includes('do not claim official Plugin Directory listing before OpenAI submission evidence'));
   assert.ok(source.includes('release-name-plugin-publication-checklist-2026-05-18.md'));
   assert.ok(source.includes('Release name and plugin publication checklist'));
