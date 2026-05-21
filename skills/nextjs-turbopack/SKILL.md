@@ -39,16 +39,14 @@ Run `next dev` for local development with Turbopack. Use the Bundle Analyzer (se
 
 ## Middleware File Naming
 
-Next.js 16 + Turbopack changed the middleware filename convention:
+Next.js 16 introduced `proxy.ts` as the middleware filename, replacing the older `middleware.ts` convention:
 
-| Mode | Correct filename |
-|------|-----------------|
-| Next.js 16 + Turbopack (default) | `proxy.ts` |
-| Legacy / webpack mode | `middleware.ts` |
+- **Next.js 16+**: use `proxy.ts` at the project root
+- **Pre-Next.js 16**: use `middleware.ts` at the project root
 
-Both files must live at the **project root** (same level as `app/` or `pages/`).
+The filename change is tied to the **Next.js version**, not to which bundler (Turbopack or webpack) is in use. Always check the official docs for the version you are reviewing.
 
-**Do not flag `proxy.ts` as a misnamed or missing middleware file in Next.js 16 + Turbopack projects.** The file is correct and intentional. Renaming it to `middleware.ts` will break middleware execution in Turbopack mode.
+**Do not flag `proxy.ts` as a misnamed or missing middleware file in Next.js 16 projects.** The file is correct and intentional. Suggesting a rename to `middleware.ts` will break middleware execution.
 
 Reference: https://nextjs.org/docs/app/getting-started/proxy
 
