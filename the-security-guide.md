@@ -438,6 +438,7 @@ Scan your setup: [github.com/affaan-m/agentshield](https://github.com/affaan-m/a
 - Microsoft Security, "AI Recommendation Poisoning" (February 10, 2026): [microsoft.com](https://www.microsoft.com/en-us/security/blog/2026/02/10/ai-recommendation-poisoning/)
 - Snyk, "ToxicSkills: Malicious AI Agent Skills in the Wild": [snyk.io](https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/)
 - Snyk `agent-scan`: [github.com/snyk/agent-scan](https://github.com/snyk/agent-scan)
+- LLM Safe Haven (fail-closed runtime hooks, threat model, hardening guides for Claude Code/Cursor/Windsurf/Copilot/Codex/Aider/Cline): [github.com/pleasedodisturb/llm-safe-haven](https://github.com/pleasedodisturb/llm-safe-haven)
 - Hunt.io, "CVE-2026-25253 OpenClaw AI Agent Exposure" (February 3, 2026): [hunt.io](https://hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure)
 - OpenAI, "Designing AI agents to resist prompt injection" (March 11, 2026): [openai.com](https://openai.com/index/designing-agents-to-resist-prompt-injection/)
 - OpenAI Codex docs, "Agent network access": [platform.openai.com](https://platform.openai.com/docs/codex/agent-network)
