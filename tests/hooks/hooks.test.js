@@ -475,6 +475,49 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('omits internal control-tag bullets from injected session content', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-internal-start-${Date.now()}`);
+      const sessionsDir = getLegacySessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+
+      const sessionFile = path.join(sessionsDir, '2026-02-11-internal-session.tmp');
+      fs.writeFileSync(
+        sessionFile,
+        buildSessionStartFixture(
+          [
+            '### Tasks',
+            '- Keep this user request',
+            '- <local-command-caveat>Caveat: hidden</local-command-caveat>',
+            '- <command-name>/clear</command-name>',
+            '- <task-notification>hidden</task-notification>',
+            '- Keep this follow-up'
+          ].join('\n'),
+          { title: '# Real Session' }
+        )
+      );
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome
+        });
+        assert.strictEqual(result.code, 0);
+        const additionalContext = getSessionStartAdditionalContext(result.stdout);
+        assert.ok(additionalContext.includes('Keep this user request'), 'Should preserve real session content');
+        assert.ok(additionalContext.includes('Keep this follow-up'), 'Should preserve later real session content');
+        assert.ok(!additionalContext.includes('local-command-caveat'), 'Should omit local command caveats');
+        assert.ok(!additionalContext.includes('<command-name>'), 'Should omit slash command metadata');
+        assert.ok(!additionalContext.includes('task-notification'), 'Should omit task notification metadata');
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('caps very large session-start context by default', async () => {
       const isoHome = path.join(os.tmpdir(), `ecc-large-start-${Date.now()}`);
       const sessionsDir = getLegacySessionsDir(isoHome);
@@ -2028,6 +2071,50 @@ async function runTests() {
       const result = await runScript(path.join(scriptsDir, 'session-end.js'), stdinJson);
       assert.strictEqual(result.code, 0, 'Should handle array content without crash');
       cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('omits Claude internal control messages from session summaries', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+
+      const lines = [
+        JSON.stringify({ type: 'user', message: { role: 'user', content: 'Fix the display issue' } }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: '<local-command-caveat>Caveat: hidden</local-command-caveat>' },
+          isMeta: true
+        }),
+        JSON.stringify({ type: 'user', message: { role: 'user', content: '<command-name>/clear</command-name>\n<command-message>clear</command-message>' } }),
+        JSON.stringify({ type: 'system', subtype: 'local_command', content: '<local-command-stdout>Done</local-command-stdout>' }),
+        JSON.stringify({ type: 'user', message: { role: 'user', content: '<task-notification>hidden</task-notification>' } }),
+        JSON.stringify({ type: 'user', message: { role: 'user', content: 'Add regression coverage' } })
+      ];
+      fs.writeFileSync(transcriptPath, lines.join('\n'));
+
+      try {
+        const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
+        const result = await runScript(path.join(scriptsDir, 'session-end.js'), stdinJson, {
+          HOME: testDir,
+          USERPROFILE: testDir
+        });
+        assert.strictEqual(result.code, 0, 'Should handle internal control messages without crashing');
+
+        const files = fs.readdirSync(getCanonicalSessionsDir(testDir)).filter(f => f.endsWith('-session.tmp'));
+        assert.ok(files.length > 0, 'Should create a session file');
+        const content = fs.readFileSync(path.join(getCanonicalSessionsDir(testDir), files[0]), 'utf8');
+        assert.ok(content.includes('Fix the display issue'), 'Should include real user message');
+        assert.ok(content.includes('Add regression coverage'), 'Should include later real user message');
+        assert.ok(!content.includes('local-command-caveat'), 'Should omit local command caveats');
+        assert.ok(!content.includes('<command-name>'), 'Should omit slash command metadata');
+        assert.ok(!content.includes('local-command-stdout'), 'Should omit local command stdout');
+        assert.ok(!content.includes('task-notification'), 'Should omit task notification metadata');
+      } finally {
+        cleanupTestDir(testDir);
+      }
     })
   )
     passed++;

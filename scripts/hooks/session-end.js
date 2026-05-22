@@ -29,6 +29,31 @@ const {
 const SUMMARY_START_MARKER = '<!-- ECC:SUMMARY:START -->';
 const SUMMARY_END_MARKER = '<!-- ECC:SUMMARY:END -->';
 const SESSION_SEPARATOR = '\n---\n';
+const INTERNAL_COMMAND_TAG_PATTERN = /^<(?:local-command-|command-|task-notification\b)/;
+
+function getTextContent(rawContent) {
+  if (typeof rawContent === 'string') {
+    return rawContent;
+  }
+
+  if (Array.isArray(rawContent)) {
+    return rawContent.map(c => (c && c.text) || '').join(' ');
+  }
+
+  return '';
+}
+
+function isInternalTranscriptEntry(entry, cleanedText) {
+  if (entry.isMeta === true) {
+    return true;
+  }
+
+  if (entry.type === 'system' && entry.subtype === 'local_command') {
+    return true;
+  }
+
+  return INTERNAL_COMMAND_TAG_PATTERN.test(cleanedText);
+}
 
 /**
  * Extract a meaningful summary from the session transcript.
@@ -55,13 +80,9 @@ function extractSessionSummary(transcriptPath) {
       if (entry.type === 'user' || entry.role === 'user' || entry.message?.role === 'user') {
         // Support both direct content and nested message.content (Claude Code JSONL format)
         const rawContent = entry.message?.content ?? entry.content;
-        const text = typeof rawContent === 'string'
-          ? rawContent
-          : Array.isArray(rawContent)
-            ? rawContent.map(c => (c && c.text) || '').join(' ')
-            : '';
+        const text = getTextContent(rawContent);
         const cleaned = stripAnsi(text).trim();
-        if (cleaned) {
+        if (cleaned && !isInternalTranscriptEntry(entry, cleaned)) {
           userMessages.push(cleaned.slice(0, 200));
         }
       }

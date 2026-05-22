@@ -35,6 +35,7 @@ const DEFAULT_SESSION_START_CONTEXT_MAX_CHARS = 8000;
 const DEFAULT_SESSION_RETENTION_DAYS = 30;
 const SESSION_START_MODE_INVALID = 'invalid';
 const SESSION_START_MODE_SKIP = 'skip';
+const INTERNAL_COMMAND_BULLET_PATTERN = /^-\s*<(?:local-command-|command-|task-notification\b)/;
 
 /**
  * Resolve a filesystem path to its canonical (real) form.
@@ -255,6 +256,13 @@ function selectMatchingSession(sessions, cwd, currentProject) {
     ? '[SessionStart] No worktree/project session match found'
     : '[SessionStart] All session files were unreadable');
   return null;
+}
+
+function sanitizeSessionContext(content) {
+  return String(content || '')
+    .split('\n')
+    .filter(line => !INTERNAL_COMMAND_BULLET_PATTERN.test(line.trim()))
+    .join('\n');
 }
 
 function parseInstinctFile(content) {
@@ -580,7 +588,7 @@ async function main() {
           log(`[SessionStart] Selected: ${result.session.path} (match: ${result.matchReason})`);
 
           // Use the already-read content from selectMatchingSession (no duplicate I/O)
-          const content = stripAnsi(result.content);
+          const content = sanitizeSessionContext(stripAnsi(result.content));
           if (content && !content.includes('[Session context goes here]')) {
             // STALE-REPLAY GUARD: wrap the summary in a historical-only marker so
             // the model does not re-execute stale skill invocations / ARGUMENTS
