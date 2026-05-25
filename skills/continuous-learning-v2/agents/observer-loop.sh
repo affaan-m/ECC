@@ -205,17 +205,20 @@ PROMPT
   fi
 
   timeout_seconds="${ECC_OBSERVER_TIMEOUT_SECONDS:-120}"
-  max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"
+  # Default MAX_TURNS=50 to pair with the MAX_ANALYSIS_LINES=500 default (#2035).
+  # A 500-observation batch consistently exhausted the previous 20-turn budget,
+  # forcing every first-cycle analysis to fail with "Reached max turns".
+  max_turns="${ECC_OBSERVER_MAX_TURNS:-50}"
   exit_code=0
 
   case "$max_turns" in
     ''|*[!0-9]*)
-      max_turns=20
+      max_turns=50
       ;;
   esac
 
   if [ "$max_turns" -lt 4 ]; then
-    max_turns=20
+    max_turns=50
   fi
 
   # Ensure CWD is PROJECT_DIR so the relative analysis_relpath resolves correctly
