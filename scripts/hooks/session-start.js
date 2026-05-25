@@ -35,12 +35,26 @@ async function main() {
   const recentSessions = findFiles(sessionsDir, '*-session.tmp', { maxAge: 7 });
 
   if (recentSessions.length > 0) {
-    const latest = recentSessions[0];
     log(`[SessionStart] Found ${recentSessions.length} recent session(s)`);
-    log(`[SessionStart] Latest: ${latest.path}`);
 
-    // Read and inject the latest session content into Claude's context
-    const content = stripAnsi(readFile(latest.path));
+    // Prefer a session whose Worktree matches the current working directory.
+    // This prevents parallel sessions in different dirs from cross-contaminating
+    // on resume. Fall back to the most-recent session if no CWD match is found.
+    const cwd = process.cwd();
+    let best = recentSessions[0]; // default: most recent
+    for (const s of recentSessions) {
+      const raw = readFile(s.path) || '';
+      const m = raw.match(/\*\*Worktree:\*\*\s*(.+)/);
+      if (m && m[1].trim() === cwd) {
+        best = s;
+        break; // recentSessions is newest-first, so first match = most recent CWD match
+      }
+    }
+
+    log(`[SessionStart] Resuming: ${best.path}${best === recentSessions[0] && recentSessions.length > 1 ? ' (no CWD match — using most recent)' : ' (CWD match)'}`);
+
+    // Read and inject the selected session content into Claude's context
+    const content = stripAnsi(readFile(best.path));
     if (content && !content.includes('[Session context goes here]')) {
       // Only inject if the session has actual content (not the blank template)
       output(`Previous session summary:\n${content}`);
