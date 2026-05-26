@@ -19,7 +19,7 @@ function getHomeDirFromEnv() {
   return require('os').homedir();
 }
 
-function expandHomePath(value) {
+function expandHomePath(value, baseDir) {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -27,7 +27,24 @@ function expandHomePath(value) {
     const remainder = trimmed.slice(1).replace(/^[/\\]+/, '');
     return remainder ? path.join(getHomeDirFromEnv(), remainder) : getHomeDirFromEnv();
   }
-  return path.resolve(trimmed);
+  if (path.isAbsolute(trimmed)) {
+    return path.resolve(trimmed);
+  }
+  const base = baseDir && String(baseDir).trim()
+    ? path.resolve(baseDir)
+    : process.cwd();
+  return path.resolve(base, trimmed);
+}
+
+/**
+ * Project root for a config file under .cursor/ecc-agent-data.json.
+ */
+function resolveProjectRootFromConfigPath(configPath) {
+  const configDir = path.dirname(path.resolve(configPath));
+  if (path.basename(configDir) === '.cursor') {
+    return path.dirname(configDir);
+  }
+  return configDir;
 }
 
 /**
@@ -61,7 +78,8 @@ function readProjectConfigAt(configPath) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const candidate = parsed.agentDataHome || parsed.ECC_AGENT_DATA_HOME;
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
-    return expandHomePath(candidate);
+    const projectRoot = resolveProjectRootFromConfigPath(configPath);
+    return expandHomePath(candidate, projectRoot);
   } catch (error) {
     console.error(
       `[ECC] Failed to read or parse agent data config at ${configPath}: ${error.message}`
@@ -72,7 +90,7 @@ function readProjectConfigAt(configPath) {
 
 function readProjectConfig(projectDir) {
   if (!projectDir || typeof projectDir !== 'string') return null;
-  return readProjectConfigAt(path.join(projectDir, PROJECT_CONFIG_RELATIVE));
+  return readProjectConfigAt(path.join(path.resolve(projectDir), PROJECT_CONFIG_RELATIVE));
 }
 
 function resolveProjectDir() {
@@ -143,6 +161,7 @@ module.exports = {
   DEFAULT_CURSOR_ECC_DIR_SEGMENTS,
   PROJECT_CONFIG_RELATIVE,
   expandHomePath,
+  resolveProjectRootFromConfigPath,
   isCursorHookRuntime,
   getDefaultCursorAgentDataHome,
   getDefaultClaudeAgentDataHome,

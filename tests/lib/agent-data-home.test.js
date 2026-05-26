@@ -119,6 +119,42 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('resolves relative agentDataHome against project root, not cwd', () => {
+    const projectDir = path.join(process.cwd(), '.tmp-agent-data-home-relative-test');
+    const cursorDir = path.join(projectDir, '.cursor');
+    const otherCwd = path.join(process.cwd(), '.tmp-agent-data-home-other-cwd');
+    fs.mkdirSync(cursorDir, { recursive: true });
+    fs.mkdirSync(otherCwd, { recursive: true });
+    const configPath = path.join(cursorDir, 'ecc-agent-data.json');
+    const expectedHome = path.join(projectDir, '.ecc-data');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ agentDataHome: '.ecc-data' }),
+      'utf8'
+    );
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(otherCwd);
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CURSOR_VERSION: undefined,
+        CURSOR_PROJECT_DIR: projectDir,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(agentDataHome.readProjectConfigAt(configPath), expectedHome);
+        assert.strictEqual(
+          agentDataHome.resolveAgentDataHome({ projectDir }),
+          expectedHome
+        );
+      });
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(projectDir, { recursive: true, force: true });
+      fs.rmSync(otherCwd, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('readProjectConfigAt logs parse failures', () => {
     const tmpDir = path.join(process.cwd(), '.tmp-agent-data-home-log-test');
     fs.mkdirSync(tmpDir, { recursive: true });
