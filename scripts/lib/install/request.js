@@ -133,7 +133,8 @@ function normalizeInstallRequest(options = {}) {
   }
 
   if (!options.help && !hasManifestBaseSelection && legacyLanguages.length === 0) {
-    throw new Error('No install profile, module IDs, included components, or legacy languages were provided');
+    // Default to the developer profile when no profile or language is specified
+    return normalizeInstallRequest({ ...options, profileId: 'developer' });
   }
 
   return {
