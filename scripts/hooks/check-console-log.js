@@ -52,6 +52,52 @@ process.stdin.on('end', () => {
 
     for (const file of files) {
       const content = readFile(file);
+      if (content) {
+        const lines = content.split('\n');
+        const matchedLines = [];
+
+        lines.forEach((line, index) => {
+          if (line.includes('console.log')) {
+            matchedLines.push(index + 1);
+          }
+        });
+
+        if (matchedLines.length > 0) {
+          log(`[Hook] WARNING: console.log found in ${file} on line(s): ${matchedLines.join(', ')}`);
+          hasConsole = true;
+        }
+      }
+    }
+
+    if (hasConsole) {
+      log('[Hook] Remove console.log statements before committing');
+    }
+  } catch (err) {
+    log(`[Hook] check-console-log error: ${err.message}`);
+  }
+
+  // Always output the original data
+  process.stdout.write(data);
+  process.exit(0);
+});
+  }
+});
+
+process.stdin.on('end', () => {
+  try {
+    if (!isGitRepo()) {
+      process.stdout.write(data);
+      process.exit(0);
+    }
+
+    const files = getGitModifiedFiles(['\\.tsx?$', '\\.jsx?$'])
+      .filter(f => fs.existsSync(f))
+      .filter(f => !EXCLUDED_PATTERNS.some(pattern => pattern.test(f)));
+
+    let hasConsole = false;
+
+    for (const file of files) {
+      const content = readFile(file);
       if (content && content.includes('console.log')) {
         log(`[Hook] WARNING: console.log found in ${file}`);
         hasConsole = true;
