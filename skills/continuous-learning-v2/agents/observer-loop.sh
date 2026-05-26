@@ -205,7 +205,17 @@ PROMPT
   fi
 
   timeout_seconds="${ECC_OBSERVER_TIMEOUT_SECONDS:-120}"
-  max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"
+  # Auto-scale max_turns proportional to analysis batch size when not explicitly set.
+  # The old hardcoded default of 20 is insufficient for the 500-line MAX_ANALYSIS_LINES
+  # default: Claude hits --max-turns before it can write all discovered instinct files.
+  # Formula: 1 turn per 10 analysis lines, floor 20, cap 100. (#2035)
+  if [ -n "${ECC_OBSERVER_MAX_TURNS:-}" ]; then
+    max_turns="${ECC_OBSERVER_MAX_TURNS}"
+  else
+    max_turns=$(( analysis_count / 10 ))
+    if [ "$max_turns" -lt 20 ]; then max_turns=20; fi
+    if [ "$max_turns" -gt 100 ]; then max_turns=100; fi
+  fi
   exit_code=0
 
   case "$max_turns" in
