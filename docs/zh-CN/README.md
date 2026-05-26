@@ -167,7 +167,7 @@
 
 ```bash
 # Add marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Install plugin
 /plugin install ecc@ecc
@@ -603,7 +603,7 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 
 ```bash
 # Add this repo as a marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Install the plugin
 /plugin install ecc@ecc

@@ -112,7 +112,7 @@
 
 ```bash
 # 마켓플레이스 추가
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # 플러그인 설치
 /plugin install ecc@ecc
@@ -356,7 +356,7 @@ Claude Code v2.1+는 설치된 플러그인의 `hooks/hooks.json`을 **자동으
 
 ```bash
 # 마켓플레이스 추가
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # 플러그인 설치
 /plugin install ecc@ecc

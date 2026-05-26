@@ -222,7 +222,7 @@ npx ecc consult "security reviews" --target claude
 
 ```bash
 # Добавьте marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Установите плагин
 /plugin install ecc@ecc
@@ -763,7 +763,7 @@ Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded fil
 
 ```bash
 # Добавить этот репозиторий как marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Установить плагин
 /plugin install ecc@ecc

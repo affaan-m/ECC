@@ -122,7 +122,7 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 
 ```bash
 # Marketplace ekle
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Plugin'i kur
 /plugin install ecc@ecc

@@ -48,7 +48,7 @@ Nếu bạn đã cài chồng nhiều lần và thấy skill/hook bị trùng, x
 
 ```bash
 # Thêm marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Cài plugin
 /plugin install ecc@ecc
