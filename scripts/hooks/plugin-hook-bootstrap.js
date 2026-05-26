@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 
 function readStdinRaw() {
   try {
@@ -69,14 +70,16 @@ function findShellBinary() {
 }
 
 function spawnNode(rootDir, relPath, raw, args) {
+  ensureAgentDataHomeEnv();
+  const hookEnv = {
+    ...process.env,
+    CLAUDE_PLUGIN_ROOT: rootDir,
+    ECC_PLUGIN_ROOT: rootDir,
+  };
   return spawnSync(process.execPath, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      CLAUDE_PLUGIN_ROOT: rootDir,
-      ECC_PLUGIN_ROOT: rootDir,
-    },
+    env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,
@@ -93,14 +96,16 @@ function spawnShell(rootDir, relPath, raw, args) {
     };
   }
 
+  ensureAgentDataHomeEnv();
+  const hookEnv = {
+    ...process.env,
+    CLAUDE_PLUGIN_ROOT: rootDir,
+    ECC_PLUGIN_ROOT: rootDir,
+  };
   return spawnSync(shell, [resolveTarget(rootDir, relPath), ...args], {
     input: raw,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      CLAUDE_PLUGIN_ROOT: rootDir,
-      ECC_PLUGIN_ROOT: rootDir,
-    },
+    env: hookEnv,
     cwd: process.cwd(),
     timeout: 30000,
     windowsHide: true,

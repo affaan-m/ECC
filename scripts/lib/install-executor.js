@@ -207,6 +207,36 @@ function readJsonObject(filePath, label) {
   return parsed;
 }
 
+function addCursorAgentDataScaffoldOperations(operations, options) {
+  const scaffoldRoot = path.join(options.sourceRoot, 'scaffolds', 'cursor');
+  if (!fs.existsSync(scaffoldRoot)) {
+    return;
+  }
+
+  addFileCopyOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'ecc-agent-data.json'),
+    destinationPath: path.join(options.targetRoot, 'ecc-agent-data.json'),
+    strategy: 'preserve-relative-path',
+  });
+
+  addFileCopyOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'rules', 'ecc-agent-data-home.mdc'),
+    destinationPath: path.join(options.targetRoot, 'rules', 'ecc-agent-data-home.mdc'),
+    strategy: 'preserve-relative-path',
+  });
+
+  addJsonMergeOperation(operations, {
+    moduleId: options.moduleId,
+    sourceRoot: options.sourceRoot,
+    sourceRelativePath: path.join('scaffolds', 'cursor', 'hooks.json'),
+    destinationPath: path.join(options.targetRoot, 'hooks.json'),
+  });
+}
+
 function addJsonMergeOperation(operations, options) {
   const sourcePath = path.join(options.sourceRoot, options.sourceRelativePath);
   if (!fs.existsSync(sourcePath)) {
@@ -391,6 +421,12 @@ function planCursorLegacyInstall(context) {
     sourceRoot: context.sourceRoot,
     sourceRelativePath: '.mcp.json',
     destinationPath: path.join(targetRoot, 'mcp.json'),
+  });
+
+  addCursorAgentDataScaffoldOperations(operations, {
+    moduleId: 'legacy-cursor-install',
+    sourceRoot: context.sourceRoot,
+    targetRoot,
   });
 
   return {

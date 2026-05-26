@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node .cursor/scripts/hooks/cursor-session-env.js"
+      }
+    ]
+  }
+}

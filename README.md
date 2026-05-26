@@ -483,11 +483,30 @@ export ECC_SESSION_START_CONTEXT=off
 export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
 ```
 
+
 Windows PowerShell:
 
 ```powershell
 [Environment]::SetEnvironmentVariable('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', 'User')
 ```
+
+### Agent data home (multi-harness isolation)
+
+Memory persistence hooks (session summaries, learned skills, session aliases, metrics) store data under a single agent data root. By default that root is `~/.claude`. When you use ECC in both Claude Code and Cursor on the same machine, set a separate root for Cursor so the two environments do not overwrite each other's session files:
+
+```bash
+# Cursor-only boundary (Claude Code keeps the default ~/.claude)
+export ECC_AGENT_DATA_HOME="$HOME/.cursor/ecc"
+```
+
+Paths resolved under that root include:
+
+- `$ECC_AGENT_DATA_HOME/session-data/` — session summaries
+- `$ECC_AGENT_DATA_HOME/skills/learned/` — learned skills from evaluate-session
+- `$ECC_AGENT_DATA_HOME/session-aliases.json` — session aliases
+- `$ECC_AGENT_DATA_HOME/metrics/` — cost and activity metrics
+
+See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 
 ---
 
@@ -1252,6 +1271,25 @@ ECC provides Cursor IDE support with hooks, rules, agents, skills, commands, and
 ECC does not install root `AGENTS.md` into `.cursor/`. Cursor treats nested `AGENTS.md` files as directory context, so copying ECC's repo identity into a host project would pollute that project.
 
 Cursor-native loading behavior can vary by Cursor build. ECC installs agents as `.cursor/agents/ecc-*.md`; if your Cursor build does not expose project agents, those files still work as explicit reference definitions instead of hidden global prompt context.
+
+### Memory and data isolation (Cursor + Claude Code)
+
+ECC memory hooks reuse the same `scripts/hooks/*.js` as Claude Code. For Cursor, ECC tries to keep memory **out of `~/.claude` automatically**:
+
+1. **Cursor `sessionStart` hook** (installed to `.cursor/hooks.json` on `--target cursor`) injects `ECC_AGENT_DATA_HOME` for the whole composer session.
+2. **Hook runtime default** — when `CURSOR_VERSION` or `CURSOR_PROJECT_DIR` is present, hooks default to `~/.cursor/ecc` if the env var is unset.
+3. **Project config** — `.cursor/ecc-agent-data.json` documents and overrides the path (`agentDataHome`).
+4. **Always-on rule** — `.cursor/rules/ecc-agent-data-home.mdc` reminds the agent where memory lives.
+
+You can still override explicitly:
+
+```bash
+export ECC_AGENT_DATA_HOME="$HOME/.cursor/ecc"
+```
+
+To **share** memory with Claude Code on purpose, set `ECC_AGENT_DATA_HOME=~/.claude` in the shell or in `.cursor/ecc-agent-data.json`.
+
+Continuous learning v2 instincts remain separate under `CLV2_HOMUNCULUS_DIR` (default `~/.local/share/ecc-homunculus`).
 
 ### Hook Architecture (DRY Adapter Pattern)
 
