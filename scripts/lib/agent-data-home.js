@@ -1,5 +1,14 @@
 /**
  * Resolve ECC agent data home (memory persistence root) across harnesses.
+ *
+ * Docstring policy: public entry points here are documented; small internal
+ * helpers (e.g. `expandHomePath`, `readProjectConfigAt`) are left undocumented on
+ * purpose, consistent with ECC script modules elsewhere. Automated PR reviewers
+ * (e.g. CodeRabbit) may still flag low JSDoc coverage against a high threshold on
+ * the diff—that check is informational for this repo, not a bar every helper in
+ * touched files must meet. Prefer clarity in code and tests over blanket JSDoc on
+ * private helpers unless maintainers adopt a project-wide coverage rule.
+ *
  * @see https://github.com/affaan-m/ECC/issues/2065
  */
 
@@ -11,6 +20,22 @@ const DEFAULT_CLAUDE_DIR_NAME = '.claude';
 const DEFAULT_CURSOR_ECC_DIR_SEGMENTS = ['.cursor', 'ecc'];
 const PROJECT_CONFIG_RELATIVE = path.join('.cursor', 'ecc-agent-data.json');
 
+/**
+ * Home directory for tilde expansion and default agent-data paths.
+ *
+ * Intentionally mirrors `getHomeDir()` in `scripts/lib/utils.js` (HOME/USERPROFILE,
+ * then `os.homedir()`). Do not import `utils.getHomeDir` here: `utils.js` already
+ * requires this module (`resolveAgentDataHome`), which would create a circular
+ * dependency and risk divergent defaults for `~/.cursor/ecc` vs `~/.claude`.
+ *
+ * If consolidation is needed later, prefer one of:
+ *
+ * | Approach | Tradeoff |
+ * | --- | --- |
+ * | Shared `scripts/lib/home-dir.js` imported by both | Clean; breaks the cycle |
+ * | Keep duplicate + cross-reference comment (this file) | Zero require risk |
+ * | Move all resolution here; thin-wrap from `utils` | Larger refactor |
+ */
 function getHomeDirFromEnv() {
   const explicitHome = process.env.HOME || process.env.USERPROFILE;
   if (explicitHome && String(explicitHome).trim().length > 0) {
