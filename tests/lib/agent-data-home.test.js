@@ -119,6 +119,36 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('readProjectConfigAt logs parse failures', () => {
+    const tmpDir = path.join(process.cwd(), '.tmp-agent-data-home-log-test');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const configPath = path.join(tmpDir, 'ecc-agent-data.json');
+    fs.writeFileSync(configPath, '{ invalid json', 'utf8');
+
+    const originalError = console.error;
+    const messages = [];
+    console.error = (...args) => {
+      messages.push(args.join(' '));
+    };
+
+    try {
+      withEnv({
+        ECC_AGENT_DATA_HOME: undefined,
+        CURSOR_VERSION: undefined,
+      }, () => {
+        const agentDataHome = require('../../scripts/lib/agent-data-home');
+        assert.strictEqual(agentDataHome.readProjectConfigAt(configPath), null);
+        assert.ok(
+          messages.some(message => message.includes(configPath)),
+          'Expected config path in error log'
+        );
+      });
+    } finally {
+      console.error = originalError;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('ensureAgentDataHomeEnv sets process.env when unset', () => {
     withEnv({
       ECC_AGENT_DATA_HOME: undefined,

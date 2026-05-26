@@ -62,7 +62,10 @@ function readProjectConfigAt(configPath) {
     const candidate = parsed.agentDataHome || parsed.ECC_AGENT_DATA_HOME;
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
     return expandHomePath(candidate);
-  } catch {
+  } catch (error) {
+    console.error(
+      `[ECC] Failed to read or parse agent data config at ${configPath}: ${error.message}`
+    );
     return null;
   }
 }

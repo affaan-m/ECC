@@ -235,6 +235,22 @@ function addCursorAgentDataScaffoldOperations(operations, options) {
     sourceRelativePath: path.join('scaffolds', 'cursor', 'hooks.json'),
     destinationPath: path.join(options.targetRoot, 'hooks.json'),
   });
+
+  const cursorSessionHookDeps = [
+    path.join('scripts', 'hooks', 'cursor-session-env.js'),
+    path.join('scripts', 'lib', 'agent-data-home.js'),
+    path.join('scripts', 'lib', 'utils.js'),
+  ];
+
+  for (const sourceRelativePath of cursorSessionHookDeps) {
+    addFileCopyOperation(operations, {
+      moduleId: options.moduleId,
+      sourceRoot: options.sourceRoot,
+      sourceRelativePath,
+      destinationPath: path.join(options.targetRoot, sourceRelativePath),
+      strategy: 'preserve-relative-path',
+    });
+  }
 }
 
 function addJsonMergeOperation(operations, options) {
