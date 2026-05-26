@@ -20,6 +20,9 @@ from datetime import datetime
 from collections import defaultdict
 from typing import Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
@@ -95,7 +98,7 @@ def load_all_instincts() -> list[dict]:
         )
         for file in yaml_files:
             try:
-                content = file.read_text()
+                content = file.read_text(encoding="utf-8")
                 parsed = parse_instinct_file(content)
                 for inst in parsed:
                     inst['_source_file'] = str(file)
@@ -196,7 +199,7 @@ def cmd_import(args):
         if not path.exists():
             print(f"File not found: {path}", file=sys.stderr)
             return 1
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
 
     # Parse instincts
     new_instincts = parse_instinct_file(content)
