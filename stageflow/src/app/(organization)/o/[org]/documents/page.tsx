@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Documents',
@@ -37,12 +38,10 @@ const STATUS_LABELS: Record<DocumentSubmission['status'], string> = {
 export default function DocumentsPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Documents</h1>
-        <p className="mt-1 text-sm text-foreground-muted">
-          Review submitted documents for verification. {SAMPLE_DOCS.filter((d) => d.status === 'pending_review').length} pending.
-        </p>
-      </div>
+      <PageHeader
+        title="Documents"
+        description={`Review submitted documents for verification. ${SAMPLE_DOCS.filter((d) => d.status === 'pending_review').length} pending.`}
+      />
 
       <div className="flex gap-3">
         <input type="search" placeholder="Search dancer or studio..." className="input-dark w-64" />

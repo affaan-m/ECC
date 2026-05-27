@@ -27,42 +27,75 @@ const SAMPLE_MESSAGES: Message[] = [
 export default function InboxPage() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Inbox</h1>
-          <p className="mt-1 text-sm text-foreground-muted">
-            {SAMPLE_MESSAGES.filter((m) => m.unread).length} unread messages
-          </p>
-        </div>
-        <button type="button" className="btn-gold px-5 py-2.5 text-xs">COMPOSE</button>
-      </div>
+      <PageHeader
+        title="Inbox"
+        description={`${SAMPLE_MESSAGES.filter((m) => m.unread).length} unread messages`}
+        actions={
+          <button type="button" className="btn-gold px-5 py-2.5 text-xs">COMPOSE</button>
+        }
+      />
 
-      <div className="surface-card divide-y divide-border">
-        {SAMPLE_MESSAGES.map((msg) => (
-          <button
-            key={msg.id}
-            type="button"
-            className={`flex w-full items-start gap-4 px-6 py-4 text-left transition-colors hover:bg-surface-elevated ${msg.unread ? 'bg-gold-muted/30' : ''}`}
-          >
-            <div className="flex h-10 w-10 items-center justify-center bg-surface-elevated text-xs font-bold text-gold">
-              {msg.from.split(' ').map((n) => n[0]).join('')}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+      <div className="grid gap-0 lg:grid-cols-[380px_1fr] h-[calc(100vh-280px)] min-h-[500px]">
+        {/* Conversation list */}
+        <div className="surface-card divide-y divide-border overflow-y-auto border-r border-border">
+          {SAMPLE_MESSAGES.map((msg) => (
+            <button
+              key={msg.id}
+              type="button"
+              className={`flex w-full items-start gap-4 px-6 py-4 text-left transition-colors hover:bg-surface-elevated ${msg.unread ? 'bg-gold-muted/30' : ''} ${msg.id === '1' ? 'border-l-2 border-l-gold' : ''}`}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-surface-elevated text-xs font-bold text-gold">
+                {msg.from.split(' ').map((n) => n[0]).join('')}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between">
                   <span className={`text-sm ${msg.unread ? 'font-bold' : 'font-medium'}`}>{msg.from}</span>
-                  <span className="text-xs text-foreground-muted">{msg.fromRole}</span>
+                  <span className="text-xs text-foreground-muted">{msg.time}</span>
                 </div>
-                <span className="text-xs text-foreground-muted">{msg.time}</span>
+                <div className={`mt-0.5 text-sm truncate ${msg.unread ? 'font-semibold text-foreground' : 'text-foreground-secondary'}`}>
+                  {msg.subject}
+                </div>
+                <p className="mt-0.5 truncate text-xs text-foreground-muted">{msg.preview}</p>
               </div>
-              <div className={`mt-0.5 text-sm ${msg.unread ? 'font-semibold text-foreground' : 'text-foreground-secondary'}`}>
-                {msg.subject}
+              {msg.unread && <div className="mt-2 h-2 w-2 flex-shrink-0 bg-gold" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Message panel */}
+        <div className="surface-card flex flex-col">
+          <div className="border-b border-border px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">Music file format question</h3>
+                <div className="text-xs text-foreground-muted">Emily Chen — Rhythm Studio</div>
               </div>
-              <p className="mt-0.5 truncate text-xs text-foreground-muted">{msg.preview}</p>
+              <div className="flex gap-2">
+                <button type="button" className="text-xs text-foreground-muted hover:text-white">Archive</button>
+                <button type="button" className="text-xs text-gold hover:text-gold-hover">Reply</button>
+              </div>
             </div>
-            {msg.unread && <div className="mt-2 h-2 w-2 flex-shrink-0 bg-gold" />}
-          </button>
-        ))}
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-surface-elevated text-xs font-bold text-gold">EC</div>
+              <div className="surface-card p-4 max-w-lg">
+                <p className="text-sm">Hi, I have a question about the accepted music file formats for the Summer Showcase. Can we submit WAV files or does it need to be MP3 only?</p>
+                <div className="mt-2 text-xs text-foreground-muted">10 min ago</div>
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-border p-4">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder="Type your reply..."
+                className="flex-1 h-10 bg-[#181818] border border-white/10 px-4 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-gold"
+              />
+              <button type="button" className="btn-gold px-5 py-2 text-xs">SEND</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

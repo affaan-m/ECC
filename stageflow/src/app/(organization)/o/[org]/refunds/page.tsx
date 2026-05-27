@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Refunds',
@@ -32,10 +33,10 @@ const STATUS_BADGE: Record<Refund['status'], string> = {
 export default function RefundsPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Refunds</h1>
-        <p className="mt-1 text-sm text-foreground-muted">Review and process refund requests from studios</p>
-      </div>
+      <PageHeader
+        title="Refunds"
+        description="Review and process refund requests from studios"
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         {[

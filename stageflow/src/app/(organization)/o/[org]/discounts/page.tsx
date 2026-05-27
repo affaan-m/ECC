@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Discount Codes',
@@ -26,13 +27,13 @@ const SAMPLE_CODES: DiscountCode[] = [
 export default function DiscountsPage() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Discount Codes</h1>
-          <p className="mt-1 text-sm text-foreground-muted">Manage promotional and loyalty discount codes</p>
-        </div>
-        <button type="button" className="btn-gold px-5 py-2.5 text-xs">CREATE CODE</button>
-      </div>
+      <PageHeader
+        title="Discount Codes"
+        description="Manage promotional and loyalty discount codes"
+        actions={
+          <button type="button" className="btn-gold px-5 py-2.5 text-xs">CREATE CODE</button>
+        }
+      />
 
       <div className="surface-card overflow-hidden">
         <table className="w-full">
