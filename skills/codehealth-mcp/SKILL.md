@@ -11,7 +11,7 @@ Structural maintainability feedback for AI-assisted coding. Complements style/li
 **Product:** [CodeScene Code Health MCP](https://codescene.com/product/code-health-mcp)  
 **Package:** `@codescene/codehealth-mcp` (stdio via npx)
 
-## When to Activate
+## When to Use
 
 - User asks to **review code quality**, **refactor** a file, or check if **AI changes degraded** maintainability
 - Before editing a **hotspot**, legacy module, or unfamiliar file
@@ -19,9 +19,13 @@ Structural maintainability feedback for AI-assisted coding. Complements style/li
 - After a large agent-written diff — verify Code Health did not regress
 - Pair with `verification-loop`, `tdd-workflow`, or `/quality-gate` as a structural check (not a replacement for tests/lint)
 
-## MCP setup
+## When to Activate
 
-### 1. Enable the server
+Same triggers as **When to Use** above — this heading is what ECC uses for skill auto-activation.
+
+## How It Works
+
+### 1. Connect the MCP server
 
 Copy the `codescene` entry from `mcp-configs/mcp-servers.json` into your harness MCP config.
 
@@ -39,14 +43,9 @@ Copy the `codescene` entry from `mcp-configs/mcp-servers.json` into your harness
 
 **Project-scoped:** merge the same block into `.mcp.json` at the repo root.
 
-### 2. Standalone token (free)
+Get a free standalone token from [codescene.com/product/code-health-mcp](https://codescene.com/product/code-health-mcp) — no paid CodeScene platform account required. Restart the session and confirm the `codescene` server is connected.
 
-Get a token from [codescene.com/product/code-health-mcp](https://codescene.com/product/code-health-mcp).  
-No paid CodeScene platform account required for the tools below.
-
-Restart the session and confirm the `codescene` MCP server is connected before calling tools.
-
-## Standalone tools only (no paid account)
+### 2. Call standalone tools only
 
 | Tool | When to use |
 |------|-------------|
@@ -57,7 +56,7 @@ Restart the session and confirm the `codescene` MCP server is connected before c
 
 Do **not** call platform-only tools (e.g. repository-wide technical debt hotspot lists). Do **not** reference `delta_analysis` — not available on standalone.
 
-## Code Health scores (1–10)
+### 3. Interpret scores (1–10)
 
 | Range | Meaning | Agent behavior |
 |-------|---------|----------------|
@@ -65,37 +64,43 @@ Do **not** call platform-only tools (e.g. repository-wide technical debt hotspot
 | **4.0–8.9** | Yellow — debt | Tread carefully; no drive-by refactors |
 | **1.0–3.9** | Red — severe debt | Narrow scope only |
 
-## Workflow
+### 4. Run the feedback loop
 
-### Before touching a file
+**Before touching a file**
 
 1. Run `code_health_review` on the target path.
 2. Record baseline score and listed code smells.
 3. Plan the smallest change that addresses the task.
 
-**Scope by score:**
+Scope by score: **below 5** — minimal diff only; **5–7** — no broad refactors; **above 7** — safer to refactor, still verify after each edit.
 
-- **Below 5** — Problematic: minimal diff only; no broad refactors.
-- **5–7** — Warning: fix what you came for; do not expand scope.
-- **Above 7** — Safer to refactor; still verify after each edit.
-
-### After each change
+**After each change**
 
 1. Run `code_health_score` on the same file.
 2. Compare to the baseline from `code_health_review`.
 3. If the score **regressed**, fix before continuing. Never mark the task done while the score is lower than when you started.
 
-### Before every commit
+**Before every commit** — run `pre_commit_code_health_safeguard` on the repository path.
 
-Run `pre_commit_code_health_safeguard` on the repository path. If gates fail, fix degradations before committing.
+**Before a PR** — run `analyze_change_set` against the base branch (e.g. `main`).
 
-### Before a PR
+## Examples
 
-Run `analyze_change_set` against the base branch (e.g. `main`). Resolve file-level degradations before opening the PR.
+### Example: Flask maintainability improvement
 
-## AGENTS.md / CLAUDE.md block
+On `pallets/flask`, an agent loop using only standalone tools:
 
-Paste into the project agent instructions:
+1. `code_health_review` on a target module (baseline **4.82**)
+2. Targeted refactor addressing listed smells
+3. `code_health_score` after each edit
+4. `pre_commit_code_health_safeguard` before commit
+5. `analyze_change_set` before PR
+
+Result: Code Health **4.82 → 9.1** (free standalone token only).
+
+### Example: AGENTS.md enforcement block
+
+Paste into the project `AGENTS.md` or `CLAUDE.md`:
 
 ```md
 ## Code Health (CodeScene MCP)
@@ -114,19 +119,7 @@ Before every commit: run `pre_commit_code_health_safeguard`.
 Before PR: run `analyze_change_set`.
 ```
 
-## Pairing with ECC
-
-| ECC skill / flow | Code Health MCP role |
-|------------------|----------------------|
-| `coding-standards` | Style/naming; Code Health = structure/complexity |
-| `plankton-code-quality` | Write-time lint/format; Code Health = pre/post edit structural gate |
-| `verification-loop` / `/quality-gate` | Add structural regression check before "done" |
-| `security-review` | Security vs maintainability — use both when relevant |
-| `tdd-workflow` | Tests pass ≠ healthy design — check score after refactors |
-
-**Context tip:** ECC recommends keeping MCP count low. Enable `codescene` when doing substantive edits; disable when not needed.
-
-## Anti-patterns
+### Example: anti-patterns vs correct loop
 
 ```markdown
 # BAD: Edit first, check later
@@ -141,9 +134,17 @@ Drive-by cleanup across the module
 # GOOD: review → small change → score → commit safeguard → analyze_change_set
 ```
 
-## Example outcome
+## Pairing with ECC
 
-On `pallets/flask`, review → targeted refactor → score verification improved Code Health from **4.82 → 9.1** using only standalone MCP tools (free token).
+| ECC skill / flow | Code Health MCP role |
+|------------------|----------------------|
+| `coding-standards` | Style/naming; Code Health = structure/complexity |
+| `plankton-code-quality` | Write-time lint/format; Code Health = pre/post edit structural gate |
+| `verification-loop` / `/quality-gate` | Add structural regression check before "done" |
+| `security-review` | Security vs maintainability — use both when relevant |
+| `tdd-workflow` | Tests pass ≠ healthy design — check score after refactors |
+
+**Context tip:** ECC recommends keeping MCP count low. Enable `codescene` when doing substantive edits; disable when not needed.
 
 ## Related Skills
 
