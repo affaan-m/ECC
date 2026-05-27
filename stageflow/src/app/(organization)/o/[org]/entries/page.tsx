@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Entries',
@@ -43,12 +44,35 @@ export default async function EntriesPage({ params }: EntriesPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Entries</h1>
-          <p className="mt-1 text-sm text-foreground-muted">{SAMPLE_ENTRIES.length} entries across all events</p>
-        </div>
-        <button type="button" className="btn-outline-gold px-4 py-2 text-xs">EXPORT CSV</button>
+      <PageHeader
+        title="Entries"
+        description={`${SAMPLE_ENTRIES.length} entries across all events`}
+        actions={
+          <div className="flex gap-2">
+            <button type="button" className="btn-outline-gold px-4 py-2 text-xs">EXPORT CSV</button>
+            <button type="button" className="px-4 py-2 text-xs font-medium bg-[#202020] text-white border border-white/10 hover:border-gold/30 transition-colors">
+              BULK ACTIONS
+            </button>
+          </div>
+        }
+      />
+
+      {/* Saved views */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-foreground-muted">Saved views:</span>
+        {['All Entries', 'Pending Review', 'Missing Music', 'Unpaid'].map((view) => (
+          <button
+            key={view}
+            type="button"
+            className={`px-2 py-1 text-xs transition-colors ${
+              view === 'All Entries'
+                ? 'bg-gold/15 text-gold'
+                : 'text-foreground-muted hover:text-white'
+            }`}
+          >
+            {view}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}

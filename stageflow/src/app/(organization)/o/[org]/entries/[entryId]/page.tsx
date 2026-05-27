@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 interface EntryDetailProps {
   params: Promise<{ org: string; entryId: string }>
@@ -21,21 +22,19 @@ export default async function EntryDetailPage({ params }: EntryDetailProps) {
         <span className="text-foreground">Gravity</span>
       </div>
 
-      <div className="flex items-start justify-between">
-        <div>
+      <PageHeader
+        title="Gravity"
+        description={`Entry ID: ${entryId} — Rhythm Studio — Senior Contemporary Solo`}
+        actions={
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Gravity</h1>
             <span className="badge-success">Approved</span>
+            <button type="button" className="border border-destructive px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive hover:bg-destructive/10">
+              REJECT
+            </button>
+            <button type="button" className="btn-gold px-4 py-2 text-xs">APPROVE</button>
           </div>
-          <p className="mt-1 text-sm text-foreground-muted">Entry ID: {entryId} — Rhythm Studio</p>
-        </div>
-        <div className="flex gap-3">
-          <button type="button" className="border border-destructive px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive hover:bg-destructive/10">
-            REJECT
-          </button>
-          <button type="button" className="btn-gold px-4 py-2 text-xs">APPROVE</button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Entry details */}
