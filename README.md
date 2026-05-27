@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **182K+ stars** | **28K+ forks** | **170+ contributors** | **12+ language ecosystems** | **Anthropic Hackathon Winner**
+> **195K+ stars** | **30K+ forks** | **207+ contributors** | **12+ language ecosystems** | **Anthropic Hackathon Winner**
 
 ---
 
