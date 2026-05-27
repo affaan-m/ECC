@@ -254,6 +254,62 @@ test('status migrates legacy no-remote linked worktree project dirs to main work
   }
 });
 
+test('status warns when populated legacy ~/.claude/homunculus exists alongside XDG path (#2036)', () => {
+  const root = createTempDir();
+  try {
+    const home = path.join(root, 'home');
+    const legacyHomunculus = path.join(home, '.claude', 'homunculus', 'projects');
+    fs.mkdirSync(legacyHomunculus, { recursive: true });
+    // Drop a sentinel project dir so the helper sees a populated tree.
+    fs.mkdirSync(path.join(legacyHomunculus, 'deadbeef'), { recursive: true });
+
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /Legacy data found at .*\.claude\/homunculus/,
+      'status should warn about the populated legacy directory'
+    );
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status stays quiet when no legacy ~/.claude/homunculus exists (#2036)', () => {
+  const root = createTempDir();
+  try {
+    const home = path.join(root, 'home');
+    fs.mkdirSync(home, { recursive: true });
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      result.stdout,
+      /Legacy data found/,
+      'status should not warn when no legacy directory exists'
+    );
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status stays quiet when legacy ~/.claude/homunculus exists but is empty (#2036)', () => {
+  const root = createTempDir();
+  try {
+    const home = path.join(root, 'home');
+    const legacy = path.join(home, '.claude', 'homunculus');
+    fs.mkdirSync(legacy, { recursive: true });
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      result.stdout,
+      /Legacy data found/,
+      'empty placeholder legacy directory should not trigger the warning'
+    );
+  } finally {
+    cleanupDir(root);
+  }
+});
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 

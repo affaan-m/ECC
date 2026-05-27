@@ -137,6 +137,35 @@ def _ensure_global_dirs():
         d.mkdir(parents=True, exist_ok=True)
 
 
+def _detect_legacy_homunculus_dir() -> "Path | None":
+    """Detect a populated legacy ~/.claude/homunculus tree that the current
+    XDG-based CLI does NOT read from.
+
+    Issue #2036: when ECC migrated to XDG_DATA_HOME (default
+    ~/.local/share/ecc-homunculus/), users with an older manual install at
+    ~/.claude/homunculus/ silently had observations written to the new path
+    while `instinct-cli.py status` continued to look at the old one. We warn
+    explicitly when both paths exist so the divergence is visible instead of
+    appearing as "system is broken".
+    """
+    legacy = Path.home() / ".claude" / "homunculus"
+    if legacy == HOMUNCULUS_DIR:
+        return None
+    try:
+        if not legacy.is_dir():
+            return None
+        # Treat the directory as populated only if it contains real ECC
+        # state -- projects/, instincts/, evolved/, or observations.jsonl.
+        # An empty placeholder dir is not worth warning about.
+        for marker in ("projects", "instincts", "evolved", "observations.jsonl"):
+            target = legacy / marker
+            if target.exists():
+                return legacy
+    except OSError:
+        return None
+    return None
+
+
 # ─────────────────────────────────────────────
 # Path Validation
 # ─────────────────────────────────────────────
@@ -702,6 +731,24 @@ def cmd_status(args) -> int:
             for item in expiring_soon:
                 days_left = max(0, PENDING_TTL_DAYS - item["age_days"])
                 print(f"    - {item['name']} ({days_left}d remaining)")
+
+    # Issue #2036: legacy ~/.claude/homunculus is invisible to the current
+    # XDG-based CLI. Surface the divergence so users debugging "no instincts
+    # found" don't spend hours tracing path mismatches.
+    legacy_dir = _detect_legacy_homunculus_dir()
+    if legacy_dir is not None:
+        migrate_script = (
+            Path(__file__).resolve().parent / "migrate-homunculus.sh"
+        )
+        print(f"\n{'-'*60}")
+        print(f"  ⚠ Legacy data found at {legacy_dir}")
+        print(f"    The current CLI reads from {HOMUNCULUS_DIR}")
+        print( "    and does NOT see anything under the legacy path.")
+        if migrate_script.exists():
+            print(f"    Run: {migrate_script}")
+        else:
+            print(f"    Migrate by moving {legacy_dir} into {HOMUNCULUS_DIR}")
+        print( "    (or remove the legacy directory once you've confirmed it's empty).")
 
     print(f"\n{'='*60}\n")
     return 0
