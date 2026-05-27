@@ -603,6 +603,7 @@ ECC/
 |   |-- perl-testing/              # Perl TDD with Test2::V0, prove, Devel::Cover (NEW)
 |   |-- autonomous-loops/           # Autonomous loop patterns: sequential pipelines, PR loops, DAG orchestration (NEW)
 |   |-- plankton-code-quality/      # Write-time code quality enforcement with Plankton hooks (NEW)
+|   |-- codehealth-mcp/             # CodeScene Code Health MCP — structural review and regression gates (NEW)
 |
 |-- commands/         # Maintained slash-entry compatibility; prefer skills/
 |   |-- plan.md             # /plan - Implementation planning
@@ -1341,6 +1342,7 @@ Canonical Anthropic skills such as `claude-api`, `frontend-design`, and `skill-c
 | brand-voice | Source-derived writing style profiles from real content |
 | bun-runtime | Bun as runtime, package manager, bundler, and test runner |
 | coding-standards | Universal coding standards |
+| codehealth-mcp | Structural Code Health via CodeScene MCP — review, score deltas, commit/PR gates |
 | content-engine | Platform-native social content and repurposing |
 | crosspost | Multi-platform content distribution across X, LinkedIn, Threads |
 | deep-research | Multi-source research with synthesis and source attribution |
