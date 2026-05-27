@@ -1,85 +1,101 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Custom Domains',
   description: 'Configure custom domains for your competition portal.',
 }
 
-interface Domain {
-  id: string
-  domain: string
-  status: 'verified' | 'pending_verification' | 'failed'
-  sslStatus: 'active' | 'provisioning' | 'none'
-  addedAt: string
+interface DomainsProps {
+  params: Promise<{ org: string }>
 }
 
-const SAMPLE_DOMAINS: Domain[] = [
-  { id: '1', domain: 'register.starlight-dance.com', status: 'verified', sslStatus: 'active', addedAt: 'Jan 10, 2025' },
-  { id: '2', domain: 'entries.starlight-dance.com', status: 'pending_verification', sslStatus: 'provisioning', addedAt: 'May 25, 2026' },
+const DOMAINS = [
+  { domain: 'compete.summershowcase.com', status: 'active' as const, ssl: true, primary: true, addedAt: 'Jan 15, 2026' },
+  { domain: 'register.summershowcase.com', status: 'pending_dns' as const, ssl: false, primary: false, addedAt: 'May 20, 2026' },
 ]
 
-export default function DomainsPage() {
+const STATUS_STYLES = {
+  active: 'badge-success',
+  pending_dns: 'badge-gold',
+  error: 'badge-destructive',
+}
+
+export default async function DomainsPage({ params }: DomainsProps) {
+  const { org } = await params
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Custom Domains</h1>
-          <p className="mt-1 text-sm text-foreground-muted">
-            Point your own domain to your StageFlow competition portal
-          </p>
-        </div>
-        <button type="button" className="btn-gold px-5 py-2.5 text-xs">ADD DOMAIN</button>
-      </div>
+      <PageHeader
+        title="Custom Domains"
+        description="Point your own domain to your StageFlow competition portal"
+        actions={
+          <button type="button" className="btn-gold px-5 py-2.5 text-xs">ADD DOMAIN</button>
+        }
+      />
 
       {/* Default domain */}
       <div className="surface-card p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">Default Domain</div>
-            <div className="mt-1 font-mono text-sm text-gold">starlight.stageflow.app</div>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Default Domain</h3>
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-2 w-2 bg-green-500" />
+            <code className="text-sm text-gold">{org}.stageflow.app</code>
           </div>
-          <span className="badge-success">Active</span>
+          <span className="text-xs text-foreground-muted">Always active</span>
         </div>
       </div>
 
       {/* Custom domains */}
       <div className="space-y-4">
-        {SAMPLE_DOMAINS.map((domain) => (
-          <div key={domain.id} className="surface-card p-6">
+        {DOMAINS.map((d) => (
+          <div key={d.domain} className="surface-card p-6">
             <div className="flex items-center justify-between">
-              <div>
-                <div className="font-mono text-sm font-medium">{domain.domain}</div>
-                <div className="mt-1 text-xs text-foreground-muted">Added {domain.addedAt}</div>
+              <div className="flex items-center gap-4">
+                <div className={`h-2 w-2 ${d.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm font-medium text-white">{d.domain}</code>
+                    {d.primary && <span className="bg-gold/15 px-2 py-0.5 text-xs text-gold">Primary</span>}
+                  </div>
+                  <div className="mt-1 text-xs text-foreground-muted">Added {d.addedAt}</div>
+                </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className={domain.status === 'verified' ? 'badge-success' : domain.status === 'pending_verification' ? 'badge-gold' : 'badge-destructive'}>
-                    {domain.status === 'verified' ? 'Verified' : domain.status === 'pending_verification' ? 'Pending' : 'Failed'}
-                  </span>
-                  <div className="mt-1 text-xs text-foreground-muted">SSL: {domain.sslStatus}</div>
+                <div className="text-right text-xs">
+                  <div className={d.ssl ? 'text-green-400' : 'text-foreground-muted'}>
+                    SSL: {d.ssl ? 'Active' : 'Pending'}
+                  </div>
                 </div>
-                <button type="button" className="text-xs text-destructive hover:text-destructive-hover">Remove</button>
+                <span className={`${STATUS_STYLES[d.status]} text-xs font-semibold px-2 py-0.5`}>
+                  {d.status === 'active' ? 'Active' : 'Pending DNS'}
+                </span>
+                <button type="button" className="text-xs text-foreground-muted hover:text-destructive">Remove</button>
               </div>
             </div>
 
-            {domain.status === 'pending_verification' && (
+            {d.status === 'pending_dns' && (
               <div className="mt-4 border-t border-border pt-4">
-                <div className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">DNS Configuration Required</div>
-                <div className="mt-2 space-y-2 bg-surface-elevated p-4 font-mono text-xs">
-                  <div className="flex gap-4">
-                    <span className="text-foreground-muted">Type:</span>
-                    <span className="text-foreground-secondary">CNAME</span>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-foreground-muted">Name:</span>
-                    <span className="text-foreground-secondary">entries</span>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-foreground-muted">Value:</span>
-                    <span className="text-gold">cname.stageflow.app</span>
-                  </div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">DNS Configuration Required</h4>
+                <div className="mt-3 bg-[#181818] p-4">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-foreground-muted">
+                        <th className="pb-2 text-left">Type</th>
+                        <th className="pb-2 text-left">Name</th>
+                        <th className="pb-2 text-left">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-mono text-white">
+                      <tr>
+                        <td className="py-1">CNAME</td>
+                        <td className="py-1">register</td>
+                        <td className="py-1 text-gold">cname.stageflow.app</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <button type="button" className="mt-3 btn-outline-gold px-4 py-2 text-xs">VERIFY NOW</button>
+                <button type="button" className="mt-3 text-xs text-gold hover:text-gold-hover">Verify DNS</button>
               </div>
             )}
           </div>
