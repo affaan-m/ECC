@@ -1,121 +1,114 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Settings',
   description: 'Organization settings and configuration.',
 }
 
-interface SettingsPageProps {
+interface SettingsProps {
   params: Promise<{ org: string }>
 }
 
-export default async function SettingsPage({ params }: SettingsPageProps) {
+export default async function SettingsPage({ params }: SettingsProps) {
   const { org } = await params
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="mt-1 text-sm text-foreground-muted">Organization configuration and preferences</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Settings"
+        description="Manage organization settings and preferences"
+        actions={
+          <button type="button" className="btn-gold px-5 py-2.5 text-xs">SAVE CHANGES</button>
+        }
+      />
 
-      {/* General */}
+      {/* Organization info */}
       <div className="surface-card p-6">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">General</h2>
-        <form className="space-y-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Organization Details</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           <div>
-            <label htmlFor="org-name" className="mb-1.5 block text-sm font-medium text-foreground-secondary">
-              Organization Name
-            </label>
-            <input id="org-name" type="text" defaultValue="Starlight Dance Championships" className="input-dark w-full max-w-md" />
+            <label htmlFor="org-name" className="mb-1.5 block text-sm font-medium">Organization Name</label>
+            <input id="org-name" type="text" defaultValue="Summer Showcase Productions" className="w-full h-10 bg-[#202020] border border-white/10 px-3 text-sm text-white focus:outline-none focus:border-gold" />
           </div>
           <div>
-            <label htmlFor="org-slug" className="mb-1.5 block text-sm font-medium text-foreground-secondary">
-              URL Slug
-            </label>
-            <div className="flex items-center gap-0">
-              <span className="bg-surface-elevated border border-r-0 border-border px-3 py-2.5 text-sm text-foreground-muted">stageflow.app/o/</span>
-              <input id="org-slug" type="text" defaultValue={org} className="input-dark w-48" />
+            <label htmlFor="org-slug" className="mb-1.5 block text-sm font-medium">URL Slug</label>
+            <div className="flex items-center">
+              <span className="h-10 flex items-center bg-[#181818] border border-r-0 border-white/10 px-3 text-sm text-foreground-muted">stageflow.app/</span>
+              <input id="org-slug" type="text" defaultValue={org} className="flex-1 h-10 bg-[#202020] border border-white/10 px-3 text-sm text-white focus:outline-none focus:border-gold" />
             </div>
           </div>
           <div>
-            <label htmlFor="org-email" className="mb-1.5 block text-sm font-medium text-foreground-secondary">
-              Contact Email
-            </label>
-            <input id="org-email" type="email" defaultValue="info@starlight-dance.com" className="input-dark w-full max-w-md" />
+            <label htmlFor="org-email" className="mb-1.5 block text-sm font-medium">Contact Email</label>
+            <input id="org-email" type="email" defaultValue="info@summershowcase.com" className="w-full h-10 bg-[#202020] border border-white/10 px-3 text-sm text-white focus:outline-none focus:border-gold" />
           </div>
           <div>
-            <label htmlFor="org-timezone" className="mb-1.5 block text-sm font-medium text-foreground-secondary">
-              Timezone
-            </label>
-            <select id="org-timezone" className="input-dark w-full max-w-md">
-              <option>America/Chicago (Central)</option>
-              <option>America/New_York (Eastern)</option>
-              <option>America/Los_Angeles (Pacific)</option>
-              <option>America/Denver (Mountain)</option>
-            </select>
+            <label htmlFor="org-phone" className="mb-1.5 block text-sm font-medium">Phone Number</label>
+            <input id="org-phone" type="tel" defaultValue="(555) 123-4567" className="w-full h-10 bg-[#202020] border border-white/10 px-3 text-sm text-white focus:outline-none focus:border-gold" />
           </div>
-          <button type="submit" className="btn-gold px-5 py-2.5 text-xs">SAVE CHANGES</button>
-        </form>
+          <div className="md:col-span-2">
+            <label htmlFor="org-desc" className="mb-1.5 block text-sm font-medium">Description</label>
+            <textarea id="org-desc" rows={3} defaultValue="Premier dance competition organization based in Chicago, hosting regional and national events since 2018." className="w-full bg-[#202020] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-gold" />
+          </div>
+        </div>
       </div>
 
       {/* Entry settings */}
       <div className="surface-card p-6">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Entry Defaults</h2>
-        <form className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground-secondary">Auto-approve entries</div>
-              <div className="text-xs text-foreground-muted">Automatically approve entries when submitted</div>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Entry Settings</h3>
+        <div className="mt-4 space-y-4">
+          {[
+            { label: 'Auto-approve entries', desc: 'Automatically confirm new entries without manual review', checked: false },
+            { label: 'Require music upload', desc: 'Studios must upload music before entry is confirmed', checked: true },
+            { label: 'Allow late entries', desc: 'Accept entries after the deadline with a late fee', checked: true },
+            { label: 'Require proof of age', desc: 'Dancers must submit age verification documents', checked: true },
+          ].map((setting) => (
+            <div key={setting.label} className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm font-medium">{setting.label}</div>
+                <div className="text-xs text-foreground-muted">{setting.desc}</div>
+              </div>
+              <div className={`h-6 w-11 rounded-full relative cursor-pointer ${setting.checked ? 'bg-gold' : 'bg-white/20'}`}>
+                <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-black transition-transform ${setting.checked ? 'right-0.5' : 'left-0.5'}`} />
+              </div>
             </div>
-            <div className="h-6 w-11 bg-surface-elevated" />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground-secondary">Require music upload</div>
-              <div className="text-xs text-foreground-muted">Music must be uploaded before entry can be approved</div>
+          ))}
+        </div>
+      </div>
+
+      {/* Notification preferences */}
+      <div className="surface-card p-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Email Notifications</h3>
+        <div className="mt-4 space-y-4">
+          {[
+            { label: 'New entry submitted', checked: true },
+            { label: 'Invoice paid', checked: true },
+            { label: 'Refund requested', checked: true },
+            { label: 'New studio registered', checked: true },
+            { label: 'Document uploaded', checked: false },
+            { label: 'New inbox message', checked: true },
+          ].map((notif) => (
+            <div key={notif.label} className="flex items-center justify-between py-1">
+              <span className="text-sm">{notif.label}</span>
+              <div className={`h-6 w-11 rounded-full relative cursor-pointer ${notif.checked ? 'bg-gold' : 'bg-white/20'}`}>
+                <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-black transition-transform ${notif.checked ? 'right-0.5' : 'left-0.5'}`} />
+              </div>
             </div>
-            <div className="h-6 w-11 bg-gold" />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground-secondary">Allow late entries</div>
-              <div className="text-xs text-foreground-muted">Accept entries after the deadline with a late fee</div>
-            </div>
-            <div className="h-6 w-11 bg-gold" />
-          </div>
-          <div>
-            <label htmlFor="late-fee" className="mb-1.5 block text-sm font-medium text-foreground-secondary">
-              Late Entry Fee
-            </label>
-            <input id="late-fee" type="text" defaultValue="$5.00" className="input-dark w-32" />
-          </div>
-          <button type="submit" className="btn-gold px-5 py-2.5 text-xs">SAVE CHANGES</button>
-        </form>
+          ))}
+        </div>
       </div>
 
       {/* Danger zone */}
-      <div className="border border-destructive/30 bg-destructive/5 p-6">
-        <h2 className="text-sm font-semibold text-destructive">Danger Zone</h2>
-        <div className="mt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground-secondary">Transfer ownership</div>
-              <div className="text-xs text-foreground-muted">Transfer this organization to another admin</div>
-            </div>
-            <button type="button" className="border border-destructive px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive hover:bg-destructive/10">
-              TRANSFER
-            </button>
+      <div className="surface-card border-destructive/30 p-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-destructive">Danger Zone</h3>
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium">Delete Organization</div>
+            <div className="text-xs text-foreground-muted">Permanently delete this organization and all its data. This action cannot be undone.</div>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground-secondary">Delete organization</div>
-              <div className="text-xs text-foreground-muted">Permanently delete this organization and all its data</div>
-            </div>
-            <button type="button" className="border border-destructive px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive hover:bg-destructive/10">
-              DELETE
-            </button>
-          </div>
+          <button type="button" className="border border-destructive px-4 py-2 text-xs font-semibold uppercase tracking-wider text-destructive hover:bg-destructive/10">
+            DELETE
+          </button>
         </div>
       </div>
     </div>

@@ -1,111 +1,119 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Stripe Connect',
-  description: 'Manage your Stripe Connect integration for collecting payments.',
+  description: 'Manage your Stripe Connect integration for payment processing.',
 }
 
-export default function StripePage() {
+interface StripeProps {
+  params: Promise<{ org: string }>
+}
+
+export default async function StripePage({ params }: StripeProps) {
+  const { org } = await params
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">Stripe Connect</h1>
-        <p className="mt-1 text-sm text-foreground-muted">
-          Connect your Stripe account to accept entry fee payments directly from studios
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Stripe Connect"
+        description="Accept payments from studios through Stripe"
+      />
 
       {/* Connection status */}
       <div className="surface-card p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center bg-[#635BFF]/15 text-lg font-bold text-[#635BFF]">
-              S
-            </div>
+            <div className="flex h-12 w-12 items-center justify-center bg-[#635BFF]/15 text-lg font-bold text-[#635BFF]">S</div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold">Stripe Account Connected</span>
-                <span className="badge-success">Active</span>
-              </div>
-              <div className="mt-1 font-mono text-xs text-foreground-muted">acct_1NqK4j2eZvKYlo2C</div>
+              <h3 className="text-base font-semibold">Stripe Account Connected</h3>
+              <p className="text-xs text-foreground-muted">acct_1234567890 — Summer Showcase LLC</p>
             </div>
           </div>
-          <button type="button" className="btn-outline-gold px-4 py-2 text-xs">
-            OPEN STRIPE DASHBOARD
-          </button>
+          <span className="badge-success text-xs font-semibold px-2 py-0.5">Active</span>
         </div>
       </div>
 
-      {/* Payout settings */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="surface-card p-6">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Payout Schedule</h2>
-          <dl className="space-y-3 text-sm">
-            {[
-              { dt: 'Frequency', dd: 'Daily (automatic)' },
-              { dt: 'Minimum payout', dd: '$1.00' },
-              { dt: 'Bank account', dd: '****4321 (Chase)' },
-              { dt: 'Currency', dd: 'USD' },
-            ].map((item) => (
-              <div key={item.dt} className="flex justify-between">
-                <dt className="text-foreground-muted">{item.dt}</dt>
-                <dd className="text-foreground-secondary">{item.dd}</dd>
+      {/* Onboarding checklist */}
+      <div className="surface-card p-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Onboarding Status</h3>
+        <div className="mt-4 space-y-3">
+          {[
+            { step: 'Business details', complete: true },
+            { step: 'Bank account connected', complete: true },
+            { step: 'Identity verification', complete: true },
+            { step: 'Tax information (W-9)', complete: true },
+            { step: 'Payouts enabled', complete: true },
+          ].map((item) => (
+            <div key={item.step} className="flex items-center gap-3">
+              <div className={`flex h-6 w-6 items-center justify-center text-xs ${
+                item.complete ? 'bg-green-500/15 text-green-400' : 'bg-white/5 text-foreground-muted'
+              }`}>
+                {item.complete ? '✓' : '○'}
               </div>
-            ))}
-          </dl>
-        </div>
-
-        <div className="surface-card p-6">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Fee Configuration</h2>
-          <dl className="space-y-3 text-sm">
-            {[
-              { dt: 'Platform fee', dd: '2.5% of transaction' },
-              { dt: 'Stripe processing', dd: '2.9% + $0.30' },
-              { dt: 'Fee payer', dd: 'Studio (pass-through)' },
-              { dt: 'Refund policy', dd: 'Full refund minus Stripe fees' },
-            ].map((item) => (
-              <div key={item.dt} className="flex justify-between">
-                <dt className="text-foreground-muted">{item.dt}</dt>
-                <dd className="text-foreground-secondary">{item.dd}</dd>
-              </div>
-            ))}
-          </dl>
+              <span className={`text-sm ${item.complete ? 'text-white' : 'text-foreground-muted'}`}>
+                {item.step}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Recent transactions */}
+      {/* Payout summary */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {[
+          { label: 'Total Collected', value: '$18,430', sub: 'all time' },
+          { label: 'Available Balance', value: '$2,340', sub: 'ready for payout' },
+          { label: 'Next Payout', value: '$1,850', sub: 'Jun 1, 2026' },
+        ].map((stat) => (
+          <div key={stat.label} className="kpi-card">
+            <div className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">{stat.label}</div>
+            <div className="mt-2 text-2xl font-bold text-gold">{stat.value}</div>
+            <div className="mt-1 text-xs text-foreground-muted">{stat.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent payouts */}
       <div className="surface-card overflow-hidden">
         <div className="border-b border-border px-6 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Recent Transactions</h2>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">Recent Payouts</h3>
         </div>
-        <table className="w-full">
+        <table className="w-full text-sm">
           <thead>
-            <tr className="table-header">
-              <th className="px-6 py-3 text-left">Date</th>
-              <th className="px-6 py-3 text-left">Studio</th>
-              <th className="px-6 py-3 text-left">Description</th>
-              <th className="px-6 py-3 text-right">Gross</th>
-              <th className="px-6 py-3 text-right">Fee</th>
-              <th className="px-6 py-3 text-right">Net</th>
+            <tr className="border-b border-border bg-[#181818]">
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted">Date</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-foreground-muted">Amount</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted">Bank Account</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-border">
             {[
-              { date: 'May 27', studio: 'Elite Academy', desc: 'INV-1042', gross: '$385.00', fee: '$11.47', net: '$373.53' },
-              { date: 'May 25', studio: 'Rhythm Studio', desc: 'INV-1041', gross: '$850.00', fee: '$24.95', net: '$825.05' },
-              { date: 'May 22', studio: 'Graceful Arts', desc: 'INV-1038', gross: '$375.00', fee: '$11.18', net: '$363.82' },
-            ].map((tx, i) => (
-              <tr key={i} className="table-row">
-                <td className="px-6 py-3 text-sm text-foreground-muted">{tx.date}</td>
-                <td className="px-6 py-3 text-sm text-foreground-secondary">{tx.studio}</td>
-                <td className="px-6 py-3 font-mono text-sm text-foreground-muted">{tx.desc}</td>
-                <td className="px-6 py-3 text-right text-sm">{tx.gross}</td>
-                <td className="px-6 py-3 text-right text-sm text-foreground-muted">{tx.fee}</td>
-                <td className="px-6 py-3 text-right text-sm font-medium text-gold">{tx.net}</td>
+              { date: 'May 24, 2026', amount: '$2,150', status: 'paid', bank: 'Chase ****6789' },
+              { date: 'May 17, 2026', amount: '$1,890', status: 'paid', bank: 'Chase ****6789' },
+              { date: 'May 10, 2026', amount: '$3,210', status: 'paid', bank: 'Chase ****6789' },
+            ].map((payout) => (
+              <tr key={payout.date} className="hover:bg-white/[0.02]">
+                <td className="px-6 py-3 text-foreground-muted">{payout.date}</td>
+                <td className="px-6 py-3 text-right font-medium text-gold">{payout.amount}</td>
+                <td className="px-6 py-3"><span className="badge-success text-xs font-semibold px-2 py-0.5">Paid</span></td>
+                <td className="px-6 py-3 text-foreground-muted font-mono text-xs">{payout.bank}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex justify-end">
+        <a
+          href="https://dashboard.stripe.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-gold hover:text-gold-hover"
+        >
+          Open Stripe Dashboard →
+        </a>
       </div>
     </div>
   )
