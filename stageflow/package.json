@@ -56,7 +56,7 @@
     "@radix-ui/react-tooltip": "^1.1.7",
     "@react-email/components": "^0.0.31",
     "@sentry/nextjs": "^8.45.0",
-    "@stripe/stripe-js": "^4.11.0",
+    "@stripe/stripe-js": "^9.0.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.12",
     "@upstash/ratelimit": "^2.0.5",
