@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -131,7 +132,7 @@ export default async function OrgDashboardPage({ params }: OrgDashboardProps) {
             className="surface-card flex items-center justify-between p-4 transition-colors hover:border-gold/30"
           >
             <span className="text-sm font-medium">{action.label}</span>
-            <span className="text-gold">→</span>
+            <ArrowRight className="h-4 w-4 text-gold" />
           </Link>
         ))}
       </div>

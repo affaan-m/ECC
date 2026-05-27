@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
 import {
   LayoutDashboard,
   Calendar,

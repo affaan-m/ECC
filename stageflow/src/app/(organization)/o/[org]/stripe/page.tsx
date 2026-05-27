@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Check, Circle } from 'lucide-react'
+import { Check, Circle, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -113,7 +113,7 @@ export default async function StripePage({ params }: StripeProps) {
           rel="noopener noreferrer"
           className="text-xs text-gold hover:text-gold-hover"
         >
-          Open Stripe Dashboard →
+          Open Stripe Dashboard <ExternalLink className="ml-1 inline h-3 w-3" />
         </a>
       </div>
     </div>

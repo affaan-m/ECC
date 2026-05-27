@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { AlertCircle, UserPlus, ArrowRight } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Platform Admin',
@@ -73,7 +74,7 @@ export default function PlatformDashboardPage() {
                       : 'bg-gold-muted text-gold'
                 }`}
               >
-                {activity.type === 'error' ? '!' : activity.type === 'signup' ? '+' : '→'}
+                {activity.type === 'error' ? <AlertCircle className="h-4 w-4" /> : activity.type === 'signup' ? <UserPlus className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-medium text-foreground-secondary">{activity.event}</div>
@@ -99,7 +100,7 @@ export default function PlatformDashboardPage() {
             className="surface-card flex items-center justify-between p-4 transition-colors hover:border-gold/30"
           >
             <span className="text-sm font-medium">{action.label}</span>
-            <span className="text-gold">→</span>
+            <ArrowRight className="h-4 w-4 text-gold" />
           </a>
         ))}
       </div>
