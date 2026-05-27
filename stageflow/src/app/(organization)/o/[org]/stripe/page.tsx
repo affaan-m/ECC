@@ -17,7 +17,7 @@ export default async function StripePage({ params }: StripeProps) {
     <div className="space-y-6">
       <PageHeader
         title="Stripe Connect"
-        description="Accept payments from studios through Stripe"
+        description={`Accept payments from studios through Stripe for ${org}`}
       />
 
       {/* Connection status */}

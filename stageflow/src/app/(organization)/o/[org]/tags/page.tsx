@@ -30,7 +30,7 @@ export default async function TagsPage({ params }: TagsProps) {
     <div className="space-y-6">
       <PageHeader
         title="Tags"
-        description={`${TAGS.length} tags for organizing entries, studios, and dancers`}
+        description={`${TAGS.length} tags for organizing ${org} entries, studios, and dancers`}
         actions={
           <button type="button" className="btn-gold px-5 py-2.5 text-xs">CREATE TAG</button>
         }

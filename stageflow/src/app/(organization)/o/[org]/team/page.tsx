@@ -33,7 +33,7 @@ export default async function TeamPage({ params }: TeamProps) {
     <div className="space-y-6">
       <PageHeader
         title="Team"
-        description={`${TEAM_MEMBERS.length} team members`}
+        description={`${TEAM_MEMBERS.length} team members in ${org}`}
         actions={
           <button type="button" className="btn-gold px-5 py-2.5 text-xs">INVITE MEMBER</button>
         }

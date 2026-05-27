@@ -17,7 +17,7 @@ export default async function BillingPage({ params }: BillingProps) {
     <div className="space-y-6">
       <PageHeader
         title="Billing"
-        description="Manage your StageFlow subscription and payment methods"
+        description={`Manage the StageFlow subscription and payment methods for ${org}`}
       />
 
       {/* Current plan */}

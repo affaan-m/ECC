@@ -11,7 +11,6 @@ interface CategoriesPageProps {
   params: Promise<{ org: string; eventId: string }>
 }
 
-const AGE_GROUPS = ['Mini', 'Petite', 'Junior', 'Teen', 'Senior'] as const
 const ENTRY_TYPES = ['Solo', 'Duo/Trio', 'Small Group', 'Large Group', 'Line/Production'] as const
 
 interface Category {

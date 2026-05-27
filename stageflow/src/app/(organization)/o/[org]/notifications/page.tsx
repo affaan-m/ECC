@@ -41,7 +41,7 @@ export default async function NotificationsPage({ params }: NotificationsProps) 
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        description={`${unreadCount} unread notifications`}
+        description={`${unreadCount} unread notifications for ${org}`}
         actions={
           <button type="button" className="text-xs text-gold hover:text-gold-hover">Mark all as read</button>
         }
