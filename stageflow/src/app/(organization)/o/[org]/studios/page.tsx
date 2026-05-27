@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Studios',
@@ -35,13 +36,13 @@ export default async function StudiosPage({ params }: StudiosPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Studios</h1>
-          <p className="mt-1 text-sm text-foreground-muted">{SAMPLE_STUDIOS.length} studios registered</p>
-        </div>
-        <button type="button" className="btn-gold px-5 py-2.5 text-xs">INVITE STUDIO</button>
-      </div>
+      <PageHeader
+        title="Studios"
+        description={`${SAMPLE_STUDIOS.length} studios registered`}
+        actions={
+          <button type="button" className="btn-gold px-5 py-2.5 text-xs">INVITE STUDIO</button>
+        }
+      />
 
       <div className="flex gap-3">
         <input type="search" placeholder="Search studios..." className="input-dark w-64" />

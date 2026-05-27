@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 interface EventDetailProps {
   params: Promise<{ org: string; eventId: string }>
@@ -9,6 +10,8 @@ export async function generateMetadata({ params }: EventDetailProps): Promise<Me
   const { eventId } = await params
   return { title: `Event ${eventId}`, description: `Event detail page for ${eventId}.` }
 }
+
+const TABS = ['Overview', 'Categories', 'Entries', 'Settings'] as const
 
 export default async function EventDetailPage({ params }: EventDetailProps) {
   const { org, eventId } = await params
@@ -22,24 +25,39 @@ export default async function EventDetailPage({ params }: EventDetailProps) {
         <span className="text-foreground">Summer Showcase 2026</span>
       </div>
 
-      <div className="flex items-start justify-between">
-        <div>
+      <PageHeader
+        title="Summer Showcase 2026"
+        description="Jul 12-14, 2026 — Grand Ballroom, Chicago"
+        actions={
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Summer Showcase 2026</h1>
             <span className="badge-success">Entries Open</span>
+            <Link href={`/o/${org}/events/${eventId}/categories`} className="btn-outline-gold px-4 py-2 text-xs">
+              CATEGORIES
+            </Link>
+            <button type="button" className="btn-gold px-4 py-2 text-xs">
+              EDIT EVENT
+            </button>
           </div>
-          <p className="mt-1 text-sm text-foreground-muted">
-            Jul 12-14, 2026 — Grand Ballroom, Chicago
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Link href={`/o/${org}/events/${eventId}/categories`} className="btn-outline-gold px-4 py-2 text-xs">
-            CATEGORIES
-          </Link>
-          <button type="button" className="btn-gold px-4 py-2 text-xs">
-            EDIT EVENT
-          </button>
-        </div>
+        }
+      />
+
+      {/* Tabs */}
+      <div className="border-b border-border">
+        <nav className="flex gap-0">
+          {TABS.map((tab) => (
+            <Link
+              key={tab}
+              href={tab === 'Categories' ? `/o/${org}/events/${eventId}/categories` : '#'}
+              className={`px-4 py-3 text-sm font-medium transition-colors ${
+                tab === 'Overview'
+                  ? 'border-b-2 border-gold text-gold'
+                  : 'text-foreground-muted hover:text-white'
+              }`}
+            >
+              {tab}
+            </Link>
+          ))}
+        </nav>
       </div>
 
       {/* Event KPIs */}

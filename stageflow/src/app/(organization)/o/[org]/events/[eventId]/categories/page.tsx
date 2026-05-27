@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Categories',
@@ -9,6 +10,9 @@ export const metadata: Metadata = {
 interface CategoriesPageProps {
   params: Promise<{ org: string; eventId: string }>
 }
+
+const AGE_GROUPS = ['Mini', 'Petite', 'Junior', 'Teen', 'Senior'] as const
+const ENTRY_TYPES = ['Solo', 'Duo/Trio', 'Small Group', 'Large Group', 'Line/Production'] as const
 
 interface Category {
   id: string
@@ -43,12 +47,32 @@ export default async function CategoriesPage({ params }: CategoriesPageProps) {
         <span className="text-foreground">Categories</span>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Categories</h1>
-          <p className="mt-1 text-sm text-foreground-muted">{SAMPLE_CATEGORIES.length} categories configured</p>
-        </div>
-        <button type="button" className="btn-gold px-5 py-2.5 text-xs">ADD CATEGORY</button>
+      <PageHeader
+        title="Categories"
+        description={`${SAMPLE_CATEGORIES.length} categories configured — Age group x style x entry type matrix`}
+        actions={
+          <div className="flex gap-2">
+            <button type="button" className="px-4 py-2 text-xs font-medium bg-[#202020] text-white border border-white/10 hover:border-gold/30 transition-colors">
+              IMPORT TEMPLATE
+            </button>
+            <button type="button" className="btn-gold px-5 py-2.5 text-xs">ADD CATEGORY</button>
+          </div>
+        }
+      />
+
+      {/* Matrix summary */}
+      <div className="grid gap-4 md:grid-cols-5">
+        {ENTRY_TYPES.map((type) => {
+          const count = SAMPLE_CATEGORIES.filter((c) => c.performerType === type).length
+          const entries = SAMPLE_CATEGORIES.filter((c) => c.performerType === type).reduce((sum, c) => sum + c.entries, 0)
+          return (
+            <div key={type} className="kpi-card text-center">
+              <div className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">{type}</div>
+              <div className="mt-2 text-2xl font-bold text-gold">{entries}</div>
+              <div className="mt-1 text-xs text-foreground-muted">{count} categories</div>
+            </div>
+          )
+        })}
       </div>
 
       <div className="surface-card overflow-hidden">

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { PageHeader } from '@/components/ui/page-header'
 
 interface StudioDetailProps {
   params: Promise<{ org: string; studioId: string }>
@@ -9,6 +10,8 @@ export async function generateMetadata({ params }: StudioDetailProps): Promise<M
   const { studioId } = await params
   return { title: `Studio ${studioId}`, description: `Studio detail view.` }
 }
+
+const TABS = ['Dancers', 'Routines', 'Entries', 'Invoices', 'Documents'] as const
 
 export default async function StudioDetailPage({ params }: StudioDetailProps) {
   const { org, studioId } = await params
@@ -21,16 +24,16 @@ export default async function StudioDetailPage({ params }: StudioDetailProps) {
         <span className="text-foreground">Rhythm Studio</span>
       </div>
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Rhythm Studio</h1>
-          <p className="mt-1 text-sm text-foreground-muted">Studio ID: {studioId}</p>
-        </div>
-        <div className="flex gap-3">
-          <button type="button" className="btn-outline-gold px-4 py-2 text-xs">MESSAGE</button>
-          <button type="button" className="btn-gold px-4 py-2 text-xs">EDIT</button>
-        </div>
-      </div>
+      <PageHeader
+        title="Rhythm Studio"
+        description={`Owned by Emily Chen — Studio ID: ${studioId}`}
+        actions={
+          <div className="flex gap-3">
+            <button type="button" className="btn-outline-gold px-4 py-2 text-xs">MESSAGE</button>
+            <button type="button" className="btn-gold px-4 py-2 text-xs">EDIT</button>
+          </div>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-4">
         {[
@@ -44,6 +47,25 @@ export default async function StudioDetailPage({ params }: StudioDetailProps) {
             <div className="mt-2 text-2xl font-bold text-gold">{kpi.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-border">
+        <nav className="flex gap-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`px-4 py-3 text-sm font-medium transition-colors ${
+                tab === 'Dancers'
+                  ? 'border-b-2 border-gold text-gold'
+                  : 'text-foreground-muted hover:text-white'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
