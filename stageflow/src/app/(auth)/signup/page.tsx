@@ -1,12 +1,61 @@
-import type { Metadata } from 'next'
-import Link from 'next/link'
+'use client'
 
-export const metadata: Metadata = {
-  title: 'Create Account',
-  description: 'Create your StageFlow account as an organizer or studio.',
-}
+import { useState, type FormEvent } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Trophy, Users } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 export default function SignupPage() {
+  const router = useRouter()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [orgName, setOrgName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [accountType, setAccountType] = useState<'organization' | 'studio'>('organization')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const supabase = createClient()
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            org_name: orgName,
+            account_type: accountType,
+          },
+        },
+      })
+
+      if (signUpError) {
+        setError(signUpError.message)
+        setLoading(false)
+        return
+      }
+
+      router.push('/verify-email')
+    } catch {
+      setError('An unexpected error occurred. Please try again.')
+      setLoading(false)
+    }
+  }
+
   return (
     <>
       <div className="mb-8 text-center">
@@ -14,22 +63,46 @@ export default function SignupPage() {
         <p className="mt-2 text-sm text-foreground-muted">Get started with StageFlow in minutes</p>
       </div>
 
-      <form className="space-y-4">
+      {error && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
+      <form className="space-y-4" onSubmit={onSubmit}>
         {/* Account type selector */}
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-foreground-secondary">I am a...</legend>
           <div className="grid grid-cols-2 gap-3">
             <label className="relative flex cursor-pointer items-center justify-center border border-border bg-surface p-4 text-sm font-medium transition-colors hover:border-gold/50 has-[:checked]:border-gold has-[:checked]:bg-gold-muted">
-              <input type="radio" name="accountType" value="organization" defaultChecked className="sr-only" />
+              <input
+                type="radio"
+                name="accountType"
+                value="organization"
+                checked={accountType === 'organization'}
+                onChange={() => setAccountType('organization')}
+                className="sr-only"
+              />
               <div className="text-center">
-                <div className="text-lg">🏆</div>
+                <div className="flex justify-center text-lg">
+                  <Trophy className="h-5 w-5" />
+                </div>
                 <div className="mt-1">Competition Organizer</div>
               </div>
             </label>
             <label className="relative flex cursor-pointer items-center justify-center border border-border bg-surface p-4 text-sm font-medium transition-colors hover:border-gold/50 has-[:checked]:border-gold has-[:checked]:bg-gold-muted">
-              <input type="radio" name="accountType" value="studio" className="sr-only" />
+              <input
+                type="radio"
+                name="accountType"
+                value="studio"
+                checked={accountType === 'studio'}
+                onChange={() => setAccountType('studio')}
+                className="sr-only"
+              />
               <div className="text-center">
-                <div className="text-lg">💃</div>
+                <div className="flex justify-center text-lg">
+                  <Users className="h-5 w-5" />
+                </div>
                 <div className="mt-1">Dance Studio</div>
               </div>
             </label>
@@ -47,6 +120,8 @@ export default function SignupPage() {
               type="text"
               required
               placeholder="Jane"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               className="input-dark w-full"
             />
           </div>
@@ -60,6 +135,8 @@ export default function SignupPage() {
               type="text"
               required
               placeholder="Smith"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
               className="input-dark w-full"
             />
           </div>
@@ -75,6 +152,8 @@ export default function SignupPage() {
             type="text"
             required
             placeholder="Starlight Dance Championships"
+            value={orgName}
+            onChange={(e) => setOrgName(e.target.value)}
             className="input-dark w-full"
           />
         </div>
@@ -90,6 +169,8 @@ export default function SignupPage() {
             autoComplete="email"
             required
             placeholder="you@organization.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="input-dark w-full"
           />
         </div>
@@ -104,14 +185,17 @@ export default function SignupPage() {
             type="password"
             autoComplete="new-password"
             required
+            minLength={8}
             placeholder="Min 8 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             className="input-dark w-full"
           />
           <p className="mt-1 text-xs text-foreground-muted">Must be at least 8 characters with one number.</p>
         </div>
 
-        <button type="submit" className="btn-gold w-full py-3 text-sm">
-          CREATE ACCOUNT
+        <button type="submit" disabled={loading} className="btn-gold w-full py-3 text-sm disabled:opacity-50">
+          {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
         </button>
 
         <p className="text-center text-xs text-foreground-muted">

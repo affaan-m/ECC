@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Dark variant for light backgrounds -->
+  <path d="M128 96 L256 96 L384 224 L256 224 L128 96Z" fill="#000000"/>
+  <path d="M384 416 L256 416 L128 288 L256 288 L384 416Z" fill="#000000"/>
+  <path d="M256 224 L256 288" stroke="#000000" stroke-width="32"/>
+</svg>

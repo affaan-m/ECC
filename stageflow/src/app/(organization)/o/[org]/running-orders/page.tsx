@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Play } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -36,7 +37,7 @@ export default async function RunningOrdersPage({ params }: RunningOrdersProps) 
       {/* Feature flag banner */}
       <div className="border border-blue-500/30 bg-blue-500/5 p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center bg-blue-500/15 text-blue-400 text-sm">▶</div>
+          <div className="flex h-8 w-8 items-center justify-center bg-blue-500/15 text-blue-400 text-sm"><Play className="h-4 w-4" /></div>
           <div>
             <h3 className="text-sm font-semibold text-blue-400">Running Order Builder — Phase 2 Preview</h3>
             <p className="text-xs text-foreground-muted">

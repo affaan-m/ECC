@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Check, Minus } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Pricing',
@@ -122,7 +123,7 @@ export default function PricingPage() {
                 {plan.features.map((feature) => (
                   <li key={feature.text} className="flex items-start gap-3 text-sm">
                     <span className={feature.included ? 'text-gold' : 'text-foreground-muted/40'}>
-                      {feature.included ? '✓' : '—'}
+                      {feature.included ? <Check className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
                     </span>
                     <span className={feature.included ? 'text-foreground-secondary' : 'text-foreground-muted/40'}>
                       {feature.text}

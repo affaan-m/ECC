@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Check } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Plan Management',
@@ -112,7 +113,7 @@ export default function PlansPage() {
               <ul className="mt-2 space-y-1">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-center gap-2 text-sm text-foreground-secondary">
-                    <span className="text-gold">✓</span>
+                    <Check className="h-4 w-4 text-gold" />
                     {feature}
                   </li>
                 ))}

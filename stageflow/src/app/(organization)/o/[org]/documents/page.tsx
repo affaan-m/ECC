@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { FileCheck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -58,7 +59,7 @@ export default function DocumentsPage() {
           <div key={doc.id} className="surface-card flex items-center justify-between p-6">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center bg-surface-elevated text-lg">
-                📄
+                <FileCheck className="h-5 w-5 text-foreground-muted" />
               </div>
               <div>
                 <div className="text-sm font-medium">{doc.dancer}</div>

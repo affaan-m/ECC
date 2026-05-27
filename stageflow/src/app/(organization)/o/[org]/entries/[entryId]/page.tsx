@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Music } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 interface EntryDetailProps {
@@ -66,7 +67,7 @@ export default async function EntryDetailPage({ params }: EntryDetailProps) {
           <div className="surface-card p-6">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Music</h2>
             <div className="flex items-center gap-3 bg-surface-elevated p-4">
-              <div className="flex h-10 w-10 items-center justify-center bg-gold-muted text-gold">♫</div>
+              <div className="flex h-10 w-10 items-center justify-center bg-gold-muted text-gold"><Music className="h-5 w-5" /></div>
               <div className="flex-1">
                 <div className="text-sm font-medium">gravity-mix.mp3</div>
                 <div className="text-xs text-foreground-muted">2:45 — 4.2 MB</div>

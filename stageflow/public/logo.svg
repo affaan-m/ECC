@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" fill="#000000"/>
+  <!-- Abstract stage/flow mark: angular S-shape inspired by stage curtains and fluid motion -->
+  <path d="M128 96 L256 96 L384 224 L256 224 L128 96Z" fill="#FFC000"/>
+  <path d="M384 416 L256 416 L128 288 L256 288 L384 416Z" fill="#FFC000"/>
+  <!-- Connecting diagonal flow line -->
+  <path d="M256 224 L256 288" stroke="#FFC000" stroke-width="32"/>
+</svg>

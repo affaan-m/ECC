@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Check, Circle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -49,7 +50,7 @@ export default async function StripePage({ params }: StripeProps) {
               <div className={`flex h-6 w-6 items-center justify-center text-xs ${
                 item.complete ? 'bg-green-500/15 text-green-400' : 'bg-white/5 text-foreground-muted'
               }`}>
-                {item.complete ? '✓' : '○'}
+                {item.complete ? <Check className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
               </div>
               <span className={`text-sm ${item.complete ? 'text-white' : 'text-foreground-muted'}`}>
                 {item.step}

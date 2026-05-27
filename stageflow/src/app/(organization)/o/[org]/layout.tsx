@@ -1,56 +1,90 @@
 import Link from 'next/link'
+import type { ReactNode } from 'react'
+import {
+  LayoutDashboard,
+  Calendar,
+  Building2,
+  ClipboardList,
+  Receipt,
+  RotateCcw,
+  Percent,
+  MessageSquare,
+  Bell,
+  FileCheck,
+  Tag,
+  ListOrdered,
+  Palette,
+  Globe,
+  Code,
+  Users,
+  CreditCard,
+  Zap,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react'
 
 interface OrgLayoutProps {
   children: React.ReactNode
   params: Promise<{ org: string }>
 }
 
-const NAV_SECTIONS = [
+interface NavItem {
+  label: string
+  segment: string
+  icon: LucideIcon
+}
+
+interface NavSection {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Main',
     items: [
-      { label: 'Dashboard', segment: 'dashboard', icon: '◆' },
-      { label: 'Events', segment: 'events', icon: '◇' },
-      { label: 'Studios', segment: 'studios', icon: '○' },
-      { label: 'Entries', segment: 'entries', icon: '▪' },
+      { label: 'Dashboard', segment: 'dashboard', icon: LayoutDashboard },
+      { label: 'Events', segment: 'events', icon: Calendar },
+      { label: 'Studios', segment: 'studios', icon: Building2 },
+      { label: 'Entries', segment: 'entries', icon: ClipboardList },
     ],
   },
   {
     label: 'Finance',
     items: [
-      { label: 'Invoices', segment: 'invoices', icon: '□' },
-      { label: 'Refunds', segment: 'refunds', icon: '↩' },
-      { label: 'Discounts', segment: 'discounts', icon: '%' },
+      { label: 'Invoices', segment: 'invoices', icon: Receipt },
+      { label: 'Refunds', segment: 'refunds', icon: RotateCcw },
+      { label: 'Discounts', segment: 'discounts', icon: Percent },
     ],
   },
   {
     label: 'Communications',
     items: [
-      { label: 'Inbox', segment: 'inbox', icon: '✉' },
-      { label: 'Notifications', segment: 'notifications', icon: '🔔' },
+      { label: 'Inbox', segment: 'inbox', icon: MessageSquare },
+      { label: 'Notifications', segment: 'notifications', icon: Bell },
     ],
   },
   {
     label: 'Content',
     items: [
-      { label: 'Documents', segment: 'documents', icon: '📄' },
-      { label: 'Tags', segment: 'tags', icon: '#' },
-      { label: 'Running Orders', segment: 'running-orders', icon: '▶' },
+      { label: 'Documents', segment: 'documents', icon: FileCheck },
+      { label: 'Tags', segment: 'tags', icon: Tag },
+      { label: 'Running Orders', segment: 'running-orders', icon: ListOrdered },
     ],
   },
   {
     label: 'Settings',
     items: [
-      { label: 'Branding', segment: 'branding', icon: '🎨' },
-      { label: 'Domains', segment: 'domains', icon: '🌐' },
-      { label: 'Embed', segment: 'embed', icon: '⟨/⟩' },
-      { label: 'Team', segment: 'team', icon: '👥' },
-      { label: 'Billing', segment: 'billing', icon: '💳' },
-      { label: 'Stripe Connect', segment: 'stripe', icon: '⚡' },
-      { label: 'Settings', segment: 'settings', icon: '⚙' },
+      { label: 'Branding', segment: 'branding', icon: Palette },
+      { label: 'Domains', segment: 'domains', icon: Globe },
+      { label: 'Embed', segment: 'embed', icon: Code },
+      { label: 'Team', segment: 'team', icon: Users },
+      { label: 'Billing', segment: 'billing', icon: CreditCard },
+      { label: 'Stripe Connect', segment: 'stripe', icon: Zap },
+      { label: 'Settings', segment: 'settings', icon: Settings },
     ],
   },
-] as const
+]
 
 export default async function OrgSpecificLayout({ children, params }: OrgLayoutProps) {
   const { org } = await params
@@ -79,17 +113,20 @@ export default async function OrgSpecificLayout({ children, params }: OrgLayoutP
                 {section.label}
               </div>
               <ul className="space-y-0.5">
-                {section.items.map((item) => (
-                  <li key={item.segment}>
-                    <Link
-                      href={`/o/${org}/${item.segment}`}
-                      className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                    >
-                      <span className="w-4 text-center text-xs text-foreground-muted">{item.icon}</span>
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
+                {section.items.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <li key={item.segment}>
+                      <Link
+                        href={`/o/${org}/${item.segment}`}
+                        className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-foreground-muted" />
+                        {item.label}
+                      </Link>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           ))}

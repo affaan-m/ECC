@@ -1,5 +1,15 @@
 import type { Metadata } from 'next'
 import { PageHeader } from '@/components/ui/page-header'
+import {
+  ClipboardList,
+  Receipt,
+  RotateCcw,
+  Building2,
+  FileCheck,
+  Calendar,
+  MessageSquare,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Notifications',
@@ -23,14 +33,14 @@ const NOTIFICATIONS = [
   { id: '10', type: 'studio' as const, title: 'Studio invite accepted', desc: 'Dance Fusion accepted your invitation', time: '1w ago', read: true },
 ]
 
-const TYPE_ICONS: Record<string, string> = {
-  entry: '▪',
-  payment: '□',
-  refund: '↩',
-  studio: '○',
-  document: '📄',
-  event: '◇',
-  message: '✉',
+const TYPE_ICONS: Record<string, LucideIcon> = {
+  entry: ClipboardList,
+  payment: Receipt,
+  refund: RotateCcw,
+  studio: Building2,
+  document: FileCheck,
+  event: Calendar,
+  message: MessageSquare,
 }
 
 export default async function NotificationsPage({ params }: NotificationsProps) {
@@ -69,28 +79,31 @@ export default async function NotificationsPage({ params }: NotificationsProps) 
 
       {/* Notifications list */}
       <div className="surface-card divide-y divide-border">
-        {NOTIFICATIONS.map((notification) => (
-          <div
-            key={notification.id}
-            className={`flex items-start gap-4 px-6 py-4 transition-colors hover:bg-white/[0.02] ${
-              !notification.read ? 'bg-gold-muted/20' : ''
-            }`}
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#181818] text-sm text-foreground-muted">
-              {TYPE_ICONS[notification.type]}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <span className={`text-sm ${!notification.read ? 'font-semibold' : 'font-medium'}`}>
-                  {notification.title}
-                </span>
-                <span className="text-xs text-foreground-muted">{notification.time}</span>
+        {NOTIFICATIONS.map((notification) => {
+          const Icon = TYPE_ICONS[notification.type]
+          return (
+            <div
+              key={notification.id}
+              className={`flex items-start gap-4 px-6 py-4 transition-colors hover:bg-white/[0.02] ${
+                !notification.read ? 'bg-gold-muted/20' : ''
+              }`}
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#181818] text-foreground-muted">
+                {Icon && <Icon className="h-4 w-4" />}
               </div>
-              <p className="mt-0.5 text-xs text-foreground-muted">{notification.desc}</p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm ${!notification.read ? 'font-semibold' : 'font-medium'}`}>
+                    {notification.title}
+                  </span>
+                  <span className="text-xs text-foreground-muted">{notification.time}</span>
+                </div>
+                <p className="mt-0.5 text-xs text-foreground-muted">{notification.desc}</p>
+              </div>
+              {!notification.read && <div className="mt-2 h-2 w-2 shrink-0 bg-gold" />}
             </div>
-            {!notification.read && <div className="mt-2 h-2 w-2 shrink-0 bg-gold" />}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Load more */}

@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 
 /**
- * ⚠️  WARNING: This client uses the service-role key and BYPASSES Row Level Security.
+ * WARNING: This client uses the service-role key and BYPASSES Row Level Security.
  *
  * Only use this in trusted server-side contexts (webhooks, background jobs,
  * admin operations). NEVER expose this client or the service-role key to the browser.

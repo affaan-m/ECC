@@ -62,37 +62,32 @@ function BrandLogo({
     );
   }
 
-  // Default StageFlow logo
+  // Default StageFlow logo with SVG mark
   return (
     <div className={cn("flex items-center gap-2", className)} {...props}>
-      <div
+      <svg
+        viewBox="0 0 512 512"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
         className={cn(
-          "flex items-center justify-center bg-[#FFC000]",
           size === "sm" && "h-6 w-6",
           size === "default" && "h-8 w-8",
           size === "lg" && "h-12 w-12",
         )}
       >
-        <span
-          className={cn(
-            "font-black text-black",
-            size === "sm" && "text-xs",
-            size === "default" && "text-sm",
-            size === "lg" && "text-lg",
-          )}
-        >
-          SF
-        </span>
-      </div>
+        <path d="M128 96 L256 96 L384 224 L256 224 L128 96Z" fill="#FFC000" />
+        <path d="M384 416 L256 416 L128 288 L256 288 L384 416Z" fill="#FFC000" />
+        <path d="M256 224 L256 288" stroke="#FFC000" strokeWidth="32" />
+      </svg>
       <span
         className={cn(
-          "font-bold text-white",
+          "font-bold tracking-tight text-white",
           size === "sm" && "text-sm",
           size === "default" && "text-base",
-          size === "lg" && "text-lg",
+          size === "lg" && "text-xl",
         )}
       >
-        Stage<span className="text-[#FFC000]">Flow</span>
+        STAGE<span className="text-[#FFC000]">FLOW</span>
       </span>
     </div>
   );

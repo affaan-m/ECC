@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Check, Minus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
@@ -124,7 +125,7 @@ export default async function EntriesPage({ params }: EntriesPageProps) {
                 <td className="px-6 py-4 text-right text-sm text-foreground-secondary">{entry.dancers}</td>
                 <td className="px-6 py-4 text-center">
                   <span className={entry.musicUploaded ? 'text-green-500' : 'text-foreground-muted'}>
-                    {entry.musicUploaded ? '✓' : '—'}
+                    {entry.musicUploaded ? <Check className="h-4 w-4 inline" /> : <Minus className="h-4 w-4 inline" />}
                   </span>
                 </td>
                 <td className="px-6 py-4">

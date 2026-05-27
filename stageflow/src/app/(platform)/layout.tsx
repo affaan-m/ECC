@@ -1,13 +1,28 @@
 import Link from 'next/link'
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
+  CreditCard,
+  FileSearch,
+  Activity,
+  type LucideIcon,
+} from 'lucide-react'
 
-const PLATFORM_NAV = [
-  { label: 'Dashboard', href: '/admin', icon: '◆' },
-  { label: 'Organizations', href: '/admin/organizations', icon: '◇' },
-  { label: 'Users', href: '/admin/users', icon: '○' },
-  { label: 'Plans', href: '/admin/plans', icon: '□' },
-  { label: 'Audit Logs', href: '/admin/audit-logs', icon: '▣' },
-  { label: 'System Health', href: '/admin/system-health', icon: '▲' },
-] as const
+interface PlatformNavItem {
+  label: string
+  href: string
+  icon: LucideIcon
+}
+
+const PLATFORM_NAV: PlatformNavItem[] = [
+  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { label: 'Organizations', href: '/admin/organizations', icon: Building2 },
+  { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Plans', href: '/admin/plans', icon: CreditCard },
+  { label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch },
+  { label: 'System Health', href: '/admin/system-health', icon: Activity },
+]
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -24,17 +39,20 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
-            {PLATFORM_NAV.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className="flex items-center gap-3 px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                >
-                  <span className="text-xs text-foreground-muted">{item.icon}</span>
-                  {item.label}
-                </Link>
-              </li>
-            ))}
+            {PLATFORM_NAV.map((item) => {
+              const Icon = item.icon
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className="flex items-center gap-3 px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-foreground-muted" />
+                    {item.label}
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </nav>
 
