@@ -86,6 +86,34 @@ export default async function EntryDetailPage({ params }: EntryDetailProps) {
             </div>
           </div>
 
+          {/* Invoice */}
+          <div className="surface-card p-6">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Invoice</h2>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-foreground-muted">Entry Fee</span>
+                <span>$25.00</span>
+              </div>
+              <div className="border-t border-border pt-2 flex justify-between text-sm font-semibold">
+                <span>Total</span>
+                <span className="text-gold">$25.00</span>
+              </div>
+              <div className="mt-2">
+                <span className="badge-success">Paid</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div className="surface-card p-6">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Tags</h2>
+            <div className="flex flex-wrap gap-2">
+              {['featured', 'returning', 'scholarship'].map((tag) => (
+                <span key={tag} className="bg-white/10 px-2 py-0.5 text-xs text-white">{tag}</span>
+              ))}
+            </div>
+          </div>
+
           <div className="surface-card p-6">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">History</h2>
             <div className="space-y-3">
@@ -98,6 +126,22 @@ export default async function EntryDetailPage({ params }: EntryDetailProps) {
                   <span className="text-foreground-secondary">{event.action}</span>
                   <span className="text-foreground-muted">{event.time}</span>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="surface-card p-6">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground-muted">Actions</h2>
+            <div className="space-y-2">
+              {['Send Confirmation Email', 'Download Music', 'Print Entry Sheet', 'Request Refund'].map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-xs text-foreground-muted hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  {action}
+                </button>
               ))}
             </div>
           </div>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Invoices',
@@ -34,15 +35,32 @@ const STATUS_BADGE: Record<Invoice['status'], string> = {
 export default function InvoicesPage() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Invoices</h1>
-          <p className="mt-1 text-sm text-foreground-muted">Track payments from studios</p>
-        </div>
-        <div className="flex gap-3">
-          <button type="button" className="btn-outline-gold px-4 py-2 text-xs">EXPORT</button>
-          <button type="button" className="btn-gold px-5 py-2.5 text-xs">CREATE INVOICE</button>
-        </div>
+      <PageHeader
+        title="Invoices"
+        description="Track payments from studios"
+        actions={
+          <div className="flex gap-3">
+            <button type="button" className="btn-outline-gold px-4 py-2 text-xs">EXPORT</button>
+            <button type="button" className="btn-gold px-5 py-2.5 text-xs">CREATE INVOICE</button>
+          </div>
+        }
+      />
+
+      {/* Status filters */}
+      <div className="flex items-center gap-3">
+        {['All', 'Paid', 'Pending', 'Overdue', 'Draft'].map((filter) => (
+          <button
+            key={filter}
+            type="button"
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              filter === 'All'
+                ? 'bg-gold text-black'
+                : 'bg-[#202020] text-white/60 hover:text-white'
+            }`}
+          >
+            {filter}
+          </button>
+        ))}
       </div>
 
       {/* Summary cards */}
