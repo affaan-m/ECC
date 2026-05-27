@@ -1,0 +1,228 @@
+@import 'tailwindcss';
+
+@theme {
+  /* ── Background ── */
+  --color-background: #000000;
+  --color-surface: #202020;
+  --color-surface-elevated: #2a2a2a;
+
+  /* ── Gold accent (Lamborghini) ── */
+  --color-gold: #FFC000;
+  --color-gold-hover: #917300;
+  --color-gold-muted: rgba(255, 192, 0, 0.15);
+
+  /* ── Text ── */
+  --color-foreground: #FFFFFF;
+  --color-foreground-secondary: #F5F5F5;
+  --color-foreground-muted: #7D7D7D;
+
+  /* ── Borders ── */
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.2);
+
+  /* ── Destructive ── */
+  --color-destructive: #ef4444;
+  --color-destructive-hover: #dc2626;
+
+  /* ── Ring ── */
+  --color-ring: #FFC000;
+
+  /* ── shadcn/ui variable mapping ── */
+  --color-primary: #FFC000;
+  --color-primary-foreground: #000000;
+  --color-secondary: #202020;
+  --color-secondary-foreground: #FFFFFF;
+  --color-muted: #202020;
+  --color-muted-foreground: #7D7D7D;
+  --color-accent: rgba(255, 192, 0, 0.15);
+  --color-accent-foreground: #FFC000;
+  --color-card: #202020;
+  --color-card-foreground: #FFFFFF;
+  --color-popover: #202020;
+  --color-popover-foreground: #FFFFFF;
+  --color-input: rgba(255, 255, 255, 0.1);
+
+  /* ── Radius (zero for sharp Lamborghini aesthetic) ── */
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+
+  /* ── Fonts ── */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Sidebar (platform/org admin) ── */
+  --color-sidebar: #0a0a0a;
+  --color-sidebar-foreground: #F5F5F5;
+  --color-sidebar-border: rgba(255, 255, 255, 0.06);
+  --color-sidebar-accent: rgba(255, 192, 0, 0.1);
+  --color-sidebar-accent-foreground: #FFC000;
+}
+
+/* ── Base layer ── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: rgba(255, 192, 0, 0.3);
+    color: #FFFFFF;
+  }
+}
+
+/* ── Utility classes ── */
+@layer utilities {
+  .gold-gradient {
+    background: linear-gradient(135deg, #FFC000 0%, #917300 100%);
+  }
+
+  .gold-text-gradient {
+    background: linear-gradient(135deg, #FFC000 0%, #FFD54F 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .surface-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+
+  .surface-elevated {
+    background-color: var(--color-surface-elevated);
+    border: 1px solid var(--color-border-strong);
+  }
+
+  .btn-gold {
+    background-color: var(--color-gold);
+    color: #000000;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: background-color 150ms;
+  }
+
+  .btn-gold:hover {
+    background-color: var(--color-gold-hover);
+  }
+
+  .btn-outline-gold {
+    border: 1px solid var(--color-gold);
+    color: var(--color-gold);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 150ms;
+  }
+
+  .btn-outline-gold:hover {
+    background-color: rgba(255, 192, 0, 0.1);
+  }
+
+  .divider-gold {
+    border-color: rgba(255, 192, 0, 0.3);
+  }
+
+  .kpi-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 1.5rem;
+  }
+
+  .table-header {
+    background-color: var(--color-surface);
+    color: var(--color-foreground-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .table-row {
+    border-bottom: 1px solid var(--color-border);
+    transition: background-color 150ms;
+  }
+
+  .table-row:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .input-dark {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-foreground);
+    padding: 0.625rem 0.875rem;
+  }
+
+  .input-dark:focus {
+    border-color: var(--color-gold);
+    outline: none;
+    box-shadow: 0 0 0 1px var(--color-gold);
+  }
+
+  .input-dark::placeholder {
+    color: var(--color-foreground-muted);
+  }
+
+  .badge-gold {
+    background-color: rgba(255, 192, 0, 0.15);
+    color: var(--color-gold);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+  }
+
+  .badge-success {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+  }
+
+  .badge-destructive {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+  }
+}
