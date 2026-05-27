@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PageHeader } from '@/components/ui/page-header'
 
 export const metadata: Metadata = {
   title: 'Branding',
@@ -8,12 +9,16 @@ export const metadata: Metadata = {
 export default function BrandingPage() {
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">Branding</h1>
-        <p className="mt-1 text-sm text-foreground-muted">
-          Customize the look and feel of your competition portal
-        </p>
-      </div>
+      <PageHeader
+        title="Branding"
+        description="Customize the look and feel of your competition portal"
+        actions={
+          <div className="flex gap-3">
+            <button type="button" className="btn-outline-gold px-5 py-2.5 text-xs">RESET TO DEFAULTS</button>
+            <button type="button" className="btn-gold px-5 py-2.5 text-xs">SAVE CHANGES</button>
+          </div>
+        }
+      />
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Logo upload */}
