@@ -94,6 +94,14 @@
       },
       "description": "Web search, research, and data ingestion via Exa API — prefer task-scoped use for broader research after GitHub search and primary docs"
     },
+    "parallel-search": {
+      "type": "http",
+      "url": "https://search.parallel.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PARALLEL_API_KEY_HERE"
+      },
+      "description": "Parallel Web Search — LLM-optimized web_search and web_fetch tools that take an objective + queries and return citation-backed excerpts in a single call (replaces multiple keyword searches). Works key-free for anonymous use (remove the headers block); set Authorization: Bearer with a key from platform.parallel.ai for higher rate limits."
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
