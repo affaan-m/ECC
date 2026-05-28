@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **182K+ stars** | **28K+ forks** | **170+ contributors** | **12+ language ecosystems** | **Anthropic Hackathon Winner**
+> **182K+ stars** | **28K+ forks** | **170+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
 
 ---
 
@@ -34,11 +34,11 @@
 
 ---
 
-**The harness-native operator system for agentic work. From an Anthropic hackathon winner.**
+**The harness-native operator system for agentic work. Built from real-world multi-harness engineering workflows.**
 
 Not just configs. A complete system: skills, instincts, memory optimization, continuous learning, security scanning, and research-first development. Production-ready agents, skills, hooks, rules, MCP configurations, and legacy command shims evolved over 10+ months of intensive daily use building real products.
 
-Works across **Claude Code**, **Codex**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
+Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
 
 ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [rc.1 release notes](docs/releases/2.0.0-rc.1/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
 
@@ -86,12 +86,12 @@ This repo is the raw code only. The guides explain everything.
 <tr>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to Everything Claude Code" />
+<img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to Everything Claude Code" />
+<img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
 </a>
 </td>
 <td width="33%">
