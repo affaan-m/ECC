@@ -152,7 +152,6 @@ test('Hermes setup uses release-candidate wording for the rc.1 surface', () => {
 
 test('Hermes setup cross-links adjacent migration and architecture docs', () => {
   const source = read('docs/HERMES-SETUP.md');
-  assert.ok(source.includes('HERMES-OPENCLAW-MIGRATION.md'));
   assert.ok(source.includes('architecture/cross-harness.md'));
   assert.ok(source.includes('Plan and scaffold migration artifacts'));
   assert.ok(!source.includes('0.5. Generate and review artifacts with `ecc migrate plan` /'));

@@ -2,7 +2,7 @@
 
 *一切关于 Claude Code / 研究 / 安全*
 
-距离我上一篇文章已经有一段时间了。这段时间我致力于构建 ECC 开发者工具生态系统。其中一个热门但重要的话题一直是智能体安全。开源智能体的广泛采用已经到来。OpenClaw 的 GitHub 星标数突破 22.8 万，并成为 2026 年首次 AI 智能体安全危机。其安全审计发现了 512 个漏洞。像 Claude Code 和 Codex 这样的持续运行框架增加了攻击面。Check Point 研究针对 Claude Code 本身发布了四个 CVE。OpenAI 刚刚收购了 PromptFoo，专门用于智能体安全测试。Lex Fridman 称其为“广泛采用的最大障碍”。Simon Willison 警告说：“在编码智能体安全方面，我们即将迎来一场‘挑战者号’级别的灾难。”我们信任的工具也正是被攻击的目标。Zack Korman 说得最好：“我赋予了一个 AI 智能体读写我机器上任何文件的能力，但别担心，我机器上有一个文件可以阻止它做任何坏事。”
+距离我上一篇文章已经有一段时间了。这段时间我致力于构建 ECC 开发者工具生态系统。其中一个热门但重要的话题一直是智能体安全。开源智能体的广泛采用已经到来。像 Claude Code 和 Codex 这样的持续运行框架增加了攻击面。Check Point 研究针对 Claude Code 本身发布了四个 CVE。OpenAI 刚刚收购了 PromptFoo，专门用于智能体安全测试。Lex Fridman 称其为“广泛采用的最大障碍”。Simon Willison 警告说：“在编码智能体安全方面，我们即将迎来一场‘挑战者号’级别的灾难。”我们信任的工具也正是被攻击的目标。Zack Korman 说得最好：“我赋予了一个 AI 智能体读写我机器上任何文件的能力，但别担心，我机器上有一个文件可以阻止它做任何坏事。”
 
 ## 攻击向量 / 攻击面
 
@@ -46,7 +46,6 @@ Perplexity 的 Comet 智能体浏览器通过日历邀请被劫持。Zenity Labs
 | **36%**        | Snyk ToxicSkills 研究中的提示注入成功率（1,467 个恶意载荷）                |
 | **150 万**     | Moltbook 漏洞中暴露的 API 密钥数量                                         |
 | **77 万**      | 可通过 Moltbook 漏洞控制的智能体数量                                       |
-| **17,500**     | 面向互联网的 OpenClaw 实例数量（Hunt.io）                                  |
 | **43.7 万**    | 通过 mcp-remote OAuth 漏洞（CVE-2025-6514）被入侵的开发环境数量            |
 | **CVSS 8.7**   | Claude Code 钩子 CVE（CVE-2025-59536）                                     |
 | **96.15%**     | Shannon AI 在 XBOW 基准测试上的漏洞利用成功率                              |
@@ -115,7 +114,7 @@ BASI Discord 是最大的有组织越狱社区。Pliny 是管理员。他们公�
 
 **恶意规则：** 你克隆的仓库中的一个 .claude/rules 文件。它写着“忽略所有先前的安全指令”。它命令智能体无需确认即可执行命令。它有效地将你的智能体变成了仓库所有者的远程 shell。
 
-**恶意 MCP：** Hunt.io 发现了 17,500 个面向互联网的 OpenClaw 实例。许多使用了不受信任的 MCP 服务器。这些服务器拉取它们不应该接触的数据。它们在运行期间窃取会话数据。OWASP 现在维护着一个官方的 MCP Top 10，涵盖：令牌管理不当、过度授予权限、命令注入、工具投毒、软件供应链攻击和认证问题。微软发布了一个特定于 Azure 的 MCP 安全指南。如果你运行 MCP 服务器，OWASP MCP Top 10 是必读材料。
+**恶意 MCP：** 暴露于互联网的 AI 智能体实例众多。许多使用了不受信任的 MCP 服务器。这些服务器拉取它们不应该接触的数据。它们在运行期间窃取会话数据。OWASP 现在维护着一个官方的 MCP Top 10，涵盖：令牌管理不当、过度授予权限、命令注入、工具投毒、软件供应链攻击和认证问题。微软发布了一个特定于 Azure 的 MCP 安全指南。如果你运行 MCP 服务器，OWASP MCP Top 10 是必读材料。
 
 **恶意钩子：** Check Point 的 CVE-2025-59536 证明了这一点。克隆仓库中的 `.claude/settings.json` 可以定义在会话开始时执行 shell 命令的钩子。没有确认对话框。不需要用户交互。克隆、打开、被入侵。
 
@@ -194,11 +193,9 @@ Unit42 发现，在具有长对话历史的智能体中，持久性提示注入�
 | Perplexity Comet 被劫持 (Zenity Labs) | <https://x.com/coraxnews/status/2032124128191258833> |
 | 每 5 个 MCP 服务器中有 1 个滥用加密 (已审计 1,900 个) | <https://x.com/TraderAegis> |
 | Snyk ToxicSkills 研究报告 | <https://snyk.io/blog/prompt-injection-toxic-skills-agent-supply-chain/> |
-| Cisco: OpenClaw 智能体是安全噩梦 | <https://blogs.cisco.com/security/personal-ai-agents-like-openclaw-are-a-security-nightmare> |
 | 用于编码智能体的 Docker 沙盒 | <https://www.docker.com/blog/docker-sandboxes-run-claude-code-and-other-coding-agents/> |
 | Pliny - OBLITERATUS | <https://x.com/elder_plinius/status/2029317072765784156> |
 | Moltbook 密钥在泄露后 5 周仍处于活动状态 | <https://x.com/irl_danB/status/2031389008576577610> |
-| Nikil: "运行 OpenClaw 会让你被黑" | <https://x.com/nikil/status/2026118683890970660> |
 | NVIDIA: 沙盒化智能体工作流 | <https://developer.nvidia.com/blog/practical-security-guidance-for-sandboxing-agentic-workflows/> |
 | Perplexity Comet 被劫持 (Zenity Labs) | <https://x.com/Prateektomar> |
 | 链接预览数据泄露向量 | <https://www.scworld.com/news/ai-agents-vulnerable-to-data-leaks-via-malicious-link-previews> |
