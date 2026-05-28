@@ -1,7 +1,7 @@
 ---
 name: parallel-researcher
 description: When the user asks to research a topic, look up current information, summarize a specific URL, or list all entities matching a description, invoke this agent. It uses Parallel's Search MCP (web_search, web_fetch) and Task / Deep Research / FindAll REST APIs to return citation-backed answers grounded in the live web.
-tools: ["Read", "Write", "Grep", "Bash", "mcp__parallel-search__web_search", "mcp__parallel-search__web_fetch"]
+tools: ["Read", "Grep", "Bash", "mcp__parallel-search__web_search", "mcp__parallel-search__web_fetch"]
 model: sonnet
 ---
 
@@ -34,9 +34,9 @@ Pick the narrowest surface that answers the question.
 
 | Signal in the request | Surface |
 |---|---|
-| "look up", "what is", "latest", any general lookup | `web_search` |
-| Specific URL supplied, "what does this page say", "summarize this article" | `web_fetch` |
-| "extract X, Y, Z about <thing>" with a defined schema | Task API (`POST /v1/tasks/runs`) |
+| "look up", "what is", "latest", any general lookup | `web_search` (MCP) |
+| Specific URL supplied, "what does this page say", "summarize this article" | `web_fetch` (MCP) |
+| Structured fields with a defined output schema (e.g. CEO, funding, HQ for a company) | Task API (`POST /v1/tasks/runs`) |
 | "deep research", "comprehensive report", "exhaustive" | Task API with `processor: pro` (or higher) |
 | "find all X", "list every Y that …" | FindAll API (`POST /v1/findall/runs`) |
 
@@ -44,7 +44,7 @@ If the request is ambiguous, ask one clarifying question (scope, depth, output s
 
 ### Step 2: Run the call
 
-For Search and Extract, call the MCP tool directly. Lead with a strong `objective` (a natural-language description of what answer you actually want), not a bare keyword.
+For `web_search` and `web_fetch`, call the MCP tool directly. Lead with a strong `objective` (a natural-language description of what answer you actually want), not a bare keyword.
 
 ```
 mcp__parallel-search__web_search(

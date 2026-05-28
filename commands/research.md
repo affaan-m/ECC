@@ -23,8 +23,8 @@ Examples:
 
 ## Workflow
 
-1. **Classify the request.** Decide whether the question needs Search, URL extraction, a structured Task, Deep Research, or FindAll. See the `parallel-research` skill for the decision table.
-2. **Dispatch to `parallel-researcher`.** Hand the topic to the `parallel-researcher` agent, which runs the appropriate Parallel surface and synthesizes a citation-backed answer.
+1. **Classify the request.** Decide whether the question needs Search, URL extraction, a structured Task, Deep Research, or FindAll. See `skills/parallel-research/SKILL.md` for the decision table.
+2. **Dispatch to the agent.** Hand the topic to `agents/parallel-researcher.md`, which runs the appropriate Parallel surface and synthesizes a citation-backed answer (`agent: parallel-researcher`).
 3. **Return the answer.** Inline `[Title](url)` citations for every claim, followed by a `Sources:` section listing every URL.
 
 For Task / Deep Research / FindAll runs that take minutes, the command immediately prints the `run_id`, the monitoring URL, and the expected latency for the chosen processor tier so the user can keep working while results come in.

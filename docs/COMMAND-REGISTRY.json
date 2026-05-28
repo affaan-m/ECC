@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 84,
+  "totalCommands": 85,
   "commands": [
     {
       "command": "aside",
@@ -764,6 +764,21 @@
       "path": "commands/refactor-clean.md"
     },
     {
+      "command": "research",
+      "description": "Web research with citation-backed answers via Parallel — uses the parallel-search MCP for fast lookups and escalates to Task / Deep Research / FindAll APIs when warranted.",
+      "type": "general",
+      "primaryAgents": [
+        "parallel-researcher"
+      ],
+      "allAgents": [
+        "parallel-researcher"
+      ],
+      "skills": [
+        "parallel-research"
+      ],
+      "path": "commands/research.md"
+    },
+    {
       "command": "resume-session",
       "description": "Load the most recent session file from ~/.claude/session-data/ and resume work with full context from where the last session ended.",
       "type": "testing",
@@ -924,7 +939,7 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 7,
+      "general": 8,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
@@ -965,11 +980,11 @@
         "count": 1
       },
       {
-        "agent": "planner",
+        "agent": "parallel-researcher",
         "count": 1
       },
       {
-        "agent": "python-reviewer",
+        "agent": "planner",
         "count": 1
       }
     ],
