@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { isHookEnabled } = require('../lib/hook-flags');
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
 
@@ -53,7 +54,9 @@ function emitHookResult(raw, output) {
   if (output && typeof output === 'object') {
     writeStderr(output.stderr);
 
-    if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
+    if (Object.prototype.hasOwnProperty.call(output, 'additionalContext')) {
+      process.stdout.write(buildPreToolUseAdditionalContext(output.additionalContext));
+    } else if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
       process.stdout.write(String(output.stdout ?? ''));
     } else if (!Number.isInteger(output.exitCode) || output.exitCode === 0) {
       process.stdout.write(raw);

@@ -35,6 +35,10 @@ function runScript(scriptPath, input, env = {}) {
   });
 }
 
+function parseHookOutput(stdout) {
+  return JSON.parse(stdout);
+}
+
 function runTests() {
   console.log('\n=== Testing Bash hook dispatchers ===\n');
 
@@ -54,13 +58,18 @@ function runTests() {
 
     const enabled = runScript(preDispatcher, input, { ECC_HOOK_PROFILE: 'strict' });
     assert.strictEqual(enabled.status, 0);
-    assert.ok(enabled.stderr.includes('Review changes before push'), 'Expected git push reminder when enabled');
+    assert.strictEqual(enabled.stderr, '', `Expected visible reminder via stdout JSON, got stderr: ${enabled.stderr}`);
+    assert.ok(
+      parseHookOutput(enabled.stdout).hookSpecificOutput.additionalContext.includes('Review changes before push'),
+      'Expected git push reminder when enabled'
+    );
 
     const disabled = runScript(preDispatcher, input, {
       ECC_HOOK_PROFILE: 'strict',
       ECC_DISABLED_HOOKS: 'pre:bash:git-push-reminder',
     });
     assert.strictEqual(disabled.status, 0);
+    assert.strictEqual(disabled.stdout, JSON.stringify(input), 'Disabled hook should pass through original input');
     assert.ok(!disabled.stderr.includes('Review changes before push'), 'Disabled hook should not emit reminder');
   })) passed++; else failed++;
 
