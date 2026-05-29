@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 76,
+  "totalCommands": 79,
   "commands": [
     {
       "command": "aside",
@@ -645,6 +645,55 @@
       "path": "commands/quality-gate.md"
     },
     {
+      "command": "react-build",
+      "description": "Fix React build failures (Vite, webpack, Next.js, CRA, Parcel, esbuild, Bun) incrementally — JSX/TSX compile errors, hydration mismatches, server/client component boundary failures, missing types. Invokes the react-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "react-build-resolver"
+      ],
+      "allAgents": [
+        "react-build-resolver"
+      ],
+      "skills": [
+        "frontend-patterns",
+        "react-patterns"
+      ],
+      "path": "commands/react-build.md"
+    },
+    {
+      "command": "react-review",
+      "description": "Comprehensive React/JSX code review for hook correctness, render performance, server/client component boundaries, accessibility, and React-specific security. Invokes the react-reviewer agent (and typescript-reviewer alongside on TSX/JSX changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "allAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "skills": [
+        "accessibility",
+        "react-patterns",
+        "react-testing"
+      ],
+      "path": "commands/react-review.md"
+    },
+    {
+      "command": "react-test",
+      "description": "Enforce TDD workflow for React. Write React Testing Library tests first (behavior-focused, accessibility-first), then implement components. Detects Vitest or Jest and verifies coverage targets.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "accessibility",
+        "e2e-testing",
+        "react-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/react-test.md"
+    },
+    {
       "command": "refactor-clean",
       "description": "Safely identify and remove dead code with verification after each change.",
       "type": "testing",
@@ -819,7 +868,7 @@
       "planning": 2,
       "refactoring": 1,
       "review": 9,
-      "testing": 48
+      "testing": 51
     },
     "topAgents": [
       {
@@ -869,15 +918,19 @@
         "count": 6
       },
       {
+        "skill": "tdd-workflow",
+        "count": 4
+      },
+      {
+        "skill": "accessibility",
+        "count": 3
+      },
+      {
         "skill": "flutter-dart-code-review",
         "count": 3
       },
       {
         "skill": "rust-patterns",
-        "count": 3
-      },
-      {
-        "skill": "tdd-workflow",
         "count": 3
       },
       {
@@ -898,10 +951,6 @@
       },
       {
         "skill": "golang-testing",
-        "count": 2
-      },
-      {
-        "skill": "kotlin-patterns",
         "count": 2
       }
     ]

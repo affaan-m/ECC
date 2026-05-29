@@ -1,20 +1,19 @@
 {
   "name": "ecc-universal",
   "version": "2.0.0-rc.1",
-  "description": "Harness-native agent operating system for Claude Code, Codex, OpenCode, Cursor, Gemini, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
+  "description": "Harness-native agent operating system for Codex, OpenCode, Cursor, Gemini, Claude Code, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
   "publishConfig": {
     "access": "public"
   },
   "keywords": [
-    "claude-code",
     "ai",
     "agents",
     "skills",
     "hooks",
     "mcp",
     "rules",
-    "claude",
-    "anthropic",
+    "harness",
+    "agent-harness",
     "tdd",
     "code-review",
     "security",
@@ -259,6 +258,9 @@
     "skills/quarkus-tdd/",
     "skills/quarkus-verification/",
     "skills/ralphinho-rfc-pipeline/",
+    "skills/react-patterns/",
+    "skills/react-performance/",
+    "skills/react-testing/",
     "skills/regex-vs-llm-structured-text/",
     "skills/remotion-video-creation/",
     "skills/research-ops/",

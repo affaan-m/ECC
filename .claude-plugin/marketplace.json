@@ -11,7 +11,7 @@
     {
       "name": "ecc",
       "source": "./",
-      "description": "Harness-native ECC operator layer - 61 agents, 246 skills, 76 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
+      "description": "Harness-native ECC operator layer - 63 agents, 249 skills, 79 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
       "version": "2.0.0-rc.1",
       "author": {
         "name": "Affaan Mustafa",

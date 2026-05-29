@@ -34,11 +34,11 @@
 
 ---
 
-**The harness-native operator system for agentic work. From an Anthropic hackathon winner.**
+**The harness-native operator system for agentic work. Built from real-world multi-harness engineering workflows.**
 
 Not just configs. A complete system: skills, instincts, memory optimization, continuous learning, security scanning, and research-first development. Production-ready agents, skills, hooks, rules, MCP configurations, and legacy command shims evolved over 10+ months of intensive daily use building real products.
 
-Works across **Claude Code**, **Codex**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
+Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
 
 ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [rc.1 release notes](docs/releases/2.0.0-rc.1/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
 
@@ -86,12 +86,12 @@ This repo is the raw code only. The guides explain everything.
 <tr>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2012378465664745795">
-<img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to Everything Claude Code" />
+<img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="33%">
 <a href="https://x.com/affaanmustafa/status/2014040193557471352">
-<img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to Everything Claude Code" />
+<img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
 </a>
 </td>
 <td width="33%">
@@ -123,7 +123,7 @@ This repo is the raw code only. The guides explain everything.
 ### v2.0.0-rc.1 — Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
 
 - **Dashboard GUI** — New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
-- **Public surface synced to the live repo** — metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 61 agents, 246 skills, and 76 legacy command shims.
+- **Public surface synced to the live repo** — metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 63 agents, 249 skills, and 79 legacy command shims.
 - **Operator and outbound workflow expansion** — `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
 - **Media and launch tooling** — `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
 - **Framework and product surface growth** — `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond Claude Code alone.
@@ -394,7 +394,7 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 61 agents, 246 skills, and 76 legacy command shims.
+**That's it!** You now have access to 63 agents, 249 skills, and 79 legacy command shims.
 
 ### Dashboard GUI
 
@@ -501,7 +501,7 @@ ECC/
 |   |-- plugin.json         # Plugin metadata and component paths
 |   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
 |
-|-- agents/           # 61 specialized subagents for delegation
+|-- agents/           # 63 specialized subagents for delegation
 |   |-- planner.md           # Feature implementation planning
 |   |-- architect.md         # System design decisions
 |   |-- tdd-guide.md         # Test-driven development
@@ -1423,15 +1423,15 @@ The configuration is automatically detected from `.opencode/opencode.json`.
 
 ### Feature Parity
 
-| Feature | Claude Code | OpenCode | Status |
-|---------|-------------|----------|--------|
-| Agents | PASS: 61 agents | PASS: 12 agents | **Claude Code leads** |
-| Commands | PASS: 76 commands | PASS: 35 commands | **Claude Code leads** |
-| Skills | PASS: 246 skills | PASS: 37 skills | **Claude Code leads** |
+| Feature | Claude Code         | OpenCode | Status |
+|---------|---------------------|----------|--------|
+| Agents | PASS: 63 agents     | PASS: 12 agents | **Claude Code leads** |
+| Commands | PASS: 79 commands   | PASS: 35 commands | **Claude Code leads** |
+| Skills | PASS: 249 skills    | PASS: 37 skills | **Claude Code leads** |
 | Hooks | PASS: 8 event types | PASS: 11 events | **OpenCode has more!** |
-| Rules | PASS: 29 rules | PASS: 13 instructions | **Claude Code leads** |
-| MCP Servers | PASS: 14 servers | PASS: Full | **Full parity** |
-| Custom Tools | PASS: Via hooks | PASS: 6 native tools | **OpenCode is better** |
+| Rules | PASS: 29 rules      | PASS: 13 instructions | **Claude Code leads** |
+| MCP Servers | PASS: 14 servers    | PASS: Full | **Full parity** |
+| Custom Tools | PASS: Via hooks     | PASS: 6 native tools | **OpenCode is better** |
 
 ### Hook Support via Plugins
 
@@ -1585,20 +1585,20 @@ GitHub Copilot does not have a hook system or a subagent API, so ECC's hook auto
 
 ECC is the **first plugin to maximize every major AI coding tool**. Here's how each harness compares:
 
-| Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
-|---------|------------|------------|-----------|----------|----------------|
-| **Agents** | 61 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
-| **Commands** | 76 | Shared | Instruction-based | 35 | 6 prompts |
-| **Skills** | 246 | Shared | 10 (native format) | 37 | Via instructions |
-| **Hook Events** | 8 types | 15 types | None yet | 11 types | None |
-| **Hook Scripts** | 20+ scripts | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
-| **Rules** | 34 (common + lang) | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |
-| **Custom Tools** | Via hooks | Via hooks | N/A | 6 native tools | N/A |
-| **MCP Servers** | 14 | Shared (mcp.json) | 7 (auto-merged via TOML parser) | Full | N/A |
-| **Config Format** | settings.json | hooks.json + rules/ | config.toml | opencode.json | copilot-instructions.md + settings.json |
+| Feature | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
+|---------|-----------------------|------------|-----------|----------|----------------|
+| **Agents** | 63                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
+| **Commands** | 79                    | Shared | Instruction-based | 35 | 6 prompts |
+| **Skills** | 249                   | Shared | 10 (native format) | 37 | Via instructions |
+| **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
+| **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
+| **Rules** | 34 (common + lang)    | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |
+| **Custom Tools** | Via hooks             | Via hooks | N/A | 6 native tools | N/A |
+| **MCP Servers** | 14                    | Shared (mcp.json) | 7 (auto-merged via TOML parser) | Full | N/A |
+| **Config Format** | settings.json         | hooks.json + rules/ | config.toml | opencode.json | copilot-instructions.md + settings.json |
 | **Context File** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md | copilot-instructions.md |
-| **Secret Detection** | Hook-based | beforeSubmitPrompt hook | Sandbox-based | Hook-based | Instruction-based |
-| **Auto-Format** | PostToolUse hook | afterFileEdit hook | N/A | file.edited hook | N/A |
+| **Secret Detection** | Hook-based            | beforeSubmitPrompt hook | Sandbox-based | Hook-based | Instruction-based |
+| **Auto-Format** | PostToolUse hook      | afterFileEdit hook | N/A | file.edited hook | N/A |
 | **Version** | Plugin | Plugin | Reference config | 2.0.0-rc.1 | Instruction layer |
 
 **Key architectural decisions:**

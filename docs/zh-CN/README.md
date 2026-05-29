@@ -224,7 +224,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 61 个智能体、246 项技能和 76 个命令了。
+**搞定！** 你现在可以使用 63 个智能体、249 项技能和 79 个命令了。
 
 ***
 
@@ -1134,15 +1134,15 @@ opencode
 
 ### 功能对等
 
-| 功能特性 | Claude Code | OpenCode | 状态 |
-|---------|-------------|----------|--------|
-| 智能体 | PASS: 61 个 | PASS: 12 个 | **Claude Code 领先** |
-| 命令 | PASS: 76 个 | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 246 项 | PASS: 37 项 | **Claude Code 领先** |
+| 功能特性 | Claude Code   | OpenCode | 状态 |
+|---------|---------------|----------|--------|
+| 智能体 | PASS: 63 个    | PASS: 12 个 | **Claude Code 领先** |
+| 命令 | PASS: 79 个    | PASS: 35 个 | **Claude Code 领先** |
+| 技能 | PASS: 249 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
-| 规则 | PASS: 29 条 | PASS: 13 条指令 | **Claude Code 领先** |
-| MCP 服务器 | PASS: 14 个 | PASS: 完整 | **完全对等** |
-| 自定义工具 | PASS: 通过钩子 | PASS: 6 个原生工具 | **OpenCode 更优** |
+| 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
+| MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
+| 自定义工具 | PASS: 通过钩子    | PASS: 6 个原生工具 | **OpenCode 更优** |
 
 ### 通过插件实现的钩子支持
 
@@ -1242,20 +1242,20 @@ npm install ecc-universal
 
 ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以下是每个平台的比较：
 
-| 功能特性 | Claude Code | Cursor IDE | Codex CLI | OpenCode |
-|---------|------------|------------|-----------|----------|
-| **智能体** | 61 | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
-| **命令** | 76 | 共享 | 基于指令 | 35 |
-| **技能** | 246 | 共享 | 10 (原生格式) | 37 |
-| **钩子事件** | 8 种类型 | 15 种类型 | 暂无 | 11 种类型 |
-| **钩子脚本** | 20+ 个脚本 | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
-| **规则** | 34 (通用 + 语言) | 34 (YAML 前页) | 基于指令 | 13 条指令 |
-| **自定义工具** | 通过钩子 | 通过钩子 | N/A | 6 个原生工具 |
-| **MCP 服务器** | 14 | 共享 (mcp.json) | 4 (基于命令) | 完整 |
-| **配置格式** | settings.json | hooks.json + rules/ | config.toml | opencode.json |
+| 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
+|---------|-----------------------|------------|-----------|----------|
+| **智能体** | 63                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **命令** | 79                    | 共享 | 基于指令 | 35 |
+| **技能** | 249                   | 共享 | 10 (原生格式) | 37 |
+| **钩子事件** | 8 种类型                 | 15 种类型 | 暂无 | 11 种类型 |
+| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
+| **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |
+| **自定义工具** | 通过钩子                  | 通过钩子 | N/A | 6 个原生工具 |
+| **MCP 服务器** | 14                    | 共享 (mcp.json) | 4 (基于命令) | 完整 |
+| **配置格式** | settings.json         | hooks.json + rules/ | config.toml | opencode.json |
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
-| **秘密检测** | 基于钩子 | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
-| **自动格式化** | PostToolUse 钩子 | afterFileEdit 钩子 | N/A | file.edited 钩子 |
+| **秘密检测** | 基于钩子                  | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
+| **自动格式化** | PostToolUse 钩子        | afterFileEdit 钩子 | N/A | file.edited 钩子 |
 | **版本** | 插件 | 插件 | 参考配置 | 2.0.0-rc.1 |
 
 **关键架构决策：**

@@ -122,6 +122,9 @@ skills:
   - quarkus-tdd
   - quarkus-verification
   - ralphinho-rfc-pipeline
+  - react-patterns
+  - react-performance
+  - react-testing
   - regex-vs-llm-structured-text
   - repo-scan
   - returns-reverse-logistics
@@ -213,6 +216,9 @@ commands:
   - prune
   - python-review
   - quality-gate
+  - react-build
+  - react-review
+  - react-test
   - refactor-clean
   - resume-session
   - review-pr
