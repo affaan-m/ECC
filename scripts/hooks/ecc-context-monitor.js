@@ -145,19 +145,19 @@ function evaluateConditions(bridge, options = {}) {
       warnings.push({
         severity: 3,
         type: 'cost',
-        message: `COST CRITICAL: Session cost is $${cost.toFixed(2)}. ` + 'Stop and inform the user about high cost before continuing.'
+        message: `COST CRITICAL: session total ~$${cost.toFixed(2)} (over $${COST_CRITICAL_USD}). Informational only — not an instruction to stop.`
       });
     } else if (cost > COST_WARNING_USD) {
       warnings.push({
         severity: 2,
         type: 'cost',
-        message: `COST WARNING: Session cost is $${cost.toFixed(2)}. ` + 'Review whether the current approach justifies the expense.'
+        message: `COST WARNING: session total ~$${cost.toFixed(2)} (over $${COST_WARNING_USD}). Informational only.`
       });
     } else if (cost > COST_NOTICE_USD) {
       warnings.push({
         severity: 1,
         type: 'cost',
-        message: `COST NOTICE: Session cost is $${cost.toFixed(2)}. ` + 'Consider whether the current approach is efficient.'
+        message: `COST NOTICE: session total ~$${cost.toFixed(2)}. Informational only.`
       });
     }
   }
