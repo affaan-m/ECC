@@ -105,7 +105,7 @@
       "env": {
         "CS_ACCESS_TOKEN": "YOUR_CS_ACCESS_TOKEN_HERE"
       },
-      "description": "CodeScene Code Health — structural review, score deltas, commit/PR safeguards for AI-assisted coding. Free standalone token: https://codescene.com/product/code-health-mcp"
+      "description": "Optional. CodeScene Code Health MCP (community skill: codehealth-mcp). Not enabled by default — copy only if you opt in. Requires your own CS_ACCESS_TOKEN (no bundled credentials). See skills/codehealth-mcp/SKILL.md for data boundaries and failure behavior."
     },
     "magic": {
       "command": "npx",
