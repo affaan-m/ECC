@@ -35,6 +35,23 @@ const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
     'agents-core',
     'commands-core',
   ],
+  // OpenCode Desktop has its own plugin runtime; avoid installing
+  // hooks-runtime by default to keep the surface small and avoid
+  // startup/provider issues (see #2079).
+  // codebuddy inherits claude defaults via the fallback below.
+  opencode: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
+  ],
+});
+const DEFAULT_EXCLUDED_MODULE_IDS_BY_TARGET = Object.freeze({
+  // OpenCode Desktop loads its own plugin runtime. Installing Claude-style
+  // hook scripts into ~/.opencode by default can interfere with provider
+  // startup; keep hooks opt-in via explicit --modules hooks-runtime.
+  opencode: ['hooks-runtime'],
 });
 const LEGACY_LANGUAGE_ALIAS_TO_CANONICAL = Object.freeze({
   c: 'c',
@@ -390,7 +407,20 @@ function resolveInstallPlan(options = {}) {
   requestedModuleIds.push(...explicitModuleIds);
   requestedModuleIds.push(...expandComponentIdsToModuleIds(includedComponentIds, manifests));
 
-  const excludedModuleIds = expandComponentIdsToModuleIds(excludedComponentIds, manifests);
+  const target = options.target || null;
+  if (target && !SUPPORTED_INSTALL_TARGETS.includes(target)) {
+    throw new Error(
+      `Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`
+    );
+  }
+
+  const defaultTargetExcludedModuleIds = (DEFAULT_EXCLUDED_MODULE_IDS_BY_TARGET[target] || [])
+    .filter(moduleId => !explicitModuleIds.includes(moduleId));
+  const allExcludedModuleIds = dedupeStrings([
+    ...expandComponentIdsToModuleIds(excludedComponentIds, manifests),
+    ...defaultTargetExcludedModuleIds,
+  ]);
+  const excludedModuleIds = allExcludedModuleIds;
   const excludedModuleOwners = new Map();
   for (const componentId of excludedComponentIds) {
     const component = manifests.componentsById.get(componentId);
@@ -403,13 +433,10 @@ function resolveInstallPlan(options = {}) {
       excludedModuleOwners.set(moduleId, owners);
     }
   }
-
-  const target = options.target || null;
-  if (target && !SUPPORTED_INSTALL_TARGETS.includes(target)) {
-    throw new Error(
-      `Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`
-    );
+  for (const moduleId of defaultTargetExcludedModuleIds) {
+    excludedModuleOwners.set(moduleId, ['target-default']);
   }
+
   const validatedProjectRoot = readOptionalStringOption(options, 'projectRoot');
   const validatedHomeDir = readOptionalStringOption(options, 'homeDir');
   const targetPlanningInput = target

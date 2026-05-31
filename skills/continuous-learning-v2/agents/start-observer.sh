@@ -35,7 +35,7 @@ PYTHON_CMD="${CLV2_PYTHON_CMD:-}"
 # Configuration
 # ─────────────────────────────────────────────
 
-CONFIG_DIR="${HOME}/.claude/homunculus"
+CONFIG_DIR="${_CLV2_HOMUNCULUS_DIR:-${CLV2_HOMUNCULUS_DIR:-${HOME}/.claude/homunculus}}"
 if [ -n "${CLV2_CONFIG:-}" ]; then
   CONFIG_FILE="$CLV2_CONFIG"
 else

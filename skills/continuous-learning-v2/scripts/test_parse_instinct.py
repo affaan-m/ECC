@@ -653,6 +653,125 @@ def test_cmd_status_returns_int(patch_globals, monkeypatch):
     assert isinstance(ret, int)
 
 
+
+# ─────────────────────────────────────────────
+# cmd_status legacy homunculus warning tests
+# ─────────────────────────────────────────────
+
+def test_cmd_status_legacy_warning_when_distinct(patch_globals, monkeypatch, capsys):
+    """Warning on stderr when legacy ~/.claude/homunculus exists alongside distinct active path."""
+    tree = patch_globals
+    project = _make_project(tree)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+
+    legacy = tree["root"] / ".claude" / "homunculus"
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "projects" / "legacy-project" / "observations.jsonl").parent.mkdir(parents=True, exist_ok=True)
+    (legacy / "projects" / "legacy-project" / "observations.jsonl").write_text("{}\n")
+    active = tree["root"] / "active-homunculus"
+    monkeypatch.setattr(_mod, "HOMUNCULUS_DIR", active)
+
+    monkeypatch.setattr(_mod, "LEGACY_HOMUNCULUS_DIR", legacy)
+
+    args = SimpleNamespace()
+    ret = cmd_status(args)
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    assert "legacy" in captured.err.lower()
+    assert str(legacy) in captured.err
+    assert str(active) in captured.err
+    assert "migrate with" in captured.err
+    assert "mkdir -p" in captured.err
+    assert "cp -a" in captured.err
+    assert "migrate-homunculus" not in captured.err
+    # Normal output should still appear
+    assert "No instincts found." in captured.out
+
+
+def test_cmd_status_no_legacy_warning_when_absent(patch_globals, monkeypatch, capsys):
+    """No legacy warning when legacy path does not exist on disk."""
+    tree = patch_globals
+    project = _make_project(tree)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+
+    legacy = tree["root"] / ".claude" / "homunculus"
+    # Do NOT create the legacy directory
+    monkeypatch.setattr(_mod, "LEGACY_HOMUNCULUS_DIR", legacy)
+
+    args = SimpleNamespace()
+    ret = cmd_status(args)
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    assert "legacy" not in captured.err.lower()
+    assert "No instincts found." in captured.out
+
+
+def test_cmd_status_no_legacy_warning_when_same_path(patch_globals, monkeypatch, capsys):
+    """No legacy warning when active HOMUNCULUS_DIR equals legacy path."""
+    tree = patch_globals
+    project = _make_project(tree)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+
+    # Make active and legacy the same directory
+    monkeypatch.setattr(_mod, "LEGACY_HOMUNCULUS_DIR", tree["homunculus"])
+    monkeypatch.setattr(_mod, "HOMUNCULUS_DIR", tree["homunculus"])
+
+    args = SimpleNamespace()
+    ret = cmd_status(args)
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    assert "legacy" not in captured.err.lower()
+    assert "No instincts found." in captured.out
+
+
+def test_cmd_status_no_legacy_warning_when_legacy_dir_empty(patch_globals, monkeypatch, capsys):
+    """No legacy warning when only empty placeholder directories exist."""
+    tree = patch_globals
+    project = _make_project(tree)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+
+    legacy = tree["root"] / ".claude" / "homunculus"
+    (legacy / "projects").mkdir(parents=True, exist_ok=True)
+    (legacy / "instincts").mkdir(parents=True, exist_ok=True)
+    (legacy / "evolved").mkdir(parents=True, exist_ok=True)
+    (legacy / "projects.json").write_text("{}")
+    active = tree["root"] / "active-homunculus"
+    monkeypatch.setattr(_mod, "LEGACY_HOMUNCULUS_DIR", legacy)
+    monkeypatch.setattr(_mod, "HOMUNCULUS_DIR", active)
+
+    args = SimpleNamespace()
+    ret = cmd_status(args)
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    assert "legacy" not in captured.err.lower()
+    assert "No instincts found." in captured.out
+
+
+def test_cmd_status_legacy_warning_for_global_instinct_state(patch_globals, monkeypatch, capsys):
+    """Warn when legacy global instinct files exist under ~/.claude/homunculus."""
+    tree = patch_globals
+    project = _make_project(tree)
+    monkeypatch.setattr(_mod, "detect_project", lambda: project)
+
+    legacy = tree["root"] / ".claude" / "homunculus"
+    (legacy / "instincts" / "personal").mkdir(parents=True, exist_ok=True)
+    (legacy / "instincts" / "personal" / "old.yaml").write_text(SAMPLE_INSTINCT_YAML)
+    active = tree["root"] / "active-homunculus"
+    monkeypatch.setattr(_mod, "LEGACY_HOMUNCULUS_DIR", legacy)
+    monkeypatch.setattr(_mod, "HOMUNCULUS_DIR", active)
+
+    args = SimpleNamespace()
+    ret = cmd_status(args)
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    assert "legacy" in captured.err.lower()
+    assert str(legacy) in captured.err
+    assert str(active) in captured.err
 # ─────────────────────────────────────────────
 # cmd_projects tests
 # ─────────────────────────────────────────────

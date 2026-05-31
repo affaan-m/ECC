@@ -1,6 +1,6 @@
 {
   "name": "ecc",
-  "version": "1.10.0",
+  "version": "1.10.6",
   "description": "Battle-tested Codex workflows — 156 shared ECC skills, production-ready MCP configs, and selective-install-aligned conventions for TDD, security scanning, code review, and autonomous development.",
   "author": {
     "name": "Affaan Mustafa",

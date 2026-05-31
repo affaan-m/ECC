@@ -2490,13 +2490,25 @@ async function runTests() {
       const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
 
       assert.ok(observerLoopSource.includes('ECC_OBSERVER_MAX_TURNS'), 'observer-loop should allow max-turn overrides');
-      assert.ok(observerLoopSource.includes('max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"'), 'observer-loop should default to 20 turns');
+      assert.ok(observerLoopSource.includes('max_turns="${ECC_OBSERVER_MAX_TURNS:-$DEFAULT_MAX_TURNS}"'), 'observer-loop should default to the computed safe max-turn budget');
       assert.ok(!observerLoopSource.includes('--max-turns 3'), 'observer-loop should not hardcode a 3-turn limit');
       assert.ok(observerLoopSource.includes('ECC_SKIP_OBSERVE=1'), 'observer-loop should suppress observe.sh for automated sessions');
       assert.ok(observerLoopSource.includes('ECC_HOOK_PROFILE=minimal'), 'observer-loop should run automated analysis with the minimal hook profile');
       assert.ok(observerLoopSource.includes('prompt_content="$(cat "$prompt_file" 2>/dev/null || true)"'), 'observer-loop should read prompt_file into memory before claude is spawned');
       assert.ok(observerLoopSource.includes('-p "$prompt_content"'), 'observer-loop should pass in-memory prompt content to claude');
       assert.ok(!observerLoopSource.includes('-p "$(cat "$prompt_file")"'), 'observer-loop should not re-read prompt_file at invocation time');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer-loop reuses the safe max-turn default for invalid overrides', () => {
+      const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
+
+      assert.ok(observerLoopSource.includes('DEFAULT_MAX_TURNS=$(( (MAX_ANALYSIS_LINES + 9) / 10 ))'), 'observer-loop should scale the safe default from selected analysis lines');
+      assert.ok(!observerLoopSource.includes('max_turns=20'), 'invalid max-turn overrides should not fall back to the old 20-turn limit');
+      assert.ok(observerLoopSource.includes('[ "$DEFAULT_MAX_TURNS" -lt 10 ] && DEFAULT_MAX_TURNS=10'), 'observer-loop should keep a minimum safe max-turn default');
     })
   )
     passed++;
@@ -2549,6 +2561,7 @@ async function runTests() {
         spawnSync('git', ['init'], { cwd: repoDir, stdio: 'ignore' });
         spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/example/ecc-test.git'], { cwd: repoDir, stdio: 'ignore' });
 
+        const homunculusDir = path.join(testRoot, 'custom homunculus');
         const shellCommand = [`cd "${toBashPath(repoDir)}"`, `source "${toBashPath(detectProjectPath)}" >/dev/null 2>&1`, 'printf "%s\\n" "$PROJECT_ID"', 'printf "%s\\n" "$PROJECT_DIR"'].join('; ');
 
         const proc = spawn('bash', ['-lc', shellCommand], {
@@ -2556,7 +2569,8 @@ async function runTests() {
             ...process.env,
             HOME: homeDir,
             USERPROFILE: homeDir,
-            CLAUDE_PROJECT_DIR: ''
+            CLAUDE_PROJECT_DIR: '',
+            CLV2_HOMUNCULUS_DIR: homunculusDir
           },
           stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -2574,14 +2588,8 @@ async function runTests() {
         assert.strictEqual(code, 0, `detect-project should source cleanly, stderr: ${stderr}`);
 
         const [projectId, projectDir] = stdout.trim().split(/\r?\n/);
-        const registryPath = path.join(homeDir, '.claude', 'homunculus', 'projects.json');
-        const expectedProjectDir = path.join(
-          homeDir,
-          '.claude',
-          'homunculus',
-          'projects',
-          projectId
-        );
+        const registryPath = path.join(homunculusDir, 'projects.json');
+        const expectedProjectDir = path.join(homunculusDir, 'projects', projectId);
         const projectMetadataPath = path.join(expectedProjectDir, 'project.json');
 
         assert.ok(projectId, 'detect-project should emit a project id');
@@ -2685,6 +2693,55 @@ async function runTests() {
     passed++;
   else failed++;
 
+
+  if (SKIP_BASH) {
+    console.log('  ⊘ observe.sh allows VS Code extension entrypoint (skipped on Windows)');
+    passed++;
+  } else if (
+    await asyncTest('observe.sh allows VS Code extension entrypoint to record observations', async () => {
+      const homeDir = createTestDir();
+      const projectDir = createTestDir();
+      const homunculusDir = path.join(homeDir, 'custom homunculus');
+      const observePath = path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'hooks', 'observe.sh');
+      const payload = JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'echo vscode' },
+        tool_response: 'ok',
+        session_id: 'session-vscode-entrypoint',
+        cwd: projectDir
+      });
+
+      try {
+        const result = await runShellScript(
+          observePath,
+          ['post'],
+          payload,
+          {
+            HOME: homeDir,
+            USERPROFILE: homeDir,
+            CLAUDE_PROJECT_DIR: projectDir,
+            CLAUDE_CODE_ENTRYPOINT: 'claude-vscode',
+            CLV2_HOMUNCULUS_DIR: homunculusDir
+          },
+          projectDir
+        );
+
+        assert.strictEqual(result.code, 0, `observe.sh should exit successfully, stderr: ${result.stderr}`);
+        const projectsDir = path.join(homunculusDir, 'projects');
+        const projectIds = fs.readdirSync(projectsDir);
+        assert.strictEqual(projectIds.length, 1, 'observe.sh should create one project-scoped observation directory');
+        const observationsPath = path.join(projectsDir, projectIds[0], 'observations.jsonl');
+        assert.ok(fs.existsSync(observationsPath), 'observe.sh should write observations for claude-vscode sessions');
+        const legacyProjectsDir = path.join(homeDir, '.claude', 'homunculus', 'projects');
+        assert.ok(!fs.existsSync(legacyProjectsDir), 'observe.sh should honor CLV2_HOMUNCULUS_DIR instead of writing to the legacy root');
+      } finally {
+        cleanupTestDir(homeDir);
+        cleanupTestDir(projectDir);
+      }
+    })
+  )
+    passed++;
+  else failed++;
   if (SKIP_BASH) { console.log("  ⊘ observe.sh skips minimal hook profile (skipped on Windows)"); passed++; } else if (
     await asyncTest('observe.sh skips minimal hook profile before project detection side effects', async () => {
       await assertObserveSkipBeforeProjectDetection({

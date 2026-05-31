@@ -80,6 +80,13 @@
 
 ## 最新动态
 
+### v1.10.6 — 钩子可靠性补丁（2026年5月）
+
+- **持续学习可靠性** —— `observe.sh` 会记录 Claude VS Code 扩展会话，observer 分析会根据所选分析批次动态计算默认 `--max-turns`，并在观察者脚本和 instinct CLI 之间统一 `CLV2_HOMUNCULUS_DIR` 数据根。
+- **本能命令加固** —— continuous-learning 命令会先解析活跃的插件/缓存根目录，再调用 `instinct-cli.py`，避免 `CLAUDE_PLUGIN_ROOT` 缺失时静默落到旧手动安装。
+- **GateGuard 控制项** —— JS 钩子支持 `GATEGUARD_BASH_ROUTINE_DISABLED=1` 和字面量 `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` 扩展，同时为非 Claude Code 宿主保留稳定 session key 和 destructive bash gate。
+- **OpenCode 安全性** —— package-manager 检测会忽略继承的通用 `PACKAGE_MANAGER`，支持 `CLAUDE_PACKAGE_MANAGER`，检查常见子目录 lockfile，并保持 hooks runtime 需要显式启用。
+
 ### v1.10.0 — 表面同步、运营工作流与 ECC 2.0 Alpha（2026年4月）
 
 - **公共表面已与真实仓库同步** —— 元数据、目录数量、插件清单以及安装文档现在都与实际开源表面保持一致。

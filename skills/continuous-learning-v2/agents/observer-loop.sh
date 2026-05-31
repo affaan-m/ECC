@@ -182,17 +182,22 @@ PROMPT
   fi
 
   timeout_seconds="${ECC_OBSERVER_TIMEOUT_SECONDS:-120}"
-  max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"
+  # Dynamic default: 1 turn per ~10 analysis lines, minimum 10 (#2035).
+  # With the default 500 analysis lines this yields 50 turns; for 200 lines
+  # it yields 20, and for 1000 lines it yields 100 — all reasonable.
+  DEFAULT_MAX_TURNS=$(( (MAX_ANALYSIS_LINES + 9) / 10 ))
+  [ "$DEFAULT_MAX_TURNS" -lt 10 ] && DEFAULT_MAX_TURNS=10
+  max_turns="${ECC_OBSERVER_MAX_TURNS:-$DEFAULT_MAX_TURNS}"
   exit_code=0
 
   case "$max_turns" in
     ''|*[!0-9]*)
-      max_turns=20
+      max_turns="$DEFAULT_MAX_TURNS"
       ;;
   esac
 
   if [ "$max_turns" -lt 4 ]; then
-    max_turns=20
+    max_turns="$DEFAULT_MAX_TURNS"
   fi
 
   # Ensure CWD is PROJECT_DIR so the relative analysis_relpath resolves correctly

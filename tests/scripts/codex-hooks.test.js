@@ -7,11 +7,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const execFileSync = require('child_process').execFileSync;
 const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
 const syncScript = path.join(repoRoot, 'scripts', 'sync-ecc-to-codex.sh');
+
+const IS_WSL_BASH = spawnSync('bash', ['-lc', 'test -d /mnt/c -o -d /mnt/d'], {
+  stdio: 'ignore',
+}).status === 0;
 
 function test(name, fn) {
   try {
@@ -33,14 +38,52 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function toBashPath(filePath) {
+  if (IS_WSL_BASH) {
+    return String(filePath)
+      .replace(/^([A-Za-z]):/, (_, driveLetter) => `/mnt/${driveLetter.toLowerCase()}`)
+      .replace(/\\/g, '/');
+  }
+
+  if (process.platform !== 'win32') {
+    return filePath;
+  }
+
+  try {
+    return execFileSync('bash', ['-lc', 'cygpath -u -- "$1"', 'bash', filePath], {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return String(filePath)
+      .replace(/^([A-Za-z]):/, (_, driveLetter) => `/${driveLetter.toLowerCase()}`)
+      .replace(/\\/g, '/');
+  }
+}
+
+function toBashEnv(env) {
+  if (process.platform !== 'win32') {
+    return env;
+  }
+
+  const pathKeys = new Set(['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'GIT_CONFIG_GLOBAL', 'CODEX_HOME', 'AGENTS_HOME', 'ECC_GLOBAL_HOOKS_DIR']);
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [
+      key,
+      pathKeys.has(key) ? toBashPath(value) : value,
+    ])
+  );
+}
+
 function runBash(scriptPath, args = [], env = {}, cwd = repoRoot) {
-  return spawnSync('bash', [scriptPath, ...args], {
+  const normalizedScript = fs.readFileSync(scriptPath, 'utf8').replace(/\r\n/g, '\n');
+  return spawnSync('bash', ['-s', '--', ...args.map(toBashPath)], {
     cwd,
     env: {
       ...process.env,
-      ...env,
+      ...toBashEnv(env),
     },
     encoding: 'utf8',
+    input: normalizedScript,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
@@ -92,6 +135,14 @@ if (os.platform() === 'win32') {
 )
   passed++;
 else failed++;
+
+
+if (IS_WSL_BASH && process.platform === 'win32') {
+  console.log('  - sync-ecc-to-codex.sh integration tests (skipped on Windows/WSL path bridge)');
+  console.log(`\nPassed: ${passed}`);
+  console.log(`Failed: ${failed}`);
+  process.exit(failed > 0 ? 1 : 0);
+}
 
 if (
   test('sync installs the missing Codex baseline and accepts the legacy context7 MCP section', () => {

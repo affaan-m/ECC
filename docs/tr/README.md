@@ -79,6 +79,13 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 
 ## Yenilikler
 
+### v1.10.6 — Hook Güvenilirliği Yaması (May 2026)
+
+- **Continuous-learning güvenilirliği** — `observe.sh` Claude VS Code uzantısı oturumlarını kaydeder, observer analizi varsayılan `--max-turns` değerini seçilen analiz parti boyutundan ölçekler ve tek `CLV2_HOMUNCULUS_DIR` kökünü izler.
+- **Instinct komutları sağlamlaştırıldı** — komutlar `instinct-cli.py` çağırmadan önce aktif plugin/cache kökünü çözer; eski manuel kurulumlara sessiz fallback engellenir.
+- **GateGuard kontrolleri** — JS hook `GATEGUARD_BASH_ROUTINE_DISABLED=1` ve literal `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` eklerini destekler; Claude Code dışı hostlar için stabil session key ve destructive gate korunur.
+- **OpenCode güvenliği** — package-manager tespiti miras kalan genel `PACKAGE_MANAGER` değerlerini yok sayar, `CLAUDE_PACKAGE_MANAGER` kullanır, yaygın alt lockfile dizinlerini tarar ve hook runtime opt-in kalır.
+
 ### v1.10.0 — Surface Sync, Operatör İş Akışları ve ECC 2.0 Alpha (Nis 2026)
 
 - **Public surface canlı repo ile senkronlandı** — metadata, katalog sayıları, plugin manifest'leri ve kurulum odaklı dokümanlar artık gerçek OSS yüzeyiyle eşleşiyor.

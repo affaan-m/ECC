@@ -105,6 +105,16 @@ Profiles:
 - `standard` — default; balanced quality + safety checks.
 - `strict` — enables additional reminders and stricter guardrails.
 
+GateGuard-specific controls:
+
+```bash
+# Skip the once-per-session routine Bash gate; destructive Bash still gates.
+export GATEGUARD_BASH_ROUTINE_DISABLED=1
+
+# Add project-specific destructive command literals (pipe-separated).
+export GATEGUARD_BASH_EXTRA_DESTRUCTIVE="supabase db reset|prisma migrate reset"
+```
+
 ### Writing Your Own Hook
 
 Hooks are shell commands that receive tool input as JSON on stdin and must output JSON on stdout.

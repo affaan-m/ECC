@@ -71,6 +71,8 @@ $env:CLAUDE_PACKAGE_MANAGER = "pnpm"
 export CLAUDE_PACKAGE_MANAGER=pnpm
 ```
 
+`PACKAGE_MANAGER` is intentionally ignored by ECC package-manager resolution because parent shells and OpenCode workers can leave stale values behind. Use `CLAUDE_PACKAGE_MANAGER` when you need an explicit override.
+
 ## Run the Detection
 
 To see current package manager detection results, run:

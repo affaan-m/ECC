@@ -98,6 +98,30 @@ if (
   passed++;
 else failed++;
 
+
+if (
+  test('OpenCode shell.env ignores stale generic PACKAGE_MANAGER', () => {
+    const source = fs.readFileSync(path.join(opencodeDir, 'plugins', 'ecc-hooks.ts'), 'utf8');
+    assert.ok(source.includes('getFirstAvailableEnv(["CLAUDE_PACKAGE_MANAGER"])'),
+      'OpenCode plugin should only treat CLAUDE_PACKAGE_MANAGER as an explicit override');
+    assert.ok(!source.includes('getFirstAvailableEnv(["CLAUDE_PACKAGE_MANAGER", "PACKAGE_MANAGER"])'),
+      'OpenCode plugin must not let stale generic PACKAGE_MANAGER suppress project detection');
+    assert.ok(source.includes('getPackageManagerFromPackageJson()'),
+      'OpenCode plugin should inspect package.json before lockfile fallback');
+    assert.ok(source.includes('getPackageManagerFromLockfiles()'),
+      'OpenCode plugin should detect root and common child-directory lockfiles');
+    assert.ok(source.includes('countConsoleLogLines('),
+      'OpenCode plugin should audit console.log via Node fs instead of spawning grep');
+    assert.ok(!source.includes('grep -n'),
+      'OpenCode plugin should not spawn grep for post-edit console checks');
+    assert.ok(!source.includes('grep -c'),
+      'OpenCode plugin should not spawn grep for stop console checks');
+    assert.ok(!source.includes('test -f'),
+      'OpenCode plugin should not shell out to test -f for project detection');
+  })
+)
+  passed++;
+else failed++;
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

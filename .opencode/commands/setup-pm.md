@@ -27,6 +27,8 @@ Set up package manager preference for the project or globally.
 export CLAUDE_PACKAGE_MANAGER=pnpm
 ```
 
+`PACKAGE_MANAGER` is intentionally not treated as an OpenCode override because parent shells can leave stale values behind. Use `CLAUDE_PACKAGE_MANAGER` for an explicit ECC override.
+
 ### Option 2: Project Config
 ```bash
 # Create .claude/package-manager.json

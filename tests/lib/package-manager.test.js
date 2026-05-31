@@ -243,8 +243,10 @@ function runTests() {
 
   if (test('respects environment variable', () => {
     const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+    const originalPm = process.env.PACKAGE_MANAGER;
     try {
       process.env.CLAUDE_PACKAGE_MANAGER = 'yarn';
+      delete process.env.PACKAGE_MANAGER;
       const result = pm.getPackageManager();
       assert.strictEqual(result.name, 'yarn');
       assert.strictEqual(result.source, 'environment');
@@ -254,13 +256,128 @@ function runTests() {
       } else {
         delete process.env.CLAUDE_PACKAGE_MANAGER;
       }
+      if (originalPm !== undefined) {
+        process.env.PACKAGE_MANAGER = originalPm;
+      } else {
+        delete process.env.PACKAGE_MANAGER;
+      }
+    }
+  })) passed++;
+
+  if (test('ignores generic PACKAGE_MANAGER when project evidence exists', () => {
+    const originalClaudePm = process.env.CLAUDE_PACKAGE_MANAGER;
+    const originalPm = process.env.PACKAGE_MANAGER;
+    const testDir = createTestDir();
+    try {
+      delete process.env.CLAUDE_PACKAGE_MANAGER;
+      process.env.PACKAGE_MANAGER = 'bun';
+      fs.writeFileSync(path.join(testDir, 'pnpm-lock.yaml'), '');
+      const result = pm.getPackageManager({ projectDir: testDir });
+      assert.strictEqual(result.name, 'pnpm');
+      assert.strictEqual(result.source, 'lock-file');
+    } finally {
+      cleanupTestDir(testDir);
+      if (originalClaudePm !== undefined) {
+        process.env.CLAUDE_PACKAGE_MANAGER = originalClaudePm;
+      } else {
+        delete process.env.CLAUDE_PACKAGE_MANAGER;
+      }
+      if (originalPm !== undefined) {
+        process.env.PACKAGE_MANAGER = originalPm;
+      } else {
+        delete process.env.PACKAGE_MANAGER;
+      }
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('CLAUDE_PACKAGE_MANAGER overrides generic PACKAGE_MANAGER and project lockfiles', () => {
+    const originalClaudePm = process.env.CLAUDE_PACKAGE_MANAGER;
+    const originalPm = process.env.PACKAGE_MANAGER;
+    const testDir = createTestDir();
+    try {
+      process.env.CLAUDE_PACKAGE_MANAGER = 'yarn';
+      process.env.PACKAGE_MANAGER = 'bun';
+      fs.writeFileSync(path.join(testDir, 'pnpm-lock.yaml'), '');
+      const result = pm.getPackageManager({ projectDir: testDir });
+      assert.strictEqual(result.name, 'yarn');
+      assert.strictEqual(result.source, 'environment');
+    } finally {
+      cleanupTestDir(testDir);
+      if (originalClaudePm !== undefined) {
+        process.env.CLAUDE_PACKAGE_MANAGER = originalClaudePm;
+      } else {
+        delete process.env.CLAUDE_PACKAGE_MANAGER;
+      }
+      if (originalPm !== undefined) {
+        process.env.PACKAGE_MANAGER = originalPm;
+      } else {
+        delete process.env.PACKAGE_MANAGER;
+      }
+    }
+  })) passed++;
+  else failed++;
+
+  // detectFromLockFile monorepo child directory tests
+  console.log('\ndetectFromLockFile (monorepo child dirs):');
+
+  if (test('detects lockfile in common monorepo child directory when root has none', () => {
+    const testDir = createTestDir();
+    try {
+      fs.mkdirSync(path.join(testDir, 'packages', 'core'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, 'packages', 'core', 'pnpm-lock.yaml'), '');
+      const result = pm.detectFromLockFile(testDir);
+      assert.strictEqual(result, 'pnpm');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('detects lockfile in frontend/ child directory', () => {
+    const testDir = createTestDir();
+    try {
+      fs.mkdirSync(path.join(testDir, 'frontend'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, 'frontend', 'yarn.lock'), '');
+      const result = pm.detectFromLockFile(testDir);
+      assert.strictEqual(result, 'yarn');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('prefers root lockfile over child directory lockfile', () => {
+    const testDir = createTestDir();
+    try {
+      fs.mkdirSync(path.join(testDir, 'apps', 'web'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, 'package-lock.json'), '{}');
+      fs.writeFileSync(path.join(testDir, 'apps', 'web', 'pnpm-lock.yaml'), '');
+      const result = pm.detectFromLockFile(testDir);
+      assert.strictEqual(result, 'npm');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('returns null when neither root nor child dirs have lockfiles', () => {
+    const testDir = createTestDir();
+    try {
+      fs.mkdirSync(path.join(testDir, 'packages', 'lib'), { recursive: true });
+      const result = pm.detectFromLockFile(testDir);
+      assert.strictEqual(result, null);
+    } finally {
+      cleanupTestDir(testDir);
     }
   })) passed++;
   else failed++;
 
   if (test('detects from lock file in project', () => {
     const originalEnv = process.env.CLAUDE_PACKAGE_MANAGER;
+    const originalPm = process.env.PACKAGE_MANAGER;
     delete process.env.CLAUDE_PACKAGE_MANAGER;
+    delete process.env.PACKAGE_MANAGER;
     const testDir = createTestDir();
     try {
       fs.writeFileSync(path.join(testDir, 'bun.lockb'), '');
@@ -271,6 +388,13 @@ function runTests() {
       cleanupTestDir(testDir);
       if (originalEnv !== undefined) {
         process.env.CLAUDE_PACKAGE_MANAGER = originalEnv;
+      } else {
+        delete process.env.CLAUDE_PACKAGE_MANAGER;
+      }
+      if (originalPm !== undefined) {
+        process.env.PACKAGE_MANAGER = originalPm;
+      } else {
+        delete process.env.PACKAGE_MANAGER;
       }
     }
   })) passed++;

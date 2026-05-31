@@ -562,6 +562,102 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  // --- Test 20: GATEGUARD_BASH_ROUTINE_DISABLED skips routine gate ---
+  clearState();
+  if (test('skips routine bash gate when GATEGUARD_BASH_ROUTINE_DISABLED=1', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'ls -la' }
+    };
+    const result = runBashHook(input, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+    assert.strictEqual(result.code, 0, 'exit code should be 0');
+    const output = parseOutput(result.stdout);
+    assert.ok(output, 'should produce valid JSON output');
+    if (output.hookSpecificOutput) {
+      assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny',
+        'should not deny routine bash when disabled');
+    } else {
+      assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+    }
+  })) passed++; else failed++;
+
+  // --- Test 21: GATEGUARD_BASH_EXTRA_DESTRUCTIVE adds custom literal patterns ---
+  clearState();
+  if (test('denies commands matching GATEGUARD_BASH_EXTRA_DESTRUCTIVE literal patterns', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'supabase db reset --force' }
+    };
+    const extraPattern = 'supabase db reset';
+
+    // First call: should deny on the extra pattern
+    const result1 = runBashHook(input, { GATEGUARD_BASH_EXTRA_DESTRUCTIVE: extraPattern });
+    assert.strictEqual(result1.code, 0, 'first call exit code should be 0');
+    const output1 = parseOutput(result1.stdout);
+    assert.ok(output1, 'first call should produce JSON output');
+    assert.strictEqual(output1.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output1.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+
+    // Second call (retry): should allow
+    const result2 = runBashHook(input, { GATEGUARD_BASH_EXTRA_DESTRUCTIVE: extraPattern });
+    assert.strictEqual(result2.code, 0, 'second call exit code should be 0');
+    const output2 = parseOutput(result2.stdout);
+    assert.ok(output2, 'second call should produce valid JSON output');
+    if (output2.hookSpecificOutput) {
+      assert.notStrictEqual(output2.hookSpecificOutput.permissionDecision, 'deny',
+        'should allow retry after facts presented');
+    } else {
+      assert.strictEqual(output2.tool_name, 'Bash', 'pass-through should preserve input');
+    }
+  })) passed++; else failed++;
+
+  // --- Test 22: extra destructive patterns are literals, not raw regexes ---
+  clearState();
+  if (test('treats GATEGUARD_BASH_EXTRA_DESTRUCTIVE as pipe-separated literals', () => {
+    const routineInput = {
+      tool_name: 'Bash',
+      tool_input: { command: 'aaaaaaaaaaaaaaaaaaaaaaaa!' }
+    };
+    const literalInput = {
+      tool_name: 'Bash',
+      tool_input: { command: '(a+)+$' }
+    };
+
+    const result1 = runBashHook(routineInput, { GATEGUARD_BASH_EXTRA_DESTRUCTIVE: '(a+)+$' });
+    assert.strictEqual(result1.code, 0, 'literal regex-like value should not hang or crash');
+    const output1 = parseOutput(result1.stdout);
+    assert.ok(output1, 'routine command should produce valid JSON output');
+    assert.strictEqual(output1.hookSpecificOutput.permissionDecision, 'deny',
+      'non-matching routine command should use the routine bash gate');
+    assert.ok(output1.hookSpecificOutput.permissionDecisionReason.includes('current instruction'));
+
+    clearState();
+    const result2 = runBashHook(literalInput, { GATEGUARD_BASH_EXTRA_DESTRUCTIVE: '(a+)+$' });
+    assert.strictEqual(result2.code, 0, 'literal extra pattern call should exit cleanly');
+    const output2 = parseOutput(result2.stdout);
+    assert.ok(output2, 'literal matching command should produce valid JSON output');
+    assert.strictEqual(output2.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output2.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+  })) passed++; else failed++;
+
+  // --- Test 23: destructive gating must not be weakened by routine bash opt-out ---
+  clearState();
+  if (test('still gates destructive commands when GATEGUARD_BASH_ROUTINE_DISABLED=1', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf /important/data' }
+    };
+    const result = runBashHook(input, { GATEGUARD_BASH_ROUTINE_DISABLED: '1' });
+    assert.strictEqual(result.code, 0, 'exit code should be 0');
+    const output = parseOutput(result.stdout);
+    assert.ok(output, 'should produce JSON output');
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny',
+      'destructive commands must still be gated even when routine bash is disabled');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'),
+      'deny reason must indicate destructive command');
+  })) passed++; else failed++;
+
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {

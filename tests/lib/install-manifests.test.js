@@ -147,6 +147,36 @@ function runTests() {
     assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.agent'));
   })) passed++; else failed++;
 
+  if (test('resolves OpenCode core profile without hooks-runtime by default', () => {
+    const homeDir = '/home/tester';
+    const plan = resolveInstallPlan({ profileId: 'core', target: 'opencode', homeDir });
+
+    assert.deepStrictEqual(plan.selectedModuleIds, ['commands-core', 'platform-configs', 'workflow-quality']);
+    assert.ok(!plan.selectedModuleIds.includes('hooks-runtime'),
+      'Should not install hooks-runtime into OpenCode by default');
+    assert.ok(plan.excludedModuleIds.includes('hooks-runtime'),
+      'Should report hooks-runtime as excluded by OpenCode target defaults');
+    assert.strictEqual(plan.targetAdapterId, 'opencode-home');
+    assert.strictEqual(plan.targetRoot, path.join(homeDir, '.opencode'));
+    assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.startsWith('hooks')),
+      'Default OpenCode profile should not copy Claude hook config files');
+    assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.startsWith('scripts/hooks')),
+      'Default OpenCode profile should not copy Claude hook scripts');
+  })) passed++; else failed++;
+
+  if (test('keeps explicit OpenCode hooks-runtime requests opt-in', () => {
+    const homeDir = '/home/tester';
+    const plan = resolveInstallPlan({ moduleIds: ['hooks-runtime'], target: 'opencode', homeDir });
+
+    assert.deepStrictEqual(plan.selectedModuleIds, ['hooks-runtime']);
+    assert.ok(!plan.skippedModuleIds.includes('hooks-runtime'),
+      'Explicit hooks-runtime requests should remain opt-in for OpenCode');
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath.startsWith('hooks')),
+      'Explicit hooks-runtime requests should copy hook config files');
+    assert.ok(plan.operations.some(operation => operation.sourceRelativePath.startsWith('scripts/hooks')),
+      'Explicit hooks-runtime requests should copy hook scripts');
+  })) passed++; else failed++;
+
   if (test('resolves explicit modules with dependency expansion', () => {
     const plan = resolveInstallPlan({ moduleIds: ['security'] });
     assert.ok(plan.selectedModuleIds.includes('security'), 'Should include requested module');

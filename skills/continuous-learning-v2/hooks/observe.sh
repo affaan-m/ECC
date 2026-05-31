@@ -83,7 +83,7 @@ fi
 # Sourcing detect-project.sh creates project-scoped directories and updates
 # projects.json, so automated sessions must return before that point.
 
-CONFIG_DIR="${HOME}/.claude/homunculus"
+CONFIG_DIR="${CLV2_HOMUNCULUS_DIR:-${HOME}/.claude/homunculus}"
 
 # Skip if disabled (check both default and CLV2_CONFIG-derived locations)
 if [ -f "$CONFIG_DIR/disabled" ]; then
@@ -103,7 +103,7 @@ fi
 # Non-interactive SDK automation is still filtered by Layers 2-5 below
 # (ECC_HOOK_PROFILE=minimal, ECC_SKIP_OBSERVE=1, agent_id, path exclusions).
 case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli|sdk-ts) ;;
+  cli|sdk-ts|claude-vscode) ;;
   *) exit 0 ;;
 esac
 

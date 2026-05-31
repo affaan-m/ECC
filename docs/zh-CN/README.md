@@ -81,6 +81,13 @@
 
 ## 最新动态
 
+### v1.10.6 — 钩子可靠性补丁（2026年5月）
+
+* **持续学习可靠性** —— `observe.sh` 会记录 Claude VS Code 扩展会话，observer 分析会根据所选分析批次动态计算默认 `--max-turns`，并统一 `CLV2_HOMUNCULUS_DIR` 数据根。
+* **本能命令加固** —— continuous-learning 命令会先解析活跃插件/缓存根目录，避免静默落到旧手动安装。
+* **GateGuard 控制项** —— JS 钩子支持 `GATEGUARD_BASH_ROUTINE_DISABLED=1` 和字面量 `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` 扩展，同时为非 Claude Code 宿主保留稳定 session key 和 destructive bash gate。
+* **OpenCode 安全性** —— package-manager 检测忽略继承的通用 `PACKAGE_MANAGER`，支持 `CLAUDE_PACKAGE_MANAGER`，检查常见子目录 lockfile，并保持 hooks runtime 显式启用。
+
 ### v1.9.0 — 选择性安装与语言扩展 (2026年3月)
 
 * **选择性安装架构** — 基于清单的安装流程，使用 `install-plan.js` 和 `install-apply.js` 进行针对性组件安装。状态存储跟踪已安装内容并支持增量更新。
@@ -1218,7 +1225,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
 | **秘密检测** | 基于钩子 | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
 | **自动格式化** | PostToolUse 钩子 | afterFileEdit 钩子 | N/A | file.edited 钩子 |
-| **版本** | 插件 | 插件 | 参考配置 | 1.10.0 |
+| **版本** | 插件 | 插件 | 参考配置 | 1.10.6 |
 
 **关键架构决策：**
 

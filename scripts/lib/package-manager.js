@@ -90,6 +90,7 @@ function saveConfig(config) {
  * Detect package manager from lock file in project directory
  */
 function detectFromLockFile(projectDir = process.cwd()) {
+  // 1. Check root directory first
   for (const pmName of DETECTION_PRIORITY) {
     const pm = PACKAGE_MANAGERS[pmName];
     const lockFilePath = path.join(projectDir, pm.lockFile);
@@ -98,6 +99,57 @@ function detectFromLockFile(projectDir = process.cwd()) {
       return pmName;
     }
   }
+
+  // 2. Check common monorepo child directories. Workspace container dirs
+  // (packages/, apps/) usually hold packages one level down; singleton app
+  // dirs (frontend/, backend/, src/) usually hold the lockfile directly.
+  const WORKSPACE_CONTAINER_DIRS = ['packages', 'apps'];
+  const SINGLETON_CHILD_DIRS = ['frontend', 'backend', 'src'];
+
+  for (const childDir of SINGLETON_CHILD_DIRS) {
+    const childPath = path.join(projectDir, childDir);
+    try {
+      if (!fs.existsSync(childPath) || !fs.statSync(childPath).isDirectory()) {
+        continue;
+      }
+
+      for (const pmName of DETECTION_PRIORITY) {
+        const pm = PACKAGE_MANAGERS[pmName];
+        if (fs.existsSync(path.join(childPath, pm.lockFile))) {
+          return pmName;
+        }
+      }
+    } catch {
+      // Permission errors or broken directories; skip this child dir
+    }
+  }
+
+  for (const childDir of WORKSPACE_CONTAINER_DIRS) {
+    const childPath = path.join(projectDir, childDir);
+    try {
+      if (!fs.existsSync(childPath) || !fs.statSync(childPath).isDirectory()) {
+        continue;
+      }
+
+      const entries = fs.readdirSync(childPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        for (const pmName of DETECTION_PRIORITY) {
+          const pm = PACKAGE_MANAGERS[pmName];
+          const lockFilePath = path.join(childPath, entry.name, pm.lockFile);
+          if (fs.existsSync(lockFilePath)) {
+            return pmName;
+          }
+        }
+      }
+    } catch {
+      // Permission errors or non-directories; skip this child dir
+    }
+  }
+
   return null;
 }
 
@@ -163,7 +215,9 @@ function getAvailablePackageManagers() {
 function getPackageManager(options = {}) {
   const { projectDir = process.cwd() } = options;
 
-  // 1. Check environment variable
+  // 1. Check explicit ECC environment variable. Deliberately do not honor the
+  // generic PACKAGE_MANAGER here: shell runtimes such as OpenCode can inherit a
+  // stale parent value that conflicts with project lockfiles (#2074).
   const envPm = process.env.CLAUDE_PACKAGE_MANAGER;
   if (envPm && PACKAGE_MANAGERS[envPm]) {
     return {

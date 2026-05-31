@@ -132,7 +132,7 @@ The system automatically detects your current project:
 3. **`git rev-parse --show-toplevel`** -- fallback using repo path (machine-specific)
 4. **Global fallback** -- if no project is detected, instincts go to global scope
 
-Each project gets a 12-character hash ID (e.g., `a1b2c3d4e5f6`). A registry file at `~/.claude/homunculus/projects.json` maps IDs to human-readable names.
+Each project gets a 12-character hash ID (e.g., `a1b2c3d4e5f6`). A registry file at `~/.claude/homunculus/projects.json` maps IDs to human-readable names. Set `CLV2_HOMUNCULUS_DIR=/path/to/ecc-homunculus` to move the active data root; the CLI and observer scripts use the same override. When a distinct legacy `~/.claude/homunculus` directory exists, `/instinct-status` warns with copy commands so old data is visible instead of silently ignored.
 
 ## Quick Start
 

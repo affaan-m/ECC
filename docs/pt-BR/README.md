@@ -80,6 +80,13 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
+### v1.10.6 — Correção de Confiabilidade dos Hooks (Mai 2026)
+
+- **Confiabilidade do continuous-learning** — `observe.sh` registra sessões da extensão VS Code do Claude, a análise do observer escala o `--max-turns` padrão a partir do tamanho do lote selecionado e a stack respeita uma única raiz `CLV2_HOMUNCULUS_DIR`.
+- **Comandos de instinto mais seguros** — os comandos resolvem a raiz ativa do plugin/cache antes de chamar `instinct-cli.py`, evitando fallback silencioso para instalações manuais antigas.
+- **Controles do GateGuard** — o hook JS aceita `GATEGUARD_BASH_ROUTINE_DISABLED=1` e padrões literais em `GATEGUARD_BASH_EXTRA_DESTRUCTIVE`, preservando chaves de sessão estáveis em hosts fora do Claude Code e a proteção destructive bash.
+- **OpenCode mais seguro** — detecção de package manager ignora `PACKAGE_MANAGER` herdado, aceita `CLAUDE_PACKAGE_MANAGER`, verifica lockfiles em diretórios filhos comuns e mantém hooks como opt-in.
+
 ### v1.10.0 — Sincronização de Superfície, Fluxos Operacionais e ECC 2.0 Alpha (Abr 2026)
 
 - **Superfície pública sincronizada com o repositório real** — metadados, contagens de catálogo, manifests de plugin e documentação de instalação agora refletem a superfície OSS que realmente é entregue.

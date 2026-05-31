@@ -43,6 +43,124 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     return path.join(worktreePath, p)
   }
 
+  function hasProjectFile(relativePath: string): boolean {
+    try {
+      return fs.statSync(resolvePath(relativePath)).isFile()
+    } catch {
+      return false
+    }
+  }
+
+  function getProjectFilePath(relativePath: string): string | null {
+    const candidate = resolvePath(relativePath)
+    try {
+      return fs.statSync(candidate).isFile() ? candidate : null
+    } catch {
+      return null
+    }
+  }
+
+  function hasProjectDirectory(relativePath: string): boolean {
+    try {
+      return fs.statSync(resolvePath(relativePath)).isDirectory()
+    } catch {
+      return false
+    }
+  }
+
+  function getFirstAvailableEnv(keys: readonly string[]): string | undefined {
+    for (const key of keys) {
+      const value = process.env[key]
+      if (value && value.trim()) {
+        return value.trim()
+      }
+    }
+    return undefined
+  }
+
+  function countConsoleLogLines(filePath: string): number {
+    try {
+      const candidate = resolvePath(filePath)
+      if (!fs.statSync(candidate).isFile()) {
+        return 0
+      }
+      return fs.readFileSync(candidate, "utf8")
+        .split(/\r?\n/)
+        .filter((line) => line.includes("console.log"))
+        .length
+    } catch {
+      return 0
+    }
+  }
+
+  function getPackageManagerFromPackageJson(): string | undefined {
+    const packageJsonPath = getProjectFilePath("package.json")
+    if (!packageJsonPath) {
+      return undefined
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { packageManager?: unknown }
+      if (typeof parsed.packageManager !== "string") {
+        return undefined
+      }
+      const name = parsed.packageManager.split("@")[0]
+      return name === "bun" || name === "pnpm" || name === "yarn" || name === "npm" ? name : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  function getPackageManagerFromLockfiles(): string | undefined {
+    const lockfiles: ReadonlyArray<readonly [string, string]> = [
+      ["pnpm-lock.yaml", "pnpm"],
+      ["bun.lockb", "bun"],
+      ["yarn.lock", "yarn"],
+      ["package-lock.json", "npm"],
+    ]
+
+    for (const [lockfile, pm] of lockfiles) {
+      if (hasProjectFile(lockfile)) {
+        return pm
+      }
+    }
+
+    const singletonDirs = ["frontend", "backend", "src"]
+    for (const childDir of singletonDirs) {
+      if (!hasProjectDirectory(childDir)) {
+        continue
+      }
+      for (const [lockfile, pm] of lockfiles) {
+        if (hasProjectFile(path.join(childDir, lockfile))) {
+          return pm
+        }
+      }
+    }
+
+    const containerDirs = ["packages", "apps"]
+    for (const childDir of containerDirs) {
+      if (!hasProjectDirectory(childDir)) {
+        continue
+      }
+      try {
+        const entries = fs.readdirSync(resolvePath(childDir), { withFileTypes: true })
+        for (const entry of entries) {
+          if (!entry.isDirectory()) {
+            continue
+          }
+          for (const [lockfile, pm] of lockfiles) {
+            if (hasProjectFile(path.join(childDir, entry.name, lockfile))) {
+              return pm
+            }
+          }
+        }
+      } catch {
+        // Ignore unreadable workspace containers.
+      }
+    }
+
+    return undefined
+  }
   const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified" }>()
   let writeCounter = 0
 
@@ -105,7 +223,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       // Auto-format JS/TS files
       if (hookEnabled("post:edit:format", ["strict"]) && event.path.match(/\.(ts|tsx|js|jsx)$/)) {
         try {
-          await $`prettier --write ${event.path} 2>/dev/null`
+          await $`prettier --write ${event.path}`.nothrow().quiet()
           log("info", `[ECC] Formatted: ${event.path}`)
         } catch {
           // Prettier not installed or failed - silently continue
@@ -114,17 +232,12 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
 
       // Console.log warning check
       if (hookEnabled("post:edit:console-warn", ["standard", "strict"]) && event.path.match(/\.(ts|tsx|js|jsx)$/)) {
-        try {
-          const result = await $`grep -n "console\\.log" ${event.path} 2>/dev/null`.text()
-          if (result.trim()) {
-            const lines = result.trim().split("\n").length
-            log(
-              "warn",
-              `[ECC] console.log found in ${event.path} (${lines} occurrence${lines > 1 ? "s" : ""})`
-            )
-          }
-        } catch {
-          // No console.log found (grep returns non-zero) - this is good
+        const lines = countConsoleLogLines(event.path)
+        if (lines > 0) {
+          log(
+            "warn",
+            `[ECC] console.log found in ${event.path} (${lines} occurrence${lines > 1 ? "s" : ""})`
+          )
         }
       }
     },
@@ -161,17 +274,13 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         input.tool === "edit" &&
         input.args?.filePath?.match(/\.tsx?$/)
       ) {
-        try {
-          await $`npx tsc --noEmit 2>&1`
+        const typecheck = await $`npx tsc --noEmit`.nothrow().quiet()
+        if (typecheck.exitCode === 0) {
           log("info", "[ECC] TypeScript check passed")
-        } catch (error: unknown) {
-          const err = error as { stdout?: string }
+        } else {
+          const output = typecheck.stdout.toString() || typecheck.stderr.toString()
           log("warn", "[ECC] TypeScript errors detected:")
-          if (err.stdout) {
-            // Log first few errors
-            const errors = err.stdout.split("\n").slice(0, 5)
-            errors.forEach((line: string) => log("warn", `  ${line}`))
-          }
+          output.split("\n").slice(0, 5).forEach((line: string) => log("warn", `  ${line}`))
         }
       }
 
@@ -275,13 +384,8 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       log("info", `[ECC] Session started - profile=${currentProfile}`)
 
       // Check for project-specific context files
-      try {
-        const hasClaudeMd = await $`test -f ${worktree}/CLAUDE.md && echo "yes"`.text()
-        if (hasClaudeMd.trim() === "yes") {
-          log("info", "[ECC] Found CLAUDE.md - loading project context")
-        }
-      } catch {
-        // No CLAUDE.md found
+      if (hasProjectFile("CLAUDE.md")) {
+        log("info", "[ECC] Found CLAUDE.md - loading project context")
       }
     },
 
@@ -304,15 +408,10 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       for (const file of editedFiles) {
         if (!file.match(/\.(ts|tsx|js|jsx)$/)) continue
 
-        try {
-          const result = await $`grep -c "console\\.log" ${file} 2>/dev/null`.text()
-          const count = parseInt(result.trim(), 10)
-          if (count > 0) {
-            totalConsoleLogCount += count
-            filesWithConsoleLogs.push(file)
-          }
-        } catch {
-          // No console.log found
+        const count = countConsoleLogLines(file)
+        if (count > 0) {
+          totalConsoleLogCount += count
+          filesWithConsoleLogs.push(file)
         }
       }
 
@@ -331,7 +430,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
 
       // Desktop notification (macOS)
       try {
-        await $`osascript -e 'display notification "Task completed!" with title "OpenCode ECC"' 2>/dev/null`
+        await $`osascript -e 'display notification "Task completed!" with title "OpenCode ECC"'`.nothrow().quiet()
       } catch {
         // Notification not supported or failed
       }
@@ -396,27 +495,25 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      */
     "shell.env": async () => {
       const env: Record<string, string> = {
-        ECC_VERSION: "1.8.0",
+        ECC_VERSION: "1.10.6",
         ECC_PLUGIN: "true",
         ECC_HOOK_PROFILE: currentProfile,
         ECC_DISABLED_HOOKS: process.env.ECC_DISABLED_HOOKS || "",
-        PROJECT_ROOT: worktree || directory,
+        PROJECT_ROOT: worktreePath,
       }
 
-      // Detect package manager
-      const lockfiles: Record<string, string> = {
-        "bun.lockb": "bun",
-        "pnpm-lock.yaml": "pnpm",
-        "yarn.lock": "yarn",
-        "package-lock.json": "npm",
+      const explicitPackageManager = getFirstAvailableEnv(["CLAUDE_PACKAGE_MANAGER"])
+      if (explicitPackageManager) {
+        env.PACKAGE_MANAGER = explicitPackageManager
       }
-      for (const [lockfile, pm] of Object.entries(lockfiles)) {
-        try {
-          await $`test -f ${worktree}/${lockfile}`
-          env.PACKAGE_MANAGER = pm
-          break
-        } catch {
-          // Not found, try next
+
+      if (!env.PACKAGE_MANAGER) {
+        const packageManagerFromPackageJson = getPackageManagerFromPackageJson()
+        const packageManagerFromLockfile = getPackageManagerFromLockfiles()
+        if (packageManagerFromPackageJson) {
+          env.PACKAGE_MANAGER = packageManagerFromPackageJson
+        } else if (packageManagerFromLockfile) {
+          env.PACKAGE_MANAGER = packageManagerFromLockfile
         }
       }
 
@@ -430,11 +527,8 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       }
       const detected: string[] = []
       for (const [file, lang] of Object.entries(langDetectors)) {
-        try {
-          await $`test -f ${worktree}/${file}`
+        if (hasProjectFile(file)) {
           detected.push(lang)
-        } catch {
-          // Not found
         }
       }
       if (detected.length > 0) {
@@ -456,7 +550,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       const contextBlock = [
         "# ECC Context (preserve across compaction)",
         "",
-        "## Active Plugin: Everything Claude Code v1.10.0",
+        "## Active Plugin: Everything Claude Code v1.10.6",
         "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell.env, compacting, permission.ask",
         "- Tools: run-tests, check-coverage, security-audit, format-code, lint-check, git-summary, changed-files",
         "- Agents: 13 specialized (planner, architect, tdd-guide, code-reviewer, security-reviewer, build-error-resolver, e2e-runner, refactor-cleaner, doc-updater, go-reviewer, go-build-resolver, database-reviewer, python-reviewer)",

@@ -10,16 +10,11 @@ command: true
 
 ## 实现
 
-使用插件根路径运行本能 CLI：
+先按 hook bootstrap 和其他斜杠命令相同的顺序解析当前 ECC 根目录：`CLAUDE_PLUGIN_ROOT`、标准安装、已知插件根、插件缓存，最后回退到 `~/.claude`；然后运行本能 CLI。这样可以避免插件已启用但斜杠命令 shell 中 `CLAUDE_PLUGIN_ROOT` 为空时，误读旧的手动安装目录 (#2037)。
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/continuous-learning-v2/scripts/instinct-cli.py" status
-```
-
-或者，如果未设置 `CLAUDE_PLUGIN_ROOT`（手动安装），则使用：
-
-```bash
-python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py status
+ECC_ROOT="${CLAUDE_PLUGIN_ROOT:-$(node -e "var r=(()=>{var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var p=require('path'),f=require('fs'),h=require('os').homedir(),d=p.join(h,'.claude'),q=p.join('scripts','lib','utils.js');if(f.existsSync(p.join(d,q)))return d;for(var s of [["ecc"],["ecc@ecc"],["marketplace","ecc"],["everything-claude-code"],["everything-claude-code@everything-claude-code"],["marketplace","everything-claude-code"]]){var l=p.join(d,'plugins',...s);if(f.existsSync(p.join(l,q)))return l}try{for(var g of ["ecc","everything-claude-code"]){var b=p.join(d,'plugins','cache',g);for(var o of f.readdirSync(b,{withFileTypes:true})){if(!o.isDirectory())continue;for(var v of f.readdirSync(p.join(b,o.name),{withFileTypes:true})){if(!v.isDirectory())continue;var c=p.join(b,o.name,v.name);if(f.existsSync(p.join(c,q)))return c}}}}catch(x){}return d})();console.log(r)")}"
+python3 "$ECC_ROOT/skills/continuous-learning-v2/scripts/instinct-cli.py" status
 ```
 
 ## 用法

@@ -36,9 +36,10 @@ except ImportError:
 
 # ─────────────────────────────────────────────
 # Configuration
-# ─────────────────────────────────────────────
-
-HOMUNCULUS_DIR = Path.home() / ".claude" / "homunculus"
+# Legacy data directory: always ~/.claude/homunculus
+LEGACY_HOMUNCULUS_DIR = Path.home() / ".claude" / "homunculus"
+# Active homunculus directory: overridable via CLV2_HOMUNCULUS_DIR env var
+HOMUNCULUS_DIR = Path(os.environ.get("CLV2_HOMUNCULUS_DIR", "")) if os.environ.get("CLV2_HOMUNCULUS_DIR") else LEGACY_HOMUNCULUS_DIR
 PROJECTS_DIR = HOMUNCULUS_DIR / "projects"
 REGISTRY_FILE = HOMUNCULUS_DIR / "projects.json"
 
@@ -77,6 +78,7 @@ def _validate_file_path(path_str: str, must_exist: bool = False) -> Path:
     Raises ValueError if the path is invalid or suspicious.
     """
     path = Path(path_str).expanduser().resolve()
+    raw_path = str(path_str).replace("\\", "/")
 
     # Block paths that escape into system directories
     # We block specific system paths but allow temp dirs (/var/folders on macOS)
@@ -87,9 +89,9 @@ def _validate_file_path(path_str: str, must_exist: bool = False) -> Path:
         "/private/etc",
         "/private/var/log", "/private/var/run", "/private/var/db",
     ]
-    path_s = str(path)
+    path_s = str(path).replace("\\", "/")
     for prefix in blocked_prefixes:
-        if path_s.startswith(prefix + "/") or path_s == prefix:
+        if raw_path.startswith(prefix + "/") or raw_path == prefix or path_s.startswith(prefix + "/") or path_s == prefix:
             raise ValueError(f"Path '{path}' targets a system directory")
 
     if must_exist and not path.exists():
@@ -109,6 +111,11 @@ def _validate_instinct_id(instinct_id: str) -> bool:
     if instinct_id.startswith("."):
         return False
     return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", instinct_id))
+
+
+def _shell_quote(value: str) -> str:
+    """Return a POSIX-shell-safe single-quoted string for migration hints."""
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _yaml_quote(value: str) -> str:
@@ -394,8 +401,85 @@ def load_project_only_instincts(project: dict) -> list[dict]:
 # Status Command
 # ─────────────────────────────────────────────
 
+
+def _directory_has_files(directory: Path) -> bool:
+    """Return True when a directory tree contains at least one file."""
+    try:
+        return directory.exists() and any(path.is_file() for path in directory.rglob("*"))
+    except OSError:
+        return False
+
+
+def _non_empty_file_exists(file_path: Path) -> bool:
+    """Return True when a file exists and contains at least one byte."""
+    try:
+        return file_path.exists() and file_path.is_file() and file_path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _projects_registry_has_entries(file_path: Path) -> bool:
+    """Return True when a legacy projects registry contains meaningful state."""
+    if not _non_empty_file_exists(file_path):
+        return False
+
+    try:
+        parsed = json.loads(file_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+
+    if isinstance(parsed, (dict, list)):
+        return bool(parsed)
+    return True
+
+
+def _legacy_homunculus_has_state(directory: Path) -> bool:
+    """Return True when a legacy homunculus directory has data worth surfacing."""
+    if _projects_registry_has_entries(directory / "projects.json"):
+        return True
+    if _non_empty_file_exists(directory / "observations.jsonl"):
+        return True
+    if _directory_has_files(directory / "projects"):
+        return True
+    if _directory_has_files(directory / "instincts"):
+        return True
+    if _directory_has_files(directory / "evolved"):
+        return True
+
+    try:
+        return any(
+            child.is_file() and child.name != "projects.json" and child.stat().st_size > 0
+            for child in directory.iterdir()
+        )
+    except OSError:
+        return False
+
+
+def _check_legacy_homunculus():
+    """Warn to stderr if legacy ~/.claude/homunculus exists alongside a distinct active path."""
+    if not LEGACY_HOMUNCULUS_DIR.exists():
+        return
+    try:
+        if LEGACY_HOMUNCULUS_DIR.resolve() == HOMUNCULUS_DIR.resolve():
+            return
+    except OSError:
+        return
+    if not _legacy_homunculus_has_state(LEGACY_HOMUNCULUS_DIR):
+        return
+    print(
+        f"WARNING: Legacy homunculus data found at:\n"
+        f"     {LEGACY_HOMUNCULUS_DIR}\n"
+        f"   Active homunculus path:\n"
+        f"     {HOMUNCULUS_DIR}\n"
+        f"   The legacy directory still contains data that has not been migrated.\n"
+        f"   Review both directories, then migrate with:\n"
+        f"     mkdir -p {_shell_quote(str(HOMUNCULUS_DIR))}\n"
+        f"     cp -a {_shell_quote(str(LEGACY_HOMUNCULUS_DIR))}/. {_shell_quote(str(HOMUNCULUS_DIR))}/\n",
+        file=sys.stderr,
+    )
 def cmd_status(args) -> int:
     """Show status of all instincts (project + global)."""
+    _check_legacy_homunculus()
     project = detect_project()
     instincts = load_all_instincts(project)
 

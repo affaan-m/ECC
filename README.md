@@ -82,6 +82,13 @@ This repo is the raw code only. The guides explain everything.
 
 ## What's New
 
+### v1.10.6 — Hook Reliability Patch (May 2026)
+
+- **Continuous-learning reliability** — `observe.sh` records Claude VS Code extension sessions, observer analysis now scales its default `--max-turns` from the selected analysis batch size, and the stack honors a single `CLV2_HOMUNCULUS_DIR` data root across observer scripts and the instinct CLI.
+- **Instinct command hardening** — continuous-learning slash commands resolve the active plugin/cache root before invoking `instinct-cli.py`, avoiding stale manual-install fallbacks when `CLAUDE_PLUGIN_ROOT` is missing.
+- **GateGuard controls** — the JS hook supports `GATEGUARD_BASH_ROUTINE_DISABLED=1` and literal `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` additions while preserving destructive-command gating and stable session keys for non-Claude-Code hosts.
+- **OpenCode safety** — package-manager detection ignores inherited generic `PACKAGE_MANAGER` values, supports `CLAUDE_PACKAGE_MANAGER`, checks common child lockfile directories, and keeps hooks runtime opt-in.
+
 ### v1.10.0 — Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
 
 - **Dashboard GUI** — New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
@@ -1338,7 +1345,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | **Context File** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
 | **Secret Detection** | Hook-based | beforeSubmitPrompt hook | Sandbox-based | Hook-based |
 | **Auto-Format** | PostToolUse hook | afterFileEdit hook | N/A | file.edited hook |
-| **Version** | Plugin | Plugin | Reference config | 1.10.0 |
+| **Version** | Plugin | Plugin | Reference config | 1.10.6 |
 
 **Key architectural decisions:**
 - **AGENTS.md** at root is the universal cross-tool file (read by all 4 tools)

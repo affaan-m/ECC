@@ -39,7 +39,36 @@ const MAX_CHECKED_ENTRIES = 500;
 const MAX_SESSION_KEYS = 50;
 const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 
-const DESTRUCTIVE_BASH = /\b(rm\s+-rf|git\s+reset\s+--hard|git\s+checkout\s+--|git\s+clean\s+-f|drop\s+table|delete\s+from|truncate|git\s+push\s+--force|dd\s+if=)\b/i;
+const _BASE_DESTRUCTIVE_PATTERN = '\\b(rm\\s+-rf|git\\s+reset\\s+--hard|git\\s+checkout\\s+--|git\\s+clean\\s+-f|drop\\s+table|delete\\s+from|truncate|git\\s+push\\s+--force|dd\\s+if=)\\b';
+const MAX_EXTRA_DESTRUCTIVE_PATTERNS = 20;
+
+function escapeRegexLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function readExtraDestructivePatterns() {
+  const extraRaw = (process.env.GATEGUARD_BASH_EXTRA_DESTRUCTIVE || '').trim();
+  if (!extraRaw) {
+    return [];
+  }
+
+  return extraRaw
+    .split('|')
+    .map(pattern => pattern.trim())
+    .filter(Boolean)
+    .slice(0, MAX_EXTRA_DESTRUCTIVE_PATTERNS)
+    .map(escapeRegexLiteral);
+}
+
+function buildDestructiveRegex() {
+  const extraPatterns = readExtraDestructivePatterns();
+  const pattern = extraPatterns.length > 0
+    ? `(${_BASE_DESTRUCTIVE_PATTERN})|(${extraPatterns.join('|')})`
+    : _BASE_DESTRUCTIVE_PATTERN;
+  return new RegExp(pattern, 'i');
+}
+
+const DESTRUCTIVE_BASH = buildDestructiveRegex();
 
 // --- State management (per-session, atomic writes, bounded) ---
 
@@ -383,6 +412,10 @@ function run(rawInput) {
         return denyResult(destructiveBashMsg());
       }
       return rawInput; // allow retry after facts presented
+    }
+
+    if (process.env.GATEGUARD_BASH_ROUTINE_DISABLED === '1') {
+      return rawInput;
     }
 
     if (!isChecked(ROUTINE_BASH_SESSION_KEY)) {

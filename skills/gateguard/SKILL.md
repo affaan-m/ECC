@@ -102,6 +102,20 @@ gateguard init
 
 This adds `.gateguard.yml` for per-project configuration (custom messages, ignore paths, gate toggles).
 
+### ECC JS Hook Runtime Controls
+
+The bundled JS hook also supports lightweight environment-variable controls without adding the Python package:
+
+```bash
+# Skip the once-per-session routine Bash gate; destructive Bash still gates.
+export GATEGUARD_BASH_ROUTINE_DISABLED=1
+
+# Add project-specific destructive command literals (pipe-separated).
+export GATEGUARD_BASH_EXTRA_DESTRUCTIVE="supabase db reset|prisma migrate reset"
+```
+
+`GATEGUARD_BASH_EXTRA_DESTRUCTIVE` entries are treated as literal command fragments, not raw regex, to avoid regex-injection and ReDoS risk.
+
 ## Anti-Patterns
 
 - **Don't use self-evaluation instead.** "Are you sure?" always gets "yes." This is experimentally verified.
