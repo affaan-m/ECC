@@ -2,7 +2,7 @@
 name: mle-reviewer
 description: Production machine-learning engineering reviewer for data contracts, feature pipelines, training reproducibility, offline/online evaluation, model serving, monitoring, and rollback. Use when ML, MLOps, model training, inference, feature store, or evaluation code changes.
 allowedTools:
-  - read
+  - fs_read
   - shell
 ---
 

@@ -2,7 +2,7 @@
 name: performance-optimizer
 description: Performance analysis and optimization specialist. Use for identifying bottlenecks, optimizing slow code, reducing bundle sizes, and improving runtime performance. Profiling, memory leaks, render optimization, and algorithmic improvements.
 allowedTools:
-  - read
+  - fs_read
   - shell
 ---
 

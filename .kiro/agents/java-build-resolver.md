@@ -2,7 +2,7 @@
 name: java-build-resolver
 description: Java/Maven/Gradle build, compilation, and dependency error resolution specialist. Automatically detects Spring Boot or Quarkus and applies framework-specific fixes. Use when Java builds fail.
 allowedTools:
-  - read
+  - fs_read
   - shell
 ---
 
@@ -54,7 +54,7 @@ Run these in order:
 | `cannot find symbol` | Missing import, typo, missing dependency | Add import or dependency |
 | `incompatible types` | Wrong type, missing cast | Add explicit cast or fix type |
 | `method X cannot be applied to given types` | Wrong argument types or count | Fix arguments or check overloads |
-| `variable X might not have been initialized` | Uninitialized local variable | Initialise variable before use |
+| `variable X might not have been initialized` | Uninitialized local variable | Initialize variable before use |
 | `package X does not exist` | Missing dependency or wrong import | Add dependency to build file |
 | `Annotation processor threw uncaught exception` | Lombok/MapStruct misconfiguration | Check annotation processor setup |
 | `Could not resolve: group:artifact:version` | Missing repository or wrong version | Add repository or fix version |
@@ -123,4 +123,4 @@ Remaining errors: 1
 
 Final: `Framework: X | Build Status: SUCCESS/FAILED | Errors Fixed: N | Files Modified: list`
 
-For detailed patterns: See `skill: springboot-patterns` or `skill: quarkus-patterns`.
+For detailed patterns: See `skill: springboot-patterns`.

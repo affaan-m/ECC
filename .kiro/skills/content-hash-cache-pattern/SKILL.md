@@ -17,7 +17,7 @@ Cache expensive file processing results (PDF parsing, text extraction, image ana
 
 ## Core Pattern
 
-### 1. Content-Hash Based Cache Key
+### 1. Content-Hash-Based Cache Key
 
 Use file content (not path) as the cache key:
 

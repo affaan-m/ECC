@@ -72,6 +72,7 @@ public struct DefaultFileAccessor: FileAccessorProviding {
 ### 3. Create Mock Implementations for Testing
 
 ```swift
+/// NOTE: Not thread-safe. Use only in single-threaded test contexts.
 public final class MockFileAccessor: FileAccessorProviding, @unchecked Sendable {
     public var files: [URL: Data] = [:]
     public var readError: Error?

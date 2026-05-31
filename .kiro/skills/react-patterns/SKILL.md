@@ -130,6 +130,8 @@ Boundaries:
 
 ### React 19 form actions (preferred for new code)
 
+> **React 19+**: This example uses `useActionState`. For React 18, use `useFormState` from `react-dom` instead.
+
 ```tsx
 "use client";
 import { useActionState } from "react";

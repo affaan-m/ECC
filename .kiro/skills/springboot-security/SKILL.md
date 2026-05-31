@@ -106,8 +106,9 @@ public ResponseEntity<UserDto> createUser(@Valid @RequestBody CreateUserDto dto)
 - For native queries, use `:param` bindings; never concatenate strings
 
 ```java
-// BAD: String concatenation in native query
-@Query(value = "SELECT * FROM users WHERE name = '" + name + "'", nativeQuery = true)
+// BAD: String concatenation with EntityManager (SQL injection risk)
+String sql = "SELECT * FROM users WHERE name = '" + name + "'";
+List<User> users = entityManager.createNativeQuery(sql, User.class).getResultList();
 
 // GOOD: Parameterized native query
 @Query(value = "SELECT * FROM users WHERE name = :name", nativeQuery = true)

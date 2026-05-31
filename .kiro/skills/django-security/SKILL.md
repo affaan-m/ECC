@@ -337,7 +337,7 @@ class SecurityHeaderMiddleware:
 ```python
 # settings.py - CSRF is enabled by default
 CSRF_COOKIE_SECURE = True  # Only send over HTTPS
-CSRF_COOKIE_HTTPONLY = True  # Prevent JavaScript access
+CSRF_COOKIE_HTTPONLY = False  # False so AJAX can read csrf token from document.cookie; SESSION_COOKIE_HTTPONLY remains True
 CSRF_COOKIE_SAMESITE = 'Lax'  # Prevent CSRF in some cases
 CSRF_TRUSTED_ORIGINS = ['https://example.com']  # Trusted domains
 
@@ -533,10 +533,10 @@ SECRET_KEY = env('DJANGO_SECRET_KEY')
 DATABASE_URL = env('DATABASE_URL')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
-# .env file (never commit this)
+# .env file — NEVER commit this to version control
 DEBUG=False
-SECRET_KEY=your-secret-key-here
-DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+SECRET_KEY=REPLACE_WITH_SECURE_KEY
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DBNAME
 ALLOWED_HOSTS=example.com,www.example.com
 ```
 

@@ -284,7 +284,7 @@ Shell scripts used by hooks to perform quality checks and formatting.
 
 ```
 .kiro/
-├── agents/                       # 16 agents (JSON + MD formats)
+├── agents/                       # 33 agents (JSON + MD formats)
 │   ├── planner.json              # Planning specialist (CLI)
 │   ├── planner.md                # Planning specialist (IDE)
 │   ├── code-reviewer.json        # Code review specialist (CLI)
@@ -317,7 +317,7 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   ├── chief-of-staff.md         # Project management specialist (IDE)
 │   ├── go-build-resolver.json    # Go build specialist (CLI)
 │   └── go-build-resolver.md      # Go build specialist (IDE)
-├── skills/                       # 18 skills
+├── skills/                       # 43 skills
 │   ├── tdd-workflow/
 │   │   └── SKILL.md              # TDD workflow skill
 │   ├── coding-standards/
@@ -354,7 +354,7 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   │   └── SKILL.md              # Search-first methodology skill
 │   └── agentic-engineering/
 │       └── SKILL.md              # Agentic engineering skill
-├── steering/                     # 16 steering files
+├── steering/                     # 22 steering files
 │   ├── coding-style.md           # Auto-loaded coding style rules
 │   ├── security.md               # Auto-loaded security rules
 │   ├── testing.md                # Auto-loaded testing rules
@@ -370,7 +370,7 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   ├── dev-mode.md               # Manual: #dev-mode
 │   ├── review-mode.md            # Manual: #review-mode
 │   └── research-mode.md          # Manual: #research-mode
-├── hooks/                        # 10 IDE hooks
+├── hooks/                        # 13 IDE hooks
 │   ├── README.md                      # Documentation on IDE and CLI hooks
 │   ├── quality-gate.kiro.hook         # Manual quality gate hook
 │   ├── typecheck-on-edit.kiro.hook    # Auto typecheck on edit
