@@ -24,11 +24,11 @@ The installer uses non-destructive copy — it will not overwrite your existing 
 
 | Component | Count | Location |
 |-----------|-------|----------|
-| Agents (JSON) | 16 | `.kiro/agents/*.json` |
-| Agents (MD) | 16 | `.kiro/agents/*.md` |
-| Skills | 18 | `.kiro/skills/*/SKILL.md` |
-| Steering Files | 16 | `.kiro/steering/*.md` |
-| IDE Hooks | 10 | `.kiro/hooks/*.kiro.hook` |
+| Agents (JSON) | 33 | `.kiro/agents/*.json` |
+| Agents (MD) | 33 | `.kiro/agents/*.md` |
+| Skills | 43 | `.kiro/skills/*/SKILL.md` |
+| Steering Files | 22 | `.kiro/steering/*.md` |
+| IDE Hooks | 13 | `.kiro/hooks/*.kiro.hook` |
 | Scripts | 2 | `.kiro/scripts/*.sh` |
 | MCP Examples | 1 | `.kiro/settings/mcp.json.example` |
 | Documentation | 5 | `docs/*.md` |
@@ -59,6 +59,23 @@ Both formats are included for maximum compatibility.
 | `refactor-cleaner` | Dead code cleanup and consolidation specialist. Removes unused code, duplicates, and refactors safely. |
 | `go-reviewer` | Go code review specialist. Reviews Go code for idiomatic patterns, error handling, concurrency, and performance. |
 | `python-reviewer` | Python code review specialist. Reviews Python code for PEP 8, type hints, error handling, and best practices. |
+| `typescript-reviewer` | TypeScript/JavaScript code reviewer. Type safety, async correctness, Node/web security, and idiomatic patterns. |
+| `rust-reviewer` | Rust code reviewer. Ownership, lifetimes, error handling, unsafe usage, and idiomatic patterns. |
+| `rust-build-resolver` | Rust/Cargo build error resolution specialist. Fixes compilation, dependency, and linking errors. |
+| `kotlin-reviewer` | Kotlin/Android/KMP code reviewer. Coroutine safety, Compose best practices, clean architecture. |
+| `kotlin-build-resolver` | Kotlin/Gradle build error resolution specialist. Fixes Gradle, KSP, and dependency errors. |
+| `java-reviewer` | Java/Spring Boot/Quarkus code reviewer. Enterprise patterns, security, and performance. |
+| `java-build-resolver` | Java/Maven/Gradle build error resolution specialist. Fixes compilation and dependency errors. |
+| `cpp-reviewer` | C++ code reviewer. Memory safety, modern C++, RAII, and performance patterns. |
+| `cpp-build-resolver` | C++/CMake build error resolution specialist. Fixes compilation, linking, and CMake errors. |
+| `django-reviewer` | Django code reviewer. ORM patterns, DRF, migrations, and Django security. |
+| `swift-reviewer` | Swift code reviewer. Concurrency, ARC, protocols, and SwiftUI patterns. |
+| `fsharp-reviewer` | F# functional code reviewer. Immutability, pattern matching, and type-driven design. |
+| `react-reviewer` | React code reviewer. Component patterns, hooks, performance, and accessibility. |
+| `react-build-resolver` | React/Next.js build error resolution specialist. Fixes bundler, SSR, and hydration errors. |
+| `pytorch-build-resolver` | PyTorch runtime/CUDA/training error resolution specialist. |
+| `mle-reviewer` | Production ML engineering reviewer. Pipelines, evals, serving, monitoring, and rollback. |
+| `performance-optimizer` | Performance analysis and optimization specialist. Profiling, bottleneck detection, and tuning. |
 | `database-reviewer` | Database and SQL specialist. Reviews schema design, queries, migrations, and database security. |
 | `e2e-runner` | End-to-end testing specialist. Creates and maintains E2E tests using Playwright or Cypress. |
 | `harness-optimizer` | Test harness optimization specialist. Improves test performance, reliability, and maintainability. |
@@ -101,6 +118,31 @@ Skills are on-demand workflows invocable via the `/` menu in chat.
 | `deployment-patterns` | Deployment strategies and CI/CD patterns. Use when setting up deployments or improving CI/CD pipelines. |
 | `search-first` | Search-first development methodology. Use when exploring unfamiliar codebases or debugging issues. |
 | `agentic-engineering` | Agentic software engineering patterns and workflows. Use when working with AI agents or building agentic systems. |
+| `rust-patterns` | Idiomatic Rust patterns, ownership, error handling, traits, and concurrency. Use when writing Rust code. |
+| `rust-testing` | Rust testing patterns including unit, integration, async, property-based testing, and coverage. |
+| `kotlin-patterns` | Idiomatic Kotlin patterns, coroutines, null safety, and DSL builders. Use when writing Kotlin code. |
+| `kotlin-testing` | Kotlin testing with Kotest, MockK, coroutine testing, and Kover coverage. |
+| `java-coding-standards` | Java coding standards for Spring Boot and Quarkus services. |
+| `jpa-patterns` | JPA/Hibernate patterns for entity design, relationships, and query optimization. |
+| `springboot-patterns` | Spring Boot architecture patterns, REST API design, and layered services. |
+| `springboot-security` | Spring Security best practices for authn/authz, validation, and secrets. |
+| `django-patterns` | Django architecture patterns, REST API design with DRF, and ORM best practices. |
+| `django-security` | Django security best practices, authentication, and CSRF/XSS prevention. |
+| `fastapi-patterns` | FastAPI patterns for async APIs, dependency injection, and Pydantic models. |
+| `nestjs-patterns` | NestJS architecture patterns for modules, controllers, and providers. |
+| `react-patterns` | React 18/19 patterns including hooks, server/client components, and Suspense. |
+| `react-testing` | React component testing with Testing Library, Vitest/Jest, and MSW. |
+| `nextjs-turbopack` | Next.js 16+ and Turbopack incremental bundling patterns. |
+| `cpp-coding-standards` | C++ coding standards based on C++ Core Guidelines. |
+| `cpp-testing` | C++ testing with GoogleTest, CTest, and sanitizers. |
+| `swift-actor-persistence` | Thread-safe data persistence in Swift using actors. |
+| `swift-protocol-di-testing` | Protocol-based dependency injection for testable Swift code. |
+| `mle-workflow` | Production ML engineering workflow for training, evaluation, deployment, and monitoring. |
+| `pytorch-patterns` | PyTorch deep learning patterns for training pipelines and model architectures. |
+| `deep-research` | Multi-source deep research with synthesis and source attribution. |
+| `strategic-compact` | Context management and manual compaction suggestions at logical intervals. |
+| `autonomous-loops` | Patterns for autonomous agent loops — sequential pipelines to multi-agent DAGs. |
+| `content-hash-cache-pattern` | Cache expensive file processing using SHA-256 content hashes. |
 
 **Usage:**
 
@@ -128,6 +170,13 @@ Steering files provide always-on rules and context that shape how the agent work
 | `python-patterns.md` | fileMatch: `*.py` | Python-specific patterns, type hints, and best practices. Loaded when editing Python files. |
 | `golang-patterns.md` | fileMatch: `*.go` | Go-specific patterns, concurrency, and best practices. Loaded when editing Go files. |
 | `swift-patterns.md` | fileMatch: `*.swift` | Swift-specific patterns and best practices. Loaded when editing Swift files. |
+| `rust-patterns.md` | fileMatch: `*.rs` | Rust ownership, lifetimes, error handling, and idiomatic patterns. Loaded when editing Rust files. |
+| `kotlin-patterns.md` | fileMatch: `*.kt` | Kotlin coroutines, Compose, and Android/KMP best practices. Loaded when editing Kotlin files. |
+| `java-patterns.md` | fileMatch: `*.java` | Java patterns, Spring Boot, and enterprise best practices. Loaded when editing Java files. |
+| `cpp-patterns.md` | fileMatch: `*.cpp,*.hpp,*.h,*.cc,*.cxx` | C++ RAII, smart pointers, and modern C++ patterns. Loaded when editing C++ files. |
+| `php-patterns.md` | fileMatch: `*.php` | PHP patterns, Laravel, and modern PHP best practices. Loaded when editing PHP files. |
+| `ruby-patterns.md` | fileMatch: `*.rb` | Ruby patterns and Rails best practices. Loaded when editing Ruby files. |
+| `typescript-security.md` | fileMatch: `*.ts,*.tsx` | TypeScript security patterns. Loaded when editing TypeScript files. |
 | `dev-mode.md` | manual | Development context mode. Invoke with `#dev-mode` for focused development. |
 | `review-mode.md` | manual | Code review context mode. Invoke with `#review-mode` for thorough reviews. |
 | `research-mode.md` | manual | Research context mode. Invoke with `#research-mode` for exploration and learning. |
@@ -169,6 +218,9 @@ These hooks appear in the Agent Hooks panel in the Kiro IDE and can be toggled o
 | `extract-patterns` | Agent stops | `askAgent` | Suggests patterns to add to lessons-learned.md after completing work. |
 | `session-summary` | Agent stops | `askAgent` | Provides a summary of work completed in the session. |
 | `doc-file-warning` | Before write operation | `askAgent` | Warns before modifying documentation files to ensure intentional changes. |
+| `rust-check-on-edit` | File edited (`*.rs`) | `askAgent` | Checks for compilation errors, ownership issues, or lifetime problems in Rust files. |
+| `python-lint-on-edit` | File edited (`*.py`) | `askAgent` | Checks for type errors, PEP 8 violations, or common anti-patterns in Python files. |
+| `security-check-on-create` | File created (`**/auth/**`, `**/api/**`, `**/middleware/**`) | `askAgent` | Runs a quick security check when new files are created in sensitive directories. |
 
 **IDE Hook Format:**
 
