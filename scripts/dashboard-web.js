@@ -13,7 +13,12 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-const PORT = parseInt(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456', 10);
+function parsePort(v) {
+  const n = parseInt(String(v), 10);
+  if (isNaN(n) || n < 1 || n > 65535) { console.error('[ECC] Invalid port: ' + v + ' — using 3456'); return 3456; }
+  return n;
+}
+const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456');
 const ROOT = path.resolve(__dirname, '..');
 
 function readFrontmatter(p) {
@@ -65,14 +70,14 @@ function loadRules() {
 function loadMcps() {
   const r = [];
   const m = path.join(ROOT, '.mcp.json');
-  if (fs.existsSync(m)) { try { const d = JSON.parse(fs.readFileSync(m, 'utf8')); r.push({ f: '.mcp.json', s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env || {}, type: v.type || 'stdio' })) }); } catch {} }
+  if (fs.existsSync(m)) { try { const d = JSON.parse(fs.readFileSync(m, 'utf8')); r.push({ f: '.mcp.json', s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env ? Object.keys(v.env).reduce((a,k)=>{a[k]='••••••'; return a;}, {}) : {}, type: v.type || 'stdio' })) }); } catch (e) { console.error('[ECC] Failed to parse .mcp.json:', e.message); } }
   const dir = path.join(ROOT, 'mcp-configs');
-  if (fs.existsSync(dir)) { for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) { try { const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); r.push({ f, s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env || {}, type: v.type || 'stdio' })) }); } catch {} } }
+  if (fs.existsSync(dir)) { for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) { try { const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); r.push({ f, s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env ? Object.keys(v.env).reduce((a,k)=>{a[k]='••••••'; return a;}, {}) : {}, type: v.type || 'stdio' })) }); } catch (e) { console.error('[ECC] Failed to parse mcp-configs/' + f + ':', e.message); } } }
   return r;
 }
 function loadHooks() {
   const p = path.join(ROOT, 'hooks', 'hooks.json'); if (!fs.existsSync(p)) return [];
-  try { const d = JSON.parse(fs.readFileSync(p, 'utf8')); const h = []; for (const [ev, es] of Object.entries(d.hooks || {})) for (const e of es || []) h.push({ ev, m: e.matcher || '*', id: e.id || '', d: e.description || '' }); return h; } catch { return []; }
+  try { const d = JSON.parse(fs.readFileSync(p, 'utf8')); const h = []; for (const [ev, es] of Object.entries(d.hooks || {})) for (const e of es || []) h.push({ ev, m: e.matcher || '*', id: e.id || '', d: e.description || '' }); return h; } catch (e) { console.error('[ECC] Failed to parse hooks/hooks.json:', e.message); return []; }
 }
 
 const LANG = {
@@ -412,6 +417,7 @@ function copy(text, btn) {
 // Recently viewed
 function recents() { try { return JSON.parse(localStorage.getItem('ecc-recent') || '[]'); } catch { return []; } }
 function addRecent(type, name) {
+  if (!name || !/^[\\w\\-./@]+$/.test(name)) return;
   let r = recents().filter(x => !(x.t === type && x.n === name));
   r.unshift({ t: type, n: name, at: Date.now() });
   if (r.length > 8) r = r.slice(0, 8);
@@ -491,13 +497,20 @@ function renderMain() {
     '<div class="stat c4" onclick="showTab(\\'mcps\\',document.querySelector(\\'.nav-it[data-tab=\\\\"mcps\\\"]\\'))"><div class="num">'+MCPS.length+'</div><div class="lbl">'+t('mcpConfigs')+'</div></div>' +
     '<div class="stat c5" onclick="showTab(\\'hooks\\',document.querySelector(\\'.nav-it[data-tab=\\\\"hooks\\\"]\\'))"><div class="num">'+HOOKS.length+'</div><div class="lbl">'+t('hooks')+'</div></div>';
 
-  const recent = recents();
+  const recent = recents().filter(r => r.n && /^[\\w\\-./@]+$/.test(r.n));
   if (recent.length) {
+    const icons = {agents:'🤖',skills:'📚',commands:'⚡',rules:'📏',mcps:'🔌',hooks:'🪝'};
     const rb = document.createElement('div');
     rb.className = 'recent-bar';
-    rb.innerHTML = '<span class="rb-lbl">'+t('recentlyViewed')+'</span><span class="rb-items">' +
-      recent.map(r => '<span class="rb-item" onclick="location.hash=\\'#/'+r.t+'/'+encodeURIComponent(r.n)+'\\'">'+((r.t==='agents'?'🤖':r.t==='skills'?'📚':r.t==='commands'?'⚡':r.t==='rules'?'📏':r.t==='mcps'?'🔌':'🪝')+' '+r.n)+'</span>').join('') +
-      '</span><span class="rb-clear" onclick="clearRecents()">✕ '+t('clearHistory')+'</span>';
+    rb.innerHTML = '<span class="rb-lbl">'+t('recentlyViewed')+'</span><span class="rb-items"></span><span class="rb-clear" onclick="clearRecents()">✕ '+t('clearHistory')+'</span>';
+    const items = rb.querySelector('.rb-items');
+    recent.forEach(r => {
+      const el = document.createElement('span');
+      el.className = 'rb-item';
+      el.textContent = (icons[r.t]||'•')+' '+r.n;
+      el.onclick = () => { location.hash = '#/'+r.t+'/'+encodeURIComponent(r.n); };
+      items.appendChild(el);
+    });
     document.getElementById('stats-bar').after(rb);
   }
 
@@ -537,34 +550,83 @@ function renderSkills(list) {
   el.innerHTML = '<div class="filters" id="sf">'+['all','sec','test','pattern','design','research','data','agent','devops'].map((c,i)=>'<button'+(i===0?' class="active"':'')+' onclick="filterSkills(\\''+c+'\\',this)">'+[t('all'),'🔒 '+t('security'),'🧪 '+t('testing'),'📐 '+t('patterns'),'🎨 '+t('design'),'🔬 '+t('research'),'🗄️ '+t('data'),'🤖 '+t('agent'),'⚙️ '+t('devops')][i]+'</button>').join('')+
     '</div><div class="grid" id="sg">'+list.map((s,i)=>'<div class="card" onclick="location.hash=\\'#/skills/'+encodeURIComponent(s.n)+'\\'">'+
       '<div class="top"><div class="il"><div class="ic '+iBg(i%6)+'">'+ICONS[i%6]+'</div><span class="nm">'+esc(s.n)+'</span></div></div>'+
-      '<div class="desc">'+(s.d||'—')+'</div><span class="ar">↗</span></div>').join('')+'</div>';
+      '<div class="desc">'+esc(s.d||'—')+'</div><span class="ar">↗</span></div>').join('')+'</div>';
 }
 function renderCommands(list) {
   const el = document.getElementById('panel-commands'); if (!el) return;
   const cats = [...new Set(list.map(c=>c.c))];
-  el.innerHTML = '<div class="filters" id="cf"><button class="active" onclick="filterCommands(\\'all\\',this)">'+t('all')+'</button>'+
-    cats.map(c=>'<button onclick="filterCommands(\\''+c+'\\',this)">'+c+'</button>').join('')+
-    '</div><div class="cmd-grid" id="cg">'+list.map(c=>'<div class="cmd-it" onclick="location.hash=\\'#/commands/'+encodeURIComponent(c.n.replace('/',''))+'\\'">'+
-      '<div class="cl"><div class="cn">'+c.n+'</div><div class="cd">'+(c.d||'—')+'</div><div class="cc">'+c.c+'</div></div>'+
-      '<button class="cpy" onclick="event.stopPropagation();copy(\\''+c.n+'\\',this)" title="Copy">⊡</button></div>').join('')+'</div>';
+  const filters = document.createElement('div');
+  filters.className = 'filters'; filters.id = 'cf';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'active'; allBtn.textContent = t('all');
+  allBtn.onclick = () => filterCommands('all', allBtn);
+  filters.appendChild(allBtn);
+  cats.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.textContent = cat;
+    btn.onclick = () => filterCommands(cat, btn);
+    filters.appendChild(btn);
+  });
+  el.innerHTML = '';
+  el.appendChild(filters);
+  const grid = document.createElement('div');
+  grid.className = 'cmd-grid'; grid.id = 'cg';
+  list.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'cmd-it';
+    div.onclick = () => { location.hash = '#/commands/'+encodeURIComponent(c.n.replace('/','')); };
+    div.innerHTML = '<div class="cl"><div class="cn">'+esc(c.n)+'</div><div class="cd">'+esc(c.d||'—')+'</div><div class="cc">'+esc(c.c)+'</div></div>'+
+      '<button class="cpy" title="Copy">⊡</button>';
+    div.querySelector('.cpy').onclick = (e) => { e.stopPropagation(); copy(c.n, e.target); };
+    grid.appendChild(div);
+  });
+  el.appendChild(grid);
 }
 function renderRules(list) {
   const el = document.getElementById('panel-rules'); if (!el) return;
-  el.innerHTML = '<div class="rules-grid">'+list.map(r=>'<div class="rule-cd" onclick="location.hash=\\'#/rules/'+encodeURIComponent(r.l)+'\\'">'+
-    '<h3>'+r.l+'</h3>'+r.f.slice(0,8).map(f=>'<div class="rf">'+esc(f)+'</div>').join('')+
-    (r.f.length>8?'<div class="rf" style="color:var(--text3);font-size:9.5px;margin-top:3px">+ '+(r.f.length-8)+' '+t('more')+'</div>':'')+'</div>').join('')+'</div>';
+  const grid = document.createElement('div');
+  grid.className = 'rules-grid';
+  list.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'rule-cd';
+    div.onclick = () => { location.hash = '#/rules/'+encodeURIComponent(r.l); };
+    let html = '<h3>'+esc(r.l)+'</h3>';
+    r.f.slice(0,8).forEach(f => { html += '<div class="rf">'+esc(f)+'</div>'; });
+    if (r.f.length > 8) html += '<div class="rf" style="color:var(--text3);font-size:9.5px;margin-top:3px">+ '+(r.f.length-8)+' '+t('more')+'</div>';
+    div.innerHTML = html;
+    grid.appendChild(div);
+  });
+  el.innerHTML = '';
+  el.appendChild(grid);
 }
 function renderMcps(list) {
   const el = document.getElementById('panel-mcps'); if (!el) return;
-  el.innerHTML = list.length?'<div class="mcp-grid">'+list.map(m=>'<div class="mcp-cd" onclick="location.hash=\\'#/mcps/'+encodeURIComponent(m.f)+'\\'"><h3>📄 '+esc(m.f)+'</h3>'+
-    m.s.map(s=>'<span class="st">'+esc(s.n)+' <small>'+(s.cmd||'').slice(0,40)+'</small></span>').join('')+'</div>').join('')+'</div>'
-    :'<div class="empty"><div class="eic">🔌</div><h3>'+t('noMcps')+'</h3><p>'+t('checkMcps')+'</p></div>';
+  if (!list.length) { el.innerHTML = '<div class="empty"><div class="eic">🔌</div><h3>'+esc(t('noMcps'))+'</h3><p>'+esc(t('checkMcps'))+'</p></div>'; return; }
+  const grid = document.createElement('div'); grid.className = 'mcp-grid';
+  list.forEach(m => {
+    const div = document.createElement('div'); div.className = 'mcp-cd';
+    div.onclick = () => { location.hash = '#/mcps/'+encodeURIComponent(m.f); };
+    div.innerHTML = '<h3>📄 '+esc(m.f)+'</h3>'+m.s.map(s => '<span class="st">'+esc(s.n)+' <small>'+esc((s.cmd||'').slice(0,40))+'</small></span>').join('');
+    grid.appendChild(div);
+  });
+  el.innerHTML = ''; el.appendChild(grid);
 }
 function renderHooks(list) {
   const el = document.getElementById('panel-hooks'); if (!el) return;
-  el.innerHTML = list.length?'<div class="hw"><table class="ht"><thead><tr><th>'+t('event')+'</th><th>'+t('matcher')+'</th><th>'+t('description')+'</th><th>'+t('id')+'</th></tr></thead><tbody>'+
-    list.map(h=>'<tr onclick="location.hash=\\'#/hooks/'+encodeURIComponent(h.id)+'\\'"><td class="ev">'+h.ev+'</td><td><span class="mt">'+h.m+'</span></td><td>'+esc(h.d)+'</td><td style="color:var(--text3);font-size:9.5px">'+h.id+'</td></tr>').join('')+
-    '</tbody></table></div>':'<div class="empty"><div class="eic">🪝</div><h3>'+t('noHooks')+'</h3></div>';
+  if (!list.length) { el.innerHTML = '<div class="empty"><div class="eic">🪝</div><h3>'+esc(t('noHooks'))+'</h3></div>'; return; }
+  const wrap = document.createElement('div'); wrap.className = 'hw';
+  const tbl = document.createElement('table'); tbl.className = 'ht';
+  tbl.innerHTML = '<thead><tr><th>'+esc(t('event'))+'</th><th>'+esc(t('matcher'))+'</th><th>'+esc(t('description'))+'</th><th>'+esc(t('id'))+'</th></tr></thead><tbody></tbody>';
+  const tbody = tbl.querySelector('tbody');
+  list.forEach(h => {
+    const tr = document.createElement('tr');
+    tr.onclick = () => { location.hash = '#/hooks/'+encodeURIComponent(h.id); };
+    tr.innerHTML = '<td class="ev">'+esc(h.ev)+'</td><td><span class="mt">'+esc(h.m)+'</span></td><td>'+esc(h.d)+'</td><td style="color:var(--text3);font-size:9.5px">'+esc(h.id)+'</td>';
+    tbody.appendChild(tr);
+  });
+  wrap.appendChild(tbl);
+  el.innerHTML = '';
+  el.appendChild(wrap);
 }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -582,27 +644,32 @@ function renderPage(type, name) {
   } else if (type === 'skills') {
     const s=SKILLS.find(x=>x.n===name); if(!s){app.innerHTML='<div class="empty"><h3>Skill not found</h3></div>';return;}
     html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('skills')+'</button><h2>'+esc(s.n)+'</h2><div class="sub">'+t('skill')+'</div>'+
-      '<div class="sec"><h3>'+t('description')+'</h3><p>'+(s.d||'—')+'</p></div>'+(s.b?'<div class="sec"><h3>'+t('details')+'</h3><pre class="pb">'+esc(s.b)+'</pre></div>':'')+'</div>';
+      '<div class="sec"><h3>'+t('description')+'</h3><p>'+esc(s.d||'—')+'</p></div>'+(s.b?'<div class="sec"><h3>'+t('details')+'</h3><pre class="pb">'+esc(s.b)+'</pre></div>':'')+'</div>';
   } else if (type === 'commands') {
     const c=COMMANDS.find(x=>x.n==='/'+name); if(!c){app.innerHTML='<div class="empty"><h3>Command not found</h3></div>';return;}
-    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('commands')+'</button><h2>'+c.n+'</h2><div class="sub">'+c.c+'</div>'+
-      '<div class="sec"><h3>'+t('description')+'</h3><p>'+(c.d||'—')+'</p></div>'+
-      '<div class="sec"><button class="copy-btn" onclick="copy(\\''+c.n+'\\',this)">⊡ Copy '+c.n+'</button></div>'+(c.b?'<div class="sec"><h3>'+t('details')+'</h3><pre class="pb">'+esc(c.b)+'</pre></div>':'')+'</div>';
+    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('commands')+'</button><h2>'+esc(c.n)+'</h2><div class="sub">'+esc(c.c)+'</div>'+
+      '<div class="sec"><h3>'+t('description')+'</h3><p>'+esc(c.d||'—')+'</p></div>'+
+      '<div class="sec"><button class="copy-btn" data-cmd="'+esc(c.n)+'">⊡ Copy '+esc(c.n)+'</button></div>'+(c.b?'<div class="sec"><h3>'+t('details')+'</h3><pre class="pb">'+esc(c.b)+'</pre></div>':'')+'</div>';
   } else if (type === 'rules') {
     const r=RULES.find(x=>x.l===name); if(!r){app.innerHTML='<div class="empty"><h3>Rules not found</h3></div>';return;}
-    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('rules')+'</button><h2>'+r.l+'</h2><div class="sub">'+r.f.length+' '+t('ruleFiles')+'</div>'+
+    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('rules')+'</button><h2>'+esc(r.l)+'</h2><div class="sub">'+r.f.length+' '+t('ruleFiles')+'</div>'+
       '<div class="sec">'+r.f.map(f=>'<div style="padding:3px 0;font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px"><span style="color:var(--text3)">—</span>'+esc(f)+'</div>').join('')+'</div></div>';
   } else if (type === 'mcps') {
     const m=MCPS.find(x=>x.f===name); if(!m){app.innerHTML='<div class="empty"><h3>MCP config not found</h3></div>';return;}
     html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('mcps')+'</button><h2>'+esc(m.f)+'</h2><div class="sub">'+m.s.length+' '+t('servers')+'</div>'+
       '<div class="svr-list">'+m.s.map(s=>'<div class="svr-it"><div class="svr-n">'+esc(s.n)+'</div><div class="svr-cmd">'+esc(s.cmd||'')+(s.args&&s.args.length?' '+s.args.join(' '):'')+'</div>'+
-      '<div class="svr-tags">'+(s.type?'<span class="stg">'+s.type+'</span>':'')+(s.env&&Object.keys(s.env).length?Object.entries(s.env).map(([k,v])=>'<span class="stg">'+k+'='+v+'</span>').join(''):'')+'</div></div>').join('')+'</div></div>';
+      '<div class="svr-tags">'+(s.type?'<span class="stg">'+esc(s.type)+'</span>':'')+(s.env&&Object.keys(s.env).length?Object.entries(s.env).map(([k,v])=>'<span class="stg">'+esc(k)+'='+esc(v)+'</span>').join(''):'')+'</div></div>').join('')+'</div></div>';
   } else if (type === 'hooks') {
     const h=HOOKS.find(x=>x.id===name); if(!h){app.innerHTML='<div class="empty"><h3>Hook not found</h3></div>';return;}
-    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('hooks')+'</button><h2 style="font-family:var(--mono);font-size:15px">'+esc(h.id)+'</h2><div class="sub">'+h.ev+' · <span class="mt" style="font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px">'+h.m+'</span></div>'+
+    html='<div class="page"><button class="back" onclick="location.hash=\\'\\'">← '+t('hooks')+'</button><h2 style="font-family:var(--mono);font-size:15px">'+esc(h.id)+'</h2><div class="sub">'+esc(h.ev)+' · <span class="mt" style="font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px">'+esc(h.m)+'</span></div>'+
       '<div class="sec"><p>'+esc(h.d)+'</p></div></div>';
   }
   app.innerHTML = html;
+  // Attach copy handlers for detail page copy buttons
+  app.querySelectorAll('.copy-btn[data-cmd]').forEach(btn => {
+    const cmd = btn.getAttribute('data-cmd');
+    btn.onclick = () => copy(cmd, btn);
+  });
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-it').forEach(n=>n.classList.remove('active'));
 }
@@ -675,7 +742,7 @@ handleRoute();
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/data') {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
   }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
