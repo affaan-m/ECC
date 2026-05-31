@@ -22,7 +22,7 @@ code review requests, or implementation requests whose acceptance conditions are
 
 ## How It Works
 
-1. **Inspect context first** — reads the repository, docs, schemas, and test infrastructure before asking any question
+1. **Inspect context first** — reads the repository, docs, schemas, and test infrastructure for technical facts before asking any question, while treating product/business constraints as something only the user or a product artifact can supply
 2. **Choose depth** — selects Quick Capture (3-7 criteria, low/moderate risk) or Full Acceptance Brief (security, data, migration, cross-system changes) based on the risk profile
 3. **Ask minimally** — only asks questions whose answers cannot be inferred and that materially change scope or behavior
 4. **Write observable criteria** — each AC-NNN describes a starting condition, trigger, expected outcome, prohibited side effect, verification method, and priority; no vague words like "correctly" or "securely" without evidence
@@ -62,27 +62,33 @@ and silent assumptions, then returns corrected or supplemental criteria without 
 
 1. Inspect the available repository, documentation, issue, design, and test context before
    asking for technical facts that can be discovered locally.
-2. Ask only questions whose answers are required and cannot be safely inferred. Group short,
+2. Do not infer product or business constraints from code. Business rules, compliance and
+   regulatory obligations, contractual SLAs, pricing, data-retention policy, prioritization,
+   and target users cannot be read from a repository. Treat them as unknown until the user
+   supplies them or an authoritative product artifact (PRD, contract, policy document) states
+   them. Record them as assumptions flagged for confirmation, never as discovered facts. The
+   repository tells you how the system behaves today, not what the business requires it to do.
+3. Ask only questions whose answers are required and cannot be safely inferred. Group short,
    related questions when that saves unnecessary turns.
-3. Do not block implementation by default. When the user has asked to implement a sufficiently
+4. Do not block implementation by default. When the user has asked to implement a sufficiently
    clear change, record key assumptions and acceptance criteria briefly, then proceed or hand
    them to the implementation workflow.
-4. Require explicit user confirmation before proceeding only when an unresolved decision could
+5. Require explicit user confirmation before proceeding only when an unresolved decision could
    create material security exposure, data loss, irreversible migration, contractual/API
    breakage, meaningful cost, or destructive external action.
-5. Do not write an acceptance document into a repository, alter project files, create a branch,
+6. Do not write an acceptance document into a repository, alter project files, create a branch,
    commit, or invoke another skill unless the user requests it or the active repository
    workflow explicitly requires it.
-6. Treat automated tests as evidence, not truth. Prefer automation when reliable and
+7. Treat automated tests as evidence, not truth. Prefer automation when reliable and
    proportionate; allow manual UX, accessibility, security, legal, or operational verification
    where automation cannot establish the outcome.
-7. Never include real secrets, credentials, tokens, private keys, personal data, or sensitive
+8. Never include real secrets, credentials, tokens, private keys, personal data, or sensitive
    production payloads in acceptance criteria, fixtures, examples, or saved artifacts. Use
    redacted or synthetic values.
-8. Do not run destructive tests, migrations, security probes, load tests, paid external calls,
+9. Do not run destructive tests, migrations, security probes, load tests, paid external calls,
    or operations against production/live data without explicit authorization and an identified
    safe environment.
-9. When an acceptance criterion cannot be satisfied due to an architectural, platform, or
+10. When an acceptance criterion cannot be satisfied due to an architectural, platform, or
    external constraint discovered during implementation, do not silently drop or workaround it.
    Update the affected criterion (mark it `[revised]`, state the constraint, and adjust scope or
    verification method), increment the revision number, and re-present only the changed criteria
@@ -146,6 +152,12 @@ When local or connected artifacts are available, inspect only what is needed:
 
 Record discovered facts separately from user-provided assumptions. If context cannot be
 inspected, say what is unknown and ask focused questions.
+
+The repository reveals technical facts — how the system behaves today, its conventions, and
+its contracts. It does not reveal product or business constraints: business rules, compliance
+and regulatory obligations, contractual SLAs, pricing, data-retention policy, prioritization,
+and target users. Never reconstruct these from code or naming. Capture them only from the user
+or an authoritative product artifact, and list them as assumptions to confirm until then.
 
 ### 3. Define Scope
 
@@ -235,8 +247,11 @@ Use this template for a Full Acceptance Brief. Omit irrelevant sections for Quic
 
 ## Context
 
-**Discovered facts**
-- <fact verified from repository, documentation, or supplied artifact>
+**Discovered facts** (technical, verified from repository or artifact)
+- <how the system behaves today, conventions, contracts>
+
+**Product/business constraints** (supplied by user or product artifact, never inferred from code)
+- <business rule, compliance/SLA obligation, retention policy, priority, target user — or "none supplied yet">
 
 **Assumptions**
 - <unverified claim to confirm or validate>
@@ -275,6 +290,55 @@ Use this template for a Full Acceptance Brief. Omit irrelevant sections for Quic
 | --- | --- | --- |
 | AC-001 | <test/check/review command or evidence type> | Pending |
 ```
+
+## Pass/Fail Examples
+
+Use these to judge whether the skill actually produced a verifiable brief, not planning prose.
+
+**A failing acceptance criterion**
+
+```
+AC-001: The export works correctly and is secure.
+```
+
+Fails — "works correctly" and "secure" are not observable, there is no scenario, trigger,
+expected result, or verification method, and nothing states what must not happen. A reader
+cannot tell whether the implementation satisfied it.
+
+**A passing acceptance criterion**
+
+```
+AC-001: Export generates file with correct headers
+- Scenario: authenticated user, at least one data row visible
+- Action: click "Export CSV"
+- Expected: browser downloads file with columns [id, name, created_at]
+- Must not: expose internal fields or rows belonging to other users
+- Verification: automated integration test + manual schema spot-check
+- Priority: Required
+```
+
+Passes — a concrete observable outcome, a prohibited side effect, and a named verification
+method. Two people would agree on whether it was met.
+
+**A failing context entry**
+
+```
+Discovered facts: Users on the free tier are limited to 100 exports per month.
+```
+
+Fails — a per-tier limit is a business rule. It must not appear under discovered facts inferred
+from code; it belongs under Product/business constraints, supplied by the user, or be listed as
+an assumption to confirm.
+
+### Pass/Fail Rubric
+
+A brief passes only if every answer is "yes". Any "no" means revise before returning it.
+
+- [ ] Does every required criterion have a scenario, an observable expected result, and a named verification method?
+- [ ] Are all vague terms ("correctly", "secure", "fast", "robust") either replaced with observable evidence or marked as human judgment?
+- [ ] Are product/business constraints listed as supplied/assumed, with none silently inferred from code?
+- [ ] Is scope explicit, with out-of-scope items named?
+- [ ] Are blocking decisions limited to choices that actually affect safety or correctness, not preferences?
 
 ## Quality Check
 
