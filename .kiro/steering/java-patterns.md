@@ -107,4 +107,4 @@ void findById_existingOrder_returnsOrder() {
 ## Reference
 
 See agents: `java-reviewer`, `java-build-resolver` for Java-specific review and build error resolution.
-See skills: `springboot-patterns`, `quarkus-patterns`, `jpa-patterns` for framework-specific guidance.
+See skills: `springboot-patterns`, `jpa-patterns` for framework-specific guidance.

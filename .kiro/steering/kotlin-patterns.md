@@ -107,8 +107,8 @@ actual fun platformName(): String = "iOS"
 
 ## Security
 
-- Never hardcode API keys — use `BuildConfig` fields from CI secrets
-- Use `EncryptedSharedPreferences` (Android) or Keychain (iOS) for runtime secrets
+- Never embed secrets in `BuildConfig` or resources — values are extractable from the APK
+- Use `EncryptedSharedPreferences` or Android Keystore (Android), Keychain (iOS), or a server-side proxy for runtime secrets
 - Use parameterized queries for Room/SQLDelight
 - Configure `network_security_config.xml` to block cleartext traffic
 

@@ -13,15 +13,15 @@ You are a senior Java engineer ensuring high standards of idiomatic Java, Spring
 Before reviewing any code, determine the framework:
 
 ```bash
-cat pom.xml 2>/dev/null || cat build.gradle 2>/dev/null || cat build.gradle.kts 2>/dev/null
+find . -name 'pom.xml' -o -name 'build.gradle' -o -name 'build.gradle.kts' | head -20 | xargs grep -l 'spring-boot\|quarkus' 2>/dev/null
 ```
 
-- If the build file contains `quarkus` → apply **[QUARKUS]** rules
-- If the build file contains `spring-boot` → apply **[SPRING]** rules
+- If any build file contains `quarkus` → apply **[QUARKUS]** rules
+- If any build file contains `spring-boot` → apply **[SPRING]** rules
 - If neither is detected → review using general Java rules only
 
 Then proceed:
-1. Run `git diff -- '*.java'` to see recent Java file changes
+1. Run `git diff HEAD~1 -- '*.java'` to see recent Java file changes (for PR review use `git diff main...HEAD -- '*.java'`; if HEAD~1 fails on shallow/single-commit history, fall back to `git show --patch HEAD -- '*.java'`)
 2. Run the appropriate build check:
    - **[SPRING]**: `./mvnw verify -q` or `./gradlew check`
    - **[QUARKUS]**: `./mvnw verify -q` or `./gradlew check`

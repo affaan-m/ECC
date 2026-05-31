@@ -10,7 +10,7 @@ Patterns for building thread-safe data persistence layers using Swift actors. Co
 
 ## When to Activate
 
-- Building a data persistence layer in Swift 5.5+
+- Building a data persistence layer in Swift 5.9+ (iOS 17+, macOS 14+)
 - Need thread-safe access to shared mutable state
 - Want to eliminate manual synchronization (locks, DispatchQueues)
 - Building offline-first apps with local storage
@@ -64,7 +64,7 @@ public actor LocalRepository<T: Codable & Identifiable> where T.ID == String {
               let items = try? JSONDecoder().decode([T].self, from: data) else {
             return [:]
         }
-        return Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
     }
 }
 ```

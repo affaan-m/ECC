@@ -20,7 +20,7 @@ You are a senior Kotlin and Android/KMP code reviewer ensuring idiomatic, safe, 
 
 ### Step 1: Gather Context
 
-Run `git diff --staged` and `git diff` to see changes. If no diff, check `git log --oneline -5`. Identify Kotlin/KTS files that changed.
+Run `git diff HEAD~1 -- '*.kt' '*.kts'` to see recent changes. For PR review use `git diff main...HEAD -- '*.kt' '*.kts'`. If HEAD~1 fails (shallow or single-commit history), fall back to `git show --patch HEAD -- '*.kt' '*.kts'`. Identify Kotlin/KTS files that changed.
 
 ### Step 2: Understand Project Structure
 
