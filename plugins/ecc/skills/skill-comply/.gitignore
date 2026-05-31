@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.py[cod]
+results/*.md
+.pytest_cache/
+.coverage
+uv.lock
