@@ -1,5 +1,5 @@
 /**
- * ECC Plugin Hooks for OpenCode
+ * Everything Claude Code (ECC) Plugin Hooks for OpenCode
  *
  * This plugin translates Claude Code hooks to OpenCode's plugin system.
  * OpenCode's plugin system is MORE sophisticated than Claude Code with 20+ events
@@ -23,9 +23,7 @@ import {
 } from "./lib/changed-files-store.js"
 import changedFilesTool from "../tools/changed-files.js"
 
-type ECCHooksPluginFn = (input: PluginInput) => Promise<Record<string, unknown>>
-
-export const ECCHooksPlugin: ECCHooksPluginFn = async ({
+export const ECCHooksPlugin = async ({
   client,
   $,
   directory,
@@ -41,14 +39,6 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   function resolvePath(p: string): string {
     if (path.isAbsolute(p)) return p
     return path.join(worktreePath, p)
-  }
-
-  function hasProjectFile(relativePath: string): boolean {
-    try {
-      return fs.statSync(resolvePath(relativePath)).isFile()
-    } catch {
-      return false
-    }
   }
 
   const pendingToolChanges = new Map<string, { path: string; type: "added" | "modified" }>()
@@ -113,7 +103,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       // Auto-format JS/TS files
       if (hookEnabled("post:edit:format", ["strict"]) && event.path.match(/\.(ts|tsx|js|jsx)$/)) {
         try {
-          await $`prettier --write ${event.path} 2>/dev/null`
+          await $`prettier --write ${event.path}`.nothrow().quiet()
           log("info", `[ECC] Formatted: ${event.path}`)
         } catch {
           // Prettier not installed or failed - silently continue
@@ -170,16 +160,16 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         input.args?.filePath?.match(/\.tsx?$/)
       ) {
         try {
-          await $`npx tsc --noEmit 2>&1`
-          log("info", "[ECC] TypeScript check passed")
-        } catch (error: unknown) {
-          const err = error as { stdout?: string }
-          log("warn", "[ECC] TypeScript errors detected:")
-          if (err.stdout) {
-            // Log first few errors
-            const errors = err.stdout.split("\n").slice(0, 5)
+          const { exitCode, stdout } = await $`npx tsc --noEmit 2>&1`.nothrow().quiet()
+          if (exitCode === 0) {
+            log("info", "[ECC] TypeScript check passed")
+          } else {
+            log("warn", "[ECC] TypeScript errors detected:")
+            const errors = stdout.toString().split("\n").slice(0, 5)
             errors.forEach((line: string) => log("warn", `  ${line}`))
           }
+        } catch (error: unknown) {
+          log("warn", "[ECC] TypeScript check failed")
         }
       }
 
@@ -283,8 +273,13 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       log("info", `[ECC] Session started - profile=${currentProfile}`)
 
       // Check for project-specific context files
-      if (hasProjectFile("CLAUDE.md")) {
-        log("info", "[ECC] Found CLAUDE.md - loading project context")
+      try {
+        const hasClaudeMd = await $`test -f ${worktree}/CLAUDE.md && echo "yes"`.text()
+        if (hasClaudeMd.trim() === "yes") {
+          log("info", "[ECC] Found CLAUDE.md - loading project context")
+        }
+      } catch {
+        // No CLAUDE.md found
       }
     },
 
@@ -334,7 +329,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
 
       // Desktop notification (macOS)
       try {
-        await $`osascript -e 'display notification "Task completed!" with title "OpenCode ECC"' 2>/dev/null`
+        await $`osascript -e 'display notification "Task completed!" with title "OpenCode ECC"'`.nothrow().quiet()
       } catch {
         // Notification not supported or failed
       }
@@ -403,7 +398,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         ECC_PLUGIN: "true",
         ECC_HOOK_PROFILE: currentProfile,
         ECC_DISABLED_HOOKS: process.env.ECC_DISABLED_HOOKS || "",
-        PROJECT_ROOT: worktreePath,
+        PROJECT_ROOT: worktree || directory,
       }
 
       // Detect package manager
@@ -414,9 +409,14 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
         "package-lock.json": "npm",
       }
       for (const [lockfile, pm] of Object.entries(lockfiles)) {
-        if (hasProjectFile(lockfile)) {
-          env.PACKAGE_MANAGER = pm
-          break
+        try {
+          const { exitCode } = await $`test -f ${worktree}/${lockfile}`.nothrow().quiet()
+          if (exitCode === 0) {
+            env.PACKAGE_MANAGER = pm
+            break
+          }
+        } catch {
+          // Not found, try next
         }
       }
 
@@ -430,8 +430,13 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       }
       const detected: string[] = []
       for (const [file, lang] of Object.entries(langDetectors)) {
-        if (hasProjectFile(file)) {
-          detected.push(lang)
+        try {
+          const { exitCode } = await $`test -f ${worktree}/${file}`.nothrow().quiet()
+          if (exitCode === 0) {
+            detected.push(lang)
+          }
+        } catch {
+          // Not found
         }
       }
       if (detected.length > 0) {
@@ -453,7 +458,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       const contextBlock = [
         "# ECC Context (preserve across compaction)",
         "",
-        "## Active Plugin: ECC v2.0.0-rc.1",
+        "## Active Plugin: Everything Claude Code v1.8.0",
         "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell.env, compacting, permission.ask",
         "- Tools: run-tests, check-coverage, security-audit, format-code, lint-check, git-summary, changed-files",
         "- Agents: 13 specialized (planner, architect, tdd-guide, code-reviewer, security-reviewer, build-error-resolver, e2e-runner, refactor-cleaner, doc-updater, go-reviewer, go-build-resolver, database-reviewer, python-reviewer)",
