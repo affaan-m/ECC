@@ -14,7 +14,7 @@ When invoked:
 1. Run `git diff -- '*.py'` to see recent Python file changes
 2. Run `python manage.py check` if a Django project is present
 3. Run `python manage.py makemigrations --check` to detect missing migrations
-4. Check any migration files for: `RunPython` without `reverse_code`, data migrations on large tables without batching, and missing `db_index` on new FK/filter columns
+4. Check any migration files for: `RunPython` without `reverse_code`, data migrations on large tables without batching, and missing `db_index` on non-FK filter columns (ForeignKey fields are indexed by default)
 5. Run `ruff check .` and `mypy .` if available
 6. Focus on modified `.py` files and any related migrations
 7. Begin review immediately
