@@ -2,7 +2,7 @@
 name: inherit-legacy-style
 description: Legacy-project style inheritance skill. Use when the user types /inherit-legacy-style, or when onboarding an AI coding agent onto a hand-written legacy project and you need to prevent "style drift" (the model imposing its pretrained mainstream idioms onto the project). Language- and framework-agnostic — it aligns meta-architecture only, not syntax. Once run, it becomes a behavioral constraint on all subsequent coding tasks. Do NOT use for pure research or one-off questions unrelated to code-style alignment.
 origin: community
-allowed-tools: Read, Glob, Grep, Bash, Edit, Write
+allowed-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion
 ---
 
 # Inherit Legacy Style
@@ -15,6 +15,10 @@ Prevents AI code style drift in legacy projects by scanning the codebase for imp
 - User mentions onboarding AI onto a hand-written legacy project
 - User is worried about AI-generated code "drifting" from existing project conventions
 - User wants to extract and codify their project's implicit coding rules
+
+## When to Use
+
+Use this skill when you need to preserve legacy project style and prevent AI-generated style drift. See **When to Activate** above for trigger conditions.
 
 ## Prerequisites
 
@@ -100,6 +104,14 @@ Ask the user for enforcement strength (use `AskUserQuestion`):
 
 When `.ai-style-rules.md` is in context (loaded via CLAUDE.md), every code-writing task must open with a **compliance declaration** in the reasoning chain, naming the exemplar being followed and the DONTs being avoided.
 
+## How It Works
+
+This skill auto-detects whether it's a first-time or incremental run via `.ai-style-rules.md` presence:
+
+- **First-time (Branch A)** — Measures project scale, scans codebase across 4 meta-architecture dimensions (File Anatomy, State & Control Flow, Infrastructure, Error Handling), applies signal-threshold noise reduction to suppress weak conflicts, resolves strong-signal conflicts one-at-a-time with the user, generates `.ai-style-rules.md` with Golden Files / Naming Rules / DONTs, and offers optional enforcement hooks.
+- **Incremental (Branch B)** — Reads existing rules, checks recent Git diffs for new or conflicting patterns, runs the same one-at-a-time grilling protocol for any conflicts found, and appends evolution logs without overwriting existing rules.
+- **Per-Turn Enforcement** — When hooked via `CLAUDE.md`, every code-writing task opens with a compliance declaration naming the exemplar followed and the DONTs avoided.
+
 ## Output Specification
 
 - `.ai-style-rules.md` at project root (with commit fingerprint + scale tier in header)
@@ -128,3 +140,17 @@ When `.ai-style-rules.md` is in context (loaded via CLAUDE.md), every code-writi
 - `init` — initialize a new CLAUDE.md with codebase documentation
 - `code-review` — review diffs for correctness and style issues
 - `simplify` — review code for reuse and simplification opportunities
+
+## Examples
+
+1. **First-time onboarding**
+   - User: "Help me onboard AI to this older codebase without changing its style."
+   - Action: Run Branch A full-scan → measure scale → scan 4 dimensions → grill conflicts → generate `.ai-style-rules.md` → offer hook strength (soft/hard/none).
+
+2. **Incremental update after team changes**
+   - User: "We added a new module; keep existing style rules intact."
+   - Action: Run Branch B incremental sniff → compare Git deltas to recorded rules → grill any new conflicts → append evolution log without overwriting.
+
+3. **Enforcing DONTs via CLAUDE.md**
+   - User: "Make sure all new code stays consistent with the project's rules."
+   - Action: Soft hook installed → `.ai-style-rules.md` auto-loaded every session → every code-writing task opens with compliance declaration, reusing exemplar patterns and avoiding DONTs.
