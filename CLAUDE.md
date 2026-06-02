@@ -86,8 +86,9 @@ npm run command-registry:write
 
 ```
 agents/                — 61 specialized subagents (Markdown + YAML frontmatter)
-skills/                — 243 workflow skill definitions (canonical workflow surface)
+skills/                — 246 workflow skill definitions (canonical workflow surface)
 commands/              — 76 slash commands (legacy compatibility shims only)
+legacy-command-shims/  — Retired shims (e.g. /tdd, /eval) for explicit opt-in only
 hooks/                 — hooks.json + memory-persistence helpers
 rules/                 — Always-on guidelines (security, style, language-specific)
 mcp-configs/           — 14 MCP server configuration files
@@ -114,15 +115,18 @@ Each harness gets its own dot-directory so its native tooling picks up the asset
 .zed/                  — Zed editor config
 .kiro/                 — Kiro config
 .codebuddy/            — CodeBuddy config
-.agents/               — Generic agents harness format
+.agents/               — Generic agents harness format (Codex auto-loads skills from .agents/skills/)
 ```
+
+When adding a new skill to `skills/`, also copy it to `.agents/skills/<skill-name>/` for Codex harness compatibility.
 
 ### Source code
 
 ```
 src/llm/               — Python provider-agnostic LLM abstraction layer
                          (supports Anthropic, OpenAI, Ollama)
-ecc2/                  — Next-generation ECC v2 components
+ecc2/                  — Rust control-plane alpha (builds locally; exposes dashboard,
+                         start, sessions, status, stop, resume, daemon commands)
 ```
 
 ### Scripts
@@ -150,6 +154,7 @@ scripts/sessions-cli.js             — Session management CLI
 scripts/consult.js                  — Agent consultation
 scripts/claw.js                     — CLAW interactive tool
 scripts/lib/                        — Shared Node.js utilities (package-manager, utils)
+scripts/hooks/                      — Hook implementations (session-start, session-end, etc.)
 scripts/ci/                         — CI validators:
   check-unicode-safety.js           — Detect dangerous Unicode
   validate-agents.js                — Validate agent frontmatter
@@ -192,6 +197,7 @@ npm run dashboard           # Same via npm
 
 - **`skills/`** is the canonical workflow surface. All new workflow contributions go here first.
 - **`commands/`** is a legacy slash-entry compatibility surface — only add/update commands when a migration shim is still required for cross-harness parity.
+- **`legacy-command-shims/`** holds retired short-name shims (e.g. `/tdd`, `/eval`). Do not add new shims here; copy individual files only if you explicitly need an old name.
 - Agent and skill files placed in `skills/` are available to all harnesses via the adapter build. Files in `~/.claude/skills/` are generated/imported personal skills and should not be committed here.
 
 ## Authoring Formats
@@ -213,38 +219,55 @@ model: claude-opus-4-5
 Agent instructions here...
 ```
 
+When adding a new agent, also register it in `AGENTS.md` and optionally update `docs/COMMAND-AGENT-MAP.md`.
+
 ### Skills (`skills/<skill-name>/`)
 
-Directory with at minimum a `skill.md`:
+Directory with at minimum a `SKILL.md`:
 
 ```markdown
+---
+name: your-skill-name
+description: Brief description shown in skill list and used for auto-activation
+origin: ECC
+---
+
 # Skill Name
 
-## When to Use
+## When to Activate
 ...
 
-## How It Works
+## Core Concepts
 ...
 
-## Examples
+## Code Examples
+...
+
+## Anti-Patterns
 ...
 ```
 
+After adding a new skill, copy it to `.agents/skills/<skill-name>/` for Codex harness compatibility.
+
 ### Commands (`commands/`)
 
-Markdown files with a description frontmatter line at the top.
+Markdown files with a `description:` frontmatter line at the top.
 
 ### Hooks (`hooks/hooks.json`)
 
-JSON with matcher conditions and command/notification hooks array.
+JSON with matcher conditions and command/notification hooks array. Hook scripts live in `scripts/hooks/`. All hooks must:
+- Use `run-with-flags.js` wrapper so `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` runtime gating works
+- Exit `0` on non-critical errors (never block tool execution unexpectedly)
+- Keep blocking hooks (PreToolUse, stop) under 200ms — no network calls
+- Log to stderr with `[HookName]` prefix on errors
 
 ### Rules (`rules/`)
 
-Markdown files. Always loaded by the harness; keep them concise and actionable.
+Markdown files organized as `rules/common/` (language-agnostic) + language-specific directories. Always loaded by the harness; keep them concise and actionable.
 
 ## File Naming Convention
 
-All content files: lowercase with hyphens — e.g., `python-reviewer.md`, `tdd-workflow.md`.
+All content files and Node.js scripts: **lowercase with hyphens** — e.g., `python-reviewer.md`, `tdd-workflow.md`, `session-start.js`.
 
 ## Available Agents (61 total)
 
@@ -328,6 +351,8 @@ All content files: lowercase with hyphens — e.g., `python-reviewer.md`, `tdd-w
 
 **Input validation:** Validate at system boundaries. Use schema-based validation. Fail fast with clear messages.
 
+**JavaScript source code:** CommonJS only — no ESM (`import`/`export`) unless file ends in `.mjs`. No TypeScript — plain `.js` throughout. Prefer `const` over `let`; never `var`.
+
 **No hardcoded secrets.** Use environment variables or a secret manager. Rotate any exposed secret immediately.
 
 ## Testing Requirements
@@ -337,6 +362,8 @@ All content files: lowercase with hyphens — e.g., `python-reviewer.md`, `tdd-w
 - **TDD cycle:** Write failing test → minimal implementation → refactor
 - Python tests use pytest with `asyncio_mode = auto`; run via `pytest tests/`
 - JavaScript tests use the built-in Node.js test runner; run via `node tests/run-all.js`
+- New scripts in `scripts/lib/` require a matching test in `tests/lib/`
+- New hooks require at least one integration test in `tests/hooks/`
 
 ## Git & Commit Conventions
 
@@ -349,6 +376,13 @@ Types: feat | fix | docs | style | refactor | perf | test | chore | ci | build |
 ```
 
 Subject must be lowercase (not Sentence-case, not UPPER-CASE, not Pascal-Case).
+
+## Operational Constraints
+
+- **No merge by title or commit summary alone** — always review the actual diff.
+- **No arbitrary external runtime installs in shipped ECC surfaces** — keep hooks and MCP behavior self-contained.
+- **Consolidate overlapping content** — overlapping skills, hooks, or agents should be merged when overlap is material and runtime separation is not required.
+- When updating catalog counts (agents/skills/commands), update both `AGENTS.md` and `README.md` to keep them in sync.
 
 ## Security Checklist (before any commit)
 
@@ -377,11 +411,12 @@ Follow the formats in `CONTRIBUTING.md`. Quick reference:
 
 | Content type | Location | Format |
 |-------------|----------|--------|
-| New workflow | `skills/<name>/` | Markdown with When/How/Examples sections |
-| New agent | `agents/` | Markdown with YAML frontmatter |
-| Slash command (migration only) | `commands/` | Markdown with description frontmatter |
-| Hook | `hooks/hooks.json` | JSON with matcher and hooks array |
-| Rule | `rules/` | Plain Markdown |
+| New workflow | `skills/<name>/` | SKILL.md with `name`, `description`, `origin: ECC` frontmatter + When/Core Concepts/Examples/Anti-Patterns sections |
+| New agent | `agents/` | Markdown with YAML frontmatter; also register in `AGENTS.md` |
+| Slash command (migration only) | `commands/` | Markdown with `description:` frontmatter |
+| Hook | `hooks/hooks.json` + `scripts/hooks/` | JSON matcher + Node.js script via `run-with-flags.js` |
+| Rule | `rules/<language>/` | Plain Markdown |
+| Cross-harness skill copy | `.agents/skills/<name>/` | Copy of SKILL.md for Codex harness |
 
 Do **not** commit personal `~/.claude/skills/` content to this repo.
 
