@@ -66,6 +66,27 @@ The operating rhythm after launch should be weekly:
 5. one measurable funnel readback covering repo traffic, sponsor clicks, Pro
    conversions, MRR movement, and inbound replies.
 
+## Platform Value Loop
+
+The long-term platform thesis is recorded in
+[`docs/architecture/platform-value-loop.md`](../../architecture/platform-value-loop.md).
+ECC should stay useful as free OSS while the managed value accrues around team
+memory, observable sessions, release gates, evals, security evidence, hosted
+analysis, billing, partner workflows, and product-specific integrations.
+
+Product integrations should behave like repeatable distribution loops:
+
+1. ship a public skill pack that works without private credentials;
+2. keep live product data or actions behind an explicit gated API path;
+3. add fixtures, docs, evals, and risk gates so the workflow is testable;
+4. convert sanitized product usage back into ECC skills, docs, or evidence;
+5. route serious teams toward sponsors, Pro, partners, or consulting.
+
+Itô is the current example: prediction-market research, basket comparison,
+manual non-advisory planning, and data-atlas workflows can be distributed
+through ECC, while live Itô data and account-specific calls remain gated by
+`ITO_API_KEY` and separate from ECC Tools billing.
+
 ## Release Gates
 
 | Lane | Done when | Current action |

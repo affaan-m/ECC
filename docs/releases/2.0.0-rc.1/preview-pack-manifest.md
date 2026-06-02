@@ -14,6 +14,7 @@ tagging plugin surfaces, uploading video, or posting announcements.
 | `skills/hermes-imports/SKILL.md` | Sanitized Hermes-to-ECC import workflow | Includes import rules, sanitization checklist, conversion pattern, and output contract |
 | `docs/architecture/cross-harness.md` | Shared substrate model for Claude Code, Codex, OpenCode, Cursor, Gemini, Hermes, and terminal-only use | Names portability boundaries and does not claim unsupported native parity |
 | `docs/architecture/harness-adapter-compliance.md` | Adapter matrix and scorecard | Verified by `npm run harness:adapters -- --check` |
+| `docs/architecture/platform-value-loop.md` | Product integration and full-stack platform thesis | Keeps external product skill packs, gated APIs, case studies, sponsorship, Pro, and consulting loops separate from unsupported GA/control-pane claims |
 | `docs/architecture/observability-readiness.md` | Local operator-readiness gate | Verified by `npm run observability:ready` |
 | `docs/architecture/progress-sync-contract.md` | GitHub, Linear, handoff, roadmap, and work-item sync boundary | Checked by `node scripts/platform-audit.js --json` |
 | `scripts/preview-pack-smoke.js` | Deterministic preview-pack smoke gate | Verified by `npm run preview-pack:smoke` |
@@ -45,6 +46,11 @@ tagging plugin surfaces, uploading video, or posting announcements.
 | `docs/releases/2.0.0-rc.1/ito-prediction-market-skill-pack.md` | Public Itô skill-pack distribution note | Keeps Itô API access gated, non-advisory, and separate from ECC Tools billing |
 
 ## Itô Skill Pack Boundary
+
+The general product-integration contract is recorded in
+`docs/architecture/platform-value-loop.md`. The Itô pack is the first worked
+example: useful public workflows, separate gated API access, and sanitized
+operator patterns feeding back into ECC without merging business ownership.
 
 The preview pack includes six public teaser skills for prediction-market and
 Itô-adjacent workflows:

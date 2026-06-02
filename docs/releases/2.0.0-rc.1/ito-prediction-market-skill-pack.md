@@ -51,6 +51,9 @@ not place trades. They can help a user:
 
 ## Growth Loop
 
+For the general product-integration contract, see
+[`docs/architecture/platform-value-loop.md`](../../architecture/platform-value-loop.md).
+
 The loop is intentionally simple:
 
 1. ECC users discover useful public prediction-market skills.
