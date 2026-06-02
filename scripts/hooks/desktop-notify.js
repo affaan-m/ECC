@@ -154,20 +154,25 @@ function isUnderMultiplexer() {
 /**
  * Send a macOS notification.
  *
- * On iTerm2 (and not inside tmux/screen), prefers the native escape sequence
- * (ESC ] 9 ; <message> BEL) written to the parent terminal's tty. This makes
- * iTerm2 the notification owner, so clicking the notification focuses the
- * exact iTerm2 tab where Claude Code is running. The default osascript path
- * makes Script Editor the owner instead, which causes clicks to launch
- * Script Editor.
+ * On terminals that support the OSC 9 notification sequence (iTerm2 and
+ * Ghostty), and when not inside tmux/screen, prefers the native escape
+ * sequence (ESC ] 9 ; <message> BEL) written to the parent terminal's tty.
+ * This makes the terminal the notification owner, so clicking the
+ * notification focuses the exact tab/window where Claude Code is running.
+ * The default osascript path makes Script Editor the owner instead, which
+ * causes clicks to launch Script Editor.
  *
- * Falls back to osascript when not running under iTerm2, when tty discovery
- * fails, or when running inside a multiplexer that would swallow OSC 9.
+ * Falls back to osascript when not running under an OSC 9-capable terminal,
+ * when tty discovery fails, or when running inside a multiplexer that would
+ * swallow OSC 9.
  * AppleScript strings do not support backslash escapes, so we replace double
  * quotes with curly quotes and strip backslashes before embedding.
  */
 function notifyMacOS(title, body) {
-  if (process.env.TERM_PROGRAM === 'iTerm.app' && !isUnderMultiplexer()) {
+  const osc9Capable =
+    process.env.TERM_PROGRAM === 'iTerm.app' ||
+    process.env.TERM_PROGRAM === 'ghostty';
+  if (osc9Capable && !isUnderMultiplexer()) {
     try {
       const tty = findTerminalTTY();
       if (tty) {
