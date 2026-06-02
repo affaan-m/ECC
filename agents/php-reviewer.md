@@ -43,7 +43,7 @@ When invoked:
 - Public methods without type hints for parameters and return types
 - Using `mixed` when a specific union type is possible
 - Missing `readonly` on constructor-promoted properties that are never reassigned
-- Using `final` keyword: classes that are not designed for inheritance
+- Missing `final` on classes not designed for inheritance
 
 ### HIGH — Eloquent / Laravel Patterns
 - N+1 queries: missing `with()` for relationships in loops or serialization
@@ -63,8 +63,8 @@ When invoked:
 - PSR-12: import order, spacing, brace placement, naming conventions
 - Missing docblocks on complex public methods
 - `dd()`/`dump()`/`var_dump()` left in committed code
-- `from module import *` — namespace pollution with `use`
-- `count($collection)` when `$collection->isEmpty()` is more intent-revealing
+- Unused or overly broad `use` imports — import only what you need, keep them clean
+- `count($collection)` vs `$collection->isEmpty()` — prefer `isEmpty()` for intent-revealing checks; use `count()` only when a numeric count is actually needed
 - Shadowing builtins (`$collection`, `$request`, `$model` in narrow closures)
 - Mixed PHP and HTML in view files without proper Blade sectioning
 

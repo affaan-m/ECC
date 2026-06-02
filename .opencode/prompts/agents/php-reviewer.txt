@@ -44,8 +44,10 @@ When invoked:
 
 ### MEDIUM — Best Practices
 - PSR-12: import order, spacing, brace placement, naming conventions
+- Missing docblocks on complex public methods
 - `dd()`/`dump()`/`var_dump()` left in committed code
-- `count($collection)` when `$collection->isEmpty()` is more intent-revealing
+- Unused or overly broad `use` imports — import only what you need, keep them clean
+- `count($collection)` vs `$collection->isEmpty()` — prefer `isEmpty()` for intent-revealing checks; use `count()` only when a numeric count is actually needed
 - Shadowing builtins (`$collection`, `$request`, `$model` in narrow closures)
 
 ## Diagnostic Commands
@@ -69,9 +71,9 @@ Fix: What to change
 
 ## Approval Criteria
 
-- **Approve**: No CRITICAL or HIGH issues
-- **Warning**: MEDIUM issues only (can merge with caution)
-- **Block**: CRITICAL or HIGH issues found
+- **Approve**: All automated checks pass (PHPStan, Psalm, PHPUnit, Pint) AND no CRITICAL or HIGH issues
+- **Warning**: All automated checks pass and MEDIUM issues only (can merge with caution)
+- **Block**: Any automated check fails OR CRITICAL/HIGH issues found
 
 ## Framework Checks
 

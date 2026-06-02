@@ -76,7 +76,8 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->withoutExceptionHandling();
+        // Call $this->withoutExceptionHandling() only in tests that
+        // test non-HTTP exceptions; it suppresses assertStatus() etc.
     }
 
     // Helper: Authenticate and return user
@@ -452,8 +453,6 @@ $order->sendConfirmation();
 Mail::assertSent(OrderConfirmation::class, function ($mail) use ($order) {
     return $mail->hasTo($order->user->email);
 });
-
-Mail::assertNothingOutgoing();
 ```
 
 ### Notification Fake
@@ -483,8 +482,10 @@ Queue::assertPushed(ProcessImage::class, function ($job) use ($product) {
 ```php
 Storage::fake('public');
 
+$file = UploadedFile::fake()->image('photo.jpg', 200, 200);
+
 $response = $this->actingAs($user)->post('/avatar', [
-    'avatar' => UploadedFile::fake()->image('photo.jpg', 200, 200),
+    'avatar' => $file,
 ]);
 
 $response->assertSessionHasNoErrors();
@@ -608,10 +609,10 @@ it('authorizes updates', function () {
 ## Coverage
 
 ```bash
-# PHPUnit
-vendor/bin/phpunit --coverage-html coverage --min-coverage=80
+# PHPUnit (use clover output for CI threshold checks)
+vendor/bin/phpunit --coverage-html coverage --coverage-clover clover.xml
 
-# Pest
+# Pest (built-in threshold support)
 vendor/bin/pest --coverage --min=80
 ```
 

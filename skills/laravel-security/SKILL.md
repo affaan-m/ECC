@@ -54,8 +54,8 @@ SANCTUM_TOKEN_PREFIX=
 // In AppServiceProvider::boot()
 $requiredEnv = ['APP_KEY', 'DB_DATABASE', 'DB_USERNAME'];
 foreach ($requiredEnv as $key) {
-    if (empty(env($key))) {
-        throw new RuntimeException("Missing required env variable: {$key}");
+    if (empty(config($key))) {
+        throw new RuntimeException("Missing required config variable: {$key}");
     }
 }
 ```
@@ -70,7 +70,9 @@ if (app()->environment('production')) {
 }
 
 // config/app.php for trusted proxies (load balancers)
-'trusted_proxies' => '*', // Or specific IPs
+// Use specific IP ranges — * trusts all, allowing X-Forwarded-* spoofing
+// AWS: '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'
+'trusted_proxies' => ['10.0.0.0/8', '172.16.0.0/12'],
 
 // Force HTTPS in production via middleware
 // app/Http/Middleware/ForceHttps.php
@@ -456,7 +458,8 @@ class VerifyCsrfToken extends Middleware
     // Only exclude routes that have external CSRF protection (webhooks, etc.)
     protected $except = [
         'stripe/*', // Stripe webhooks use their own signature verification
-        'api/*',    // If using Sanctum/Passport for API
+        // Avoid blanket 'api/*' — stateful Sanctum routes need CSRF.
+        // Exclude only specific stateless webhook/endpoint routes.
     ];
 }
 ```
@@ -592,7 +595,7 @@ final class StorePostRequest extends FormRequest
                 'mimes:jpg,jpeg,png,gif,webp', // Whitelist specific types
                 'max:2048', // 2MB max
             ],
-            'tags' => ['array', 'exists:tags,id'],
+            'tags' => ['array'],
             'tags.*' => ['integer', 'exists:tags,id'],
         ];
     }
@@ -606,7 +609,7 @@ final class StorePostRequest extends FormRequest
     }
 
     // Sanitize input after validation
-    public function validated($key = null, $default = null): array
+    public function validated($key = null, $default = null): mixed
     {
         $validated = parent::validated();
         $validated['title'] = strip_tags($validated['title']);
@@ -672,7 +675,7 @@ protected function configureRateLimiting(): void
     });
 
     RateLimiter::for('uploads', function (Request $request) {
-        return Limit::perHour(10)->by($request->user()->id)
+        return Limit::perHour(10)->by($request->user()?->id ?? $request->ip())
             ->response(function () {
                 return response()->json([
                     'message' => 'Upload limit reached. Try again later.',
@@ -752,7 +755,7 @@ public function rules(): array
             'file',
             'mimes:pdf,doc,docx,xls,xlsx', // Whitelist specific MIME types
             'max:10240', // 10MB
-            'extensions:pdf,doc,docx', // Verify extension matches MIME
+            'extensions:pdf,doc,docx,xls,xlsx', // Verify extension matches MIME
         ],
         'avatar' => [
             'nullable',
@@ -838,7 +841,7 @@ SANCTUM_TOKEN_PREFIX=myapp_
 # Validate secrets at boot (AppServiceProvider::boot)
 $secrets = ['STRIPE_KEY', 'STRIPE_WEBHOOK_SECRET', 'MAIL_PASSWORD'];
 foreach ($secrets as $key) {
-    if (empty(env($key))) {
+    if (empty(config($key))) {
         Log::critical("Missing secret: {$key}");
     }
 }
@@ -847,14 +850,19 @@ foreach ($secrets as $key) {
 ## Queue Security
 
 ```php
-// Encrypt sensitive job data
-final class ProcessPaymentJob implements ShouldQueue
+// Define a named rate limiter (typically in AppServiceProvider::boot())
+RateLimiter::for('payments', fn () => Limit::perMinute(5));
+```
+
+```php
+// Encrypt sensitive job data by implementing the interface
+final class ProcessPaymentJob implements ShouldQueue, ShouldBeEncrypted
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public function __construct(
         private readonly string $paymentIntentId, // Public IDs are fine
-        #[Encrypted] private readonly string $cardFingerprint, // Laravel 11+ encrypted casting
+        private readonly string $cardFingerprint, // Encrypted via ShouldBeEncrypted
     ) {}
 
     public function handle(): void
@@ -872,7 +880,7 @@ final class ProcessPaymentJob implements ShouldQueue
     public function middleware(): array
     {
         return [
-            new RateLimited('payments', 5, Carbon::minute()),
+            new RateLimited('payments'),
         ];
     }
 }
