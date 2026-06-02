@@ -79,6 +79,25 @@ function runTests() {
   else failed++;
 
   if (
+    test('different edits to the SAME file produce different hashes (no false loop)', () => {
+      const h1 = hashToolCall('Edit', { file_path: 'a.kt', old_string: 'foo', new_string: 'bar' });
+      const h2 = hashToolCall('Edit', { file_path: 'a.kt', old_string: 'baz', new_string: 'qux' });
+      assert.notStrictEqual(h1, h2);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('identical Edit (same file + same change) still hashes the same', () => {
+      const args = { file_path: 'a.kt', old_string: 'foo', new_string: 'bar' };
+      assert.strictEqual(hashToolCall('Edit', args), hashToolCall('Edit', { ...args }));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('non-file tools hash by stable input to avoid false loop collisions', () => {
       const h1 = hashToolCall('Glob', { pattern: '**/*.js', path: '/repo/a' });
       const h2 = hashToolCall('Glob', { pattern: '**/*.md', path: '/repo/a' });

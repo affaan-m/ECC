@@ -48,6 +48,18 @@ function hashToolCall(toolName, toolInput) {
   let key = '';
   if (name === 'Bash') {
     key = String(toolInput?.command || '').slice(0, 160);
+  } else if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(name)) {
+    // Fingerprint the actual change, not just the path. Hashing on file_path
+    // alone made every distinct edit to the same file collide, so a few normal
+    // edits to one file looked like a stuck loop. Include the edit content so
+    // different edits to the same file hash differently.
+    key = stableStringify({
+      file_path: toolInput?.file_path,
+      old_string: toolInput?.old_string,
+      new_string: toolInput?.new_string,
+      content: toolInput?.content,
+      edits: toolInput?.edits
+    }).slice(0, HASH_INPUT_LIMIT);
   } else if (toolInput?.file_path) {
     key = String(toolInput.file_path);
   } else {
