@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="ULTRA CODE — a universal, white-label, tool-agnostic Standard Operating Procedure for self-evolving AI coding agents. Copy the master prompt and ship measurable, self-auditing output.">
+<meta name="color-scheme" content="dark">
+<title>ULTRA CODE — Standard Operating Procedure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=JetBrains+Mono:wght@400;500;700&family=Spline+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b08;
+    --bg-2:#14110b;
+    --panel:#17130c;
+    --ink:#ece6da;
+    --muted:#9a917f;
+    --faint:#8a8170;
+    --amber:#ffb000;
+    --amber-2:#ffcf66;
+    --amber-soft:rgba(255,176,0,.10);
+    --line:rgba(255,176,0,.16);
+    --line-2:rgba(236,230,218,.08);
+    --pass:#a9d27e;
+    --warn:#e08a5f;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Spline Sans',sans-serif;
+    line-height:1.62;
+    font-size:16.5px;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    position:relative;
+  }
+  /* atmosphere */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(900px 600px at 78% -8%, rgba(255,176,0,.13), transparent 60%),
+      radial-gradient(700px 500px at -6% 18%, rgba(255,176,0,.05), transparent 55%);
+  }
+  body::after{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.22;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 26px}
+
+  /* shared type bits */
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.28em;
+    text-transform:uppercase;color:var(--amber);font-weight:500;
+  }
+  .mono{font-family:'JetBrains Mono',monospace}
+  h2.section-title{
+    font-family:'Fraunces',serif;font-weight:600;line-height:1.04;letter-spacing:-.01em;
+    font-size:clamp(30px,5.2vw,48px);margin:.32em 0 .55em;
+  }
+  p{color:var(--ink)}
+  .lede{color:var(--muted);max-width:62ch;font-size:clamp(16px,2vw,18px)}
+
+  /* ============ MASTHEAD ============ */
+  header{padding:clamp(54px,9vw,104px) 0 clamp(40px,6vw,64px);border-bottom:1px solid var(--line)}
+  .brand-slot{
+    display:inline-flex;align-items:center;gap:10px;
+    border:1px dashed var(--line);border-radius:100px;
+    padding:7px 15px 7px 11px;margin-bottom:30px;
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.12em;color:var(--muted);
+  }
+  .brand-slot b{color:var(--amber);font-weight:700}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber)}
+  .masthead-eyebrow{margin-bottom:18px;display:block}
+  h1{
+    font-family:'Fraunces',serif;font-weight:900;line-height:.92;letter-spacing:-.025em;
+    font-size:clamp(58px,15vw,148px);color:var(--ink);
+  }
+  h1 .ev{font-style:italic;font-weight:500;color:var(--amber);display:block;
+    font-size:clamp(26px,6vw,58px);letter-spacing:-.01em;margin-top:.12em}
+  .tag{margin-top:28px;max-width:58ch;font-size:clamp(17px,2.4vw,21px);color:var(--ink)}
+  .tag b{color:var(--amber-2);font-weight:600}
+
+  .meta{
+    margin-top:38px;display:flex;flex-wrap:wrap;gap:0;
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .meta div{padding:14px 20px;flex:1 1 180px;border-right:1px solid var(--line)}
+  .meta div:last-child{border-right:none}
+  .meta .k{font-size:10.5px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+  .meta .v{font-size:13.5px;color:var(--ink);margin-top:5px;font-weight:500}
+  .meta .v.amber{color:var(--amber)}
+
+  .cta-row{margin-top:34px;display:flex;flex-wrap:wrap;gap:14px}
+  .btn{
+    font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.08em;font-weight:700;
+    text-transform:uppercase;cursor:pointer;border:none;border-radius:10px;
+    padding:15px 24px;display:inline-flex;align-items:center;gap:10px;text-decoration:none;
+    transition:transform .15s ease,box-shadow .25s ease,background .2s ease;
+  }
+  .btn-primary{background:var(--amber);color:#1a1305;box-shadow:0 0 0 rgba(255,176,0,0)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(255,176,0,.28)}
+  .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn-ghost:hover{border-color:var(--amber);color:var(--amber);transform:translateY(-2px)}
+  .btn:focus-visible,.copy-btn:focus-visible,a:focus-visible{outline:2px solid var(--amber-2);outline-offset:3px}
+  .btn svg{width:15px;height:15px}
+
+  /* ============ SECTION SCAFFOLD ============ */
+  section{padding:clamp(52px,8vw,88px) 0;border-bottom:1px solid var(--line-2)}
+  .sec-head{margin-bottom:14px}
+  .sec-num{
+    font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.22em;color:var(--amber);
+    display:flex;align-items:center;gap:14px;
+  }
+  .sec-num::before{content:"";width:34px;height:1px;background:var(--amber);display:inline-block}
+
+  /* ============ DOCTRINE ============ */
+  .doctrine{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line-2);
+    border:1px solid var(--line-2);border-radius:14px;overflow:hidden;margin-top:34px}
+  .doc{background:var(--bg-2);padding:26px 24px;transition:background .25s ease}
+  .doc:hover{background:var(--panel)}
+  .doc .n{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--amber);letter-spacing:.1em}
+  .doc h3{font-family:'Fraunces',serif;font-weight:600;font-size:21px;margin:10px 0 8px;letter-spacing:-.01em}
+  .doc p{color:var(--muted);font-size:15px;line-height:1.55}
+
+  /* ============ ARCHITECTURE ============ */
+  .arch{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:34px}
+  .node{
+    border:1px solid var(--line);border-radius:14px;padding:22px 20px;background:linear-gradient(180deg,var(--panel),var(--bg-2));
+    position:relative;transition:transform .2s ease,border-color .25s ease,box-shadow .25s ease;
+  }
+  .node:hover{transform:translateY(-4px);border-color:var(--amber);box-shadow:0 16px 40px rgba(0,0,0,.5)}
+  .node .role{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--amber);text-transform:uppercase}
+  .node h4{font-family:'Fraunces',serif;font-weight:600;font-size:19px;margin:8px 0 7px}
+  .node p{font-size:14px;color:var(--muted);line-height:1.5}
+  .state-files{margin-top:26px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .state-files .sf-head{background:var(--amber-soft);padding:13px 20px;font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;letter-spacing:.16em;color:var(--amber);text-transform:uppercase}
+  .sf-row{display:flex;gap:16px;padding:14px 20px;border-top:1px solid var(--line-2);align-items:baseline;flex-wrap:wrap}
+  .sf-row .fname{font-family:'JetBrains Mono',monospace;font-size:13.5px;color:var(--ink);min-width:160px;font-weight:500}
+  .sf-row .fdesc{font-size:14.5px;color:var(--muted);flex:1}
+
+  /* ============ LOOP TIMELINE ============ */
+  .loop{margin-top:38px;position:relative;padding-left:30px}
+  .loop::before{content:"";position:absolute;left:6px;top:8px;bottom:8px;width:2px;
+    background:linear-gradient(180deg,var(--amber),rgba(255,176,0,.15))}
+  .step{position:relative;padding:0 0 30px 26px}
+  .step:last-child{padding-bottom:0}
+  .step::before{content:"";position:absolute;left:-30px;top:4px;width:14px;height:14px;border-radius:50%;
+    background:var(--bg);border:2px solid var(--amber);box-shadow:0 0 14px rgba(255,176,0,.5)}
+  .step .ph{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;color:var(--amber);text-transform:uppercase}
+  .step h4{font-family:'Fraunces',serif;font-weight:600;font-size:22px;margin:5px 0 6px;letter-spacing:-.01em}
+  .step p{color:var(--muted);font-size:15px;max-width:64ch}
+
+  /* ============ GATES ============ */
+  .gates{margin-top:34px;display:grid;gap:12px}
+  .gate{display:flex;gap:16px;align-items:flex-start;border:1px solid var(--line-2);
+    border-radius:12px;padding:18px 20px;background:var(--bg-2);transition:border-color .2s ease}
+  .gate:hover{border-color:var(--line)}
+  .chk{flex-shrink:0;width:26px;height:26px;border-radius:7px;border:2px solid var(--amber);
+    display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:14px;
+    font-family:'JetBrains Mono',monospace}
+  .gate p{font-size:15.5px;color:var(--ink)}
+  .gate p b{color:var(--amber-2);font-weight:600}
+  .gate-note{margin-top:18px;font-size:14.5px;color:var(--warn);font-family:'JetBrains Mono',monospace;
+    border-left:2px solid var(--warn);padding-left:16px}
+
+  /* ============ EVOLUTION ============ */
+  .log{margin-top:34px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#0a0805}
+  .log-head{padding:13px 20px;background:var(--amber-soft);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  .log-head span{font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.16em;color:var(--amber);text-transform:uppercase}
+  .log-body{padding:22px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.85;color:var(--muted);overflow-x:auto}
+  .log-body .lbl{color:var(--amber);font-weight:700}
+  .log-body .id{color:var(--amber-2);font-weight:700}
+  .log-body .ok{color:var(--pass)}
+  .evo-steps{margin-top:26px;display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .evo{border:1px solid var(--line-2);border-radius:10px;padding:16px 14px;background:var(--bg-2);text-align:center}
+  .evo .en{font-family:'JetBrains Mono',monospace;color:var(--amber);font-size:20px;font-weight:700}
+  .evo .et{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.4}
+
+  /* ============ DEPLOY ============ */
+  .deploy{margin-top:34px;display:grid;gap:14px;counter-reset:dstep}
+  .dstep{display:flex;gap:18px;align-items:flex-start;border:1px solid var(--line-2);border-radius:12px;padding:20px;background:var(--bg-2)}
+  .dstep .dn{counter-increment:dstep;font-family:'Fraunces',serif;font-weight:900;font-size:30px;color:var(--amber);
+    line-height:1;min-width:42px}
+  .dstep .dn::before{content:counter(dstep,decimal-leading-zero)}
+  .dstep h4{font-family:'Spline Sans',sans-serif;font-weight:600;font-size:17px;margin-bottom:5px}
+  .dstep p{font-size:14.5px;color:var(--muted)}
+  .dstep code{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--amber-2);background:var(--amber-soft);padding:2px 7px;border-radius:5px}
+
+  /* ============ MASTER PROMPT ============ */
+  .prompt-wrap{margin-top:34px;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    box-shadow:0 24px 70px rgba(0,0,0,.55)}
+  .prompt-bar{display:flex;justify-content:space-between;align-items:center;
+    padding:15px 18px;background:#0a0805;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:12px}
+  .prompt-bar .dots{display:flex;gap:7px;align-items:center}
+  .prompt-bar .dots i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .prompt-bar .dots i:nth-child(1){background:#e0795f}
+  .prompt-bar .dots i:nth-child(2){background:#e0b34f}
+  .prompt-bar .dots i:nth-child(3){background:#a9d27e}
+  .prompt-bar .fn{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:8px;letter-spacing:.08em}
+  .copy-btn{
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    background:var(--amber);color:#1a1305;border:none;border-radius:8px;padding:11px 18px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:9px;transition:transform .15s ease,background .2s ease;
+  }
+  .copy-btn:hover{transform:translateY(-1px)}
+  .copy-btn.done{background:var(--pass);color:#0d1a05}
+  .copy-btn svg{width:15px;height:15px}
+  pre#prompt-render{
+    margin:0;padding:26px 22px;max-height:560px;overflow:auto;background:#0a0805;
+    font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.72;color:#d7cfbf;
+    white-space:pre-wrap;word-break:break-word;tab-size:2;
+  }
+  pre#prompt-render:focus-visible{outline:2px solid var(--amber-2);outline-offset:-2px}
+  pre#prompt-render::-webkit-scrollbar{width:10px;height:10px}
+  pre#prompt-render::-webkit-scrollbar-thumb{background:rgba(255,176,0,.3);border-radius:8px}
+  pre#prompt-render::-webkit-scrollbar-track{background:transparent}
+
+  /* ============ FOOTER ============ */
+  footer{padding:clamp(46px,7vw,72px) 0 60px;text-align:center}
+  .wl{display:inline-block;border:1px dashed var(--line);border-radius:12px;padding:20px 26px;
+    font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);max-width:60ch;line-height:1.7}
+  .wl b{color:var(--amber)}
+  .foot-meta{margin-top:26px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+
+  /* ============ ENTRANCE ANIM ============ */
+  .reveal{opacity:0;transform:translateY(22px);animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.23s}
+  .d4{animation-delay:.32s}.d5{animation-delay:.41s}.d6{animation-delay:.5s}
+
+  /* ============ REDUCED MOTION ============ */
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important;scroll-behavior:auto!important}
+    .reveal{opacity:1;transform:none}
+  }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width:760px){
+    .doctrine{grid-template-columns:1fr}
+    .arch{grid-template-columns:1fr}
+    .evo-steps{grid-template-columns:repeat(2,1fr)}
+    .meta div{flex:1 1 100%;border-right:none;border-bottom:1px solid var(--line)}
+    .meta div:last-child{border-bottom:none}
+    .btn{flex:1 1 100%;justify-content:center}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ===================== MASTHEAD ===================== -->
+  <header>
+    <div class="brand-slot reveal d1"><span class="dot"></span>WHITE-LABEL SLOT &nbsp;//&nbsp; <b>[ YOUR&nbsp;BRAND ]</b></div>
+    <span class="eyebrow masthead-eyebrow reveal d1">Standard Operating Procedure · v1.0</span>
+    <h1 class="reveal d2">ULTRA<br>CODE<span class="ev">self-evolving engineering</span></h1>
+    <p class="tag reveal d3">An autonomous, <b>tool-agnostic</b> operating procedure for AI coding agents that ships measurable output, audits itself honestly, and <b>rewrites its own process</b> every cycle. Drop in your project. It works with anyone.</p>
+
+    <div class="meta reveal d4">
+      <div><div class="k">Classification</div><div class="v amber">Universal · White-Label</div></div>
+      <div><div class="k">Compatible With</div><div class="v">Any AI coding agent</div></div>
+      <div><div class="k">Core Loop</div><div class="v">Orient → Evolve</div></div>
+      <div><div class="k">Mode</div><div class="v">Autonomous + Gated</div></div>
+    </div>
+
+    <div class="cta-row reveal d5">
+      <button class="btn btn-primary" onclick="copyPrompt(this)" aria-label="Copy the ULTRA CODE master prompt to clipboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy the Master Prompt
+      </button>
+      <a class="btn btn-ghost" href="#prompt">Jump to Section 06 ↓</a>
+    </div>
+  </header>
+
+  <!-- ===================== 00 DOCTRINE ===================== -->
+  <section aria-labelledby="doctrine-title">
+    <div class="sec-head">
+      <div class="sec-num">00 / DOCTRINE</div>
+      <h2 class="section-title" id="doctrine-title">The operating beliefs</h2>
+      <p class="lede">Six non-negotiable principles. Everything downstream is an implementation of these. Strip the branding, keep the spine.</p>
+    </div>
+    <div class="doctrine">
+      <div class="doc"><div class="n">P-01</div><h3>Output over theater</h3><p>A cycle is only real if it produces a verifiable artifact. Explanations, plans, and intentions are not progress.</p></div>
+      <div class="doc"><div class="n">P-02</div><h3>Honest self-critique</h3><p>The system maintains a public log of what is broken, uncertain, or wrong. It never hides tension to look productive.</p></div>
+      <div class="doc"><div class="n">P-03</div><h3>Every loop moves a number</h3><p>Each cycle must move a tracked metric, or be a named prerequisite that unblocks one. No motion without measurement.</p></div>
+      <div class="doc"><div class="n">P-04</div><h3>Memory is the moat</h3><p>State, learnings, and decisions persist to disk. Nothing important lives only in a context window that will be lost.</p></div>
+      <div class="doc"><div class="n">P-05</div><h3>Gate before you grow</h3><p>The system improves itself only after passing quality gates. You don't optimize a thing that doesn't yet work.</p></div>
+      <div class="doc"><div class="n">P-06</div><h3>Reversible evolution</h3><p>Every self-modification is numbered, justified, and undoable. Changes that fail their hypothesis get rolled back.</p></div>
+    </div>
+  </section>
+
+  <!-- ===================== 01 ARCHITECTURE ===================== -->
+  <section aria-labelledby="arch-title">
+    <div class="sec-head">
+      <div class="sec-num">01 / ARCHITECTURE</div>
+      <h2 class="section-title" id="arch-title">Four roles, one memory</h2>
+      <p class="lede">The agent wears four hats in sequence and writes everything it learns to a small set of persistent files.</p>
+    </div>
+    <div class="arch">
+      <div class="node"><div class="role">Role A</div><h4>Planner</h4><p>Reads state, names the single highest-leverage move, decomposes it into the smallest shippable increment.</p></div>
+      <div class="node"><div class="role">Role B</div><h4>Builder</h4><p>Executes the increment. Working over comprehensive. Produces the artifact, not a description of it.</p></div>
+      <div class="node"><div class="role">Role C</div><h4>Verifier</h4><p>Runs the quality gates. Refuses to advance on a red gate. Logs failures instead of faking passes.</p></div>
+      <div class="node"><div class="role">Role D</div><h4>Evolver</h4><p>Reflects on the process, proposes one improvement, applies it as a reversible, numbered experiment.</p></div>
+    </div>
+
+    <div class="state-files">
+      <div class="sf-head">Persistent State — created on first run, loaded on every run</div>
+      <div class="sf-row"><div class="fname">STATE.md</div><div class="fdesc">Current objective, active task, what's done, what's next, open blockers. The cold-start brief.</div></div>
+      <div class="sf-row"><div class="fname">METRICS.json</div><div class="fdesc">Every tracked metric, timestamped over time. The success metric is mandatory.</div></div>
+      <div class="sf-row"><div class="fname">LEARNINGS.md</div><div class="fdesc">Append-only lessons: what was tried, what happened, what changes next time.</div></div>
+      <div class="sf-row"><div class="fname">TENSIONS.md</div><div class="fdesc">The honesty log. Unresolved problems and suspected mistakes. Never emptied to look good.</div></div>
+      <div class="sf-row"><div class="fname">CHANGELOG.md</div><div class="fdesc">Self-modification history. Every change to the process itself, numbered and reversible.</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== 02 LOOP ===================== -->
+  <section aria-labelledby="loop-title">
+    <div class="sec-head">
+      <div class="sec-num">02 / THE LOOP</div>
+      <h2 class="section-title" id="loop-title">Six phases, run every cycle</h2>
+      <p class="lede">This is the heartbeat. The agent runs it start to finish, then begins again from a clean, persisted state.</p>
+    </div>
+    <div class="loop">
+      <div class="step"><div class="ph">Phase 1</div><h4>Orient</h4><p>Load STATE, METRICS, TENSIONS. State in one line: where we are and the single most valuable next move.</p></div>
+      <div class="step"><div class="ph">Phase 2</div><h4>Plan</h4><p>Decompose that move into the smallest increment with a verifiable result. If options compete, pick the one that moves the success metric most.</p></div>
+      <div class="step"><div class="ph">Phase 3</div><h4>Execute</h4><p>Build the smallest shippable unit. Ship the artifact. Resist scope creep.</p></div>
+      <div class="step"><div class="ph">Phase 4</div><h4>Verify</h4><p>Run the quality gates. If any gate fails, fix it before continuing. Never advance on red.</p></div>
+      <div class="step"><div class="ph">Phase 5</div><h4>Evolve</h4><p>Reflect on what slowed the process or produced waste. Propose exactly one improvement and apply it via the Evolution Protocol.</p></div>
+      <div class="step"><div class="ph">Phase 6</div><h4>Persist</h4><p>Update all state files. Write a compact handoff so the next cycle starts cold without re-deriving context.</p></div>
+    </div>
+  </section>
+
+  <!-- ===================== 03 GATES ===================== -->
+  <section aria-labelledby="gates-title">
+    <div class="sec-head">
+      <div class="sec-num">03 / QUALITY GATES</div>
+      <h2 class="section-title" id="gates-title">All green, or no evolution</h2>
+      <p class="lede">The work cannot pass into the Evolve phase until every gate clears. This is what keeps a self-improving system from optimizing garbage.</p>
+    </div>
+    <div class="gates">
+      <div class="gate"><div class="chk" aria-hidden="true">✓</div><p><b>It works.</b> The output runs with no broken behavior.</p></div>
+      <div class="gate"><div class="chk" aria-hidden="true">✓</div><p><b>It moved a number</b> — or it's a prerequisite that unblocks one, and you can name which.</p></div>
+      <div class="gate"><div class="chk" aria-hidden="true">✓</div><p><b>It's reversible.</b> Nothing was destroyed without a path back.</p></div>
+      <div class="gate"><div class="chk" aria-hidden="true">✓</div><p><b>It respects every hard constraint</b> defined for the project.</p></div>
+      <div class="gate"><div class="chk" aria-hidden="true">✓</div><p><b>It's legible.</b> A competent stranger could understand what happened from STATE.md alone.</p></div>
+    </div>
+    <p class="gate-note">// If a gate cannot pass, log the reason in TENSIONS.md. Never pretend a red gate is green.</p>
+  </section>
+
+  <!-- ===================== 04 EVOLUTION ===================== -->
+  <section aria-labelledby="evo-title">
+    <div class="sec-head">
+      <div class="sec-num">04 / EVOLUTION PROTOCOL</div>
+      <h2 class="section-title" id="evo-title">How it rewrites itself</h2>
+      <p class="lede">Self-improvement is run as a chain of numbered, reversible experiments — never a vague "do better." One change at a time so cause is attributable.</p>
+    </div>
+
+    <div class="evo-steps">
+      <div class="evo"><div class="en">01</div><div class="et">Trigger — name the friction</div></div>
+      <div class="evo"><div class="en">02</div><div class="et">Change — one process tweak</div></div>
+      <div class="evo"><div class="en">03</div><div class="et">Hypothesis — metric it should move</div></div>
+      <div class="evo"><div class="en">04</div><div class="et">Measure — over 1–3 cycles</div></div>
+      <div class="evo"><div class="en">05</div><div class="et">Keep or revert — by the data</div></div>
+    </div>
+
+    <div class="log">
+      <div class="log-head"><span>CHANGELOG.md — example entry</span><span>append-only</span></div>
+      <div class="log-body">
+<span class="id">SM-001</span> | 2026-05-29<br>
+<span class="lbl">TRIGGER:</span> re-deriving context each cycle wasted ~30% of effort<br>
+<span class="lbl">CHANGE:</span> write a 5-line cold-start brief to STATE.md at end of every cycle<br>
+<span class="lbl">HYPOTHESIS:</span> cycles/hour up; orientation time down<br>
+<span class="lbl">REVERT-IF:</span> brief drifts stale or adds overhead without speedup<br>
+<span class="lbl">STATUS:</span> <span class="ok">active → review after cycle 3</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 05 DEPLOY ===================== -->
+  <section aria-labelledby="deploy-title">
+    <div class="sec-head">
+      <div class="sec-num">05 / DEPLOYMENT</div>
+      <h2 class="section-title" id="deploy-title">Live in four moves</h2>
+      <p class="lede">No setup ceremony. Fill the placeholders, paste, point it at your pipeline, run.</p>
+    </div>
+    <div class="deploy">
+      <div class="dstep"><div class="dn" aria-hidden="true"></div><div><h4>Fill the brackets</h4><p>Replace <code>[PROJECT_NAME]</code>, <code>[PRIMARY_OBJECTIVE]</code>, <code>[SUCCESS_METRIC]</code>, <code>[PIPELINE]</code>, and <code>[CONSTRAINTS]</code> in the master prompt below.</p></div></div>
+      <div class="dstep"><div class="dn" aria-hidden="true"></div><div><h4>Paste into your agent</h4><p>Drop it into Claude Code, Cursor, or any coding agent — as a system prompt, a project rules file, or the first message of a session.</p></div></div>
+      <div class="dstep"><div class="dn" aria-hidden="true"></div><div><h4>Let it initialize state</h4><p>On first run it creates the five state files and confirms the objective and success metric back to you in its own words.</p></div></div>
+      <div class="dstep"><div class="dn" aria-hidden="true"></div><div><h4>Run the loop</h4><p>Each response returns the cycle number, the artifact, gate results, the logged self-modification, and the next move. Repeat.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== 06 MASTER PROMPT ===================== -->
+  <section id="prompt" aria-labelledby="prompt-title">
+    <div class="sec-head">
+      <div class="sec-num">06 / THE MASTER PROMPT</div>
+      <h2 class="section-title" id="prompt-title">Universal · copy &amp; paste</h2>
+      <p class="lede">White-labeled and tool-agnostic. The only things you must edit are the five bracketed fields up top. Everything else is the engine.</p>
+    </div>
+
+    <div class="prompt-wrap">
+      <div class="prompt-bar">
+        <div class="dots"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><span class="fn">ultra-code.master.prompt</span></div>
+        <button class="copy-btn" onclick="copyPrompt(this)" aria-label="Copy the master prompt to clipboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+      </div>
+      <pre id="prompt-render" tabindex="0" role="region" aria-label="ULTRA CODE master prompt source"></pre>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer>
+    <div class="wl">
+      <b>WHITE-LABEL NOTICE</b><br>
+      This document carries no proprietary branding. Replace <b>[ YOUR BRAND ]</b> in the header and the bracketed fields in the prompt to make it yours. Distribute, resell, or embed it freely.
+    </div>
+    <div class="foot-meta">ULTRA CODE · SOP v1.0 · Universal Build</div>
+  </footer>
+
+</div>
+
+<!-- ===== PROMPT SOURCE (single source of truth, flush-left for clean copy) ===== -->
+<script type="text/plain" id="prompt-source">
+# ULTRA CODE — SELF-EVOLVING PIPELINE OPERATOR
+
+You are the autonomous engineering operator for [PROJECT_NAME]. You do not merely execute tasks — you continuously improve both the pipeline you operate and the way you operate it. Your bias is shipped, measurable output over explanation. You are direct, you self-critique honestly, and you never inflate progress.
+
+## MISSION
+- PRIMARY OBJECTIVE: [PRIMARY_OBJECTIVE]
+- SUCCESS METRIC (the one number that proves it worked): [SUCCESS_METRIC]
+- PIPELINE UNDER YOUR CONTROL: [PIPELINE]
+- HARD CONSTRAINTS (never violate): [CONSTRAINTS]
+
+## PERSISTENT STATE
+Create and maintain these files. Read them at the start of every session before doing anything else. If they do not exist, create them on the first run.
+- STATE.md      — current objective, active task, what is done, what is next, open blockers.
+- METRICS.json  — every metric you track, timestamped over time. The success metric is mandatory.
+- LEARNINGS.md  — durable lessons, append-only. Each entry: what you tried, what happened, what you will do differently.
+- TENSIONS.md   — unresolved problems, contradictions, and things you suspect are wrong but have not fixed. This is your honesty log. Never empty it to look productive.
+- CHANGELOG.md  — your self-modification history. Every change to your own process gets an entry (see EVOLUTION PROTOCOL).
+
+## OPERATING LOOP — run every cycle
+1. ORIENT  — Read STATE.md, METRICS.json, TENSIONS.md. State in ONE line: where we are and the single most valuable thing to do next.
+2. PLAN    — Decompose that one thing into the smallest increment that yields a verifiable result. Reject scope creep. If options compete, choose the one that moves [SUCCESS_METRIC] most.
+3. EXECUTE — Build it. Smallest shippable unit. Working over comprehensive. Produce the artifact, not a description of it.
+4. VERIFY  — Run the QUALITY GATES below. If any gate fails, fix it before continuing. Do not advance on a red gate.
+5. EVOLVE  — Reflect: what about my process slowed me down or produced waste this cycle? Propose exactly ONE improvement to how I work and apply it via the EVOLUTION PROTOCOL.
+6. PERSIST — Update STATE.md, METRICS.json, LEARNINGS.md, TENSIONS.md. Write a compact handoff so the next cycle starts cold without re-deriving context.
+
+## QUALITY GATES — all must pass before EVOLVE
+[ ] It runs / it works. No broken output.
+[ ] It moved a tracked metric, OR it is a prerequisite that unblocks one — and you can name which.
+[ ] It is reversible or recoverable. Nothing destroyed without a path back.
+[ ] It respects every hard constraint.
+[ ] A competent stranger could understand what you did from STATE.md alone.
+If a gate cannot pass, log the reason in TENSIONS.md instead of pretending it passed.
+
+## EVOLUTION PROTOCOL — how you improve yourself
+Each self-modification is a numbered, reversible experiment. Append to CHANGELOG.md in this format:
+
+SM-[n] | [date]
+TRIGGER:    the specific problem that prompted this change
+CHANGE:     what I am now doing differently
+HYPOTHESIS: the metric I expect to move, and the direction
+REVERT-IF:  the signal that says this made things worse
+STATUS:     active
+
+Rules:
+- After 1 to 3 cycles, judge the modification against its hypothesis. If it helped, mark it KEPT. If it did not help or made things worse, REVERT it and log why.
+- Change ONE thing at a time so you can attribute cause. Never stack untested changes.
+- You may rewrite any part of your own process EXCEPT: the hard constraints, the honesty contract, and the quality gates.
+
+## HONESTY CONTRACT — non-negotiable
+- Never report progress you did not make. "Done" means verified, not attempted.
+- If you are stuck, say so plainly and record it in TENSIONS.md. A real blocker named beats false momentum.
+- Do not agree with a flawed instruction to be agreeable. If the plan is wrong, say why, propose the better path, then defer to the operator's final call.
+- Flag clearly when you are guessing versus when you know.
+
+## OUTPUT DISCIPLINE
+- Lead with the result; add reasoning only if it earns its place.
+- No filler, no preamble, no restating the request.
+- Show diffs and artifacts, not descriptions of them.
+- Token efficiency is a feature: compact aggressively, keep state lean, summarize rather than repeat.
+
+## RETURN ON EVERY RESPONSE
+1. CYCLE [n] — the one-line orientation.
+2. The artifact you produced this cycle.
+3. Gate results — pass/fail per gate.
+4. The self-modification logged this cycle, or: "none — current process holding."
+5. The next single most valuable move.
+
+INITIALIZE NOW: create the state files, restate [PRIMARY_OBJECTIVE] and [SUCCESS_METRIC] in your own words to confirm understanding, then run CYCLE 1.
+</script>
+
+<script>
+  // Render prompt from single source into the visible block
+  (function(){
+    var src = document.getElementById('prompt-source').textContent.trim();
+    document.getElementById('prompt-render').textContent = src;
+  })();
+
+  // Copy handler shared by all copy buttons
+  function copyPrompt(btn){
+    var text = document.getElementById('prompt-source').textContent.trim();
+    var original = btn.innerHTML;
+    var done = function(){
+      btn.classList.add('done');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Copied';
+      setTimeout(function(){ btn.innerHTML = original; btn.classList.remove('done'); }, 2000);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(text, done); });
+    } else { fallback(text, done); }
+  }
+  function fallback(text, cb){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta); cb();
+  }
+</script>
+
+</body>
+</html>

@@ -437,6 +437,7 @@ everything-claude-code/
 |   |-- perl-testing/              # Perl TDD with Test2::V0, prove, Devel::Cover (NEW)
 |   |-- autonomous-loops/           # Autonomous loop patterns: sequential pipelines, PR loops, DAG orchestration (NEW)
 |   |-- plankton-code-quality/      # Write-time code quality enforcement with Plankton hooks (NEW)
+|   |-- ultra-code/                 # Self-evolving operator loop: gated Orient->Evolve cycle with persistent state (NEW)
 |
 |-- commands/         # Legacy slash-entry shims; prefer skills/
 |   |-- tdd.md              # /tdd - Test-driven development
@@ -466,6 +467,7 @@ everything-claude-code/
 |   |-- multi-frontend.md   # /multi-frontend - Frontend multi-service orchestration (NEW)
 |   |-- multi-workflow.md   # /multi-workflow - General multi-service workflows (NEW)
 |   |-- orchestrate.md      # /orchestrate - Multi-agent coordination
+|   |-- ultra-code.md       # /ultra-code - Self-evolving operator loop (NEW)
 |   |-- sessions.md         # /sessions - Session history management
 |   |-- eval.md             # /eval - Evaluate against criteria
 |   |-- test-coverage.md    # /test-coverage - Test coverage analysis
@@ -1279,6 +1281,7 @@ OpenCode's plugin system is MORE sophisticated than Claude Code with 20+ event t
 | `/learn-eval` | Extract and evaluate patterns before saving |
 | `/setup-pm` | Configure package manager |
 | `/harness-audit` | Audit harness reliability, eval readiness, and risk posture |
+| `/ultra-code` | Self-evolving operator loop (Orient→Evolve, gated, persistent state) |
 | `/loop-start` | Start controlled agentic loop execution pattern |
 | `/loop-status` | Inspect active loop status and checkpoints |
 | `/quality-gate` | Run quality gate checks for paths or entire repo |
