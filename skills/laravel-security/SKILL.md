@@ -839,7 +839,7 @@ SANCTUM_TOKEN_PREFIX=myapp_
 # Deploy with: env $(aws secretsmanager get-secret-value --secret-id prod/db | jq ...) php artisan serve
 
 # Validate secrets at boot (AppServiceProvider::boot)
-$secrets = ['services.stripe.key', 'services.stripe.webhook_secret', 'mail.mailers.smtp.password'];
+$secrets = ['services.stripe.key', 'services.stripe.webhook_secret'];
 foreach ($secrets as $key) {
     if (empty(config($key))) {
         Log::critical("Missing secret: {$key}");
