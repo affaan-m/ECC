@@ -53,13 +53,22 @@ function hashToolCall(toolName, toolInput) {
     // alone made every distinct edit to the same file collide, so a few normal
     // edits to one file looked like a stuck loop. Include the edit content so
     // different edits to the same file hash differently.
-    key = stableStringify({
-      file_path: toolInput?.file_path,
-      old_string: toolInput?.old_string,
-      new_string: toolInput?.new_string,
-      content: toolInput?.content,
-      edits: toolInput?.edits
-    }).slice(0, HASH_INPUT_LIMIT);
+    // Hash the FULL serialized payload (truncate the digest, not the input):
+    // slicing the serialized string to HASH_INPUT_LIMIT first would collapse
+    // large edits that share their first N chars, reviving the same false-loop
+    // collision for big Write/edit payloads.
+    key = crypto
+      .createHash('sha256')
+      .update(
+        stableStringify({
+          file_path: toolInput?.file_path,
+          old_string: toolInput?.old_string,
+          new_string: toolInput?.new_string,
+          content: toolInput?.content,
+          edits: toolInput?.edits
+        })
+      )
+      .digest('hex');
   } else if (toolInput?.file_path) {
     key = String(toolInput.file_path);
   } else {

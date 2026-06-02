@@ -98,6 +98,20 @@ function runTests() {
   else failed++;
 
   if (
+    test('large edits diverging only after 2048 chars still hash differently', () => {
+      // Shared prefix longer than the old HASH_INPUT_LIMIT (2048) truncation
+      // point; the payloads differ only afterwards. Hashing the full payload
+      // (digest truncated, not input) must keep them distinct.
+      const prefix = 'x'.repeat(4000);
+      const h1 = hashToolCall('Write', { file_path: 'big.txt', content: prefix + 'AAA' });
+      const h2 = hashToolCall('Write', { file_path: 'big.txt', content: prefix + 'BBB' });
+      assert.notStrictEqual(h1, h2);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('non-file tools hash by stable input to avoid false loop collisions', () => {
       const h1 = hashToolCall('Glob', { pattern: '**/*.js', path: '/repo/a' });
       const h2 = hashToolCall('Glob', { pattern: '**/*.md', path: '/repo/a' });

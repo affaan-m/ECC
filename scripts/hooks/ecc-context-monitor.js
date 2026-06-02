@@ -217,7 +217,18 @@ function run(rawInput) {
     const evalBridge = isStale ? { ...bridge, context_remaining_pct: null } : bridge;
 
     const warnings = evaluateConditions(evalBridge, { costWarnings: costWarningsEnabled() });
-    if (warnings.length === 0) return rawInput;
+    if (warnings.length === 0) {
+      // Clear dedupe state when the condition resolves, so the SAME warning text
+      // recurring later (context dips, recovers, dips again; a loop that stops
+      // then restarts) is surfaced again instead of being suppressed as a
+      // duplicate. Only write when there is state to clear — most tool calls
+      // have no warning, and this keeps the common path free of disk writes.
+      const prior = readWarnState(sessionId);
+      if (prior.lastMessage) {
+        writeWarnState(sessionId, { callsSinceWarn: 0, lastSeverity: null, lastMessage: null });
+      }
+      return rawInput;
+    }
 
     // Combine top 2 warnings
     const message = warnings
