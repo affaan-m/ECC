@@ -3,7 +3,7 @@
     "nexus": {
       "command": "nexus",
       "args": ["mcp"],
-      "description": "NEXUS — local cost/privacy proxy under the harness. Query your own usage and savings (nexus_stats / nexus_savings / nexus_recent / nexus_providers / nexus_cost_breakdown). Routes Claude Code to the cheapest capable model, learns the best provider per task, and masks secrets/PII before they ever leave the machine. Single Go binary, no cloud, no markup. Install: github.com/lynuxis2026-pixel/nexus-proxy"
+      "description": "Local cost/privacy proxy - query your own usage & savings, route to the cheapest capable model, and mask secrets/PII before egress (nexus_stats, nexus_savings, nexus_recent, nexus_providers, nexus_cost_breakdown)"
     },
     "jira": {
       "command": "uvx",
