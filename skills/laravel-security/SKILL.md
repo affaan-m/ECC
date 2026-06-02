@@ -52,10 +52,10 @@ SANCTUM_TOKEN_PREFIX=
 
 # Validate required variables at boot
 // In AppServiceProvider::boot()
-$requiredEnv = ['APP_KEY', 'DB_DATABASE', 'DB_USERNAME'];
-foreach ($requiredEnv as $key) {
+$requiredKeys = ['app.key', 'database.connections.mysql.database', 'database.connections.mysql.username'];
+foreach ($requiredKeys as $key) {
     if (empty(config($key))) {
-        throw new RuntimeException("Missing required config variable: {$key}");
+        throw new RuntimeException("Missing required config key: {$key}");
     }
 }
 ```
@@ -839,7 +839,7 @@ SANCTUM_TOKEN_PREFIX=myapp_
 # Deploy with: env $(aws secretsmanager get-secret-value --secret-id prod/db | jq ...) php artisan serve
 
 # Validate secrets at boot (AppServiceProvider::boot)
-$secrets = ['STRIPE_KEY', 'STRIPE_WEBHOOK_SECRET', 'MAIL_PASSWORD'];
+$secrets = ['services.stripe.key', 'services.stripe.webhook_secret', 'mail.mailers.smtp.password'];
 foreach ($secrets as $key) {
     if (empty(config($key))) {
         Log::critical("Missing secret: {$key}");
