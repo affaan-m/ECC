@@ -3137,7 +3137,9 @@ async function runTests() {
       const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
 
       assert.ok(observerLoopSource.includes('ECC_OBSERVER_MAX_TURNS'), 'observer-loop should allow max-turn overrides');
-      assert.ok(observerLoopSource.includes('max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"'), 'observer-loop should default to 20 turns');
+      assert.ok(observerLoopSource.includes('max_turns=$(( analysis_count / 10 ))'), 'observer-loop should auto-scale max_turns from the analysis batch size when no override is set');
+      assert.ok(observerLoopSource.includes('if [ "$max_turns" -lt 20 ]; then max_turns=20; fi'), 'observer-loop should clamp the auto-scaled budget to a floor of 20 turns');
+      assert.ok(observerLoopSource.includes('if [ "$max_turns" -gt 100 ]; then max_turns=100; fi'), 'observer-loop should clamp the auto-scaled budget to a cap of 100 turns');
       assert.ok(!observerLoopSource.includes('--max-turns 3'), 'observer-loop should not hardcode a 3-turn limit');
       assert.ok(observerLoopSource.includes('ECC_SKIP_OBSERVE=1'), 'observer-loop should suppress observe.sh for automated sessions');
       assert.ok(observerLoopSource.includes('ECC_HOOK_PROFILE=minimal'), 'observer-loop should run automated analysis with the minimal hook profile');

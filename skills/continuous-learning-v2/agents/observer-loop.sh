@@ -218,6 +218,9 @@ PROMPT
   fi
   exit_code=0
 
+  # Sanitize max_turns. The auto-scaled path above always yields a valid value >=20,
+  # but an explicit ECC_OBSERVER_MAX_TURNS override may be non-numeric, empty, or too
+  # small, so guard here and fall back to the safe default of 20.
   case "$max_turns" in
     ''|*[!0-9]*)
       max_turns=20
