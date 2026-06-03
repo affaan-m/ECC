@@ -21,6 +21,10 @@ const COMMANDS = {
     script: 'consult.js',
     description: 'Recommend ECC components and profiles from a natural language query',
   },
+  'control-pane': {
+    script: 'control-pane.js',
+    description: 'Run the local ECC2 operator control pane',
+  },
   'install-plan': {
     script: 'install-plan.js',
     description: 'Alias for plan',
@@ -80,6 +84,7 @@ const PRIMARY_COMMANDS = [
   'plan',
   'catalog',
   'consult',
+  'control-pane',
   'list-installed',
   'doctor',
   'repair',
@@ -118,6 +123,7 @@ Examples:
   ecc catalog components --family language
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
+  ecc control-pane --port 8765
   ecc list-installed --json
   ecc doctor --target cursor
   ecc repair --dry-run

@@ -79,6 +79,7 @@
     "scripts/consult.js",
     "scripts/auto-update.js",
     "scripts/claw.js",
+    "scripts/control-pane.js",
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     "scripts/discussion-audit.js",
@@ -314,6 +315,7 @@
   ],
   "bin": {
     "ecc": "scripts/ecc.js",
+    "ecc-control-pane": "scripts/control-pane.js",
     "ecc-install": "scripts/install-apply.js"
   },
   "scripts": {
@@ -331,6 +333,7 @@
     "preview-pack:smoke": "node scripts/preview-pack-smoke.js",
     "release:approval-gate": "node scripts/release-approval-gate.js",
     "release:video-suite": "node scripts/release-video-suite.js",
+    "control:pane": "node scripts/control-pane.js",
     "platform:audit": "node scripts/platform-audit.js",
     "discussion:audit": "node scripts/discussion-audit.js",
     "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
