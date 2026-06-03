@@ -6,16 +6,21 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const initSqlJs = require('sql.js');
 
 const {
   createControlPaneServer,
   parseArgs,
+  runAction,
 } = require('../../scripts/lib/control-pane/server');
+const {
+  main: runControlPaneCli,
+} = require('../../scripts/control-pane');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'control-pane.js');
+const REPO_ROOT = path.join(__dirname, '..', '..');
 
 async function test(name, fn) {
   try {
@@ -70,6 +75,50 @@ async function writeMinimalDatabase(dbPath) {
   db.close();
 }
 
+function waitForCliReady(child) {
+  return new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error(`Timed out waiting for control pane CLI.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    }, 5000);
+
+    child.stdout.on('data', chunk => {
+      stdout += chunk.toString('utf8');
+      if (!settled && stdout.includes('ECC Control Pane:') && stdout.includes('Actions:')) {
+        settled = true;
+        clearTimeout(timer);
+        resolve({ stdout, stderr });
+      }
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('exit', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`control pane CLI exited early with ${code}.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    });
+  });
+}
+
+function waitForExit(child) {
+  return new Promise(resolve => {
+    child.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+}
+
 async function runTests() {
   console.log('\n=== Testing control-pane server ===\n');
 
@@ -98,6 +147,17 @@ async function runTests() {
     assert.strictEqual(parsed.openBrowser, false);
   })) passed++; else failed++;
 
+  if (await test('rejects invalid CLI port values', async () => {
+    assert.throws(
+      () => parseArgs(['node', 'scripts/control-pane.js', '--port', '70000']),
+      /Invalid --port value/
+    );
+    assert.throws(
+      () => parseArgs(['node', 'scripts/control-pane.js', '--port', 'wat']),
+      /Invalid --port value/
+    );
+  })) passed++; else failed++;
+
   if (await test('serves HTML and snapshot JSON from a temp ECC2 database', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-server-'));
     const dbPath = path.join(tempDir, 'ecc2.db');
@@ -108,7 +168,7 @@ async function runTests() {
         host: '127.0.0.1',
         port: 0,
         dbPath,
-        repoRoot: path.join(__dirname, '..', '..'),
+        repoRoot: REPO_ROOT,
         query: 'control pane',
         allowActions: false,
       });
@@ -131,15 +191,204 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  if (await test('serves health, asset, not-found, invalid body, and read-only action responses', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-routes-'));
+
+    try {
+      const app = await createControlPaneServer({
+        host: '127.0.0.1',
+        port: 0,
+        dbPath: path.join(tempDir, 'missing.db'),
+        repoRoot: tempDir,
+        allowActions: false,
+      });
+
+      await app.listen();
+      try {
+        const health = await fetch(`${app.url}/api/health`).then(response => response.json());
+        assert.strictEqual(health.ok, true);
+        assert.strictEqual(health.allowActions, false);
+
+        const realAssetApp = await createControlPaneServer({
+          host: '127.0.0.1',
+          port: 0,
+          dbPath: path.join(tempDir, 'missing.db'),
+          repoRoot: REPO_ROOT,
+          allowActions: false,
+        });
+        await realAssetApp.listen();
+        try {
+          const realAsset = await fetch(`${realAssetApp.url}/assets/ecc-icon.svg`);
+          assert.strictEqual(realAsset.status, 200);
+          assert.match(await realAsset.text(), /<svg/);
+        } finally {
+          await realAssetApp.close();
+        }
+
+        const missingAsset = await fetch(`${app.url}/assets/ecc-icon.svg`);
+        assert.strictEqual(missingAsset.status, 404);
+        assert.strictEqual(await missingAsset.text(), 'not found');
+
+        const missing = await fetch(`${app.url}/not-here`).then(response => response.json());
+        assert.strictEqual(missing.ok, false);
+        assert.strictEqual(missing.error, 'not found');
+
+        const blocked = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: 'memory' }),
+        }).then(async response => ({ status: response.status, body: await response.json() }));
+        assert.strictEqual(blocked.status, 403);
+        assert.match(blocked.body.error, /disabled/);
+
+        const invalidBody = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{bad json',
+        }).then(async response => ({ status: response.status, body: await response.json() }));
+        assert.strictEqual(invalidBody.status, 403);
+      } finally {
+        await app.close();
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (await test('guards copy-only and unknown action requests', async () => {
+    const app = await createControlPaneServer({
+      host: '127.0.0.1',
+      port: 0,
+      repoRoot: REPO_ROOT,
+      allowActions: true,
+    });
+
+    await app.listen();
+    try {
+      const copyOnly = await fetch(`${app.url}/api/actions/open-dashboard`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }).then(async response => ({ status: response.status, body: await response.json() }));
+      assert.strictEqual(copyOnly.status, 400);
+      assert.strictEqual(copyOnly.body.action, 'open-dashboard');
+      assert.match(copyOnly.body.error, /copy-only/);
+
+      const unknown = await fetch(`${app.url}/api/actions/nope`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }).then(async response => ({ status: response.status, body: await response.json() }));
+      assert.strictEqual(unknown.status, 500);
+      assert.match(unknown.body.error, /Unknown control-pane action/);
+
+      const invalidBody = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{bad json',
+      }).then(async response => ({ status: response.status, body: await response.json() }));
+      assert.strictEqual(invalidBody.status, 500);
+      assert.match(invalidBody.body.error, /JSON/);
+    } finally {
+      await app.close();
+    }
+  })) passed++; else failed++;
+
+  if (await test('runAction captures success, failure, and bounded output', async () => {
+    const repoRoot = REPO_ROOT;
+    const success = await runAction({
+      id: 'node-success',
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("x".repeat(21010))'],
+      cwd: repoRoot,
+    });
+    assert.strictEqual(success.ok, true);
+    assert.strictEqual(success.code, 0);
+    assert.ok(success.stdout.includes('[truncated '));
+
+    const failure = await runAction({
+      id: 'node-failure',
+      command: process.execPath,
+      args: ['-e', 'process.stderr.write("bad"); process.exit(7)'],
+      cwd: repoRoot,
+    });
+    assert.strictEqual(failure.ok, false);
+    assert.strictEqual(failure.code, 7);
+    assert.strictEqual(failure.stderr, 'bad');
+
+    const spawnError = await runAction({
+      id: 'spawn-error',
+      command: 'definitely-not-ecc-control-pane-command',
+      args: [],
+      cwd: repoRoot,
+    });
+    assert.strictEqual(spawnError.ok, false);
+    assert.strictEqual(spawnError.code, null);
+    assert.match(spawnError.error, /ENOENT/);
+  })) passed++; else failed++;
+
+  if (await test('runAction terminates commands that exceed the local timeout', async () => {
+    const timedOut = await runAction(
+      {
+        id: 'node-timeout',
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 5000)'],
+        cwd: REPO_ROOT,
+      },
+      { timeoutMs: 25 }
+    );
+
+    assert.strictEqual(timedOut.ok, false);
+    assert.strictEqual(timedOut.signal, 'SIGTERM');
+  })) passed++; else failed++;
+
   if (await test('CLI prints help', async () => {
     const result = spawnSync('node', [SCRIPT, '--help'], {
       encoding: 'utf8',
-      cwd: path.join(__dirname, '..', '..'),
+      cwd: REPO_ROOT,
     });
 
     assert.strictEqual(result.status, 0, result.stderr);
     assert.ok(result.stdout.includes('Usage:'));
     assert.ok(result.stdout.includes('control-pane'));
+  })) passed++; else failed++;
+
+  if (await test('CLI main handles help without starting a server', async () => {
+    const originalLog = console.log;
+    const lines = [];
+    console.log = line => {
+      lines.push(String(line));
+    };
+    try {
+      await runControlPaneCli(['node', 'scripts/control-pane.js', '--help']);
+    } finally {
+      console.log = originalLog;
+    }
+
+    assert.match(lines.join('\n'), /Usage:/);
+    assert.match(lines.join('\n'), /--read-only/);
+  })) passed++; else failed++;
+
+  if (await test('CLI starts a read-only local server and shuts down on SIGTERM', async () => {
+    const child = spawn(process.execPath, [SCRIPT, '--host', '127.0.0.1', '--port', '0', '--read-only', '--no-open'], {
+      cwd: REPO_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        ECC2_DB_PATH: path.join(os.tmpdir(), 'missing-ecc2-cli.db'),
+      },
+    });
+    const exitPromise = waitForExit(child);
+
+    try {
+      const ready = await waitForCliReady(child);
+      assert.match(ready.stdout, /ECC Control Pane: http:\/\/127\.0\.0\.1:\d+/);
+      assert.match(ready.stdout, /Actions: read-only/);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      const result = await exitPromise;
+      assert.strictEqual(result.code, 0);
+    }
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
