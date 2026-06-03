@@ -728,16 +728,18 @@ def _warn_legacy_data() -> None:
     if not legacy_files:
         return
 
+    migrate_script = Path(__file__).resolve().parent / "migrate-homunculus.sh"
+
     print(f"\n{'!'*60}")
-    print(f"  LEGACY DATA DETECTED")
+    print("  LEGACY DATA DETECTED")
     print(f"{'!'*60}")
     print(f"  Found {len(legacy_files)} file(s) in legacy path:")
     print(f"    {legacy_dir}")
-    print(f"  Active data directory:")
+    print("  Active data directory:")
     print(f"    {HOMUNCULUS_DIR}")
     print()
-    print(f"  Run the migration script to move your data:")
-    print(f"    bash skills/continuous-learning-v2/scripts/migrate-homunculus.sh")
+    print("  Run the migration script to move your data:")
+    print(f"    bash {migrate_script}")
     print(f"  Or set CLV2_HOMUNCULUS_DIR={legacy_dir} to use the legacy path.")
     print(f"{'!'*60}\n")
 
