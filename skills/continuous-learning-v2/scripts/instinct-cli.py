@@ -703,8 +703,43 @@ def cmd_status(args) -> int:
                 days_left = max(0, PENDING_TTL_DAYS - item["age_days"])
                 print(f"    - {item['name']} ({days_left}d remaining)")
 
+    # Legacy data warning
+    _warn_legacy_data()
+
     print(f"\n{'='*60}\n")
     return 0
+
+
+def _warn_legacy_data() -> None:
+    """Warn if legacy ~/.claude/homunculus/ contains data while the active
+    path has moved to the XDG directory."""
+    legacy_dir = Path.home() / ".claude" / "homunculus"
+    if legacy_dir == HOMUNCULUS_DIR:
+        return  # CLV2_HOMUNCULUS_DIR explicitly points at the legacy path
+    if not legacy_dir.is_dir():
+        return
+
+    # Count substantive files (skip empty dirs and the directory itself)
+    try:
+        legacy_files = [f for f in legacy_dir.rglob("*") if f.is_file()]
+    except (PermissionError, OSError):
+        print(f"\n  Note: legacy directory exists but cannot be read: {legacy_dir}", file=sys.stderr)
+        return
+    if not legacy_files:
+        return
+
+    print(f"\n{'!'*60}")
+    print(f"  LEGACY DATA DETECTED")
+    print(f"{'!'*60}")
+    print(f"  Found {len(legacy_files)} file(s) in legacy path:")
+    print(f"    {legacy_dir}")
+    print(f"  Active data directory:")
+    print(f"    {HOMUNCULUS_DIR}")
+    print()
+    print(f"  Run the migration script to move your data:")
+    print(f"    bash skills/continuous-learning-v2/scripts/migrate-homunculus.sh")
+    print(f"  Or set CLV2_HOMUNCULUS_DIR={legacy_dir} to use the legacy path.")
+    print(f"{'!'*60}\n")
 
 
 def _print_instincts_by_domain(instincts: list[dict]) -> None:
