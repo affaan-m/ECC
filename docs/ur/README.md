@@ -137,7 +137,7 @@ cp -R rules/typescript ~/.claude/rules/ecc/  # اپنی زبان منتخب کر
 /plugin list ecc@ecc
 ```
 
-**بس!** آپ کو اب 60 agents، 232 skills، اور 75 legacy command shims تک رسائی حاصل ہے۔
+**بس!** آپ کو اب 61 agents، 246 skills، اور 76 legacy command shims تک رسائی حاصل ہے۔
 
 ### Dashboard GUI
 
