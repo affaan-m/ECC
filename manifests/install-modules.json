@@ -181,7 +181,15 @@
         "skills/springboot-patterns",
         "skills/springboot-tdd",
         "skills/springboot-verification",
-        "skills/ui-to-vue"
+        "skills/ui-to-vue",
+        "skills/accessibility",
+        "skills/design-system",
+        "skills/motion-foundations",
+        "skills/motion-patterns",
+        "skills/motion-advanced",
+        "skills/nextjs-turbopack",
+        "skills/vite-patterns",
+        "skills/hexagonal-architecture"
       ],
       "targets": [
         "claude",
@@ -215,7 +223,8 @@
         "skills/jpa-patterns",
         "skills/mysql-patterns",
         "skills/postgres-patterns",
-        "skills/prisma-patterns"
+        "skills/prisma-patterns",
+        "skills/redis-patterns"
       ],
       "targets": [
         "claude",
@@ -261,7 +270,15 @@
         "skills/strategic-compact",
         "skills/tdd-workflow",
         "skills/verification-loop",
-        "skills/windows-desktop-e2e"
+        "skills/windows-desktop-e2e",
+        "skills/git-workflow",
+        "skills/codebase-onboarding",
+        "skills/repo-scan",
+        "skills/documentation-lookup",
+        "skills/context-budget",
+        "skills/architecture-decision-records",
+        "skills/opensource-pipeline",
+        "skills/safety-guard"
       ],
       "targets": [
         "claude",
@@ -593,7 +610,8 @@
         "skills/swift-actor-persistence",
         "skills/swift-concurrency-6-2",
         "skills/swift-protocol-di-testing",
-        "skills/swiftui-patterns"
+        "skills/swiftui-patterns",
+        "skills/ios-icon-gen"
       ],
       "targets": [
         "claude",
@@ -638,7 +656,8 @@
         "skills/regex-vs-llm-structured-text",
         "skills/search-first",
         "skills/token-budget-advisor",
-        "skills/team-builder"
+        "skills/team-builder",
+        "skills/agent-payment-x402"
       ],
       "targets": [
         "claude",
