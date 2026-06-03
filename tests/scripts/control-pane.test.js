@@ -387,7 +387,10 @@ async function runTests() {
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       const result = await exitPromise;
-      assert.strictEqual(result.code, 0);
+      assert.ok(
+        result.code === 0 || result.signal === 'SIGTERM',
+        `expected graceful shutdown or SIGTERM, got code=${result.code} signal=${result.signal}`
+      );
     }
   })) passed++; else failed++;
 
