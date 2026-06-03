@@ -119,6 +119,19 @@ function waitForExit(child) {
   });
 }
 
+async function fetchLocal(url, options) {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      lastError = error;
+      await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 async function runTests() {
   console.log('\n=== Testing control-pane server ===\n');
 
@@ -175,11 +188,11 @@ async function runTests() {
 
       await app.listen();
       try {
-        const html = await fetch(`${app.url}/`).then(response => response.text());
+        const html = await fetchLocal(`${app.url}/`).then(response => response.text());
         assert.ok(html.includes('ECC Control Pane'));
         assert.ok(html.includes('id="app"'));
 
-        const snapshot = await fetch(`${app.url}/api/snapshot?query=control`).then(response => response.json());
+        const snapshot = await fetchLocal(`${app.url}/api/snapshot?query=control`).then(response => response.json());
         assert.strictEqual(snapshot.schemaVersion, 'ecc.control-pane.snapshot.v1');
         assert.strictEqual(snapshot.summary.totalSessions, 1);
         assert.strictEqual(snapshot.sessions[0].id, 'session-a');
@@ -205,7 +218,7 @@ async function runTests() {
 
       await app.listen();
       try {
-        const health = await fetch(`${app.url}/api/health`).then(response => response.json());
+        const health = await fetchLocal(`${app.url}/api/health`).then(response => response.json());
         assert.strictEqual(health.ok, true);
         assert.strictEqual(health.allowActions, false);
 
@@ -218,22 +231,22 @@ async function runTests() {
         });
         await realAssetApp.listen();
         try {
-          const realAsset = await fetch(`${realAssetApp.url}/assets/ecc-icon.svg`);
+          const realAsset = await fetchLocal(`${realAssetApp.url}/assets/ecc-icon.svg`);
           assert.strictEqual(realAsset.status, 200);
           assert.match(await realAsset.text(), /<svg/);
         } finally {
           await realAssetApp.close();
         }
 
-        const missingAsset = await fetch(`${app.url}/assets/ecc-icon.svg`);
+        const missingAsset = await fetchLocal(`${app.url}/assets/ecc-icon.svg`);
         assert.strictEqual(missingAsset.status, 404);
         assert.strictEqual(await missingAsset.text(), 'not found');
 
-        const missing = await fetch(`${app.url}/not-here`).then(response => response.json());
+        const missing = await fetchLocal(`${app.url}/not-here`).then(response => response.json());
         assert.strictEqual(missing.ok, false);
         assert.strictEqual(missing.error, 'not found');
 
-        const blocked = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+        const blocked = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ query: 'memory' }),
@@ -241,7 +254,7 @@ async function runTests() {
         assert.strictEqual(blocked.status, 403);
         assert.match(blocked.body.error, /disabled/);
 
-        const invalidBody = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+        const invalidBody = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{bad json',
@@ -265,7 +278,7 @@ async function runTests() {
 
     await app.listen();
     try {
-      const copyOnly = await fetch(`${app.url}/api/actions/open-dashboard`, {
+      const copyOnly = await fetchLocal(`${app.url}/api/actions/open-dashboard`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{}',
@@ -274,7 +287,7 @@ async function runTests() {
       assert.strictEqual(copyOnly.body.action, 'open-dashboard');
       assert.match(copyOnly.body.error, /copy-only/);
 
-      const unknown = await fetch(`${app.url}/api/actions/nope`, {
+      const unknown = await fetchLocal(`${app.url}/api/actions/nope`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{}',
@@ -282,7 +295,7 @@ async function runTests() {
       assert.strictEqual(unknown.status, 500);
       assert.match(unknown.body.error, /Unknown control-pane action/);
 
-      const invalidBody = await fetch(`${app.url}/api/actions/sync-knowledge`, {
+      const invalidBody = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{bad json',
