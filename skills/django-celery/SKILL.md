@@ -22,7 +22,7 @@ Production-grade patterns for background task processing in Django using Celery 
 ### Installation
 
 ```bash
-pip install celery[redis] django-celery-results django-celery-beat
+pip install 'celery[redis]' django-celery-results django-celery-beat
 ```
 
 ### `celery.py` — App Entrypoint
