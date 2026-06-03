@@ -182,6 +182,7 @@ function renderControlPaneHtml() {
     .subtle {
       color: var(--muted);
       font-size: 12px;
+      overflow-wrap: anywhere;
     }
 
     table {
@@ -232,6 +233,11 @@ function renderControlPaneHtml() {
       justify-content: space-between;
       gap: 12px;
       align-items: start;
+      min-width: 0;
+    }
+
+    .row > * {
+      min-width: 0;
     }
 
     .pill {
