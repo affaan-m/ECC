@@ -191,6 +191,8 @@ async function runTests() {
         const html = await fetchLocal(`${app.url}/`).then(response => response.text());
         assert.ok(html.includes('ECC Control Pane'));
         assert.ok(html.includes('id="app"'));
+        assert.ok(html.includes('function showError'));
+        assert.ok(html.includes('response.ok'));
 
         const snapshot = await fetchLocal(`${app.url}/api/snapshot?query=control`).then(response => response.json());
         assert.strictEqual(snapshot.schemaVersion, 'ecc.control-pane.snapshot.v1');
@@ -364,6 +366,13 @@ async function runTests() {
     assert.strictEqual(result.status, 0, result.stderr);
     assert.ok(result.stdout.includes('Usage:'));
     assert.ok(result.stdout.includes('control-pane'));
+  })) passed++; else failed++;
+
+  if (await test('CLI browser opener handles spawn errors', async () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+
+    assert.match(source, /child\.on\('error'/);
+    assert.match(source, /child\.unref\(\)/);
   })) passed++; else failed++;
 
   if (await test('CLI main handles help without starting a server', async () => {

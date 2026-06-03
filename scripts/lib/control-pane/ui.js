@@ -270,6 +270,25 @@ function renderControlPaneHtml() {
       max-height: 260px;
     }
 
+    #app {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      max-width: min(640px, calc(100vw - 32px));
+      max-height: 45vh;
+      overflow: auto;
+      padding: 12px 14px;
+      background: #190706;
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      color: #ffe5e2;
+      box-shadow: 0 12px 30px var(--shadow);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      z-index: 10;
+    }
+
     .empty {
       padding: 18px 14px;
       color: var(--muted);
@@ -350,6 +369,41 @@ function renderControlPaneHtml() {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[char]);
     const fmt = new Intl.NumberFormat('en-US');
+
+    function formatError(error) {
+      if (!error) return 'Unknown error';
+      return error.stack || error.message || String(error);
+    }
+
+    function showError(targetSelector, error) {
+      const target = $(targetSelector);
+      if (!target) return;
+      target.hidden = false;
+      target.textContent = formatError(error);
+    }
+
+    function clearError(targetSelector) {
+      const target = $(targetSelector);
+      if (!target) return;
+      target.hidden = true;
+      target.textContent = '';
+    }
+
+    async function readJsonResponse(response) {
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        throw new Error('Expected JSON response from control pane: ' + error.message);
+      }
+
+      if (!response.ok) {
+        const detail = payload && payload.error ? payload.error : response.status + ' ' + response.statusText;
+        throw new Error(detail);
+      }
+
+      return payload;
+    }
 
     function statePill(stateName) {
       const state = String(stateName || 'unknown');
@@ -432,26 +486,35 @@ function renderControlPaneHtml() {
       '</div>').join('');
 
       document.querySelectorAll('[data-action]').forEach(button => {
-        button.addEventListener('click', async () => runAction(button.dataset.action));
+        button.addEventListener('click', () => {
+          runAction(button.dataset.action);
+        });
       });
     }
 
     async function runAction(actionId) {
-      $('#run-output').textContent = 'Running ' + actionId + '...';
-      const response = await fetch('/api/actions/' + encodeURIComponent(actionId), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ query: state.query })
-      });
-      const payload = await response.json();
-      $('#run-output').textContent = JSON.stringify(payload, null, 2);
-      await load();
+      const output = $('#run-output');
+      output.textContent = 'Running ' + actionId + '...';
+
+      try {
+        const response = await fetch('/api/actions/' + encodeURIComponent(actionId), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: state.query })
+        });
+        const payload = await readJsonResponse(response);
+        output.textContent = JSON.stringify(payload, null, 2);
+        await load();
+      } catch (error) {
+        output.textContent = formatError(error);
+      }
     }
 
     async function load() {
       const url = new URL('/api/snapshot', window.location.href);
       if (state.query) url.searchParams.set('query', state.query);
-      const snapshot = await fetch(url).then(response => response.json());
+      const response = await fetch(url);
+      const snapshot = await readJsonResponse(response);
       $('#query').value = snapshot.knowledge.query || state.query;
       $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
       $('#action-status').textContent = snapshot.execution.allowActions ? 'local allowlist' : 'read-only';
@@ -463,17 +526,18 @@ function renderControlPaneHtml() {
         ...action,
         executable: snapshot.execution.allowActions && action.executable
       })));
+      clearError('#app');
     }
 
     $('#query-form').addEventListener('submit', event => {
       event.preventDefault();
       state.query = $('#query').value.trim();
-      load();
+      load().catch(error => showError('#app', error));
     });
-    $('#refresh').addEventListener('click', () => load());
-    load().catch(error => {
-      document.getElementById('app').textContent = error.stack || error.message;
+    $('#refresh').addEventListener('click', () => {
+      load().catch(error => showError('#app', error));
     });
+    load().catch(error => showError('#app', error));
   </script>
 </body>
 </html>`;

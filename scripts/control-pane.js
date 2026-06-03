@@ -15,6 +15,9 @@ function openBrowser(url) {
     stdio: 'ignore',
     detached: true,
   });
+  child.on('error', error => {
+    console.error(`[control-pane] failed to open browser: ${error.message}`);
+  });
   child.unref();
 }
 
