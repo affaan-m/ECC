@@ -739,7 +739,7 @@ def _warn_legacy_data() -> None:
     print(f"    {HOMUNCULUS_DIR}")
     print()
     print("  Run the migration script to move your data:")
-    print(f"    bash {migrate_script}")
+    print(f'    bash "{migrate_script}"')
     print(f"  Or set CLV2_HOMUNCULUS_DIR={legacy_dir} to use the legacy path.")
     print(f"{'!'*60}\n")
 
