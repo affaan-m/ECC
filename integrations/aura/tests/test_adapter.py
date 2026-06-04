@@ -70,9 +70,15 @@ def test_gate_allows_trusted():
     assert v.verdict == "trusted"
 
 
-def test_gate_allows_caution_and_new_by_default():
+def test_gate_allows_caution_by_default():
     assert before_settle("did:aura:caution-bot", _fetch=FETCH).verdict == "caution"
-    assert before_settle("did:aura:fresh-bot", _fetch=FETCH).verdict == "new"
+
+
+def test_gate_rejects_new_by_default():
+    # Fresh-DID Sybil guard: a brand-new agent has no track record and is
+    # rejected unless the caller explicitly loosens `allow`.
+    with pytest.raises(AuraUntrusted):
+        before_settle("did:aura:fresh-bot", _fetch=FETCH)
 
 
 def test_gate_rejects_high_risk():
@@ -86,9 +92,10 @@ def test_gate_rejects_unknown_by_default():
         before_settle("did:aura:ghost-bot", _fetch=FETCH)
 
 
-def test_strict_allow_rejects_new():
-    with pytest.raises(AuraUntrusted):
-        before_settle("did:aura:fresh-bot", allow=("trusted", "caution"), _fetch=FETCH)
+def test_opt_in_allow_can_include_new():
+    # Loosening to include `new` is opt-in for explicit onboarding flows.
+    v = before_settle("did:aura:fresh-bot", allow=("trusted", "caution", "new"), _fetch=FETCH)
+    assert v.verdict == "new"
 
 
 # ── network-failure path ──────────────────────────────────────────────────────
