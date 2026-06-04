@@ -52,14 +52,18 @@ if v.dimensions and v.dimensions.get("financial_integrity", 1) < 0.4:
 | `trusted` | strong on-chain track record (composite ≥ 0.70) | ✅ |
 | `caution` | mixed history (0.40–0.70) | ✅ |
 | `high_risk` | poor track record (< 0.40) | ❌ |
-| `new` | registered identity, no interactions yet | ❌ |
+| `new` | registered identity, no interactions yet | ❌ default (Sybil guard) |
 | `unknown` | no track record — or AURA was unreachable | ❌ |
+
+> The default `allow` is **fail-closed on `new`** — a fresh DID has no
+> track record and is a Sybil / fresh-DID bypass vector. Loosen it
+> explicitly if you want to onboard fresh agents through this gate.
 
 ## Policy knobs
 
 ```python
-# Reject brand-new agents too (strict):
-before_settle(did, allow=("trusted", "caution"))
+# Loosen to also allow brand-new agents (opt-in onboarding):
+before_settle(did, allow=("trusted", "caution", "new"))
 
 # Treat an *unreachable* AURA as a pass (fail-open). Off by default —
 # absence of evidence is not evidence of trust.
