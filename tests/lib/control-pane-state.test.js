@@ -227,6 +227,96 @@ async function writeSampleEcc2Database(dbPath) {
   db.close();
 }
 
+async function writeSampleWorkItemsDatabase(dbPath) {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+
+  db.run(`
+    CREATE TABLE work_items (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      source_id TEXT,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL,
+      priority TEXT,
+      url TEXT,
+      owner TEXT,
+      repo_root TEXT,
+      session_id TEXT,
+      metadata TEXT NOT NULL CHECK (json_valid(metadata)),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  const insertWorkItem = db.prepare(`
+    INSERT INTO work_items (
+      id, source, source_id, title, status, priority, url, owner,
+      repo_root, session_id, metadata, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertWorkItem.run([
+    'agent-card-001',
+    'manual',
+    'agent-card-001',
+    'Build dynamic workflow skill',
+    'running',
+    'high',
+    null,
+    'codex',
+    '/repo/ecc',
+    'lead-hermes',
+    JSON.stringify({
+      branch: 'product/dynamic-workflow-team-orchestration',
+      mergeGate: 'focused tests and catalog check pass',
+      acceptance: ['skill exists', 'content pack exists'],
+    }),
+    '2026-06-04T09:00:00Z',
+    '2026-06-04T09:05:00Z',
+  ]);
+  insertWorkItem.run([
+    'agent-card-002',
+    'github-pr',
+    '2131',
+    'Merge ECC control pane',
+    'done',
+    'normal',
+    'https://github.com/affaan-m/ECC/pull/2131',
+    'affaan',
+    '/repo/ecc',
+    null,
+    JSON.stringify({
+      branch: 'product/ecc2-knowledge-control-pane',
+      mergeGate: 'merged into main',
+    }),
+    '2026-06-03T13:00:00Z',
+    '2026-06-03T13:55:00Z',
+  ]);
+  insertWorkItem.run([
+    'agent-card-003',
+    'manual',
+    'blocked-content',
+    'Record content pipeline',
+    'blocked',
+    'high',
+    null,
+    'operator',
+    '/repo/ecc',
+    null,
+    JSON.stringify({
+      blocker: 'needs publish approval',
+      mergeGate: 'approval packet accepted',
+    }),
+    '2026-06-04T09:10:00Z',
+    '2026-06-04T09:12:00Z',
+  ]);
+  insertWorkItem.free();
+
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  db.close();
+}
+
 async function mutateSqlDatabase(dbPath, mutator) {
   const SQL = await initSqlJs();
   const buffer = fs.readFileSync(dbPath);
@@ -285,6 +375,36 @@ async function runTests() {
       assert.strictEqual(snapshot.connectors[0].name, 'hermes_workspace');
       assert.strictEqual(snapshot.connectors[0].syncedSources, 1);
       assert.strictEqual(snapshot.connectors[1].syncedSources, 0);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (await test('projects state-store work items into agent Kanban summary', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-work-items-'));
+    const dbPath = path.join(tempDir, 'ecc2.db');
+    const stateDbPath = path.join(tempDir, 'state.db');
+
+    try {
+      await writeSampleEcc2Database(dbPath);
+      await writeSampleWorkItemsDatabase(stateDbPath);
+
+      const snapshot = await buildControlPaneSnapshot({
+        dbPath,
+        stateDbPath,
+        repoRoot: path.join(__dirname, '..', '..'),
+        query: 'workflow',
+      });
+
+      assert.strictEqual(snapshot.workItems.totalCount, 3);
+      assert.strictEqual(snapshot.workItems.openCount, 2);
+      assert.strictEqual(snapshot.workItems.blockedCount, 1);
+      assert.strictEqual(snapshot.workItems.doneCount, 1);
+      assert.strictEqual(snapshot.workItems.kanban.running, 1);
+      assert.strictEqual(snapshot.workItems.kanban.blocked, 1);
+      assert.strictEqual(snapshot.workItems.items[0].id, 'agent-card-003');
+      assert.strictEqual(snapshot.workItems.items[0].mergeGate, 'approval packet accepted');
+      assert.strictEqual(snapshot.workItems.items[1].branch, 'product/dynamic-workflow-team-orchestration');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

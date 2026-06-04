@@ -10,6 +10,7 @@ const toml = require('@iarna/toml');
 const { buildControlPaneActions } = require('./actions');
 
 const SNAPSHOT_SCHEMA_VERSION = 'ecc.control-pane.snapshot.v1';
+const DEFAULT_STATE_STORE_RELATIVE_PATH = path.join('.claude', 'ecc', 'state.db');
 
 function homeDir(env = process.env) {
   return env.HOME || env.USERPROFILE || os.homedir() || '.';
@@ -17,6 +18,10 @@ function homeDir(env = process.env) {
 
 function defaultDbPath(env = process.env) {
   return path.join(homeDir(env), '.claude', 'ecc2.db');
+}
+
+function defaultStateDbPath(env = process.env) {
+  return path.join(homeDir(env), DEFAULT_STATE_STORE_RELATIVE_PATH);
 }
 
 function defaultConfigPaths(cwd = process.cwd(), env = process.env) {
@@ -75,11 +80,22 @@ function normalizeMemoryConnectors(connectors = {}) {
 }
 
 function normalizeConfig(rawConfig = {}, options = {}) {
-  const { memory_connectors: snakeMemoryConnectors, memoryConnectors, ...rest } = rawConfig;
+  const {
+    memory_connectors: snakeMemoryConnectors,
+    memoryConnectors,
+    state_db_path: snakeStateDbPath,
+    stateDbPath: camelStateDbPath,
+    ...rest
+  } = rawConfig;
   const normalized = normalizeObjectKeys(rest);
   const connectorConfig = memoryConnectors || snakeMemoryConnectors || normalized.memoryConnectors;
   return {
     dbPath: options.dbPath || normalized.dbPath || defaultDbPath(options.env),
+    stateDbPath: options.stateDbPath
+      || camelStateDbPath
+      || snakeStateDbPath
+      || normalized.stateDbPath
+      || defaultStateDbPath(options.env),
     memoryConnectors: normalizeMemoryConnectors(connectorConfig),
   };
 }
@@ -107,6 +123,7 @@ function resolveControlPaneConfig(options = {}) {
     ...normalizeConfig(merged, {
       env,
       dbPath: options.dbPath || env.ECC2_DB_PATH || null,
+      stateDbPath: options.stateDbPath || env.ECC_STATE_DB_PATH || null,
     }),
     configPaths: configPaths.filter(configPath => fs.existsSync(configPath)),
   };
@@ -437,25 +454,117 @@ function connectorStatus(config, db) {
     });
 }
 
+function normalizeWorkItemStatus(status) {
+  const normalized = String(status || 'open').trim().toLowerCase();
+  if (['done', 'closed', 'resolved', 'merged', 'cancelled'].includes(normalized)) return 'done';
+  if (['blocked', 'needs-review', 'failed', 'stalled'].includes(normalized)) return 'blocked';
+  if (['running', 'in-progress', 'active', 'working'].includes(normalized)) return 'running';
+  return 'ready';
+}
+
+function normalizeWorkItem(row) {
+  const parsedMetadata = parseJson(row.metadata, {});
+  const metadata = isPlainObject(parsedMetadata) ? normalizeObjectKeys(parsedMetadata) : {};
+  const kanbanState = normalizeWorkItemStatus(row.status);
+  return {
+    id: String(row.id || ''),
+    source: String(row.source || ''),
+    sourceId: row.source_id ? String(row.source_id) : null,
+    title: String(row.title || ''),
+    status: String(row.status || 'open'),
+    kanbanState,
+    priority: row.priority ? String(row.priority) : null,
+    url: row.url ? String(row.url) : null,
+    owner: row.owner ? String(row.owner) : null,
+    repoRoot: row.repo_root ? String(row.repo_root) : null,
+    sessionId: row.session_id ? String(row.session_id) : null,
+    branch: metadata.branch || metadata.headRefName || null,
+    mergeGate: metadata.mergeGate || metadata.mergeGateStatus || null,
+    blocker: metadata.blocker || null,
+    acceptance: Array.isArray(metadata.acceptance) ? metadata.acceptance.map(String) : [],
+    metadata,
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  };
+}
+
+function readWorkItems(db) {
+  if (!tableExists(db, 'work_items')) return [];
+  return execRows(
+    db,
+    `SELECT *
+     FROM work_items
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 100`
+  ).map(normalizeWorkItem);
+}
+
+function summarizeWorkItems(items) {
+  const summary = {
+    totalCount: items.length,
+    openCount: 0,
+    blockedCount: 0,
+    doneCount: 0,
+    kanban: {
+      ready: 0,
+      running: 0,
+      blocked: 0,
+      done: 0,
+    },
+    items,
+  };
+
+  for (const item of items) {
+    const kanbanState = normalizeWorkItemStatus(item.kanbanState || item.status);
+    summary.kanban[kanbanState] += 1;
+    if (kanbanState === 'done') {
+      summary.doneCount += 1;
+    } else {
+      summary.openCount += 1;
+    }
+    if (kanbanState === 'blocked') summary.blockedCount += 1;
+  }
+
+  return summary;
+}
+
+async function readWorkItemsSnapshot(stateDbPath) {
+  const db = await openSqlDatabase(stateDbPath);
+  if (!db) return summarizeWorkItems([]);
+
+  try {
+    return summarizeWorkItems(readWorkItems(db));
+  } finally {
+    db.close();
+  }
+}
+
 async function buildControlPaneSnapshot(options = {}) {
   const repoRoot = path.resolve(options.repoRoot || path.join(__dirname, '..', '..', '..'));
   const config = options.config
     ? normalizeConfig(options.config, {
         env: options.env || process.env,
         dbPath: options.dbPath || options.config.dbPath || null,
+        stateDbPath: options.stateDbPath || options.config.stateDbPath || null,
       })
     : resolveControlPaneConfig(options);
   const dbPath = options.dbPath || config.dbPath;
+  const stateDbPath = options.stateDbPath || config.stateDbPath;
   const query = String(options.query || '').trim();
   const limit = Math.max(1, Math.min(Number.parseInt(String(options.limit || 12), 10) || 12, 50));
   const generatedAt = new Date().toISOString();
+  const workItems = await readWorkItemsSnapshot(stateDbPath);
   const base = {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     generatedAt,
     repoRoot,
     dbPath,
+    stateDbPath,
     database: {
       exists: Boolean(dbPath && fs.existsSync(dbPath)),
+    },
+    stateDatabase: {
+      exists: Boolean(stateDbPath && fs.existsSync(stateDbPath)),
     },
     config: {
       configPaths: config.configPaths || [],
@@ -473,6 +582,7 @@ async function buildControlPaneSnapshot(options = {}) {
       results: [],
     },
     connectors: connectorStatus(config, null),
+    workItems,
     actions: buildControlPaneActions({ repoRoot, query, limit }),
   };
 
@@ -513,6 +623,7 @@ module.exports = {
   SNAPSHOT_SCHEMA_VERSION,
   buildControlPaneSnapshot,
   defaultConfigPaths,
+  defaultStateDbPath,
   recallKnowledgeEntries,
   resolveControlPaneConfig,
 };

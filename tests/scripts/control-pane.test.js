@@ -148,6 +148,8 @@ async function runTests() {
       '8788',
       '--db',
       '/tmp/ecc2.db',
+      '--state-db',
+      '/tmp/ecc-state.db',
       '--query',
       'Hermes memory',
       '--no-open',
@@ -156,6 +158,7 @@ async function runTests() {
     assert.strictEqual(parsed.host, '127.0.0.1');
     assert.strictEqual(parsed.port, 8788);
     assert.strictEqual(parsed.dbPath, '/tmp/ecc2.db');
+    assert.strictEqual(parsed.stateDbPath, '/tmp/ecc-state.db');
     assert.strictEqual(parsed.query, 'Hermes memory');
     assert.strictEqual(parsed.openBrowser, false);
   })) passed++; else failed++;
@@ -191,12 +194,15 @@ async function runTests() {
         const html = await fetchLocal(`${app.url}/`).then(response => response.text());
         assert.ok(html.includes('ECC Control Pane'));
         assert.ok(html.includes('id="app"'));
+        assert.ok(html.includes('id="work-items"'));
+        assert.ok(html.includes('function renderWorkItems'));
         assert.ok(html.includes('function showError'));
         assert.ok(html.includes('response.ok'));
 
         const snapshot = await fetchLocal(`${app.url}/api/snapshot?query=control`).then(response => response.json());
         assert.strictEqual(snapshot.schemaVersion, 'ecc.control-pane.snapshot.v1');
         assert.strictEqual(snapshot.summary.totalSessions, 1);
+        assert.strictEqual(snapshot.workItems.totalCount, 0);
         assert.strictEqual(snapshot.sessions[0].id, 'session-a');
       } finally {
         await app.close();
