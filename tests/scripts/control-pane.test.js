@@ -174,6 +174,17 @@ async function runTests() {
     );
   })) passed++; else failed++;
 
+  if (await test('rejects missing state database path values', async () => {
+    assert.throws(
+      () => parseArgs(['node', 'scripts/control-pane.js', '--state-db']),
+      /Invalid --state-db value/
+    );
+    assert.throws(
+      () => parseArgs(['node', 'scripts/control-pane.js', '--state-db', '--query', 'Hermes']),
+      /Invalid --state-db value/
+    );
+  })) passed++; else failed++;
+
   if (await test('serves HTML and snapshot JSON from a temp ECC2 database', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-server-'));
     const dbPath = path.join(tempDir, 'ecc2.db');

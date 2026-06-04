@@ -27,6 +27,15 @@ function valueAfter(args, name) {
   return index >= 0 ? args[index + 1] : null;
 }
 
+function pathValueAfter(args, name) {
+  const value = valueAfter(args, name);
+  if (value === null) return null;
+  if (!value || value.startsWith('-')) {
+    throw new Error(`Invalid ${name} value: expected a path`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const help = args.includes('--help') || args.includes('-h');
@@ -42,7 +51,7 @@ function parseArgs(argv) {
     host,
     port,
     dbPath: valueAfter(args, '--db'),
-    stateDbPath: valueAfter(args, '--state-db'),
+    stateDbPath: pathValueAfter(args, '--state-db'),
     configPath: valueAfter(args, '--config'),
     query: valueAfter(args, '--query') || '',
     openBrowser: !args.includes('--no-open'),

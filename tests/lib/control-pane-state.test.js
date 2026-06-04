@@ -288,7 +288,7 @@ async function writeSampleWorkItemsDatabase(dbPath) {
     null,
     JSON.stringify({
       branch: 'product/ecc2-knowledge-control-pane',
-      mergeGate: 'merged into main',
+      mergeStateStatus: 'CLEAN',
     }),
     '2026-06-03T13:00:00Z',
     '2026-06-03T13:55:00Z',
@@ -405,6 +405,34 @@ async function runTests() {
       assert.strictEqual(snapshot.workItems.items[0].id, 'agent-card-003');
       assert.strictEqual(snapshot.workItems.items[0].mergeGate, 'approval packet accepted');
       assert.strictEqual(snapshot.workItems.items[1].branch, 'product/dynamic-workflow-team-orchestration');
+      assert.strictEqual(
+        snapshot.workItems.items.find(item => item.id === 'agent-card-002').mergeGate,
+        'CLEAN'
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (await test('treats an unreadable optional state-store database as empty work items', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-corrupt-work-items-'));
+    const dbPath = path.join(tempDir, 'ecc2.db');
+    const stateDbPath = path.join(tempDir, 'corrupt-state.db');
+
+    try {
+      await writeSampleEcc2Database(dbPath);
+      fs.writeFileSync(stateDbPath, 'not a sqlite database', 'utf8');
+
+      const snapshot = await buildControlPaneSnapshot({
+        dbPath,
+        stateDbPath,
+        repoRoot: path.join(__dirname, '..', '..'),
+        query: 'workflow',
+      });
+
+      assert.strictEqual(snapshot.stateDatabase.exists, true);
+      assert.strictEqual(snapshot.workItems.totalCount, 0);
+      assert.strictEqual(snapshot.summary.totalSessions, 2);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

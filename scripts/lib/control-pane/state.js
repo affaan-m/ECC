@@ -479,7 +479,7 @@ function normalizeWorkItem(row) {
     repoRoot: row.repo_root ? String(row.repo_root) : null,
     sessionId: row.session_id ? String(row.session_id) : null,
     branch: metadata.branch || metadata.headRefName || null,
-    mergeGate: metadata.mergeGate || metadata.mergeGateStatus || null,
+    mergeGate: metadata.mergeGate || metadata.mergeGateStatus || metadata.mergeStateStatus || null,
     blocker: metadata.blocker || null,
     acceptance: Array.isArray(metadata.acceptance) ? metadata.acceptance.map(String) : [],
     metadata,
@@ -529,13 +529,15 @@ function summarizeWorkItems(items) {
 }
 
 async function readWorkItemsSnapshot(stateDbPath) {
-  const db = await openSqlDatabase(stateDbPath);
-  if (!db) return summarizeWorkItems([]);
-
+  let db = null;
   try {
+    db = await openSqlDatabase(stateDbPath);
+    if (!db) return summarizeWorkItems([]);
     return summarizeWorkItems(readWorkItems(db));
+  } catch {
+    return summarizeWorkItems([]);
   } finally {
-    db.close();
+    if (db) db.close();
   }
 }
 
