@@ -43,9 +43,13 @@ __all__ = [
 DEFAULT_BASE_URL = "https://agent.auraopenprotocol.org"
 DEFAULT_TIMEOUT = 8  # seconds
 
-# Verdicts safe to proceed with by default. Rejects `high_risk` (poor track
-# record) and `unknown` (no verifiable history / endpoint unreachable).
-DEFAULT_ALLOW = ("trusted", "caution", "new")
+# Verdicts safe to proceed with by default — only `trusted` and `caution`.
+# `new`, `high_risk` and `unknown` are rejected. Fail-closed on un-vouched
+# identity is intentional: a brand-new DID has no track record and is a
+# Sybil / fresh-DID bypass vector (see THREAT_MODEL). Pass
+# `allow=("trusted", "caution", "new")` explicitly to onboard fresh agents
+# through this gate — opt-in, not default.
+DEFAULT_ALLOW = ("trusted", "caution")
 
 # All verdict classes the /check endpoint can return.
 VERDICTS = ("trusted", "caution", "high_risk", "new", "unknown")
@@ -180,13 +184,13 @@ def before_settle(
     raises AuraUntrusted on fail.
 
         try:
-            before_settle(counterparty_did)   # rejects high_risk + unknown
+            before_settle(counterparty_did)   # rejects new + high_risk + unknown
             settle_payment(counterparty_did, amount)
         except AuraUntrusted as e:
             abort(str(e))
 
-    Tighten to reject brand-new agents too:
-        before_settle(did, allow=("trusted", "caution"))
+    Loosen to also allow brand-new agents (opt-in onboarding):
+        before_settle(did, allow=("trusted", "caution", "new"))
 
     fail_open=True makes an *unreachable* AURA pass through (transport failure
     only — a reachable AURA that returns `unknown` is still rejected). Off by
