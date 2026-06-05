@@ -451,6 +451,113 @@ function runTests() {
   })) passed++;
   else failed++;
 
+  // ── Stale counter temp-file cleanup (#2156) ──
+  console.log('\nStale counter cleanup (#2156):');
+
+  // Backdate a file's mtime by N days so the sweep treats it as stale.
+  function backdateFile(filePath, days) {
+    const when = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    fs.utimesSync(filePath, when, when);
+  }
+
+  if (test('deletes stale counter files older than retention window', () => {
+    const stale = getCounterFilePath(`stale-${Date.now()}`);
+    fs.writeFileSync(stale, '5');
+    backdateFile(stale, 30); // older than the 14-day default
+    const { sessionId, cleanup } = createCounterContext();
+    cleanup();
+    try {
+      const result = runCompact({ CLAUDE_SESSION_ID: sessionId });
+      assert.strictEqual(result.code, 0, 'Should exit 0');
+      assert.ok(!fs.existsSync(stale), 'Stale counter file should be swept');
+    } finally {
+      try { fs.unlinkSync(stale); } catch (_err) { /* ignore */ }
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('keeps fresh counter files within the retention window', () => {
+    const fresh = getCounterFilePath(`fresh-${Date.now()}`);
+    fs.writeFileSync(fresh, '5');
+    backdateFile(fresh, 3); // well within the 14-day default
+    const { sessionId, cleanup } = createCounterContext();
+    cleanup();
+    try {
+      runCompact({ CLAUDE_SESSION_ID: sessionId });
+      assert.ok(fs.existsSync(fresh), 'Fresh counter file should be kept');
+    } finally {
+      try { fs.unlinkSync(fresh); } catch (_err) { /* ignore */ }
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('never deletes the current session counter file', () => {
+    const { sessionId, counterFile, cleanup } = createCounterContext();
+    cleanup();
+    // Pre-create the current session's counter and backdate it far past the TTL.
+    fs.writeFileSync(counterFile, '5');
+    backdateFile(counterFile, 100);
+    try {
+      runCompact({ CLAUDE_SESSION_ID: sessionId });
+      assert.ok(fs.existsSync(counterFile), 'Current session counter must survive sweep');
+      const count = parseInt(fs.readFileSync(counterFile, 'utf8').trim(), 10);
+      assert.strictEqual(count, 6, 'Current counter should increment, not be reset');
+    } finally {
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('COMPACT_STATE_TTL_DAYS=0 disables the sweep', () => {
+    const stale = getCounterFilePath(`stale-disabled-${Date.now()}`);
+    fs.writeFileSync(stale, '5');
+    backdateFile(stale, 100);
+    const { sessionId, cleanup } = createCounterContext();
+    cleanup();
+    try {
+      runCompact({ CLAUDE_SESSION_ID: sessionId, COMPACT_STATE_TTL_DAYS: '0' });
+      assert.ok(fs.existsSync(stale), 'Sweep disabled → stale file must remain');
+    } finally {
+      try { fs.unlinkSync(stale); } catch (_err) { /* ignore */ }
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('custom COMPACT_STATE_TTL_DAYS shortens the window', () => {
+    const stale = getCounterFilePath(`stale-custom-${Date.now()}`);
+    fs.writeFileSync(stale, '5');
+    backdateFile(stale, 5); // would survive default 14, but not TTL=2
+    const { sessionId, cleanup } = createCounterContext();
+    cleanup();
+    try {
+      runCompact({ CLAUDE_SESSION_ID: sessionId, COMPACT_STATE_TTL_DAYS: '2' });
+      assert.ok(!fs.existsSync(stale), '5-day-old file should be swept with TTL=2');
+    } finally {
+      try { fs.unlinkSync(stale); } catch (_err) { /* ignore */ }
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('does not touch unrelated temp files', () => {
+    const unrelated = path.join(os.tmpdir(), `unrelated-${Date.now()}.tmp`);
+    fs.writeFileSync(unrelated, 'keep me');
+    backdateFile(unrelated, 100);
+    const { sessionId, cleanup } = createCounterContext();
+    cleanup();
+    try {
+      runCompact({ CLAUDE_SESSION_ID: sessionId });
+      assert.ok(fs.existsSync(unrelated), 'Non-counter temp files must be untouched');
+    } finally {
+      try { fs.unlinkSync(unrelated); } catch (_err) { /* ignore */ }
+      cleanup();
+    }
+  })) passed++;
+  else failed++;
+
   // Summary
   console.log(`
 Results: Passed: ${passed}, Failed: ${failed}`);
