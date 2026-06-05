@@ -18,6 +18,8 @@
 ![Java](https://img.shields.io/badge/-Java-ED8B00?logo=openjdk&logoColor=white)
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
+![Codex](https://img.shields.io/badge/Codex-CLI%20%2B%20App-111827)
+![Gemini CLI](https://img.shields.io/badge/Gemini-CLI%20Extension-4285F4)
 
 > **182K+ stars** | **28K+ forks** | **170+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
 
@@ -39,6 +41,25 @@
 Not just configs. A complete system: skills, instincts, memory optimization, continuous learning, security scanning, and research-first development. Production-ready agents, skills, hooks, rules, MCP configurations, and legacy command shims evolved over 10+ months of intensive daily use building real products.
 
 Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
+
+### New: Codex + Gemini Native Surfaces
+
+ECC now ships first-class surfaces for **Codex**, **Codex CLI**, **Codex app**, **Gemini**, and **Gemini CLI**. These are not README-only claims: the branch includes generated, installable directories for both harness families.
+
+| Harness | What ECC Adds | Install Surface |
+|---------|---------------|-----------------|
+| **Codex CLI** | `251` packaged skills, `63` agents, `79` command prompts, MCP config, and plugin metadata | `plugins/ecc/` via `codex plugin add ecc@ecc` |
+| **Codex app** | The same plugin package plus project-local `.codex/` config and sample agent roles | Open the repo or install the local Codex plugin package |
+| **Gemini CLI** | Project context, `251` skills, `63` Gemini-compatible agents, and `79` TOML custom commands | `.gemini/` plus `extensions/ecc-gemini/` |
+| **Gemini extension** | A self-contained extension package with `GEMINI.md`, skills, agents, and commands | `gemini extensions link ./extensions/ecc-gemini` |
+
+```bash
+# Build the Codex plugin package
+npm run codex:package
+
+# Build the Gemini workspace + extension surfaces
+npm run gemini:surface
+```
 
 ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [rc.1 release notes](docs/releases/2.0.0-rc.1/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
 
@@ -1283,9 +1304,9 @@ alwaysApply: false
 
 ---
 
-## Codex macOS App + CLI Support
+## Codex App + CLI Support
 
-ECC provides **first-class Codex support** for both the macOS app and CLI, with a reference configuration, Codex-specific AGENTS.md supplement, and shared skills.
+ECC provides **first-class Codex support** for both Codex CLI and the Codex app. The Codex surface is materialized as an installable plugin package, backed by project-local configuration, a Codex-specific AGENTS.md supplement, sample agent roles, shared skills, command prompts, and MCP settings.
 
 ### Quick Start (Codex App + CLI)
 
@@ -1317,7 +1338,8 @@ The sync script safely merges ECC MCP servers into your existing `~/.codex/confi
 Codex plugin marketplace support uses the generated `plugins/ecc/` package. That
 package is rebuilt from root `skills/`, `agents/`, `commands/`, `.mcp.json`, and
 `.codex-plugin/` by `npm run codex:package`; do not edit the generated package
-by hand.
+by hand. This keeps Codex CLI and Codex app installs aligned with the canonical
+ECC catalog.
 
 For Context7, ECC uses the canonical Codex section name `[mcp_servers.context7]` while still launching the `@upstash/context7-mcp` package. If you already have a legacy `[mcp_servers.context7-mcp]` entry, `--update-mcp` migrates it to the canonical section name.
 
@@ -1411,7 +1433,10 @@ ECC ships three sample role configs:
 ## Gemini CLI Support
 
 ECC provides both a project-local Gemini surface and a Gemini extension package.
-Gemini CLI calls this an **extension**, not a plugin.
+Gemini CLI calls this an **extension**, not a plugin. The generated Gemini
+surface adapts ECC agents, skills, and commands into the formats Gemini CLI
+expects: `.gemini/agents/*.md`, `.gemini/skills/*/SKILL.md`, and TOML custom
+commands under `.gemini/commands/`.
 
 ```bash
 # Rebuild Gemini project and extension surfaces
@@ -1422,6 +1447,9 @@ gemini
 
 # Extension use while developing locally
 gemini extensions link ./extensions/ecc-gemini
+
+# Non-interactive local linking when you have already reviewed the extension
+gemini extensions link ./extensions/ecc-gemini --consent
 ```
 
 ### What's Included for Gemini
