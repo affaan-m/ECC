@@ -61,6 +61,9 @@ Add to your `~/.claude/settings.json`:
 
 Environment variables:
 - `COMPACT_THRESHOLD` — Tool calls before first suggestion (default: 50)
+- `COMPACT_STATE_TTL_DAYS` — Retention window for the per-session counter temp
+  files; the hook sweeps `claude-tool-count-*` files older than this on each run
+  (default: 14; set to `0` to disable cleanup)
 
 ## Compaction Decision Guide
 
