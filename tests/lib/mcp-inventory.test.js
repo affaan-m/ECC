@@ -19,7 +19,7 @@ const { readClaudeCodeMcp } = require('../../scripts/lib/mcp-inventory/readers/c
 const { readCodexMcp } = require('../../scripts/lib/mcp-inventory/readers/codex');
 const { readOpencodeMcp } = require('../../scripts/lib/mcp-inventory/readers/opencode');
 const { collectMcpInventory } = require('../../scripts/lib/mcp-inventory/collect');
-const { formatHumanReport, parseArgs } = require('../../scripts/mcp-inventory');
+const { formatHumanReport, parseArgs, usage, main } = require('../../scripts/mcp-inventory');
 
 console.log('=== Testing mcp-inventory ===\n');
 
@@ -234,6 +234,90 @@ test('CLI parseArgs + human report render fragmentation', () => {
   const report = formatHumanReport(inventory);
   assert.ok(report.includes('github'), 'report names the fragmented server');
   assert.ok(report.includes('x2'), 'report shows the harness count');
+});
+
+
+// --- branch/error coverage: readers degrade gracefully, CLI main(), collect skips ---
+
+function captureStdout(fn) {
+  const original = console.log;
+  const lines = [];
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return lines.join('\n');
+}
+
+test('readers return [] for missing files, malformed JSON, and missing blocks', () => {
+  const home = tmpHome();
+  assert.deepStrictEqual(readClaudeCodeMcp({ homeDir: home }), []);
+  assert.deepStrictEqual(readCodexMcp({ homeDir: home }), []);
+  assert.deepStrictEqual(readOpencodeMcp({ homeDir: home }), []);
+
+  fs.writeFileSync(path.join(home, '.claude.json'), '{not valid json', 'utf8');
+  assert.deepStrictEqual(readClaudeCodeMcp({ homeDir: home }), []);
+
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ other: true }), 'utf8');
+  assert.deepStrictEqual(readClaudeCodeMcp({ homeDir: home }), []);
+
+  fs.mkdirSync(path.join(home, '.config', 'opencode'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.config', 'opencode', 'opencode.json'), 'nope', 'utf8');
+  assert.deepStrictEqual(readOpencodeMcp({ homeDir: home }), []);
+
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), 'this = = broken', 'utf8');
+  assert.deepStrictEqual(readCodexMcp({ homeDir: home }), []);
+});
+
+test('codex reader returns [] when no TOML parser is available', () => {
+  const home = tmpHome();
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.x]\ncommand = "node"\n', 'utf8');
+  assert.deepStrictEqual(readCodexMcp({ homeDir: home, parseTomlImpl: () => { throw new Error('no parser'); } }), []);
+});
+
+test('collect skips non-function readers and swallows reader errors', () => {
+  const inv = collectMcpInventory({
+    readers: {
+      good: () => ([{ name: 'a', type: 'stdio', command: 'node', source: { harness: 'good' } }]),
+      broken: () => { throw new Error('reader blew up'); },
+      notAFunction: 'nope'
+    }
+  });
+  assert.strictEqual(inv.servers.length, 1);
+  assert.strictEqual(inv.servers[0].name, 'a');
+});
+
+test('CLI usage() and parseArgs cover help/fragmented flags', () => {
+  assert.ok(usage().includes('mcp-inventory'));
+  assert.deepStrictEqual(parseArgs(['node', 's', '-h']), { json: false, fragmentedOnly: false, help: true });
+  assert.deepStrictEqual(parseArgs(['node', 's', '--fragmented']), { json: false, fragmentedOnly: true, help: false });
+});
+
+test('CLI main() renders help, JSON, and human output paths', () => {
+  const help = captureStdout(() => main(['node', 's', '--help']));
+  assert.ok(help.includes('Usage: mcp-inventory'));
+
+  const jsonOut = captureStdout(() => main(['node', 's', '--json']));
+  const parsed = JSON.parse(jsonOut);
+  assert.strictEqual(parsed.schemaVersion, MCP_SCHEMA_VERSION);
+
+  const human = captureStdout(() => main(['node', 's']));
+  assert.ok(human.includes('MCP Inventory'));
+});
+
+test('formatHumanReport handles the no-fragmentation and fragmented-only branches', () => {
+  const solo = buildInventory([
+    normalizeServerEntry({ name: 'solo', ...GITHUB_STDIO, source: { harness: 'claude-code' } })
+  ]);
+  const report = formatHumanReport(solo);
+  assert.ok(report.includes('No servers are configured in more than one harness'));
+
+  const fragOnly = formatHumanReport(solo, { fragmentedOnly: true });
+  assert.ok(!fragOnly.includes('All servers:'), 'fragmented-only omits the all-servers list');
 });
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
