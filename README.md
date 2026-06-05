@@ -898,13 +898,15 @@ cp -r rules/arkts ~/.claude/rules/ecc/
 
 # Copy skills first (primary workflow surface)
 # Recommended (new users): core/general skills only
-mkdir -p ~/.claude/skills/ecc
-cp -r .agents/skills/* ~/.claude/skills/ecc/
-cp -r skills/search-first ~/.claude/skills/ecc/
+mkdir -p ~/.claude/skills
+cp -r .agents/skills/* ~/.claude/skills/
+cp -r skills/search-first ~/.claude/skills/
+# Claude Code loads skills only from direct children of ~/.claude/skills.
+# Do not nest manual installs under ~/.claude/skills/ecc/.
 
 # Optional: add niche/framework-specific skills only when needed
 # for s in django-patterns django-tdd laravel-patterns springboot-patterns quarkus-patterns; do
-# cp -r skills/$s ~/.claude/skills/ecc/
+# cp -r skills/$s ~/.claude/skills/
 # done
 
 # Optional: keep maintained slash-command compatibility during migration
