@@ -6,10 +6,15 @@ This supplements the root `AGENTS.md` with Codex-specific guidance.
 
 | Task Type | Recommended Model |
 |-----------|------------------|
-| Routine coding, tests, formatting | GPT 5.4 |
-| Complex features, architecture | GPT 5.4 |
-| Debugging, refactoring | GPT 5.4 |
-| Security review | GPT 5.4 |
+| Routine coding, tests, formatting | GPT 5.5 |
+| Complex features, architecture | GPT 5.5 |
+| Debugging, refactoring | GPT 5.5 |
+| Security review | GPT 5.5 |
+
+> Codex CLI now defaults to **GPT 5.5** across all task tiers. If you are pinned
+> to an earlier Codex release that does not recognize GPT 5.5 yet, the table
+> above degrades gracefully — Codex will pick the newest model your CLI version
+> recognizes.
 
 ## Skills Discovery
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Bumped stale Codex default model references to `gpt-5.5` across `.codex/AGENTS.md` Model Recommendations table and the three sample role configs (`.codex/agents/explorer.toml`, `.codex/agents/reviewer.toml`, `.codex/agents/docs-researcher.toml`). The repo had drifted behind the current Codex CLI default model. (#2111)
+
 ## 2.0.0-rc.1 - 2026-04-28
 
 ### Highlights
