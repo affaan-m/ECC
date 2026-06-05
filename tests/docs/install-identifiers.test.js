@@ -107,7 +107,7 @@ for (const relativePath of manualClaudeSkillInstallDocs) {
 
   test(`${relativePath} keeps manual Claude skill installs top-level`, () => {
     assert.ok(
-      !/^\s*#?\s*(mkdir\s+-p|cp\s+.*)\s+.*~\/\.claude\/skills\/ecc(\/|\b)/m.test(content),
+      !/^\s*#?\s*(mkdir\s+-p|md\s+.*|cp\s+.*|copy\s+.*|cpi\s+.*|New-Item\s+.*|Copy-Item\s+.*)\s+.*(~|\$HOME)[\\/]\.claude[\\/]skills[\\/]ecc([\\/]|\b)/mi.test(content),
       'Claude Code does not discover skills installed by commands targeting ~/.claude/skills/ecc'
     );
     assert.ok(
