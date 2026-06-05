@@ -112,6 +112,28 @@ if (
   passed++;
 else failed++;
 
+if (
+  test('sample Codex role configs declare required custom agent metadata', () => {
+    const roleFiles = fs.readdirSync(codexAgentsDir).filter(file => file.endsWith('.toml'));
+    assert.ok(roleFiles.length > 0, 'Expected sample role config files under `.codex/agents`');
+
+    for (const roleFile of roleFiles) {
+      const rolePath = path.join(codexAgentsDir, roleFile);
+      const roleConfig = fs.readFileSync(rolePath, 'utf8');
+      assert.ok(
+        /^name\s*=\s*"[^"]+"$/m.test(roleConfig),
+        `Expected sample Codex role config to declare name: ${roleFile}`,
+      );
+      assert.ok(
+        /^description\s*=\s*"[^"]+"$/m.test(roleConfig),
+        `Expected sample Codex role config to declare description: ${roleFile}`,
+      );
+    }
+  })
+)
+  passed++;
+else failed++;
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

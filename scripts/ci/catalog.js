@@ -149,17 +149,17 @@ function parseReadmeExpectations(readmeContent) {
   const parityPatterns = [
     {
       category: 'agents',
-      regex: /^\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*12\s*\|(?:\s*N\/A\s*\|)?$/im,
+      regex: /^\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*(\d+)\s+packaged\s+\+\s+3\s+project\s+roles\s*\|\s*(\d+)\s+generated\s+local\/extension\s+agents\s*\|\s*12\s*\|\s*N\/A\s*\|$/im,
       source: 'README.md parity table'
     },
     {
       category: 'commands',
-      regex: /^\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*Instruction-based\s*\|\s*\d+\s*\|(?:\s*\d+\s+prompts\s*\|)?$/im,
+      regex: /^\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*(\d+)\s+packaged\s+prompts\s*\|\s*(\d+)\s+TOML\s+custom\s+commands\s*\|\s*35\s*\|\s*6\s+prompts\s*\|$/im,
       source: 'README.md parity table'
     },
     {
       category: 'skills',
-      regex: /^\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*10\s*\(native format\)\s*\|\s*37\s*\|(?:\s*Via instructions\s*\|)?$/im,
+      regex: /^\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*(\d+)\s*\|\s*Shared\s*\|\s*(\d+)\s+packaged\s+skills\s*\|\s*(\d+)\s+workspace\/extension\s+skills\s*\|\s*37\s*\|\s*Via\s+instructions\s*\|$/im,
       source: 'README.md parity table'
     }
   ];
@@ -170,12 +170,14 @@ function parseReadmeExpectations(readmeContent) {
       throw new Error(`${pattern.source} is missing the ${pattern.category} row`);
     }
 
-    expectations.push({
-      category: pattern.category,
-      mode: 'exact',
-      expected: Number(match[1]),
-      source: `${pattern.source} (${pattern.category})`
-    });
+    for (let index = 1; index < match.length; index += 1) {
+      expectations.push({
+        category: pattern.category,
+        mode: 'exact',
+        expected: Number(match[index]),
+        source: `${pattern.source} (${pattern.category})`
+      });
+    }
   }
 
   return expectations;
@@ -461,20 +463,23 @@ function syncEnglishReadme(content, catalog) {
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*12\s*\|(?:\s*N\/A\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.agents.count}${suffix}`,
+    /^(\|\s*(?:\*\*)?Agents(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\(AGENTS\.md\)\s*\|\s*)(\d+)(\s+packaged\s+\+\s+3\s+project\s+roles\s*\|\s*)(\d+)(\s+generated\s+local\/extension\s+agents\s*\|\s*12\s*\|\s*N\/A\s*\|)$/im,
+    (_, prefix, __, middle, ___, codexSuffix, ____, geminiSuffix) =>
+      `${prefix}${catalog.agents.count}${middle}${catalog.agents.count}${codexSuffix}${catalog.agents.count}${geminiSuffix}`,
     'README.md parity table (agents)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*Instruction-based\s*\|\s*\d+\s*\|(?:\s*\d+\s+prompts\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.commands.count}${suffix}`,
+    /^(\|\s*(?:\*\*)?Commands(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*)(\d+)(\s+packaged\s+prompts\s*\|\s*)(\d+)(\s+TOML\s+custom\s+commands\s*\|\s*35\s*\|\s*6\s+prompts\s*\|)$/im,
+    (_, prefix, __, middle, ___, codexSuffix, ____, geminiSuffix) =>
+      `${prefix}${catalog.commands.count}${middle}${catalog.commands.count}${codexSuffix}${catalog.commands.count}${geminiSuffix}`,
     'README.md parity table (commands)'
   );
   nextContent = replaceOrThrow(
     nextContent,
-    /^(\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*10\s*\(native format\)\s*\|\s*37\s*\|(?:\s*Via instructions\s*\|)?)$/im,
-    (_, prefix, __, suffix) => `${prefix}${catalog.skills.count}${suffix}`,
+    /^(\|\s*(?:\*\*)?Skills(?:\*\*)?\s*\|\s*)(\d+)(\s*\|\s*Shared\s*\|\s*)(\d+)(\s+packaged\s+skills\s*\|\s*)(\d+)(\s+workspace\/extension\s+skills\s*\|\s*37\s*\|\s*Via\s+instructions\s*\|)$/im,
+    (_, prefix, __, middle, ___, codexSuffix, ____, geminiSuffix) =>
+      `${prefix}${catalog.skills.count}${middle}${catalog.skills.count}${codexSuffix}${catalog.skills.count}${geminiSuffix}`,
     'README.md parity table (skills)'
   );
 

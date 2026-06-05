@@ -1,48 +1,21 @@
 # ECC for Gemini CLI
 
-This file provides Gemini CLI with the baseline ECC workflow, review standards, and security checks for repositories that install the Gemini target.
+ECC provides Gemini CLI with an instruction layer plus discoverable skills, subagents, and custom commands generated from the canonical ECC repository assets.
 
-## Overview
+## Operating Rules
 
-Everything Claude Code (ECC) is a cross-harness coding system with 36 specialized agents, 142 skills, and 68 commands.
+- Follow the repository `AGENTS.md` guidance when working inside an ECC checkout.
+- Use ECC skills from `skills/` for specialized workflows instead of loading all workflow detail into context.
+- Use ECC agents from `agents/` for isolated review, planning, research, and implementation support when Gemini CLI subagents are enabled.
+- Use ECC commands from `commands/` as reusable slash-command prompts.
+- Treat hooks from other harnesses as documented policy unless Gemini CLI native hooks are installed and trusted.
 
-Gemini support is currently focused on a strong project-local instruction layer via `.gemini/GEMINI.md`, plus the shared MCP catalog and package-manager setup assets shipped by the installer.
+## Surfaces
 
-## Core Workflow
+- Skills: `skills/<name>/SKILL.md`
+- Agents: `agents/<name>.md`
+- Commands: `commands/<name>.toml`
 
-1. Plan before editing large features.
-2. Prefer test-first changes for bug fixes and new functionality.
-3. Review for security before shipping.
-4. Keep changes self-contained, readable, and easy to revert.
+## Shared Project Instructions
 
-## Coding Standards
-
-- Prefer immutable updates over in-place mutation.
-- Keep functions small and files focused.
-- Validate user input at boundaries.
-- Never hardcode secrets.
-- Fail loudly with clear error messages instead of silently swallowing problems.
-
-## Security Checklist
-
-Before any commit:
-
-- No hardcoded API keys, passwords, or tokens
-- All external input validated
-- Parameterized queries for database writes
-- Sanitized HTML output where applicable
-- Authz/authn checked for sensitive paths
-- Error messages scrubbed of sensitive internals
-
-## Delivery Standards
-
-- Use conventional commits: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
-- Run targeted verification for touched areas before shipping
-- Prefer contained local implementations over adding new third-party runtime dependencies
-
-## ECC Areas To Reuse
-
-- `AGENTS.md` for repo-wide operating rules
-- `skills/` for deep workflow guidance
-- `commands/` for slash-command patterns worth adapting into prompts/macros
-- `mcp-configs/` for shared connector baselines
+@../AGENTS.md

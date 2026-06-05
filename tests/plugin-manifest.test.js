@@ -461,7 +461,7 @@ test('marketplace.json plugin version matches package.json', () => {
   assert.strictEqual(marketplace.plugins[0].version, expectedVersion);
 });
 
-test('marketplace local plugin path resolves to the repo-root Codex bundle', () => {
+test('marketplace local plugin path resolves to the materialized Codex plugin package', () => {
   for (const plugin of marketplace.plugins) {
     if (!plugin.source || plugin.source.source !== 'local') {
       continue;
@@ -472,10 +472,9 @@ test('marketplace local plugin path resolves to the repo-root Codex bundle', () 
       `Codex marketplace source.path must be ./-prefixed: ${plugin.source.path}`,
     );
     const resolvedRoot = path.resolve(repoRoot, plugin.source.path);
-    assert.strictEqual(
-      resolvedRoot,
-      repoRoot,
-      `Expected local marketplace path to resolve to repo root from marketplace root, got: ${plugin.source.path}`,
+    assert.ok(
+      plugin.source.path.startsWith('./plugins/'),
+      `Expected Codex marketplace path to use a plugins/<name> package root, got: ${plugin.source.path}`,
     );
     assert.ok(
       fs.existsSync(path.join(resolvedRoot, '.codex-plugin', 'plugin.json')),
@@ -484,6 +483,26 @@ test('marketplace local plugin path resolves to the repo-root Codex bundle', () 
     assert.ok(
       fs.existsSync(path.join(resolvedRoot, '.mcp.json')),
       `Root MCP config missing under resolved marketplace root: ${plugin.source.path}`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(resolvedRoot, 'skills')),
+      `Packaged skills directory missing under resolved marketplace root: ${plugin.source.path}`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(resolvedRoot, 'agents')),
+      `Packaged agents directory missing under resolved marketplace root: ${plugin.source.path}`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(resolvedRoot, 'commands')),
+      `Packaged commands directory missing under resolved marketplace root: ${plugin.source.path}`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(resolvedRoot, 'assets', 'ecc-icon.svg')),
+      `Packaged Codex composer icon missing under resolved marketplace root: ${plugin.source.path}`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(resolvedRoot, 'assets', 'hero.png')),
+      `Packaged Codex logo missing under resolved marketplace root: ${plugin.source.path}`,
     );
   }
 });
@@ -500,9 +519,11 @@ test('.opencode/package-lock.json root version matches package.json', () => {
 
 test('README version row matches package.json', () => {
   const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
-  const match = readme.match(new RegExp(`^\\| \\*\\*Version\\*\\* \\| Plugin \\| Plugin \\| Reference config \\| (${semverPattern}) \\|(?: Instruction layer \\|)?$`, 'm'));
+  const match = readme.match(new RegExp(`^\\| \\*\\*Version\\*\\* \\| Plugin \\| Plugin \\| (${semverPattern}) \\| (${semverPattern}) \\| (${semverPattern}) \\| Instruction layer \\|$`, 'm'));
   assert.ok(match, 'Expected README version summary row');
   assert.strictEqual(match[1], expectedVersion);
+  assert.strictEqual(match[2], expectedVersion);
+  assert.strictEqual(match[3], expectedVersion);
 });
 
 test('user-facing docs do not use overlong legacy marketplace install commands', () => {

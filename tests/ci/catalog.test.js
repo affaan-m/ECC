@@ -58,11 +58,11 @@ function writeEnglishReadme(root, counts, options = {}) {
 
 ## Cross-Tool Feature Parity
 
-| Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode |
-| --- | --- | --- | --- | --- |
-| **Agents** | ${parityCounts.agents} | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 |
-| **Commands** | ${parityCounts.commands} | Shared | Instruction-based | 31 |
-| **Skills** | ${parityCounts.skills} | Shared | 10 (native format) | 37 |
+| Feature | Claude Code | Cursor IDE | Codex CLI/App | Gemini CLI | OpenCode | GitHub Copilot |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Agents** | ${parityCounts.agents} | Shared (AGENTS.md) | ${parityCounts.agents} packaged + 3 project roles | ${parityCounts.agents} generated local/extension agents | 12 | N/A |
+| **Commands** | ${parityCounts.commands} | Shared | ${parityCounts.commands} packaged prompts | ${parityCounts.commands} TOML custom commands | 35 | 6 prompts |
+| **Skills** | ${parityCounts.skills} | Shared | ${parityCounts.skills} packaged skills | ${parityCounts.skills} workspace/extension skills | 37 | Via instructions |
 `);
 }
 

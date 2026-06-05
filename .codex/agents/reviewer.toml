@@ -1,3 +1,5 @@
+name = "reviewer"
+description = "PR reviewer focused on correctness, security, and missing tests."
 model = "gpt-5.4"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

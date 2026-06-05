@@ -1,3 +1,5 @@
+name = "docs_researcher"
+description = "Documentation specialist that verifies APIs, framework behavior, and release notes."
 model = "gpt-5.4"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"

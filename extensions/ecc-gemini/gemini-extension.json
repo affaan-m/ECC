@@ -1,0 +1,6 @@
+{
+  "name": "ecc-gemini",
+  "version": "2.0.0-rc.1",
+  "description": "ECC workflows for Gemini CLI: context, skills, subagents, and custom commands.",
+  "contextFileName": "GEMINI.md"
+}
