@@ -99,12 +99,25 @@ async function main() {
   const tempDir = getTempDir();
   const counterFile = path.join(tempDir, `${COUNTER_PREFIX}${sessionId}`);
 
-  // Keep the temp dir bounded: sweep counter files older than the retention
-  // window before doing any counting. Best-effort and never blocks (#2156).
+  // Keep the temp dir bounded by sweeping stale counter files (#2156), but only
+  // pay for the directory scan once per session. The sweep only needs to run on
+  // a session's first tool call — i.e. when this session's counter file does not
+  // exist yet. On every subsequent PreToolUse the file is already present, so we
+  // skip the readdir/stat entirely and keep the blocking hot path fast. Stale
+  // files still get cleaned up promptly because every new session triggers a
+  // sweep. Best-effort throughout and never blocks.
+  let isFirstToolCall;
   try {
-    sweepStaleCounters(tempDir, resolveTtlDays(), counterFile);
+    isFirstToolCall = !fs.existsSync(counterFile);
   } catch {
-    /* cleanup is best-effort — never let it affect the count or exit code */
+    isFirstToolCall = true; // can't tell — fall back to attempting the sweep
+  }
+  if (isFirstToolCall) {
+    try {
+      sweepStaleCounters(tempDir, resolveTtlDays(), counterFile);
+    } catch {
+      /* cleanup is best-effort — never let it affect the count or exit code */
+    }
   }
 
   const rawThreshold = parseInt(process.env.COMPACT_THRESHOLD || '50', 10);
