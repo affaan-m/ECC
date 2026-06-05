@@ -269,7 +269,14 @@ function isDestructiveGit(tokens) {
   }
 
   if (command === 'checkout') {
-    return rest.includes('--');
+    // `git checkout -- <path>`, `git checkout .`, and the force forms
+    // (`--force` / `-f`) all discard uncommitted working-tree changes,
+    // mirroring the `switch` handler below.
+    return rest.some(t => {
+      if (t === '--' || t === '.' || t === '--force') return true;
+      if (!t.startsWith('-') || t.startsWith('--')) return false;
+      return t.slice(1).includes('f');
+    });
   }
 
   if (command === 'clean') {

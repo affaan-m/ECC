@@ -301,6 +301,22 @@ function runTests() {
     assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('rollback'));
   })) passed++; else failed++;
 
+  // --- Test 7b: gates force/path git checkout as destructive Bash ---
+  clearState();
+  if (test('denies git checkout -f as destructive Bash', () => {
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'git checkout -f main' }
+    };
+    const result = runBashHook(input);
+    assert.strictEqual(result.code, 0, 'exit code should be 0');
+    const output = parseOutput(result.stdout);
+    assert.ok(output, 'should produce JSON output');
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('rollback'));
+  })) passed++; else failed++;
+
   // --- Test 8: denies first routine Bash, allows second ---
   clearState();
   if (test('denies first routine Bash, allows second', () => {
