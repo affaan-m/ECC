@@ -23,6 +23,59 @@ const {
   output
 } = require('../lib/utils');
 
+// Shared prefix for the per-session counter temp files. Used both to build the
+// current session's counter path and to sweep stale ones.
+const COUNTER_PREFIX = 'claude-tool-count-';
+
+/**
+ * Resolve the retention window (in days) for stale counter temp files.
+ * Env-tunable via COMPACT_STATE_TTL_DAYS. 0 disables the sweep. Invalid or
+ * out-of-range values fall back to the conservative 14-day default.
+ */
+function resolveTtlDays() {
+  const raw = parseInt(process.env.COMPACT_STATE_TTL_DAYS || '14', 10);
+  if (!Number.isFinite(raw) || raw < 0 || raw > 3650) return 14;
+  return raw;
+}
+
+/**
+ * Best-effort cleanup of orphaned counter temp files.
+ *
+ * Each session writes one `claude-tool-count-<sessionId>` file and nothing ever
+ * removed them, so the temp dir grew unbounded (one file per session, forever —
+ * issue #2156). Sweep deletes counter files whose mtime is older than the
+ * retention window. It never throws: counting must not depend on cleanup
+ * succeeding, and a hook must never block Claude.
+ *
+ * @param {string} tempDir   Directory holding the counter files.
+ * @param {number} ttlDays   Retention window in days (0 = sweep disabled).
+ * @param {string} keepFile  Absolute path of the current session's counter
+ *                           file, which is never deleted even if stale.
+ */
+function sweepStaleCounters(tempDir, ttlDays, keepFile) {
+  if (!ttlDays || ttlDays <= 0) return;
+  const cutoff = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
+  let entries;
+  try {
+    entries = fs.readdirSync(tempDir);
+  } catch {
+    return; // temp dir unreadable — nothing to do
+  }
+  for (const name of entries) {
+    if (!name.startsWith(COUNTER_PREFIX)) continue;
+    const full = path.join(tempDir, name);
+    if (full === keepFile) continue;
+    try {
+      const stats = fs.statSync(full);
+      if (stats.isFile() && stats.mtimeMs < cutoff) {
+        fs.unlinkSync(full);
+      }
+    } catch {
+      // File vanished mid-sweep, or is unreadable — ignore and continue.
+    }
+  }
+}
+
 async function resolveSessionId() {
   // Claude Code passes hook input via stdin JSON; session_id is the
   // canonical field. Fall back to the legacy env var, then 'default'.
@@ -43,7 +96,17 @@ async function main() {
   // legacy env var, or 'default' as fallback.
   const rawSessionId = await resolveSessionId();
   const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
-  const counterFile = path.join(getTempDir(), `claude-tool-count-${sessionId}`);
+  const tempDir = getTempDir();
+  const counterFile = path.join(tempDir, `${COUNTER_PREFIX}${sessionId}`);
+
+  // Keep the temp dir bounded: sweep counter files older than the retention
+  // window before doing any counting. Best-effort and never blocks (#2156).
+  try {
+    sweepStaleCounters(tempDir, resolveTtlDays(), counterFile);
+  } catch {
+    /* cleanup is best-effort — never let it affect the count or exit code */
+  }
+
   const rawThreshold = parseInt(process.env.COMPACT_THRESHOLD || '50', 10);
   const threshold = Number.isFinite(rawThreshold) && rawThreshold > 0 && rawThreshold <= 10000
     ? rawThreshold
