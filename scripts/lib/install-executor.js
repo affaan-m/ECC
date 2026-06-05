@@ -262,18 +262,16 @@ function isDirectoryNonEmpty(dirPath) {
   return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory() && fs.readdirSync(dirPath).length > 0;
 }
 
-function planClaudeLegacyInstall(context) {
-  const adapter = getInstallTargetAdapter('claude');
-  const targetRoot = adapter.resolveRoot({ homeDir: context.homeDir });
-  const rulesDir = context.claudeRulesDir || path.join(targetRoot, 'rules', CLAUDE_ECC_NAMESPACE);
-  const installStatePath = adapter.getInstallStatePath({ homeDir: context.homeDir });
+function planClaudeStyleLegacyInstall(context, { adapterId, adapterRootInput, rulesDir: rulesDirOverride }) {
+  const adapter = getInstallTargetAdapter(adapterId);
+  const targetRoot = adapter.resolveRoot(adapterRootInput);
+  const rulesDir = rulesDirOverride || path.join(targetRoot, 'rules', CLAUDE_ECC_NAMESPACE);
+  const installStatePath = adapter.getInstallStatePath(adapterRootInput);
   const operations = [];
   const warnings = [];
 
   if (isDirectoryNonEmpty(rulesDir)) {
-    warnings.push(
-      `Destination ${rulesDir}/ already exists and files may be overwritten`
-    );
+    warnings.push(`Destination ${rulesDir}/ already exists and files may be overwritten`);
   }
 
   addRecursiveCopyOperations(operations, {
@@ -285,9 +283,7 @@ function planClaudeLegacyInstall(context) {
 
   for (const language of context.languages) {
     if (!LANGUAGE_NAME_PATTERN.test(language)) {
-      warnings.push(
-        `Invalid language name '${language}'. Only alphanumeric, dash, and underscore are allowed`
-      );
+      warnings.push(`Invalid language name '${language}'. Only alphanumeric, dash, and underscore are allowed`);
       continue;
     }
 
@@ -308,7 +304,7 @@ function planClaudeLegacyInstall(context) {
   return {
     mode: 'legacy',
     adapter,
-    target: 'claude',
+    target: adapterId,
     targetRoot,
     installRoot: rulesDir,
     installStatePath,
@@ -316,6 +312,22 @@ function planClaudeLegacyInstall(context) {
     warnings,
     selectedModules: ['legacy-claude-rules'],
   };
+}
+
+function planClaudeLegacyInstall(context) {
+  return planClaudeStyleLegacyInstall(context, {
+    adapterId: 'claude',
+    adapterRootInput: { homeDir: context.homeDir },
+    rulesDir: context.claudeRulesDir || null,
+  });
+}
+
+function planClaudeProjectLegacyInstall(context) {
+  return planClaudeStyleLegacyInstall(context, {
+    adapterId: 'claude-project',
+    adapterRootInput: { repoRoot: context.projectRoot },
+    rulesDir: null,
+  });
 }
 
 function planCursorLegacyInstall(context) {
@@ -503,6 +515,8 @@ function createLegacyInstallPlan(options = {}) {
   let plan;
   if (target === 'claude') {
     plan = planClaudeLegacyInstall(context);
+  } else if (target === 'claude-project') {
+    plan = planClaudeProjectLegacyInstall(context);
   } else if (target === 'cursor') {
     plan = planCursorLegacyInstall(context);
   } else {
