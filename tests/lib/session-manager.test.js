@@ -1384,7 +1384,15 @@ src/main.ts
 
     // Create a broken symlink that matches the session filename pattern
     const brokenSymlink = '2026-02-10-deadbeef-session.tmp';
-    fs.symlinkSync('/nonexistent/path/that/does/not/exist', path.join(sessionsDir, brokenSymlink));
+    try {
+      fs.symlinkSync('/nonexistent/path/that/does/not/exist', path.join(sessionsDir, brokenSymlink));
+    } catch {
+      // Skip on systems that don't support symlinks (e.g. Windows without
+      // Developer Mode / admin rights, where symlinkSync throws EPERM).
+      console.log('    (skipped — symlinks not supported)');
+      fs.rmSync(isoHome, { recursive: true, force: true });
+      return;
+    }
 
     const origHome = process.env.HOME;
     const origUserProfile = process.env.USERPROFILE;
@@ -1421,7 +1429,15 @@ src/main.ts
 
     // Create a broken symlink that matches a session ID pattern
     const brokenFile = '2026-02-11-deadbeef-session.tmp';
-    fs.symlinkSync('/nonexistent/target/that/does/not/exist', path.join(sessionsDir, brokenFile));
+    try {
+      fs.symlinkSync('/nonexistent/target/that/does/not/exist', path.join(sessionsDir, brokenFile));
+    } catch {
+      // Skip on systems that don't support symlinks (e.g. Windows without
+      // Developer Mode / admin rights, where symlinkSync throws EPERM).
+      console.log('    (skipped — symlinks not supported)');
+      fs.rmSync(isoHome, { recursive: true, force: true });
+      return;
+    }
 
     const origHome = process.env.HOME;
     const origUserProfile = process.env.USERPROFILE;
