@@ -1417,12 +1417,16 @@ function runTests() {
     const brokenLink = path.join(tmpDir, 'broken.txt');
     try {
       fs.symlinkSync('/nonexistent/path/does/not/exist', brokenLink);
-    } catch {
-      // Skip on systems that don't support symlinks (e.g. Windows without
-      // Developer Mode / admin rights, where symlinkSync throws EPERM).
-      console.log('    (skipped — symlinks not supported)');
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      return;
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        return;
+      }
+      throw err;
     }
 
     try {

@@ -1386,12 +1386,16 @@ src/main.ts
     const brokenSymlink = '2026-02-10-deadbeef-session.tmp';
     try {
       fs.symlinkSync('/nonexistent/path/that/does/not/exist', path.join(sessionsDir, brokenSymlink));
-    } catch {
-      // Skip on systems that don't support symlinks (e.g. Windows without
-      // Developer Mode / admin rights, where symlinkSync throws EPERM).
-      console.log('    (skipped — symlinks not supported)');
-      fs.rmSync(isoHome, { recursive: true, force: true });
-      return;
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        return;
+      }
+      throw err;
     }
 
     const origHome = process.env.HOME;
@@ -1431,12 +1435,16 @@ src/main.ts
     const brokenFile = '2026-02-11-deadbeef-session.tmp';
     try {
       fs.symlinkSync('/nonexistent/target/that/does/not/exist', path.join(sessionsDir, brokenFile));
-    } catch {
-      // Skip on systems that don't support symlinks (e.g. Windows without
-      // Developer Mode / admin rights, where symlinkSync throws EPERM).
-      console.log('    (skipped — symlinks not supported)');
-      fs.rmSync(isoHome, { recursive: true, force: true });
-      return;
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        return;
+      }
+      throw err;
     }
 
     const origHome = process.env.HOME;
