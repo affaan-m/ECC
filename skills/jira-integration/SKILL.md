@@ -65,6 +65,15 @@ If MCP is not available, use the Jira REST API v3 directly via `curl` or a helpe
 
 Store these in your shell environment, secrets manager, or an untracked local env file. Do not commit them to the repo.
 
+For direct `curl` examples, keep credentials out of command-line arguments by passing the Jira user config on stdin:
+
+```bash
+jira_curl() {
+  printf 'user = "%s:%s"\n' "$JIRA_EMAIL" "$JIRA_API_TOKEN" |
+    curl -s -K - "$@"
+}
+```
+
 ## MCP Tools Reference
 
 When the `mcp-atlassian` MCP server is configured, these tools are available:
@@ -88,7 +97,7 @@ When the `mcp-atlassian` MCP server is configured, these tools are available:
 ### Fetch a Ticket
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234" | jq '{
     key: .key,
@@ -105,7 +114,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### Fetch Comments
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234?fields=comment" | jq '.fields.comment.comments[] | {
     author: .author.displayName,
@@ -117,7 +126,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### Add a Comment
 
 ```bash
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "body": {
@@ -136,11 +145,11 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 
 ```bash
 # 1. Get available transitions
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions" | jq '.transitions[] | {id, name: .name}'
 
 # 2. Execute transition (replace TRANSITION_ID)
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"transition": {"id": "TRANSITION_ID"}}' \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions"
@@ -149,7 +158,7 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### Search with JQL
 
 ```bash
-curl -s -G -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -G \
   --data-urlencode "jql=project = PROJ AND status = 'In Progress'" \
   "$JIRA_URL/rest/api/3/search"
 ```

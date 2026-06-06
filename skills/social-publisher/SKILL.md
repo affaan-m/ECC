@@ -23,7 +23,8 @@ Connects Claude Code to [SocialClaw](https://getsocialclaw.com) for agent-driven
 export SC_API_KEY="<workspace-key>"
 
 # Verify access
-curl -sS -H "Authorization: Bearer $SC_API_KEY" https://getsocialclaw.com/v1/keys/validate
+printf 'header = "Authorization: Bearer %s"\n' "$SC_API_KEY" |
+  curl -sS -K - https://getsocialclaw.com/v1/keys/validate
 
 # Install CLI (optional but recommended)
 npm install -g socialclaw@0.1.12
