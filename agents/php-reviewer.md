@@ -96,7 +96,7 @@ Fix: What to change
 ## Framework Checks
 
 - **Laravel**: N+1 via `with()`/`load()`, `$fillable`/`$casts`, FormRequest validation, route model binding, `Gate`/`Policy` authorization, Sanctum token abilities, queue idempotency
-- **Livewire**: Proper `#[Rule]` attributes, authorization in ` authorize()`, wire:model security
+- **Livewire**: Proper `#[Rule]` attributes, authorization in `authorize()`, wire:model security
 - **Filament**: Form/table authorization, `canAccess()`, policy registration
 - **Plain PHP**: PDO prepared statements, password_hash/password_verify, header-based CSRF
 

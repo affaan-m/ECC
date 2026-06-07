@@ -171,7 +171,14 @@ function main() {
   process.exit(Number.isInteger(result.status) ? result.status : 0);
 }
 
-if (require.main === module) {
+// Run when invoked as a hook entry. Production hooks load this via
+// `node -e "...; process.argv.splice(1,0,s); require(s)"`; on Node 21+ that
+// leaves require.main undefined (not this module), which previously skipped
+// main() and made every plugin hook a silent no-op. Guard on both the
+// direct-entry case and that eval-bootstrap case. When imported for its
+// exports (tests), require.main is a real, different module, so main() stays
+// dormant.
+if (require.main === module || require.main === undefined) {
   main();
 }
 

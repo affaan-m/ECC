@@ -32,19 +32,19 @@ Orientación TDD para servicios Quarkus 3.x con 80%+ de cobertura (unit + integr
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Pruebas Unitarias de OrderService")
 class OrderServiceTest {
-  
+
   @Mock
   private OrderRepository orderRepository;
-  
+
   @Mock
   private EventService eventService;
-  
+
   @Mock
   private FulfillmentPublisher fulfillmentPublisher;
-  
+
   @InjectMocks
   private OrderService orderService;
-  
+
   private CreateOrderCommand validCommand;
 
   @BeforeEach
@@ -58,16 +58,16 @@ class OrderServiceTest {
   @Nested
   @DisplayName("Pruebas para createOrder")
   class CreateOrder {
-    
+
     @Test
     @DisplayName("Debe persistir orden y publicar evento de fulfillment")
     void givenValidCommand_whenCreateOrder_thenPersistsAndPublishes() {
       // ARRANGE
       doNothing().when(orderRepository).persist(any(Order.class));
-      
+
       // ACT
       OrderReceipt receipt = orderService.createOrder(validCommand);
-      
+
       // ASSERT
       assertThat(receipt).isNotNull();
       assertThat(receipt.customerId()).isEqualTo("customer-123");
@@ -81,7 +81,7 @@ class OrderServiceTest {
     void givenMissingCustomerId_whenCreateOrder_thenThrowsBadRequest() {
       // ARRANGE
       CreateOrderCommand invalid = new CreateOrderCommand("", validCommand.lines());
-      
+
       // ACT & ASSERT
       WebApplicationException exception = assertThrows(
           WebApplicationException.class,
@@ -99,13 +99,13 @@ class OrderServiceTest {
       // ARRANGE
       doThrow(new PersistenceException("base de datos no disponible"))
           .when(orderRepository).persist(any(Order.class));
-      
+
       // ACT & ASSERT
       PersistenceException exception = assertThrows(
           PersistenceException.class,
           () -> orderService.createOrder(validCommand)
       );
-      
+
       assertThat(exception.getMessage()).contains("base de datos no disponible");
       verify(eventService).createErrorEvent(
           eq(validCommand),
@@ -168,20 +168,20 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockRabbitMQ = camelContext.getEndpoint("mock:rabbitmq", MockEndpoint.class);
       mockRabbitMQ.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("business-rules-publisher");
       AdviceWith.adviceWith(camelContext, "business-rules-publisher", advice -> {
         advice.replaceFromWith("direct:business-rules-publisher");
         advice.weaveByToString(".*spring-rabbitmq.*").replace().to("mock:rabbitmq");
       });
       camelContext.getRouteController().startRoute("business-rules-publisher");
-      
+
       // ACT
       producerTemplate.sendBody("direct:business-rules-publisher", testPayload);
-      
+
       // ASSERT
       mockRabbitMQ.assertIsSatisfied(5000);
-      
+
       assertThat(mockRabbitMQ.getExchanges()).hasSize(1);
       String body = mockRabbitMQ.getExchanges().get(0).getIn().getBody(String.class);
       assertThat(body).contains("\"documentId\":1");
@@ -199,17 +199,17 @@ class EventServiceTest {
 
   @Mock
   private EventRepository eventRepository;
-  
+
   @Mock
   private ObjectMapper objectMapper;
-  
+
   @InjectMocks
   private EventService eventService;
 
   @Nested
   @DisplayName("Pruebas para createSuccessEvent")
   class CreateSuccessEvent {
-    
+
     @Test
     @DisplayName("Debe crear evento de éxito con atributos correctos")
     void givenValidPayload_whenCreateSuccessEvent_thenEventPersisted() throws Exception {
@@ -217,13 +217,13 @@ class EventServiceTest {
       BusinessRulesPayload testPayload = new BusinessRulesPayload();
       testPayload.setDocumentId(1L);
       when(objectMapper.writeValueAsString(testPayload)).thenReturn("{\"documentId\":1}");
-      
+
       // ACT
-      assertDoesNotThrow(() -> 
+      assertDoesNotThrow(() ->
           eventService.createSuccessEvent(testPayload, "DOCUMENT_PROCESSED"));
-      
+
       // ASSERT
-      verify(eventRepository).persist(argThat(event -> 
+      verify(eventRepository).persist(argThat(event ->
           event.getType().equals("DOCUMENT_PROCESSED") &&
           event.getStatus() == EventStatus.SUCCESS &&
           event.getTimestamp() != null
@@ -235,13 +235,13 @@ class EventServiceTest {
     void givenNullPayload_whenCreateSuccessEvent_thenThrowsException() {
       // ARRANGE
       Object nullPayload = null;
-      
+
       // ACT & ASSERT
       NullPointerException exception = assertThrows(
           NullPointerException.class,
           () -> eventService.createSuccessEvent(nullPayload, "EVENT_TYPE")
       );
-      
+
       assertThat(exception.getMessage()).isEqualTo("Payload cannot be null");
       verify(eventRepository, never()).persist(any());
     }
@@ -250,7 +250,7 @@ class EventServiceTest {
   @Nested
   @DisplayName("Pruebas para createErrorEvent")
   class CreateErrorEvent {
-    
+
     @ParameterizedTest
     @DisplayName("Debe rechazar mensajes de error inválidos")
     @ValueSource(strings = {"", " "})
@@ -263,7 +263,7 @@ class EventServiceTest {
           IllegalArgumentException.class,
           () -> eventService.createErrorEvent(testPayload, "ERROR", blankMessage)
       );
-      
+
       assertThat(exception.getMessage()).contains("Error message cannot be blank");
     }
   }
@@ -278,10 +278,10 @@ class FileStorageServiceTest {
 
   @Mock
   private S3Client s3Client;
-  
+
   @Mock
   private ExecutorService executorService;
-  
+
   @InjectMocks
   private FileStorageService fileStorageService;
 
@@ -293,15 +293,15 @@ class FileStorageServiceTest {
       ((Runnable) invocation.getArgument(0)).run();
       return null;
     }).when(executorService).execute(any(Runnable.class));
-    
+
     when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
         .thenThrow(new StorageException("S3 no disponible"));
-    
+
     // ACT
-    CompletableFuture<StoredDocumentInfo> future = 
-        fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+    CompletableFuture<StoredDocumentInfo> future =
+        fileStorageService.uploadOriginalFile(testInputStream, 1024L,
             testLogContext, InvoiceFormat.UBL);
-    
+
     // ASSERT
     assertThatThrownBy(() -> future.join())
         .isInstanceOf(CompletionException.class)

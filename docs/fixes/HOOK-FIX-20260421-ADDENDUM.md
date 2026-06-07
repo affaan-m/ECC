@@ -17,7 +17,7 @@ Node.js の `child_process.spawn` で `.sh` ファイルを直接実行すると
 **EFTYPE** で失敗する：
 
 ```js
-spawn('C:/Users/sugig/.claude/skills/continuous-learning/hooks/observe-wrapper.sh', 
+spawn('C:/Users/sugig/.claude/skills/continuous-learning/hooks/observe-wrapper.sh',
       ['post'], {stdio:['pipe','pipe','pipe']});
 // → Error: spawn EFTYPE (errno -4028)
 ```

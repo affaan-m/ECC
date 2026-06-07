@@ -70,18 +70,18 @@ public class OrderProcessingService {
 ```java
 @ApplicationScoped
 public class ProcessingService {
-    
+
     public void processDocument(Document doc) {
         LogContext logContext = CustomLog.getCurrentContext();
         try (SafeAutoCloseable ignored = CustomLog.startScope(logContext)) {
             logContext.put("documentId", doc.getId().toString());
             logContext.put("documentType", doc.getType());
             logContext.put("userId", SecurityContext.getUserId());
-            
+
             log.info("Iniciando procesamiento de documento");
-            
+
             processInternal(doc);
-            
+
             log.info("Procesamiento de documento completado");
         } catch (Exception e) {
             log.error("Error en el procesamiento de documento", e);
@@ -101,7 +101,7 @@ public class ProcessingService {
             <includeMdc>true</includeMdc>
         </encoder>
     </appender>
-    
+
     <logger name="com.example" level="INFO"/>
     <root level="WARN">
         <appender-ref ref="CONSOLE"/>
@@ -118,7 +118,7 @@ public class ProcessingService {
 public class EventService {
     private final EventRepository eventRepository;
     private final ObjectMapper objectMapper;
-    
+
     public void createSuccessEvent(Object payload, String eventType) {
         Objects.requireNonNull(payload, "El payload no puede ser null");
         Event event = new Event();
@@ -126,11 +126,11 @@ public class EventService {
         event.setStatus(EventStatus.SUCCESS);
         event.setPayload(serializePayload(payload));
         event.setTimestamp(Instant.now());
-        
+
         eventRepository.persist(event);
         log.info("Evento de éxito creado: {}", eventType);
     }
-    
+
     public void createErrorEvent(Object payload, String eventType, String errorMessage) {
         Objects.requireNonNull(payload, "El payload no puede ser null");
         if (errorMessage == null || errorMessage.isBlank()) {
@@ -142,11 +142,11 @@ public class EventService {
         event.setErrorMessage(errorMessage);
         event.setPayload(serializePayload(payload));
         event.setTimestamp(Instant.now());
-        
+
         eventRepository.persist(event);
         log.error("Evento de error creado: {} - {}", eventType, errorMessage);
     }
-    
+
     private String serializePayload(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
@@ -165,10 +165,10 @@ public class EventService {
 @RequiredArgsConstructor
 public class BusinessRulesPublisher {
     private final ProducerTemplate producerTemplate;
-    
+
     public void publishSync(BusinessRulesPayload payload) {
         producerTemplate.sendBody(
-            "direct:business-rules-publisher", 
+            "direct:business-rules-publisher",
             payload
         );
     }
@@ -180,23 +180,23 @@ public class BusinessRulesPublisher {
 ```java
 @ApplicationScoped
 public class BusinessRulesRoute extends RouteBuilder {
-    
+
     @ConfigProperty(name = "camel.rabbitmq.queue.business-rules")
     String businessRulesQueue;
-    
+
     @ConfigProperty(name = "rabbitmq.host")
     String rabbitHost;
-    
+
     @ConfigProperty(name = "rabbitmq.port")
     Integer rabbitPort;
-    
+
     @Override
     public void configure() {
         from("direct:business-rules-publisher")
             .routeId("business-rules-publisher")
             .log("Publicando mensaje en RabbitMQ: ${body}")
             .marshal().json(JsonLibrary.Jackson)
-            .toF("spring-rabbitmq:%s?hostname=%s&portNumber=%d", 
+            .toF("spring-rabbitmq:%s?hostname=%s&portNumber=%d",
                 businessRulesQueue, rabbitHost, rabbitPort);
     }
 }
@@ -207,14 +207,14 @@ public class BusinessRulesRoute extends RouteBuilder {
 ```java
 @ApplicationScoped
 public class DocumentProcessingRoute extends RouteBuilder {
-    
+
     @Override
     public void configure() {
         onException(ValidationException.class)
             .handled(true)
             .to("direct:validation-error-handler")
             .log("Error de validación: ${exception.message}");
-        
+
         from("direct:process-document")
             .routeId("document-processing")
             .log("Procesando documento: ${header.documentId}")
@@ -237,19 +237,19 @@ public class DocumentProcessingRoute extends RouteBuilder {
 ```java
 @ApplicationScoped
 public class FileMonitoringRoute extends RouteBuilder {
-    
+
     @ConfigProperty(name = "file.input.directory")
     String inputDirectory;
-    
+
     @ConfigProperty(name = "file.processed.directory")
     String processedDirectory;
-    
+
     @ConfigProperty(name = "file.error.directory")
     String errorDirectory;
-    
+
     @Override
     public void configure() {
-        from("file:" + inputDirectory + "?move=" + processedDirectory + 
+        from("file:" + inputDirectory + "?move=" + processedDirectory +
              "&moveFailed=" + errorDirectory + "&delay=5000")
             .routeId("file-monitor")
             .log("Procesando archivo: ${header.CamelFileName}")
@@ -302,7 +302,7 @@ public class DocumentResource {
 ```java
 @ApplicationScoped
 public class DocumentRepository implements PanacheRepository<Document> {
-  
+
   public List<Document> findByStatus(DocumentStatus status, int page, int size) {
     return find("status = ?1 order by createdAt desc", status)
         .page(page, size)
@@ -331,11 +331,11 @@ public class DocumentService {
     document.setDescription(request.description());
     document.setStatus(DocumentStatus.PENDING);
     document.setCreatedAt(Instant.now());
-    
+
     repo.persist(document);
-    
+
     eventService.createSuccessEvent(document, "DOCUMENT_CREATED");
-    
+
     return document;
   }
 }
@@ -352,7 +352,7 @@ public record CreateDocumentRequest(
 
 public record DocumentResponse(Long id, String referenceNumber, DocumentStatus status) {
   public static DocumentResponse from(Document document) {
-    return new DocumentResponse(document.getId(), document.getReferenceNumber(), 
+    return new DocumentResponse(document.getId(), document.getReferenceNumber(),
         document.getStatus());
   }
 }
@@ -368,7 +368,7 @@ public class ValidationExceptionMapper implements ExceptionMapper<ConstraintViol
     String message = exception.getConstraintViolations().stream()
         .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
         .collect(Collectors.joining(", "));
-    
+
     return Response.status(Response.Status.BAD_REQUEST)
         .entity(Map.of("error", "validation_error", "message", message))
         .build();
@@ -385,25 +385,25 @@ public class ValidationExceptionMapper implements ExceptionMapper<ConstraintViol
 public class FileStorageService {
     private final S3Client s3Client;
     private final ExecutorService executorService;
-    
+
     public CompletableFuture<StoredDocumentInfo> uploadOriginalFile(
-            InputStream inputStream, 
-            long size, 
+            InputStream inputStream,
+            long size,
             LogContext logContext,
             InvoiceFormat format) {
-        
+
         return CompletableFuture.supplyAsync(() -> {
             try (SafeAutoCloseable ignored = CustomLog.startScope(logContext)) {
                 String path = generateStoragePath(format);
-                
+
                 PutObjectRequest request = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(path)
                     .contentLength(size)
                     .build();
-                
+
                 s3Client.putObject(request, RequestBody.fromInputStream(inputStream, size));
-                
+
                 return new StoredDocumentInfo(path, size, Instant.now());
             } catch (Exception e) {
                 log.error("Error al subir archivo a S3", e);

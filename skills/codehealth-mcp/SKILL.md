@@ -8,7 +8,7 @@ origin: community
 
 Structural maintainability feedback for AI-assisted coding. Complements style/lint skills (`coding-standards`, `plankton-code-quality`) with **design-level** health scores and regression gates.
 
-**Upstream:** [codescene-oss/codescene-mcp-server](https://github.com/codescene-oss/codescene-mcp-server)  
+**Upstream:** [codescene-oss/codescene-mcp-server](https://github.com/codescene-oss/codescene-mcp-server)
 **Package:** `@codescene/codehealth-mcp` (stdio via npx)
 
 ## Security and boundaries

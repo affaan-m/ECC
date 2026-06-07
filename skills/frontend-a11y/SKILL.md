@@ -203,8 +203,7 @@ Use ARIA only when native HTML semantics are insufficient. Wrong ARIA is worse t
 <button
   aria-describedby="delete-warning"
   onClick={handleDelete}
->
-  Delete account
+> Delete account
 </button>
 <p id="delete-warning">This action cannot be undone.</p>
 ```

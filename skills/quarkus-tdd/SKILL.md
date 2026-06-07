@@ -34,19 +34,19 @@ Follow this structured approach for comprehensive, readable tests:
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderService Unit Tests")
 class OrderServiceTest {
-  
+
   @Mock
   private OrderRepository orderRepository;
-  
+
   @Mock
   private EventService eventService;
-  
+
   @Mock
   private FulfillmentPublisher fulfillmentPublisher;
-  
+
   @InjectMocks
   private OrderService orderService;
-  
+
   private CreateOrderCommand validCommand;
 
   @BeforeEach
@@ -60,16 +60,16 @@ class OrderServiceTest {
   @Nested
   @DisplayName("Tests for createOrder")
   class CreateOrder {
-    
+
     @Test
     @DisplayName("Should persist order and publish fulfillment event")
     void givenValidCommand_whenCreateOrder_thenPersistsAndPublishes() {
       // ARRANGE
       doNothing().when(orderRepository).persist(any(Order.class));
-      
+
       // ACT
       OrderReceipt receipt = orderService.createOrder(validCommand);
-      
+
       // ASSERT
       assertThat(receipt).isNotNull();
       assertThat(receipt.customerId()).isEqualTo("customer-123");
@@ -83,7 +83,7 @@ class OrderServiceTest {
     void givenMissingCustomerId_whenCreateOrder_thenThrowsBadRequest() {
       // ARRANGE
       CreateOrderCommand invalid = new CreateOrderCommand("", validCommand.lines());
-      
+
       // ACT & ASSERT
       WebApplicationException exception = assertThrows(
           WebApplicationException.class,
@@ -101,13 +101,13 @@ class OrderServiceTest {
       // ARRANGE
       doThrow(new PersistenceException("database unavailable"))
           .when(orderRepository).persist(any(Order.class));
-      
+
       // ACT & ASSERT
       PersistenceException exception = assertThrows(
           PersistenceException.class,
           () -> orderService.createOrder(validCommand)
       );
-      
+
       assertThat(exception.getMessage()).contains("database unavailable");
       verify(eventService).createErrorEvent(
           eq(validCommand),
@@ -125,7 +125,7 @@ class OrderServiceTest {
           NullPointerException.class,
           () -> orderService.createOrder(null)
       );
-      
+
       verify(orderRepository, never()).persist(any(Order.class));
     }
   }
@@ -184,7 +184,7 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockRabbitMQ = camelContext.getEndpoint("mock:rabbitmq", MockEndpoint.class);
       mockRabbitMQ.expectedMessageCount(1);
-      
+
       // Replace real endpoint with mock for testing
       camelContext.getRouteController().stopRoute("business-rules-publisher");
       AdviceWith.adviceWith(camelContext, "business-rules-publisher", advice -> {
@@ -192,13 +192,13 @@ class BusinessRulesRouteTest {
         advice.weaveByToString(".*spring-rabbitmq.*").replace().to("mock:rabbitmq");
       });
       camelContext.getRouteController().startRoute("business-rules-publisher");
-      
+
       // ACT
       producerTemplate.sendBody("direct:business-rules-publisher", testPayload);
-      
+
       // ASSERT — body is a JSON String after .marshal().json(JsonLibrary.Jackson)
       mockRabbitMQ.assertIsSatisfied(5000);
-      
+
       assertThat(mockRabbitMQ.getExchanges()).hasSize(1);
       String body = mockRabbitMQ.getExchanges().get(0).getIn().getBody(String.class);
       assertThat(body).contains("\"documentId\":1");
@@ -211,19 +211,19 @@ class BusinessRulesRouteTest {
       MockEndpoint mockMarshal = new MockEndpoint("mock:marshal");
       camelContext.addEndpoint("mock:marshal", mockMarshal);
       mockMarshal.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("business-rules-publisher");
       AdviceWith.adviceWith(camelContext, "business-rules-publisher", advice -> {
         advice.weaveAddLast().to("mock:marshal");
       });
       camelContext.getRouteController().startRoute("business-rules-publisher");
-      
+
       // ACT
       producerTemplate.sendBody("direct:business-rules-publisher", testPayload);
-      
+
       // ASSERT
       mockMarshal.assertIsSatisfied(5000);
-      
+
       String body = mockMarshal.getExchanges().get(0).getIn().getBody(String.class);
       assertThat(body).contains("\"documentId\":1");
       assertThat(body).contains("\"flowProfile\":\"BASIC\"");
@@ -240,17 +240,17 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockInvoice = camelContext.getEndpoint("mock:invoice", MockEndpoint.class);
       mockInvoice.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("document-processing");
       AdviceWith.adviceWith(camelContext, "document-processing", advice -> {
         advice.weaveByToString(".*direct:process-invoice.*").replace().to("mock:invoice");
       });
       camelContext.getRouteController().startRoute("document-processing");
-      
+
       // ACT
-      producerTemplate.sendBodyAndHeader("direct:process-document", 
+      producerTemplate.sendBodyAndHeader("direct:process-document",
           testPayload, "documentType", "INVOICE");
-      
+
       // ASSERT
       mockInvoice.assertIsSatisfied(5000);
     }
@@ -261,23 +261,23 @@ class BusinessRulesRouteTest {
       // ARRANGE
       MockEndpoint mockError = camelContext.getEndpoint("mock:error", MockEndpoint.class);
       mockError.expectedMessageCount(1);
-      
+
       camelContext.getRouteController().stopRoute("document-processing");
       AdviceWith.adviceWith(camelContext, "document-processing", advice -> {
         advice.weaveByToString(".*direct:validation-error-handler.*")
             .replace().to("mock:error");
       });
       camelContext.getRouteController().startRoute("document-processing");
-      
+
       // Mock validator bean to throw exception
       when(documentValidator.validate(any())).thenThrow(new ValidationException("Invalid document"));
-      
+
       // ACT
       producerTemplate.sendBody("direct:process-document", testPayload);
-      
+
       // ASSERT
       mockError.assertIsSatisfied(5000);
-      
+
       Exception exception = mockError.getExchanges().get(0).getException();
       assertThat(exception).isInstanceOf(ValidationException.class);
       assertThat(exception.getMessage()).contains("Invalid document");
@@ -295,13 +295,13 @@ class EventServiceTest {
 
   @Mock
   private EventRepository eventRepository;
-  
+
   @Mock
   private ObjectMapper objectMapper;
-  
+
   @InjectMocks
   private EventService eventService;
-  
+
   private BusinessRulesPayload testPayload;
 
   @BeforeEach
@@ -314,19 +314,19 @@ class EventServiceTest {
   @Nested
   @DisplayName("Tests for createSuccessEvent")
   class CreateSuccessEvent {
-    
+
     @Test
     @DisplayName("Should create success event with correct attributes")
     void givenValidPayload_whenCreateSuccessEvent_thenEventPersisted() throws Exception {
       // ARRANGE
       when(objectMapper.writeValueAsString(testPayload)).thenReturn("{\"documentId\":1}");
-      
+
       // ACT
-      assertDoesNotThrow(() -> 
+      assertDoesNotThrow(() ->
           eventService.createSuccessEvent(testPayload, "DOCUMENT_PROCESSED"));
-      
+
       // ASSERT
-      verify(eventRepository).persist(argThat(event -> 
+      verify(eventRepository).persist(argThat(event ->
           event.getType().equals("DOCUMENT_PROCESSED") &&
           event.getStatus() == EventStatus.SUCCESS &&
           event.getPayload().equals("{\"documentId\":1}") &&
@@ -339,13 +339,13 @@ class EventServiceTest {
     void givenNullPayload_whenCreateSuccessEvent_thenThrowsException() {
       // ARRANGE
       Object nullPayload = null;
-      
+
       // ACT & ASSERT
       NullPointerException exception = assertThrows(
           NullPointerException.class,
           () -> eventService.createSuccessEvent(nullPayload, "EVENT_TYPE")
       );
-      
+
       assertThat(exception.getMessage()).isEqualTo("Payload cannot be null");
       verify(eventRepository, never()).persist(any());
     }
@@ -354,20 +354,20 @@ class EventServiceTest {
   @Nested
   @DisplayName("Tests for createErrorEvent")
   class CreateErrorEvent {
-    
+
     @Test
     @DisplayName("Should create error event with error message")
     void givenError_whenCreateErrorEvent_thenEventPersistedWithMessage() throws Exception {
       // ARRANGE
       String errorMessage = "Processing failed";
       when(objectMapper.writeValueAsString(testPayload)).thenReturn("{\"documentId\":1}");
-      
+
       // ACT
-      assertDoesNotThrow(() -> 
+      assertDoesNotThrow(() ->
           eventService.createErrorEvent(testPayload, "PROCESSING_ERROR", errorMessage));
-      
+
       // ASSERT
-      verify(eventRepository).persist(argThat(event -> 
+      verify(eventRepository).persist(argThat(event ->
           event.getType().equals("PROCESSING_ERROR") &&
           event.getStatus() == EventStatus.ERROR &&
           event.getErrorMessage().equals(errorMessage) &&
@@ -384,7 +384,7 @@ class EventServiceTest {
           IllegalArgumentException.class,
           () -> eventService.createErrorEvent(testPayload, "ERROR", blankMessage)
       );
-      
+
       assertThat(exception.getMessage()).contains("Error message cannot be blank");
     }
   }
@@ -400,13 +400,13 @@ class FileStorageServiceTest {
 
   @Mock
   private S3Client s3Client;
-  
+
   @Mock
   private ExecutorService executorService;
-  
+
   @InjectMocks
   private FileStorageService fileStorageService;
-  
+
   private InputStream testInputStream;
   private LogContext testLogContext;
 
@@ -421,7 +421,7 @@ class FileStorageServiceTest {
   @Nested
   @DisplayName("Tests for uploadOriginalFile")
   class UploadOriginalFile {
-    
+
     @Test
     @DisplayName("Should successfully upload file and return document info")
     void givenValidFile_whenUpload_thenReturnsDocumentInfo() throws Exception {
@@ -430,23 +430,23 @@ class FileStorageServiceTest {
         ((Runnable) invocation.getArgument(0)).run();
         return null;
       }).when(executorService).execute(any(Runnable.class));
-      
+
       when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
           .thenReturn(PutObjectResponse.builder().build());
-      
+
       // ACT
-      CompletableFuture<StoredDocumentInfo> future = 
-          fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      CompletableFuture<StoredDocumentInfo> future =
+          fileStorageService.uploadOriginalFile(testInputStream, 1024L,
               testLogContext, InvoiceFormat.UBL);
-      
+
       StoredDocumentInfo result = future.join();
-      
+
       // ASSERT
       assertThat(result).isNotNull();
       assertThat(result.getPath()).isNotBlank();
       assertThat(result.getSize()).isEqualTo(1024L);
       assertThat(result.getUploadedAt()).isNotNull();
-      
+
       verify(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
 
@@ -458,15 +458,15 @@ class FileStorageServiceTest {
         ((Runnable) invocation.getArgument(0)).run();
         return null;
       }).when(executorService).execute(any(Runnable.class));
-      
+
       when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
           .thenThrow(new StorageException("S3 unavailable"));
-      
+
       // ACT
-      CompletableFuture<StoredDocumentInfo> future = 
-          fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      CompletableFuture<StoredDocumentInfo> future =
+          fileStorageService.uploadOriginalFile(testInputStream, 1024L,
               testLogContext, InvoiceFormat.UBL);
-      
+
       // ASSERT
       assertThatThrownBy(() -> future.join())
           .isInstanceOf(CompletionException.class)
@@ -479,17 +479,17 @@ class FileStorageServiceTest {
     void givenLogContext_whenUpload_thenContextPropagated() throws Exception {
       // ARRANGE
       AtomicReference<LogContext> capturedContext = new AtomicReference<>();
-      
+
       doAnswer(invocation -> {
         capturedContext.set(CustomLog.getCurrentContext());
         ((Runnable) invocation.getArgument(0)).run();
         return null;
       }).when(executorService).execute(any(Runnable.class));
-      
+
       // ACT
-      fileStorageService.uploadOriginalFile(testInputStream, 1024L, 
+      fileStorageService.uploadOriginalFile(testInputStream, 1024L,
           testLogContext, InvoiceFormat.UBL).join();
-      
+
       // ASSERT
       assertThat(capturedContext.get()).isNotNull();
       assertThat(capturedContext.get().get("traceId")).isEqualTo("trace-123");
@@ -641,7 +641,7 @@ class DocumentIntegrationTest {
         <goal>prepare-agent</goal>
       </goals>
     </execution>
-    
+
     <!-- Generate coverage report -->
     <execution>
       <id>report</id>
@@ -650,7 +650,7 @@ class DocumentIntegrationTest {
         <goal>report</goal>
       </goals>
     </execution>
-    
+
     <!-- Enforce coverage thresholds -->
     <execution>
       <id>check</id>
@@ -705,14 +705,14 @@ mvn jacoco:check
         <artifactId>quarkus-junit5-mockito</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- Mockito -->
     <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- AssertJ (preferred over JUnit assertions) -->
     <dependency>
         <groupId>org.assertj</groupId>
@@ -720,14 +720,14 @@ mvn jacoco:check
         <version>3.24.2</version>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- REST Assured -->
     <dependency>
         <groupId>io.rest-assured</groupId>
         <artifactId>rest-assured</artifactId>
         <scope>test</scope>
     </dependency>
-    
+
     <!-- Camel Testing -->
     <dependency>
         <groupId>org.apache.camel.quarkus</groupId>

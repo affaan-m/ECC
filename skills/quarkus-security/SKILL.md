@@ -28,7 +28,7 @@ Best practices for securing Quarkus applications with authentication, authorizat
 @Path("/api/protected")
 @Authenticated
 public class ProtectedResource {
-  
+
   @Inject
   JsonWebToken jwt;
 
@@ -65,20 +65,20 @@ quarkus.oidc.credentials.secret=${OIDC_SECRET}
 @Provider
 @Priority(Priorities.AUTHENTICATION)
 public class CustomAuthFilter implements ContainerRequestFilter {
-  
+
   @Inject
   SecurityIdentity identity;
 
   @Override
   public void filter(ContainerRequestContext requestContext) {
     String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
-    
+
     // Reject immediately if header is absent or malformed
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
       return;
     }
-    
+
     String token = authHeader.substring(7);
     if (!validateToken(token)) {
       requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
@@ -100,7 +100,7 @@ public class CustomAuthFilter implements ContainerRequestFilter {
 @Path("/api/admin")
 @RolesAllowed("ADMIN")
 public class AdminResource {
-  
+
   @GET
   @Path("/users")
   public List<UserDto> listUsers() {
@@ -118,7 +118,7 @@ public class AdminResource {
 
 @Path("/api/users")
 public class UserResource {
-  
+
   @Inject
   SecurityIdentity securityIdentity;
 
@@ -127,7 +127,7 @@ public class UserResource {
   @RolesAllowed("USER")
   public Response getUser(@PathParam("id") Long id) {
     // Check ownership
-    if (!securityIdentity.hasRole("ADMIN") && 
+    if (!securityIdentity.hasRole("ADMIN") &&
         !isOwner(id, securityIdentity.getPrincipal().getName())) {
       return Response.status(Response.Status.FORBIDDEN).build();
     }
@@ -145,7 +145,7 @@ public class UserResource {
 ```java
 @ApplicationScoped
 public class SecurityService {
-  
+
   @Inject
   SecurityIdentity securityIdentity;
 
@@ -153,7 +153,7 @@ public class SecurityService {
     if (securityIdentity.isAnonymous()) {
       return false;
     }
-    
+
     if (securityIdentity.hasRole("ADMIN")) {
       return true;
     }
@@ -229,7 +229,7 @@ List<User> users = User.list("email = ?1 and active = ?2", email, true);
 Optional<User> user = User.find("username", username).firstResultOptional();
 
 // GOOD: Named parameters
-List<User> users = User.list("email = :email and age > :minAge", 
+List<User> users = User.list("email = :email and age > :minAge",
     Parameters.with("email", email).and("minAge", 18));
 ```
 
@@ -256,7 +256,7 @@ public class User extends PanacheEntity {
 ```java
 @ApplicationScoped
 public class PasswordService {
-  
+
   public String hash(String plainPassword) {
     return BcryptUtil.bcryptHash(plainPassword);
   }
@@ -324,7 +324,7 @@ quarkus.vault.authentication.kubernetes.role=my-role
 ```java
 @ApplicationScoped
 public class SecretService {
-  
+
   @ConfigProperty(name = "api-key")
   String apiKey; // Fetched from Vault
 
@@ -351,7 +351,7 @@ public class RateLimitFilter implements ContainerRequestFilter {
   @Override
   public void filter(ContainerRequestContext requestContext) {
     String clientId = getClientIdentifier();
-    RateLimiter limiter = limiters.computeIfAbsent(clientId, 
+    RateLimiter limiter = limiters.computeIfAbsent(clientId,
         k -> RateLimiter.create(100.0)); // 100 requests per second
 
     if (!limiter.tryAcquire()) {
@@ -377,25 +377,25 @@ public class RateLimitFilter implements ContainerRequestFilter {
 ```java
 @Provider
 public class SecurityHeadersFilter implements ContainerResponseFilter {
-  
+
   @Override
   public void filter(ContainerRequestContext request, ContainerResponseContext response) {
     MultivaluedMap<String, Object> headers = response.getHeaders();
-    
+
     // Prevent clickjacking
     headers.putSingle("X-Frame-Options", "DENY");
-    
+
     // XSS protection
     headers.putSingle("X-Content-Type-Options", "nosniff");
     headers.putSingle("X-XSS-Protection", "1; mode=block");
-    
+
     // HSTS
     headers.putSingle("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    
+
     // CSP — avoid 'unsafe-inline' for script-src as it negates XSS protection;
     // use nonces or hashes instead. 'unsafe-inline' for style-src is acceptable
     // when CSS frameworks require it, but prefer nonces where possible.
-    headers.putSingle("Content-Security-Policy", 
+    headers.putSingle("Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'");
   }
 }
@@ -412,11 +412,11 @@ public class AuditService {
   SecurityIdentity securityIdentity;
 
   public void logAccess(String resource, String action) {
-    String user = securityIdentity.isAnonymous() 
-        ? "anonymous" 
+    String user = securityIdentity.isAnonymous()
+        ? "anonymous"
         : securityIdentity.getPrincipal().getName();
-    
-    LOG.infof("AUDIT: user=%s action=%s resource=%s timestamp=%s", 
+
+    LOG.infof("AUDIT: user=%s action=%s resource=%s timestamp=%s",
         user, action, resource, Instant.now());
   }
 }

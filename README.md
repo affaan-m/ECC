@@ -123,7 +123,7 @@ This repo is the raw code only. The guides explain everything.
 ### v2.0.0-rc.1 — Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
 
 - **Dashboard GUI** — New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
-- **Public surface synced to the live repo** — metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 63 agents, 251 skills, and 79 legacy command shims.
+- **Public surface synced to the live repo** — metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 64 agents, 255 skills, and 79 legacy command shims.
 - **Operator and outbound workflow expansion** — `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
 - **Media and launch tooling** — `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
 - **Framework and product surface growth** — `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond Claude Code alone.
@@ -394,7 +394,7 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 63 agents, 251 skills, and 79 legacy command shims.
+**That's it!** You now have access to 64 agents, 255 skills, and 79 legacy command shims.
 
 ### Dashboard GUI
 
@@ -487,7 +487,6 @@ export ECC_SESSION_RETENTION_DAYS=14
 export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
 ```
 
-
 Windows PowerShell:
 
 ```powershell
@@ -525,7 +524,7 @@ ECC/
 |   |-- plugin.json         # Plugin metadata and component paths
 |   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
 |
-|-- agents/           # 63 specialized subagents for delegation
+|-- agents/           # 64 specialized subagents for delegation
 |   |-- planner.md           # Feature implementation planning
 |   |-- architect.md         # System design decisions
 |   |-- tdd-guide.md         # Test-driven development
@@ -1472,9 +1471,9 @@ The configuration is automatically detected from `.opencode/opencode.json`.
 
 | Feature | Claude Code         | OpenCode | Status |
 |---------|---------------------|----------|--------|
-| Agents | PASS: 63 agents     | PASS: 12 agents | **Claude Code leads** |
+| Agents | PASS: 64 agents     | PASS: 12 agents | **Claude Code leads** |
 | Commands | PASS: 79 commands   | PASS: 35 commands | **Claude Code leads** |
-| Skills | PASS: 251 skills    | PASS: 37 skills | **Claude Code leads** |
+| Skills | PASS: 255 skills    | PASS: 37 skills | **Claude Code leads** |
 | Hooks | PASS: 8 event types | PASS: 11 events | **OpenCode has more!** |
 | Rules | PASS: 29 rules      | PASS: 13 instructions | **Claude Code leads** |
 | MCP Servers | PASS: 14 servers    | PASS: Full | **Full parity** |
@@ -1634,9 +1633,9 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 
 | Feature | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |---------|-----------------------|------------|-----------|----------|----------------|
-| **Agents** | 63                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
+| **Agents** | 64                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 79                    | Shared | Instruction-based | 35 | 6 prompts |
-| **Skills** | 251                   | Shared | 10 (native format) | 37 | Via instructions |
+| **Skills** | 255                   | Shared | 10 (native format) | 37 | Via instructions |
 | **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
 | **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
 | **Rules** | 34 (common + lang)    | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |

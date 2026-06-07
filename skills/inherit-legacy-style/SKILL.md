@@ -71,9 +71,9 @@ Before interrupting the user, evaluate signal strength:
 
 For each strong-signal conflict, present exactly ONE question with 4 options:
 
-> 📄 Evidence: `pathA` uses style X, `pathB` uses style Y
-> ⚠️ Risk: mixing both fractures the project style
-> ❓ Choose: `1` follow X  `2` follow Y  `3` this is evolution, update rules  `4` I have a new rule
+> Evidence: `pathA` uses style X, `pathB` uses style Y
+> WARNING: Risk: mixing both fractures the project style
+> Choose: `1` follow X  `2` follow Y  `3` this is evolution, update rules  `4` I have a new rule
 
 Suspend until the user answers, then proceed to the next conflict. Never stack questions.
 
@@ -89,7 +89,7 @@ Ask the user for enforcement strength (use `AskUserQuestion`):
 | Option | Mechanism |
 |---|---|
 | **1** Soft hook (recommended) | Write `@.ai-style-rules.md` reference into project `CLAUDE.md` |
-| **2** Hard hook | Soft hook + `PreToolUse[Write|Edit|MultiEdit]` Hook in `settings.json` |
+| **2** Hard hook | Soft hook + `PreToolUse[Write\|Edit\|MultiEdit]` Hook in `settings.json` |
 | **3** No hook | Keep the rules file; user references manually |
 
 ### Branch B — Incremental Sniff
@@ -120,12 +120,12 @@ This skill auto-detects whether it's a first-time or incremental run via `.ai-st
 
 ## Anti-Patterns
 
-- ❌ Do NOT skip the scale measurement step — sampling a 30-file project "starves" it; full-scanning a 5,000-file repo blows up
-- ❌ Do NOT stack multiple conflict questions at once — grilling is strictly one-at-a-time
-- ❌ Do NOT overwrite old rules in incremental mode — always append evolution logs
-- ❌ Do NOT default to "hard hook" without asking — enforcement strength is the user's call
-- ❌ Do NOT judge syntax or tech-stack quality — this skill aligns meta-architecture only
-- ❌ Do NOT copy bugs from exemplar files — reuse structure, flag defects
+- FAIL: Do NOT skip the scale measurement step — sampling a 30-file project "starves" it; full-scanning a 5,000-file repo blows up
+- FAIL: Do NOT stack multiple conflict questions at once — grilling is strictly one-at-a-time
+- FAIL: Do NOT overwrite old rules in incremental mode — always append evolution logs
+- FAIL: Do NOT default to "hard hook" without asking — enforcement strength is the user's call
+- FAIL: Do NOT judge syntax or tech-stack quality — this skill aligns meta-architecture only
+- FAIL: Do NOT copy bugs from exemplar files — reuse structure, flag defects
 
 ## Best Practices
 
