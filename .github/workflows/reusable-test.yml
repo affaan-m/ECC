@@ -67,8 +67,9 @@ jobs:
           COREPACK_ENABLE_STRICT: '0'
           npm_config_ignore_scripts: 'true'
           YARN_ENABLE_SCRIPTS: 'false'
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
         run: |
-          case "${{ inputs.package-manager }}" in
+          case "$PACKAGE_MANAGER" in
             npm) npm ci --ignore-scripts ;;
             # pnpm v10 can fail CI on ignored native build scripts
             # (for example msgpackr-extract) even though this repo is Yarn-native
@@ -77,7 +78,7 @@ jobs:
             # Yarn Berry (v4+) removed --ignore-engines; engine checking is no longer a core feature
             yarn) yarn install --mode=skip-build ;;
             bun) bun install --ignore-scripts ;;
-            *) echo "Unsupported package manager: ${{ inputs.package-manager }}" && exit 1 ;;
+            *) echo "Unsupported package manager: $PACKAGE_MANAGER" && exit 1 ;;
           esac
 
       - name: Run tests

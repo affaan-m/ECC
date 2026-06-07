@@ -9,6 +9,43 @@ const { buildControlPaneAction } = require('./actions');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
 
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+// Extract the hostname portion of an HTTP Host header value, stripping any
+// port. Returns null when the header is missing or malformed. Used to gate
+// requests against a local-only allowlist so DNS-rebinding cannot pivot a
+// browser tab into the loopback control-pane API.
+function parseHostHeader(value) {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\[[^\]]+\]|[^:]+)(?::\d+)?$/);
+  if (!match) return null;
+  return match[1].toLowerCase();
+}
+
+function buildAllowedHostnames(configuredHost) {
+  const set = new Set(LOOPBACK_HOSTNAMES);
+  if (configuredHost) set.add(String(configuredHost).toLowerCase());
+  return set;
+}
+
+function isAllowedHostHeader(hostHeader, allowedHostnames) {
+  const hostname = parseHostHeader(hostHeader);
+  if (!hostname) return false;
+  return allowedHostnames.has(hostname);
+}
+
+function isAllowedOrigin(originHeader, allowedHostnames) {
+  if (!originHeader || typeof originHeader !== 'string') return true;
+  try {
+    const url = new URL(originHeader);
+    return allowedHostnames.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function usage() {
   return [
     'Usage:',
@@ -159,9 +196,19 @@ function createControlPaneServer(options = {}) {
     env: options.env || process.env,
   });
   const baseQuery = options.query || '';
+  const allowedHostnames = buildAllowedHostnames(host);
 
   const server = http.createServer(async (req, res) => {
     try {
+      if (!isAllowedHostHeader(req.headers.host, allowedHostnames)) {
+        sendJson(res, 421, { ok: false, error: 'Misdirected request' });
+        return;
+      }
+      if (!isAllowedOrigin(req.headers.origin, allowedHostnames)) {
+        sendJson(res, 403, { ok: false, error: 'Forbidden origin' });
+        return;
+      }
+
       const requestUrl = new URL(req.url, `http://${host}:${port || 0}`);
 
       if (req.method === 'GET' && requestUrl.pathname === '/') {
@@ -280,5 +327,8 @@ module.exports = {
   createControlPaneServer,
   parseArgs,
   runAction,
+  isAllowedHostHeader,
+  isAllowedOrigin,
+  buildAllowedHostnames,
   usage,
 };

@@ -4,6 +4,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
@@ -14,6 +15,9 @@ const {
   createControlPaneServer,
   parseArgs,
   runAction,
+  isAllowedHostHeader,
+  isAllowedOrigin,
+  buildAllowedHostnames,
 } = require('../../scripts/lib/control-pane/server');
 const {
   main: runControlPaneCli,
@@ -321,6 +325,92 @@ async function runTests() {
       }).then(async response => ({ status: response.status, body: await response.json() }));
       assert.strictEqual(invalidBody.status, 500);
       assert.match(invalidBody.body.error, /JSON/);
+    } finally {
+      await app.close();
+    }
+  })) passed++; else failed++;
+
+  if (await test('classifies Host and Origin headers against the loopback allowlist', async () => {
+    const allowed = buildAllowedHostnames('127.0.0.1');
+    assert.strictEqual(isAllowedHostHeader('127.0.0.1:8765', allowed), true);
+    assert.strictEqual(isAllowedHostHeader('localhost:8765', allowed), true);
+    assert.strictEqual(isAllowedHostHeader('LOCALHOST:8765', allowed), true);
+    assert.strictEqual(isAllowedHostHeader('[::1]:8765', allowed), true);
+    assert.strictEqual(isAllowedHostHeader('attacker.example.com:8765', allowed), false);
+    assert.strictEqual(isAllowedHostHeader('rebind.dnsbin.io', allowed), false);
+    assert.strictEqual(isAllowedHostHeader('', allowed), false);
+    assert.strictEqual(isAllowedHostHeader(undefined, allowed), false);
+
+    // Origin is optional; absence is allowed for non-browser clients.
+    assert.strictEqual(isAllowedOrigin(undefined, allowed), true);
+    assert.strictEqual(isAllowedOrigin('', allowed), true);
+    assert.strictEqual(isAllowedOrigin('http://127.0.0.1:8765', allowed), true);
+    assert.strictEqual(isAllowedOrigin('http://localhost', allowed), true);
+    assert.strictEqual(isAllowedOrigin('http://attacker.example.com', allowed), false);
+    assert.strictEqual(isAllowedOrigin('not-a-url', allowed), false);
+
+    // A non-default configured host should still admit loopback variants.
+    const lan = buildAllowedHostnames('192.168.1.10');
+    assert.strictEqual(isAllowedHostHeader('192.168.1.10:8765', lan), true);
+    assert.strictEqual(isAllowedHostHeader('127.0.0.1:8765', lan), true);
+    assert.strictEqual(isAllowedHostHeader('attacker.example.com:8765', lan), false);
+  })) passed++; else failed++;
+
+  if (await test('rejects requests forged with a non-loopback Host header (DNS rebinding gate)', async () => {
+    const app = await createControlPaneServer({
+      host: '127.0.0.1',
+      port: 0,
+      repoRoot: REPO_ROOT,
+      allowActions: true,
+    });
+
+    await app.listen();
+    try {
+      const address = app.server.address();
+      const actualPort = address && typeof address === 'object' ? address.port : 0;
+
+      const sendWithHeaders = (method, pathname, headers, body) =>
+        new Promise((resolve, reject) => {
+          const req = http.request(
+            { host: '127.0.0.1', port: actualPort, method, path: pathname, headers },
+            response => {
+              let chunks = '';
+              response.on('data', chunk => {
+                chunks += chunk.toString('utf8');
+              });
+              response.on('end', () => {
+                resolve({ status: response.statusCode, body: chunks });
+              });
+            }
+          );
+          req.on('error', reject);
+          if (body) req.write(body);
+          req.end();
+        });
+
+      const forgedHost = await sendWithHeaders('GET', '/api/health', { Host: 'attacker.example.com:1234' });
+      assert.strictEqual(forgedHost.status, 421);
+      assert.match(forgedHost.body, /Misdirected request/);
+
+      const forgedActionHost = await sendWithHeaders(
+        'POST',
+        '/api/actions/sync-knowledge',
+        { Host: 'attacker.example.com:1234', 'content-type': 'application/json' },
+        JSON.stringify({ query: 'rebound' })
+      );
+      assert.strictEqual(forgedActionHost.status, 421);
+
+      const forgedOrigin = await sendWithHeaders('GET', '/api/health', {
+        Host: '127.0.0.1:' + actualPort,
+        Origin: 'http://attacker.example.com',
+      });
+      assert.strictEqual(forgedOrigin.status, 403);
+      assert.match(forgedOrigin.body, /Forbidden origin/);
+
+      const okHost = await sendWithHeaders('GET', '/api/health', { Host: '127.0.0.1:' + actualPort });
+      assert.strictEqual(okHost.status, 200);
+      const okBody = JSON.parse(okHost.body);
+      assert.strictEqual(okBody.ok, true);
     } finally {
       await app.close();
     }
