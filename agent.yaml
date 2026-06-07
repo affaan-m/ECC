@@ -201,6 +201,11 @@ commands:
   - multi-frontend
   - multi-plan
   - multi-workflow
+  - orch-add-feature
+  - orch-build-mvp
+  - orch-change-feature
+  - orch-fix-defect
+  - orch-refine-code
   - plan
   - plan-prd
   - pm2

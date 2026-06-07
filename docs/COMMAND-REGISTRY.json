@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 79,
+  "totalCommands": 84,
   "commands": [
     {
       "command": "aside",
@@ -491,6 +491,67 @@
       "path": "commands/multi-workflow.md"
     },
     {
+      "command": "orch-add-feature",
+      "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature"
+      ],
+      "path": "commands/orch-add-feature.md"
+    },
+    {
+      "command": "orch-build-mvp",
+      "description": "Orchestrate bootstrapping a working MVP from a design/spec doc — ingest, slice, scaffold, TDD, review, gated commit (reuses the GAN harness). Wrapper for the orch-build-mvp skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-build-mvp"
+      ],
+      "path": "commands/orch-build-mvp.md"
+    },
+    {
+      "command": "orch-change-feature",
+      "description": "Orchestrate altering an existing, working feature to new desired behavior — update tests to the new spec, change impl, review, gated commit. Wrapper for the orch-change-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-change-feature.md"
+    },
+    {
+      "command": "orch-fix-defect",
+      "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, gated commit. Wrapper for the orch-fix-defect skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-fix-defect.md"
+    },
+    {
+      "command": "orch-refine-code",
+      "description": "Orchestrate a behavior-preserving refactor — confirm tests green, restructure without changing behavior, keep green, review, gated commit. Wrapper for the orch-refine-code skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-change-feature",
+        "orch-fix-defect",
+        "orch-refine-code"
+      ],
+      "path": "commands/orch-refine-code.md"
+    },
+    {
       "command": "plan-prd",
       "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
       "type": "testing",
@@ -864,7 +925,7 @@
     "byType": {
       "build": 2,
       "general": 7,
-      "orchestration": 6,
+      "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
       "review": 9,
@@ -930,6 +991,18 @@
         "count": 3
       },
       {
+        "skill": "orch-add-feature",
+        "count": 3
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 3
+      },
+      {
+        "skill": "orch-fix-defect",
+        "count": 3
+      },
+      {
         "skill": "rust-patterns",
         "count": 3
       },
@@ -939,18 +1012,6 @@
       },
       {
         "skill": "cpp-testing",
-        "count": 2
-      },
-      {
-        "skill": "ecc-guide",
-        "count": 2
-      },
-      {
-        "skill": "golang-patterns",
-        "count": 2
-      },
-      {
-        "skill": "golang-testing",
         "count": 2
       }
     ]
