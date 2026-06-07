@@ -225,6 +225,7 @@ commands:
   - react-review
   - react-test
   - refactor-clean
+  - research
   - resume-session
   - review-pr
   - rust-build
