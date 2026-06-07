@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0a0820" />
+<title>ChemQuest — Trials of the Periodic Realm</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%97%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="bg-grad"></div>
+  <canvas id="bg"></canvas>
+
+  <div class="app" id="app">
+
+    <!-- ============ HOME ============ -->
+    <section class="screen" id="screen-home">
+      <div class="home wrap">
+        <svg class="brand-logo" viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/>
+            </linearGradient>
+          </defs>
+          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="url(#lg1)" stroke-width="3" opacity=".8"/>
+          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="#f472b6" stroke-width="3" opacity=".8" transform="rotate(60 50 50)"/>
+          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="#a3e635" stroke-width="3" opacity=".8" transform="rotate(120 50 50)"/>
+          <circle cx="50" cy="50" r="9" fill="url(#lg1)"/>
+        </svg>
+        <h1 class="title">ChemQuest</h1>
+        <p class="tagline">Trials of the Periodic Realm</p>
+
+        <div class="pstrip card" id="home-pstrip"></div>
+
+        <div class="home-actions">
+          <button class="btn primary lg" id="btn-adventure">⚗️ &nbsp;Adventure</button>
+          <button class="btn" id="btn-review">🧪 Review Lab</button>
+          <button class="btn" id="btn-endless">☄️ Endless</button>
+          <button class="btn ghost" id="btn-lab">⚙️ Lab &amp; Stats</button>
+          <button class="btn ghost" id="btn-how">📖 How to play</button>
+        </div>
+
+        <p class="home-foot">
+          A turn-based study RPG built on real learning science — <b>active recall</b>,
+          <b>spaced repetition</b>, <b>interleaving</b> &amp; <b>instant feedback</b>.
+          Based on the IB Chemistry guide (Structure 1–3 &amp; Reactivity 1–2).
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ MAP ============ -->
+    <section class="screen" id="screen-map">
+      <div class="wrap">
+        <div class="topbar">
+          <button class="iconbtn" data-home>‹</button>
+          <div class="grow map-head" style="text-align:left">
+            <h2>World Map</h2>
+          </div>
+          <div class="mini-xp">
+            <span class="lvpill" id="map-lv">Lv 1</span>
+            <div class="xpbar" style="width:120px"><i id="map-xp"></i></div>
+          </div>
+        </div>
+        <div class="map-head">
+          <p>Restore order to the Periodic Realm — clear each region to unlock the next. Bosses appear at the end of every theme.</p>
+        </div>
+        <div id="map-zones"></div>
+      </div>
+    </section>
+
+    <!-- ============ BATTLE ============ -->
+    <section class="screen" id="screen-battle">
+      <div class="battle" id="battle-root">
+        <div class="topbar">
+          <button class="iconbtn" id="battle-quit">‹</button>
+          <div class="grow"><h2 id="battle-title">Battle</h2></div>
+          <div class="mini-xp">
+            <span class="lvpill" id="battle-lv">Lv 1</span>
+            <div class="xpbar" style="width:110px"><i id="battle-xp"></i></div>
+          </div>
+        </div>
+
+        <!-- enemy -->
+        <div class="enemy-zone">
+          <div class="combatant enemy">
+            <div class="sprite idle" id="enemy-sprite"></div>
+            <div class="hpcol">
+              <div class="hp-name"><b id="enemy-name">Enemy</b><span class="lvtag" id="enemy-sub"></span></div>
+              <div class="hpbar" id="enemy-hpbar"><i></i><div class="shine"></div></div>
+              <div class="hp-num" id="enemy-hpnum"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- player -->
+        <div class="player-zone">
+          <div class="combatant">
+            <div class="sprite idle" id="player-sprite"></div>
+            <div class="hpcol">
+              <div class="hp-name"><b id="player-name">You</b><span class="lvtag" id="player-sub"></span></div>
+              <div class="hpbar" id="player-hpbar"><i></i><div class="shine"></div></div>
+              <div class="hp-num" id="player-hpnum"></div>
+            </div>
+          </div>
+          <div class="combo-wrap"><span class="combo" id="combo"></span></div>
+        </div>
+
+        <!-- question / feedback -->
+        <div class="qpanel" id="qpanel"></div>
+
+        <!-- banner -->
+        <div class="banner" id="banner">
+          <div class="big" id="banner-big"></div>
+          <div class="rewards" id="banner-rewards"></div>
+          <div id="banner-actions" style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LAB / STATS ============ -->
+    <section class="screen" id="screen-lab">
+      <div class="wrap">
+        <div class="topbar">
+          <button class="iconbtn" data-home>‹</button>
+          <div class="grow"><h2>Lab &amp; Stats</h2></div>
+        </div>
+        <div id="lab-content"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <canvas id="fx"></canvas>
+  <div class="levelup" id="levelup">⭐ Level Up!</div>
+  <div class="modal-bg" id="modal"><div class="modal card" id="modal-inner"></div></div>
+
+  <script src="data.js"></script>
+  <script src="engine.js"></script>
+</body>
+</html>

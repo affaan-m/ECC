@@ -17,6 +17,7 @@ const ignoredDirs = new Set([
   '.venv',
   'coverage',
   'venv',
+  'ib-chem-game', // standalone browser study-game app (uses emoji in UI)
 ]);
 
 const textExtensions = new Set([
