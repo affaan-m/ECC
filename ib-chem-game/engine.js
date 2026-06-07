@@ -396,7 +396,7 @@
 
   function startBattle(opts) {
     const pool = buildPool(opts);
-    if (!pool.length) { toast("No topics enabled — turn some on in the Lab ⚙️"); return; }
+    if (!pool.length) { toast("No topics enabled — turn some on in the Lab ⚙"); return; }
     const boss = opts.mode === "boss";
     const endless = opts.mode === "endless";
     const review = opts.mode === "review";
@@ -756,7 +756,7 @@
         </div>
       </div>
 
-      <div class="section-title">⚙️ Settings</div>
+      <div class="section-title">⚙ Settings</div>
       <div class="card">
         ${setRow("sound", "Sound effects", "Beeps, hits & fanfares")}
         ${setRow("motion", "Animations", "Particles & motion (off = calmer / faster)")}
@@ -770,7 +770,7 @@
       </div>
       <div class="card" style="padding:14px; margin-top:10px">${topicGroups}</div>
 
-      <div class="section-title">⚠️ Danger zone</div>
+      <div class="section-title">⚠ Danger zone</div>
       <div class="card" style="padding:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap">
         <div class="rt" style="flex:1; min-width:200px"><b>Reset all progress</b><br><small class="muted">Wipes level, XP and memory data. Cannot be undone.</small></div>
         <button class="btn" id="btn-reset" style="border-color:rgba(251,113,133,.5); color:var(--red)">Reset</button>
@@ -815,7 +815,7 @@
   }
 
   function howToModal() {
-    modal(`<h2>⚗️ How to play</h2>
+    modal(`<h2>⚗ How to play</h2>
       <p style="text-align:left">
         <b>The story.</b> Entropy is unravelling the Periodic Realm. You and your mole
         companion <b>${esc(S.player.name)}</b> travel region to region, restoring order by

@@ -521,7 +521,7 @@ window.CHEM_DATA = {
     },
     {
       id: "r1_3", code: "1.3", theme: "Reactivity 1", region: "The Combustion Wastes",
-      title: "Energy from Fuels", sym: "🔥", hue: 20, hl: false, on: true,
+      title: "Energy from Fuels", sym: "FIRE", hue: 20, hl: false, on: true,
       blurb: "Complete/incomplete combustion, fossil fuels, CO₂, biofuels.",
       q: [
         { d:2, q:"Complete combustion of a hydrocarbon produces…",
