@@ -1,23 +1,32 @@
-# ⚗️ ChemQuest — Trials of the Periodic Realm
+# ⚔️ ChemQuest — Trials of the Periodic Realm
 
-A turn-based study **RPG** for revising **Year 1 IB Chemistry**. You and your
-mole companion battle Entropy monsters across the Periodic Realm by recalling
-chemistry. Get an answer right and you strike; get it wrong and the monster
-strikes back — but you always get an explanation, so every mistake becomes
-learning.
+A turn-based, **medieval-fantasy study RPG** for revising **Year 1 IB
+Chemistry**. You and your familiar ride hold to hold across the Periodic Realm,
+freeing keeps from the blight of Entropy by recalling chemistry. Answer right and
+you strike the beast; answer wrong and it strikes back — but you always get an
+explanation, so every mistake becomes learning.
+
+It's set in a candlelit-keep world (think Skyrim / Witcher holds), with its own
+**generated medieval lute music**, themed foes (Bond Wyrms, Periodic Gargoyles,
+Cinder Imps…), and **two ways to answer**: multiple choice or **written recall**
+(type answers from memory).
 
 Built on the official IB Chemistry guide (2023 syllabus, first exams 2025),
 covering **Structure 1–3** and **Reactivity 1–2**.
 
+> **🆕 Never opened it before?** See **[HOW-TO-OPEN-MAC.md](HOW-TO-OPEN-MAC.md)**
+> for dead-simple, click-by-click instructions for macOS (no coding needed).
+
 ## ▶️ How to play
 
 1. Open **`index.html`** in any modern browser (double-click it — no install,
-   no internet needed).
-2. Name your companion, then hit **Adventure**.
-3. Each turn, pick the answer. Build a **combo** for bigger hits, answer fast
+   no internet needed). On a Mac, see the guide linked above.
+2. Name your familiar, then hit **Adventure**.
+3. Each turn, answer the riddle. Build a **combo** for bigger hits, answer fast
    for bonus damage, and **level up** as you go.
-4. Clear every region in a theme to unlock its **Boss** — a mixed trial of the
+4. Clear every hold in a realm to unlock its **Warden** — a mixed trial of the
    whole theme.
+5. Tap the **🎵 note** (bottom-left corner) anytime to toggle the lute music.
 
 Your progress saves automatically in the browser.
 
@@ -31,8 +40,9 @@ Every mechanic maps to a research-backed study method:
 | In the game | The method | Why it works |
 |-------------|------------|--------------|
 | Every turn asks you to produce an answer | **Active recall / retrieval practice** | Retrieving beats re-reading for long-term memory |
+| **Written recall** mode: type the answer from memory | **Free recall** (the strongest retrieval) | Generating without cues builds the most durable memory |
 | Missed questions come back sooner | **Spaced repetition** (Leitner boxes) | Re-testing at the right time fights forgetting |
-| Boss battles mix a whole theme together | **Interleaving** | Mixing topics improves discrimination and transfer |
+| Warden battles mix a whole theme together | **Interleaving** | Mixing topics improves discrimination and transfer |
 | An explanation after **every** answer | **Elaborative feedback** | Turns errors into understanding immediately |
 | XP is earned only by recalling correctly | **Testing effect + motivation** | Ties the dopamine to actual learning, not clicking |
 | **Review Lab** drills your weakest cards | **Targeted spaced practice** | Spends your time where memory is weakest |
@@ -54,29 +64,37 @@ explanation (`e`). Instructions are at the top of the file.
 
 | File | What it is |
 |------|------------|
-| `index.html` | The app shell — open this to play |
-| `styles.css` | All styling (neon alchemy-lab theme) |
-| `engine.js` | Game engine: battles, leveling, spaced-repetition scheduling, effects |
+| `index.html` | The app shell — **open this to play** |
+| `styles.css` | All styling (medieval candlelit-keep theme) |
+| `engine.js` | Game engine: battles, leveling, spaced-repetition, lute music, effects |
 | `data.js` | The question bank — **edit this to change content** |
+| `HOW-TO-OPEN-MAC.md` | Click-by-click opening guide for macOS |
 
-## 🎮 Modes
+## 🎮 Modes & options
 
-- **Adventure** — work through the syllabus region by region, with bosses.
-- **Endless** — survive escalating waves of mixed questions.
+- **Adventure** — ride through the syllabus hold by hold, with Warden bosses.
+- **Endless Siege** — survive escalating waves of mixed foes.
 - **Review Lab** — a focused drill of the cards you most need to revise.
+- **Written recall** *(toggle in Lab & Stats)* — type your answers from memory
+  instead of picking from four options. Forgiving spell-check + a **🗝 Hint**
+  button, and an honest "I had it / I missed it" check for longer answers.
+- **Lute music** *(toggle the 🎵 corner button, or in Lab & Stats)* — generated
+  medieval background music; chill-tavern vibes.
 
 ## ♿ Accessibility
 
-- Keyboard play: keys **1–4** choose answers, **Enter/Space** continues.
+- Keyboard play: keys **1–4** choose answers, **Enter** submits a typed answer,
+  **Enter/Space** continues.
 - **Relaxed mode**: turn the timer off in settings.
 - **Reduced motion**: animations can be switched off (and respect the OS
   `prefers-reduced-motion` setting).
-- Sound effects can be muted.
+- Sound effects and music can each be muted independently.
 
 ## 🧪 Tech notes
 
 Plain HTML/CSS/JavaScript — no build step, no dependencies, no network calls.
-Sound is generated with the Web Audio API and graphics are inline SVG and
-`<canvas>`, so the whole thing runs from a single folder, even offline.
+**All sound *and* the medieval music are generated live with the Web Audio API**
+(no audio files), and graphics are inline SVG and `<canvas>`, so the whole thing
+runs from a single folder, even fully offline.
 
-Good luck, alchemist. 🔬
+Good luck, adventurer. ⚔️

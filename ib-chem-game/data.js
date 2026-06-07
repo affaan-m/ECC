@@ -32,7 +32,7 @@ window.CHEM_DATA = {
   zones: [
     /* ===================== STRUCTURE 1 ===================== */
     {
-      id: "s1_1", code: "1.1", theme: "Structure 1", region: "The Shifting Sands",
+      id: "s1_1", code: "1.1", theme: "Structure 1", region: "Dustmere Hollow",
       title: "Particulate Nature of Matter", sym: "H", hue: 188, hl: false, on: true,
       blurb: "Elements, compounds & mixtures, states of matter, kinetic theory.",
       q: [
@@ -74,7 +74,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s1_2", code: "1.2", theme: "Structure 1", region: "The Nuclear Forge",
+      id: "s1_2", code: "1.2", theme: "Structure 1", region: "Emberforge Keep",
       title: "The Nuclear Atom", sym: "U", hue: 38, hl: false, on: true,
       blurb: "Subatomic particles, atomic & mass number, isotopes, ions.",
       q: [
@@ -116,7 +116,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s1_3", code: "1.3", theme: "Structure 1", region: "The Spectral Heights",
+      id: "s1_3", code: "1.3", theme: "Structure 1", region: "Highspire Watch",
       title: "Electron Configurations", sym: "Ne", hue: 280, hl: false, on: true,
       blurb: "Emission spectra, energy levels, orbitals, Aufbau, Hund, Pauli.",
       q: [
@@ -158,7 +158,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s1_4", code: "1.4", theme: "Structure 1", region: "The Counting House",
+      id: "s1_4", code: "1.4", theme: "Structure 1", region: "Tallowmere Market",
       title: "Counting Particles: The Mole", sym: "C", hue: 140, hl: false, on: true,
       blurb: "The mole, Avogadro constant, molar mass, formulas, concentration.",
       q: [
@@ -200,7 +200,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s1_5", code: "1.5", theme: "Structure 1", region: "The Pressure Vaults",
+      id: "s1_5", code: "1.5", theme: "Structure 1", region: "Windward Bastion",
       title: "Ideal Gases", sym: "He", hue: 205, hl: false, on: true,
       blurb: "Ideal gas assumptions, deviations, molar volume, PV = nRT.",
       q: [
@@ -238,7 +238,7 @@ window.CHEM_DATA = {
 
     /* ===================== STRUCTURE 2 ===================== */
     {
-      id: "s2_1", code: "2.1", theme: "Structure 2", region: "The Lattice Citadel",
+      id: "s2_1", code: "2.1", theme: "Structure 2", region: "Saltcrag Citadel",
       title: "The Ionic Model", sym: "Na", hue: 25, hl: false, on: true,
       blurb: "Ions, ionic bonding, formulas & naming, lattices, properties.",
       q: [
@@ -275,7 +275,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s2_2", code: "2.2", theme: "Structure 2", region: "The Covalent Expanse",
+      id: "s2_2", code: "2.2", theme: "Structure 2", region: "Thornwood Reach",
       title: "The Covalent Model", sym: "O", hue: 215, hl: false, on: true,
       blurb: "Covalent bonds, Lewis, VSEPR shapes, polarity, IMFs, network solids.",
       q: [
@@ -318,7 +318,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s2_3", code: "2.3", theme: "Structure 2", region: "The Iron Bastion",
+      id: "s2_3", code: "2.3", theme: "Structure 2", region: "Ironhold Bastion",
       title: "The Metallic Model", sym: "Fe", hue: 210, hl: false, on: true,
       blurb: "Metallic bonding, conductivity, malleability, bond strength.",
       q: [
@@ -349,7 +349,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s2_4", code: "2.4", theme: "Structure 2", region: "The Materials Foundry",
+      id: "s2_4", code: "2.4", theme: "Structure 2", region: "Forgefall Foundry",
       title: "From Models to Materials", sym: "Si", hue: 170, hl: false, on: true,
       blurb: "Bonding continuum / triangle, alloys, polymers.",
       q: [
@@ -382,7 +382,7 @@ window.CHEM_DATA = {
 
     /* ===================== STRUCTURE 3 ===================== */
     {
-      id: "s3_1", code: "3.1", theme: "Structure 3", region: "The Grand Periodic Hall",
+      id: "s3_1", code: "3.1", theme: "Structure 3", region: "Highcourt Hall",
       title: "The Periodic Table", sym: "Pt", hue: 320, hl: false, on: true,
       blurb: "Periods, groups, blocks, periodic trends, group 1 & 17, oxides.",
       q: [
@@ -419,7 +419,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "s3_2", code: "3.2", theme: "Structure 3", region: "The Carbon Labyrinth",
+      id: "s3_2", code: "3.2", theme: "Structure 3", region: "Blackbriar Labyrinth",
       title: "Organic: Functional Groups", sym: "Cₙ", hue: 95, hl: false, on: true,
       blurb: "Homologous series, naming, functional groups, isomers.",
       q: [
@@ -457,7 +457,7 @@ window.CHEM_DATA = {
 
     /* ===================== REACTIVITY 1 ===================== */
     {
-      id: "r1_1", code: "1.1", theme: "Reactivity 1", region: "The Ember Crucible",
+      id: "r1_1", code: "1.1", theme: "Reactivity 1", region: "Ashen Crucible",
       title: "Measuring Enthalpy Changes", sym: "ΔH", hue: 12, hl: false, on: true,
       blurb: "Heat vs temperature, endo/exothermic, energy profiles, q = mcΔT.",
       q: [
@@ -495,7 +495,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "r1_2", code: "1.2", theme: "Reactivity 1", region: "The Cycle Sanctum",
+      id: "r1_2", code: "1.2", theme: "Reactivity 1", region: "Everturn Sanctum",
       title: "Energy Cycles & Bond Enthalpies", sym: "Hₛ", hue: 50, hl: false, on: true,
       blurb: "Bond breaking/making, Hess's law, enthalpy cycles.",
       q: [
@@ -520,7 +520,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "r1_3", code: "1.3", theme: "Reactivity 1", region: "The Combustion Wastes",
+      id: "r1_3", code: "1.3", theme: "Reactivity 1", region: "The Scorched Marches",
       title: "Energy from Fuels", sym: "FIRE", hue: 20, hl: false, on: true,
       blurb: "Complete/incomplete combustion, fossil fuels, CO₂, biofuels.",
       q: [
@@ -551,7 +551,7 @@ window.CHEM_DATA = {
 
     /* ===================== REACTIVITY 2 ===================== */
     {
-      id: "r2_1", code: "2.1", theme: "Reactivity 2", region: "The Stoichiometry Bazaar",
+      id: "r2_1", code: "2.1", theme: "Reactivity 2", region: "Tradeford Crossing",
       title: "The Amount of Chemical Change", sym: "Σ", hue: 330, hl: false, on: true,
       blurb: "Equations, mole ratios, limiting reactant, yield, atom economy.",
       q: [
@@ -586,7 +586,7 @@ window.CHEM_DATA = {
       ]
     },
     {
-      id: "r2_2", code: "2.2", theme: "Reactivity 2", region: "The Kinetic Storm",
+      id: "r2_2", code: "2.2", theme: "Reactivity 2", region: "Stormgate Pass",
       title: "How Fast? The Rate of Change", sym: "vₜ", hue: 75, hl: false, on: true,
       blurb: "Rate, collision theory, factors, activation energy, catalysts.",
       q: [

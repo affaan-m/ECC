@@ -22,19 +22,26 @@
   const SAVE_KEY = "chemquest.save.v1";
 
   /* -------------------------------------------------- persistence */
+  const DEFAULT_SETTINGS = { sound: true, motion: true, timer: true, music: true, recall: false };
   const defaultState = () => ({
     firstRun: true,
     player: { name: "Avo", level: 1, xp: 0, coins: 0, cleared: {} },
     cards: {},            // cardId -> {box, seen, correct, wrong, due, lastWrong}
-    settings: { sound: true, motion: true, timer: true },
+    settings: Object.assign({}, DEFAULT_SETTINGS),
     topics: {},           // zoneId -> bool override
     stats: { answered: 0, correct: 0 }
   });
 
   let S = load();
   function load() {
-    try { const raw = localStorage.getItem(SAVE_KEY); if (raw) return Object.assign(defaultState(), JSON.parse(raw)); }
-    catch (e) {}
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) {
+        const s = Object.assign(defaultState(), JSON.parse(raw));
+        s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {}); // backfill new toggles
+        return s;
+      }
+    } catch (e) {}
     return defaultState();
   }
   let saveTimer = null;
@@ -136,10 +143,15 @@
   /* ==========================================================================
      AUDIO  (Web Audio, generated — no asset files)
      ========================================================================== */
+  let _audioCtx = null;
+  function getAudioCtx() {
+    if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    return _audioCtx;
+  }
+
   const sfx = (() => {
-    let ctx = null;
     const on = () => S.settings.sound;
-    function ac() { if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } return ctx; }
+    function ac() { return getAudioCtx(); }
     function tone(freq, dur, type, vol, when) {
       if (!on()) return; const c = ac(); if (!c) return;
       const t = c.currentTime + (when || 0);
@@ -164,12 +176,133 @@
   })();
 
   /* ==========================================================================
+     MUSIC — procedural medieval lute (Web Audio, generated — loops, no files)
+     A slow, modal "chill tavern / Skyrim-ish" loop: a low drone, a plucked
+     lute melody wandering through D-Dorian, a soft frame-drum and a little echo.
+     ========================================================================== */
+  const music = (() => {
+    let playing = false, timer = null, bus = null, master = null, delay = null;
+    let step = 0, nextTime = 0, bar = 0, mIdx = 5;
+    const BPM = 72;                         // slow, relaxed tavern tempo
+    const stepDur = (60 / BPM) / 4;         // 16th-note grid
+    // D-Dorian scale (the quintessential medieval/folk mode) across ~2 octaves
+    const SCALE = [146.83, 164.81, 174.61, 196.00, 220.00, 246.94, 261.63, 293.66, 329.63, 349.23, 392.00, 440.00];
+    const DRONE = [73.42, 110.00];          // D2 + A2 open-fifth drone
+
+    function ensureGraph(ac) {
+      if (master) return;
+      master = ac.createGain(); master.gain.value = 0.0001;
+      master.connect(ac.destination);
+      // gentle echo for atmosphere
+      delay = ac.createDelay(1.0); delay.delayTime.value = 0.32;
+      const fb = ac.createGain(); fb.gain.value = 0.24;
+      const wet = ac.createGain(); wet.gain.value = 0.26;
+      delay.connect(fb).connect(delay); delay.connect(wet).connect(master);
+      bus = ac.createGain(); bus.gain.value = 1;
+      bus.connect(master); bus.connect(delay);
+    }
+    function pluck(freq, t, dur, vol) {
+      const ac = getAudioCtx(); if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain(), lp = ac.createBiquadFilter();
+      o.type = "triangle"; o.frequency.value = freq;
+      lp.type = "lowpass"; lp.frequency.value = 2200; lp.Q.value = 0.6;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(lp).connect(g).connect(bus);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    function drone(t, dur) {
+      const ac = getAudioCtx(); if (!ac) return;
+      DRONE.forEach((f, i) => {
+        const o = ac.createOscillator(), g = ac.createGain(), lp = ac.createBiquadFilter();
+        o.type = "sawtooth"; o.frequency.value = f;
+        lp.type = "lowpass"; lp.frequency.value = 520;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.05 - i * 0.015, t + 0.7);
+        g.gain.setValueAtTime(0.05 - i * 0.015, t + dur - 0.7);
+        g.gain.linearRampToValueAtTime(0.0001, t + dur);
+        o.connect(lp).connect(g).connect(master);
+        o.start(t); o.stop(t + dur + 0.1);
+      });
+    }
+    function drum(t, vol) {
+      const ac = getAudioCtx(); if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(115, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.14);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(g).connect(master); o.start(t); o.stop(t + 0.2);
+    }
+    function nextMelodyIdx() {
+      const r = Math.random();
+      const d = r < 0.4 ? 1 : r < 0.8 ? -1 : r < 0.9 ? 2 : -2; // favour stepwise motion
+      mIdx = clamp(mIdx + d, 0, SCALE.length - 1);
+      return mIdx;
+    }
+    function schedStep(s, t) {
+      const inBar = s % 16;
+      if (inBar === 0) { drone(t, stepDur * 16 + 0.2); bar++; }
+      // soft frame-drum: heartbeat on 1 & 3, ghost taps mid-bar
+      if (inBar === 0) drum(t, 0.09);
+      if (inBar === 8) drum(t, 0.07);
+      if (inBar === 6 || inBar === 14) drum(t, 0.03);
+      // plucked lute melody on a gentle, breathing pattern
+      if ([0, 3, 6, 8, 11, 12, 14].includes(inBar)) {
+        if (Math.random() < 0.18) return;                 // rest for air
+        let idx;
+        if (inBar === 0 && bar % 2 === 0) { mIdx = Math.random() < 0.6 ? 0 : 7; idx = mIdx; } // resolve to root
+        else idx = nextMelodyIdx();
+        const long = (inBar === 0 || inBar === 8);
+        pluck(SCALE[idx], t, long ? 0.9 : 0.5, long ? 0.16 : 0.12);
+        if (Math.random() < 0.25) pluck(SCALE[Math.min(SCALE.length - 1, idx + 4)], t + 0.06, 0.4, 0.06); // harp 5th
+      }
+      // every 4th bar, a small ascending flourish
+      if (bar % 4 === 3 && inBar === 12) {
+        [0, 2, 4, 7].forEach((d, i) => pluck(SCALE[d], t + i * stepDur * 0.5, 0.4, 0.09));
+      }
+    }
+    function loop() {
+      const ac = getAudioCtx(); if (!ac) return;
+      while (nextTime < ac.currentTime + 0.12) { schedStep(step, nextTime); nextTime += stepDur; step++; }
+    }
+    return {
+      start() {
+        if (playing) return;
+        const ac = getAudioCtx(); if (!ac) return;
+        ensureGraph(ac);
+        if (ac.state === "suspended") ac.resume();
+        playing = true;
+        const t = ac.currentTime;
+        master.gain.cancelScheduledValues(t);
+        master.gain.setValueAtTime(Math.max(0.0001, master.gain.value), t);
+        master.gain.exponentialRampToValueAtTime(0.9, t + 1.4);   // fade in
+        step = 0; bar = 0; mIdx = 5; nextTime = t + 0.1;
+        timer = setInterval(loop, 25);
+      },
+      stop() {
+        if (!playing) return;
+        playing = false;
+        clearInterval(timer); timer = null;
+        const ac = getAudioCtx();
+        if (ac && master) {
+          const t = ac.currentTime;
+          master.gain.cancelScheduledValues(t);
+          master.gain.setValueAtTime(Math.max(0.0001, master.gain.value), t);
+          master.gain.exponentialRampToValueAtTime(0.0001, t + 0.5); // fade out
+        }
+      },
+      get playing() { return playing; }
+    };
+  })();
+
+  /* ==========================================================================
      BACKGROUND CANVAS — drifting molecules
      ========================================================================== */
   (function bgCanvas() {
     const cv = $("bg"), ctx = cv.getContext("2d");
     let W, H, nodes = [];
-    const COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#a3e635", "#fbbf24", "#60a5fa"];
+    // warm torchlit embers & dust motes drifting through the keep
+    const COLORS = ["#fbbf24", "#f59e0b", "#ef8a3c", "#d97706", "#facc15", "#b45309"];
     function resize() {
       W = cv.width = innerWidth * devicePixelRatio; H = cv.height = innerHeight * devicePixelRatio;
       cv.style.width = innerWidth + "px"; cv.style.height = innerHeight + "px";
@@ -189,7 +322,7 @@
         if (a.x < 0 || a.x > W) a.vx *= -1; if (a.y < 0 || a.y > H) a.vy *= -1;
         for (let j = i + 1; j < nodes.length; j++) {
           const b = nodes[j], dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy);
-          if (d < link) { ctx.globalAlpha = (1 - d / link) * 0.14; ctx.strokeStyle = "#9fb6ff"; ctx.lineWidth = devicePixelRatio; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+          if (d < link) { ctx.globalAlpha = (1 - d / link) * 0.10; ctx.strokeStyle = "#c79a5b"; ctx.lineWidth = devicePixelRatio; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
         }
       }
       for (const a of nodes) {
@@ -283,12 +416,20 @@
       ${crown}
     </svg>`;
   }
-  // themed enemy name generator
-  const NAME_PRE = ["Void", "Entropy", "Rogue", "Unstable", "Spectral", "Quantum", "Toxic", "Chaotic", "Phantom", "Volatile"];
+  // themed medieval enemy bestiary — fantasy creatures tied to each chem theme
+  const FOE_ADJ = ["Rusted", "Cursed", "Grim", "Wretched", "Ashen", "Spectral", "Molten", "Venomous", "Feral", "Bewitched", "Wandering", "Vile"];
+  const FOE_BY_THEME = {
+    "Structure 1": ["Mote Goblin", "Atom Sprite", "Quark Imp"],
+    "Structure 2": ["Bond Wyrm", "Lattice Golem", "Covalent Knave"],
+    "Structure 3": ["Periodic Gargoyle", "Element Drake", "Ion Banshee"],
+    "Reactivity 1": ["Cinder Imp", "Ember Fiend", "Pyre Hound"],
+    "Reactivity 2": ["Flux Wraith", "Equilibrium Specter", "Rate Revenant"]
+  };
+  const ALL_FOES = Object.keys(FOE_BY_THEME).reduce((a, k) => a.concat(FOE_BY_THEME[k]), []);
   function enemyName(zone, boss) {
-    if (boss) return "⚠ Warden of " + zone.theme;
-    const suff = { "Structure 1": "Particle", "Structure 2": "Bondling", "Structure 3": "Element-wraith", "Reactivity 1": "Pyre", "Reactivity 2": "Flux" }[zone.theme] || "Anomaly";
-    return pick(NAME_PRE) + " " + suff;
+    if (boss) return "⚔ Warden of " + zone.theme;
+    const beasts = FOE_BY_THEME[zone.theme] || ["Entropy Beast"];
+    return pick(FOE_ADJ) + " " + pick(beasts);
   }
 
   /* ==========================================================================
@@ -318,7 +459,7 @@
          <div class="xpbar"><i style="width:${clamp(p.xp / xpNeeded(p.level) * 100, 0, 100)}%"></i></div>
          <div class="xptext">${p.xp} / ${xpNeeded(p.level)} XP</div>
        </div>
-       <div class="coin">★ ${p.coins}</div>`;
+       <div class="coin">🪙 ${p.coins}</div>`;
   }
 
   /* ==========================================================================
@@ -425,9 +566,9 @@
 
   function enemyConfigFor() {
     const b = battle;
-    if (b.mode === "boss") return { hp: 240 + S.player.level * 6, name: "⚠ Warden of " + b.node.theme, boss: true, hue: 350, sym: "☠" };
-    if (b.mode === "endless") { const tier = b.enemiesCleared; return { hp: 90 + tier * 22, name: pick(NAME_PRE) + " Anomaly", boss: false, hue: rand(360), sym: "∞" }; }
-    if (b.mode === "review") return { hp: 9999, name: "Memory Sprite", boss: false, hue: 265, sym: "🧠", endlessReview: true };
+    if (b.mode === "boss") return { hp: 240 + S.player.level * 6, name: "⚔ Warden of " + b.node.theme, boss: true, hue: 350, sym: "☠" };
+    if (b.mode === "endless") { const tier = b.enemiesCleared; return { hp: 90 + tier * 22, name: pick(FOE_ADJ) + " " + pick(ALL_FOES), boss: false, hue: rand(360), sym: "∞" }; }
+    if (b.mode === "review") return { hp: 9999, name: "Memory Wisp", boss: false, hue: 265, sym: "🧠", endlessReview: true };
     const z = b.node.zone; return { hp: 100 + S.player.level * 3, name: enemyName(z, false), boss: false, hue: z.hue, sym: z.sym };
   }
   function spawnEnemy() {
@@ -478,30 +619,50 @@
     const card = ref.card;
     b.askedCount++;
     const z = zoneById(ref.zoneId);
-    const options = shuffle([card.a].concat(card.x));
     const diff = card.d || 1;
-    const keys = ["A", "B", "C", "D"];
 
     const panel = $("qpanel");
-    panel.innerHTML =
+    const meta =
       `<div class="qmeta">
          <span>${z ? esc(z.theme) + " · " + esc(z.title) : ""}</span>
          <span class="diff" title="Difficulty">${[1, 2, 3].map((i) => `<i class="${i <= diff ? "on" : ""}"></i>`).join("")}</span>
        </div>
        ${S.settings.timer ? '<div class="timerbar" id="timerbar"><i></i></div>' : ""}
-       <div class="question card">${esc(card.q)}</div>
-       <div class="answers">
-         ${options.map((o, i) => `<button class="ans" data-opt="${i}"><span class="key">${keys[i]}</span>${esc(o)}</button>`).join("")}
-       </div>`;
+       <div class="question card">${esc(card.q)}</div>`;
 
-    panel.querySelectorAll(".ans").forEach((btn, i) => { btn.onclick = () => answer(options[i], card, btn); });
+    if (S.settings.recall) {
+      // WRITTEN RECALL — type your answer from memory
+      panel.innerHTML = meta +
+        `<form class="recall" id="recall-form" autocomplete="off">
+           <input id="recall-input" type="text" placeholder="Inscribe thy answer…"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+           <div class="recall-row">
+             <button type="button" class="btn ghost recall-hintbtn" id="recall-hint">🗝 Hint</button>
+             <button type="submit" class="btn primary recall-go" id="recall-go">Strike ⚔</button>
+           </div>
+           <div class="recall-tip" id="recall-tip"></div>
+         </form>`;
+      const inp = $("recall-input");
+      $("recall-form").onsubmit = (e) => { e.preventDefault(); answerTyped(inp.value, card); };
+      $("recall-hint").onclick = () => showHint(card);
+      setTimeout(() => inp.focus(), 30);
+    } else {
+      // MULTIPLE CHOICE
+      const options = shuffle([card.a].concat(card.x));
+      const keys = ["A", "B", "C", "D"];
+      panel.innerHTML = meta +
+        `<div class="answers">
+           ${options.map((o, i) => `<button class="ans" data-opt="${i}"><span class="key">${keys[i]}</span>${esc(o)}</button>`).join("")}
+         </div>`;
+      panel.querySelectorAll(".ans").forEach((btn, i) => { btn.onclick = () => answer(options[i], card, btn); });
+    }
 
-    if (S.settings.timer) startTimer(card, options, panel);
+    if (S.settings.timer) startTimer(card, panel);
   }
 
-  function startTimer(card, options, panel) {
+  function startTimer(card, panel) {
     const total = 24000; let left = total;
-    const bar = $("timerbar"); const fill = bar.querySelector("i");
+    const bar = $("timerbar"); if (!bar) return; const fill = bar.querySelector("i");
     battle.timeFrac = 1; battle.tStart = now();
     clearTimer();
     timerInt = setInterval(() => {
@@ -513,9 +674,9 @@
   }
   function timeUp(card, panel) {
     // gentle: counts as a miss, enemy strikes, but you still learn
-    const correctOpt = card.a;
-    const btns = panel.querySelectorAll(".ans");
-    btns.forEach((b) => { if (b.textContent.trim().slice(1).trim() === correctOpt) {} });
+    battle.locked = true;
+    panel.querySelectorAll(".ans").forEach((b) => b.setAttribute("disabled", ""));
+    const inp = $("recall-input"); if (inp) inp.setAttribute("disabled", "");
     resolveAnswer(false, null, card, true);
   }
 
@@ -545,49 +706,124 @@
     resolveAnswer(ok, chosen, card, false);
   }
 
-  function resolveAnswer(ok, chosen, card, timedOut) {
+  // ----- outcome appliers (shared by multiple-choice and written recall) -----
+  function applyCorrect(card) {
     const b = battle;
-    const id = cardId(b.current.zoneId, b.current.idx);
-    recordAnswer(id, ok);
+    b.combo++; b.bestCombo = Math.max(b.bestCombo, b.combo); b.correctCount++;
+    const diff = card.d || 1;
+    const speedFrac = S.settings.timer ? (b.timeFrac || 0) : 0.5;
+    const crit = b.combo >= 4 && Math.random() < 0.25 + speedFrac * 0.15;
+    let dmg = 14 + diff * 5 + Math.min(b.combo, 8) * 2 + Math.round(speedFrac * 8);
+    if (crit) dmg = Math.round(dmg * 1.8);
+    b.enemyHp -= dmg;
 
-    if (ok) {
-      b.combo++; b.bestCombo = Math.max(b.bestCombo, b.combo); b.correctCount++;
-      const diff = card.d || 1;
-      const speedFrac = S.settings.timer ? (b.timeFrac || 0) : 0.5;
-      const crit = b.combo >= 4 && Math.random() < 0.25 + speedFrac * 0.15;
-      let dmg = 14 + diff * 5 + Math.min(b.combo, 8) * 2 + Math.round(speedFrac * 8);
-      if (crit) dmg = Math.round(dmg * 1.8);
-      b.enemyHp -= dmg;
+    const ps = $("player-sprite"), es = $("enemy-sprite");
+    ps.className = "sprite attack-p"; setTimeout(() => ps.className = "sprite idle", 420);
+    setTimeout(() => { es.className = "sprite hurt"; setTimeout(() => es.className = "sprite idle", 360); }, 150);
+    const ec = spriteRect("enemy-sprite");
+    setTimeout(() => { (crit ? fx.crit : fx.burst)(ec.x, ec.y, 24); floatDmg((crit ? "✦" : "") + "-" + dmg, "enemy-sprite", "enemy" + (crit ? " crit" : "")); }, 160);
+    crit ? sfx.crit() : sfx.correct();
 
-      // animate
-      const ps = $("player-sprite"), es = $("enemy-sprite");
-      ps.className = "sprite attack-p"; setTimeout(() => ps.className = "sprite idle", 420);
-      setTimeout(() => { es.className = "sprite hurt"; setTimeout(() => es.className = "sprite idle", 360); }, 150);
-      const ec = spriteRect("enemy-sprite");
-      setTimeout(() => { (crit ? fx.crit : fx.burst)(ec.x, ec.y, 24); floatDmg((crit ? "✦" : "") + "-" + dmg, "enemy-sprite", "enemy" + (crit ? " crit" : "")); }, 160);
-      crit ? sfx.crit() : sfx.correct();
+    const xpGain = 5 + diff * 4 + Math.min(b.combo, 6) + (crit ? 6 : 0);  // XP tied to retrieval!
+    b.xpEarned += xpGain; addXp(xpGain);
+    updateCombo(); renderHp();
+  }
+  function applyWrong(card) {
+    const b = battle;
+    b.combo = 0; updateCombo();
+    const diff = card.d || 1;
+    const dmg = 10 + diff * 3 + (b.enemyCfg.boss ? 6 : 0) + rand(4);
+    b.playerHp -= dmg;
+    const es = $("enemy-sprite"), ps = $("player-sprite");
+    es.className = "sprite attack-e"; setTimeout(() => es.className = "sprite idle", 420);
+    setTimeout(() => { ps.className = "sprite hurt"; setTimeout(() => ps.className = "sprite idle", 360); $("battle-root").classList.add("shake"); setTimeout(() => $("battle-root").classList.remove("shake"), 400); }, 150);
+    const pc = spriteRect("player-sprite");
+    setTimeout(() => { fx.hurt(pc.x, pc.y); floatDmg("-" + dmg, "player-sprite", "player-dmg"); }, 160);
+    sfx.wrong(); renderHp();
+  }
 
-      // XP per correct (ties XP to retrieval!)
-      const xpGain = 5 + diff * 4 + Math.min(b.combo, 6) + (crit ? 6 : 0);
-      b.xpEarned += xpGain; addXp(xpGain);
+  function resolveAnswer(ok, chosen, card, timedOut) {
+    recordAnswer(cardId(battle.current.zoneId, battle.current.idx), ok);
+    if (ok) { applyCorrect(card); showFeedback(true, card, chosen, () => afterTurn()); }
+    else { applyWrong(card); showFeedback(false, card, chosen, () => afterTurn(), timedOut); }
+  }
 
-      updateCombo();
-      renderHp();
-      showFeedback(true, card, chosen, () => afterTurn());
-    } else {
-      b.combo = 0; updateCombo();
-      const diff = card.d || 1;
-      let dmg = 10 + diff * 3 + (b.enemyCfg.boss ? 6 : 0) + rand(4);
-      b.playerHp -= dmg;
-      const es = $("enemy-sprite"), ps = $("player-sprite");
-      es.className = "sprite attack-e"; setTimeout(() => es.className = "sprite idle", 420);
-      setTimeout(() => { ps.className = "sprite hurt"; setTimeout(() => ps.className = "sprite idle", 360); $("battle-root").classList.add("shake"); setTimeout(() => $("battle-root").classList.remove("shake"), 400); }, 150);
-      const pc = spriteRect("player-sprite");
-      setTimeout(() => { fx.hurt(pc.x, pc.y); floatDmg("-" + dmg, "player-sprite", "player-dmg"); }, 160);
-      sfx.wrong();
-      renderHp();
-      showFeedback(false, card, chosen, () => afterTurn(), timedOut);
+  /* ----- written recall: answer checking + reveal/self-grade ----- */
+  function normalizeAns(s) {
+    return String(s).toLowerCase()
+      .normalize("NFKD")                 // splits accents & turns ₂/² into "2"
+      .replace(/[̀-ͯ]/g, "")   // drop leftover combining marks
+      .replace(/[^a-z0-9]+/g, " ")       // strip punctuation/symbols
+      .replace(/\b(a|an|the)\b/g, " ")   // ignore articles
+      .trim().replace(/\s+/g, " ");
+  }
+  function lev(a, b) {                    // Levenshtein distance (typo tolerance)
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    const dp = Array.from({ length: m + 1 }, (_, i) => { const row = new Array(n + 1).fill(0); row[0] = i; return row; });
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
     }
+    return dp[m][n];
+  }
+  function checkTyped(value, card) {
+    const t = normalizeAns(value);
+    if (!t) return false;
+    const cands = [card.a].concat(card.acc || []).map(normalizeAns).filter(Boolean);
+    for (const c of cands) {
+      if (t === c) return true;
+      const tol = c.length <= 4 ? 0 : c.length <= 9 ? 1 : 2;
+      if (lev(t, c) <= tol) return true;
+      if (c.indexOf(" ") < 0) {           // single-word answer: accept it appearing among typed words
+        for (const w of t.split(" ")) { if (w === c || lev(w, c) <= (c.length <= 4 ? 0 : 1)) return true; }
+      }
+    }
+    return false;
+  }
+  function maskAnswer(a) {                // keep first letter of each word, hide the rest
+    return String(a).replace(/(\w)(\w*)/g, (_, f, rest) => f + rest.replace(/\w/g, "_"));
+  }
+  function showHint(card) {
+    const tip = $("recall-tip"); if (!tip) return;
+    tip.textContent = maskAnswer(card.a);
+    tip.classList.add("show");
+    const hb = $("recall-hint"); if (hb) hb.setAttribute("disabled", "");
+  }
+
+  function answerTyped(value, card) {
+    if (battle.locked) return;
+    battle.locked = true; clearTimer(); unlockAudio();
+    const inp = $("recall-input"); if (inp) inp.setAttribute("disabled", "");
+    const id = cardId(battle.current.zoneId, battle.current.idx);
+    if (checkTyped(value, card)) {
+      recordAnswer(id, true); applyCorrect(card);
+      showFeedback(true, card, value, () => afterTurn());
+    } else {
+      showRecallReveal(value, card, id);   // can't be sure — let the learner self-grade honestly
+    }
+  }
+  function showRecallReveal(value, card, id) {
+    const typed = (value && value.trim()) ? value.trim() : "— nothing —";
+    $("qpanel").insertAdjacentHTML("beforeend",
+      `<div class="feedback neutral" id="fb">
+         <div class="verdict neutral">📜 Compare thy scroll</div>
+         <div class="ans-line">You wrote: <b>${esc(typed)}</b></div>
+         <div class="ans-line">Answer: <b>${esc(card.a)}</b></div>
+         <div class="explain">${esc(card.e)}</div>
+         <div class="selfgrade" id="selfgrade">
+           <button class="btn" id="sg-miss">✗ I missed it</button>
+           <button class="btn primary" id="sg-got">✓ I had it</button>
+         </div>
+       </div>`);
+    $("sg-got").onclick = () => { sfx.click(); recordAnswer(id, true); applyCorrect(card); recallContinue(); };
+    $("sg-miss").onclick = () => { sfx.click(); recordAnswer(id, false); applyWrong(card); recallContinue(); };
+    $("sg-got").focus();
+  }
+  function recallContinue() {
+    const sg = $("selfgrade");
+    if (sg) sg.outerHTML = `<div class="next"><button class="btn primary" id="fb-next">Continue ▸</button></div>`;
+    const nx = $("fb-next"); if (nx) { nx.onclick = () => { sfx.click(); afterTurn(); }; nx.focus(); }
   }
 
   function updateCombo() {
@@ -652,7 +888,7 @@
     const acc = b.askedCount ? Math.round(b.correctCount / b.askedCount * 100) : 0;
     const rewards =
       `<div class="reward-chip"><b>+${b.xpEarned + clearBonus}</b><span>XP</span></div>
-       <div class="reward-chip"><b>★${coinGain}</b><span>Reagents</span></div>
+       <div class="reward-chip"><b>🪙${coinGain}</b><span>Gold</span></div>
        <div class="reward-chip"><b>${b.bestCombo}×</b><span>Best combo</span></div>
        <div class="reward-chip"><b>${acc}%</b><span>Accuracy</span></div>`;
     const actions = [];
@@ -734,22 +970,22 @@
 
     $("lab-content").innerHTML = `
       <div class="info-callout">
-        <h4>🔬 Why this game actually works</h4>
+        <h4>🔮 Why this quest sharpens the mind</h4>
         Every turn makes you <b>retrieve</b> an answer (active recall — the single most
-        effective study method). Cards you miss come back <b>sooner</b> (spaced repetition).
-        Boss battles <b>mix topics together</b> (interleaving). And you get an
-        <b>explanation after every answer</b> so mistakes turn into learning.
+        effective study method). Lore you miss returns <b>sooner</b> (spaced repetition).
+        Warden trials <b>mix topics together</b> (interleaving). And you get an
+        <b>explanation after every answer</b> so mistakes turn into mastery.
       </div>
 
-      <div class="section-title">📊 Your progress</div>
+      <div class="section-title">🛡 Your chronicle</div>
       <div class="card" style="padding:16px">
         <div class="stat-grid">
           <div class="stat"><b>${S.player.level}</b><span>Level</span></div>
           <div class="stat"><b>${S.stats.answered}</b><span>Answered</span></div>
           <div class="stat"><b>${acc}%</b><span>Accuracy</span></div>
           <div class="stat"><b>${mastered}/${totalCards}</b><span>Cards mastered</span></div>
-          <div class="stat"><b>${clearedCount}</b><span>Regions cleared</span></div>
-          <div class="stat"><b>★ ${S.player.coins}</b><span>Reagents</span></div>
+          <div class="stat"><b>${clearedCount}</b><span>Holds freed</span></div>
+          <div class="stat"><b>🪙 ${S.player.coins}</b><span>Gold</span></div>
         </div>
         <div style="margin-top:16px">
           ${themeMastery.map((x) => `<div class="mastery-row"><div class="ml">${esc(x.t)}</div><div class="mbar"><i style="width:${x.m}%"></i></div><div class="mp">${x.m}%</div></div>`).join("")}
@@ -758,13 +994,15 @@
 
       <div class="section-title">⚙ Settings</div>
       <div class="card">
+        ${setRow("music", "Lute music", "Medieval background music — chill tavern vibes")}
+        ${setRow("recall", "Written recall", "Type your answers from memory instead of multiple choice")}
         ${setRow("sound", "Sound effects", "Beeps, hits & fanfares")}
         ${setRow("motion", "Animations", "Particles & motion (off = calmer / faster)")}
         ${setRow("timer", "Question timer", "On = bonus damage for speed · off = relaxed mode")}
       </div>
 
-      <div class="section-title">📚 Exam scope — toggle your topics</div>
-      <div class="info-callout" style="background:rgba(34,211,238,.07); border-color:rgba(34,211,238,.3)">
+      <div class="section-title">📚 Exam scope — choose thy trials</div>
+      <div class="info-callout" style="background:rgba(180,120,40,.10); border-color:rgba(212,160,90,.35)">
         Switch <b>off</b> anything that is crossed-out or highlighted on your exam sheet — it
         disappears from the map, battles and review instantly.
       </div>
@@ -815,42 +1053,62 @@
   }
 
   function howToModal() {
-    modal(`<h2>⚗ How to play</h2>
+    modal(`<h2>📜 The Adventurer's Guide</h2>
       <p style="text-align:left">
-        <b>The story.</b> Entropy is unravelling the Periodic Realm. You and your mole
-        companion <b>${esc(S.player.name)}</b> travel region to region, restoring order by
-        mastering chemistry.<br><br>
-        <b>Battle.</b> Each turn a question appears. A <b>correct</b> answer makes you
-        strike the monster; a <b>wrong</b> one lets it hit you. Build a <b>combo</b> for
-        bigger hits and crits. Answer fast for bonus damage (or switch the timer off in the Lab).<br><br>
-        <b>Level up.</b> Every correct recall earns XP. Clear regions to unlock new ones,
-        then beat the <b>Boss</b> (a mixed trial) at the end of each theme.<br><br>
-        <b>It's real studying.</b> Missed questions return sooner, and you get an
-        explanation after <i>every</i> answer. Use the <b>Review Lab</b> to drill your
-        weakest cards anytime.
+        <b>The tale.</b> A blight of Entropy creeps across the Periodic Realm — its holds and
+        keeps falling to chaos. You and your faithful familiar <b>${esc(S.player.name)}</b> ride
+        hold to hold, restoring order with the old craft of chemistry.<br><br>
+        <b>The duel.</b> Each turn a riddle appears. A <b>correct</b> answer lands a blow on the
+        beast; a <b>wrong</b> one lets it strike you. Chain answers for a <b>combo</b> — bigger
+        hits and mighty crits. Answer swiftly for bonus damage (or douse the timer in the Lab).<br><br>
+        <b>Rise in rank.</b> Every correct recall earns XP. Clear a hold to unlock the next,
+        then face the <b>Warden</b> (a mixed trial) at the end of each realm.<br><br>
+        <b>Two ways to answer.</b> Battle by <b>multiple choice</b>, or flip on
+        <b>Written recall</b> in the Lab to <i>inscribe</i> answers from memory — the strongest
+        study of all. Tap <b>🗝 Hint</b> if the words escape you.<br><br>
+        <b>Bardic comforts.</b> Toggle the <b>medieval lute music</b> with the note in the corner,
+        and revisit your weakest lore anytime in the <b>Review Lab</b>.
       </p>
-      <div class="row-btns"><button class="btn primary block" id="m-go">Got it ⚗️</button></div>`);
+      <div class="row-btns"><button class="btn primary block" id="m-go">To arms! ⚔</button></div>`);
     $("m-go").onclick = closeModal;
   }
 
   function firstRunModal() {
-    modal(`<h2>⚗️ Welcome to ChemQuest</h2>
-      <p>A turn-based RPG that turns IB Chemistry revision into a battle adventure — powered by real learning science.</p>
-      <p style="margin-top:6px"><b>Name your companion:</b></p>
+    modal(`<h2>⚔ Welcome to ChemQuest</h2>
+      <p>A turn-based RPG that turns IB Chemistry revision into a medieval quest —
+      with lute music, themed foes and real learning science.</p>
+      <p style="margin-top:6px"><b>Name your familiar:</b></p>
       <div class="namebox" style="margin:10px auto 0"><input id="m-name" maxlength="14" placeholder="Avo" value="Avo" /></div>
-      <div class="row-btns"><button class="btn primary block" id="m-start">Begin the adventure ▸</button></div>`);
+      <div class="row-btns"><button class="btn primary block" id="m-start">Begin the quest ▸</button></div>`);
     const inp = $("m-name"); setTimeout(() => inp.focus(), 100);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") $("m-start").click(); });
     $("m-start").onclick = () => {
       const nm = inp.value.trim().slice(0, 14) || "Avo";
-      S.player.name = nm; S.firstRun = false; save(); closeModal(); sfx.resume();
-      renderHome(); toast("Welcome, " + nm + "! 🧪");
+      S.player.name = nm; S.firstRun = false; save(); closeModal(); unlockAudio();
+      renderHome(); toast("Welcome, " + nm + "! ⚔");
     };
   }
 
   /* ==========================================================================
      WIRING
      ========================================================================== */
+  function unlockAudio() {
+    sfx.resume();
+    if (S.settings.music && !music.playing) music.start();
+  }
+  function updateMusicBtn() {
+    const b = $("musicbtn"); if (!b) return;
+    b.textContent = S.settings.music ? "🎵" : "🔇";
+    b.classList.toggle("off", !S.settings.music);
+    b.title = S.settings.music ? "Music on — click to mute" : "Music off — click to play";
+  }
+  function toggleMusic() {
+    S.settings.music = !S.settings.music; save();
+    if (S.settings.music) { unlockAudio(); music.start(); } else { music.stop(); }
+    updateMusicBtn();
+    if (currentScreen === "lab") renderLab();
+  }
+
   function quitBattle() {
     if (battle.active && battle.enemyHp > 0 && battle.playerHp > 0 && !$("banner").classList.contains("show")) {
       modal(`<h2>Leave the battle?</h2><p>Your progress in this fight will be lost (XP already earned is kept).</p>
@@ -861,17 +1119,27 @@
   }
 
   function wire() {
-    $("btn-adventure").onclick = () => { sfx.resume(); sfx.click(); showScreen("map"); };
-    $("btn-review").onclick = () => { sfx.resume(); sfx.click(); startBattle({ mode: "review" }); };
-    $("btn-endless").onclick = () => { sfx.resume(); sfx.click(); startBattle({ mode: "endless" }); };
-    $("btn-lab").onclick = () => { sfx.resume(); sfx.click(); showScreen("lab"); };
-    $("btn-how").onclick = () => { sfx.resume(); sfx.click(); howToModal(); };
+    $("btn-adventure").onclick = () => { unlockAudio(); sfx.click(); showScreen("map"); };
+    $("btn-review").onclick = () => { unlockAudio(); sfx.click(); startBattle({ mode: "review" }); };
+    $("btn-endless").onclick = () => { unlockAudio(); sfx.click(); startBattle({ mode: "endless" }); };
+    $("btn-lab").onclick = () => { unlockAudio(); sfx.click(); showScreen("lab"); };
+    $("btn-how").onclick = () => { unlockAudio(); sfx.click(); howToModal(); };
     $("battle-quit").onclick = quitBattle;
     document.querySelectorAll("[data-home]").forEach((b) => b.onclick = () => { sfx.click(); showScreen("home"); });
+
+    // floating lute-music toggle
+    const mb = $("musicbtn"); if (mb) mb.onclick = () => { sfx.click(); toggleMusic(); };
+    updateMusicBtn();
+
+    // unlock + start audio on the first interaction (browsers require a gesture)
+    ["pointerdown", "keydown", "touchstart"].forEach((ev) =>
+      document.addEventListener(ev, unlockAudio, { passive: true }));
 
     // keyboard: 1-4 answers, enter/space continue
     document.addEventListener("keydown", (e) => {
       if (currentScreen !== "battle") return;
+      const ae = document.activeElement;
+      if (ae && ae.id === "recall-input") return;   // let the scribe type & press Enter freely
       if ($("banner").classList.contains("show")) return;
       const fbNext = $("fb-next");
       if (fbNext && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fbNext.click(); return; }

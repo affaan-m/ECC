@@ -19,14 +19,23 @@
       <div class="home wrap">
         <svg class="brand-logo" viewBox="0 0 100 100" aria-hidden="true">
           <defs>
-            <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/>
+            <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffe9a8"/><stop offset=".5" stop-color="#e7b34b"/><stop offset="1" stop-color="#a9772a"/>
+            </linearGradient>
+            <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#4a2f1c"/><stop offset="1" stop-color="#241327"/>
             </linearGradient>
           </defs>
-          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="url(#lg1)" stroke-width="3" opacity=".8"/>
-          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="#f472b6" stroke-width="3" opacity=".8" transform="rotate(60 50 50)"/>
-          <ellipse cx="50" cy="50" rx="44" ry="17" fill="none" stroke="#a3e635" stroke-width="3" opacity=".8" transform="rotate(120 50 50)"/>
-          <circle cx="50" cy="50" r="9" fill="url(#lg1)"/>
+          <!-- heraldic shield -->
+          <path d="M50 6 L86 18 V46 C86 70 70 86 50 94 C30 86 14 70 14 46 V18 Z"
+                fill="url(#field)" stroke="url(#gold)" stroke-width="4" stroke-linejoin="round"/>
+          <!-- alchemist's flask (the realm's craft) -->
+          <path d="M44 28 h12 v12 l11 21 a17 17 0 0 1 -34 0 l11 -21 z"
+                fill="none" stroke="url(#gold)" stroke-width="3" stroke-linejoin="round"/>
+          <path d="M36 59 a17 17 0 0 0 28 0 z" fill="#7dd3fc" opacity=".65"/>
+          <!-- orbiting mote -->
+          <ellipse cx="50" cy="52" rx="21" ry="8" fill="none" stroke="url(#gold)" stroke-width="2" opacity=".7" transform="rotate(33 50 52)"/>
+          <circle cx="50" cy="52" r="3.2" fill="#ffe9a8"/>
         </svg>
         <h1 class="title">ChemQuest</h1>
         <p class="tagline">Trials of the Periodic Realm</p>
@@ -34,17 +43,17 @@
         <div class="pstrip card" id="home-pstrip"></div>
 
         <div class="home-actions">
-          <button class="btn primary lg" id="btn-adventure">⚗️ &nbsp;Adventure</button>
-          <button class="btn" id="btn-review">🧪 Review Lab</button>
-          <button class="btn" id="btn-endless">☄️ Endless</button>
-          <button class="btn ghost" id="btn-lab">⚙️ Lab &amp; Stats</button>
-          <button class="btn ghost" id="btn-how">📖 How to play</button>
+          <button class="btn primary lg" id="btn-adventure">⚔️ &nbsp;Adventure</button>
+          <button class="btn" id="btn-review">📜 Review Lab</button>
+          <button class="btn" id="btn-endless">🏰 Endless Siege</button>
+          <button class="btn ghost" id="btn-lab">🪶 Lab &amp; Stats</button>
+          <button class="btn ghost" id="btn-how">📖 Guide</button>
         </div>
 
         <p class="home-foot">
-          A turn-based study RPG built on real learning science — <b>active recall</b>,
+          A turn-based study quest forged on real learning science — <b>active recall</b>,
           <b>spaced repetition</b>, <b>interleaving</b> &amp; <b>instant feedback</b>.
-          Based on the IB Chemistry guide (Structure 1–3 &amp; Reactivity 1–2).
+          Drawn from the IB Chemistry guide (Structure 1–3 &amp; Reactivity 1–2).
         </p>
       </div>
     </section>
@@ -55,7 +64,7 @@
         <div class="topbar">
           <button class="iconbtn" data-home>‹</button>
           <div class="grow map-head" style="text-align:left">
-            <h2>World Map</h2>
+            <h2>The Realm</h2>
           </div>
           <div class="mini-xp">
             <span class="lvpill" id="map-lv">Lv 1</span>
@@ -63,7 +72,7 @@
           </div>
         </div>
         <div class="map-head">
-          <p>Restore order to the Periodic Realm — clear each region to unlock the next. Bosses appear at the end of every theme.</p>
+          <p>Ride forth and free the holds of the Periodic Realm — clear each hold to open the road onward. A <b>Warden</b> guards the end of every realm.</p>
         </div>
         <div id="map-zones"></div>
       </div>
@@ -132,6 +141,7 @@
   </div>
 
   <canvas id="fx"></canvas>
+  <button class="musicbtn" id="musicbtn" aria-label="Toggle music">🎵</button>
   <div class="levelup" id="levelup">⭐ Level Up!</div>
   <div class="modal-bg" id="modal"><div class="modal card" id="modal-inner"></div></div>
 
