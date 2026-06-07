@@ -12,7 +12,7 @@
     },
     "github": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "args": ["-y", "@modelcontextprotocol/server-github@2025.4.8"],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PAT_HERE"
       },
@@ -20,7 +20,7 @@
     },
     "firecrawl": {
       "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
+      "args": ["-y", "firecrawl-mcp@3.20.2"],
       "env": {
         "FIRECRAWL_API_KEY": "YOUR_FIRECRAWL_KEY_HERE"
       },
@@ -28,12 +28,12 @@
     },
     "supabase": {
       "command": "npx",
-      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--project-ref=YOUR_PROJECT_REF"],
+      "args": ["-y", "@supabase/mcp-server-supabase@0.8.1", "--project-ref=YOUR_PROJECT_REF"],
       "description": "Supabase database operations"
     },
     "memory": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "args": ["-y", "@modelcontextprotocol/server-memory@2026.1.26"],
       "description": "Persistent memory across sessions"
     },
     "omega-memory": {
@@ -48,7 +48,7 @@
     },
     "sequential-thinking": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
       "description": "Chain-of-thought reasoning"
     },
     "vercel": {
@@ -58,7 +58,7 @@
     },
     "railway": {
       "command": "npx",
-      "args": ["-y", "@railway/mcp-server"],
+      "args": ["-y", "@railway/mcp-server@0.1.12"],
       "description": "Railway deployments"
     },
     "cloudflare-docs": {
@@ -88,7 +88,7 @@
     },
     "exa-web-search": {
       "command": "npx",
-      "args": ["-y", "exa-mcp-server"],
+      "args": ["-y", "exa-mcp-server@3.2.1"],
       "env": {
         "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE"
       },
@@ -96,27 +96,27 @@
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "args": ["-y", "@upstash/context7-mcp@3.1.0"],
       "description": "Live documentation lookup — use with /docs command and documentation-lookup skill (resolve-library-id, query-docs)."
     },
     "magic": {
       "command": "npx",
-      "args": ["-y", "@magicuidesign/mcp@latest"],
+      "args": ["-y", "@magicuidesign/mcp@2.0.0"],
       "description": "Magic UI components"
     },
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/your/projects"],
+      "args": ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "/path/to/your/projects"],
       "description": "Filesystem operations (set your path)"
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp", "--browser", "chrome"],
+      "args": ["-y", "@playwright/mcp@0.0.75", "--browser", "chrome"],
       "description": "Browser automation and testing via Playwright"
     },
     "fal-ai": {
       "command": "npx",
-      "args": ["-y", "fal-ai-mcp-server"],
+      "args": ["-y", "fal-ai-mcp-server@2.1.4"],
       "env": {
         "FAL_KEY": "YOUR_FAL_KEY_HERE"
       },
@@ -124,7 +124,7 @@
     },
     "browserbase": {
       "command": "npx",
-      "args": ["-y", "@browserbasehq/mcp-server-browserbase"],
+      "args": ["-y", "@browserbasehq/mcp-server-browserbase@2.4.3"],
       "env": {
         "BROWSERBASE_API_KEY": "YOUR_BROWSERBASE_KEY_HERE"
       },
@@ -145,7 +145,7 @@
     },
     "token-optimizer": {
       "command": "npx",
-      "args": ["-y", "token-optimizer-mcp"],
+      "args": ["-y", "token-optimizer-mcp@2.17.0"],
       "description": "Token optimization for 95%+ context reduction via content deduplication and compression"
     },
     "laraplugins": {
@@ -155,7 +155,7 @@
     },
     "confluence": {
       "command": "npx",
-      "args": ["-y", "confluence-mcp-server"],
+      "args": ["-y", "confluence-mcp-server@1.3.1"],
       "env": {
         "CONFLUENCE_BASE_URL": "YOUR_CONFLUENCE_URL_HERE",
         "CONFLUENCE_EMAIL": "YOUR_EMAIL_HERE",
