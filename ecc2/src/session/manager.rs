@@ -3634,24 +3634,6 @@ fn send_signal(pid: u32, signal: i32) -> Result<()> {
     Err(error).with_context(|| format!("Failed to kill process {pid}"))
 }
 
-#[cfg(not(unix))]
-async fn kill_process(pid: u32) -> Result<()> {
-    let status = Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .with_context(|| format!("Failed to invoke taskkill for process {pid}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        anyhow::bail!("taskkill failed for process {pid}");
-    }
-}
-
 pub struct SessionStatus {
     harness: SessionHarnessInfo,
     profile: Option<SessionAgentProfile>,
