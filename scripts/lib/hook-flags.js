@@ -50,6 +50,10 @@ function parseProfiles(rawProfiles, fallback = ['standard', 'strict']) {
   return parsed.length > 0 ? parsed : [...fallback];
 }
 
+function isDryRun() {
+  return process.env.ECC_DRY_RUN === '1';
+}
+
 function isHookEnabled(hookId, options = {}) {
   const id = normalizeId(hookId);
   if (!id) return true;
@@ -71,4 +75,5 @@ module.exports = {
   getDisabledHookIds,
   parseProfiles,
   isHookEnabled,
+  isDryRun,
 };

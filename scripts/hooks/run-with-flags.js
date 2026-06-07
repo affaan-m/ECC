@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { isHookEnabled } = require('../lib/hook-flags');
+const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
@@ -88,6 +88,50 @@ function getPluginRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+
+//Safely extract target context from hook stdin JSON for dry-run preview.
+ 
+function extractTargetContext(raw) {
+  const result = { tool: '', filePath: '', command: '' };
+  if (!raw || typeof raw !== 'string') return result;
+
+  try {
+    const payload = JSON.parse(raw);
+    if (payload && typeof payload === 'object') {
+      result.tool = String(payload.tool || '');
+      const input = payload.tool_input;
+      if (input && typeof input === 'object') {
+        result.filePath = String(input.file_path || input.path || '');
+        result.command = String(input.command || '');
+      }
+    }
+  } catch {
+  }
+  return result;
+}
+
+// Build the [DryRun] preview line for stderr.
+ 
+function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
+  const ctx = extractTargetContext(raw);
+  const parts = [
+    `[DryRun] Hook "${hookId}" would execute: ${relScriptPath}`,
+    `(enabled=true, profiles=${profilesCsv || 'default'})`,
+  ];
+
+  if (ctx.tool) {
+    parts.push(`tool=${ctx.tool}`);
+  }
+  if (ctx.filePath) {
+    parts.push(`target=${ctx.filePath}`);
+  }
+  if (ctx.command) {
+    parts.push(`command=${ctx.command}`);
+  }
+
+  return parts.join(' ') + '\n';
+}
+
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
@@ -98,6 +142,13 @@ async function main() {
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
+    process.stdout.write(raw);
+    process.exit(0);
+  }
+
+  if (isDryRun()) {
+    const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
+    process.stderr.write(preview);
     process.stdout.write(raw);
     process.exit(0);
   }
