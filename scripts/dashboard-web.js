@@ -40,21 +40,24 @@ function readFrontmatter(p) {
 }
 function readSkill(p) { try { const c = fs.readFileSync(p, 'utf8'); const fm = readFrontmatter(p); return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() }; } catch { return { d: '', b: '' }; } }
 
-function loadAgents() {
-  const dir = path.join(ROOT, 'agents'); if (!fs.existsSync(dir)) return [];
+function loadAgents(_root) {
+  const root = _root || ROOT;
+  const dir = path.join(root, 'agents'); if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().map(f => {
     const fm = readFrontmatter(path.join(dir, f));
     return { n: fm.name || f.replace('.md', ''), d: fm.description || '', m: fm.model || 'default', t: Array.isArray(fm.tools) ? fm.tools : [], b: (fm._body || '').slice(0, 1200), f };
   });
 }
-function loadSkills() {
-  const dir = path.join(ROOT, 'skills'); if (!fs.existsSync(dir)) return [];
+function loadSkills(_root) {
+  const root = _root || ROOT;
+  const dir = path.join(root, 'skills'); if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter(d => { try { return fs.statSync(path.join(dir, d)).isDirectory(); } catch { return false; } }).sort().map(d => {
     const r = readSkill(path.join(dir, d, 'SKILL.md')); return { n: d, d: r.d, b: r.b.slice(0, 1000) };
   });
 }
-function loadCommands() {
-  const dir = path.join(ROOT, 'commands'); if (!fs.existsSync(dir)) return [];
+function loadCommands(_root) {
+  const root = _root || ROOT;
+  const dir = path.join(root, 'commands'); if (!fs.existsSync(dir)) return [];
   const cm = { plan: 'Planning', 'plan-': 'Planning', 'prp-': 'Git & PR', pr: 'Git & PR', 'review-': 'Review', 'code-': 'Review', build: 'Build', fix: 'Build', test: 'Testing', 'e2e': 'Testing', coverage: 'Testing', quality: 'Testing', session: 'Session', save: 'Session', resume: 'Session', skill: 'Knowledge', learn: 'Knowledge', instinct: 'Knowledge', evolve: 'Knowledge', ecc: 'System', hookify: 'System', model: 'System', setup: 'System', multi: 'Multi-Agent', security: 'Security', harness: 'Security', 'go-': 'Languages', 'rust-': 'Languages', 'cpp-': 'Languages', 'kotlin-': 'Languages', 'flutter-': 'Languages', 'react-': 'Languages', 'python-': 'Languages', 'fastapi-': 'Languages', 'gradle-': 'Languages', gan: 'GAN', marketing: 'Marketing', jira: 'Project', pm2: 'Process', cost: 'Analytics', promote: 'Project', aside: 'Other', santa: 'Fun' };
   return fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().map(f => {
     const fm = readFrontmatter(path.join(dir, f));
@@ -63,20 +66,23 @@ function loadCommands() {
     return { n, f, d: fm.description || fm['argument-hint'] || '', c, b: (fm._body || '').slice(0, 600) };
   });
 }
-function loadRules() {
-  const dir = path.join(ROOT, 'rules'); if (!fs.existsSync(dir)) return [];
+function loadRules(_root) {
+  const root = _root || ROOT;
+  const dir = path.join(root, 'rules'); if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter(d => { try { return fs.statSync(path.join(dir, d)).isDirectory(); } catch { return false; } }).sort().map(l => ({ l, f: fs.readdirSync(path.join(dir, l)).filter(f => f.endsWith('.md')).sort().map(f => f.replace('.md', '')) }));
 }
-function loadMcps() {
+function loadMcps(_root) {
+  const root = _root || ROOT;
   const r = [];
-  const m = path.join(ROOT, '.mcp.json');
+  const m = path.join(root, '.mcp.json');
   if (fs.existsSync(m)) { try { const d = JSON.parse(fs.readFileSync(m, 'utf8')); r.push({ f: '.mcp.json', s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env ? Object.keys(v.env).reduce((a,k)=>{a[k]='••••••'; return a;}, {}) : {}, type: v.type || 'stdio' })) }); } catch (e) { console.error('[ECC] Failed to parse .mcp.json:', e.message); } }
-  const dir = path.join(ROOT, 'mcp-configs');
+  const dir = path.join(root, 'mcp-configs');
   if (fs.existsSync(dir)) { for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) { try { const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); r.push({ f, s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env ? Object.keys(v.env).reduce((a,k)=>{a[k]='••••••'; return a;}, {}) : {}, type: v.type || 'stdio' })) }); } catch (e) { console.error('[ECC] Failed to parse mcp-configs/' + f + ':', e.message); } } }
   return r;
 }
-function loadHooks() {
-  const p = path.join(ROOT, 'hooks', 'hooks.json'); if (!fs.existsSync(p)) return [];
+function loadHooks(_root) {
+  const root = _root || ROOT;
+  const p = path.join(root, 'hooks', 'hooks.json'); if (!fs.existsSync(p)) return [];
   try { const d = JSON.parse(fs.readFileSync(p, 'utf8')); const h = []; for (const [ev, es] of Object.entries(d.hooks || {})) for (const e of es || []) h.push({ ev, m: e.matcher || '*', id: e.id || '', d: e.description || '' }); return h; } catch (e) { console.error('[ECC] Failed to parse hooks/hooks.json:', e.message); return []; }
 }
 
@@ -106,6 +112,7 @@ function renderHTML(data) {
   const ll = JSON.stringify(LANG).replace(/</g, '\\u003c');
   const lc = JSON.stringify(LANG_KEYS);
 
+  /* eslint-disable no-useless-escape */
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -448,12 +455,20 @@ function applyLang() {
   document.getElementById('t-title').textContent = t('title');
   document.getElementById('t-contribution').textContent = t('contribution');
   document.getElementById('search').placeholder = t('search');
-  document.getElementById('nav-agents').innerHTML = '🤖 '+t('agents')+' <span class="ct" id="nav-ct-agents">'+AGENTS.length+'</span>';
-  document.getElementById('nav-skills').innerHTML = '📚 '+t('skills')+' <span class="ct" id="nav-ct-skills">'+SKILLS.length+'</span>';
-  document.getElementById('nav-commands').innerHTML = '⚡ '+t('commands')+' <span class="ct" id="nav-ct-commands">'+COMMANDS.length+'</span>';
-  document.getElementById('nav-rules').innerHTML = '📏 '+t('rules')+' <span class="ct" id="nav-ct-rules">'+RULES.length+'</span>';
-  document.getElementById('nav-mcps').innerHTML = '🔌 '+t('mcps')+' <span class="ct" id="nav-ct-mcps">'+MCPS.length+'</span>';
-  document.getElementById('nav-hooks').innerHTML = '🪝 '+t('hooks')+' <span class="ct" id="nav-ct-hooks">'+HOOKS.length+'</span>';
+  // Update label text only — counter spans are separate siblings
+  document.getElementById('nav-agents').childNodes[0].textContent = '🤖 ' + t('agents');
+  document.getElementById('nav-skills').childNodes[0].textContent = '📚 ' + t('skills');
+  document.getElementById('nav-commands').childNodes[0].textContent = '⚡ ' + t('commands');
+  document.getElementById('nav-rules').childNodes[0].textContent = '📏 ' + t('rules');
+  document.getElementById('nav-mcps').childNodes[0].textContent = '🔌 ' + t('mcps');
+  document.getElementById('nav-hooks').childNodes[0].textContent = '🪝 ' + t('hooks');
+  // Update counter spans by their own IDs (avoids duplicate IDs in DOM)
+  document.getElementById('nav-ct-agents').textContent = AGENTS.length;
+  document.getElementById('nav-ct-skills').textContent = SKILLS.length;
+  document.getElementById('nav-ct-commands').textContent = COMMANDS.length;
+  document.getElementById('nav-ct-rules').textContent = RULES.length;
+  document.getElementById('nav-ct-mcps').textContent = MCPS.length;
+  document.getElementById('nav-ct-hooks').textContent = HOOKS.length;
 }
 // Build lang dropdown
 (function(){
@@ -695,9 +710,9 @@ function filterCommands(cat, btn) {
 // Search
 function onSearchInput(q) {
   q = q.toLowerCase().trim();
-  const fa=q?AGENTS.filter(a=>a.n.includes(q)||a.d.toLowerCase().includes(q)||(a.t||[]).some(t=>t.toLowerCase().includes(q))):AGENTS;
-  const fs=q?SKILLS.filter(s=>s.n.includes(q)||s.d.toLowerCase().includes(q)):SKILLS;
-  const fc=q?COMMANDS.filter(c=>c.n.includes(q)||c.d.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):COMMANDS;
+  const fa=q?AGENTS.filter(a=>a.n.toLowerCase().includes(q)||a.d.toLowerCase().includes(q)||(a.t||[]).some(t=>t.toLowerCase().includes(q))):AGENTS;
+  const fs=q?SKILLS.filter(s=>s.n.toLowerCase().includes(q)||s.d.toLowerCase().includes(q)):SKILLS;
+  const fc=q?COMMANDS.filter(c=>c.n.toLowerCase().includes(q)||c.d.toLowerCase().includes(q)||c.c.toLowerCase().includes(q)):COMMANDS;
   renderAgents(fa); renderSkills(fs); renderCommands(fc);
   document.querySelectorAll('#af .active, #sf .active, #cf .active').forEach(b=>b.classList.remove('active'));
   ['#af button','#sf button','#cf button'].forEach(s=>{const b=document.querySelector(s);if(b)b.classList.add('active')});
@@ -708,9 +723,9 @@ function showSuggestions() {
   const sug = document.getElementById('suggest');
   if (!q) { sug.classList.remove('show'); return; }
   const results = [];
-  AGENTS.filter(a=>a.n.includes(q)||a.d.toLowerCase().includes(q)).slice(0,4).forEach(a=>results.push({t:'agents',n:a.n,d:a.d.slice(0,60),ic:'a',e:'⊙'}));
-  SKILLS.filter(s=>s.n.includes(q)||s.d.toLowerCase().includes(q)).slice(0,4).forEach(s=>results.push({t:'skills',n:s.n,d:s.d.slice(0,60),ic:'s',e:'⊞'}));
-  COMMANDS.filter(c=>c.n.includes(q)||c.d.toLowerCase().includes(q)).slice(0,4).forEach(c=>results.push({t:'commands',n:c.n,d:c.d.slice(0,60),ic:'c',e:'⊡'}));
+  AGENTS.filter(a=>a.n.toLowerCase().includes(q)||a.d.toLowerCase().includes(q)).slice(0,4).forEach(a=>results.push({t:'agents',n:a.n,d:a.d.slice(0,60),ic:'a',e:'⊙'}));
+  SKILLS.filter(s=>s.n.toLowerCase().includes(q)||s.d.toLowerCase().includes(q)).slice(0,4).forEach(s=>results.push({t:'skills',n:s.n,d:s.d.slice(0,60),ic:'s',e:'⊞'}));
+  COMMANDS.filter(c=>c.n.toLowerCase().includes(q)||c.d.toLowerCase().includes(q)).slice(0,4).forEach(c=>results.push({t:'commands',n:c.n,d:c.d.slice(0,60),ic:'c',e:'⊡'}));
   if (!results.length) { sug.classList.remove('show'); return; }
   const groups = {};
   results.forEach(r=>{if(!groups[r.t])groups[r.t]=[];groups[r.t].push(r);});
@@ -737,6 +752,7 @@ setLang(lang);
 handleRoute();
 </script>
 </body></html>`;
+  /* eslint-enable no-useless-escape */
 }
 
 const server = http.createServer((req, res) => {
@@ -749,7 +765,11 @@ const server = http.createServer((req, res) => {
   res.end(renderHTML({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
 });
 
-server.listen(PORT, () => {
-  console.log(`\n  🧩  ECC Capabilities  →  http://localhost:${PORT}\n`);
-  try { const { spawn } = require('child_process'); const p = process.platform; const c = p === 'darwin' ? 'open' : p === 'win32' ? 'start' : 'xdg-open'; if (c === 'start') spawn('cmd', ['/c', 'start', `http://localhost:${PORT}`], { stdio: 'ignore' }); else spawn(c, [`http://localhost:${PORT}`], { stdio: 'ignore' }); } catch {}
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`\n  🧩  ECC Capabilities  →  http://localhost:${PORT}\n`);
+    try { const { spawn } = require('child_process'); const p = process.platform; const c = p === 'darwin' ? 'open' : p === 'win32' ? 'start' : 'xdg-open'; if (c === 'start') spawn('cmd', ['/c', 'start', `http://localhost:${PORT}`], { stdio: 'ignore' }); else spawn(c, [`http://localhost:${PORT}`], { stdio: 'ignore' }); } catch { /* best-effort auto-open */ }
+  });
+}
+
+module.exports = { parsePort, readFrontmatter, readSkill, loadAgents, loadSkills, loadCommands, loadRules, loadMcps, loadHooks, renderHTML, LANG, LANG_KEYS, server };

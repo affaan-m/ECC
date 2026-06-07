@@ -47,6 +47,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/ci/supply-chain-advisory-sources.js",
     "scripts/consult.js",
     "scripts/control-pane.js",
+    "scripts/dashboard-web.js",
     "scripts/discussion-audit.js",
     "scripts/doctor.js",
     "scripts/status.js",
