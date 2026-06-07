@@ -301,7 +301,10 @@ function runTests() {
     assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('rollback'));
   })) passed++; else failed++;
 
-  // --- Test 7b: gates force/path git checkout as destructive Bash ---
+  /**
+   * Test 7b: `git checkout -f <branch>` (force checkout) discards uncommitted
+   * working-tree changes, so it must be gated as destructive Bash.
+   */
   clearState();
   if (test('denies git checkout -f as destructive Bash', () => {
     const input = {
