@@ -16,9 +16,9 @@ from scripts.scenario_generator import Scenario
 SANDBOX_BASE = Path("/tmp/skill-comply-sandbox")
 ALLOWED_MODELS = frozenset({"haiku", "sonnet", "opus"})
 ALLOWED_SETUP_EXECUTABLES = frozenset({
-    "git", "npm", "pip", "pip3", "python", "python3",
-    "node", "touch", "mkdir", "cp", "mv", "echo",
-    "chmod", "curl", "wget", "unzip", "tar",
+    "git", "npm", "pip", "pip3",
+    "touch", "mkdir", "cp", "mv", "echo",
+    "chmod", "unzip", "tar",
 })
 # Shell builtins cannot be invoked via subprocess.run; cwd is already
 # controlled by the cwd= keyword. Scenarios that include these in

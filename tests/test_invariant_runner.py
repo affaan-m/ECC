@@ -1,59 +1,64 @@
-import pytest
-import sys
 import os
-import tempfile
-import subprocess
+import sys
+import pytest
+from pathlib import Path
 
-# Add the module path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'skills', 'skill-comply', 'scripts'))
+_SKILL_COMPLY_ROOT = Path(__file__).resolve().parent.parent / "skills" / "skill-comply"
+if str(_SKILL_COMPLY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_COMPLY_ROOT))
+
+from scripts.runner import _setup_sandbox          # noqa: E402
+from scripts.scenario_generator import Scenario    # noqa: E402
+
+_GLOBAL_MARKER = "/tmp/runner_test_pwned_marker"
 
 
-@pytest.mark.parametrize("malicious_input", [
-    # Exact exploit: command injection via crafted skill definition
-    "rm -rf /tmp/pwned; echo pwned > /tmp/pwned",
-    # Boundary: null bytes and shell metacharacters
-    "cat /etc/passwd\x00--help",
-    # Attempt to escape sandbox via path traversal in command
-    "../../../../../../bin/sh -c 'id > /tmp/pwned'",
-    # Valid benign input for baseline
-    "echo hello",
-])
-def test_runner_does_not_execute_arbitrary_commands(malicious_input, tmp_path):
-    """Invariant: Adversarial inputs must not result in arbitrary command execution
-    that creates files or exfiltrates data outside the sandbox."""
-    marker_file = tmp_path / "pwned"
-    global_marker = "/tmp/runner_test_pwned_marker"
+@pytest.fixture(autouse=True)
+def _remove_marker():
+    if os.path.exists(_GLOBAL_MARKER):
+        os.remove(_GLOBAL_MARKER)
+    yield
+    if os.path.exists(_GLOBAL_MARKER):
+        os.remove(_GLOBAL_MARKER)
 
-    # Clean up any pre-existing marker
-    if os.path.exists(global_marker):
-        os.remove(global_marker)
 
-    # Run the runner.py as a subprocess with the malicious input to see if it
-    # allows arbitrary command execution
-    runner_path = os.path.join(
-        os.path.dirname(__file__), '..', 'skills', 'skill-comply', 'scripts', 'runner.py'
+@pytest.mark.parametrize(
+    "setup_commands,test_id",
+    [
+        (
+            ("python -c \"import os; os.system('touch /tmp/runner_test_pwned_marker')\"",),
+            "python_interpreter",
+        ),
+        (
+            ("../../../../../../bin/sh -c 'touch /tmp/runner_test_pwned_marker'",),
+            "path_traversal",
+        ),
+        (
+            ("bash -c 'touch /tmp/runner_test_pwned_marker'",),
+            "non_allowlisted_binary",
+        ),
+        (
+            ("echo hello",),
+            "benign_echo",
+        ),
+    ],
+    ids=["python_interpreter", "path_traversal", "non_allowlisted_binary", "benign_echo"],
+)
+def test_setup_sandbox_blocks_dangerous_commands(setup_commands, test_id, tmp_path):
+    """Invariant: _setup_sandbox must not execute disallowed commands."""
+    scenario = Scenario(
+        id=f"test-{test_id}",
+        level=1,
+        level_name="basic",
+        description="security test scenario",
+        prompt="",
+        setup_commands=setup_commands,
     )
+    sandbox_dir = tmp_path / "sandbox"
 
-    if not os.path.exists(runner_path):
-        pytest.skip("runner.py not found at expected path")
+    _setup_sandbox(sandbox_dir, scenario)
 
-    # Attempt to invoke runner with crafted input - we pass it via stdin/args
-    # depending on how runner.py accepts input
-    result = subprocess.run(
-        [sys.executable, runner_path, malicious_input],
-        cwd=str(tmp_path),
-        capture_output=True,
-        timeout=10,
-        env={**os.environ, "HOME": str(tmp_path)},
+    assert not os.path.exists(_GLOBAL_MARKER), (
+        f"Arbitrary command execution detected for '{test_id}': "
+        f"marker file created at {_GLOBAL_MARKER}"
     )
-
-    # Security invariant: no marker file should be created by malicious commands
-    assert not os.path.exists(global_marker), \
-        f"Arbitrary command execution detected: marker file created at {global_marker}"
-    assert not marker_file.exists(), \
-        f"Arbitrary command execution detected: marker file created in sandbox"
-    # Ensure no sensitive file content leaked in output
-    assert b"root:" not in result.stdout, \
-        "Sensitive file content (/etc/passwd) leaked in stdout"
-    assert b"root:" not in result.stderr, \
-        "Sensitive file content (/etc/passwd) leaked in stderr"
