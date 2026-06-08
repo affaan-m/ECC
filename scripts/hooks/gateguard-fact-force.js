@@ -45,6 +45,7 @@ const MAX_SESSION_KEYS = 50;
 const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 const EDIT_WRITE_HOOK_ID = 'pre:edit-write:gateguard-fact-force';
 const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
+const DEFAULT_FACT_FORCE_FULL_DENIALS = 3;
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
@@ -494,6 +495,33 @@ function normalizeEnvValue(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeFactForceDenials(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+}
+
+function getFactForceFullDenialLimit() {
+  const raw = process.env.GATEGUARD_FACT_FORCE_FULL_DENIALS;
+  const normalized = normalizeEnvValue(raw);
+  if (!normalized) {
+    return DEFAULT_FACT_FORCE_FULL_DENIALS;
+  }
+
+  const parsed = Number.parseInt(normalized, 10);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+
+  if (ECC_DISABLE_VALUES.has(normalized)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return DEFAULT_FACT_FORCE_FULL_DENIALS;
+}
+
 function isGateGuardDisabled() {
   if (normalizeEnvValue(process.env.GATEGUARD_DISABLED) === '1') {
     return true;
@@ -559,14 +587,18 @@ function loadState() {
         } catch (_) {
           /* ignore */
         }
-        return { checked: [], last_active: Date.now() };
+        return { checked: [], fact_force_denials: 0, last_active: Date.now() };
       }
-      return state;
+      return {
+        checked: Array.isArray(state.checked) ? state.checked : [],
+        fact_force_denials: normalizeFactForceDenials(state.fact_force_denials),
+        last_active: lastActive
+      };
     }
   } catch (_) {
     /* ignore */
   }
-  return { checked: [], last_active: Date.now() };
+  return { checked: [], fact_force_denials: 0, last_active: Date.now() };
 }
 
 function pruneCheckedEntries(checked) {
@@ -591,6 +623,7 @@ function saveState(state) {
     fs.mkdirSync(STATE_DIR, { recursive: true });
 
     let mergedChecked = Array.isArray(state.checked) ? state.checked : [];
+    let mergedFactForceDenials = normalizeFactForceDenials(state.fact_force_denials);
     let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
 
     try {
@@ -602,6 +635,10 @@ function saveState(state) {
         if (typeof diskState.last_active === 'number') {
           mergedLastActive = Math.max(mergedLastActive, diskState.last_active);
         }
+        mergedFactForceDenials = Math.max(
+          mergedFactForceDenials,
+          normalizeFactForceDenials(diskState.fact_force_denials)
+        );
       }
     } catch (_) {
       /* ignore malformed or transient disk state */
@@ -609,6 +646,7 @@ function saveState(state) {
 
     const finalState = {
       checked: pruneCheckedEntries(mergedChecked),
+      fact_force_denials: mergedFactForceDenials,
       last_active: Math.max(mergedLastActive, Date.now())
     };
 
@@ -650,6 +688,20 @@ function markChecked(key) {
     return saveState(state);
   }
   return true;
+}
+
+function markFactForceDenied(key) {
+  const state = loadState();
+  if (!state.checked.includes(key)) {
+    state.checked.push(key);
+    state.fact_force_denials = normalizeFactForceDenials(state.fact_force_denials) + 1;
+  }
+
+  if (!saveState(state)) {
+    return null;
+  }
+
+  return normalizeFactForceDenials(state.fact_force_denials);
 }
 
 function isChecked(key) {
@@ -819,6 +871,22 @@ function routineBashMsg() {
   ].join('\n');
 }
 
+function condensedFactForceMsg(filePath, action) {
+  const safe = sanitizePath(filePath);
+  return `[Fact-Forcing Gate] Before ${action} ${safe}, present the relevant facts for this target, then retry the same operation.`;
+}
+
+function shouldCondenseFactForce(denialCount) {
+  return normalizeFactForceDenials(denialCount) > getFactForceFullDenialLimit();
+}
+
+function fileFactForceMsg(toolName, filePath, denialCount) {
+  if (shouldCondenseFactForce(denialCount)) {
+    return condensedFactForceMsg(filePath, toolName === 'Write' ? 'creating' : 'editing');
+  }
+  return toolName === 'Write' ? writeGateMsg(filePath) : editGateMsg(filePath);
+}
+
 function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID]) {
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
   return [
@@ -902,10 +970,11 @@ function run(rawInput) {
     }
 
     if (!isChecked(filePath)) {
-      if (!markChecked(filePath)) {
+      const denialCount = markFactForceDenied(filePath);
+      if (denialCount === null) {
         return allowWithStateWarning();
       }
-      return denyResult(toolName === 'Edit' ? editGateMsg(filePath) : writeGateMsg(filePath));
+      return denyResult(fileFactForceMsg(toolName, filePath, denialCount));
     }
 
     return rawInput; // allow
@@ -920,10 +989,11 @@ function run(rawInput) {
     for (const edit of edits) {
       const filePath = edit.file_path || '';
       if (filePath && !isClaudeSettingsPath(filePath) && !isChecked(filePath)) {
-        if (!markChecked(filePath)) {
+        const denialCount = markFactForceDenied(filePath);
+        if (denialCount === null) {
           return allowWithStateWarning();
         }
-        return denyResult(editGateMsg(filePath));
+        return denyResult(fileFactForceMsg('Edit', filePath, denialCount));
       }
     }
     return rawInput; // allow

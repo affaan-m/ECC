@@ -46,6 +46,7 @@ function writeExpiredState() {
     fs.mkdirSync(stateDir, { recursive: true });
     const expired = {
       checked: ['some_file.js', '__bash_session__'],
+      fact_force_denials: 99,
       last_active: Date.now() - (31 * 60 * 1000) // 31 minutes ago
     };
     fs.writeFileSync(stateFile, JSON.stringify(expired), 'utf8');
@@ -173,6 +174,107 @@ function runTests() {
       // Pass-through: output matches original input (allow)
       assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
     }
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('dampens repeated fact-force blocks after the configured threshold', () => {
+    const thresholdEnv = { GATEGUARD_FACT_FORCE_FULL_DENIALS: '2' };
+
+    const editResult = runHook({
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/dampen-edit.js', old_string: 'a', new_string: 'b' }
+    }, thresholdEnv);
+    const editOutput = parseOutput(editResult.stdout);
+    assert.strictEqual(editOutput.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(editOutput.hookSpecificOutput.permissionDecisionReason.includes('List ALL files that import/require'),
+      'first denial should still include the full Edit fact block');
+
+    const writeResult = runHook({
+      tool_name: 'Write',
+      tool_input: { file_path: '/src/dampen-write.js', content: 'module.exports = {};' }
+    }, thresholdEnv);
+    const writeOutput = parseOutput(writeResult.stdout);
+    assert.strictEqual(writeOutput.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(writeOutput.hookSpecificOutput.permissionDecisionReason.includes('call this new file'),
+      'second denial should still include the full Write fact block');
+
+    const multiResult = runHook({
+      tool_name: 'MultiEdit',
+      tool_input: {
+        edits: [
+          { file_path: '/src/dampen-multi.js', old_string: 'a', new_string: 'b' }
+        ]
+      }
+    }, thresholdEnv);
+    const multiOutput = parseOutput(multiResult.stdout);
+    const reason = multiOutput.hookSpecificOutput.permissionDecisionReason;
+    assert.strictEqual(multiOutput.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(reason.includes('Fact-Forcing Gate'), 'condensed denial should still identify the gate');
+    assert.ok(reason.includes('/src/dampen-multi.js'), 'condensed denial should name the target');
+    assert.ok(reason.includes('ECC_GATEGUARD=off'), 'condensed denial should keep the recovery hint');
+    assert.ok(!reason.includes('List ALL files that import/require'),
+      'condensed denial should drop the repeated four-fact Edit block');
+    assert.ok(!reason.includes("Quote the user's current instruction verbatim"),
+      'condensed denial should drop the repeated quote instruction');
+
+    const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.strictEqual(persisted.fact_force_denials, 3, 'counter should be persisted after the condensed denial');
+
+    const retry = runHook({
+      tool_name: 'MultiEdit',
+      tool_input: {
+        edits: [
+          { file_path: '/src/dampen-multi.js', old_string: 'a', new_string: 'b' }
+        ]
+      }
+    }, thresholdEnv);
+    const retryOutput = parseOutput(retry.stdout);
+    assert.ok(!retryOutput.hookSpecificOutput || retryOutput.hookSpecificOutput.permissionDecision !== 'deny',
+      'retry of the same target should be allowed without re-emitting any gate prompt');
+
+    const afterRetry = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.strictEqual(afterRetry.fact_force_denials, 3, 'retry should not increment the counter');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('fact-force dampening counter is isolated by session key', () => {
+    const env = {
+      CLAUDE_SESSION_ID: '',
+      ECC_SESSION_ID: '',
+      GATEGUARD_FACT_FORCE_FULL_DENIALS: '1'
+    };
+
+    const sessionAFirst = runHook({
+      session_id: 'counter-session-a',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/session-a-one.js', old_string: 'a', new_string: 'b' }
+    }, env);
+    const sessionAFirstOutput = parseOutput(sessionAFirst.stdout);
+    assert.ok(sessionAFirstOutput.hookSpecificOutput.permissionDecisionReason.includes('List ALL files'),
+      'first denial in session A should be full');
+
+    const sessionBFirst = runHook({
+      session_id: 'counter-session-b',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/session-b-one.js', old_string: 'a', new_string: 'b' }
+    }, env);
+    const sessionBFirstOutput = parseOutput(sessionBFirst.stdout);
+    assert.ok(sessionBFirstOutput.hookSpecificOutput.permissionDecisionReason.includes('List ALL files'),
+      'first denial in session B should not inherit session A counter');
+
+    const sessionASecond = runHook({
+      session_id: 'counter-session-a',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/session-a-two.js', old_string: 'a', new_string: 'b' }
+    }, env);
+    const sessionASecondOutput = parseOutput(sessionASecond.stdout);
+    assert.ok(!sessionASecondOutput.hookSpecificOutput.permissionDecisionReason.includes('List ALL files'),
+      'second distinct denial in session A should be condensed at threshold=1');
+
+    const stateA = JSON.parse(fs.readFileSync(path.join(stateDir, 'state-counter-session-a.json'), 'utf8'));
+    const stateB = JSON.parse(fs.readFileSync(path.join(stateDir, 'state-counter-session-b.json'), 'utf8'));
+    assert.strictEqual(stateA.fact_force_denials, 2, 'session A counter should reflect its two denials');
+    assert.strictEqual(stateB.fact_force_denials, 1, 'session B counter should remain isolated');
   })) passed++; else failed++;
 
   // --- Test 3: denies first Write per file ---
@@ -361,6 +463,10 @@ function runTests() {
     assert.ok(output, 'should produce JSON output after expired state');
     assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny',
       'should deny again after session timeout (state was reset)');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('List ALL files'),
+      'expired dampening counter should reset with the session state');
+    const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.strictEqual(persisted.fact_force_denials, 1, 'counter should restart after session timeout');
   })) passed++; else failed++;
 
   // --- Test 7: allows unknown tool names ---
@@ -425,6 +531,7 @@ function runTests() {
       // When disabled, hook passes through raw input
       assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
     }
+    assert.ok(!fs.existsSync(stateFile), 'disabled hook should not create or mutate gate state');
   })) passed++; else failed++;
 
   // --- Test 10: respects direct GateGuard env disable for recovery sessions ---
@@ -522,6 +629,28 @@ function runTests() {
     assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive command detected'));
     assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('ECC_GATEGUARD=off'),
       'destructive gate should not advertise disabling GateGuard');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('destructive Bash gate is not dampened by fact-force counter', () => {
+    writeState({
+      checked: ['__bash_session__'],
+      fact_force_denials: 99,
+      last_active: Date.now()
+    });
+
+    const input = {
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf /tmp/dampen-demo' }
+    };
+    const result = runBashHook(input, { GATEGUARD_FACT_FORCE_FULL_DENIALS: '1' });
+    const output = parseOutput(result.stdout);
+    const reason = output.hookSpecificOutput.permissionDecisionReason;
+
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(reason.includes('Destructive command detected'),
+      'destructive Bash should keep its full gate message');
+    assert.ok(reason.includes('rollback'), 'destructive Bash should keep rollback guidance');
   })) passed++; else failed++;
 
   // --- Test 16: MultiEdit gates first unchecked file ---
@@ -625,6 +754,27 @@ function runTests() {
 
     const after = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     assert.ok(after.last_active > staleButActive, 'read should refresh last_active after heartbeat');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('malformed fact-force counter state resets without crashing', () => {
+    writeState({
+      checked: [],
+      fact_force_denials: 'not-a-number',
+      last_active: Date.now()
+    });
+
+    const result = runHook({
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/malformed-counter.js', old_string: 'a', new_string: 'b' }
+    }, { GATEGUARD_FACT_FORCE_FULL_DENIALS: '1' });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('List ALL files'),
+      'malformed counter should be treated as zero before incrementing');
+
+    const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.strictEqual(persisted.fact_force_denials, 1, 'malformed counter should persist as a valid count');
   })) passed++; else failed++;
 
   // --- Test 14: pruning preserves routine bash gate marker ---
