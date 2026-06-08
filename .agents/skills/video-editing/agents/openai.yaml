@@ -1,7 +1,0 @@
-interface:
-  display_name: "Video Editing"
-  short_description: "AI-assisted editing for real footage"
-  brand_color: "#EF4444"
-  default_prompt: "Use $video-editing to plan an AI-assisted edit for real footage."
-policy:
-  allow_implicit_invocation: true

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Documentation Lookup"
-  short_description: "Current library docs via Context7"
-  brand_color: "#6366F1"
-  default_prompt: "Use $documentation-lookup to fetch current library documentation via Context7."
-policy:
-  allow_implicit_invocation: true

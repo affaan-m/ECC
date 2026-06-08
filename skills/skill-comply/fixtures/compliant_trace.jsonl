@@ -1,5 +1,0 @@
-{"timestamp":"2026-03-20T10:00:01Z","event":"tool_complete","tool":"Write","session":"sess-001","input":"{\"file_path\":\"tests/test_fib.py\",\"content\":\"def test_fib(): assert fib(0) == 0\"}","output":"File created"}
-{"timestamp":"2026-03-20T10:00:10Z","event":"tool_complete","tool":"Bash","session":"sess-001","input":"{\"command\":\"cd /tmp/sandbox && pytest tests/\"}","output":"FAILED - 1 failed"}
-{"timestamp":"2026-03-20T10:00:20Z","event":"tool_complete","tool":"Write","session":"sess-001","input":"{\"file_path\":\"src/fib.py\",\"content\":\"def fib(n): return n if n <= 1 else fib(n-1)+fib(n-2)\"}","output":"File created"}
-{"timestamp":"2026-03-20T10:00:30Z","event":"tool_complete","tool":"Bash","session":"sess-001","input":"{\"command\":\"cd /tmp/sandbox && pytest tests/\"}","output":"1 passed"}
-{"timestamp":"2026-03-20T10:00:40Z","event":"tool_complete","tool":"Edit","session":"sess-001","input":"{\"file_path\":\"src/fib.py\",\"old_string\":\"return n if\",\"new_string\":\"if n < 0: raise ValueError\\n    return n if\"}","output":"File edited"}

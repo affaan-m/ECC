@@ -1,7 +1,0 @@
-interface:
-  display_name: "Coding Standards"
-  short_description: "Cross-project coding conventions and review"
-  brand_color: "#3B82F6"
-  default_prompt: "Use $coding-standards to review code against cross-project standards."
-policy:
-  allow_implicit_invocation: true
