@@ -23,36 +23,39 @@ jobs:
       digests: ${{ steps.hash.outputs.digests }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      # ========================================================
-      #
-      # Step 1: Build your artifacts.
-      #
-      # ========================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '20.x'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
       - name: Build artifacts
+        id: build
         run: |
-            # These are some amazing artifacts.
-            echo "artifact1" > artifact1
-            echo "artifact2" > artifact2
+          npm pack --json > npm-pack.json
+          PACKAGE_FILE=$(node -e "const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); console.log(data[0].filename)")
+          echo "package_file=${PACKAGE_FILE}" >> "${GITHUB_OUTPUT}"
 
-      # ========================================================
-      #
-      # Step 2: Add a step to generate the provenance subjects
-      #         as shown below. Update the sha256 sum arguments
-      #         to include all binaries that you generate
-      #         provenance for.
-      #
-      # ========================================================
       - name: Generate subject for provenance
         id: hash
         run: |
           set -euo pipefail
-
-          # List the artifacts the provenance will refer to.
-          files=$(ls artifact*)
           # Generate the subjects (base64 encoded).
-          echo "hashes=$(sha256sum $files | base64 -w0)" >> "${GITHUB_OUTPUT}"
+          echo "digests=$(sha256sum ${{ steps.build.outputs.package_file }} | base64 -w0)" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.build.outputs.package_file }}
+          path: ${{ steps.build.outputs.package_file }}
+          if-no-files-found: error
 
   provenance:
     needs: [build]
