@@ -10,7 +10,7 @@
 # The provenance file can be verified using https://github.com/slsa-framework/slsa-verifier.
 # For more information about SLSA and how it improves the supply-chain, visit slsa.dev.
 
-name: SLSA generic generator
+name: SLSA generic generator workflow #1
 on:
   workflow_dispatch:
   release:
