@@ -166,6 +166,13 @@ commands:
   - cpp-review
   - cpp-test
   - ecc-guide
+  - epic-claim
+  - epic-decompose
+  - epic-publish
+  - epic-review
+  - epic-sync
+  - epic-unblock
+  - epic-validate
   - evolve
   - fastapi-review
   - feature-dev

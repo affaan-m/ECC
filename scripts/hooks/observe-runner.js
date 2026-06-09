@@ -51,7 +51,10 @@ function findShellBinary() {
   }
 
   if (process.platform === 'win32') {
-    candidates.push('bash.exe', 'bash', 'sh');
+    if (!String(process.env.PATH || '').trim()) {
+      return null;
+    }
+    candidates.push('bash', 'bash.exe', 'sh');
   } else {
     candidates.push('bash', 'sh');
   }

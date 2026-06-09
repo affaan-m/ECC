@@ -72,6 +72,20 @@
 
 ---
 
+## GitHub Coordination
+
+| Command | What it does |
+|---------|-------------|
+| `/epic-claim` | Claim an epic issue and stamp coordination state |
+| `/epic-sync` | Sync epic issue bodies, labels, and local snapshots |
+| `/epic-validate` | Validate epic readiness and dependency status |
+| `/epic-publish` | Publish a validated epic update back to GitHub |
+| `/epic-review` | Mark review requested, approved, or changes requested |
+| `/epic-unblock` | Sweep blocked epics whose dependencies are closed |
+| `/epic-decompose` | Break an epic into task children without task branches |
+
+---
+
 ## Session Management
 
 | Command | What it does |

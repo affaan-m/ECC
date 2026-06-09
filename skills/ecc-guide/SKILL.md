@@ -17,7 +17,7 @@ Use this skill when the user:
 - is new to the repository and needs a guided path
 - asks "how do I do X with ECC?"
 - asks which ECC components fit a project
-- needs a lightweight explanation of how commands, skills, agents, hooks, and rules relate
+- needs a lightweight explanation of how commands, skills, agents, hooks, rules, and the epic coordination layer relate
 - is confused by install paths, duplicate installs, reset/uninstall, or selective install options
 
 ## Core Principle
@@ -82,14 +82,14 @@ Give a short menu:
 - run a harness audit
 - find a specific workflow
 
-Point to `README.md` for install/reset and `/project-init` for project-specific onboarding.
+Point to `README.md` for install/reset and `/project-init` for project-specific onboarding. If the user is already working from a GitHub issue, also point them to the epic layer (`/epic-claim`, `/epic-sync`, `/epic-validate`, `/epic-publish`).
 
 ### Feature Discovery
 
 For "what should I use for X?":
 
 1. Search `skills/`, `commands/`, and `agents/`.
-2. Prefer skills as the primary workflow surface.
+2. Prefer skills as the primary workflow surface, but prefer the epic layer for GitHub coordination and source-of-truth issue state.
 3. Use commands only when they are a maintained compatibility shim or a user explicitly wants slash-command behavior.
 4. Mention agents when delegation is useful.
 
@@ -187,3 +187,4 @@ Needs approval before apply: <yes/no>
 - `/skill-health`: skill quality review
 - `/skill-create`: generate a new skill from local git history
 - `/security-scan`: inspect Claude/OpenCode configuration security
+

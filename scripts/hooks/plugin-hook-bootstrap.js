@@ -58,6 +58,17 @@ function resolveTarget(rootDir, relPath) {
   return resolvedTarget;
 }
 
+function toShellPath(filePath) {
+  const normalized = String(filePath || '');
+  if (process.platform !== 'win32') {
+    return normalized;
+  }
+
+  return normalized
+    .replace(/^([A-Za-z]):[\\/]/, (_, driveLetter) => `/${driveLetter.toLowerCase()}/`)
+    .replace(/\\/g, '/');
+}
+
 function findShellBinary() {
   const candidates = [];
   if (process.env.BASH && process.env.BASH.trim()) {
@@ -65,7 +76,10 @@ function findShellBinary() {
   }
 
   if (process.platform === 'win32') {
-    candidates.push('bash.exe', 'bash');
+    if (!String(process.env.PATH || '').trim()) {
+      return null;
+    }
+    candidates.push('bash', 'bash.exe', 'sh');
   } else {
     candidates.push('bash', 'sh');
   }
@@ -116,7 +130,7 @@ function spawnShell(rootDir, relPath, raw, args) {
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
   };
-  return spawnSync(shell, [resolveTarget(rootDir, relPath), ...args], {
+  return spawnSync(shell, [toShellPath(resolveTarget(rootDir, relPath)), ...args], {
     input: raw,
     encoding: 'utf8',
     env: hookEnv,

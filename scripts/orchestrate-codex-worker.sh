@@ -10,6 +10,25 @@ task_file="$1"
 handoff_file="$2"
 status_file="$3"
 
+normalize_path() {
+  local input="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$input"
+  elif [[ "$input" =~ ^([A-Za-z]):[\\/](.*)$ ]]; then
+    local drive="${BASH_REMATCH[1],,}"
+    local rest="${BASH_REMATCH[2]//\\//}"
+    printf '/%s/%s' "$drive" "$rest"
+  else
+    printf '%s' "$input"
+  fi
+}
+
+task_file="$(normalize_path "$task_file")"
+handoff_file="$(normalize_path "$handoff_file")"
+status_file="$(normalize_path "$status_file")"
+
+mkdir -p "$(dirname "$handoff_file")" "$(dirname "$status_file")"
+
 timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
@@ -29,8 +48,6 @@ write_status() {
 $details
 EOF
 }
-
-mkdir -p "$(dirname "$handoff_file")" "$(dirname "$status_file")"
 
 if [[ ! -r "$task_file" ]]; then
   write_status "failed" "- Error: task file is missing or unreadable (\`$task_file\`)"
@@ -103,5 +120,6 @@ else
     echo "The Codex worker exited with a non-zero status."
   } > "$handoff_file"
   write_status "failed" "- Handoff file: \`$handoff_file\`"
+  sleep 3
   exit 1
 fi

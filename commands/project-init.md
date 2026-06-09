@@ -25,6 +25,8 @@ Create a safe, reviewable ECC onboarding plan for the current project. This comm
 4. Keep permissions narrow. Any generated settings should match detected build/test/lint tools and avoid broad shell access.
 5. Report exactly what would change before applying anything.
 
+When the target project is also being coordinated through GitHub epics, keep `/epic-claim`, `/epic-sync`, and `/epic-validate` as the coordination layer after onboarding.
+
 ## Detection Inputs
 
 Read the current project root and detect stack signals from:
@@ -84,3 +86,4 @@ Never replace an existing `CLAUDE.md` without showing a diff and receiving appro
 - `scripts/install-plan.js` for deterministic plan resolution
 - `scripts/install-apply.js` for dry-run and apply operations
 - `/ecc-guide` for interactive feature discovery before installing
+

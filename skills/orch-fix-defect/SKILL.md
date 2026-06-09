@@ -1,26 +1,26 @@
 ---
 name: orch-fix-defect
-description: Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, and gated commit — by delegating each phase to the matching ECC agent. Use when existing behavior is broken or wrong.
+description: Legacy implementation wrapper for the orch family. GitHub issue ownership should be handled by the epic layer first.
 origin: ECC
 ---
 
 # orch-fix-defect
 
-Actor · action · target: **orch · fix · defect**. Thin wrapper over the shared
+Actor Â· action Â· target: **orch Â· fix Â· defect**. Thin wrapper over the shared
 engine in [`orch-pipeline`](../orch-pipeline/SKILL.md).
 
 ## When to Use
 
 - Something is **broken**: wrong output, an error, a crash, a regression.
 - Distinguish from siblings:
-  - behavior is correct but you want it different → `orch-change-feature`.
-  - the capability does not exist yet → `orch-add-feature`.
+  - behavior is correct but you want it different â†’ `orch-change-feature`.
+  - the capability does not exist yet â†’ `orch-add-feature`.
 
 ## Operation settings
 
 - **Default size floor:** small (often trivial).
-- **Phase mask:** 0 → (light 2 only if root cause is non-obvious or standard+) →
-  4 → 5 → 6. Research (1) is usually skipped.
+- **Phase mask:** 0 â†’ (light 2 only if root cause is non-obvious or standard+) â†’
+  4 â†’ 5 â†’ 6. Research (1) is usually skipped.
 - **First move (phase 4):** reproduce the bug as a **new failing** test
   (regression test), then fix until it goes green. Proving the bug exists first
   is what separates a fix from a tweak.
@@ -37,6 +37,7 @@ engine in [`orch-pipeline`](../orch-pipeline/SKILL.md).
 
 ```
 orch-fix-defect: poller crashes on empty NWS response
-→ write failing test reproducing the crash → fix to green
-→ code-review → commit  [GATE 2: confirm]   (commit: fix:)
+â†’ write failing test reproducing the crash â†’ fix to green
+â†’ code-review â†’ commit  [GATE 2: confirm]   (commit: fix:)
 ```
+

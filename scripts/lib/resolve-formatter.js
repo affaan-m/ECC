@@ -9,6 +9,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // ── Caches (per-process, cleared on next hook invocation) ───────────
@@ -59,12 +60,18 @@ function findProjectRoot(startDir) {
   if (projectRootCache.has(startDir)) return projectRootCache.get(startDir);
 
   let dir = startDir;
+  const tempRoot = path.resolve(os.tmpdir());
+  const stopAtTempRoot = path.resolve(startDir).startsWith(`${tempRoot}${path.sep}`)
+    || path.resolve(startDir) === tempRoot;
   while (dir !== path.dirname(dir)) {
     for (const marker of PROJECT_ROOT_MARKERS) {
       if (fs.existsSync(path.join(dir, marker))) {
         projectRootCache.set(startDir, dir);
         return dir;
       }
+    }
+    if (stopAtTempRoot && path.resolve(dir) === tempRoot) {
+      break;
     }
     dir = path.dirname(dir);
   }

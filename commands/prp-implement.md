@@ -7,7 +7,7 @@ argument-hint: <path/to/plan.md>
 
 # PRP Implement
 
-Execute a plan file step-by-step with continuous validation. Every change is verified immediately — never accumulate broken state.
+Execute a plan file step-by-step with continuous validation. Every change is verified immediately â€” never accumulate broken state.
 
 **Core Philosophy**: Validation loops catch mistakes early. Run checks after every change. Fix issues immediately.
 
@@ -15,7 +15,7 @@ Execute a plan file step-by-step with continuous validation. Every change is ver
 
 ---
 
-## Phase 0 — DETECT
+## Phase 0 â€” DETECT
 
 ### Package Manager Detection
 
@@ -42,7 +42,7 @@ Note available commands for: type-check, lint, test, build.
 
 ---
 
-## Phase 1 — LOAD
+## Phase 1 â€” LOAD
 
 Read the plan file:
 
@@ -51,24 +51,24 @@ cat "$ARGUMENTS"
 ```
 
 Extract these sections from the plan:
-- **Summary** — What is being built
-- **Patterns to Mirror** — Code conventions to follow
-- **Files to Change** — What to create or modify
-- **Step-by-Step Tasks** — Implementation sequence
-- **Validation Commands** — How to verify correctness
-- **Acceptance Criteria** — Definition of done
+- **Summary** â€” What is being built
+- **Patterns to Mirror** â€” Code conventions to follow
+- **Files to Change** â€” What to create or modify
+- **Step-by-Step Tasks** â€” Implementation sequence
+- **Validation Commands** â€” How to verify correctness
+- **Acceptance Criteria** â€” Definition of done
 
 If the file doesn't exist or isn't a valid plan:
 ```
 Error: Plan file not found or invalid.
-Run /prp-plan <feature-description> to create a plan first.
+Run /epic-decompose <issue-number> and /epic-validate <issue-number> first when the work is tracked as an epic issue. Use /prp-plan <feature-description> only for legacy .claude/PRPs/ artifacts.
 ```
 
 **CHECKPOINT**: Plan loaded. All sections identified. Tasks extracted.
 
 ---
 
-## Phase 2 — PREPARE
+## Phase 2 â€” PREPARE
 
 ### Git State
 
@@ -83,7 +83,7 @@ git status --porcelain
 |---|---|
 | On feature branch | Use current branch |
 | On main, clean working tree | Create feature branch: `git checkout -b feat/{plan-name}` |
-| On main, dirty working tree | **STOP** — Ask user to stash or commit first |
+| On main, dirty working tree | **STOP** â€” Ask user to stash or commit first |
 | In a git worktree for this feature | Use the worktree |
 
 ### Sync Remote
@@ -96,7 +96,7 @@ git pull --rebase origin $(git branch --show-current) 2>/dev/null || true
 
 ---
 
-## Phase 3 — EXECUTE
+## Phase 3 â€” EXECUTE
 
 Process each task from the plan sequentially.
 
@@ -104,18 +104,18 @@ Process each task from the plan sequentially.
 
 For each task in **Step-by-Step Tasks**:
 
-1. **Read MIRROR reference** — Open the pattern file referenced in the task's MIRROR field. Understand the convention before writing code.
+1. **Read MIRROR reference** â€” Open the pattern file referenced in the task's MIRROR field. Understand the convention before writing code.
 
-2. **Implement** — Write the code following the pattern exactly. Apply GOTCHA warnings. Use specified IMPORTS.
+2. **Implement** â€” Write the code following the pattern exactly. Apply GOTCHA warnings. Use specified IMPORTS.
 
-3. **Validate immediately** — After EVERY file change:
+3. **Validate immediately** â€” After EVERY file change:
    ```bash
    # Run type-check (adjust command per project)
    [type-check command from Phase 0]
    ```
-   If type-check fails → fix the error before moving to the next file.
+   If type-check fails â†’ fix the error before moving to the next file.
 
-4. **Track progress** — Log: `[done] Task N: [task name] — complete`
+4. **Track progress** â€” Log: `[done] Task N: [task name] â€” complete`
 
 ### Handling Deviations
 
@@ -129,17 +129,17 @@ If implementation must deviate from the plan:
 
 ---
 
-## Phase 4 — VALIDATE
+## Phase 4 â€” VALIDATE
 
 Run all validation levels from the plan. Fix issues at each level before proceeding.
 
 ### Level 1: Static Analysis
 
 ```bash
-# Type checking — zero errors required
+# Type checking â€” zero errors required
 [project type-check command]
 
-# Linting — fix automatically where possible
+# Linting â€” fix automatically where possible
 [project lint command]
 [project lint-fix command]
 ```
@@ -156,7 +156,7 @@ Write tests for every new function (as specified in the plan's Testing Strategy)
 
 - Every function needs at least one test
 - Cover edge cases listed in the plan
-- If a test fails → fix the implementation (not the test, unless the test is wrong)
+- If a test fails â†’ fix the implementation (not the test, unless the test is wrong)
 
 ### Level 3: Build Check
 
@@ -206,7 +206,7 @@ Run through edge cases from the plan's Testing Strategy checklist.
 
 ---
 
-## Phase 5 — REPORT
+## Phase 5 â€” REPORT
 
 ### Create Implementation Report
 
@@ -235,7 +235,7 @@ Write report to `.claude/PRPs/reports/{plan-name}-report.md`:
 | # | Task | Status | Notes |
 |---|---|---|---|
 | 1 | [task name] | [done] Complete | |
-| 2 | [task name] | [done] Complete | Deviated — [reason] |
+| 2 | [task name] | [done] Complete | Deviated â€” [reason] |
 
 ## Validation Results
 
@@ -268,7 +268,7 @@ Write report to `.claude/PRPs/reports/{plan-name}-report.md`:
 
 ## Next Steps
 - [ ] Code review via `/code-review`
-- [ ] Create PR via `/prp-pr`
+- [ ] Create PR via `/epic-publish`
 ```
 
 ### Update PRD (if applicable)
@@ -288,14 +288,14 @@ mv "$ARGUMENTS" .claude/PRPs/plans/completed/
 
 ---
 
-## Phase 6 — OUTPUT
+## Phase 6 â€” OUTPUT
 
 Report to user:
 
 ```
 ## Implementation Complete
 
-- **Plan**: [plan file path] → archived to completed/
+- **Plan**: [plan file path] â†’ archived to completed/
 - **Branch**: [current branch name]
 - **Status**: [done] All tasks complete
 
@@ -313,7 +313,7 @@ Report to user:
 - [N] files created, [M] files updated
 
 ### Deviations
-[Summary or "None — implemented exactly as planned"]
+[Summary or "None â€” implemented exactly as planned"]
 
 ### Artifacts
 - Report: `.claude/PRPs/reports/{name}-report.md`
@@ -326,7 +326,7 @@ Report to user:
 | Phase 2 | [next] |
 | ... | ... |
 
-> Next step: Run `/prp-pr` to create a pull request, or `/code-review` to review changes first.
+> Next step: Run `/epic-publish` to create a pull request, or `/code-review` to review changes first.
 ```
 
 ---
@@ -352,7 +352,7 @@ Report to user:
 4. Continue only when clean
 
 ### Build Fails
-1. Usually a type or import issue — check error message
+1. Usually a type or import issue â€” check error message
 2. Fix the offending file
 3. Re-run build
 4. Continue only when successful
@@ -381,5 +381,6 @@ Report to user:
 
 - Run `/code-review` to review changes before committing
 - Run `/prp-commit` to commit with a descriptive message
-- Run `/prp-pr` to create a pull request
-- Run `/prp-plan <next-phase>` if the PRD has more phases
+- Run `/epic-publish` to create a pull request
+- Run `/epic-decompose <next-issue>` if the PRD has more phases
+

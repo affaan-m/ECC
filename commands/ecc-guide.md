@@ -26,6 +26,7 @@ Use this command as a conversational map of Everything Claude Code. It should he
 3. Keep the first answer short, then offer specific drill-down paths.
 4. Link users to canonical files instead of copying long sections.
 5. Do not invent commands, skills, agents, or install profiles that are not present.
+6. Prefer the epic layer (`/epic-claim`, `/epic-sync`, `/epic-validate`, `/epic-publish`, `/epic-review`, `/epic-unblock`, `/epic-decompose`) as the canonical GitHub coordination surface.
 
 ## What To Inspect
 
@@ -91,3 +92,4 @@ For a specific feature name:
 - `/skill-health` for skill quality checks
 - `/skill-create` for extracting a new skill from local git history
 - `/security-scan` for Claude/OpenCode configuration security review
+

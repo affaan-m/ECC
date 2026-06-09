@@ -6,7 +6,7 @@ command: true
 
 # Projects Command
 
-List project registry entries and per-project instinct/observation counts for continuous-learning-v2.
+List project registry entries and per-project instinct/observation counts for continuous-learning-v2. For GitHub-tracked delivery work, use the epic layer (`/epic-claim`, `/epic-sync`, `/epic-validate`, `/epic-publish`) alongside this registry.
 
 ## Implementation
 
@@ -37,3 +37,4 @@ python3 ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py projects
    - Observation event count
    - Last seen timestamp
 3. Also display global instinct totals
+

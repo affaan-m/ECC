@@ -19,9 +19,25 @@ for arg in "$@"; do
   esac
 done
 
+normalize_path() {
+  local input="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$input"
+  elif [[ "$input" =~ ^([A-Za-z]):[\\/](.*)$ ]]; then
+    local drive="${BASH_REMATCH[1],,}"
+    local rest="${BASH_REMATCH[2]//\\//}"
+    printf '/%s/%s' "$drive" "$rest"
+  else
+    printf '%s' "$input"
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+HOME="$(normalize_path "$HOME")"
+CODEX_HOME="$(normalize_path "${CODEX_HOME:-$HOME/.codex}")"
+AGENTS_HOME="$(normalize_path "${AGENTS_HOME:-$HOME/.agents}")"
+ECC_GLOBAL_HOOKS_DIR="$(normalize_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}")"
 
 CONFIG_FILE="$CODEX_HOME/config.toml"
 AGENTS_FILE="$CODEX_HOME/AGENTS.md"

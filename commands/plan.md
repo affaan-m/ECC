@@ -62,6 +62,8 @@ Before writing the plan, search the codebase for conventions the implementation 
 
 If no similar code exists, state that explicitly. Do not invent a pattern.
 
+If the work is tracked as a GitHub epic, pair this plan with `/epic-decompose` and `/epic-validate` so the issue remains the source of truth.
+
 ## PRD Artifact Output
 
 When called with a `.prd.md` file, write the plan to `.claude/plans/{kebab-case-name}.plan.md` using this structure:
@@ -198,3 +200,4 @@ If the `planner` subagent is unavailable, continue planning inline instead of su
 
 For manual installs, the source file lives at:
 `agents/planner.md`
+

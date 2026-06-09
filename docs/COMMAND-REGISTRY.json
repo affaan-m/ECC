@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 84,
+  "totalCommands": 91,
   "commands": [
     {
       "command": "aside",
@@ -110,6 +110,72 @@
         "security-scan"
       ],
       "path": "commands/ecc-guide.md"
+    },
+    {
+      "command": "epic-claim",
+      "description": "Claim an epic issue, stamp coordination state, and sync local ownership.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature"
+      ],
+      "path": "commands/epic-claim.md"
+    },
+    {
+      "command": "epic-decompose",
+      "description": "Break an epic into task children without creating task branches.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-decompose.md"
+    },
+    {
+      "command": "epic-publish",
+      "description": "Publish a validated epic update back to the issue and local cache.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-publish.md"
+    },
+    {
+      "command": "epic-review",
+      "description": "Mark epic review requested, approved, or changes requested.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-review.md"
+    },
+    {
+      "command": "epic-sync",
+      "description": "Sync epic issue bodies, labels, and local coordination snapshots from GitHub.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-sync.md"
+    },
+    {
+      "command": "epic-unblock",
+      "description": "Sweep blocked epic issues and reopen anything whose dependencies are closed.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-unblock.md"
+    },
+    {
+      "command": "epic-validate",
+      "description": "Validate epic readiness, dependencies, and coordination policy.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-validate.md"
     },
     {
       "command": "evolve",
@@ -492,7 +558,7 @@
     },
     {
       "command": "orch-add-feature",
-      "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
+      "description": "Legacy compatibility wrapper for the orch implementation flow. GitHub-native coordination should use the epic layer first.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -503,7 +569,7 @@
     },
     {
       "command": "orch-build-mvp",
-      "description": "Orchestrate bootstrapping a working MVP from a design/spec doc — ingest, slice, scaffold, TDD, review, gated commit (reuses the GAN harness). Wrapper for the orch-build-mvp skill.",
+      "description": "Legacy compatibility wrapper for the orch implementation flow. GitHub-native coordination should use the epic layer first.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -514,7 +580,7 @@
     },
     {
       "command": "orch-change-feature",
-      "description": "Orchestrate altering an existing, working feature to new desired behavior — update tests to the new spec, change impl, review, gated commit. Wrapper for the orch-change-feature skill.",
+      "description": "Legacy compatibility wrapper for the orch implementation flow. GitHub-native coordination should use the epic layer first.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -527,7 +593,7 @@
     },
     {
       "command": "orch-fix-defect",
-      "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, gated commit. Wrapper for the orch-fix-defect skill.",
+      "description": "Legacy compatibility wrapper for the orch implementation flow. GitHub-native coordination should use the epic layer first.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -540,7 +606,7 @@
     },
     {
       "command": "orch-refine-code",
-      "description": "Orchestrate a behavior-preserving refactor — confirm tests green, restructure without changing behavior, keep green, review, gated commit. Wrapper for the orch-refine-code skill.",
+      "description": "Legacy compatibility wrapper for the orch implementation flow. GitHub-native coordination should use the epic layer first.",
       "type": "orchestration",
       "primaryAgents": [],
       "allAgents": [],
@@ -584,7 +650,7 @@
     },
     {
       "command": "pr",
-      "description": "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes",
+      "description": "Create a GitHub PR from current branch with unpushed commits â€” discovers templates, analyzes changes, pushes",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -626,7 +692,7 @@
     },
     {
       "command": "prp-commit",
-      "description": "Quick commit with natural language file targeting — describe what to commit in plain English",
+      "description": "Quick commit with natural language file targeting â€” describe what to commit in plain English",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -644,7 +710,7 @@
     },
     {
       "command": "prp-plan",
-      "description": "Create comprehensive feature implementation plan with codebase analysis and pattern extraction",
+      "description": "Legacy PRP planning entry point. For GitHub-native coordination, prefer epic decomposition and validation first.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -653,7 +719,7 @@
     },
     {
       "command": "prp-pr",
-      "description": "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes",
+      "description": "Create a GitHub PR from current branch with unpushed commits â€” discovers templates, analyzes changes, pushes",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -924,11 +990,11 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 7,
+      "general": 10,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 9,
+      "review": 13,
       "testing": 52
     },
     "topAgents": [
@@ -979,6 +1045,14 @@
         "count": 6
       },
       {
+        "skill": "orch-add-feature",
+        "count": 4
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 4
+      },
+      {
         "skill": "tdd-workflow",
         "count": 4
       },
@@ -988,14 +1062,6 @@
       },
       {
         "skill": "flutter-dart-code-review",
-        "count": 3
-      },
-      {
-        "skill": "orch-add-feature",
-        "count": 3
-      },
-      {
-        "skill": "orch-change-feature",
         "count": 3
       },
       {

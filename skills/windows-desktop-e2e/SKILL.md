@@ -39,13 +39,13 @@ Your test (Python)
 
 | Framework | AutomationId | Reliability | Notes |
 |-----------|-------------|-------------|-------|
-| WPF | ★★★★★ | Excellent | `x:Name` maps directly to AutomationId |
-| WinForms | ★★★★☆ | Good | `AccessibleName` = AutomationId |
-| UWP / WinUI 3 | ★★★★★ | Excellent | Full Microsoft support |
-| Qt 6.x | ★★★★★ | Excellent | Accessibility enabled by default; class names change to `Qt6*` |
-| Qt 5.15+ | ★★★★☆ | Good | Improved Accessibility module |
-| Qt 5.7–5.14 | ★★★☆☆ | Fair | Needs `QT_ACCESSIBILITY=1`; objectName manual |
-| Win32 / MFC | ★★★☆☆ | Fair | Control IDs accessible; text matching common |
+| WPF | 5/5 | Excellent | `x:Name` maps directly to AutomationId |
+| WinForms | 4/5 | Good | `AccessibleName` = AutomationId |
+| UWP / WinUI 3 | 5/5 | Excellent | Full Microsoft support |
+| Qt 6.x | 5/5 | Excellent | Accessibility enabled by default; class names change to `Qt6*` |
+| Qt 5.15+ | 4/5 | Good | Improved Accessibility module |
+| Qt 5.7-5.14 | 3/5 | Fair | Needs `QT_ACCESSIBILITY=1`; objectName manual |
+| Win32 / MFC | 3/5 | Fair | Control IDs accessible; text matching common |
 
 ## Setup & Prerequisites
 

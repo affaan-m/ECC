@@ -2,7 +2,7 @@
 description: Comprehensive PR review using specialized agents
 ---
 
-Run a comprehensive multi-perspective review of a pull request.
+Run a comprehensive multi-perspective review of a pull request. For epics that have not been published yet, validate and publish the epic first with `/epic-validate` and `/epic-publish`.
 
 ## Usage
 
@@ -35,3 +35,4 @@ Only report issues with confidence >= 80:
 - Critical: bugs, security, data loss
 - Important: missing tests, quality problems, style violations
 - Advisory: suggestions only when explicitly requested
+
