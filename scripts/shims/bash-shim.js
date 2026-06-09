@@ -35,23 +35,22 @@ function quoteBash(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
 
-function sleepMs(ms) {
-  const shared = new SharedArrayBuffer(4);
-  const view = new Int32Array(shared);
-  Atomics.wait(view, 0, 0, ms);
-}
-
 const realBash = findRealBash();
-const rawArgs = process.env.BASH_SHIM_ARGS_JSON
-  ? JSON.parse(process.env.BASH_SHIM_ARGS_JSON)
-  : process.argv.slice(2);
+let rawArgs;
+try {
+  rawArgs = process.env.BASH_SHIM_ARGS_JSON
+    ? JSON.parse(process.env.BASH_SHIM_ARGS_JSON)
+    : process.argv.slice(2);
+} catch (_) {
+  rawArgs = process.argv.slice(2);
+}
 const rawInput = fs.readFileSync(0, 'utf8');
 const commandMode = rawArgs[0] === '-c' || rawArgs[0] === '-lc';
 let args = rawArgs.map((arg, index) => (
   commandMode && index === 1 ? arg : toBashPath(arg)
 ));
-let cwd = path.dirname(realBash);
 const launchCwd = process.env.BASH_SHIM_CWD || process.cwd();
+let cwd = launchCwd;
 
 if (rawArgs.length > 0 && !rawArgs[0].startsWith('-')) {
   const [script, ...rest] = args;
@@ -84,9 +83,7 @@ if (result.stderr) {
 
 if (result.error) {
   process.stderr.write(`${result.error.message}\n`);
-  sleepMs(1500);
   process.exit(1);
 }
 
-sleepMs(1500);
 process.exit(typeof result.status === 'number' ? result.status : 1);

@@ -510,9 +510,9 @@ fi
 
 log "Merging ECC MCP servers into $CONFIG_FILE (add-only, preserving user config)"
 if [[ "$MODE" == "dry-run" ]]; then
-  node "$MCP_MERGE_SCRIPT" "$CONFIG_FILE" --dry-run $UPDATE_MCP
+  node "$MCP_MERGE_SCRIPT" "$CONFIG_FILE" --dry-run ${UPDATE_MCP:+"$UPDATE_MCP"}
 else
-  node "$MCP_MERGE_SCRIPT" "$CONFIG_FILE" $UPDATE_MCP
+  node "$MCP_MERGE_SCRIPT" "$CONFIG_FILE" ${UPDATE_MCP:+"$UPDATE_MCP"}
 fi
 
 log "Installing global git safety hooks"

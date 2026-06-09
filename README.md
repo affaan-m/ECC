@@ -1,4 +1,4 @@
-**Language:** English | [PortuguÃªs (Brasil)](docs/pt-BR/README.md) | [ç®€ä½“ä¸­æ–‡](README.zh-CN.md) | [ç¹é«”ä¸­æ–‡](docs/zh-TW/README.md) | [æ—¥æœ¬èªž](docs/ja-JP/README.md) | [í•œêµ­ì–´](docs/ko-KR/README.md) | [TÃ¼rkÃ§e](docs/tr/README.md) | [Ð ÑƒÑÑÐºÐ¸Ð¹](docs/ru/README.md) | [Tiáº¿ng Viá»‡t](docs/vi-VN/README.md) | [à¹„à¸—à¸¢](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [EspaÃ±ol](docs/es/README.md)
+﻿**Language:** English | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md) | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [Español](docs/es/README.md)
 
 # ECC
 
@@ -25,10 +25,10 @@
 
 <div align="center">
 
-**Language / è¯­è¨€ / èªžè¨€ / Dil / Ð¯Ð·Ñ‹Ðº / NgÃ´n ngá»¯ / Idioma**
+**Language / 语言 / 語言 / Dil / Язык / Ngôn ngữ / Idioma**
 
-[**English**](README.md) | [PortuguÃªs (Brasil)](docs/pt-BR/README.md) | [ç®€ä½“ä¸­æ–‡](README.zh-CN.md) | [ç¹é«”ä¸­æ–‡](docs/zh-TW/README.md) | [æ—¥æœ¬èªž](docs/ja-JP/README.md) | [í•œêµ­ì–´](docs/ko-KR/README.md)
- | [TÃ¼rkÃ§e](docs/tr/README.md) | [Ð ÑƒÑÑÐºÐ¸Ð¹](docs/ru/README.md) | [Tiáº¿ng Viá»‡t](docs/vi-VN/README.md) | [à¹„à¸—à¸¢](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [EspaÃ±ol](docs/es/README.md)
+[**English**](README.md) | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md)
+ | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [Español](docs/es/README.md)
 
 </div>
 
@@ -127,7 +127,7 @@ This repo is the raw code only. The guides explain everything.
 - **Operator and outbound workflow expansion** "” `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
 - **Media and launch tooling** "” `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
 - **Framework and product surface growth** "” `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond Claude Code alone.
-- **ItÃ´ prediction-market skill pack** "” `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research`, and `prediction-market-risk-review` add public, non-advisory market/basket workflows while keeping live ItÃ´ API access gated and separate from ECC Tools billing.
+- **Itô prediction-market skill pack** "” `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research`, and `prediction-market-risk-review` add public, non-advisory market/basket workflows while keeping live Itô API access gated and separate from ECC Tools billing.
 - **Optimization skill pack** "” `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems`, and `recursive-decision-ledger` turn repeated speed/recursion prompts into bounded benchmark, throughput, and decision-ledger workflows.
 - **ECC 2.0 alpha is in-tree** "” the Rust control-plane prototype in `ecc2/` now builds locally and exposes `dashboard`, `start`, `sessions`, `status`, `stop`, `resume`, and `daemon` commands. It is usable as an alpha, not yet a general release.
 - **Operator status snapshots** "” `ecc status --markdown --write status.md` turns the local state store into a portable handoff covering readiness, active sessions, skill-run health, install health, pending governance events, and linked work items from Linear/GitHub/handoffs. Use `ecc work-items upsert ...` for manual entries, `ecc work-items sync-github --repo owner/repo` for PR/issue queue state, and `ecc status --exit-code` to fail automation when readiness needs attention.

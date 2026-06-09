@@ -558,7 +558,7 @@ function syncIssueLabels(repo, issue, state, policy = DEFAULT_POLICY, options = 
   }
 
   if (addLabels.length > 0 || removeLabels.length > 0) {
-    editIssue(repo, issue.number, { addLabels, removeLabels }, options);
+    editIssue(repo, issue.number, { ...options, addLabels, removeLabels });
   }
 
   return { addLabels, removeLabels };
