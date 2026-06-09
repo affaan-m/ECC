@@ -1,5 +1,5 @@
 ---
-description: "Quick commit with natural language file targeting â€” describe what to commit in plain English"
+description: "Quick commit with natural language file targeting "” describe what to commit in plain English"
 argument-hint: "[target description] (blank = all changes)"
 ---
 
@@ -11,19 +11,19 @@ argument-hint: "[target description] (blank = all changes)"
 
 ---
 
-## Phase 1 â€” ASSESS
+## Phase 1 "” ASSESS
 
 ```bash
 git status --short
 ```
 
-If output is empty â†’ stop: "Nothing to commit."
+If output is empty →’ stop: "Nothing to commit."
 
 Show the user a summary of what's changed (added, modified, deleted, untracked).
 
 ---
 
-## Phase 2 â€” INTERPRET & STAGE
+## Phase 2 "” INTERPRET & STAGE
 
 Interpret `$ARGUMENTS` to determine what to stage:
 
@@ -34,7 +34,7 @@ Interpret `$ARGUMENTS` to determine what to stage:
 | `*.ts` or `*.py` etc. | Stage matching glob | `git add '*.ts'` |
 | `except tests` | Stage all, then unstage tests | `git add -A && git reset -- '**/*.test.*' '**/*.spec.*' '**/test_*' 2>/dev/null \|\| true` |
 | `only new files` | Stage untracked files only | `git ls-files --others --exclude-standard \| grep . && git ls-files --others --exclude-standard \| xargs git add` |
-| `the auth changes` | Interpret from status/diff â€” find auth-related files | `git add <matched files>` |
+| `the auth changes` | Interpret from status/diff "” find auth-related files | `git add <matched files>` |
 | Specific filenames | Stage those files | `git add <files>` |
 
 For natural language inputs (like "the auth changes"), cross-reference the `git status` output and `git diff` to identify relevant files. Show the user which files you're staging and why.
@@ -52,7 +52,7 @@ If nothing staged, stop: "No files matched your description."
 
 ---
 
-## Phase 3 â€” COMMIT
+## Phase 3 "” COMMIT
 
 Craft a single-line commit message in imperative mood:
 
@@ -61,14 +61,14 @@ Craft a single-line commit message in imperative mood:
 ```
 
 Types:
-- `feat` â€” New feature or capability
-- `fix` â€” Bug fix
-- `refactor` â€” Code restructuring without behavior change
-- `docs` â€” Documentation changes
-- `test` â€” Adding or updating tests
-- `chore` â€” Build, config, dependencies
-- `perf` â€” Performance improvement
-- `ci` â€” CI/CD changes
+- `feat` "” New feature or capability
+- `fix` "” Bug fix
+- `refactor` "” Code restructuring without behavior change
+- `docs` "” Documentation changes
+- `test` "” Adding or updating tests
+- `chore` "” Build, config, dependencies
+- `perf` "” Performance improvement
+- `ci` "” CI/CD changes
 
 Rules:
 - Imperative mood ("add feature" not "added feature")
@@ -83,7 +83,7 @@ git commit -m "{type}: {description}"
 
 ---
 
-## Phase 4 â€” OUTPUT
+## Phase 4 "” OUTPUT
 
 Report to user:
 
@@ -93,9 +93,9 @@ Message:   {type}: {description}
 Files:     {count} file(s) changed
 
 Next steps:
-  - git push           â†’ push to remote
-  - /epic-publish            â†’ create a pull request
-  - /code-review       â†’ review before pushing
+  - git push           →’ push to remote
+  - /epic-publish            →’ create a pull request
+  - /code-review       →’ review before pushing
 ```
 
 ---

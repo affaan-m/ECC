@@ -30,9 +30,9 @@ Invoke the `orch-fix-defect` skill with `$ARGUMENTS` as the request. The skill
 2. **Write a new failing regression test** reproducing the bug, then fix until
    it goes green. (Proving the bug first is what makes this a fix, not a tweak.)
 3. `code-reviewer` (+ `security-reviewer` if the defect sits in a sensitive path).
-4. Commit as a conventional `fix:` commit. â†’ **GATE 2** (confirm before commit).
+4. Commit as a conventional `fix:` commit. →’ **GATE 2** (confirm before commit).
 
-Use this only when behavior is **broken/wrong** â€” not for intentional changes
+Use this only when behavior is **broken/wrong** "” not for intentional changes
 (`/orch-change-feature`) or new capability (`/orch-add-feature`).
 
 If `$ARGUMENTS` is empty, ask the user to describe the defect.

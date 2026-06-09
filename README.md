@@ -74,7 +74,7 @@ ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable la
 </tr>
 </table>
 
-<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work â€” that's why a single maintainer ships weekly across 7 harnesses.</sub>
+<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work "” that's why a single maintainer ships weekly across 7 harnesses.</sub>
 
 ---
 
@@ -120,83 +120,83 @@ This repo is the raw code only. The guides explain everything.
 
 ## What's New
 
-### v2.0.0-rc.1 â€” Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
+### v2.0.0-rc.1 "” Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
 
-- **Dashboard GUI** â€” New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
-- **Public surface synced to the live repo** â€” metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 64 agents, 261 skills, and 91 legacy command shims.
-- **Operator and outbound workflow expansion** â€” `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
-- **Media and launch tooling** â€” `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
-- **Framework and product surface growth** â€” `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond Claude Code alone.
-- **ItÃ´ prediction-market skill pack** â€” `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research`, and `prediction-market-risk-review` add public, non-advisory market/basket workflows while keeping live ItÃ´ API access gated and separate from ECC Tools billing.
-- **Optimization skill pack** â€” `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems`, and `recursive-decision-ledger` turn repeated speed/recursion prompts into bounded benchmark, throughput, and decision-ledger workflows.
-- **ECC 2.0 alpha is in-tree** â€” the Rust control-plane prototype in `ecc2/` now builds locally and exposes `dashboard`, `start`, `sessions`, `status`, `stop`, `resume`, and `daemon` commands. It is usable as an alpha, not yet a general release.
-- **Operator status snapshots** â€” `ecc status --markdown --write status.md` turns the local state store into a portable handoff covering readiness, active sessions, skill-run health, install health, pending governance events, and linked work items from Linear/GitHub/handoffs. Use `ecc work-items upsert ...` for manual entries, `ecc work-items sync-github --repo owner/repo` for PR/issue queue state, and `ecc status --exit-code` to fail automation when readiness needs attention.
-- **Ecosystem hardening** â€” AgentShield, ECC Tools cost controls, billing portal work, and website refreshes continue to ship around the core plugin instead of drifting into separate silos.
+- **Dashboard GUI** "” New Tkinter-based desktop application (`ecc_dashboard.py` or `npm run dashboard`) with dark/light theme toggle, font customization, and project logo in header and taskbar.
+- **Public surface synced to the live repo** "” metadata, catalog counts, plugin manifests, and install-facing docs now match the actual OSS surface: 64 agents, 261 skills, and 91 legacy command shims.
+- **Operator and outbound workflow expansion** "” `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
+- **Media and launch tooling** "” `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
+- **Framework and product surface growth** "” `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond Claude Code alone.
+- **ItÃ´ prediction-market skill pack** "” `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research`, and `prediction-market-risk-review` add public, non-advisory market/basket workflows while keeping live ItÃ´ API access gated and separate from ECC Tools billing.
+- **Optimization skill pack** "” `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems`, and `recursive-decision-ledger` turn repeated speed/recursion prompts into bounded benchmark, throughput, and decision-ledger workflows.
+- **ECC 2.0 alpha is in-tree** "” the Rust control-plane prototype in `ecc2/` now builds locally and exposes `dashboard`, `start`, `sessions`, `status`, `stop`, `resume`, and `daemon` commands. It is usable as an alpha, not yet a general release.
+- **Operator status snapshots** "” `ecc status --markdown --write status.md` turns the local state store into a portable handoff covering readiness, active sessions, skill-run health, install health, pending governance events, and linked work items from Linear/GitHub/handoffs. Use `ecc work-items upsert ...` for manual entries, `ecc work-items sync-github --repo owner/repo` for PR/issue queue state, and `ecc status --exit-code` to fail automation when readiness needs attention.
+- **Ecosystem hardening** "” AgentShield, ECC Tools cost controls, billing portal work, and website refreshes continue to ship around the core plugin instead of drifting into separate silos.
 
-### v1.9.0 â€” Selective Install & Language Expansion (Mar 2026)
+### v1.9.0 "” Selective Install & Language Expansion (Mar 2026)
 
-- **Selective install architecture** â€” Manifest-driven install pipeline with `install-plan.js` and `install-apply.js` for targeted component installation. State store tracks what's installed and enables incremental updates.
-- **6 new agents** â€” `typescript-reviewer`, `pytorch-build-resolver`, `java-build-resolver`, `java-reviewer`, `kotlin-reviewer`, `kotlin-build-resolver` expand language coverage to 10 languages.
-- **New skills** â€” `pytorch-patterns` for deep learning workflows, `documentation-lookup` for API reference research, `bun-runtime` and `nextjs-turbopack` for modern JS toolchains, plus 8 operational domain skills and `mcp-server-patterns`.
-- **Session & state infrastructure** â€” SQLite state store with query CLI, session adapters for structured recording, skill evolution foundation for self-improving skills.
-- **Orchestration overhaul** â€” Harness audit scoring made deterministic, orchestration status and launcher compatibility hardened, observer loop prevention with 5-layer guard.
-- **Observer reliability** â€” Memory explosion fix with throttling and tail sampling, sandbox access fix, lazy-start logic, and re-entrancy guard.
-- **12 language ecosystems** â€” New rules for Java, PHP, Perl, Kotlin/Android/KMP, C++, and Rust join existing TypeScript, Python, Go, and common rules.
-- **Community contributions** â€” Korean and Chinese translations, biome hook optimization, video processing skills, operational skills, PowerShell installer, Antigravity IDE support.
-- **CI hardening** â€” 19 test failure fixes, catalog count enforcement, install manifest validation, and full test suite green.
+- **Selective install architecture** "” Manifest-driven install pipeline with `install-plan.js` and `install-apply.js` for targeted component installation. State store tracks what's installed and enables incremental updates.
+- **6 new agents** "” `typescript-reviewer`, `pytorch-build-resolver`, `java-build-resolver`, `java-reviewer`, `kotlin-reviewer`, `kotlin-build-resolver` expand language coverage to 10 languages.
+- **New skills** "” `pytorch-patterns` for deep learning workflows, `documentation-lookup` for API reference research, `bun-runtime` and `nextjs-turbopack` for modern JS toolchains, plus 8 operational domain skills and `mcp-server-patterns`.
+- **Session & state infrastructure** "” SQLite state store with query CLI, session adapters for structured recording, skill evolution foundation for self-improving skills.
+- **Orchestration overhaul** "” Harness audit scoring made deterministic, orchestration status and launcher compatibility hardened, observer loop prevention with 5-layer guard.
+- **Observer reliability** "” Memory explosion fix with throttling and tail sampling, sandbox access fix, lazy-start logic, and re-entrancy guard.
+- **12 language ecosystems** "” New rules for Java, PHP, Perl, Kotlin/Android/KMP, C++, and Rust join existing TypeScript, Python, Go, and common rules.
+- **Community contributions** "” Korean and Chinese translations, biome hook optimization, video processing skills, operational skills, PowerShell installer, Antigravity IDE support.
+- **CI hardening** "” 19 test failure fixes, catalog count enforcement, install manifest validation, and full test suite green.
 
-### v1.8.0 â€” Harness Performance System (Mar 2026)
+### v1.8.0 "” Harness Performance System (Mar 2026)
 
-- **Harness-first release** â€” ECC is now explicitly framed as an agent harness performance system, not just a config pack.
-- **Hook reliability overhaul** â€” SessionStart root fallback, Stop-phase session summaries, and script-based hooks replacing fragile inline one-liners.
-- **Hook runtime controls** â€” `ECC_HOOK_PROFILE=minimal|standard|strict` and `ECC_DISABLED_HOOKS=...` for runtime gating without editing hook files.
-- **New harness commands** â€” `/harness-audit`, `/loop-start`, `/loop-status`, `/quality-gate`, `/model-route`.
-- **NanoClaw v2** â€” model routing, skill hot-load, session branch/search/export/compact/metrics.
-- **Cross-harness parity** â€” behavior tightened across Claude Code, Cursor, OpenCode, and Codex app/CLI.
-- **997 internal tests passing** â€” full suite green after hook/runtime refactor and compatibility updates.
+- **Harness-first release** "” ECC is now explicitly framed as an agent harness performance system, not just a config pack.
+- **Hook reliability overhaul** "” SessionStart root fallback, Stop-phase session summaries, and script-based hooks replacing fragile inline one-liners.
+- **Hook runtime controls** "” `ECC_HOOK_PROFILE=minimal|standard|strict` and `ECC_DISABLED_HOOKS=...` for runtime gating without editing hook files.
+- **New harness commands** "” `/harness-audit`, `/loop-start`, `/loop-status`, `/quality-gate`, `/model-route`.
+- **NanoClaw v2** "” model routing, skill hot-load, session branch/search/export/compact/metrics.
+- **Cross-harness parity** "” behavior tightened across Claude Code, Cursor, OpenCode, and Codex app/CLI.
+- **997 internal tests passing** "” full suite green after hook/runtime refactor and compatibility updates.
 
-### v1.7.0 â€” Cross-Platform Expansion & Presentation Builder (Feb 2026)
+### v1.7.0 "” Cross-Platform Expansion & Presentation Builder (Feb 2026)
 
-- **Codex app + CLI support** â€” Direct `AGENTS.md`-based Codex support, installer targeting, and Codex docs
-- **`frontend-slides` skill** â€” Zero-dependency HTML presentation builder with PPTX conversion guidance and strict viewport-fit rules
-- **5 new generic business/content skills** â€” `article-writing`, `content-engine`, `market-research`, `investor-materials`, `investor-outreach`
-- **Broader tool coverage** â€” Cursor, Codex, and OpenCode support tightened so the same repo ships cleanly across all major harnesses
-- **992 internal tests** â€” Expanded validation and regression coverage across plugin, hooks, skills, and packaging
+- **Codex app + CLI support** "” Direct `AGENTS.md`-based Codex support, installer targeting, and Codex docs
+- **`frontend-slides` skill** "” Zero-dependency HTML presentation builder with PPTX conversion guidance and strict viewport-fit rules
+- **5 new generic business/content skills** "” `article-writing`, `content-engine`, `market-research`, `investor-materials`, `investor-outreach`
+- **Broader tool coverage** "” Cursor, Codex, and OpenCode support tightened so the same repo ships cleanly across all major harnesses
+- **992 internal tests** "” Expanded validation and regression coverage across plugin, hooks, skills, and packaging
 
-### v1.6.0 â€” Codex CLI, AgentShield & Marketplace (Feb 2026)
+### v1.6.0 "” Codex CLI, AgentShield & Marketplace (Feb 2026)
 
-- **Codex CLI support** â€” New `/codex-setup` command generates `codex.md` for OpenAI Codex CLI compatibility
-- **7 new skills** â€” `search-first`, `swift-actor-persistence`, `swift-protocol-di-testing`, `regex-vs-llm-structured-text`, `content-hash-cache-pattern`, `cost-aware-llm-pipeline`, `skill-stocktake`
-- **AgentShield integration** â€” `/security-scan` skill runs AgentShield directly from Claude Code; 1282 tests, 102 rules
-- **GitHub Marketplace** â€” ECC Tools GitHub App live at [github.com/marketplace/ecc-tools](https://github.com/marketplace/ecc-tools) with free/pro/enterprise tiers
-- **30+ community PRs merged** â€” Contributions from 30 contributors across 6 languages
-- **978 internal tests** â€” Expanded validation suite across agents, skills, commands, hooks, and rules
+- **Codex CLI support** "” New `/codex-setup` command generates `codex.md` for OpenAI Codex CLI compatibility
+- **7 new skills** "” `search-first`, `swift-actor-persistence`, `swift-protocol-di-testing`, `regex-vs-llm-structured-text`, `content-hash-cache-pattern`, `cost-aware-llm-pipeline`, `skill-stocktake`
+- **AgentShield integration** "” `/security-scan` skill runs AgentShield directly from Claude Code; 1282 tests, 102 rules
+- **GitHub Marketplace** "” ECC Tools GitHub App live at [github.com/marketplace/ecc-tools](https://github.com/marketplace/ecc-tools) with free/pro/enterprise tiers
+- **30+ community PRs merged** "” Contributions from 30 contributors across 6 languages
+- **978 internal tests** "” Expanded validation suite across agents, skills, commands, hooks, and rules
 
-### v1.4.1 â€” Bug Fix (Feb 2026)
+### v1.4.1 "” Bug Fix (Feb 2026)
 
-- **Fixed instinct import content loss** â€” `parse_instinct_file()` was silently dropping all content after frontmatter (Action, Evidence, Examples sections) during `/instinct-import`. ([#148](https://github.com/affaan-m/ECC/issues/148), [#161](https://github.com/affaan-m/ECC/pull/161))
+- **Fixed instinct import content loss** "” `parse_instinct_file()` was silently dropping all content after frontmatter (Action, Evidence, Examples sections) during `/instinct-import`. ([#148](https://github.com/affaan-m/ECC/issues/148), [#161](https://github.com/affaan-m/ECC/pull/161))
 
-### v1.4.0 â€” Multi-Language Rules, Installation Wizard & PM2 (Feb 2026)
+### v1.4.0 "” Multi-Language Rules, Installation Wizard & PM2 (Feb 2026)
 
-- **Interactive installation wizard** â€” New `configure-ecc` skill provides guided setup with merge/overwrite detection
-- **PM2 & multi-agent orchestration** â€” 6 new commands (`/pm2`, `/multi-plan`, `/multi-execute`, `/multi-backend`, `/multi-frontend`, `/multi-workflow`) for managing complex multi-service workflows
-- **Multi-language rules architecture** â€” Rules restructured from flat files into `common/` + `typescript/` + `python/` + `golang/` directories. Install only the languages you need
-- **Chinese (zh-CN) translations** â€” Complete translation of all agents, commands, skills, and rules (80+ files)
-- **GitHub Sponsors support** â€” Sponsor the project via GitHub Sponsors
-- **Enhanced CONTRIBUTING.md** â€” Detailed PR templates for each contribution type
+- **Interactive installation wizard** "” New `configure-ecc` skill provides guided setup with merge/overwrite detection
+- **PM2 & multi-agent orchestration** "” 6 new commands (`/pm2`, `/multi-plan`, `/multi-execute`, `/multi-backend`, `/multi-frontend`, `/multi-workflow`) for managing complex multi-service workflows
+- **Multi-language rules architecture** "” Rules restructured from flat files into `common/` + `typescript/` + `python/` + `golang/` directories. Install only the languages you need
+- **Chinese (zh-CN) translations** "” Complete translation of all agents, commands, skills, and rules (80+ files)
+- **GitHub Sponsors support** "” Sponsor the project via GitHub Sponsors
+- **Enhanced CONTRIBUTING.md** "” Detailed PR templates for each contribution type
 
-### v1.3.0 â€” OpenCode Plugin Support (Feb 2026)
+### v1.3.0 "” OpenCode Plugin Support (Feb 2026)
 
-- **Full OpenCode integration** â€” 12 agents, 24 commands, 16 skills with hook support via OpenCode's plugin system (20+ event types)
-- **3 native custom tools** â€” run-tests, check-coverage, security-audit
-- **LLM documentation** â€” `llms.txt` for comprehensive OpenCode docs
+- **Full OpenCode integration** "” 12 agents, 24 commands, 16 skills with hook support via OpenCode's plugin system (20+ event types)
+- **3 native custom tools** "” run-tests, check-coverage, security-audit
+- **LLM documentation** "” `llms.txt` for comprehensive OpenCode docs
 
-### v1.2.0 â€” Unified Commands & Skills (Feb 2026)
+### v1.2.0 "” Unified Commands & Skills (Feb 2026)
 
-- **Python/Django support** â€” Django patterns, security, TDD, and verification skills
-- **Java Spring Boot skills** â€” Patterns, security, TDD, and verification for Spring Boot
-- **Session management** â€” `/sessions` command for session history
-- **Continuous learning v2** â€” Instinct-based learning with confidence scoring, import/export, evolution
+- **Python/Django support** "” Django patterns, security, TDD, and verification skills
+- **Java Spring Boot skills** "” Patterns, security, TDD, and verification for Spring Boot
+- **Session management** "” `/sessions` command for session history
+- **Continuous learning v2** "” Instinct-based learning with confidence scoring, import/export, evolution
 
 See the full changelog in [Releases](https://github.com/affaan-m/ECC/releases).
 
@@ -505,10 +505,10 @@ export ECC_AGENT_DATA_HOME="$HOME/.cursor/ecc"
 
 Paths resolved under that root include:
 
-- `$ECC_AGENT_DATA_HOME/session-data/` â€” session summaries
-- `$ECC_AGENT_DATA_HOME/skills/learned/` â€” learned skills from evaluate-session
-- `$ECC_AGENT_DATA_HOME/session-aliases.json` â€” session aliases
-- `$ECC_AGENT_DATA_HOME/metrics/` â€” cost and activity metrics
+- `$ECC_AGENT_DATA_HOME/session-data/` "” session summaries
+- `$ECC_AGENT_DATA_HOME/skills/learned/` "” learned skills from evaluate-session
+- `$ECC_AGENT_DATA_HOME/session-aliases.json` "” session aliases
+- `$ECC_AGENT_DATA_HOME/metrics/` "” cost and activity metrics
 
 See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 
@@ -769,7 +769,7 @@ Both options create:
 - **Instinct collections** - For continuous-learning-v2
 - **Pattern extraction** - Learns from your commit history
 
-### AgentShield â€” Security Auditor
+### AgentShield "” Security Auditor
 
 > Built at the Claude Code Hackathon (Cerebral Valley x Anthropic, Feb 2026). 1282 tests, 98% coverage, 102 static analysis rules.
 
@@ -789,7 +789,7 @@ npx ecc-agentshield scan --opus --stream
 npx ecc-agentshield init
 ```
 
-**What it scans:** CLAUDE.md, settings.json, MCP configs, hooks, agent definitions, and skills across 5 categories â€” secrets detection (14 patterns), permission auditing, hook injection analysis, MCP server risk profiling, and agent config review.
+**What it scans:** CLAUDE.md, settings.json, MCP configs, hooks, agent definitions, and skills across 5 categories "” secrets detection (14 patterns), permission auditing, hook injection analysis, MCP server risk profiling, and agent config review.
 
 **The `--opus` flag** runs three Claude Opus 4.6 agents in a red-team/blue-team/auditor pipeline. The attacker finds exploit chains, the defender evaluates protections, and the auditor synthesizes both into a prioritized risk assessment. Adversarial reasoning, not just pattern matching.
 
@@ -1077,23 +1077,23 @@ Slash forms below are shown where they remain part of the maintained command sur
 **Starting a new feature:**
 ```
 /ecc:plan "Add user authentication with OAuth"
-                                              â†’ planner creates implementation blueprint
-tdd-workflow skill                            â†’ tdd-guide enforces write-tests-first
-/code-review                                  â†’ code-reviewer checks your work
+                                              →’ planner creates implementation blueprint
+tdd-workflow skill                            →’ tdd-guide enforces write-tests-first
+/code-review                                  →’ code-reviewer checks your work
 ```
 
 **Fixing a bug:**
 ```
-tdd-workflow skill                            â†’ tdd-guide: write a failing test that reproduces it
-                                              â†’ implement the fix, verify test passes
-/code-review                                  â†’ code-reviewer: catch regressions
+tdd-workflow skill                            →’ tdd-guide: write a failing test that reproduces it
+                                              →’ implement the fix, verify test passes
+/code-review                                  →’ code-reviewer: catch regressions
 ```
 
 **Preparing for production:**
 ```
-/security-scan                                â†’ security-reviewer: OWASP Top 10 audit
-e2e-testing skill                             â†’ e2e-runner: critical user flow tests
-/test-coverage                                â†’ verify 80%+ coverage
+/security-scan                                →’ security-reviewer: OWASP Top 10 audit
+e2e-testing skill                             →’ e2e-runner: critical user flow tests
+/test-coverage                                →’ verify 80%+ coverage
 ```
 
 ---
@@ -1182,7 +1182,7 @@ Yes. ECC is cross-platform:
 - **Qwen CLI**: Home-directory selective install adapter for commands, agents, skills, rules, and Qwen config. See [Qwen CLI Adapter Guide](docs/QWEN-GUIDE.md).
 - **Zed**: Project-local selective install adapter for `.zed/settings.json`, flattened rules, commands, agents, and skills.
 - **Non-native harnesses**: Manual fallback path for Grok and similar interfaces. See [Manual Adaptation Guide](docs/MANUAL-ADAPTATION-GUIDE.md).
-- **Claude Code**: Native â€” this is the primary target.
+- **Claude Code**: Native "” this is the primary target.
 </details>
 
 <details>
@@ -1227,8 +1227,8 @@ Please contribute! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Ideas for Contributions
 
-- Language-specific skills (Rust, C#, Kotlin, Java) â€” Go, Python, Perl, Swift, TypeScript, and HarmonyOS/ArkTS already included
-- Framework-specific configs (Rails, FastAPI) â€” Django, NestJS, Spring Boot, and Laravel already included
+- Language-specific skills (Rust, C#, Kotlin, Java) "” Go, Python, Perl, Swift, TypeScript, and HarmonyOS/ArkTS already included
+- Framework-specific configs (Rails, FastAPI) "” Django, NestJS, Spring Boot, and Laravel already included
 - DevOps agents (Kubernetes, Terraform, AWS, Docker)
 - Testing strategies (different frameworks, visual regression)
 - Domain-specific knowledge (ML, data engineering, mobile)
@@ -1237,9 +1237,9 @@ Please contribute! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 These are not bundled with ECC and are not audited by this repo, but they are worth knowing about if you are exploring the broader Claude Code skills ecosystem:
 
-- [claude-seo](https://github.com/AgriciDaniel/claude-seo) â€” SEO-focused skill and agent collection
-- [claude-ads](https://github.com/AgriciDaniel/claude-ads) â€” Ad-audit and paid-growth workflow collection
-- [claude-cybersecurity](https://github.com/AgriciDaniel/claude-cybersecurity) â€” Security-oriented skill and agent collection
+- [claude-seo](https://github.com/AgriciDaniel/claude-seo) "” SEO-focused skill and agent collection
+- [claude-ads](https://github.com/AgriciDaniel/claude-ads) "” Ad-audit and paid-growth workflow collection
+- [claude-cybersecurity](https://github.com/AgriciDaniel/claude-cybersecurity) "” Security-oriented skill and agent collection
 
 ---
 
@@ -1284,9 +1284,9 @@ Cursor-native loading behavior can vary by Cursor build. ECC installs agents as 
 ECC memory hooks reuse the same `scripts/hooks/*.js` as Claude Code. For Cursor, ECC tries to keep memory **out of `~/.claude` automatically**:
 
 1. **Cursor `sessionStart` hook** (installed to `.cursor/hooks.json` on `--target cursor`) injects `ECC_AGENT_DATA_HOME` for the whole composer session.
-2. **Hook runtime default** â€” when `CURSOR_VERSION` or `CURSOR_PROJECT_DIR` is present, hooks default to `~/.cursor/ecc` if the env var is unset.
-3. **Project config** â€” `.cursor/ecc-agent-data.json` documents and overrides the path (`agentDataHome`).
-4. **Always-on rule** â€” `.cursor/rules/ecc-agent-data-home.mdc` reminds the agent where memory lives.
+2. **Hook runtime default** "” when `CURSOR_VERSION` or `CURSOR_PROJECT_DIR` is present, hooks default to `~/.cursor/ecc` if the env var is unset.
+3. **Project config** "” `.cursor/ecc-agent-data.json` documents and overrides the path (`agentDataHome`).
+4. **Always-on rule** "” `.cursor/rules/ecc-agent-data-home.mdc` reminds the agent where memory lives.
 
 You can still override explicitly:
 
@@ -1303,16 +1303,16 @@ Continuous learning v2 instincts remain separate under `CLV2_HOMUNCULUS_DIR` (de
 Cursor has **more hook events than Claude Code** (20 vs 8). The `.cursor/hooks/adapter.js` module transforms Cursor's stdin JSON to Claude Code's format, allowing existing `scripts/hooks/*.js` to be reused without duplication.
 
 ```
-Cursor stdin JSON â†’ adapter.js â†’ transforms â†’ scripts/hooks/*.js
+Cursor stdin JSON →’ adapter.js →’ transforms →’ scripts/hooks/*.js
                                               (shared with Claude Code)
 ```
 
 Key hooks:
-- **beforeShellExecution** â€” Blocks dev servers outside tmux (exit 2), git push review
-- **afterFileEdit** â€” Auto-format + TypeScript check + console.log warning
-- **beforeSubmitPrompt** â€” Detects secrets (sk-, ghp_, AKIA patterns) in prompts
-- **beforeTabFileRead** â€” Blocks Tab from reading .env, .key, .pem files (exit 2)
-- **beforeMCPExecution / afterMCPExecution** â€” MCP audit logging
+- **beforeShellExecution** "” Blocks dev servers outside tmux (exit 2), git push review
+- **afterFileEdit** "” Auto-format + TypeScript check + console.log warning
+- **beforeSubmitPrompt** "” Detects secrets (sk-, ghp_, AKIA patterns) in prompts
+- **beforeTabFileRead** "” Blocks Tab from reading .env, .key, .pem files (exit 2)
+- **beforeMCPExecution / afterMCPExecution** "” MCP audit logging
 
 ### Rules Format
 
@@ -1335,7 +1335,7 @@ ECC provides **first-class Codex support** for both the macOS app and CLI, with 
 ### Quick Start (Codex App + CLI)
 
 ```bash
-# Run Codex CLI in the repo â€” AGENTS.md and .codex/ are auto-detected
+# Run Codex CLI in the repo "” AGENTS.md and .codex/ are auto-detected
 codex
 
 # Automatic setup: sync ECC assets (AGENTS.md, skills, MCP servers) into ~/.codex
@@ -1348,7 +1348,7 @@ npm install && bash scripts/sync-ecc-to-codex.sh
 cp .codex/config.toml ~/.codex/config.toml
 ```
 
-The sync script safely merges ECC MCP servers into your existing `~/.codex/config.toml` using an **add-only** strategy â€” it never removes or modifies your existing servers. Run with `--dry-run` to preview changes, or `--update-mcp` to force-refresh ECC servers to the latest recommended config.
+The sync script safely merges ECC MCP servers into your existing `~/.codex/config.toml` using an **add-only** strategy "” it never removes or modifies your existing servers. Run with `--dry-run` to preview changes, or `--update-mcp` to force-refresh ECC servers to the latest recommended config.
 
 For Context7, ECC uses the canonical Codex section name `[mcp_servers.context7]` while still launching the `@upstash/context7-mcp` package. If you already have a legacy `[mcp_servers.context7-mcp]` entry, `--update-mcp` migrates it to the canonical section name.
 
@@ -1363,12 +1363,12 @@ Codex macOS app:
 
 | Component | Count | Details |
 |-----------|-------|---------|
-| Config | 1 | `.codex/config.toml` â€” top-level approvals/sandbox/web_search, MCP servers, notifications, profiles |
+| Config | 1 | `.codex/config.toml` "” top-level approvals/sandbox/web_search, MCP servers, notifications, profiles |
 | AGENTS.md | 2 | Root (universal) + `.codex/AGENTS.md` (Codex-specific supplement) |
-| Skills | 32 | `.agents/skills/` â€” SKILL.md + agents/openai.yaml per skill |
+| Skills | 32 | `.agents/skills/` "” SKILL.md + agents/openai.yaml per skill |
 | MCP Servers | 6 | GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking (7 with Supabase via `--update-mcp` sync) |
 | Profiles | 2 | `strict` (read-only sandbox) and `yolo` (full auto-approve) |
-| Agent Roles | 3 | `.codex/agents/` â€” explorer, reviewer, docs-researcher |
+| Agent Roles | 3 | `.codex/agents/` "” explorer, reviewer, docs-researcher |
 
 ### Skills
 
@@ -1386,7 +1386,7 @@ Canonical Anthropic skills such as `claude-api`, `frontend-design`, and `skill-c
 | brand-voice | Source-derived writing style profiles from real content |
 | bun-runtime | Bun as runtime, package manager, bundler, and test runner |
 | coding-standards | Universal coding standards |
-| codehealth-mcp | Optional â€” Code Health MCP (opt-in server + token); structural review and commit/PR gates |
+| codehealth-mcp | Optional "” Code Health MCP (opt-in server + token); structural review and commit/PR gates |
 | content-engine | Platform-native social content and repurposing |
 | crosspost | Multi-platform content distribution across X, LinkedIn, Threads |
 | deep-research | Multi-source research with synthesis and source attribution |
@@ -1572,7 +1572,7 @@ For the full ECC OpenCode setup, either:
 
 ## GitHub Copilot Support
 
-ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system â€” no extra tooling required.
+ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system "” no extra tooling required.
 
 ### What's Included
 
@@ -1589,7 +1589,7 @@ ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native in
 
 ### Quick Start (GitHub Copilot)
 
-The files are already in place â€” open any repo that contains this project and GitHub Copilot Chat will automatically pick up `.github/copilot-instructions.md`.
+The files are already in place "” open any repo that contains this project and GitHub Copilot Chat will automatically pick up `.github/copilot-instructions.md`.
 The committed `.vscode/settings.json` enables `chat.promptFiles` so VS Code can load the reusable prompts from `.github/prompts/`.
 
 To use the workflow prompts in Copilot Chat:
@@ -1601,8 +1601,8 @@ To use the workflow prompts in Copilot Chat:
 
 GitHub Copilot in VS Code reads two types of files automatically:
 
-- **`.github/copilot-instructions.md`** â€” repository-level instructions, always injected into every Copilot Chat request. Contains ECC's core coding standards, security checklist, testing requirements, and git workflow.
-- **`.github/prompts/*.prompt.md`** â€” reusable prompt files users invoke on demand. Each prompt walks Copilot through a specific ECC workflow (plan â†’ TDD â†’ review â†’ ship).
+- **`.github/copilot-instructions.md`** "” repository-level instructions, always injected into every Copilot Chat request. Contains ECC's core coding standards, security checklist, testing requirements, and git workflow.
+- **`.github/prompts/*.prompt.md`** "” reusable prompt files users invoke on demand. Each prompt walks Copilot through a specific ECC workflow (plan →’ TDD →’ review →’ ship).
 
 The **`.vscode/settings.json`** adds per-task instruction overlays so Copilot receives the right context depending on whether you are generating code, writing tests, reviewing a selection, or drafting a commit message.
 
@@ -1623,7 +1623,7 @@ The **`.vscode/settings.json`** adds per-task instruction overlays so Copilot re
 
 ### Limitations
 
-GitHub Copilot does not have a hook system or a subagent API, so ECC's hook automations (auto-format, TypeScript check, session persistence, dev-server guard) and agent delegation are unavailable. The instruction and prompt layer still brings the full ECC coding philosophy â€” standards, security, TDD, and workflow â€” into every Copilot Chat session.
+GitHub Copilot does not have a hook system or a subagent API, so ECC's hook automations (auto-format, TypeScript check, session persistence, dev-server guard) and agent delegation are unavailable. The instruction and prompt layer still brings the full ECC coding philosophy "” standards, security, TDD, and workflow "” into every Copilot Chat session.
 
 ---
 
@@ -1648,7 +1648,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | **Version** | Plugin | Plugin | Reference config | 2.0.0-rc.1 | Instruction layer |
 
 **Key architectural decisions:**
-- **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode â€” GitHub Copilot uses `.github/copilot-instructions.md` instead)
+- **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode "” GitHub Copilot uses `.github/copilot-instructions.md` instead)
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
 - **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
 - Codex's lack of hooks is compensated by `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
@@ -1657,7 +1657,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 
 ## Background
 
-I've been using Claude Code since the experimental rollout. Won the Anthropic x Forum Ventures hackathon in Sep 2025 with [@DRodriguezFX](https://x.com/DRodriguezFX) â€” built [zenith.chat](https://zenith.chat) entirely using Claude Code.
+I've been using Claude Code since the experimental rollout. Won the Anthropic x Forum Ventures hackathon in Sep 2025 with [@DRodriguezFX](https://x.com/DRodriguezFX) "” built [zenith.chat](https://zenith.chat) entirely using Claude Code.
 
 These configs are battle-tested across multiple production applications.
 
@@ -1685,7 +1685,7 @@ Add to `~/.claude/settings.json`:
 |---------|---------|-------------|--------|
 | `model` | opus | **sonnet** | ~60% cost reduction; handles 80%+ of coding tasks |
 | `MAX_THINKING_TOKENS` | 31,999 | **10,000** | ~70% reduction in hidden thinking cost per request |
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 95 | **50** | Compacts earlier â€” better quality in long sessions |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 95 | **50** | Compacts earlier "” better quality in long sessions |
 | `ECC_CONTEXT_MONITOR_COST_WARNINGS` | on | **off for subscription users** | Suppresses agent-facing API-rate estimate warnings while keeping context/scope/loop warnings |
 
 Switch to Opus only when you need deep architectural reasoning:
@@ -1771,7 +1771,7 @@ Projects built on or inspired by ECC:
 
 | Project | Description |
 |---------|-------------|
-| [EVC](https://github.com/SaigonXIII/evc) | Marketing agent workspace â€” 42 commands for content operators, brand governance, and multi-channel publishing. [Visual overview](https://saigonxiii.github.io/evc). |
+| [EVC](https://github.com/SaigonXIII/evc) | Marketing agent workspace "” 42 commands for content operators, brand governance, and multi-channel publishing. [Visual overview](https://saigonxiii.github.io/evc). |
 | [trading-skills](https://github.com/VictorVVedtion/trading-skills) | 68 trading-themed Claude Code skills with pre-trade review prompts and risk gates inspired by market operators. |
 
 Built something with ECC? Open a PR to add it here.

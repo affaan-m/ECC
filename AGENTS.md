@@ -6,11 +6,11 @@ This is a **production-ready AI coding plugin** providing 64 specialized agents,
 
 ## Core Principles
 
-1. **Agent-First** Ã¢â‚¬â€ Delegate to specialized agents for domain tasks
-2. **Test-Driven** Ã¢â‚¬â€ Write tests before implementation, 80%+ coverage required
-3. **Security-First** Ã¢â‚¬â€ Never compromise on security; validate all inputs
-4. **Immutability** Ã¢â‚¬â€ Always create new objects, never mutate existing ones
-5. **Plan Before Execute** Ã¢â‚¬â€ Plan complex features before writing code
+1. **Agent-First** —" Delegate to specialized agents for domain tasks
+2. **Test-Driven** —" Write tests before implementation, 80%+ coverage required
+3. **Security-First** —" Never compromise on security; validate all inputs
+4. **Immutability** —" Always create new objects, never mutate existing ones
+5. **Plan Before Execute** —" Plan complex features before writing code
 
 ## Available Agents
 
@@ -50,15 +50,15 @@ This is a **production-ready AI coding plugin** providing 64 specialized agents,
 ## Agent Orchestration
 
 Use agents proactively without user prompt:
-- Complex feature requests Ã¢â€ â€™ **planner**
-- Code just written/modified Ã¢â€ â€™ **code-reviewer**
-- Bug fix or new feature Ã¢â€ â€™ **tdd-guide**
-- Architectural decision Ã¢â€ â€™ **architect**
-- Security-sensitive code Ã¢â€ â€™ **security-reviewer**
-- Autonomous loops / loop monitoring Ã¢â€ â€™ **loop-operator**
-- Harness config reliability and cost Ã¢â€ â€™ **harness-optimizer**
+- Complex feature requests Ã¢" ' **planner**
+- Code just written/modified Ã¢" ' **code-reviewer**
+- Bug fix or new feature Ã¢" ' **tdd-guide**
+- Architectural decision Ã¢" ' **architect**
+- Security-sensitive code Ã¢" ' **security-reviewer**
+- Autonomous loops / loop monitoring Ã¢" ' **loop-operator**
+- Harness config reliability and cost Ã¢" ' **harness-optimizer**
 
-Use parallel execution for independent operations Ã¢â‚¬â€ launch multiple agents simultaneously.
+Use parallel execution for independent operations —" launch multiple agents simultaneously.
 
 ## Security Guidelines
 
@@ -74,7 +74,7 @@ Use parallel execution for independent operations Ã¢â‚¬â€ launch mult
 
 **Secret management:** NEVER hardcode secrets. Use environment variables or a secret manager. Validate required secrets at startup. Rotate any exposed secrets immediately.
 
-**If security issue found:** STOP Ã¢â€ â€™ use security-reviewer agent Ã¢â€ â€™ fix CRITICAL issues Ã¢â€ â€™ rotate exposed secrets Ã¢â€ â€™ review codebase for similar issues.
+**If security issue found:** STOP Ã¢" ' use security-reviewer agent Ã¢" ' fix CRITICAL issues Ã¢" ' rotate exposed secrets Ã¢" ' review codebase for similar issues.
 
 ## Coding Style
 
@@ -97,28 +97,28 @@ Use parallel execution for independent operations Ã¢â‚¬â€ launch mult
 **Minimum coverage: 80%**
 
 Test types (all required):
-1. **Unit tests** Ã¢â‚¬â€ Individual functions, utilities, components
-2. **Integration tests** Ã¢â‚¬â€ API endpoints, database operations
-3. **E2E tests** Ã¢â‚¬â€ Critical user flows
+1. **Unit tests** —" Individual functions, utilities, components
+2. **Integration tests** —" API endpoints, database operations
+3. **E2E tests** —" Critical user flows
 
 **TDD workflow (mandatory):**
-1. Write test first (RED) Ã¢â‚¬â€ test should FAIL
-2. Write minimal implementation (GREEN) Ã¢â‚¬â€ test should PASS
-3. Refactor (IMPROVE) Ã¢â‚¬â€ verify coverage 80%+
+1. Write test first (RED) —" test should FAIL
+2. Write minimal implementation (GREEN) —" test should PASS
+3. Refactor (IMPROVE) —" verify coverage 80%+
 
-Troubleshoot failures: check test isolation Ã¢â€ â€™ verify mocks Ã¢â€ â€™ fix implementation (not tests, unless tests are wrong).
+Troubleshoot failures: check test isolation Ã¢" ' verify mocks Ã¢" ' fix implementation (not tests, unless tests are wrong).
 
 ## Development Workflow
 
-1. **Plan** Ã¢â‚¬â€ Use planner agent, identify dependencies and risks, break into phases
-2. **TDD** Ã¢â‚¬â€ Use tdd-guide agent, write tests first, implement, refactor
-3. **Review** Ã¢â‚¬â€ Use code-reviewer agent immediately, address CRITICAL/HIGH issues
+1. **Plan** —" Use planner agent, identify dependencies and risks, break into phases
+2. **TDD** —" Use tdd-guide agent, write tests first, implement, refactor
+3. **Review** —" Use code-reviewer agent immediately, address CRITICAL/HIGH issues
 4. **Capture knowledge in the right place**
-   - Personal debugging notes, preferences, and temporary context Ã¢â€ â€™ auto memory
-   - Team/project knowledge (architecture decisions, API changes, runbooks) Ã¢â€ â€™ the project's existing docs structure
+   - Personal debugging notes, preferences, and temporary context Ã¢" ' auto memory
+   - Team/project knowledge (architecture decisions, API changes, runbooks) Ã¢" ' the project's existing docs structure
    - If the current task already produces the relevant docs or code comments, do not duplicate the same information elsewhere
    - If there is no obvious project doc location, ask before creating a new top-level file
-5. **Commit** Ã¢â‚¬â€ Conventional commits format, comprehensive PR summaries
+5. **Commit** —" Conventional commits format, comprehensive PR summaries
 
 ## Workflow Surface Policy
 
@@ -128,9 +128,9 @@ Troubleshoot failures: check test isolation Ã¢â€ â€™ verify mocks Ã�
 
 ## Git Workflow
 
-**Commit format:** `<type>: <description>` Ã¢â‚¬â€ Types: feat, fix, refactor, docs, test, chore, perf, ci
+**Commit format:** `<type>: <description>` —" Types: feat, fix, refactor, docs, test, chore, perf, ci
 
-**PR workflow:** Analyze full commit history Ã¢â€ â€™ draft comprehensive summary Ã¢â€ â€™ include test plan Ã¢â€ â€™ push with `-u` flag.
+**PR workflow:** Analyze full commit history Ã¢" ' draft comprehensive summary Ã¢" ' include test plan Ã¢" ' push with `-u` flag.
 
 ## Architecture Patterns
 
@@ -144,7 +144,7 @@ Troubleshoot failures: check test isolation Ã¢â€ â€™ verify mocks Ã�
 
 **Context management:** Avoid last 20% of context window for large refactoring and multi-file features. Lower-sensitivity tasks (single edits, docs, simple fixes) tolerate higher utilization.
 
-**Build troubleshooting:** Use build-error-resolver agent Ã¢â€ â€™ analyze errors Ã¢â€ â€™ fix incrementally Ã¢â€ â€™ verify after each fix.
+**Build troubleshooting:** Use build-error-resolver agent Ã¢" ' analyze errors Ã¢" ' fix incrementally Ã¢" ' verify after each fix.
 
 ## Project Structure
 

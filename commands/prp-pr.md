@@ -1,5 +1,5 @@
 ---
-description: "Create a GitHub PR from current branch with unpushed commits â€” discovers templates, analyzes changes, pushes"
+description: "Create a GitHub PR from current branch with unpushed commits "” discovers templates, analyzes changes, pushes"
 argument-hint: "[base-branch] (default: main)"
 ---
 
@@ -7,7 +7,7 @@ argument-hint: "[base-branch] (default: main)"
 
 > Adapted from PRPs-agentic-eng by Wirasm. Part of the PRP workflow series.
 
-**Input**: `$ARGUMENTS` â€” optional, may contain a base branch name and/or flags (e.g., `--draft`).
+**Input**: `$ARGUMENTS` "” optional, may contain a base branch name and/or flags (e.g., `--draft`).
 
 **Parse `$ARGUMENTS`**:
 - Extract any recognized flags (`--draft`)
@@ -16,7 +16,7 @@ argument-hint: "[base-branch] (default: main)"
 
 ---
 
-## Phase 1 â€” VALIDATE
+## Phase 1 "” VALIDATE
 
 Check preconditions:
 
@@ -28,7 +28,7 @@ git log origin/<base>..HEAD --oneline
 
 | Check | Condition | Action if Failed |
 |---|---|---|
-| Not on base branch | Current branch â‰  base | Stop: "Switch to a feature branch first." |
+| Not on base branch | Current branch ≠  base | Stop: "Switch to a feature branch first." |
 | Clean working directory | No uncommitted changes | Warn: "You have uncommitted changes. Commit or stash first. Use `/epic-publish` after validation, or `/prp-commit` for legacy PRP workflows." |
 | Has commits ahead | `git log origin/<base>..HEAD` not empty | Stop: "No commits ahead of `<base>`. Nothing to PR." |
 | No existing PR | `gh pr list --head <branch> --json number` is empty | Stop: "PR already exists: #<number>. Use `gh pr view <number> --web` to open it." |
@@ -37,13 +37,13 @@ If all checks pass, proceed.
 
 ---
 
-## Phase 2 â€” DISCOVER
+## Phase 2 "” DISCOVER
 
 ### PR Template
 
 Search for PR template in order:
 
-1. `.github/PULL_REQUEST_TEMPLATE/` directory â€” if exists, list files and let user choose (or use `default.md`)
+1. `.github/PULL_REQUEST_TEMPLATE/` directory "” if exists, list files and let user choose (or use `default.md`)
 2. `.github/PULL_REQUEST_TEMPLATE.md`
 3. `.github/pull_request_template.md`
 4. `docs/pull_request_template.md`
@@ -57,7 +57,7 @@ git log origin/<base>..HEAD --format="%h %s" --reverse
 ```
 
 Analyze commits to determine:
-- **PR title**: Use conventional commit format with type prefix â€” `feat: ...`, `fix: ...`, etc.
+- **PR title**: Use conventional commit format with type prefix "” `feat: ...`, `fix: ...`, etc.
   - If multiple types, use the dominant one
   - If single commit, use its message as-is
 - **Change summary**: Group commits by type/area
@@ -74,15 +74,15 @@ Categorize changed files: source, tests, docs, config, migrations.
 ### PRP Artifacts
 
 Check for related PRP artifacts:
-- `.claude/PRPs/reports/` â€” Implementation reports
-- `.claude/PRPs/plans/` â€” Plans that were executed
-- `.claude/PRPs/prds/` â€” Related PRDs
+- `.claude/PRPs/reports/` "” Implementation reports
+- `.claude/PRPs/plans/` "” Plans that were executed
+- `.claude/PRPs/prds/` "” Related PRDs
 
 Reference these in the PR body if they exist.
 
 ---
 
-## Phase 3 â€” PUSH
+## Phase 3 "” PUSH
 
 ```bash
 git push -u origin HEAD
@@ -99,11 +99,11 @@ If rebase conflicts occur, stop and inform the user.
 
 ---
 
-## Phase 4 â€” CREATE
+## Phase 4 "” CREATE
 
 ### With Template
 
-If a PR template was found in Phase 2, fill in each section using the commit and file analysis. Preserve all template sections â€” leave sections as "N/A" if not applicable rather than removing them.
+If a PR template was found in Phase 2, fill in each section using the commit and file analysis. Preserve all template sections "” leave sections as "N/A" if not applicable rather than removing them.
 
 ### Without Template
 
@@ -143,7 +143,7 @@ gh pr create \
 
 ---
 
-## Phase 5 â€” VERIFY
+## Phase 5 "” VERIFY
 
 ```bash
 gh pr view --json number,url,title,state,baseRefName,headRefName,additions,deletions,changedFiles
@@ -152,14 +152,14 @@ gh pr checks --json name,status,conclusion 2>/dev/null || true
 
 ---
 
-## Phase 6 â€” OUTPUT
+## Phase 6 "” OUTPUT
 
 Report to user:
 
 ```
 PR #<number>: <title>
 URL: <url>
-Branch: <head> â†’ <base>
+Branch: <head> →’ <base>
 Changes: +<additions> -<deletions> across <changedFiles> files
 
 CI Checks: <status summary or "pending" or "none configured">
@@ -168,9 +168,9 @@ Artifacts referenced:
   - <any PRP reports/plans linked in PR body>
 
 Next steps:
-  - gh pr view <number> --web   â†’ open in browser
-  - /code-review <number>       â†’ review the PR
-  - gh pr merge <number>        â†’ merge when ready
+  - gh pr view <number> --web   →’ open in browser
+  - /code-review <number>       →’ review the PR
+  - gh pr merge <number>        →’ merge when ready
 ```
 
 ---
