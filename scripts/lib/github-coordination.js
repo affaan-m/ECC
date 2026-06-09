@@ -52,10 +52,11 @@ const DEFAULT_POLICY = Object.freeze({
 });
 
 function normalizeRepo(repo) {
-  const [owner, name] = String(repo || '').split('/');
-  if (!owner || !name) {
-    throw new Error(`Invalid repo: ${repo}`);
+  const parts = String(repo || '').split('/').filter(Boolean);
+  if (parts.length !== 2) {
+    throw new Error(`Invalid repo format: "${repo}". Expected "owner/repo".`);
   }
+  const [owner, name] = parts;
   return { owner, name };
 }
 
@@ -144,7 +145,12 @@ function loadPolicy(rootDir = process.cwd(), configPath = null) {
     };
   }
 
-  const parsed = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Failed to load policy from ${resolvedPath}: ${error.message}`);
+  }
   return {
     ...DEFAULT_POLICY,
     ...parsed,
@@ -176,8 +182,16 @@ function loadPolicy(rootDir = process.cwd(), configPath = null) {
   };
 }
 
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeBodyForComparison(body) {
+  return (body || '').replace(/lastSyncAt:\s*[^\n]+/g, 'lastSyncAt: NORMALIZED');
+}
+
 function extractCoordinationState(body, policy = DEFAULT_POLICY) {
-  const marker = policy.sectionMarker || DEFAULT_SECTION_MARKER;
+  const marker = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
   const regex = new RegExp(
     `<!--\\s*${marker}:start\\s*-->\\s*` +
     '```json\\s*([\\s\\S]*?)\\s*```' +
@@ -318,10 +332,10 @@ function renderCoordinationState(state, policy = DEFAULT_POLICY) {
 
 function mergeIssueBody(issue, nextState, policy = DEFAULT_POLICY) {
   const body = String(issue.body || '');
-  const marker = policy.sectionMarker || DEFAULT_SECTION_MARKER;
+  const markerEscaped = escapeRegExp(policy.sectionMarker || DEFAULT_SECTION_MARKER);
   const rendered = renderCoordinationState(nextState, policy);
   const regex = new RegExp(
-    `\\n?<!--\\s*${marker}:start\\s*-->[\\s\\S]*?<!--\\s*${marker}:end\\s*-->\\n?`,
+    `\\n?<!--\\s*${markerEscaped}:start\\s*-->[\\s\\S]*?<!--\\s*${markerEscaped}:end\\s*-->\\n?`,
     'm'
   );
 
@@ -608,16 +622,18 @@ function assertIssueClaimable(issue, state) {
   }
 }
 
-function verifyDependenciesClosed(repo, dependencyNumbers, options = {}) {
+function verifyDependenciesClosed(repo, dependencyNumbers, options = {}, allIssues = null) {
   if (!Array.isArray(dependencyNumbers) || dependencyNumbers.length === 0) {
     return [];
   }
 
-  const allIssues = listIssues(repo, { ...options, state: 'all', limit: options.limit || 200 });
+  const issueList = allIssues || listIssues(repo, { ...options, state: 'all', limit: options.limit || 200 });
   const closed = [];
   for (const dependencyNumber of dependencyNumbers) {
-    const issue = findIssueByNumber(allIssues, dependencyNumber);
-    if (issue && String(issue.state || '').toLowerCase() === 'closed') {
+    const issue = findIssueByNumber(issueList, dependencyNumber);
+    if (!issue) {
+      process.stderr.write(`[github-coordination] Warning: dependency issue #${dependencyNumber} not found in issue list (may be in a different repo or beyond limit)\n`);
+    } else if (String(issue.state || '').toLowerCase() === 'closed') {
       closed.push(dependencyNumber);
     }
   }
@@ -706,7 +722,7 @@ function applySync(repo, options = {}, context = {}) {
     const body = mergeIssueBody(issue, nextState, policy);
     const labelPlan = syncIssueLabels(repo, issue, nextState, policy, options);
 
-    if (!options.dryRun && (body !== issue.body || labelPlan.addLabels.length > 0 || labelPlan.removeLabels.length > 0)) {
+    if (!options.dryRun && (normalizeBodyForComparison(body) !== normalizeBodyForComparison(issue.body) || labelPlan.addLabels.length > 0 || labelPlan.removeLabels.length > 0)) {
       editIssue(repo, issue.number, {
         body,
         addLabels: labelPlan.addLabels,
@@ -731,9 +747,9 @@ function applySync(repo, options = {}, context = {}) {
   };
 }
 
-function applyValidate(repo, issueNumber, options = {}, context = {}) {
+function applyValidate(repo, issueNumber, options = {}, context = {}, existingIssue = null) {
   const policy = context.policy || loadPolicy(context.rootDir || process.cwd(), options.configPath);
-  const issue = getIssue(repo, issueNumber, options);
+  const issue = existingIssue || getIssue(repo, issueNumber, options);
   const state = getCoordinationState(issue, policy);
   const dependencyNumbers = Array.isArray(state.dependencies) ? state.dependencies : [];
   const closedDependencies = verifyDependenciesClosed(repo, dependencyNumbers, options);
@@ -785,7 +801,7 @@ function applyPublish(repo, issueNumber, options = {}, context = {}) {
   const policy = context.policy || loadPolicy(context.rootDir || process.cwd(), options.configPath);
   const issue = getIssue(repo, issueNumber, options);
   const state = getCoordinationState(issue, policy);
-  const validation = applyValidate(repo, issueNumber, { ...options, dryRun: true }, context);
+  const validation = applyValidate(repo, issueNumber, { ...options, dryRun: true }, context, issue);
 
   if (!validation.ok) {
     throw new Error(`Issue #${issueNumber} is not ready to publish: ${validation.validations.map(entry => `${entry.check}=${entry.ok}`).join(', ')}`);
@@ -822,9 +838,9 @@ function applyReview(repo, issueNumber, options = {}, context = {}) {
   const policy = context.policy || loadPolicy(context.rootDir || process.cwd(), options.configPath);
   const issue = getIssue(repo, issueNumber, options);
   const state = getCoordinationState(issue, policy);
-  const reviewState = options.review || (options.request ? 'requested' : 'approved');
+  const reviewState = options.review || 'approved';
   const nextState = buildIssueStateFromAction(issue, state, 'review', {
-    status: reviewState === 'approved' ? 'ready' : 'blocked',
+    status: reviewState === 'approved' ? 'ready' : reviewState === 'requested' ? 'claimed' : 'blocked',
     review: reviewState,
     projectState: reviewState === 'approved' ? 'ready' : 'blocked',
   }, policy);
@@ -900,7 +916,7 @@ function applyUnblock(repo, options = {}, context = {}) {
     }
 
     const dependencyNumbers = Array.isArray(state.dependencies) ? state.dependencies : [];
-    const closedDependencies = verifyDependenciesClosed(repo, dependencyNumbers, options);
+    const closedDependencies = verifyDependenciesClosed(repo, dependencyNumbers, options, issues);
     if (dependencyNumbers.length > 0 && closedDependencies.length !== dependencyNumbers.length) {
       continue;
     }

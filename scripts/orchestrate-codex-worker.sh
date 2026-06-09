@@ -120,6 +120,5 @@ else
     echo "The Codex worker exited with a non-zero status."
   } > "$handoff_file"
   write_status "failed" "- Handoff file: \`$handoff_file\`"
-  sleep 3
   exit 1
 fi

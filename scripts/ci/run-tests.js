@@ -17,6 +17,7 @@ process.env.PATH = `${shimsDir}${path.delimiter}${process.env.PATH || ''}`;
 process.env.Path = process.env.PATH;
 process.env.PATHEXT = '.CMD;.COM;.EXE;.BAT';
 const patchPath = path.join(root, 'scripts', 'ci', 'windows-temp-rm-patch.js');
-process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ''}--require ${patchPath}`;
+const requirePath = patchPath.includes(' ') ? `"${patchPath}"` : patchPath;
+process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ''}--require ${requirePath}`;
 
 require(path.join(root, 'tests', 'run-all.js'));

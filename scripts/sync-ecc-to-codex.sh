@@ -519,14 +519,14 @@ log "Installing global git safety hooks"
 if [[ "$MODE" == "dry-run" ]]; then
   HOME="$HOME" \
   CODEX_HOME="$CODEX_HOME" \
-  AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}" \
-  ECC_GLOBAL_HOOKS_DIR="${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}" \
+  AGENTS_HOME="$AGENTS_HOME" \
+  ECC_GLOBAL_HOOKS_DIR="$ECC_GLOBAL_HOOKS_DIR" \
     "$HOOKS_INSTALLER" --dry-run
 else
   HOME="$HOME" \
   CODEX_HOME="$CODEX_HOME" \
-  AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}" \
-  ECC_GLOBAL_HOOKS_DIR="${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}" \
+  AGENTS_HOME="$AGENTS_HOME" \
+  ECC_GLOBAL_HOOKS_DIR="$ECC_GLOBAL_HOOKS_DIR" \
     "$HOOKS_INSTALLER"
 fi
 
@@ -536,8 +536,8 @@ if [[ "$MODE" == "dry-run" ]]; then
 else
   HOME="$HOME" \
   CODEX_HOME="$CODEX_HOME" \
-  AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}" \
-  ECC_GLOBAL_HOOKS_DIR="${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}" \
+  AGENTS_HOME="$AGENTS_HOME" \
+  ECC_GLOBAL_HOOKS_DIR="$ECC_GLOBAL_HOOKS_DIR" \
     "$SANITY_CHECKER"
 fi
 
