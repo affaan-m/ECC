@@ -44,6 +44,7 @@ _promote_auto = _mod._promote_auto
 _find_cross_project_instincts = _mod._find_cross_project_instincts
 load_registry = _mod.load_registry
 _validate_instinct_id = _mod._validate_instinct_id
+_validate_import_url = _mod._validate_import_url
 _update_registry = _mod._update_registry
 _confidence_bar = _mod._confidence_bar
 
@@ -324,6 +325,32 @@ def test_validate_relative_path(tmp_path, monkeypatch):
     test_file.write_text("content")
     result = _validate_file_path("rel.yaml", must_exist=True)
     assert result == test_file.resolve()
+
+
+def test_validate_import_url_rejects_http():
+    """Remote imports should not downgrade to plaintext HTTP."""
+    with pytest.raises(ValueError, match="require https"):
+        _validate_import_url("http://example.com/instincts.yaml")
+
+
+def test_validate_import_url_rejects_private_hosts(monkeypatch):
+    """Remote imports should not resolve to private or loopback addresses."""
+    monkeypatch.setattr(
+        _mod.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 443))],
+    )
+    with pytest.raises(ValueError, match="non-public address"):
+        _validate_import_url("https://example.com/instincts.yaml")
+
+
+def test_validate_import_url_allows_public_https(monkeypatch):
+    monkeypatch.setattr(
+        _mod.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    assert _validate_import_url("https://example.com/instincts.yaml") == "https://example.com/instincts.yaml"
 
 
 # ─────────────────────────────────────────────

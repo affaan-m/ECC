@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **182K+ stars** | **28K+ forks** | **170+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
+> **211.9K+ stars** | **32.5K+ forks** | **230+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
 
 ---
 
@@ -76,6 +76,13 @@ ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable la
 
 <sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work "” that's why a single maintainer ships weekly across 7 harnesses.</sub>
 
+<div align="center">
+  <sub><strong>Business sponsors</strong></sub><br />
+  <a href="https://www.coderabbit.ai"><img src="assets/images/sponsors/coderabbit.png" width="72" alt="CodeRabbit logo" /></a>
+  &nbsp;&nbsp;
+  <a href="https://greptile.com"><img src="assets/images/sponsors/greptile.png" width="72" alt="Greptile logo" /></a>
+</div>
+
 ---
 
 ## The Guides
@@ -85,17 +92,17 @@ This repo is the raw code only. The guides explain everything.
 <table>
 <tr>
 <td width="33%">
-<a href="https://x.com/affaanmustafa/status/2012378465664745795">
+<a href="https://x.com/affaan/status/2012378465664745795">
 <img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
 </a>
 </td>
 <td width="33%">
-<a href="https://x.com/affaanmustafa/status/2014040193557471352">
+<a href="https://x.com/affaan/status/2014040193557471352">
 <img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
 </a>
 </td>
 <td width="33%">
-<a href="https://x.com/affaanmustafa/status/2033263813387223421">
+<a href="https://x.com/affaan/status/2033263813387223421">
 <img src="./assets/images/security/security-guide-header.png" alt="The Shorthand Guide to Everything Agentic Security" />
 </a>
 </td>
@@ -755,17 +762,17 @@ This analyzes your git history locally and generates SKILL.md files.
 
 For advanced features (10k+ commits, auto-PRs, team sharing):
 
-[Install GitHub App](https://github.com/apps/skill-creator) | [ecc.tools](https://ecc.tools)
+[Install ECC Tools GitHub App](https://github.com/apps/ecc-tools) | [ecc.tools](https://ecc.tools)
 
 ```bash
 # Comment on any issue:
-/skill-creator analyze
+/ecc-tools analyze
 
-# Or auto-triggers on push to default branch
+# Or run against a repo from the hosted app
 ```
 
 Both options create:
-- **SKILL.md files** - Ready-to-use skills for Claude Code
+- **SKILL.md files** - Ready-to-use skills for the active harness
 - **Instinct collections** - For continuous-learning-v2
 - **Pattern extraction** - Learns from your commit history
 
@@ -1780,24 +1787,26 @@ Built something with ECC? Open a PR to add it here.
 
 ## Sponsors
 
-This project is free and open source. Sponsors help keep it maintained and growing.
+ECC stays free because paid sponsors fund the work. Featured README placement is reserved for active sponsors.
+
+<div align="center">
+  <a href="https://www.coderabbit.ai"><img src="assets/images/sponsors/coderabbit.png" width="80" alt="CodeRabbit logo" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://greptile.com"><img src="assets/images/sponsors/greptile.png" width="80" alt="Greptile logo" /></a>
+  <br />
+  <sub><strong>CodeRabbit</strong> · <strong>Greptile</strong></sub>
+</div>
 
 [**Become a Sponsor**](https://github.com/sponsors/affaan-m) | [Sponsor Tiers](SPONSORS.md) | [Sponsorship Program](SPONSORING.md)
 
 ---
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=affaan-m/ECC&type=Date)](https://star-history.com/#affaan-m/ECC&Date)
-
----
-
 ## Links
 
-- **Shorthand Guide (Start Here):** [The Shorthand Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2012378465664745795)
-- **Longform Guide (Advanced):** [The Longform Guide to Everything Claude Code](https://x.com/affaanmustafa/status/2014040193557471352)
-- **Security Guide:** [Security Guide](./the-security-guide.md) | [Thread](https://x.com/affaanmustafa/status/2033263813387223421)
-- **Follow:** [@affaanmustafa](https://x.com/affaanmustafa)
+- **Shorthand Guide (Start Here):** [The Shorthand Guide to ECC](https://x.com/affaan/status/2012378465664745795)
+- **Longform Guide (Advanced):** [The Longform Guide to ECC](https://x.com/affaan/status/2014040193557471352)
+- **Security Guide:** [Security Guide](./the-security-guide.md) | [Thread](https://x.com/affaan/status/2033263813387223421)
+- **Follow:** [@affaan](https://x.com/affaan)
 
 ---
 
