@@ -1215,10 +1215,9 @@ ECC proporciona **soporte para GitHub Copilot** para VS Code mediante el sistema
 | Componente | Archivo | Propósito |
 |------------|---------|-----------|
 | Instrucciones principales | `.github/copilot-instructions.md` | Reglas siempre cargadas: estilo de código, seguridad, pruebas, flujo de git |
-| Configuración de VS Code | `.vscode/settings.json` | Archivos de instrucciones por tarea para generación de código, pruebas, revisión y mensajes de commit |
+| Configuración de VS Code | `.vscode/settings.json` | Archivos de instrucciones por tarea para generación de código, pruebas y mensajes de commit |
 | Prompt de plan | `.github/prompts/plan.prompt.md` | Planificación de implementación por fases |
 | Prompt de TDD | `.github/prompts/tdd.prompt.md` | Ciclo Rojo-Verde-Mejorar |
-| Prompt de revisión de código | `.github/prompts/code-review.prompt.md` | Revisión de calidad y seguridad |
 | Prompt de revisión de seguridad | `.github/prompts/security-review.prompt.md` | Análisis de seguridad profundo alineado con OWASP |
 | Prompt de corrección de build | `.github/prompts/build-fix.prompt.md` | Resolución sistemática de errores de build y CI |
 | Prompt de refactorización | `.github/prompts/refactor.prompt.md` | Limpieza de código muerto y simplificación |
@@ -1231,7 +1230,7 @@ El `.vscode/settings.json` confirmado habilita `chat.promptFiles` para que VS Co
 Para usar los prompts de flujo de trabajo en Copilot Chat:
 1. Abre el panel de Copilot Chat en VS Code.
 2. Haz clic en el icono de **clip / adjuntar** y selecciona **Prompt...**, o escribe `/` y elige un prompt.
-3. Selecciona el prompt (por ejemplo, `plan`, `tdd`, `code-review`).
+3. Selecciona el prompt (por ejemplo, `plan`, `tdd`, `security-review`).
 
 ---
 
@@ -1242,7 +1241,7 @@ ECC es el **primer plugin que maximiza todas las principales herramientas de cod
 | Característica | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |----------------|-----------------------|------------|-----------|----------|----------------|
 | **Agentes** | 63                    | Compartidos (AGENTS.md) | Compartidos (AGENTS.md) | 12 | N/A |
-| **Comandos** | 79                    | Compartidos | Basados en instrucciones | 35 | 6 prompts |
+| **Comandos** | 79                    | Compartidos | Basados en instrucciones | 35 | 5 prompts |
 | **Skills** | 249                   | Compartidas | 10 (formato nativo) | 37 | Mediante instrucciones |
 | **Eventos de Hook** | 8 tipos               | 15 tipos | Ninguno aún | 11 tipos | Ninguno |
 | **Scripts de Hook** | 20+ scripts           | 16 scripts (adaptador DRY) | N/A | Hooks de plugin | N/A |

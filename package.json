@@ -1,6 +1,6 @@
 {
   "name": "ecc-universal",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0",
   "description": "Harness-native agent operating system for Codex, OpenCode, Cursor, Gemini, Claude Code, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
   "publishConfig": {
     "access": "public"
@@ -28,7 +28,7 @@
   ],
   "author": {
     "name": "Affaan Mustafa",
-    "url": "https://x.com/affaanmustafa"
+    "url": "https://x.com/affaan"
   },
   "license": "MIT",
   "repository": {
