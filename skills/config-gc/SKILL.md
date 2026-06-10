@@ -44,7 +44,7 @@ Do NOT activate for: cleaning project source code (that's refactoring), clearing
 1. **Scan** all channels (or the subset the user names). Collect candidates with: path, channel, signal that flagged it, size, last-modified.
 2. **Rank** by confidence (broken/orphaned = high; merely old = low) and present as a numbered table. Cap each run at ~20 candidates — GC is periodic, not exhaustive.
 3. **Confirm one by one.** For each candidate show the evidence, then ask `[y/n/skip]`. The user can stop at any point.
-4. **Soft-delete confirmed items**: prefer `.disabled` rename for skills/hooks, `_gc_trash/<date>/` move for files, comment-out for permission lines. Only hard-delete when the user explicitly asks.
+4. **Soft-delete confirmed items**: prefer `.disabled` rename for skills/hooks and `_gc_trash/<date>/` move for files. Permission entries live in JSON (no comments possible): back up the settings file, record each removed entry verbatim in `gc_log.md`, then remove it from the `allow` array with `jq`. Only hard-delete when the user explicitly asks.
 5. **Log** the run to `~/.claude/gc_log.md`: timestamp, items actioned, undo instructions.
 6. **Report**: reclaimed size, channels still healthy, suggested next review date.
 
@@ -60,28 +60,39 @@ for f in ~/.claude/hooks/*; do
 done
 ```
 
-Redundant permission entries (channel 4) — specific grants shadowed by a wildcard:
+Redundant permission entries (channel 4) — duplicates, and specific grants shadowed by a wildcard:
 
 ```bash
 jq -r '.permissions.allow[]' ~/.claude/settings.local.json | sort | uniq -d
-jq -r '.permissions.allow[]' ~/.claude/settings.local.json \
-  | grep -E '^Bash\(.+\)$' | grep -v '^Bash(\*)$' \
-  | { grep -q 'Bash(\*)' ~/.claude/settings.local.json && cat || true; }
+if jq -e '.permissions.allow | index("Bash(*)")' ~/.claude/settings.local.json >/dev/null; then
+  jq -r '.permissions.allow[]' ~/.claude/settings.local.json \
+    | grep '^Bash(' | grep -vF 'Bash(*)'
+fi
 ```
 
-Largest stale caches (channel 8):
+Largest stale caches (channel 8) — `du -k` instead of GNU-only `find -printf`, so it works on macOS/BSD too:
 
 ```bash
 find ~/.claude/file-history ~/.claude/shell-snapshots -type f -mtime +30 \
-  -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -20
+  -exec du -k {} + 2>/dev/null | sort -rn | head -20
 ```
 
-Soft-delete with undo path:
+Soft-delete with undo path (capture the date once so the log can't disagree with the directory):
 
 ```bash
-mkdir -p ~/.claude/_gc_trash/$(date +%Y-%m-%d)
-mv ~/.claude/skills/dead-skill ~/.claude/_gc_trash/$(date +%Y-%m-%d)/
-echo "$(date -Iseconds) moved skills/dead-skill -> _gc_trash/$(date +%Y-%m-%d)/ (undo: mv back)" >> ~/.claude/gc_log.md
+gc_date=$(date +%Y-%m-%d)
+mkdir -p ~/.claude/_gc_trash/$gc_date
+mv ~/.claude/skills/dead-skill ~/.claude/_gc_trash/$gc_date/
+echo "$(date -Iseconds) moved skills/dead-skill -> _gc_trash/$gc_date/ (undo: mv back)" >> ~/.claude/gc_log.md
+```
+
+Removing a confirmed-redundant permission entry (JSON has no comments — back up, log, then edit):
+
+```bash
+cp ~/.claude/settings.local.json ~/.claude/settings.local.json.bak
+echo "$(date -Iseconds) removed permission entry: Bash(git push) (undo: restore from .bak or re-add)" >> ~/.claude/gc_log.md
+jq '.permissions.allow -= ["Bash(git push)"]' ~/.claude/settings.local.json.bak \
+  > ~/.claude/settings.local.json
 ```
 
 ## Anti-Patterns
