@@ -2123,8 +2123,11 @@ async function runTests() {
       fs.writeFileSync(transcriptPath, lines.join('\n'));
 
       // Send invalid JSON to stdin so it falls back to env var
+      // HOME must be set to testDir to prevent writes to the real ~/.claude/session-data/
       const result = await runScript(path.join(scriptsDir, 'session-end.js'), 'not json', {
-        CLAUDE_TRANSCRIPT_PATH: transcriptPath
+        CLAUDE_TRANSCRIPT_PATH: transcriptPath,
+        HOME: testDir,
+        USERPROFILE: testDir
       });
       assert.strictEqual(result.code, 0, 'Should use env var fallback');
       cleanupTestDir(testDir);
@@ -3293,7 +3296,8 @@ async function runTests() {
           {
             HOME: homeDir,
             USERPROFILE: homeDir,
-            CLAUDE_PROJECT_DIR: projectDir
+            CLAUDE_PROJECT_DIR: projectDir,
+            CLAUDE_CODE_ENTRYPOINT: 'cli',
           },
           projectDir
         );

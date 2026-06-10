@@ -179,6 +179,7 @@ commands:
   - go-test
   - gradle-build
   - harness-audit
+  - hm-save
   - hookify
   - hookify-configure
   - hookify-help
