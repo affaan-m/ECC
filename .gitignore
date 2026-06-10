@@ -99,3 +99,11 @@ ecc2/target/
 .opencode/package-lock.json
 .opencode/node_modules/
 assets/images/security/badrudi-exploit.mp4
+
+# Local Bezalel project (separate codebase, not part of ECC plugin)
+/bezalel/
+
+# Local Claude Code state
+/.claude/memory.db
+/.claude/settings.json
+/.swarm/
