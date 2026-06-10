@@ -982,10 +982,12 @@ Use Claude Code's `/mcp` command or CLI-managed MCP setup for live Claude Code s
 
 For repo-local MCP access, copy desired MCP server definitions from `mcp-configs/mcp-servers.json` into a project-scoped `.mcp.json`.
 
+ECC ships exactly one default connector (`chrome-devtools`); everything else is a skill wrapping a CLI/REST API or an opt-in catalog entry. The rule and the June 2026 audit that retired the previous six defaults live in [docs/MCP-CONNECTOR-POLICY.md](docs/MCP-CONNECTOR-POLICY.md).
+
 If you already run your own copies of ECC-bundled MCPs, set:
 
 ```bash
-export ECC_DISABLED_MCPS="github,context7,exa,playwright,sequential-thinking,memory"
+export ECC_DISABLED_MCPS="chrome-devtools"
 ```
 
 ECC-managed install and Codex sync flows will skip or remove those bundled servers instead of re-adding duplicates. `ECC_DISABLED_MCPS` is an ECC install/sync filter, not a live Claude Code toggle.

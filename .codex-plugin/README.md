@@ -49,12 +49,9 @@ stay below provider length limits.
 
 | Server | Purpose |
 |---|---|
-| `github` | GitHub API access |
-| `context7` | Live documentation lookup |
-| `exa` | Neural web search |
-| `memory` | Persistent memory across sessions |
-| `playwright` | Browser automation & E2E testing |
-| `sequential-thinking` | Step-by-step reasoning |
+| `chrome-devtools` | Interactive browser debugging via Chrome DevTools (CDP sessions, performance traces, console/network inspection) |
+
+The former defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `sequential-thinking`) were retired in the June 2026 connector audit — their jobs are covered by skills wrapping CLIs/REST APIs or by harness-native features. They remain available as opt-in entries in `mcp-configs/mcp-servers.json`. See `docs/MCP-CONNECTOR-POLICY.md` for the policy and the per-connector rationale.
 
 ## Notes
 
