@@ -16,6 +16,12 @@ Use this skill when:
 - The user asks "add X functionality" and you're about to write code
 - Before creating a new utility, helper, or abstraction
 
+## Scope and Approval Rules
+
+Default to read-only research: inspect the repo, package metadata, docs, and public examples before recommending a dependency or integration. Do not install packages, configure MCP servers, publish artifacts, open PRs, or make external write actions from this skill unless the user has explicitly approved that action in the current task.
+
+When a candidate requires credentials, paid services, network writes, or project-wide config changes, return a recommendation and approval checkpoint instead of applying it directly.
+
 ## Workflow
 
 ```
