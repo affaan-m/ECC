@@ -592,6 +592,7 @@ function saveState(state) {
 
     let mergedChecked = Array.isArray(state.checked) ? state.checked : [];
     let mergedLastActive = typeof state.last_active === 'number' ? state.last_active : 0;
+    let mergedDenials = getDenialCount(state);
 
     try {
       if (fs.existsSync(stateFile)) {
@@ -602,6 +603,7 @@ function saveState(state) {
         if (typeof diskState.last_active === 'number') {
           mergedLastActive = Math.max(mergedLastActive, diskState.last_active);
         }
+        mergedDenials = Math.max(mergedDenials, getDenialCount(diskState));
       }
     } catch (_) {
       /* ignore malformed or transient disk state */
@@ -609,7 +611,8 @@ function saveState(state) {
 
     const finalState = {
       checked: pruneCheckedEntries(mergedChecked),
-      last_active: Math.max(mergedLastActive, Date.now())
+      last_active: Math.max(mergedLastActive, Date.now()),
+      fact_force_denials: mergedDenials
     };
 
     // Atomic write: temp file + rename prevents partial reads
@@ -650,6 +653,48 @@ function markChecked(key) {
     return saveState(state);
   }
   return true;
+}
+
+// --- Fact-force denial dampening (#2142) ---
+//
+// In long sessions the near-identical four-fact deny blocks accumulate in
+// the context window and measurably raise the odds of the model dropping
+// into a degenerate repetition loop. Emit the full four-fact block only for
+// the first GATEGUARD_FACT_FORCE_FULL_DENIALS denials per session (default
+// 3); afterwards emit a condensed single-line denial that carries the
+// denial ordinal, so consecutive denials are structurally different and
+// never textually identical. True retries of an already-gated target are
+// unaffected (they were always allowed). Destructive-Bash and routine-Bash
+// gates are unchanged.
+
+const DEFAULT_FULL_DENIALS = 3;
+
+function getFullDenialBudget() {
+  const raw = Number.parseInt(process.env.GATEGUARD_FACT_FORCE_FULL_DENIALS || '', 10);
+  if (Number.isInteger(raw) && raw >= 0) {
+    return raw;
+  }
+  return DEFAULT_FULL_DENIALS;
+}
+
+function getDenialCount(state) {
+  const n = Number(state && state.fact_force_denials);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Record a first-touch target AND count the fact-force denial in the same
+ * state write. Returns the new denial ordinal (1-based) plus whether the
+ * write persisted.
+ */
+function markCheckedAndCountDenial(key) {
+  const state = loadState();
+  if (!state.checked.includes(key)) {
+    state.checked.push(key);
+  }
+  const denials = getDenialCount(state) + 1;
+  state.fact_force_denials = denials;
+  return { ok: saveState(state), denials };
 }
 
 function isChecked(key) {
@@ -792,6 +837,20 @@ function writeGateMsg(filePath) {
   ].join('\n');
 }
 
+/**
+ * Condensed single-line denial used after the full-block budget is spent
+ * (#2142). Carries the denial ordinal so consecutive denials differ
+ * textually, and a one-line recovery hint instead of the multi-line block.
+ */
+function condensedGateMsg(action, filePath, ordinal) {
+  const safe = sanitizePath(filePath);
+  return (
+    `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
+    "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
+    '(ECC_GATEGUARD=off disables this gate.)'
+  );
+}
+
 function destructiveBashMsg() {
   return [
     '[Fact-Forcing Gate]',
@@ -902,8 +961,13 @@ function run(rawInput) {
     }
 
     if (!isChecked(filePath)) {
-      if (!markChecked(filePath)) {
+      const { ok, denials } = markCheckedAndCountDenial(filePath);
+      if (!ok) {
         return allowWithStateWarning();
+      }
+      if (denials > getFullDenialBudget()) {
+        const action = toolName === 'Edit' ? 'edit' : 'creation';
+        return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
       }
       return denyResult(toolName === 'Edit' ? editGateMsg(filePath) : writeGateMsg(filePath));
     }
@@ -920,8 +984,12 @@ function run(rawInput) {
     for (const edit of edits) {
       const filePath = edit.file_path || '';
       if (filePath && !isClaudeSettingsPath(filePath) && !isChecked(filePath)) {
-        if (!markChecked(filePath)) {
+        const { ok, denials } = markCheckedAndCountDenial(filePath);
+        if (!ok) {
           return allowWithStateWarning();
+        }
+        if (denials > getFullDenialBudget()) {
+          return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
         }
         return denyResult(editGateMsg(filePath));
       }
