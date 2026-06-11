@@ -178,59 +178,59 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.4"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-darwin-x64@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-darwin-x64@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-darwin-x64@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-darwin-x64@npm:3.0.4"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-linux-arm64@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-linux-arm64@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-linux-arm64@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-linux-arm64@npm:3.0.4"
   conditions: os=linux & cpu=arm64
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-linux-arm@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-linux-arm@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-linux-arm@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-linux-arm@npm:3.0.4"
   conditions: os=linux & cpu=arm
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-linux-x64@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-linux-x64@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-linux-x64@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-linux-x64@npm:3.0.4"
   conditions: os=linux & cpu=x64
   languageName: node
   linkType: hard
 
-"@msgpackr-extract/msgpackr-extract-win32-x64@npm:3.0.3":
-  version: 3.0.3
-  resolution: "@msgpackr-extract/msgpackr-extract-win32-x64@npm:3.0.3"
+"@msgpackr-extract/msgpackr-extract-win32-x64@npm:3.0.4":
+  version: 3.0.4
+  resolution: "@msgpackr-extract/msgpackr-extract-win32-x64@npm:3.0.4"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
-"@opencode-ai/plugin@npm:^1.0.0":
-  version: 1.15.3
-  resolution: "@opencode-ai/plugin@npm:1.15.3"
+"@opencode-ai/plugin@npm:^1.16.2":
+  version: 1.16.2
+  resolution: "@opencode-ai/plugin@npm:1.16.2"
   dependencies:
-    "@opencode-ai/sdk": "npm:1.15.3"
-    effect: "npm:4.0.0-beta.65"
+    "@opencode-ai/sdk": "npm:1.16.2"
+    effect: "npm:4.0.0-beta.74"
     zod: "npm:4.1.8"
   peerDependencies:
-    "@opentui/core": ">=0.2.11"
-    "@opentui/keymap": ">=0.2.11"
-    "@opentui/solid": ">=0.2.11"
+    "@opentui/core": ">=0.3.2"
+    "@opentui/keymap": ">=0.3.2"
+    "@opentui/solid": ">=0.3.2"
   peerDependenciesMeta:
     "@opentui/core":
       optional: true
@@ -238,16 +238,16 @@ __metadata:
       optional: true
     "@opentui/solid":
       optional: true
-  checksum: 10c0/8f680d7e318e3a8b64314c9923e00ecbbde33b195651b59ca4bbfb7cbf0a90a5ea30df7c806ec9611482fef96dfd6b48432267af6df3bde068535774a97d5fe9
+  checksum: 10c0/a10d6259557c2b587afd93dc690bf5b3b0132272c0b0bca1f77c5a7ea9e3440ebbf1fbdf0a24e4a20ae05f23961c546a2feab53c8f50b10a9d237090c41d2146
   languageName: node
   linkType: hard
 
-"@opencode-ai/sdk@npm:1.15.3":
-  version: 1.15.3
-  resolution: "@opencode-ai/sdk@npm:1.15.3"
+"@opencode-ai/sdk@npm:1.16.2":
+  version: 1.16.2
+  resolution: "@opencode-ai/sdk@npm:1.16.2"
   dependencies:
     cross-spawn: "npm:7.0.6"
-  checksum: 10c0/b9345d31fa53f2f22cb1a63e7fe39d3e260ea2d0ca65ae27525c203beefd5db0ce7854eeaa5054b2cf1680164f19cc9e90c2e049dfac9cdc804a4b53a9128a4c
+  checksum: 10c0/0f8de5a64bfb4411ecddd0bb2c3049df07a5661a05e7c965e2404692f80394652b00a4d46985e97aabf8b26ac85e4313d8dbf7bce2280a297eb4fa88bf700a6a
   languageName: node
   linkType: hard
 
@@ -302,12 +302,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:25.7.0":
-  version: 25.7.0
-  resolution: "@types/node@npm:25.7.0"
+"@types/node@npm:25.9.2":
+  version: 25.9.2
+  resolution: "@types/node@npm:25.9.2"
   dependencies:
-    undici-types: "npm:~7.21.0"
-  checksum: 10c0/47ec7eaca154c36ad6d1ac0270e6e254eedf20b9dc49afe3bc76e4f7eba29ceac705f8903b162aeaf40e3941101ffe76ffb374989359ea3ef8c8509d8b443f55
+    undici-types: "npm:>=7.24.0 <7.24.7"
+  checksum: 10c0/f14c0d56361febb985eccc45cf0834ee6e2f07c4389a636f3e1a55ebde320077a80bface18c9afd3092f5fa295925502c1a9d55f805efa813f634aa9c941cbac
   languageName: node
   linkType: hard
 
@@ -631,8 +631,8 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:^9.39.2"
     "@iarna/toml": "npm:^2.2.5"
-    "@opencode-ai/plugin": "npm:^1.0.0"
-    "@types/node": "npm:25.7.0"
+    "@opencode-ai/plugin": "npm:^1.16.2"
+    "@types/node": "npm:25.9.2"
     ajv: "npm:^8.18.0"
     c8: "npm:^11.0.0"
     eslint: "npm:^9.39.2"
@@ -647,21 +647,21 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"effect@npm:4.0.0-beta.65":
-  version: 4.0.0-beta.65
-  resolution: "effect@npm:4.0.0-beta.65"
+"effect@npm:4.0.0-beta.74":
+  version: 4.0.0-beta.74
+  resolution: "effect@npm:4.0.0-beta.74"
   dependencies:
     "@standard-schema/spec": "npm:^1.1.0"
-    fast-check: "npm:^4.6.0"
+    fast-check: "npm:^4.8.0"
     find-my-way-ts: "npm:^0.1.6"
-    ini: "npm:^6.0.0"
+    ini: "npm:^7.0.0"
     kubernetes-types: "npm:^1.30.0"
-    msgpackr: "npm:^1.11.9"
+    msgpackr: "npm:^2.0.1"
     multipasta: "npm:^0.2.7"
     toml: "npm:^4.1.1"
-    uuid: "npm:^13.0.0"
-    yaml: "npm:^2.8.3"
-  checksum: 10c0/ed89d877461414af2bbfccc0c7b66a3f5a46d08e7e7d8b10bec9f969db97180b916e8c079138dab985937c8e9297fa003ef2d1d560458924cd2308203baf305c
+    uuid: "npm:^14.0.0"
+    yaml: "npm:^2.9.0"
+  checksum: 10c0/3dfc7ce7b58bbe9e8459ea9eba0abdcef7d9e7082643c64f4cc5165632777aa163f20d7b5f86372f819e6b60154e44cea125abb71be01da667a330c10a9b5892
   languageName: node
   linkType: hard
 
@@ -823,12 +823,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fast-check@npm:^4.6.0":
-  version: 4.7.0
-  resolution: "fast-check@npm:4.7.0"
+"fast-check@npm:^4.8.0":
+  version: 4.8.0
+  resolution: "fast-check@npm:4.8.0"
   dependencies:
     pure-rand: "npm:^8.0.0"
-  checksum: 10c0/7edce2b82d11d5325e9e79a2377e1f6e7200d27219edda2e3449d827e994c34461132fc149c90e41b78fc8e6ef4aae77d45350ac7bb1bc4a81110401d0a49fbc
+  checksum: 10c0/f72556a29db4ff386a8b6e50d420b06c7e5eaafff7db5560a99136c57d8d4777998155eb02d1bbeff396f575cc0b1442c8a1c4ddb798c4a919b542de1a1904ff
   languageName: node
   linkType: hard
 
@@ -1025,10 +1025,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ini@npm:^6.0.0":
-  version: 6.0.0
-  resolution: "ini@npm:6.0.0"
-  checksum: 10c0/9a7f55f306e2b25b41ae67c8b526e8f4673f057b70852b9025816ef4f15f07bf1ba35ed68ea4471ff7b31718f7ef1bc50d709f8d03cb012e10a3135eb99c7206
+"ini@npm:^7.0.0":
+  version: 7.0.0
+  resolution: "ini@npm:7.0.0"
+  checksum: 10c0/7520cae38bd5587e1cbca4637bb5fc0e157f38e0816522756456010ef703772d0018f9f4987cb9977bf3b10c1feccaad7800744dd1f5d85fb435e58a1baa9754
   languageName: node
   linkType: hard
 
@@ -1671,16 +1671,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"msgpackr-extract@npm:^3.0.2":
-  version: 3.0.3
-  resolution: "msgpackr-extract@npm:3.0.3"
+"msgpackr-extract@npm:^3.0.4":
+  version: 3.0.4
+  resolution: "msgpackr-extract@npm:3.0.4"
   dependencies:
-    "@msgpackr-extract/msgpackr-extract-darwin-arm64": "npm:3.0.3"
-    "@msgpackr-extract/msgpackr-extract-darwin-x64": "npm:3.0.3"
-    "@msgpackr-extract/msgpackr-extract-linux-arm": "npm:3.0.3"
-    "@msgpackr-extract/msgpackr-extract-linux-arm64": "npm:3.0.3"
-    "@msgpackr-extract/msgpackr-extract-linux-x64": "npm:3.0.3"
-    "@msgpackr-extract/msgpackr-extract-win32-x64": "npm:3.0.3"
+    "@msgpackr-extract/msgpackr-extract-darwin-arm64": "npm:3.0.4"
+    "@msgpackr-extract/msgpackr-extract-darwin-x64": "npm:3.0.4"
+    "@msgpackr-extract/msgpackr-extract-linux-arm": "npm:3.0.4"
+    "@msgpackr-extract/msgpackr-extract-linux-arm64": "npm:3.0.4"
+    "@msgpackr-extract/msgpackr-extract-linux-x64": "npm:3.0.4"
+    "@msgpackr-extract/msgpackr-extract-win32-x64": "npm:3.0.4"
     node-gyp: "npm:latest"
     node-gyp-build-optional-packages: "npm:5.2.2"
   dependenciesMeta:
@@ -1698,19 +1698,19 @@ __metadata:
       optional: true
   bin:
     download-msgpackr-prebuilds: bin/download-prebuilds.js
-  checksum: 10c0/e504fd8bf86a29d7527c83776530ee6dc92dcb0273bb3679fd4a85173efead7f0ee32fb82c8410a13c33ef32828c45f81118ffc0fbed5d6842e72299894623b4
+  checksum: 10c0/582a9d17abbf3019e600e948736695056280ce401fd0235ee2474e95f9952208b9f6cce4d0e355b03b7d3c5630e6c3d11fe5fc27fdedb2311cce48de464338d8
   languageName: node
   linkType: hard
 
-"msgpackr@npm:^1.11.9":
-  version: 1.11.12
-  resolution: "msgpackr@npm:1.11.12"
+"msgpackr@npm:^2.0.1":
+  version: 2.0.4
+  resolution: "msgpackr@npm:2.0.4"
   dependencies:
-    msgpackr-extract: "npm:^3.0.2"
+    msgpackr-extract: "npm:^3.0.4"
   dependenciesMeta:
     msgpackr-extract:
       optional: true
-  checksum: 10c0/e9f1460e363dbd8c81a5c1b5829980edea7d76e91d570d094d0a4dae0d8ad12f64dea11b2be15f3d7b48d615fa9d3c9b600a6894fd272526087fa33753b5fd16
+  checksum: 10c0/b72e8de59ce82a29cd5ca6d93ceec589367dd742a75fb04b6d26d6e0c5863f1000d0b27979469f18ca4554f3ccabe620524013268d5387415bcab495cca4ae73
   languageName: node
   linkType: hard
 
@@ -2117,10 +2117,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici-types@npm:~7.21.0":
-  version: 7.21.0
-  resolution: "undici-types@npm:7.21.0"
-  checksum: 10c0/c3b4ae5f066c398acb1962505b56214ecd72843f7d7827fcc2df7a48a63d1639d3608c580ac09f836253d21fa7ba8f1a04440569ed9d332474ad01b8a010db87
+"undici-types@npm:>=7.24.0 <7.24.7":
+  version: 7.24.6
+  resolution: "undici-types@npm:7.24.6"
+  checksum: 10c0/d9cd8befb643ac904615c280a095ba4240531f6bb4a5e75a22a7483630ca8d3f1016d2ab6ace6ceda1f63b3a2db2fe037fafe121d6917a0187573aa548ff78ca
   languageName: node
   linkType: hard
 
@@ -2140,12 +2140,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"uuid@npm:^13.0.0":
-  version: 13.0.1
-  resolution: "uuid@npm:13.0.1"
+"uuid@npm:^14.0.0":
+  version: 14.0.0
+  resolution: "uuid@npm:14.0.0"
   bin:
     uuid: dist-node/bin/uuid
-  checksum: 10c0/7bb8ad18b11871b7bd1b9161a60610c2b6ce8f7300d93932f92117a2ab9b40479dd23e81929ac848e8a7c45f78b8ed3333f88694b71c17ff3265e443f8684642
+  checksum: 10c0/a57ae7794c45005c1a9208989196c5baf79a7679c30f43c1bee9033a2c4d113a2cea216fa6fcc9663b08b0d55635df1a7c6eb7e7f3d21c3e50688c698fa39a50
   languageName: node
   linkType: hard
 
@@ -2214,12 +2214,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yaml@npm:^2.8.3":
-  version: 2.8.4
-  resolution: "yaml@npm:2.8.4"
+"yaml@npm:^2.9.0":
+  version: 2.9.0
+  resolution: "yaml@npm:2.9.0"
   bin:
     yaml: bin.mjs
-  checksum: 10c0/0a33a1fa28d4bc79f61a12ec7ef7a2bce0ce5f8e80c6eaecfb4a0c88c08767dd1ede372b6a3bcd70891213b8c9f3169b355c97e77026d3b3459e10d2cccaef1e
+  checksum: 10c0/f340718df45e97a9551b9bf9dac61c80050bc464513b710debfb5067c380c8472e3b67809cffacb4ab5ffb5e66ef9310816c88b05f371cec60abfedd8c88e0a2
   languageName: node
   linkType: hard
 

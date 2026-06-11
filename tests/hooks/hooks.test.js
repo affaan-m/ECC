@@ -5285,17 +5285,15 @@ async function runTests() {
   console.log('\nRound 59: check-console-log.js (stdin exceeding 1MB — truncation):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit
+    await asyncTest('suppresses pass-through for oversized stdin (fail-open, #2090)', async () => {
+      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit. Echoing the
+      // truncated string would emit a JSON document cut mid-stream, which the
+      // harness reports as a Stop hook JSON validation failure.
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, '', 'Truncated stdin must not be echoed (empty stdout = no opinion)');
     })
   )
     passed++;

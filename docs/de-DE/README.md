@@ -1533,10 +1533,9 @@ ECC bietet **GitHub-Copilot-Unterstützung** für VS Code über das native Instr
 | Komponente | Datei | Zweck |
 |-----------|------|---------|
 | Kern-Instructions | `.github/copilot-instructions.md` | Stets geladene Rules: Coding-Style, Sicherheit, Testing, Git-Workflow |
-| VS-Code-Einstellungen | `.vscode/settings.json` | Aufgabenspezifische Instruction-Dateien für Codegenerierung, Testgenerierung, Review und Commit-Nachrichten |
+| VS-Code-Einstellungen | `.vscode/settings.json` | Aufgabenspezifische Instruction-Dateien für Codegenerierung, Testgenerierung und Commit-Nachrichten |
 | Plan-Prompt | `.github/prompts/plan.prompt.md` | Phasenweise Implementierungsplanung |
 | TDD-Prompt | `.github/prompts/tdd.prompt.md` | Red-Green-Improve-Zyklus |
-| Code-Review-Prompt | `.github/prompts/code-review.prompt.md` | Qualitäts- und Sicherheitsreview |
 | Security-Review-Prompt | `.github/prompts/security-review.prompt.md` | Tiefe, OWASP-orientierte Sicherheitsanalyse |
 | Build-Fix-Prompt | `.github/prompts/build-fix.prompt.md` | Systematische Behebung von Build- und CI-Fehlern |
 | Refactor-Prompt | `.github/prompts/refactor.prompt.md` | Beseitigung von totem Code und Vereinfachung |
@@ -1549,16 +1548,16 @@ Die eingecheckte `.vscode/settings.json` aktiviert `chat.promptFiles`, sodass VS
 So verwendest du die Workflow-Prompts in Copilot Chat:
 1. Öffne das Copilot-Chat-Panel in VS Code.
 2. Klicke auf das **Büroklammer-/Anhängen-Symbol** und wähle **Prompt...**, oder tippe `/` und wähle einen Prompt.
-3. Wähle den Prompt aus (z. B. `plan`, `tdd`, `code-review`).
+3. Wähle den Prompt aus (z. B. `plan`, `tdd`, `security-review`).
 
 ### Wie es funktioniert
 
 GitHub Copilot in VS Code liest zwei Dateitypen automatisch:
 
 - **`.github/copilot-instructions.md`** — Instructions auf Repository-Ebene, die in jede Copilot-Chat-Anfrage injiziert werden. Enthält ECCs Kern-Coding-Standards, Sicherheits-Checkliste, Testanforderungen und Git-Workflow.
-- **`.github/prompts/*.prompt.md`** — wiederverwendbare Prompt-Dateien, die Nutzer bei Bedarf aufrufen. Jeder Prompt führt Copilot durch einen bestimmten ECC-Workflow (plan → TDD → review → ship).
+- **`.github/prompts/*.prompt.md`** — wiederverwendbare Prompt-Dateien, die Nutzer bei Bedarf aufrufen. Jeder Prompt führt Copilot durch einen bestimmten ECC-Workflow wie Planung, TDD, Security-Review, Build-Fix oder Refactor.
 
-Die **`.vscode/settings.json`** fügt aufgabenspezifische Instruction-Overlays hinzu, sodass Copilot je nachdem, ob du Code generierst, Tests schreibst, eine Auswahl reviewst oder eine Commit-Nachricht entwirfst, den richtigen Kontext erhält.
+Die **`.vscode/settings.json`** fügt aufgabenspezifische Instruction-Overlays hinzu, sodass Copilot für Codegenerierung, Testgenerierung und Commit-Nachrichten den richtigen Kontext erhält.
 
 ### Feature-Abdeckung
 
@@ -1568,7 +1567,7 @@ Die **`.vscode/settings.json`** fügt aufgabenspezifische Instruction-Overlays h
 | Sicherheits-Checkliste | Stets aktiv + `security-review`-Prompt |
 | Testing / TDD | Stets aktiv + `tdd`-Prompt |
 | Implementierungsplanung | `plan`-Prompt |
-| Code-Review | `code-review`-Prompt |
+| Code-Review | Externes PR-Review über CodeRabbit + Greptile |
 | Behebung von Build-Fehlern | `build-fix`-Prompt |
 | Refactoring | `refactor`-Prompt |
 | Commit-Nachrichten-Format | Aufgabenspezifische Instruction in `settings.json` |
@@ -1588,7 +1587,7 @@ ECC ist das **erste Plugin, das jedes große KI-Coding-Tool ausreizt**. So vergl
 | Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |---------|------------|------------|-----------|----------|----------------|
 | **Agents** | 60 | Gemeinsam (AGENTS.md) | Gemeinsam (AGENTS.md) | 12 | Nicht verfügbar |
-| **Commands** | 75 | Gemeinsam | Instruction-basiert | 35 | 6 Prompts |
+| **Commands** | 75 | Gemeinsam | Instruction-basiert | 35 | 5 Prompts |
 | **Skills** | 232 | Gemeinsam | 10 (natives Format) | 37 | Über Instructions |
 | **Hook-Events** | 8 Typen | 15 Typen | Noch keine | 11 Typen | Keine |
 | **Hook-Skripte** | 20+ Skripte | 16 Skripte (DRY-Adapter) | Nicht verfügbar | Plugin-Hooks | Nicht verfügbar |

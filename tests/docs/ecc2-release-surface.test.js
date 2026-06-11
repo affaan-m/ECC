@@ -55,7 +55,7 @@ const expectedReleaseFiles = [
   'video-suite-production.md',
   'partner-sponsor-talks-pack.md',
   'owner-approval-packet-2026-05-19.md',
-  'release-name-plugin-publication-checklist-2026-05-18.md',
+  'release-name-plugin-publication-checklist-2026-05-18.md'
 ];
 
 test('release candidate directory includes the public launch pack', () => {
@@ -64,10 +64,10 @@ test('release candidate directory includes the public launch pack', () => {
   }
 });
 
-test('README links to Hermes setup and rc.1 release notes', () => {
+test('README links to Hermes setup and current release notes', () => {
   const readme = read('README.md');
   assert.ok(readme.includes('docs/HERMES-SETUP.md'), 'README must link to Hermes setup');
-  assert.ok(readme.includes('docs/releases/2.0.0-rc.1/release-notes.md'), 'README must link to rc.1 release notes');
+  assert.ok(readme.includes('docs/releases/2.0.0/release-notes.md'), 'README must link to the 2.0.0 release notes');
 });
 
 test('cross-harness architecture doc exists and names core harnesses', () => {
@@ -109,37 +109,19 @@ test('release docs do not contain unresolved public-link placeholders', () => {
 test('business launch copy stays aligned with the rc.1 public surface', () => {
   const source = read('docs/business/social-launch-copy.md');
   assert.ok(source.includes('ECC v2.0.0-rc.1'), 'business launch copy should use the rc.1 release');
-  assert.ok(
-    source.includes('preview pack is ready for final release review'),
-    'business launch copy should stay pre-publication until release URLs exist'
-  );
-  assert.ok(
-    source.includes('https://github.com/affaan-m/ECC'),
-    'business launch copy should include the public repo URL'
-  );
-  assert.ok(
-    source.includes(
-      'https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md'
-    ),
-    'business launch copy should link to the rc.1 release notes'
-  );
+  assert.ok(source.includes('preview pack is ready for final release review'), 'business launch copy should stay pre-publication until release URLs exist');
+  assert.ok(source.includes('https://github.com/affaan-m/ECC'), 'business launch copy should include the public repo URL');
+  assert.ok(source.includes('https://github.com/affaan-m/ECC/blob/main/docs/releases/2.0.0-rc.1/release-notes.md'), 'business launch copy should link to the rc.1 release notes');
   assert.ok(!source.includes('<repo-link>'), 'business launch copy should not contain repo placeholders');
   assert.ok(!source.includes('v1.8.0'), 'business launch copy should not stay pinned to v1.8.0');
 });
 
 test('announcement drafts avoid live-release claims before publication', () => {
-  const announcementFiles = [
-    'docs/releases/2.0.0-rc.1/linkedin-post.md',
-    'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md',
-    'docs/business/social-launch-copy.md',
-  ];
+  const announcementFiles = ['docs/releases/2.0.0-rc.1/linkedin-post.md', 'docs/releases/2.0.0-rc.1/partner-sponsor-talks-pack.md', 'docs/business/social-launch-copy.md'];
 
   for (const relativePath of announcementFiles) {
     const source = read(relativePath);
-    assert.ok(
-      !/ECC v2\.0\.0-rc\.1 is live\./.test(source),
-      `${relativePath} must not claim rc.1 is live before the release gate completes`
-    );
+    assert.ok(!/ECC v2\.0\.0-rc\.1 is live\./.test(source), `${relativePath} must not claim rc.1 is live before the release gate completes`);
   }
 });
 
@@ -184,7 +166,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'docs/releases/2.0.0-rc.1/owner-approval-packet-2026-05-19.md',
     'docs/releases/2.0.0-rc.1/video-suite-production.md',
     'docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md',
-    'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md',
+    'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md'
   ]) {
     assert.ok(manifest.includes(artifact), `preview pack manifest missing ${artifact}`);
   }
@@ -194,7 +176,7 @@ test('preview pack manifest assembles release, Hermes, and publication gates', (
     'npm `ecc-universal@2.0.0-rc.1`',
     'Claude plugin tag',
     'Codex repo-marketplace distribution evidence',
-    'ECC Tools billing/product readiness',
+    'ECC Tools billing/product readiness'
   ]) {
     assert.ok(manifest.includes(blocker), `preview pack manifest missing blocker ${blocker}`);
   }
@@ -223,7 +205,7 @@ test('owner approval packet consolidates the final gated decisions', () => {
     'Video upload',
     'Final URL Fill-In',
     'Do Not Approve If',
-    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement is authorized by this packet alone.',
+    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement is authorized by this packet alone.'
   ]) {
     assert.ok(packet.includes(marker), `owner approval packet missing ${marker}`);
   }
@@ -233,18 +215,12 @@ test('owner approval packet consolidates the final gated decisions', () => {
     'npm run preview-pack:smoke -- --format json',
     'npm run release:approval-gate -- --format json',
     'npm run release:video-suite -- --format json',
-    'node tests/run-all.js',
+    'node tests/run-all.js'
   ]) {
     assert.ok(packet.includes(command), `owner approval packet missing command ${command}`);
   }
 
-  for (const urlSurface of [
-    'GitHub prerelease URL',
-    'npm rc package URL',
-    'Claude plugin tag URL',
-    'Primary launch video URL',
-    'ECC Tools billing/readiness URL',
-  ]) {
+  for (const urlSurface of ['GitHub prerelease URL', 'npm rc package URL', 'Claude plugin tag URL', 'Primary launch video URL', 'ECC Tools billing/readiness URL']) {
     assert.ok(packet.includes(urlSurface), `owner approval packet missing ${urlSurface}`);
   }
 
@@ -272,7 +248,7 @@ test('GA roadmap mirrors the current May 19 release evidence', () => {
     '467d148a-712a-4777-aad9-95593e9f1739',
     '7642ee9c-3107-400c-a229-53e2895a8914',
     'ecc-may-19-post-pr-2002-sync-64cef8f668e0',
-    'owner approval packet',
+    'owner approval packet'
   ]) {
     assert.ok(roadmap.includes(marker), `GA roadmap missing current evidence marker ${marker}`);
   }
@@ -331,19 +307,12 @@ test('release video suite manifest gates the content launch lane', () => {
     'Do Not Publish If',
     'renders/ecc-2-primary-launch-rough-v1.mp4',
     'timelines/primary-launch-v1.timeline.json',
-    'Primary launch video',
+    'Primary launch video'
   ]) {
     assert.ok(videoManifest.includes(marker), `video suite manifest missing ${marker}`);
   }
 
-  for (const asset of [
-    'longform-full-wide.mp4',
-    'sf-thread-2-whatisecc.mp4',
-    'thread-2-ghapp-money.mp4',
-    'coverage-montage-wide.mp4',
-    'star_history.png',
-    'x_analytics.png',
-  ]) {
+  for (const asset of ['longform-full-wide.mp4', 'sf-thread-2-whatisecc.mp4', 'thread-2-ghapp-money.mp4', 'coverage-montage-wide.mp4', 'star_history.png', 'x_analytics.png']) {
     assert.ok(videoManifest.includes(asset), `video suite manifest missing asset ${asset}`);
   }
 
@@ -365,7 +334,7 @@ test('release approval gate blocks publication until owner decisions and URLs ar
     'owner-decisions-approved',
     'release-url-ledger-finalized',
     'announcement-copy-finalized',
-    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement',
+    'No outbound email, personal-account post, package publish, plugin tag, or billing announcement'
   ]) {
     assert.ok(script.includes(marker), `release approval gate missing ${marker}`);
   }
@@ -402,7 +371,7 @@ test('partner sponsor talks pack gates the hypergrowth outbound lane', () => {
     'GitHub Discussion Announcement',
     'Video CTA Hooks',
     'Do Not Send Or Publish If',
-    'The user has not approved outbound sponsor, partner, consulting, or media',
+    'The user has not approved outbound sponsor, partner, consulting, or media'
   ]) {
     assert.ok(partnerPack.includes(marker), `partner pack missing ${marker}`);
   }
@@ -416,10 +385,7 @@ test('partner sponsor talks pack gates the hypergrowth outbound lane', () => {
 });
 
 test('release video suite public docs do not expose private media paths', () => {
-  const releaseVideoDocs = [
-    'docs/releases/2.0.0-rc.1/video-suite-production.md',
-    'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md',
-  ];
+  const releaseVideoDocs = ['docs/releases/2.0.0-rc.1/video-suite-production.md', 'docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md'];
 
   const offenders = [];
   for (const relativePath of releaseVideoDocs) {
@@ -437,37 +403,15 @@ test('publication readiness checklist gates public release actions on evidence',
   const may15Evidence = read('docs/releases/2.0.0-rc.1/publication-evidence-2026-05-15.md');
   const discussionPlaybook = read('docs/architecture/discussion-response-playbook.md');
 
-  for (const section of [
-    '## Release Identity Matrix',
-    '## Publication Gates',
-    '## Required Command Evidence',
-    '## Do Not Publish If',
-    '## Announcement Order',
-  ]) {
+  for (const section of ['## Release Identity Matrix', '## Publication Gates', '## Required Command Evidence', '## Do Not Publish If', '## Announcement Order']) {
     assert.ok(source.includes(section), `publication readiness missing ${section}`);
   }
 
-  for (const field of [
-    'Fresh check',
-    'Evidence artifact',
-    'Owner',
-    'Status',
-    'Blocker field',
-    'Recorded output',
-  ]) {
+  for (const field of ['Fresh check', 'Evidence artifact', 'Owner', 'Status', 'Blocker field', 'Recorded output']) {
     assert.ok(source.includes(field), `publication readiness missing ${field}`);
   }
 
-  for (const surface of [
-    'GitHub release',
-    'npm package',
-    'Claude plugin',
-    'Codex plugin',
-    'Codex repo marketplace',
-    'OpenCode package',
-    'ECC Tools billing reference',
-    'Announcement copy',
-  ]) {
+  for (const surface of ['GitHub release', 'npm package', 'Claude plugin', 'Codex plugin', 'Codex repo marketplace', 'OpenCode package', 'ECC Tools billing reference', 'Announcement copy']) {
     assert.ok(source.includes(surface), `publication readiness missing ${surface}`);
   }
 
@@ -502,14 +446,7 @@ test('publication readiness checklist gates public release actions on evidence',
   assert.ok(source.includes('platform audit sampled 59 trunk discussions'));
   assert.ok(source.includes('0 needing maintainer touch'));
   assert.ok(source.includes('discussion-response-playbook.md'));
-  for (const expected of [
-    'Public Support',
-    'Maintainer Coordination',
-    'Stale Or Concluded',
-    'Release Announcement',
-    'Security Escalation',
-    'classified as informational',
-  ]) {
+  for (const expected of ['Public Support', 'Maintainer Coordination', 'Stale Or Concluded', 'Release Announcement', 'Security Escalation', 'classified as informational']) {
     assert.ok(discussionPlaybook.includes(expected), `discussion playbook missing ${expected}`);
   }
   assert.ok(may15Evidence.includes('env -u GITHUB_TOKEN'));
@@ -518,9 +455,7 @@ test('publication readiness checklist gates public release actions on evidence',
 });
 
 test('release name and plugin publication checklist freezes rc.1 surfaces', () => {
-  const checklist = read(
-    'docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md'
-  );
+  const checklist = read('docs/releases/2.0.0-rc.1/release-name-plugin-publication-checklist-2026-05-18.md');
   const launchChecklist = read('docs/releases/2.0.0-rc.1/launch-checklist.md');
   const referenceArchitecture = read('docs/ECC-2.0-REFERENCE-ARCHITECTURE.md');
 
@@ -534,7 +469,7 @@ test('release name and plugin publication checklist freezes rc.1 surfaces', () =
     'Codex plugin',
     'do not claim official directory listing until OpenAI publishing path is available',
     'Do not rename the npm package until rc.1 is published',
-    'Do not announce billing, Marketplace, or native payments',
+    'Do not announce billing, Marketplace, or native payments'
   ]) {
     assert.ok(checklist.includes(value), `release name/plugin checklist missing ${value}`);
   }
@@ -545,7 +480,7 @@ test('release name and plugin publication checklist freezes rc.1 surfaces', () =
     'codex plugin marketplace add --help',
     'npm publish --tag next --dry-run',
     'npm run preview-pack:smoke',
-    'npm run release:approval-gate -- --format json',
+    'npm run release:approval-gate -- --format json'
   ]) {
     assert.ok(checklist.includes(command), `release name/plugin checklist missing command ${command}`);
   }
@@ -569,7 +504,7 @@ test('active release identity surfaces use canonical ECC repo URLs', () => {
     'docs/releases/2.0.0-rc.1/release-url-ledger-2026-05-19.md',
     'ecc2/Cargo.toml',
     'scripts/platform-audit.js',
-    'scripts/discussion-audit.js',
+    'scripts/discussion-audit.js'
   ];
 
   const offenders = [];

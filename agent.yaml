@@ -1,6 +1,6 @@
 spec_version: "0.1.0"
 name: ecc
-version: 2.0.0-rc.1
+version: 2.0.0
 description: "Initial gitagent export surface for ECC's shared skill catalog, governance, and identity. Native agents, commands, and hooks remain authoritative in the repository while manifest coverage expands."
 author: affaan-m
 license: MIT

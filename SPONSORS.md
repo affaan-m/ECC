@@ -11,7 +11,7 @@ Thank you to everyone funding ECC's open-source work. Your sponsorship is what l
 | Sponsor | Logo | Since |
 |---------|------|-------|
 | [**CodeRabbit**](https://www.coderabbit.ai) | <img src="assets/images/sponsors/coderabbit.png" width="60" alt="CodeRabbit logo" /> | 2026 |
-| [**Greptile**](https://greptile.com) | <img src="assets/images/sponsors/greptile.png" width="60" alt="Greptile logo" /> | 2026 |
+| [**Greptile**](https://www.greptile.com/go/ecc) | <img src="assets/images/sponsors/greptile.png" width="60" alt="Greptile logo" /> | 2026 |
 
 *[Become a Business sponsor](https://github.com/sponsors/affaan-m) to get README sponsor placement + SPONSORS.md listing. No seats, SLA, custom development, or preferential technical placement is bundled unless separately agreed.*
 

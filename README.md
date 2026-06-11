@@ -1,8 +1,14 @@
 **Language:** English | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md) | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [Español](docs/es/README.md)
 
-# ECC
+<div align="center">
 
-![ECC - the harness-native operator system for agentic work](assets/hero.png)
+<a href="https://ecc.tools"><img src="assets/ecc-icon.svg" width="120" alt="ECC logo" /></a>
+
+<h1>ECC</h1>
+
+<p><strong>The harness-native operator system for agentic work.</strong></p>
+
+</div>
 
 [![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
 [![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
@@ -40,7 +46,7 @@ Not just configs. A complete system: skills, instincts, memory optimization, con
 
 Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
 
-ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [rc.1 release notes](docs/releases/2.0.0-rc.1/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
+ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [2.0.0 release notes](docs/releases/2.0.0/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
 
 ---
 
@@ -77,10 +83,30 @@ ECC v2.0.0-rc.1 adds the public Hermes operator story on top of that reusable la
 <sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work — that's why a single maintainer ships weekly across 7 harnesses.</sub>
 
 <div align="center">
-  <sub><strong>Business sponsors</strong></sub><br />
-  <a href="https://www.coderabbit.ai"><img src="assets/images/sponsors/coderabbit.png" width="72" alt="CodeRabbit logo" /></a>
-  &nbsp;&nbsp;
-  <a href="https://greptile.com"><img src="assets/images/sponsors/greptile.png" width="72" alt="Greptile logo" /></a>
+
+<sub><strong>Business sponsors</strong></sub>
+
+<table>
+<tr>
+<td align="center" width="220">
+  <a href="https://www.coderabbit.ai">
+    <img src="assets/images/sponsors/coderabbit.png" width="96" alt="CodeRabbit logo" /><br />
+    <strong>CodeRabbit</strong>
+  </a>
+</td>
+<td align="center" width="220">
+  <a href="https://www.greptile.com/go/ecc">
+    <img src="assets/images/sponsors/greptile.png" width="96" alt="Greptile logo" /><br />
+    <strong>Greptile</strong>
+  </a>
+</td>
+</tr>
+</table>
+
+<sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+
+<sub><a href="https://github.com/sponsors/affaan-m"><strong>Become a Sponsor</strong></a> · <a href="SPONSORS.md">Sponsor Tiers</a> · <a href="SPONSORING.md">Sponsorship Program</a></sub>
+
 </div>
 
 ---
@@ -91,28 +117,30 @@ This repo is the raw code only. The guides explain everything.
 
 <table>
 <tr>
-<td width="33%">
-<a href="https://x.com/affaan/status/2012378465664745795">
-<img src="./assets/images/guides/shorthand-guide.png" alt="The Shorthand Guide to ECC" />
+<td width="50%" align="center">
+<a href="./the-shortform-guide.md">
+<img src="./assets/images/shortform/00-header.png" width="420" alt="The Shorthand Guide to ECC" /><br />
+<b>The Shorthand Guide</b>
 </a>
+<br /><sub>Setup, foundations, philosophy. <b>Read this first.</b> (<a href="https://x.com/affaan/status/2012378465664745795">thread</a>)</sub>
 </td>
-<td width="33%">
-<a href="https://x.com/affaan/status/2014040193557471352">
-<img src="./assets/images/guides/longform-guide.png" alt="The Longform Guide to ECC" />
+<td width="50%" align="center">
+<a href="./the-longform-guide.md">
+<img src="./assets/images/longform/01-header.png" width="420" alt="The Longform Guide to ECC" /><br />
+<b>The Longform Guide</b>
 </a>
+<br /><sub>Token optimization, memory persistence, evals, parallelization. (<a href="https://x.com/affaan/status/2014040193557471352">thread</a>)</sub>
 </td>
-<td width="33%">
-<a href="https://x.com/affaan/status/2033263813387223421">
-<img src="./assets/images/security/security-guide-header.png" alt="The Shorthand Guide to Everything Agentic Security" />
-</a>
-</td>
-</tr>
-<tr>
-<td align="center"><b>Shorthand Guide</b><br/>Setup, foundations, philosophy. <b>Read this first.</b></td>
-<td align="center"><b>Longform Guide</b><br/>Token optimization, memory persistence, evals, parallelization.</td>
-<td align="center"><b>Security Guide</b><br/>Attack vectors, sandboxing, sanitization, CVEs, AgentShield.</td>
 </tr>
 </table>
+
+<div align="center">
+<a href="./the-security-guide.md">
+<img src="./assets/images/security/security-guide-header.png" width="420" alt="The Shorthand Guide to Everything Agentic Security" /><br />
+<b>The Security Guide</b>
+</a>
+<br /><sub>Attack vectors, sandboxing, sanitization, CVEs, AgentShield. (<a href="https://x.com/affaan/status/2033263813387223421">thread</a>)</sub>
+</div>
 
 | Topic | What You'll Learn |
 |-------|-------------------|
@@ -126,6 +154,10 @@ This repo is the raw code only. The guides explain everything.
 ---
 
 ## What's New
+
+### v2.0.0 — The Agent Harness Operating System (Jun 2026)
+
+Stable graduation of the 2.0 line: 261 skills, the control-pane substrate (session adapters + MCP inventory), the worktree-lifecycle service, the `orch-*` orchestrator family, and the launch of the [ECC Discord community](https://discord.gg/36yGMHGFbR). Full notes: [docs/releases/2.0.0/release-notes.md](docs/releases/2.0.0/release-notes.md).
 
 ### v2.0.0-rc.1 — Surface Refresh, Operator Workflows, and ECC 2.0 Alpha (Apr 2026)
 
@@ -978,10 +1010,12 @@ Use Claude Code's `/mcp` command or CLI-managed MCP setup for live Claude Code s
 
 For repo-local MCP access, copy desired MCP server definitions from `mcp-configs/mcp-servers.json` into a project-scoped `.mcp.json`.
 
+ECC ships exactly one default connector (`chrome-devtools`); everything else is a skill wrapping a CLI/REST API or an opt-in catalog entry. The rule and the June 2026 audit that retired the previous six defaults live in [docs/MCP-CONNECTOR-POLICY.md](docs/MCP-CONNECTOR-POLICY.md).
+
 If you already run your own copies of ECC-bundled MCPs, set:
 
 ```bash
-export ECC_DISABLED_MCPS="github,context7,exa,playwright,sequential-thinking,memory"
+export ECC_DISABLED_MCPS="chrome-devtools"
 ```
 
 ECC-managed install and Codex sync flows will skip or remove those bundled servers instead of re-adding duplicates. `ECC_DISABLED_MCPS` is an ECC install/sync filter, not a live Claude Code toggle.
@@ -1578,10 +1612,9 @@ ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native in
 | Component | File | Purpose |
 |-----------|------|---------|
 | Core instructions | `.github/copilot-instructions.md` | Always-loaded rules: coding style, security, testing, git workflow |
-| VS Code settings | `.vscode/settings.json` | Per-task instruction files for code gen, test gen, review, and commit messages |
+| VS Code settings | `.vscode/settings.json` | Per-task instruction files for code gen, test gen, and commit messages |
 | Plan prompt | `.github/prompts/plan.prompt.md` | Phased implementation planning |
 | TDD prompt | `.github/prompts/tdd.prompt.md` | Red-Green-Improve cycle |
-| Code review prompt | `.github/prompts/code-review.prompt.md` | Quality and security review |
 | Security review prompt | `.github/prompts/security-review.prompt.md` | Deep OWASP-aligned security analysis |
 | Build fix prompt | `.github/prompts/build-fix.prompt.md` | Systematic build and CI error resolution |
 | Refactor prompt | `.github/prompts/refactor.prompt.md` | Dead code cleanup and simplification |
@@ -1594,16 +1627,16 @@ The committed `.vscode/settings.json` enables `chat.promptFiles` so VS Code can 
 To use the workflow prompts in Copilot Chat:
 1. Open the Copilot Chat panel in VS Code.
 2. Click the **paperclip / attach** icon and select **Prompt...**, or type `/` and choose a prompt.
-3. Select the prompt (e.g. `plan`, `tdd`, `code-review`).
+3. Select the prompt (e.g. `plan`, `tdd`, `security-review`).
 
 ### How It Works
 
 GitHub Copilot in VS Code reads two types of files automatically:
 
 - **`.github/copilot-instructions.md`** — repository-level instructions, always injected into every Copilot Chat request. Contains ECC's core coding standards, security checklist, testing requirements, and git workflow.
-- **`.github/prompts/*.prompt.md`** — reusable prompt files users invoke on demand. Each prompt walks Copilot through a specific ECC workflow (plan → TDD → review → ship).
+- **`.github/prompts/*.prompt.md`** — reusable prompt files users invoke on demand. Each prompt walks Copilot through a specific ECC workflow such as planning, TDD, security review, build-fix, or refactor.
 
-The **`.vscode/settings.json`** adds per-task instruction overlays so Copilot receives the right context depending on whether you are generating code, writing tests, reviewing a selection, or drafting a commit message.
+The **`.vscode/settings.json`** adds per-task instruction overlays so Copilot receives the right context for code generation, test generation, and commit message drafting.
 
 ### Feature Coverage
 
@@ -1613,7 +1646,7 @@ The **`.vscode/settings.json`** adds per-task instruction overlays so Copilot re
 | Security checklist | Always-on + `security-review` prompt |
 | Testing / TDD | Always-on + `tdd` prompt |
 | Implementation planning | `plan` prompt |
-| Code review | `code-review` prompt |
+| Code review | External PR review via CodeRabbit + Greptile |
 | Build error resolution | `build-fix` prompt |
 | Refactoring | `refactor` prompt |
 | Commit message format | Per-task instruction in `settings.json` |
@@ -1633,7 +1666,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | Feature | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |---------|-----------------------|------------|-----------|----------|----------------|
 | **Agents** | 64                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
-| **Commands** | 84                    | Shared | Instruction-based | 35 | 6 prompts |
+| **Commands** | 84                    | Shared | Instruction-based | 35 | 5 prompts |
 | **Skills** | 261                   | Shared | 10 (native format) | 37 | Via instructions |
 | **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
 | **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
@@ -1644,7 +1677,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | **Context File** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md | copilot-instructions.md |
 | **Secret Detection** | Hook-based            | beforeSubmitPrompt hook | Sandbox-based | Hook-based | Instruction-based |
 | **Auto-Format** | PostToolUse hook      | afterFileEdit hook | N/A | file.edited hook | N/A |
-| **Version** | Plugin | Plugin | Reference config | 2.0.0-rc.1 | Instruction layer |
+| **Version** | Plugin | Plugin | Reference config | 2.0.0 | Instruction layer |
 
 **Key architectural decisions:**
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode — GitHub Copilot uses `.github/copilot-instructions.md` instead)
@@ -1766,17 +1799,7 @@ These configs work for my workflow. You should:
 
 ## Sponsors
 
-ECC stays free because paid sponsors fund the work. Featured README placement is reserved for active sponsors.
-
-<div align="center">
-  <a href="https://www.coderabbit.ai"><img src="assets/images/sponsors/coderabbit.png" width="80" alt="CodeRabbit logo" /></a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="https://greptile.com"><img src="assets/images/sponsors/greptile.png" width="80" alt="Greptile logo" /></a>
-  <br />
-  <sub><strong>CodeRabbit</strong> · <strong>Greptile</strong></sub>
-</div>
-
-[**Become a Sponsor**](https://github.com/sponsors/affaan-m) | [Sponsor Tiers](SPONSORS.md) | [Sponsorship Program](SPONSORING.md)
+Featured sponsors are at the top of this README — full list and tiers in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
 
 ---
 

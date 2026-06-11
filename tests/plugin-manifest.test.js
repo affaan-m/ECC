@@ -61,10 +61,7 @@ function loadJsonObject(filePath, label) {
     assert.fail(`Expected ${label} to contain valid JSON: ${error.message}`);
   }
 
-  assert.ok(
-    parsed && typeof parsed === 'object' && !Array.isArray(parsed),
-    `Expected ${label} to contain a JSON object`,
-  );
+  assert.ok(parsed && typeof parsed === 'object' && !Array.isArray(parsed), `Expected ${label} to contain a JSON object`);
 
   return parsed;
 }
@@ -161,34 +158,22 @@ test('.opencode/plugins/ecc-hooks.ts active plugin banner matches package.json',
 
 test('docs/pt-BR/README.md latest release heading matches package.json', () => {
   const source = fs.readFileSync(ptBrReadmePath, 'utf8');
-  assert.ok(
-    source.includes(`### v${expectedVersion} `),
-    'Expected docs/pt-BR/README.md to advertise the current release heading',
-  );
+  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/pt-BR/README.md to advertise the current release heading');
 });
 
 test('docs/tr/README.md latest release heading matches package.json', () => {
   const source = fs.readFileSync(trReadmePath, 'utf8');
-  assert.ok(
-    source.includes(`### v${expectedVersion} `),
-    'Expected docs/tr/README.md to advertise the current release heading',
-  );
+  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/tr/README.md to advertise the current release heading');
 });
 
 test('README.zh-CN.md latest release heading matches package.json', () => {
   const source = fs.readFileSync(rootZhCnReadmePath, 'utf8');
-  assert.ok(
-    source.includes(`### v${expectedVersion} `),
-    'Expected README.zh-CN.md to advertise the current release heading',
-  );
+  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected README.zh-CN.md to advertise the current release heading');
 });
 
 test('docs/zh-CN/README.md latest release heading matches package.json', () => {
   const source = fs.readFileSync(zhCnReadmePath, 'utf8');
-  assert.ok(
-    source.includes(`### v${expectedVersion} `),
-    'Expected docs/zh-CN/README.md to advertise the current release heading',
-  );
+  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/zh-CN/README.md to advertise the current release heading');
 });
 
 // ── Claude plugin manifest ────────────────────────────────────────────────────
@@ -216,10 +201,7 @@ test('claude plugin.json uses short plugin slug', () => {
 });
 
 test('claude plugin.json does NOT have agents field (unsupported by Claude Code validator)', () => {
-  assert.ok(
-    !('agents' in claudePlugin),
-    'agents field must NOT be declared — Claude Code plugin validator rejects it',
-  );
+  assert.ok(!('agents' in claudePlugin), 'agents field must NOT be declared — Claude Code plugin validator rejects it');
 });
 
 test('claude plugin.json skills is an array', () => {
@@ -234,26 +216,13 @@ test('claude plugin.json disables bundled MCP servers for provider tool-name com
   const legacyPluginName = 'everything-claude-code';
   const reportedOverlongToolName = `mcp__plugin_${legacyPluginName}_github__create_pull_request_review`;
 
-  assert.ok(
-    reportedOverlongToolName.length > 64,
-    'Expected the reported GitHub MCP tool name to exceed strict provider limits without the MCP opt-out',
-  );
-  assert.ok(
-    Object.prototype.hasOwnProperty.call(claudePlugin, 'mcpServers'),
-    'Expected mcpServers to be explicitly declared so Claude Code does not auto-load root .mcp.json',
-  );
-  assert.deepStrictEqual(
-    claudePlugin.mcpServers,
-    {},
-    'Claude plugin installs must not auto-bundle root MCP servers; document/manual MCP install remains supported',
-  );
+  assert.ok(reportedOverlongToolName.length > 64, 'Expected the reported GitHub MCP tool name to exceed strict provider limits without the MCP opt-out');
+  assert.ok(Object.prototype.hasOwnProperty.call(claudePlugin, 'mcpServers'), 'Expected mcpServers to be explicitly declared so Claude Code does not auto-load root .mcp.json');
+  assert.deepStrictEqual(claudePlugin.mcpServers, {}, 'Claude plugin installs must not auto-bundle root MCP servers; document/manual MCP install remains supported');
 });
 
 test('claude plugin.json does NOT have explicit hooks declaration', () => {
-  assert.ok(
-    !('hooks' in claudePlugin),
-    'hooks field must NOT be declared — Claude Code v2.1+ auto-loads hooks/hooks.json by convention',
-  );
+  assert.ok(!('hooks' in claudePlugin), 'hooks field must NOT be declared — Claude Code v2.1+ auto-loads hooks/hooks.json by convention');
 });
 
 console.log('\n=== .claude-plugin/marketplace.json ===\n');
@@ -267,10 +236,7 @@ const claudeMarketplace = loadJsonObject(claudeMarketplacePath, '.claude-plugin/
 test('claude marketplace.json keeps only Claude-supported top-level keys', () => {
   const unsupportedTopLevelKeys = ['$schema', 'description'];
   for (const key of unsupportedTopLevelKeys) {
-    assert.ok(
-      !(key in claudeMarketplace),
-      `.claude-plugin/marketplace.json must not declare unsupported top-level key "${key}"`,
-    );
+    assert.ok(!(key in claudeMarketplace), `.claude-plugin/marketplace.json must not declare unsupported top-level key "${key}"`);
   }
 });
 
@@ -316,39 +282,21 @@ test('codex plugin.json version matches package.json', () => {
 });
 
 test('codex plugin.json skills is a string (not array) per official spec', () => {
-  assert.strictEqual(
-    typeof codexPlugin.skills,
-    'string',
-    'skills must be a string path per Codex official docs, not an array',
-  );
+  assert.strictEqual(typeof codexPlugin.skills, 'string', 'skills must be a string path per Codex official docs, not an array');
 });
 
 test('codex plugin.json mcpServers is a string path (not array) per official spec', () => {
-  assert.strictEqual(
-    typeof codexPlugin.mcpServers,
-    'string',
-    'mcpServers must be a string path per Codex official docs',
-  );
+  assert.strictEqual(typeof codexPlugin.mcpServers, 'string', 'mcpServers must be a string path per Codex official docs');
 });
 
 test('codex plugin.json mcpServers exactly matches "./.mcp.json"', () => {
-  assert.strictEqual(
-    codexPlugin.mcpServers,
-    './.mcp.json',
-    'mcpServers must point exactly to "./.mcp.json" per official docs',
-  );
+  assert.strictEqual(codexPlugin.mcpServers, './.mcp.json', 'mcpServers must point exactly to "./.mcp.json" per official docs');
   const mcpPath = path.join(repoRoot, codexPlugin.mcpServers.replace(/^\.\//, ''));
-  assert.ok(
-    fs.existsSync(mcpPath),
-    `mcpServers file missing at plugin root: ${codexPlugin.mcpServers}`,
-  );
+  assert.ok(fs.existsSync(mcpPath), `mcpServers file missing at plugin root: ${codexPlugin.mcpServers}`);
 });
 
 test('codex plugin.json has interface.displayName', () => {
-  assert.ok(
-    codexPlugin.interface && codexPlugin.interface.displayName,
-    'Expected interface.displayName for plugin directory presentation',
-  );
+  assert.ok(codexPlugin.interface && codexPlugin.interface.displayName, 'Expected interface.displayName for plugin directory presentation');
 });
 
 test('codex plugin.json uses canonical ECC repo and display name', () => {
@@ -363,20 +311,11 @@ test('codex plugin presentation assets exist and ship in npm package', () => {
   for (const field of ['composerIcon', 'logo']) {
     const assetPath = codexPlugin.interface[field];
     assert.ok(assetPath, `Expected interface.${field}`);
-    assert.ok(
-      assetPath.startsWith('./assets/'),
-      `Expected interface.${field} to point at a root assets path, got ${assetPath}`,
-    );
+    assert.ok(assetPath.startsWith('./assets/'), `Expected interface.${field} to point at a root assets path, got ${assetPath}`);
 
     const packagePath = assetPath.replace(/^\.\//, '');
-    assert.ok(
-      fs.existsSync(path.join(repoRoot, packagePath)),
-      `Expected interface.${field} asset to exist: ${packagePath}`,
-    );
-    assert.ok(
-      packageFiles.has(packagePath),
-      `Expected package.json files to include interface.${field} asset: ${packagePath}`,
-    );
+    assert.ok(fs.existsSync(path.join(repoRoot, packagePath)), `Expected interface.${field} asset to exist: ${packagePath}`);
+    assert.ok(packageFiles.has(packagePath), `Expected package.json files to include interface.${field} asset: ${packagePath}`);
   }
 });
 
@@ -388,31 +327,27 @@ const mcpJsonPath = path.join(repoRoot, '.mcp.json');
 
 test('.mcp.json exists at plugin root (not inside .codex-plugin/)', () => {
   assert.ok(fs.existsSync(mcpJsonPath), 'Expected .mcp.json at repo root (plugin root)');
-  assert.ok(
-    !fs.existsSync(path.join(repoRoot, '.codex-plugin', '.mcp.json')),
-    '.mcp.json must NOT be inside .codex-plugin/ — only plugin.json belongs there',
-  );
+  assert.ok(!fs.existsSync(path.join(repoRoot, '.codex-plugin', '.mcp.json')), '.mcp.json must NOT be inside .codex-plugin/ — only plugin.json belongs there');
 });
 
 const mcpConfig = loadJsonObject(mcpJsonPath, '.mcp.json');
 
 test('.mcp.json has mcpServers object', () => {
-  assert.ok(
-    mcpConfig.mcpServers && typeof mcpConfig.mcpServers === 'object',
-    'Expected mcpServers object',
-  );
+  assert.ok(mcpConfig.mcpServers && typeof mcpConfig.mcpServers === 'object', 'Expected mcpServers object');
 });
 
-test('.mcp.json includes at least github, context7, and exa servers', () => {
+test('.mcp.json default set follows the connector policy', () => {
   const servers = Object.keys(mcpConfig.mcpServers);
-  assert.ok(servers.includes('github'), 'Expected github MCP server');
-  assert.ok(servers.includes('context7'), 'Expected context7 MCP server');
-  assert.ok(servers.includes('exa'), 'Expected exa MCP server');
+  assert.ok(servers.includes('chrome-devtools'), 'Expected chrome-devtools as the default browser connector');
+  assert.ok(servers.length <= 2, `Default connector set must stay minimal per docs/MCP-CONNECTOR-POLICY.md (found ${servers.length})`);
 });
 
-test('.mcp.json declares exa as an http MCP server', () => {
-  assert.strictEqual(mcpConfig.mcpServers.exa.type, 'http', 'Expected exa MCP server to declare type=http');
-  assert.strictEqual(mcpConfig.mcpServers.exa.url, 'https://mcp.exa.ai/mcp', 'Expected exa MCP server URL to remain unchanged');
+test('.mcp.json does not reintroduce retired default connectors', () => {
+  const retired = ['github', 'context7', 'exa', 'memory', 'playwright', 'sequential-thinking'];
+  const servers = Object.keys(mcpConfig.mcpServers);
+  for (const name of retired) {
+    assert.ok(!servers.includes(name), `${name} was retired from the default set (June 2026 audit) — it lives in mcp-configs/mcp-servers.json as opt-in; see docs/MCP-CONNECTOR-POLICY.md`);
+  }
 });
 
 // ── Codex marketplace file ────────────────────────────────────────────────────
@@ -422,10 +357,7 @@ console.log('\n=== .agents/plugins/marketplace.json ===\n');
 const marketplacePath = path.join(repoRoot, '.agents', 'plugins', 'marketplace.json');
 
 test('marketplace.json exists at .agents/plugins/', () => {
-  assert.ok(
-    fs.existsSync(marketplacePath),
-    'Expected .agents/plugins/marketplace.json for Codex repo marketplace discovery',
-  );
+  assert.ok(fs.existsSync(marketplacePath), 'Expected .agents/plugins/marketplace.json for Codex repo marketplace discovery');
 });
 
 const marketplace = loadJsonObject(marketplacePath, '.agents/plugins/marketplace.json');
@@ -467,24 +399,11 @@ test('marketplace local plugin path resolves to the repo-root Codex bundle', () 
       continue;
     }
 
-    assert.ok(
-      plugin.source.path.startsWith('./'),
-      `Codex marketplace source.path must be ./-prefixed: ${plugin.source.path}`,
-    );
+    assert.ok(plugin.source.path.startsWith('./'), `Codex marketplace source.path must be ./-prefixed: ${plugin.source.path}`);
     const resolvedRoot = path.resolve(repoRoot, plugin.source.path);
-    assert.strictEqual(
-      resolvedRoot,
-      repoRoot,
-      `Expected local marketplace path to resolve to repo root from marketplace root, got: ${plugin.source.path}`,
-    );
-    assert.ok(
-      fs.existsSync(path.join(resolvedRoot, '.codex-plugin', 'plugin.json')),
-      `Codex plugin manifest missing under resolved marketplace root: ${plugin.source.path}`,
-    );
-    assert.ok(
-      fs.existsSync(path.join(resolvedRoot, '.mcp.json')),
-      `Root MCP config missing under resolved marketplace root: ${plugin.source.path}`,
-    );
+    assert.strictEqual(resolvedRoot, repoRoot, `Expected local marketplace path to resolve to repo root from marketplace root, got: ${plugin.source.path}`);
+    assert.ok(fs.existsSync(path.join(resolvedRoot, '.codex-plugin', 'plugin.json')), `Codex plugin manifest missing under resolved marketplace root: ${plugin.source.path}`);
+    assert.ok(fs.existsSync(path.join(resolvedRoot, '.mcp.json')), `Root MCP config missing under resolved marketplace root: ${plugin.source.path}`);
   }
 });
 
@@ -510,7 +429,7 @@ test('user-facing docs do not use overlong legacy marketplace install commands',
     path.join(repoRoot, 'README.md'),
     path.join(repoRoot, 'README.zh-CN.md'),
     path.join(repoRoot, 'skills', 'configure-ecc', 'SKILL.md'),
-    ...collectMarkdownFiles(path.join(repoRoot, 'docs')),
+    ...collectMarkdownFiles(path.join(repoRoot, 'docs'))
   ].filter(filePath => !path.relative(repoRoot, filePath).startsWith(`docs${path.sep}drafts${path.sep}`));
 
   const offenders = [];
@@ -521,19 +440,11 @@ test('user-facing docs do not use overlong legacy marketplace install commands',
     }
   }
 
-  assert.deepStrictEqual(
-    offenders,
-    [],
-    `Overlong legacy install commands must not appear in user-facing docs: ${offenders.join(', ')}`,
-  );
+  assert.deepStrictEqual(offenders, [], `Overlong legacy install commands must not appear in user-facing docs: ${offenders.join(', ')}`);
 });
 
 test('user-facing docs do not use the legacy non-URL marketplace add form', () => {
-  const markdownFiles = [
-    path.join(repoRoot, 'README.md'),
-    path.join(repoRoot, 'README.zh-CN.md'),
-    ...collectMarkdownFiles(path.join(repoRoot, 'docs')),
-  ];
+  const markdownFiles = [path.join(repoRoot, 'README.md'), path.join(repoRoot, 'README.zh-CN.md'), ...collectMarkdownFiles(path.join(repoRoot, 'docs'))];
 
   const offenders = [];
   for (const filePath of markdownFiles) {
@@ -543,31 +454,15 @@ test('user-facing docs do not use the legacy non-URL marketplace add form', () =
     }
   }
 
-  assert.deepStrictEqual(
-    offenders,
-    [],
-    `Legacy non-URL marketplace add form must not appear in user-facing docs: ${offenders.join(', ')}`,
-  );
+  assert.deepStrictEqual(offenders, [], `Legacy non-URL marketplace add form must not appear in user-facing docs: ${offenders.join(', ')}`);
 });
 
 test('.codex-plugin README uses current marketplace add flow', () => {
   const readme = fs.readFileSync(path.join(repoRoot, '.codex-plugin', 'README.md'), 'utf8');
-  assert.ok(
-    readme.includes('codex plugin marketplace add'),
-    'Expected .codex-plugin README to document codex plugin marketplace add',
-  );
-  assert.ok(
-    readme.includes('codex plugin marketplace add affaan-m/ECC'),
-    'Expected .codex-plugin README to document the canonical ECC repo marketplace source',
-  );
-  assert.ok(
-    readme.includes('Official Plugin Directory publishing is coming soon'),
-    'Expected .codex-plugin README to document current official directory status',
-  );
-  assert.ok(
-    !/\bcodex plugin install\b/.test(readme),
-    'codex plugin install is not a current Codex CLI command',
-  );
+  assert.ok(readme.includes('codex plugin marketplace add'), 'Expected .codex-plugin README to document codex plugin marketplace add');
+  assert.ok(readme.includes('codex plugin marketplace add affaan-m/ECC'), 'Expected .codex-plugin README to document the canonical ECC repo marketplace source');
+  assert.ok(readme.includes('Official Plugin Directory publishing is coming soon'), 'Expected .codex-plugin README to document current official directory status');
+  assert.ok(!/\bcodex plugin install\b/.test(readme), 'codex plugin install is not a current Codex CLI command');
 });
 
 test('docs/zh-CN/README.md version row matches package.json', () => {
