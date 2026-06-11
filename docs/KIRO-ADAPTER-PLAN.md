@@ -48,6 +48,7 @@ canonical sources                      generator                committed adapte
 - [x] `tests/lib/kiro-generate.test.js` (4/4) + install-targets (41/41), manifests (39/39), executor (10/10)
 - [x] eslint + markdownlint + validate-install-manifests + validate-no-personal-paths + catalog:check all clean
 
-### Phase 4 — Branch + PR  [pending user]
-- [ ] Commit regenerated `.kiro/` + new code on a feature branch (makes `--check` pass)
+### Phase 4 — Branch + PR  [ready]
+- [x] Feature branch `feat/kiro-first-class-adapter` with 3 commits
+- [x] Full suite green: `node tests/run-all.js` → 2739/2739 passed, 0 failed
 - [ ] Push to a fork + open PR to affaan-m/ECC (needs your GitHub fork/auth)
