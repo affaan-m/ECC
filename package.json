@@ -71,6 +71,7 @@
     "install.sh",
     "manifests/",
     "mcp-configs/",
+    "plugins/ecc/",
     "rules/",
     "schemas/",
     "scripts/catalog.js",

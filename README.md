@@ -2,12 +2,12 @@
 
 ![ECC — the agent harness operating system](assets/hero.png)
 
-[![Stars](https://img.shields.io/github/stars/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/stargazers)
-[![Forks](https://img.shields.io/github/forks/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/network/members)
+[![Stars](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Fstars&style=flat)](https://github.com/affaan-m/ECC/stargazers)
+[![Forks](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Fforks&style=flat)](https://github.com/affaan-m/ECC/network/members)
 [![Contributors](https://img.shields.io/github/contributors/affaan-m/ECC?style=flat)](https://github.com/affaan-m/ECC/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
-[![GitHub App Install](https://img.shields.io/badge/GitHub%20App-150%20installs-2ea44f?logo=github)](https://github.com/marketplace/ecc-tools)
+[![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white)
@@ -1383,6 +1383,17 @@ Codex macOS app:
 - `.codex/config.toml` and `.codex/agents/*.toml` work best when kept project-local.
 - The reference `.codex/config.toml` intentionally does not pin `model` or `model_provider`, so Codex uses its own current default unless you override it.
 - Optional: copy `.codex/config.toml` to `~/.codex/config.toml` for global defaults; keep the multi-agent role files project-local unless you also copy `.codex/agents/`.
+
+### Codex Plugin Marketplace (experimental)
+
+The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) whose entry points at the `plugins/ecc/` plugin folder — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so the entry must target a concrete plugin subdirectory:
+
+```bash
+codex plugin marketplace add affaan-m/ECC
+codex plugin list   # ecc@ecc should appear
+```
+
+**Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. Until that settles, treat the plugin path as experimental and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
 
 ### What's Included
 

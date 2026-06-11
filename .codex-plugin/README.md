@@ -30,10 +30,22 @@ codex plugin marketplace add affaan-m/ECC
 codex plugin marketplace add /absolute/path/to/ECC
 ```
 
-The marketplace entry points at the repository root so `.codex-plugin/plugin.json`,
-`skills/`, and `.mcp.json` resolve from one shared source of truth. After adding
-or updating the marketplace, restart Codex and install or enable `ecc` from the
-plugin directory.
+The marketplace entry points at `plugins/ecc/` — Codex does not discover
+plugins whose local marketplace `source.path` is the marketplace root (`./`),
+so the entry must target a concrete plugin subdirectory (see
+[#2128](https://github.com/affaan-m/ECC/issues/2128)). That thin plugin folder
+references the root `skills/` and `.mcp.json` so content stays single-sourced.
+After adding or updating the marketplace, restart Codex and install or enable
+`ecc` from the plugin directory.
+
+> **Plugin mode is currently fragile on Codex.** Marketplace discovery and
+> install work with this layout, but runtime skill loading from local/repo
+> marketplaces is unreliable upstream
+> ([openai/codex#26037](https://github.com/openai/codex/issues/26037)) — Codex
+> copies only the plugin folder into its install cache, so parent-referenced
+> content may not be exposed in a fresh session. The safer, fully supported
+> path today is the manual sync flow:
+> `npm install && bash scripts/sync-ecc-to-codex.sh`.
 
 Official Plugin Directory publishing is coming soon. For official OpenAI
 plugin-directory review, package this repo under the `openai/plugins`
