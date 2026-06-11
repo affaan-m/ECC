@@ -1,12 +1,12 @@
 ---
-inclusion: fileMatch
+inclusion: "fileMatch"
 fileMatchPattern: "*.go"
-description: Go-specific patterns including functional options, small interfaces, and dependency injection
+description: "ECC golang guidance (loaded for matching files)."
 ---
 
 # Go Patterns
 
-> This file extends the common patterns with Go specific content.
+> This file extends [common/patterns.md](../common/patterns.md) with Go specific content.
 
 ## Functional Options
 

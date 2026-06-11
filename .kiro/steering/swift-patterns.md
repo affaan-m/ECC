@@ -1,12 +1,12 @@
 ---
-inclusion: fileMatch
+inclusion: "fileMatch"
 fileMatchPattern: "*.swift"
-description: Swift-specific patterns including protocol-oriented design, value types, actor pattern, and dependency injection
+description: "ECC swift guidance (loaded for matching files)."
 ---
 
 # Swift Patterns
 
-> This file extends the common patterns with Swift specific content.
+> This file extends [common/patterns.md](../common/patterns.md) with Swift specific content.
 
 ## Protocol-Oriented Design
 
@@ -49,7 +49,7 @@ actor Cache<Key: Hashable & Sendable, Value: Sendable> {
 
 ## Dependency Injection
 
-Inject protocols with default parameters -- production uses defaults, tests inject mocks:
+Inject protocols with default parameters — production uses defaults, tests inject mocks:
 
 ```swift
 struct UserService {

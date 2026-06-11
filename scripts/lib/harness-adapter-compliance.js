@@ -197,6 +197,40 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'kiro',
+    harness: 'Kiro',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Kiro steering files (rules)',
+      'shared skills',
+      'agents (IDE markdown + CLI JSON)',
+      'native `.kiro.hook` IDE hooks',
+      'MCP server example',
+    ],
+    unsupported_surfaces: [
+      'No native slash-command surface; ECC commands surface as skills/steering',
+      'IDE hooks use Kiro askAgent/runCommand, not Claude plugin-bootstrap hooks',
+    ],
+    install_or_onramp: ['`./install.sh --profile minimal --target kiro`'],
+    verification_commands: [
+      '`node tests/lib/install-targets.test.js`',
+      '`node tests/lib/kiro-generate.test.js`',
+      '`node scripts/generate-kiro-adapter.js --check`',
+    ],
+    risk_notes: [
+      'Regenerate `.kiro/` via `scripts/generate-kiro-adapter.js` after editing canonical sources to avoid drift.',
+    ],
+    last_verified_at: '2026-06-12',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.kiro/',
+      'scripts/lib/install-targets/kiro-project.js',
+      'scripts/lib/kiro/generate.js',
+      'docs/KIRO-GUIDE.md',
+      'tests/lib/install-targets.test.js',
+    ],
+  },
+  {
     id: 'dmux',
     harness: 'dmux',
     state: 'Adapter-backed',

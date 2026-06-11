@@ -1,6 +1,6 @@
 ---
-inclusion: auto
-description: Git workflow guidelines for conventional commits and pull request process
+inclusion: "auto"
+description: "ECC git workflow rules (always-on)."
 ---
 
 # Git Workflow
@@ -26,4 +26,4 @@ When creating PRs:
 5. Push with `-u` flag if new branch
 
 > For the full development process (planning, TDD, code review) before git operations,
-> see the development workflow rule.
+> see [development-workflow.md](./development-workflow.md).

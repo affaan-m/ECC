@@ -157,8 +157,6 @@ getAdminReport(@Req() req: AuthenticatedRequest) {
 ```ts
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
-
   catch(exception: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
     const request = host.switchToHttp().getRequest<Request>();
@@ -169,11 +167,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error: exception.getResponse(),
       });
     }
-
-    this.logger.error(
-      `Unhandled exception at ${request.url}: ${exception instanceof Error ? exception.message : exception}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
 
     return response.status(500).json({
       path: request.url,

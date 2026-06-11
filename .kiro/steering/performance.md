@@ -1,23 +1,23 @@
 ---
-inclusion: auto
-description: Performance optimization guidelines including model selection strategy, context window management, and build troubleshooting
+inclusion: "auto"
+description: "ECC performance rules (always-on)."
 ---
 
 # Performance Optimization
 
 ## Model Selection Strategy
 
-**Claude Haiku 4.5** (90% of Sonnet capability, 3x cost savings):
+**Haiku 4.5** (90% of Sonnet capability, 3x cost savings):
 - Lightweight agents with frequent invocation
 - Pair programming and code generation
 - Worker agents in multi-agent systems
 
-**Claude Sonnet 4.6** (Best coding model):
+**Sonnet 4.6** (Best coding model):
 - Main development work
 - Orchestrating multi-agent workflows
 - Complex coding tasks
 
-**Claude Opus 4.6** (Deepest reasoning):
+**Opus 4.6** (Deepest reasoning):
 - Complex architectural decisions
 - Maximum reasoning requirements
 - Research and analysis tasks
@@ -35,20 +35,26 @@ Lower context sensitivity tasks:
 - Documentation updates
 - Simple bug fixes
 
-## Extended Thinking
+## Extended Thinking + Plan Mode
 
-Extended thinking is enabled by default in Kiro, reserving tokens for internal reasoning.
+Extended thinking is enabled by default, reserving up to 31,999 tokens for internal reasoning.
+
+Control extended thinking via:
+- **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux)
+- **Config**: Set `alwaysThinkingEnabled` in `~/.claude/settings.json`
+- **Budget cap**: `export MAX_THINKING_TOKENS=10000` (bash) or `$env:MAX_THINKING_TOKENS = "10000"` (PowerShell)
+- **Verbose mode**: Ctrl+O to see thinking output
 
 For complex tasks requiring deep reasoning:
-1. Ensure extended thinking is enabled
-2. Use structured approach for planning
+1. Ensure extended thinking is enabled (on by default)
+2. Enable **Plan Mode** for structured approach
 3. Use multiple critique rounds for thorough analysis
-4. Use sub-agents for diverse perspectives
+4. Use split role sub-agents for diverse perspectives
 
 ## Build Troubleshooting
 
 If build fails:
-1. Use build-error-resolver agent
+1. Use **build-error-resolver** agent
 2. Analyze error messages
 3. Fix incrementally
 4. Verify after each fix

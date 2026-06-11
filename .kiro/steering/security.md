@@ -1,6 +1,6 @@
 ---
-inclusion: auto
-description: Security best practices including mandatory checks, secret management, and security response protocol.
+inclusion: "auto"
+description: "ECC security rules (always-on)."
 ---
 
 # Security Guidelines

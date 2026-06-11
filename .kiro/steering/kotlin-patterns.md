@@ -1,40 +1,31 @@
 ---
-inclusion: fileMatch
-fileMatchPattern: "*.kt"
-description: Kotlin-specific patterns, coroutines, Compose, and Android/KMP best practices.
+inclusion: "fileMatch"
+fileMatchPattern: "*.kt,*.kts"
+description: "ECC kotlin guidance (loaded for matching files)."
 ---
 
 # Kotlin Patterns
 
-> This file extends the common patterns with Kotlin and Android/KMP specific content.
+> This file extends [common/patterns.md](../common/patterns.md) with Kotlin and Android/KMP-specific content.
 
-## Immutability & Null Safety
+## Dependency Injection
 
-- Prefer `val` over `var` — default to `val` and only use `var` when mutation is required
-- Use `data class` for value types; use immutable collections in public APIs
-- Never use `!!` — prefer `?.`, `?:`, `requireNotNull()`, or `checkNotNull()`
+Prefer constructor injection. Use Koin (KMP) or Hilt (Android-only):
 
 ```kotlin
-// BAD
-val name = user!!.name
-
-// GOOD
-val name = user?.name ?: "Unknown"
-```
-
-## Sealed Types
-
-Use sealed classes/interfaces to model closed state hierarchies:
-
-```kotlin
-sealed interface UiState<out T> {
-    data object Loading : UiState<Nothing>
-    data class Success<T>(val data: T) : UiState<T>
-    data class Error(val message: String) : UiState<Nothing>
+// Koin — declare modules
+val dataModule = module {
+    single<ItemRepository> { ItemRepositoryImpl(get(), get()) }
+    factory { GetItemsUseCase(get()) }
+    viewModelOf(::ItemListViewModel)
 }
-```
 
-Always use exhaustive `when` with sealed types — no `else` branch.
+// Hilt — annotations
+@HiltViewModel
+class ItemListViewModel @Inject constructor(
+    private val getItems: GetItemsUseCase
+) : ViewModel()
+```
 
 ## ViewModel Pattern
 
@@ -59,6 +50,20 @@ class ScreenViewModel(private val useCase: GetItemsUseCase) : ViewModel() {
 }
 ```
 
+## Repository Pattern
+
+- `suspend` functions return `Result<T>` or custom error type
+- `Flow` for reactive streams
+- Coordinate local + remote data sources
+
+```kotlin
+interface ItemRepository {
+    suspend fun getById(id: String): Result<Item>
+    suspend fun getAll(): Result<List<Item>>
+    fun observeAll(): Flow<List<Item>>
+}
+```
+
 ## UseCase Pattern
 
 Single responsibility, `operator fun invoke`:
@@ -69,26 +74,13 @@ class GetItemUseCase(private val repository: ItemRepository) {
         return repository.getById(id)
     }
 }
-```
 
-## Dependency Injection
-
-Prefer constructor injection. Use Koin (KMP) or Hilt (Android-only):
-
-```kotlin
-// Koin
-val dataModule = module {
-    single<ItemRepository> { ItemRepositoryImpl(get(), get()) }
-    factory { GetItemsUseCase(get()) }
-    viewModelOf(::ItemListViewModel)
+class GetItemsUseCase(private val repository: ItemRepository) {
+    suspend operator fun invoke(): Result<List<Item>> {
+        return repository.getAll()
+    }
 }
 ```
-
-## Coroutine Patterns
-
-- Use `viewModelScope` in ViewModels, `coroutineScope` for structured child work
-- Use `supervisorScope` when child failures should be independent
-- Never catch `CancellationException` — always rethrow it
 
 ## expect/actual (KMP)
 
@@ -97,42 +89,59 @@ Use for platform-specific implementations:
 ```kotlin
 // commonMain
 expect fun platformName(): String
+expect class SecureStorage {
+    fun save(key: String, value: String)
+    fun get(key: String): String?
+}
 
 // androidMain
 actual fun platformName(): String = "Android"
+actual class SecureStorage {
+    actual fun save(key: String, value: String) { /* EncryptedSharedPreferences */ }
+    actual fun get(key: String): String? = null /* ... */
+}
 
 // iosMain
 actual fun platformName(): String = "iOS"
-```
-
-## Security
-
-- Never embed secrets in `BuildConfig` or resources — values are extractable from the APK
-- Use `EncryptedSharedPreferences` or Android Keystore (Android), Keychain (iOS), or a server-side proxy for runtime secrets
-- Use parameterized queries for Room/SQLDelight
-- Configure `network_security_config.xml` to block cleartext traffic
-
-## Testing
-
-- Use `kotlin.test` for multiplatform, JUnit for Android-specific tests
-- Use Turbine for testing Flows and StateFlow
-- Use `runTest` with `kotlinx-coroutines-test` for coroutine testing
-- Prefer hand-written fakes over mocking frameworks
-
-```kotlin
-@Test
-fun `loading state emitted then data`() = runTest {
-    val repo = FakeItemRepository()
-    val viewModel = ItemListViewModel(GetItemsUseCase(repo))
-
-    viewModel.state.test {
-        assertEquals(ItemListState(), awaitItem())
-        viewModel.onEvent(ItemListEvent.Load)
-        assertTrue(awaitItem().isLoading)
-    }
+actual class SecureStorage {
+    actual fun save(key: String, value: String) { /* Keychain */ }
+    actual fun get(key: String): String? = null /* ... */
 }
 ```
 
-## Reference
+## Coroutine Patterns
 
-See agents: `kotlin-reviewer`, `kotlin-build-resolver` for Kotlin-specific review and build error resolution.
+- Use `viewModelScope` in ViewModels, `coroutineScope` for structured child work
+- Use `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initialValue)` for StateFlow from cold Flows
+- Use `supervisorScope` when child failures should be independent
+
+## Builder Pattern with DSL
+
+```kotlin
+class HttpClientConfig {
+    var baseUrl: String = ""
+    var timeout: Long = 30_000
+    private val interceptors = mutableListOf<Interceptor>()
+
+    fun interceptor(block: () -> Interceptor) {
+        interceptors.add(block())
+    }
+}
+
+fun httpClient(block: HttpClientConfig.() -> Unit): HttpClient {
+    val config = HttpClientConfig().apply(block)
+    return HttpClient(config)
+}
+
+// Usage
+val client = httpClient {
+    baseUrl = "https://api.example.com"
+    timeout = 15_000
+    interceptor { AuthInterceptor(tokenProvider) }
+}
+```
+
+## References
+
+See skill: `kotlin-coroutines-flows` for detailed coroutine patterns.
+See skill: `android-clean-architecture` for module and layer patterns.

@@ -209,12 +209,8 @@ Page<Market> results = marketService.list(page);
 
 ## Error-Resilient External Calls
 
-> **Production recommendation:** Use Resilience4j or Spring Retry for production retry logic
-> with circuit breakers, metrics, and configurable policies.
-
 ```java
 public <T> T withRetry(Supplier<T> supplier, int maxRetries) {
-  final long maxBackoffMillis = 10_000L;
   int attempts = 0;
   while (true) {
     try {
@@ -225,8 +221,7 @@ public <T> T withRetry(Supplier<T> supplier, int maxRetries) {
         throw ex;
       }
       try {
-        long backoff = Math.min((long) Math.pow(2, attempts) * 100L, maxBackoffMillis);
-        Thread.sleep(backoff);
+        Thread.sleep((long) Math.pow(2, attempts) * 100L);
       } catch (InterruptedException ie) {
         Thread.currentThread().interrupt();
         throw ex;

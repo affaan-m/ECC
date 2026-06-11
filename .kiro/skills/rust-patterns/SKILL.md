@@ -366,7 +366,7 @@ async fn fetch_all(urls: Vec<String>) -> Vec<Result<String>> {
 ### When Unsafe Is Acceptable
 
 ```rust
-// Acceptable: FFI boundary with documented invariants
+// Acceptable: FFI boundary with documented invariants (Rust 2024+)
 /// # Safety
 /// `ptr` must be a valid, aligned pointer to an initialized `Widget`.
 unsafe fn widget_from_raw<'a>(ptr: *const Widget) -> &'a Widget {

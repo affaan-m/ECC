@@ -61,11 +61,9 @@ private List<PositionEntity> positions = new ArrayList<>();
 - Avoid `EAGER` on collections; use DTO projections for read paths
 
 ```java
-@Query("select distinct m from MarketEntity m left join fetch m.positions where m.id = :id")
+@Query("select m from MarketEntity m left join fetch m.positions where m.id = :id")
 Optional<MarketEntity> findWithPositions(@Param("id") Long id);
 ```
-
-> **Note:** `DISTINCT` is required when fetch-joining a one-to-many collection — without it, the root entity is duplicated once per child row in the result set. For single-result queries (`findById`) the duplication is harmless, but for list queries it produces duplicate root objects. Hibernate 6+ applies de-duplication automatically in some cases, but explicit `DISTINCT` keeps behavior portable and clear.
 
 ## Repository Patterns
 

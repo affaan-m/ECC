@@ -1,11 +1,7 @@
 ---
 name: docker-patterns
-description: >
-  Docker and Docker Compose patterns for local development, container security,
-  networking, volume strategies, and multi-service orchestration. Use when
-  setting up containerized development environments or reviewing Docker configurations.
-metadata:
-  origin: ECC
+description: Docker and Docker Compose patterns for local development, container security, networking, volume strategies, and multi-service orchestration.
+origin: ECC
 ---
 
 # Docker Patterns
@@ -366,11 +362,3 @@ docker network inspect <project>_default
 # BAD: Putting secrets in docker-compose.yml
 # Use .env files (gitignored) or Docker secrets
 ```
-
-## When to Use This Skill
-
-- Setting up Docker Compose for local development
-- Designing multi-container architectures
-- Troubleshooting container issues
-- Reviewing Dockerfiles for security
-- Implementing container best practices

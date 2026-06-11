@@ -1,12 +1,12 @@
 ---
-inclusion: fileMatch
+inclusion: "fileMatch"
 fileMatchPattern: "*.py"
-description: Python patterns extending common rules
+description: "ECC python guidance (loaded for matching files)."
 ---
 
 # Python Patterns
 
-> This file extends the common patterns rule with Python specific content.
+> This file extends [common/patterns.md](../common/patterns.md) with Python specific content.
 
 ## Protocol (Duck Typing)
 

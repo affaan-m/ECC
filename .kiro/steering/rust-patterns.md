@@ -1,55 +1,53 @@
 ---
-inclusion: fileMatch
+inclusion: "fileMatch"
 fileMatchPattern: "*.rs"
-description: Rust-specific patterns, ownership, lifetimes, error handling, and best practices.
+description: "ECC rust guidance (loaded for matching files)."
 ---
 
 # Rust Patterns
 
-> This file extends the common patterns with Rust specific content.
+> This file extends [common/patterns.md](../common/patterns.md) with Rust-specific content.
 
-## Formatting & Linting
+## Repository Pattern with Traits
 
-- Run `cargo fmt` before committing
-- Run `cargo clippy -- -D warnings` (treat warnings as errors)
-
-## Immutability & Ownership
-
-- Use `let` by default; only `let mut` when mutation is required
-- Borrow (`&T`) by default; take ownership only when storing or consuming
-- Accept `&str` over `String`, `&[T]` over `Vec<T>` in function parameters
-- Never clone to satisfy the borrow checker without understanding the root cause
+Encapsulate data access behind a trait:
 
 ```rust
-// GOOD — borrows when ownership isn't needed
-fn word_count(text: &str) -> usize {
-    text.split_whitespace().count()
-}
-
-// GOOD — takes ownership in constructor via Into
-fn new(name: impl Into<String>) -> Self {
-    Self { name: name.into() }
+pub trait OrderRepository: Send + Sync {
+    fn find_by_id(&self, id: u64) -> Result<Option<Order>, StorageError>;
+    fn find_all(&self) -> Result<Vec<Order>, StorageError>;
+    fn save(&self, order: &Order) -> Result<Order, StorageError>;
+    fn delete(&self, id: u64) -> Result<(), StorageError>;
 }
 ```
 
-## Error Handling
+Concrete implementations handle storage details (Postgres, SQLite, in-memory for tests).
 
-- Use `Result<T, E>` and `?` for propagation — never `unwrap()` in production code
-- Libraries: define typed errors with `thiserror`
-- Applications: use `anyhow` for flexible error context
-- Reserve `unwrap()` / `expect()` for tests and truly unreachable states
+## Service Layer
+
+Business logic in service structs; inject dependencies via constructor:
 
 ```rust
-#[derive(Debug, thiserror::Error)]
-pub enum ConfigError {
-    #[error("failed to read config: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("invalid config format: {0}")]
-    Parse(String),
+pub struct OrderService {
+    repo: Box<dyn OrderRepository>,
+    payment: Box<dyn PaymentGateway>,
+}
+
+impl OrderService {
+    pub fn new(repo: Box<dyn OrderRepository>, payment: Box<dyn PaymentGateway>) -> Self {
+        Self { repo, payment }
+    }
+
+    pub fn place_order(&self, request: CreateOrderRequest) -> anyhow::Result<OrderSummary> {
+        let order = Order::from(request);
+        self.payment.charge(order.total())?;
+        let saved = self.repo.save(&order)?;
+        Ok(OrderSummary::from(saved))
+    }
 }
 ```
 
-## Newtype Pattern
+## Newtype Pattern for Type Safety
 
 Prevent argument mix-ups with distinct wrapper types:
 
@@ -58,6 +56,7 @@ struct UserId(u64);
 struct OrderId(u64);
 
 fn get_order(user: UserId, order: OrderId) -> anyhow::Result<Order> {
+    // Can't accidentally swap user and order IDs at call sites
     todo!()
 }
 ```
@@ -73,51 +72,99 @@ enum ConnectionState {
     Connected { session_id: String },
     Failed { reason: String, retries: u32 },
 }
-```
 
-Always match exhaustively — no wildcard `_` for business-critical enums.
-
-## Repository Pattern with Traits
-
-```rust
-pub trait OrderRepository: Send + Sync {
-    fn find_by_id(&self, id: u64) -> Result<Option<Order>, StorageError>;
-    fn save(&self, order: &Order) -> Result<Order, StorageError>;
-    fn delete(&self, id: u64) -> Result<(), StorageError>;
-}
-```
-
-## Security
-
-- Never hardcode secrets — use `std::env::var("API_KEY")`
-- Always use parameterized queries (sqlx, diesel, sea-orm)
-- Minimize `unsafe` blocks; every `unsafe` must have a `// SAFETY:` comment
-- Run `cargo audit` and `cargo deny check` in CI
-
-## Testing
-
-- Unit tests in `#[cfg(test)]` modules in the same file
-- Integration tests in `tests/` directory
-- Use `rstest` for parameterized tests, `mockall` for trait mocking
-- Target 80%+ coverage with `cargo llvm-cov`
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn creates_user_with_valid_email() {
-        let user = User::new("Alice", "alice@example.com").unwrap();
-        assert_eq!(user.name, "Alice");
+fn handle(state: &ConnectionState) {
+    match state {
+        ConnectionState::Disconnected => connect(),
+        ConnectionState::Connecting { attempt } if *attempt > 3 => abort(),
+        ConnectionState::Connecting { .. } => wait(),
+        ConnectionState::Connected { session_id } => use_session(session_id),
+        ConnectionState::Failed { retries, .. } if *retries < 5 => retry(),
+        ConnectionState::Failed { reason, .. } => log_failure(reason),
     }
 }
 ```
 
-## Module Organization
+Always match exhaustively — no wildcard `_` for business-critical enums.
 
-Organize by domain, not by type. Default to private; use `pub(crate)` for internal sharing.
+## Builder Pattern
 
-## Reference
+Use for structs with many optional parameters:
 
-See agents: `rust-reviewer`, `rust-build-resolver` for Rust-specific review and build error resolution.
+```rust
+pub struct ServerConfig {
+    host: String,
+    port: u16,
+    max_connections: usize,
+}
+
+impl ServerConfig {
+    pub fn builder(host: impl Into<String>, port: u16) -> ServerConfigBuilder {
+        ServerConfigBuilder {
+            host: host.into(),
+            port,
+            max_connections: 100,
+        }
+    }
+}
+
+pub struct ServerConfigBuilder {
+    host: String,
+    port: u16,
+    max_connections: usize,
+}
+
+impl ServerConfigBuilder {
+    pub fn max_connections(mut self, n: usize) -> Self {
+        self.max_connections = n;
+        self
+    }
+
+    pub fn build(self) -> ServerConfig {
+        ServerConfig {
+            host: self.host,
+            port: self.port,
+            max_connections: self.max_connections,
+        }
+    }
+}
+```
+
+## Sealed Traits for Extensibility Control
+
+Use a private module to seal a trait, preventing external implementations:
+
+```rust
+mod private {
+    pub trait Sealed {}
+}
+
+pub trait Format: private::Sealed {
+    fn encode(&self, data: &[u8]) -> Vec<u8>;
+}
+
+pub struct Json;
+impl private::Sealed for Json {}
+impl Format for Json {
+    fn encode(&self, data: &[u8]) -> Vec<u8> { todo!() }
+}
+```
+
+## API Response Envelope
+
+Consistent API responses using a generic enum:
+
+```rust
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "status")]
+pub enum ApiResponse<T: serde::Serialize> {
+    #[serde(rename = "ok")]
+    Ok { data: T },
+    #[serde(rename = "error")]
+    Error { message: String },
+}
+```
+
+## References
+
+See skill: `rust-patterns` for comprehensive patterns including ownership, traits, generics, concurrency, and async.

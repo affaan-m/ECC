@@ -1,6 +1,6 @@
 ---
-inclusion: auto
-description: Common design patterns including repository pattern, API response format, and skeleton project approach
+inclusion: "auto"
+description: "ECC patterns rules (always-on)."
 ---
 
 # Common Patterns

@@ -40,6 +40,7 @@ Targets:
   opencode     - Install shared commands/hooks/config into ~/.opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
+  kiro         - Install agents, skills, steering, hooks, and MCP example into ./.kiro/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
 

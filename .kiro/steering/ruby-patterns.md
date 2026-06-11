@@ -1,77 +1,42 @@
 ---
-inclusion: fileMatch
+inclusion: "fileMatch"
 fileMatchPattern: "*.rb"
-description: Ruby-specific patterns and Rails best practices.
+description: "ECC ruby guidance (loaded for matching files)."
 ---
 
 # Ruby Patterns
 
-> This file extends the common patterns with Ruby and Rails specific content.
-
-## Standards
-
-- Target **Ruby 3.3+** for new Rails work
-- Add `# frozen_string_literal: true` to new files when the project uses that convention
-- Prefer clear Ruby over clever metaprogramming
-
-## Formatting & Linting
-
-```bash
-bundle exec rubocop
-bundle exec rubocop -A
-```
+> This file extends [common/patterns.md](../common/patterns.md) with Ruby and Rails specific content.
 
 ## Rails Way First
 
-- Start with plain Rails MVC and Active Record conventions
-- Introduce service objects, query objects, form objects when model/controller carries multiple responsibilities
-- Keep controllers transport-focused: auth, params, response shape
+- Start with plain Rails MVC and Active Record conventions for small and medium features.
+- Introduce service objects, query objects, form objects, decorators, or presenters when the model/controller boundary is carrying multiple responsibilities.
+- Name extracted objects after the business operation they perform, not after generic layers like `Manager` or `Processor`.
 
 ## Persistence
 
-- Prefer PostgreSQL for multi-host production Rails apps
-- Keep raw SQL behind query objects or model scopes; parameterize every dynamic value
+- Prefer PostgreSQL for multi-host production Rails apps unless the existing platform has a clear reason for MySQL or SQLite.
+- Treat Rails 8 SQLite-backed defaults as viable for single-host or modest deployments, not as an automatic fit for shared multi-service systems.
+- Keep raw SQL behind query objects or model scopes and parameterize every dynamic value.
 
-## Background Jobs
+## Background Jobs And Runtime Services
 
-- Use **Solid Queue** for greenfield Rails 8 apps with modest throughput
-- Use **Sidekiq** for mature observability, high throughput, or existing Redis infrastructure
+- Use **Solid Queue** for greenfield Rails 8 apps with modest throughput and simple deployment needs.
+- Use **Sidekiq** when the app needs mature observability, high throughput, existing Redis infrastructure, or Pro/Enterprise features.
+- Use **Solid Cache** and **Solid Cable** when their deployment model matches the app; use Redis when shared cross-service behavior, high fanout, or advanced data structures matter.
 
 ## Frontend
 
-- Prefer **Hotwire** (Turbo, Stimulus, Importmap, Propshaft) for server-rendered Rails apps
-- Use React/Vue/Inertia when interaction complexity justifies the extra client surface
+- Prefer **Hotwire** with Turbo, Stimulus, Importmap, and Propshaft for server-rendered Rails apps.
+- Use React, Vue, Inertia.js, or a separate SPA when interaction complexity, existing product architecture, or team ownership justifies the extra client surface.
+- Keep view components, partials, and presenters focused on rendering decisions; keep persistence and authorization out of templates.
 
 ## Authentication
 
-- Use Rails 8 authentication generator for straightforward session auth
-- Use Devise when requirements include OAuth, MFA, confirmable/lockable flows
-
-## Security
-
-- Keep CSRF protection enabled for state-changing browser requests
-- Use strong parameters or typed boundary objects before mass assignment
-- Store secrets in Rails credentials or environment variables — never commit plaintext keys
-- Prefer Active Record query APIs and parameterized SQL — never interpolate user input into SQL
-
-```bash
-bundle exec bundle-audit check --update
-bundle exec brakeman --no-progress
-```
-
-## Testing
-
-- Use **Minitest** when the app follows default Rails test stack
-- Use **RSpec** when already established in the project
-- Put fast domain behavior in model/service/query tests
-- Use system tests with Capybara for browser-critical flows only
-
-```bash
-bin/rails test
-bundle exec rspec
-```
+- Use the Rails 8 authentication generator for straightforward session auth and password reset needs.
+- Use Devise or another established auth system when requirements include OAuth, MFA, confirmable/lockable flows, multi-model auth, or a large existing Devise footprint.
 
 ## Reference
 
 See skill: `backend-patterns` for service boundaries and adapter patterns.
-See skill: `security-review` for secure-by-default review patterns.

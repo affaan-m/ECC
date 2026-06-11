@@ -1,300 +1,592 @@
 ---
 name: python-testing
-description: >
-  Python testing best practices using pytest including fixtures, parametrization,
-  mocking, coverage analysis, async testing, and test organization. Use when
-  writing or improving Python tests.
-metadata:
-  origin: ECC
-  globs: ["**/*.py", "**/*.pyi"]
+description: Python testing strategies using pytest, TDD methodology, fixtures, mocking, parametrization, and coverage requirements.
+origin: ECC
 ---
 
-# Python Testing
+# Python Testing Patterns
 
-> This skill provides comprehensive Python testing patterns using pytest as the primary testing framework.
+Comprehensive testing strategies for Python applications using pytest, TDD methodology, and best practices.
 
-## Testing Framework
+## When to Activate
 
-Use **pytest** as the testing framework for its powerful features and clean syntax.
+- Writing new Python code (follow TDD: red, green, refactor)
+- Designing test suites for Python projects
+- Reviewing Python test coverage
+- Setting up testing infrastructure
+
+## Core Testing Philosophy
+
+### Test-Driven Development (TDD)
+
+Always follow the TDD cycle:
+
+1. **RED**: Write a failing test for the desired behavior
+2. **GREEN**: Write minimal code to make the test pass
+3. **REFACTOR**: Improve code while keeping tests green
+
+```python
+# Step 1: Write failing test (RED)
+def test_add_numbers():
+    result = add(2, 3)
+    assert result == 5
+
+# Step 2: Write minimal implementation (GREEN)
+def add(a, b):
+    return a + b
+
+# Step 3: Refactor if needed (REFACTOR)
+```
+
+### Coverage Requirements
+
+- **Target**: 80%+ code coverage
+- **Critical paths**: 100% coverage required
+- Use `pytest --cov` to measure coverage
+
+```bash
+pytest --cov=mypackage --cov-report=term-missing --cov-report=html
+```
+
+## pytest Fundamentals
 
 ### Basic Test Structure
 
 ```python
-def test_user_creation():
-    """Test that a user can be created with valid data"""
-    user = User(name="Alice", email="alice@example.com")
+import pytest
 
-    assert user.name == "Alice"
-    assert user.email == "alice@example.com"
-    assert user.is_active is True
+def test_addition():
+    """Test basic addition."""
+    assert 2 + 2 == 4
+
+def test_string_uppercase():
+    """Test string uppercasing."""
+    text = "hello"
+    assert text.upper() == "HELLO"
+
+def test_list_append():
+    """Test list append."""
+    items = [1, 2, 3]
+    items.append(4)
+    assert 4 in items
+    assert len(items) == 4
 ```
 
-### Test Discovery
+### Assertions
 
-pytest automatically discovers tests following these conventions:
-- Files: `test_*.py` or `*_test.py`
-- Functions: `test_*`
-- Classes: `Test*` (without `__init__`)
-- Methods: `test_*`
+```python
+# Equality
+assert result == expected
+
+# Inequality
+assert result != unexpected
+
+# Truthiness
+assert result  # Truthy
+assert not result  # Falsy
+assert result is True  # Exactly True
+assert result is False  # Exactly False
+assert result is None  # Exactly None
+
+# Membership
+assert item in collection
+assert item not in collection
+
+# Comparisons
+assert result > 0
+assert 0 <= result <= 100
+
+# Type checking
+assert isinstance(result, str)
+
+# Exception testing (preferred approach)
+with pytest.raises(ValueError):
+    raise ValueError("error message")
+
+# Check exception message
+with pytest.raises(ValueError, match="invalid input"):
+    raise ValueError("invalid input provided")
+
+# Check exception attributes
+with pytest.raises(ValueError) as exc_info:
+    raise ValueError("error message")
+assert str(exc_info.value) == "error message"
+```
 
 ## Fixtures
 
-Fixtures provide reusable test setup and teardown:
+### Basic Fixture Usage
 
 ```python
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 @pytest.fixture
-def db_session():
-    """Provide a database session for tests"""
-    engine = create_engine("sqlite:///:memory:")
-    Session = sessionmaker(bind=engine)
-    session = Session()
+def sample_data():
+    """Fixture providing sample data."""
+    return {"name": "Alice", "age": 30}
 
+def test_sample_data(sample_data):
+    """Test using the fixture."""
+    assert sample_data["name"] == "Alice"
+    assert sample_data["age"] == 30
+```
+
+### Fixture with Setup/Teardown
+
+```python
+@pytest.fixture
+def database():
+    """Fixture with setup and teardown."""
     # Setup
-    Base.metadata.create_all(engine)
+    db = Database(":memory:")
+    db.create_tables()
+    db.insert_test_data()
 
-    yield session
+    yield db  # Provide to test
 
     # Teardown
-    session.close()
+    db.close()
 
-def test_user_repository(db_session):
-    """Test using the db_session fixture"""
-    repo = UserRepository(db_session)
-    user = repo.create(name="Alice", email="alice@example.com")
-
-    assert user.id is not None
+def test_database_query(database):
+    """Test database operations."""
+    result = database.query("SELECT * FROM users")
+    assert len(result) > 0
 ```
 
 ### Fixture Scopes
 
 ```python
-@pytest.fixture(scope="function")  # Default: per test
-def user():
-    return User(name="Alice")
+# Function scope (default) - runs for each test
+@pytest.fixture
+def temp_file():
+    with open("temp.txt", "w") as f:
+        yield f
+    os.remove("temp.txt")
 
-@pytest.fixture(scope="class")  # Per test class
-def database():
-    db = Database()
-    db.connect()
+# Module scope - runs once per module
+@pytest.fixture(scope="module")
+def module_db():
+    db = Database(":memory:")
+    db.create_tables()
     yield db
-    db.disconnect()
+    db.close()
 
-@pytest.fixture(scope="module")  # Per module
-def app():
-    return create_app()
-
-@pytest.fixture(scope="session")  # Once per test session
-def config():
-    return load_config()
+# Session scope - runs once per test session
+@pytest.fixture(scope="session")
+def shared_resource():
+    resource = ExpensiveResource()
+    yield resource
+    resource.cleanup()
 ```
 
-### Fixture Dependencies
+### Fixture with Parameters
+
+```python
+@pytest.fixture(params=[1, 2, 3])
+def number(request):
+    """Parameterized fixture."""
+    return request.param
+
+def test_numbers(number):
+    """Test runs 3 times, once for each parameter."""
+    assert number > 0
+```
+
+### Using Multiple Fixtures
 
 ```python
 @pytest.fixture
-def database():
-    db = Database()
-    db.connect()
-    yield db
-    db.disconnect()
+def user():
+    return User(id=1, name="Alice")
 
 @pytest.fixture
-def user_repository(database):
-    """Fixture that depends on database fixture"""
-    return UserRepository(database)
+def admin():
+    return User(id=2, name="Admin", role="admin")
 
-def test_create_user(user_repository):
-    user = user_repository.create(name="Alice")
-    assert user.id is not None
+def test_user_admin_interaction(user, admin):
+    """Test using multiple fixtures."""
+    assert admin.can_manage(user)
+```
+
+### Autouse Fixtures
+
+```python
+@pytest.fixture(autouse=True)
+def reset_config():
+    """Automatically runs before every test."""
+    Config.reset()
+    yield
+    Config.cleanup()
+
+def test_without_fixture_call():
+    # reset_config runs automatically
+    assert Config.get_setting("debug") is False
+```
+
+### Conftest.py for Shared Fixtures
+
+```python
+# tests/conftest.py
+import pytest
+
+@pytest.fixture
+def client():
+    """Shared fixture for all tests."""
+    app = create_app(testing=True)
+    with app.test_client() as client:
+        yield client
+
+@pytest.fixture
+def auth_headers(client):
+    """Generate auth headers for API testing."""
+    response = client.post("/api/login", json={
+        "username": "test",
+        "password": "test"
+    })
+    token = response.json["token"]
+    return {"Authorization": f"Bearer {token}"}
 ```
 
 ## Parametrization
 
-Test multiple inputs with `@pytest.mark.parametrize`:
+### Basic Parametrization
 
 ```python
-import pytest
-
-@pytest.mark.parametrize("email,expected", [
-    ("user@example.com", True),
-    ("invalid-email", False),
-    ("", False),
-    ("user@", False),
-    ("@example.com", False),
+@pytest.mark.parametrize("input,expected", [
+    ("hello", "HELLO"),
+    ("world", "WORLD"),
+    ("PyThOn", "PYTHON"),
 ])
-def test_email_validation(email, expected):
-    result = validate_email(email)
-    assert result == expected
+def test_uppercase(input, expected):
+    """Test runs 3 times with different inputs."""
+    assert input.upper() == expected
 ```
 
 ### Multiple Parameters
 
 ```python
-@pytest.mark.parametrize("name,age,valid", [
-    ("Alice", 25, True),
-    ("Bob", 17, False),
-    ("", 25, False),
-    ("Charlie", -1, False),
+@pytest.mark.parametrize("a,b,expected", [
+    (2, 3, 5),
+    (0, 0, 0),
+    (-1, 1, 0),
+    (100, 200, 300),
 ])
-def test_user_validation(name, age, valid):
-    result = validate_user(name, age)
-    assert result == valid
+def test_add(a, b, expected):
+    """Test addition with multiple inputs."""
+    assert add(a, b) == expected
 ```
 
 ### Parametrize with IDs
 
 ```python
 @pytest.mark.parametrize("input,expected", [
-    ("hello", "HELLO"),
-    ("world", "WORLD"),
-], ids=["lowercase", "another_lowercase"])
-def test_uppercase(input, expected):
-    assert input.upper() == expected
+    ("valid@email.com", True),
+    ("invalid", False),
+    ("@no-domain.com", False),
+], ids=["valid-email", "missing-at", "missing-domain"])
+def test_email_validation(input, expected):
+    """Test email validation with readable test IDs."""
+    assert is_valid_email(input) is expected
 ```
 
-## Test Markers
-
-Use markers for test categorization and selective execution:
+### Parametrized Fixtures
 
 ```python
-import pytest
+@pytest.fixture(params=["sqlite", "postgresql", "mysql"])
+def db(request):
+    """Test against multiple database backends."""
+    if request.param == "sqlite":
+        return Database(":memory:")
+    elif request.param == "postgresql":
+        return Database("postgresql://localhost/test")
+    elif request.param == "mysql":
+        return Database("mysql://localhost/test")
 
-@pytest.mark.unit
-def test_calculate_total():
-    """Fast unit test"""
-    assert calculate_total([1, 2, 3]) == 6
+def test_database_operations(db):
+    """Test runs 3 times, once for each database."""
+    result = db.query("SELECT 1")
+    assert result is not None
+```
 
-@pytest.mark.integration
-def test_database_connection():
-    """Slower integration test"""
-    db = Database()
-    assert db.connect() is True
+## Markers and Test Selection
 
+### Custom Markers
+
+```python
+# Mark slow tests
 @pytest.mark.slow
-def test_large_dataset():
-    """Very slow test"""
-    process_million_records()
+def test_slow_operation():
+    time.sleep(5)
 
-@pytest.mark.skip(reason="Not implemented yet")
-def test_future_feature():
-    pass
+# Mark integration tests
+@pytest.mark.integration
+def test_api_integration():
+    response = requests.get("https://api.example.com")
+    assert response.status_code == 200
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="Requires Python 3.10+")
-def test_new_syntax():
-    pass
+# Mark unit tests
+@pytest.mark.unit
+def test_unit_logic():
+    assert calculate(2, 3) == 5
 ```
 
-**Run specific markers:**
-```bash
-pytest -m unit              # Run only unit tests
-pytest -m "not slow"        # Skip slow tests
-pytest -m "unit or integration"  # Run unit OR integration
-```
-
-## Mocking
-
-### Using unittest.mock
-
-```python
-from unittest.mock import Mock, patch, MagicMock
-
-def test_user_service_with_mock():
-    """Test with mock repository"""
-    mock_repo = Mock()
-    mock_repo.find_by_id.return_value = User(id="1", name="Alice")
-
-    service = UserService(mock_repo)
-    user = service.get_user("1")
-
-    assert user.name == "Alice"
-    mock_repo.find_by_id.assert_called_once_with("1")
-
-@patch('myapp.services.EmailService')
-def test_send_notification(mock_email_service):
-    """Test with patched dependency"""
-    service = NotificationService()
-    service.send("user@example.com", "Hello")
-
-    mock_email_service.send.assert_called_once()
-```
-
-### pytest-mock Plugin
-
-```python
-def test_with_mocker(mocker):
-    """Using pytest-mock plugin"""
-    mock_repo = mocker.Mock()
-    mock_repo.find_by_id.return_value = User(id="1", name="Alice")
-
-    service = UserService(mock_repo)
-    user = service.get_user("1")
-
-    assert user.name == "Alice"
-```
-
-## Coverage Analysis
-
-### Basic Coverage
+### Run Specific Tests
 
 ```bash
-pytest --cov=src --cov-report=term-missing
+# Run only fast tests
+pytest -m "not slow"
+
+# Run only integration tests
+pytest -m integration
+
+# Run integration or slow tests
+pytest -m "integration or slow"
+
+# Run tests marked as unit but not slow
+pytest -m "unit and not slow"
 ```
 
-### HTML Coverage Report
-
-```bash
-pytest --cov=src --cov-report=html
-open htmlcov/index.html
-```
-
-### Coverage Configuration
+### Configure Markers in pytest.ini
 
 ```ini
-# pytest.ini or pyproject.toml
-[tool.pytest.ini_options]
-addopts = """
-    --cov=src
-    --cov-report=term-missing
-    --cov-report=html
-    --cov-fail-under=80
-"""
+[pytest]
+markers =
+    slow: marks tests as slow
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
+    django: marks tests as requiring Django
 ```
 
-### Branch Coverage
+## Mocking and Patching
 
-```bash
-pytest --cov=src --cov-branch
+### Mocking Functions
+
+```python
+from unittest.mock import patch, Mock
+
+@patch("mypackage.external_api_call")
+def test_with_mock(api_call_mock):
+    """Test with mocked external API."""
+    api_call_mock.return_value = {"status": "success"}
+
+    result = my_function()
+
+    api_call_mock.assert_called_once()
+    assert result["status"] == "success"
 ```
 
-## Async Testing
+### Mocking Return Values
 
-### Testing Async Functions
+```python
+@patch("mypackage.Database.connect")
+def test_database_connection(connect_mock):
+    """Test with mocked database connection."""
+    connect_mock.return_value = MockConnection()
+
+    db = Database()
+    db.connect()
+
+    connect_mock.assert_called_once_with("localhost")
+```
+
+### Mocking Exceptions
+
+```python
+@patch("mypackage.api_call")
+def test_api_error_handling(api_call_mock):
+    """Test error handling with mocked exception."""
+    api_call_mock.side_effect = ConnectionError("Network error")
+
+    with pytest.raises(ConnectionError):
+        api_call()
+
+    api_call_mock.assert_called_once()
+```
+
+### Mocking Context Managers
+
+```python
+@patch("builtins.open", new_callable=mock_open)
+def test_file_reading(mock_file):
+    """Test file reading with mocked open."""
+    mock_file.return_value.read.return_value = "file content"
+
+    result = read_file("test.txt")
+
+    mock_file.assert_called_once_with("test.txt", "r")
+    assert result == "file content"
+```
+
+### Using Autospec
+
+```python
+@patch("mypackage.DBConnection", autospec=True)
+def test_autospec(db_mock):
+    """Test with autospec to catch API misuse."""
+    db = db_mock.return_value
+    db.query("SELECT * FROM users")
+
+    # This would fail if DBConnection doesn't have query method
+    db_mock.assert_called_once()
+```
+
+### Mock Class Instances
+
+```python
+class TestUserService:
+    @patch("mypackage.UserRepository")
+    def test_create_user(self, repo_mock):
+        """Test user creation with mocked repository."""
+        repo_mock.return_value.save.return_value = User(id=1, name="Alice")
+
+        service = UserService(repo_mock.return_value)
+        user = service.create_user(name="Alice")
+
+        assert user.name == "Alice"
+        repo_mock.return_value.save.assert_called_once()
+```
+
+### Mock Property
+
+```python
+@pytest.fixture
+def mock_config():
+    """Create a mock with a property."""
+    config = Mock()
+    type(config).debug = PropertyMock(return_value=True)
+    type(config).api_key = PropertyMock(return_value="test-key")
+    return config
+
+def test_with_mock_config(mock_config):
+    """Test with mocked config properties."""
+    assert mock_config.debug is True
+    assert mock_config.api_key == "test-key"
+```
+
+## Testing Async Code
+
+### Async Tests with pytest-asyncio
 
 ```python
 import pytest
 
 @pytest.mark.asyncio
-async def test_async_fetch_user():
-    """Test async function"""
-    user = await fetch_user("1")
-    assert user.name == "Alice"
-
-@pytest.fixture
-async def async_client():
-    """Async fixture"""
-    client = AsyncClient()
-    await client.connect()
-    yield client
-    await client.disconnect()
+async def test_async_function():
+    """Test async function."""
+    result = await async_add(2, 3)
+    assert result == 5
 
 @pytest.mark.asyncio
-async def test_with_async_fixture(async_client):
-    result = await async_client.get("/users/1")
-    assert result.status == 200
+async def test_async_with_fixture(async_client):
+    """Test async with async fixture."""
+    response = await async_client.get("/api/users")
+    assert response.status_code == 200
+```
+
+### Async Fixture
+
+```python
+@pytest.fixture
+async def async_client():
+    """Async fixture providing async test client."""
+    app = create_app()
+    async with app.test_client() as client:
+        yield client
+
+@pytest.mark.asyncio
+async def test_api_endpoint(async_client):
+    """Test using async fixture."""
+    response = await async_client.get("/api/data")
+    assert response.status_code == 200
+```
+
+### Mocking Async Functions
+
+```python
+@pytest.mark.asyncio
+@patch("mypackage.async_api_call")
+async def test_async_mock(api_call_mock):
+    """Test async function with mock."""
+    api_call_mock.return_value = {"status": "ok"}
+
+    result = await my_async_function()
+
+    api_call_mock.assert_awaited_once()
+    assert result["status"] == "ok"
+```
+
+## Testing Exceptions
+
+### Testing Expected Exceptions
+
+```python
+def test_divide_by_zero():
+    """Test that dividing by zero raises ZeroDivisionError."""
+    with pytest.raises(ZeroDivisionError):
+        divide(10, 0)
+
+def test_custom_exception():
+    """Test custom exception with message."""
+    with pytest.raises(ValueError, match="invalid input"):
+        validate_input("invalid")
+```
+
+### Testing Exception Attributes
+
+```python
+def test_exception_with_details():
+    """Test exception with custom attributes."""
+    with pytest.raises(CustomError) as exc_info:
+        raise CustomError("error", code=400)
+
+    assert exc_info.value.code == 400
+    assert "error" in str(exc_info.value)
+```
+
+## Testing Side Effects
+
+### Testing File Operations
+
+```python
+import tempfile
+import os
+
+def test_file_processing():
+    """Test file processing with temp file."""
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+        f.write("test content")
+        temp_path = f.name
+
+    try:
+        result = process_file(temp_path)
+        assert result == "processed: test content"
+    finally:
+        os.unlink(temp_path)
+```
+
+### Testing with pytest's tmp_path Fixture
+
+```python
+def test_with_tmp_path(tmp_path):
+    """Test using pytest's built-in temp path fixture."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("hello world")
+
+    result = process_file(str(test_file))
+    assert result == "hello world"
+    # tmp_path automatically cleaned up
+```
+
+### Testing with tmpdir Fixture
+
+```python
+def test_with_tmpdir(tmpdir):
+    """Test using pytest's tmpdir fixture."""
+    test_file = tmpdir.join("test.txt")
+    test_file.write("data")
+
+    result = process_file(str(test_file))
+    assert result == "data"
 ```
 
 ## Test Organization
@@ -303,161 +595,172 @@ async def test_with_async_fixture(async_client):
 
 ```
 tests/
-├── unit/
+├── conftest.py                 # Shared fixtures
+├── __init__.py
+├── unit/                       # Unit tests
+│   ├── __init__.py
 │   ├── test_models.py
-│   ├── test_services.py
-│   └── test_utils.py
-├── integration/
-│   ├── test_database.py
-│   └── test_api.py
-├── conftest.py          # Shared fixtures
-└── pytest.ini           # Configuration
+│   ├── test_utils.py
+│   └── test_services.py
+├── integration/                # Integration tests
+│   ├── __init__.py
+│   ├── test_api.py
+│   └── test_database.py
+└── e2e/                        # End-to-end tests
+    ├── __init__.py
+    └── test_user_flow.py
 ```
 
-### conftest.py
+### Test Classes
 
 ```python
-# tests/conftest.py
-import pytest
+class TestUserService:
+    """Group related tests in a class."""
 
-@pytest.fixture(scope="session")
-def app():
-    """Application fixture available to all tests"""
-    return create_app()
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Setup runs before each test in this class."""
+        self.service = UserService()
 
-@pytest.fixture
-def client(app):
-    """Test client fixture"""
-    return app.test_client()
+    def test_create_user(self):
+        """Test user creation."""
+        user = self.service.create_user("Alice")
+        assert user.name == "Alice"
 
-def pytest_configure(config):
-    """Register custom markers"""
-    config.addinivalue_line("markers", "unit: Unit tests")
-    config.addinivalue_line("markers", "integration: Integration tests")
-    config.addinivalue_line("markers", "slow: Slow tests")
-```
-
-## Assertions
-
-### Basic Assertions
-
-```python
-def test_assertions():
-    assert value == expected
-    assert value != other
-    assert value > 0
-    assert value in collection
-    assert isinstance(value, str)
-```
-
-### pytest Assertions with Better Error Messages
-
-```python
-def test_with_context():
-    """pytest provides detailed assertion introspection"""
-    result = calculate_total([1, 2, 3])
-    expected = 6
-
-    # pytest shows: assert 5 == 6
-    assert result == expected
-```
-
-### Custom Assertion Messages
-
-```python
-def test_with_message():
-    result = process_data(input_data)
-    assert result.is_valid, f"Expected valid result, got errors: {result.errors}"
-```
-
-### Approximate Comparisons
-
-```python
-import pytest
-
-def test_float_comparison():
-    result = 0.1 + 0.2
-    assert result == pytest.approx(0.3)
-
-    # With tolerance
-    assert result == pytest.approx(0.3, abs=1e-9)
-```
-
-## Exception Testing
-
-```python
-import pytest
-
-def test_raises_exception():
-    """Test that function raises expected exception"""
-    with pytest.raises(ValueError):
-        validate_age(-1)
-
-def test_exception_message():
-    """Test exception message"""
-    with pytest.raises(ValueError, match="Age must be positive"):
-        validate_age(-1)
-
-def test_exception_details():
-    """Capture and inspect exception"""
-    with pytest.raises(ValidationError) as exc_info:
-        validate_user(name="", age=-1)
-
-    assert "name" in exc_info.value.errors
-    assert "age" in exc_info.value.errors
-```
-
-## Test Helpers
-
-```python
-# tests/helpers.py
-def assert_user_equal(actual, expected):
-    """Custom assertion helper"""
-    assert actual.id == expected.id
-    assert actual.name == expected.name
-    assert actual.email == expected.email
-
-def create_test_user(**kwargs):
-    """Test data factory"""
-    defaults = {
-        "name": "Test User",
-        "email": "test@example.com",
-        "age": 25,
-    }
-    defaults.update(kwargs)
-    return User(**defaults)
-```
-
-## Property-Based Testing
-
-Using `hypothesis` for property-based testing:
-
-```python
-from hypothesis import given, strategies as st
-
-@given(st.integers(), st.integers())
-def test_addition_commutative(a, b):
-    """Test that addition is commutative"""
-    assert a + b == b + a
-
-@given(st.lists(st.integers()))
-def test_sort_idempotent(lst):
-    """Test that sorting twice gives same result"""
-    sorted_once = sorted(lst)
-    sorted_twice = sorted(sorted_once)
-    assert sorted_once == sorted_twice
+    def test_delete_user(self):
+        """Test user deletion."""
+        user = User(id=1, name="Bob")
+        self.service.delete_user(user)
+        assert not self.service.user_exists(1)
 ```
 
 ## Best Practices
 
-1. **One assertion per test** (when possible)
-2. **Use descriptive test names** - describe what's being tested
-3. **Arrange-Act-Assert pattern** - clear test structure
-4. **Use fixtures for setup** - avoid duplication
-5. **Mock external dependencies** - keep tests fast and isolated
-6. **Test edge cases** - empty inputs, None, boundaries
-7. **Use parametrize** - test multiple scenarios efficiently
-8. **Keep tests independent** - no shared state between tests
+### DO
+
+- **Follow TDD**: Write tests before code (red-green-refactor)
+- **Test one thing**: Each test should verify a single behavior
+- **Use descriptive names**: `test_user_login_with_invalid_credentials_fails`
+- **Use fixtures**: Eliminate duplication with fixtures
+- **Mock external dependencies**: Don't depend on external services
+- **Test edge cases**: Empty inputs, None values, boundary conditions
+- **Aim for 80%+ coverage**: Focus on critical paths
+- **Keep tests fast**: Use marks to separate slow tests
+
+### DON'T
+
+- **Don't test implementation**: Test behavior, not internals
+- **Don't use complex conditionals in tests**: Keep tests simple
+- **Don't ignore test failures**: All tests must pass
+- **Don't test third-party code**: Trust libraries to work
+- **Don't share state between tests**: Tests should be independent
+- **Don't catch exceptions in tests**: Use `pytest.raises`
+- **Don't use print statements**: Use assertions and pytest output
+- **Don't write tests that are too brittle**: Avoid over-specific mocks
+
+## Common Patterns
+
+### Testing API Endpoints (FastAPI/Flask)
+
+```python
+@pytest.fixture
+def client():
+    app = create_app(testing=True)
+    return app.test_client()
+
+def test_get_user(client):
+    response = client.get("/api/users/1")
+    assert response.status_code == 200
+    assert response.json["id"] == 1
+
+def test_create_user(client):
+    response = client.post("/api/users", json={
+        "name": "Alice",
+        "email": "alice@example.com"
+    })
+    assert response.status_code == 201
+    assert response.json["name"] == "Alice"
+```
+
+### Testing Database Operations
+
+```python
+@pytest.fixture
+def db_session():
+    """Create a test database session."""
+    session = Session(bind=engine)
+    session.begin_nested()
+    yield session
+    session.rollback()
+    session.close()
+
+def test_create_user(db_session):
+    user = User(name="Alice", email="alice@example.com")
+    db_session.add(user)
+    db_session.commit()
+
+    retrieved = db_session.query(User).filter_by(name="Alice").first()
+    assert retrieved.email == "alice@example.com"
+```
+
+### Testing Class Methods
+
+```python
+class TestCalculator:
+    @pytest.fixture
+    def calculator(self):
+        return Calculator()
+
+    def test_add(self, calculator):
+        assert calculator.add(2, 3) == 5
+
+    def test_divide_by_zero(self, calculator):
+        with pytest.raises(ZeroDivisionError):
+            calculator.divide(10, 0)
+```
+
+## pytest Configuration
+
+### pytest.ini
+
+```ini
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts =
+    --strict-markers
+    --disable-warnings
+    --cov=mypackage
+    --cov-report=term-missing
+    --cov-report=html
+markers =
+    slow: marks tests as slow
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
+```
+
+### pyproject.toml
+
+```toml
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--cov=mypackage",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+```
 
 ## Running Tests
 
@@ -466,32 +769,48 @@ def test_sort_idempotent(lst):
 pytest
 
 # Run specific file
-pytest tests/test_user.py
+pytest tests/test_utils.py
 
 # Run specific test
-pytest tests/test_user.py::test_create_user
+pytest tests/test_utils.py::test_function
 
 # Run with verbose output
 pytest -v
 
-# Run with output capture disabled
-pytest -s
+# Run with coverage
+pytest --cov=mypackage --cov-report=html
 
-# Run in parallel (requires pytest-xdist)
-pytest -n auto
+# Run only fast tests
+pytest -m "not slow"
 
-# Run only failed tests from last run
+# Run until first failure
+pytest -x
+
+# Run and stop on N failures
+pytest --maxfail=3
+
+# Run last failed tests
 pytest --lf
 
-# Run failed tests first
-pytest --ff
+# Run tests with pattern
+pytest -k "test_user"
+
+# Run with debugger on failure
+pytest --pdb
 ```
 
-## When to Use This Skill
+## Quick Reference
 
-- Writing new Python tests
-- Improving test coverage
-- Setting up pytest infrastructure
-- Debugging flaky tests
-- Implementing integration tests
-- Testing async Python code
+| Pattern | Usage |
+|---------|-------|
+| `pytest.raises()` | Test expected exceptions |
+| `@pytest.fixture()` | Create reusable test fixtures |
+| `@pytest.mark.parametrize()` | Run tests with multiple inputs |
+| `@pytest.mark.slow` | Mark slow tests |
+| `pytest -m "not slow"` | Skip slow tests |
+| `@patch()` | Mock functions and classes |
+| `tmp_path` fixture | Automatic temp directory |
+| `pytest --cov` | Generate coverage report |
+| `assert` | Simple and readable assertions |
+
+**Remember**: Tests are code too. Keep them clean, readable, and maintainable. Good tests catch bugs; great tests prevent them.

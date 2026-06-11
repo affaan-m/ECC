@@ -6,6 +6,7 @@ const codexHome = require('./codex-home');
 const cursorProject = require('./cursor-project');
 const geminiProject = require('./gemini-project');
 const joycodeProject = require('./joycode-project');
+const kiroProject = require('./kiro-project');
 const opencodeHome = require('./opencode-home');
 const qwenHome = require('./qwen-home');
 const zedProject = require('./zed-project');
@@ -20,6 +21,7 @@ const ADAPTERS = Object.freeze([
   opencodeHome,
   codebuddyProject,
   joycodeProject,
+  kiroProject,
   qwenHome,
   zedProject,
 ]);

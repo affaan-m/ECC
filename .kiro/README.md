@@ -24,14 +24,18 @@ The installer uses non-destructive copy — it will not overwrite your existing 
 
 | Component | Count | Location |
 |-----------|-------|----------|
-| Agents (JSON) | 33 | `.kiro/agents/*.json` |
-| Agents (MD) | 33 | `.kiro/agents/*.md` |
-| Skills | 43 | `.kiro/skills/*/SKILL.md` |
-| Steering Files | 22 | `.kiro/steering/*.md` |
+| Agents (JSON) | 64 | `.kiro/agents/*.json` |
+| Agents (MD) | 64 | `.kiro/agents/*.md` |
+| Skills | 262 | `.kiro/skills/*/SKILL.md` |
+| Steering Files | 103 | `.kiro/steering/*.md` |
 | IDE Hooks | 13 | `.kiro/hooks/*.kiro.hook` |
 | Scripts | 2 | `.kiro/scripts/*.sh` |
 | MCP Examples | 1 | `.kiro/settings/mcp.json.example` |
 | Documentation | 5 | `docs/*.md` |
+
+> Generated from canonical ECC sources by `scripts/generate-kiro-adapter.js`.
+> See [docs/KIRO-GUIDE.md](../docs/KIRO-GUIDE.md). Do not hand-edit `.kiro/agents`,
+> `.kiro/skills`, or `.kiro/steering` — edit the canonical sources and regenerate.
 
 ## What's Included
 

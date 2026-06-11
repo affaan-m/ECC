@@ -1,50 +1,286 @@
 {
   "mcpServers": {
-    "bedrock-agentcore-mcp-server": {
+    "nexus": {
+      "command": "nexus",
+      "args": [
+        "mcp"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "jira": {
       "command": "uvx",
       "args": [
-        "awslabs.amazon-bedrock-agentcore-mcp-server@latest"
+        "mcp-atlassian==0.21.0"
       ],
       "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
+        "JIRA_URL": "YOUR_JIRA_URL_HERE",
+        "JIRA_EMAIL": "YOUR_JIRA_EMAIL_HERE",
+        "JIRA_API_TOKEN": "YOUR_JIRA_API_TOKEN_HERE"
       },
       "disabled": false,
-      "autoApprove": [
-        "search_agentcore_docs",
-        "fetch_agentcore_doc",
-        "manage_agentcore_memory"
-      ]
+      "autoApprove": []
     },
-    "strands-agents": {
-      "command": "uvx",
-      "args": [
-        "strands-agents-mcp-server"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "INFO"
-      },
-      "disabled": false,
-      "autoApprove": [
-        "search_docs",
-        "fetch_doc"
-      ]
-    },
-    "awslabs.cdk-mcp-server": {
-      "command": "uvx",
-      "args": [
-        "awslabs.cdk-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      },
-      "disabled": false
-    },
-    "react-docs": {
+    "github": {
       "command": "npx",
       "args": [
         "-y",
-        "react-docs-mcp"
-      ]
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PAT_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": "YOUR_FIRECRAWL_KEY_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--project-ref=YOUR_PROJECT_REF"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "omega-memory": {
+      "command": "uvx",
+      "args": [
+        "omega-memory",
+        "serve"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "longhand": {
+      "command": "longhand",
+      "args": [
+        "mcp-server"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "vercel": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "railway": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@railway/mcp-server"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "cloudflare-docs": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "cloudflare-workers-builds": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "cloudflare-workers-bindings": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "cloudflare-observability": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "clickhouse": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "exa-web-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "exa-mcp-server"
+      ],
+      "env": {
+        "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "parallel-search": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "codescene": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@codescene/codehealth-mcp"
+      ],
+      "env": {
+        "CS_ACCESS_TOKEN": "YOUR_CS_ACCESS_TOKEN_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "magic": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@magicuidesign/mcp@latest"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/your/projects"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp",
+        "--browser",
+        "chrome"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "fal-ai": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "fal-ai-mcp-server"
+      ],
+      "env": {
+        "FAL_KEY": "YOUR_FAL_KEY_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "browserbase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@browserbasehq/mcp-server-browserbase"
+      ],
+      "env": {
+        "BROWSERBASE_API_KEY": "YOUR_BROWSERBASE_KEY_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "browser-use": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "devfleet": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "token-optimizer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "token-optimizer-mcp"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "laraplugins": {
+      "args": [],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "confluence": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "confluence-mcp-server"
+      ],
+      "env": {
+        "CONFLUENCE_BASE_URL": "YOUR_CONFLUENCE_URL_HERE",
+        "CONFLUENCE_EMAIL": "YOUR_EMAIL_HERE",
+        "CONFLUENCE_API_TOKEN": "YOUR_CONFLUENCE_TOKEN_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "evalview": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "evalview",
+        "mcp",
+        "serve"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY_HERE"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "squish": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "squish-memory"
+      ],
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
