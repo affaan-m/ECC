@@ -113,6 +113,26 @@ if (
 else failed++;
 
 if (
+  test('a security hook can still block on an oversized payload (no blanket skip)', () => {
+    // config-protection refuses to fail open on truncated payloads. The
+    // runner must still execute the hook and forward its verdict — only the
+    // runner's own raw-echo is suppressed.
+    const payload = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '.eslintrc.js', content: 'x'.repeat(MAX_STDIN + 2048) }
+    });
+    const result = runRunner(
+      ['pre:config-protection', 'scripts/hooks/config-protection.js', 'standard,strict'],
+      payload
+    );
+    assert.strictEqual(result.status, 2, `expected block exit 2, got ${result.status}: ${result.stderr}`);
+    assert.strictEqual(result.stdout, '', 'blocked truncated payload must not echo raw input');
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('payload just under the cap echoes through completely (no 64KB pipe cut)', () => {
     // process.exit() right after stdout.write() used to drop everything past
     // the ~64KB pipe buffer, cutting the echoed JSON mid-stream.

@@ -104,24 +104,26 @@ async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
 
-  // Fail open on oversized payloads: every fallthrough below echoes `raw`,
-  // and a truncated echo is invalid JSON that the harness treats as a hook
-  // failure, blocking the tool call (#2222). Empty stdout + exit 0 means
-  // "no opinion" in the hooks protocol, so the tool proceeds.
+  // Oversized payloads: never echo the truncated string — a JSON document
+  // cut mid-stream is treated by the harness as a hook failure, blocking the
+  // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
+  // pass-through paths fail open. The hook itself still runs and receives
+  // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
+  // security hooks like config-protection can still choose to block.
+  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
   if (truncated) {
     process.stderr.write(
-      `[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; skipping hook (fail-open)\n`
+      `[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`
     );
-    process.exit(0);
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout(raw, 0);
+    exitWithStdout(sanitizeEcho(raw), 0);
     return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout(raw, 0);
+    exitWithStdout(sanitizeEcho(raw), 0);
     return;
   }
 
@@ -132,13 +134,13 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(raw, 0);
+    exitWithStdout(sanitizeEcho(raw), 0);
     return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(raw, 0);
+    exitWithStdout(sanitizeEcho(raw), 0);
     return;
   }
 
@@ -171,10 +173,10 @@ async function main() {
         maxStdin: MAX_STDIN
       });
       const result = resolveHookResult(raw, output);
-      exitWithStdout(result.stdout, result.exitCode);
+      exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout(raw, 0);
+      exitWithStdout(sanitizeEcho(raw), 0);
     }
     return;
   }
@@ -195,7 +197,7 @@ async function main() {
     timeout: 30000
   });
 
-  const legacyStdout = resolveLegacySpawnStdout(raw, result);
+  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
