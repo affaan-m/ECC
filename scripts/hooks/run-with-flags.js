@@ -112,9 +112,7 @@ async function main() {
   // security hooks like config-protection can still choose to block.
   const sanitizeEcho = text => (truncated && text === raw ? '' : text);
   if (truncated) {
-    process.stderr.write(
-      `[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`
-    );
+    process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
   }
 
   if (!hookId || !relScriptPath) {
@@ -201,11 +199,7 @@ async function main() {
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
-    const failureDetail = result.error
-      ? result.error.message
-      : result.signal
-        ? `terminated by signal ${result.signal}`
-        : 'missing exit status';
+    const failureDetail = result.error ? result.error.message : result.signal ? `terminated by signal ${result.signal}` : 'missing exit status';
     writeStderr(`[Hook] legacy hook execution failed for ${hookId}: ${failureDetail}`);
     exitWithStdout(legacyStdout, 1);
     return;

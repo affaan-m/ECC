@@ -57,10 +57,7 @@ let failed = 0;
 
 if (
   test('oversized payload exits 0 with empty stdout for an enabled hook', () => {
-    const result = runRunner(
-      ['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'],
-      oversizedPayload()
-    );
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], oversizedPayload());
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
     assert.strictEqual(result.stdout, '', `stdout must be empty, got: ${result.stdout.slice(0, 120)}...`);
     assert.match(result.stderr, /stdin exceeded \d+ bytes for pre:write:doc-file-warning/);
@@ -82,11 +79,7 @@ else failed++;
 
 if (
   test('oversized payload never echoes truncated stdin for a disabled hook', () => {
-    const result = runRunner(
-      ['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'],
-      oversizedPayload(),
-      { ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning' }
-    );
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], oversizedPayload(), { ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning' });
     assert.strictEqual(result.status, 0);
     assert.strictEqual(result.stdout, '', 'disabled-hook path must not echo truncated stdin');
   })
@@ -100,10 +93,7 @@ if (
       tool_name: 'Write',
       tool_input: { file_path: '/tmp/small.js', content: 'const x = 1;\n' }
     });
-    const result = runRunner(
-      ['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'],
-      payload
-    );
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload);
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
     assert.ok(result.stdout.length > 0, 'normal payloads keep the pass-through behavior');
     JSON.parse(result.stdout); // stdout must remain valid JSON
@@ -121,10 +111,7 @@ if (
       tool_name: 'Write',
       tool_input: { file_path: '.eslintrc.js', content: 'x'.repeat(MAX_STDIN + 2048) }
     });
-    const result = runRunner(
-      ['pre:config-protection', 'scripts/hooks/config-protection.js', 'standard,strict'],
-      payload
-    );
+    const result = runRunner(['pre:config-protection', 'scripts/hooks/config-protection.js', 'standard,strict'], payload);
     assert.strictEqual(result.status, 2, `expected block exit 2, got ${result.status}: ${result.stderr}`);
     assert.strictEqual(result.stdout, '', 'blocked truncated payload must not echo raw input');
   })
@@ -154,11 +141,7 @@ if (
       tool_name: 'Write',
       tool_input: { file_path: '/tmp/medium.md', content: 'z'.repeat(256 * 1024) }
     });
-    const result = runRunner(
-      ['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'],
-      payload,
-      { ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning' }
-    );
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload, { ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning' });
     assert.strictEqual(result.status, 0);
     assert.strictEqual(result.stdout, payload);
     JSON.parse(result.stdout);
