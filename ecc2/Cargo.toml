@@ -14,7 +14,7 @@ vendored-openssl = ["git2/vendored-openssl"]
 [dependencies]
 # TUI
 ratatui = { version = "0.30", features = ["crossterm_0_28"] }
-crossterm = "0.28"
+crossterm = "0.29"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
