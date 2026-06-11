@@ -1637,6 +1637,114 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  // --- Fact-force denial dampening (#2142) ---
+
+  console.log('\n  Fact-force denial dampening (#2142):');
+
+  clearState();
+  if (test('first denials use the full four-fact block and count toward the budget', () => {
+    const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/damp-one.js' } });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'),
+      'first denial should use the full block');
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    assert.strictEqual(state.fact_force_denials, 1, 'denial counter should persist in session state');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('emits a condensed single-line denial once the full-block budget is spent', () => {
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+    const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/damp-two.js' } });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(result.code, 0);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'still denies first touch');
+    const reason = output.hookSpecificOutput.permissionDecisionReason;
+    assert.ok(reason.includes('[Fact-Forcing Gate]'), 'condensed message keeps the gate marker');
+    assert.ok(reason.includes('denial #4'), 'condensed message carries the denial ordinal');
+    assert.ok(reason.includes('/src/damp-two.js'), 'condensed message names the target');
+    assert.ok(!reason.includes('present these facts'), 'no repeated four-fact block');
+    assert.ok(!reason.includes('\n'), 'condensed message is a single line');
+    assert.ok(reason.includes('ECC_GATEGUARD=off'), 'condensed message keeps a recovery hint');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('consecutive condensed denials are textually different (ordinal advances)', () => {
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 5 });
+    const first = parseOutput(runHook({ tool_name: 'Write', tool_input: { file_path: '/src/damp-a.js', content: 'x' } }).stdout);
+    const second = parseOutput(runHook({ tool_name: 'Write', tool_input: { file_path: '/src/damp-b.js', content: 'x' } }).stdout);
+    const firstReason = first.hookSpecificOutput.permissionDecisionReason;
+    const secondReason = second.hookSpecificOutput.permissionDecisionReason;
+    assert.ok(firstReason.includes('denial #6'), `expected ordinal 6, got: ${firstReason}`);
+    assert.ok(secondReason.includes('denial #7'), `expected ordinal 7, got: ${secondReason}`);
+    assert.notStrictEqual(firstReason, secondReason, 'successive denials must differ so they cannot compound verbatim');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('retry of the same target is still allowed after a condensed denial', () => {
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 9 });
+    const input = { tool_name: 'Edit', tool_input: { file_path: '/src/damp-retry.js' } };
+    const denied = parseOutput(runHook(input).stdout);
+    assert.strictEqual(denied.hookSpecificOutput.permissionDecision, 'deny');
+    const retryOutput = parseOutput(runHook(input).stdout);
+    assert.ok(!retryOutput || !retryOutput.hookSpecificOutput, 'retry passes through (no second deny, no re-prompt)');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('GATEGUARD_FACT_FORCE_FULL_DENIALS tunes the full-block budget', () => {
+    // Budget 0: condensed from the very first denial.
+    const zero = parseOutput(runHook(
+      { tool_name: 'Edit', tool_input: { file_path: '/src/damp-zero.js' } },
+      { GATEGUARD_FACT_FORCE_FULL_DENIALS: '0' }
+    ).stdout);
+    assert.ok(zero.hookSpecificOutput.permissionDecisionReason.includes('denial #1'));
+    assert.ok(!zero.hookSpecificOutput.permissionDecisionReason.includes('present these facts'));
+
+    // Large budget: full block well past the default threshold.
+    clearState();
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 7 });
+    const big = parseOutput(runHook(
+      { tool_name: 'Edit', tool_input: { file_path: '/src/damp-big.js' } },
+      { GATEGUARD_FACT_FORCE_FULL_DENIALS: '20' }
+    ).stdout);
+    assert.ok(big.hookSpecificOutput.permissionDecisionReason.includes('present these facts'),
+      'budget of 20 keeps the full block at denial 8');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('malformed denial counter in state is treated as zero (full block, no crash)', () => {
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 'garbage' });
+    const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/damp-malformed.js' } });
+    assert.strictEqual(result.code, 0);
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'),
+      'malformed counter resets to the full block');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('MultiEdit denials are dampened past the budget', () => {
+    writeState({ checked: [], last_active: Date.now(), fact_force_denials: 4 });
+    const result = runHook({
+      tool_name: 'MultiEdit',
+      tool_input: { edits: [{ file_path: '/src/damp-multi.js', old_string: 'a', new_string: 'b' }] }
+    });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('denial #5'));
+    assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'));
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('destructive Bash gate keeps the full message regardless of denial count', () => {
+    writeState({ checked: ['__bash_session__'], last_active: Date.now(), fact_force_denials: 50 });
+    const result = runBashHook({ tool_name: 'Bash', tool_input: { command: 'rm -rf /tmp/damp-target' } });
+    const output = parseOutput(result.stdout);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+    assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('rollback'),
+      'destructive gate is exempt from dampening');
+  })) passed++; else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
