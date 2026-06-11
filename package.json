@@ -46,6 +46,7 @@
     ".codex-plugin/",
     ".cursor/",
     ".gemini/",
+    ".kiro/",
     ".opencode/",
     ".qwen/",
     ".zed/",
