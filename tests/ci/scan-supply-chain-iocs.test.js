@@ -323,6 +323,9 @@ function run() {
           beforeMCPExecution: [{
             command: 'node .cursor/hooks/before-mcp-execution.js',
           }],
+          afterFileEdit: [{
+            command: 'node .cursor/hooks/post_execution.js',
+          }],
         },
       }, null, 2),
     }, rootDir => {
