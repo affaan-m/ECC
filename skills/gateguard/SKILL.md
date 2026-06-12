@@ -98,6 +98,13 @@ If GateGuard blocks setup or repair work, start the session with
 `ECC_GATEGUARD=off`. For hook-level control, keep using
 `ECC_DISABLED_HOOKS` with the GateGuard hook ID.
 
+In long sessions, only the first `GATEGUARD_FACT_FORCE_FULL_DENIALS`
+fact-force denials (default 3) emit the full four-fact block; later
+denials are condensed to a single line carrying the denial ordinal, so
+near-identical blocks cannot accumulate in the context window and
+amplify model repetition loops (#2142). Retrying the same file or
+command after presenting facts never re-triggers the gate.
+
 ### Option B: Full package with config
 
 ```bash

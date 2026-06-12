@@ -33,10 +33,18 @@ function test(name, fn) {
  * Returns { code, stdout, stderr }.
  */
 function runCompact(envOverrides = {}) {
+  return runCompactWithInput('{}', envOverrides);
+}
+
+/**
+ * Run suggest-compact.js with a custom stdin payload (hook input JSON).
+ * Returns { code, stdout, stderr }.
+ */
+function runCompactWithInput(input, envOverrides = {}) {
   const env = { ...process.env, ...envOverrides };
   const result = spawnSync('node', [compactScript], {
     encoding: 'utf8',
-    input: '{}',
+    input: typeof input === 'string' ? input : JSON.stringify(input),
     timeout: 10000,
     env,
   });
@@ -633,6 +641,252 @@ function runTests() {
         try { fs.unlinkSync(p); } catch (_err) { /* ignore */ }
       }
       cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  // ── Context-size trigger (#2155) ──
+  // Tool count is a weak proxy for window pressure. The hook now also reads
+  // the latest `usage` record from the session transcript (transcript_path in
+  // the hook stdin payload) and suggests /compact at a window-scaled token
+  // threshold, re-firing only after another interval of context growth.
+  console.log('\nContext-size trigger (#2155):');
+
+  function getBucketFilePath(sessionId) {
+    return path.join(os.tmpdir(), `claude-context-bucket-${sessionId}`);
+  }
+
+  let transcriptSeq = 0;
+
+  function writeTranscriptFixture(tokens, model = 'claude-sonnet-4-6') {
+    transcriptSeq += 1;
+    const filePath = path.join(os.tmpdir(), `compact-transcript-${process.pid}-${transcriptSeq}.jsonl`);
+    writeTranscriptTokens(filePath, tokens, model);
+    return filePath;
+  }
+
+  function writeTranscriptTokens(filePath, tokens, model = 'claude-sonnet-4-6') {
+    const record = JSON.stringify({
+      type: 'assistant',
+      message: {
+        model,
+        usage: {
+          input_tokens: tokens,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          output_tokens: 50
+        }
+      }
+    });
+    fs.writeFileSync(filePath, record + '\n');
+  }
+
+  function createContextContext() {
+    const base = createCounterContext('test-context');
+    const bucketFile = getBucketFilePath(base.sessionId);
+    return {
+      ...base,
+      bucketFile,
+      cleanup() {
+        base.cleanup();
+        try { fs.unlinkSync(bucketFile); } catch (_err) { /* ignore */ }
+      }
+    };
+  }
+
+  if (test('suggests compact when context exceeds the 200k-window threshold', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(170000);
+    try {
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(result.code, 0, 'Should exit 0');
+      assert.ok(result.stdout.trim().length > 0, `Expected stdout payload. Got: "${result.stdout}"`);
+      const parsed = JSON.parse(result.stdout);
+      const context = parsed.hookSpecificOutput.additionalContext;
+      assert.ok(context.includes('Context ~170k tokens'), `Expected token estimate. Got: ${context}`);
+      assert.ok(context.includes('85% of 200k window'), `Expected window percentage. Got: ${context}`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('stays silent below the context threshold', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(100000);
+    try {
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(result.code, 0);
+      assert.strictEqual(result.stdout.trim(), '', `Expected silent run below threshold. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('honours COMPACT_CONTEXT_THRESHOLD override', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(1500);
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { COMPACT_CONTEXT_THRESHOLD: '1000' }
+      );
+      assert.ok(result.stdout.includes('Context ~2k tokens'), `Expected context suggestion with overridden threshold. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('does not re-fire within the same context bucket', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(170000);
+    try {
+      const first = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.ok(first.stdout.includes('Context ~170k tokens'), 'First run should fire');
+      const second = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(second.stdout.trim(), '', `Second run in the same bucket must be silent. Got: "${second.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('re-fires after the context grows by another interval', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(170000);
+    try {
+      runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      // Default interval is 60k: 160k threshold + 60k => next bucket at 220k.
+      writeTranscriptTokens(transcript, 230000, 'claude-sonnet-4-6[1m]');
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        // Pin the threshold so window detection (230k > 200k => 1M window,
+        // 250k default threshold) does not silence the growth re-fire.
+        { COMPACT_CONTEXT_THRESHOLD: '160000' }
+      );
+      assert.ok(result.stdout.includes('Context ~230k tokens'), `Expected re-fire after interval growth. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('uses the 250k default threshold for [1m] models', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5[1m]');
+    try {
+      const silent = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(silent.stdout.trim(), '', `230k on a 1M window must stay silent. Got: "${silent.stdout}"`);
+      writeTranscriptTokens(transcript, 260000, 'claude-opus-4-5[1m]');
+      const fired = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.ok(fired.stdout.includes('26% of 1M window'), `260k on a 1M window should fire. Got: "${fired.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('treats >200k observed tokens as a 1M window even without the [1m] marker', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5');
+    try {
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      // 230k would exceed the 160k standard threshold, but the observed size
+      // implies a 1M window whose 250k default threshold is not reached yet.
+      assert.strictEqual(result.stdout.trim(), '', `Expected 1M-window inference to keep run silent. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('COMPACT_CONTEXT_THRESHOLD=0 disables the context signal', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(170000);
+    try {
+      const result = runCompactWithInput(
+        { session_id: ctx.sessionId, transcript_path: transcript },
+        { COMPACT_CONTEXT_THRESHOLD: '0' }
+      );
+      assert.strictEqual(result.stdout.trim(), '', `Disabled signal must stay silent. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('survives a malformed transcript (exit 0, silent)', () => {
+    const ctx = createContextContext();
+    const transcript = path.join(os.tmpdir(), `compact-transcript-broken-${Date.now()}.jsonl`);
+    fs.writeFileSync(transcript, 'this is not json\n{broken');
+    try {
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(result.code, 0, 'Must exit 0 on malformed transcript');
+      assert.strictEqual(result.stdout.trim(), '');
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('survives a missing transcript path (exit 0, count signal intact)', () => {
+    const ctx = createContextContext();
+    try {
+      fs.writeFileSync(ctx.counterFile, '49');
+      const result = runCompactWithInput({
+        session_id: ctx.sessionId,
+        transcript_path: path.join(os.tmpdir(), `missing-${Date.now()}.jsonl`)
+      });
+      assert.strictEqual(result.code, 0);
+      assert.ok(result.stdout.includes('50 tool calls reached'), `Count signal must still work. Got: "${result.stdout}"`);
+    } finally {
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('emits a single stdout JSON payload when both signals fire', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(170000);
+    try {
+      fs.writeFileSync(ctx.counterFile, '49');
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      const lines = result.stdout.trim().split('\n');
+      assert.strictEqual(lines.length, 1, `Hook must emit exactly one stdout JSON line. Got: "${result.stdout}"`);
+      const parsed = JSON.parse(lines[0]);
+      const context = parsed.hookSpecificOutput.additionalContext;
+      assert.ok(context.includes('Context ~170k tokens'), `Expected context signal. Got: ${context}`);
+      assert.ok(context.includes('50 tool calls reached'), `Expected count signal. Got: ${context}`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('sweeps stale context bucket state files', () => {
+    const ctx = createContextContext();
+    const stale = getBucketFilePath(`stale-bucket-${Date.now()}`);
+    fs.writeFileSync(stale, '2');
+    setMtimeDaysAgo(stale, 30);
+    try {
+      const result = runCompact({ CLAUDE_SESSION_ID: ctx.sessionId });
+      assert.strictEqual(result.code, 0);
+      assert.ok(!fs.existsSync(stale), `Stale bucket state file should have been swept. Path: ${stale}`);
+    } finally {
+      try { fs.unlinkSync(stale); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
     }
   })) passed++;
   else failed++;

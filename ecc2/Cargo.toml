@@ -13,14 +13,14 @@ vendored-openssl = ["git2/vendored-openssl"]
 
 [dependencies]
 # TUI
-ratatui = { version = "0.30", features = ["crossterm_0_28"] }
-crossterm = "0.28"
+ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+crossterm = "0.29"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # State store
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Git integration
 git2 = { version = "0.20", features = ["ssh"] }
@@ -30,8 +30,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 regex = "1"
-sha2 = "0.10"
-ureq = { version = "2", features = ["json"] }
+sha2 = "0.11"
+ureq = { version = "3", features = ["json"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
