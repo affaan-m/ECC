@@ -66,10 +66,10 @@ jobs:
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node@v4`
     # or others). This is typically only required for manual builds.
-    - name: Setup Node.js 20
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
