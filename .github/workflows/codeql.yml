@@ -8,9 +8,7 @@
 # We have attempted to detect the languages in your repository. Please check
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
-#find . -name "*.xcodeproj"
-#find . -name "*.xcworkspace"
-#find . -name "Package.swift"
+#autobuild detected neither an Xcode project or workspace,nor a Swift package
 # github/workflows/codeql.yml
 
 name: "CodeQL Advanced"
@@ -94,6 +92,7 @@ jobs:
     # to build your code.
     # Command-line programs to run using the OS shell.
     # See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
+    
     - name: Run manual build steps
       if: matrix.build-mode == 'manual'
       shell: bash
@@ -109,9 +108,9 @@ jobs:
       shell: /bin/bash -e {0}
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
+      
     - category: "/language:${{matrix.language}} 
     language: 
    strategy:
   matrix:
-  shell: /bin/bash -e {0}
   
