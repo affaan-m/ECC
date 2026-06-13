@@ -1,8 +1,13 @@
 name: Release
 
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
+
+# Prevent duplicate runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -17,6 +22,19 @@ jobs:
       package_file: ${{ steps.pack.outputs.package_file }}
 
     steps:
+      - name: Validate release payload
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "::error::Missing tag_name in release payload"
+            exit 1
+          fi
+          if ! [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version tag format: $TAG_NAME. Expected vX.Y.Z or vX.Y.Z-prerelease"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -38,24 +56,14 @@ jobs:
       - name: Verify OpenCode package payload
         run: node tests/scripts/build-opencode.test.js
 
-      - name: Validate version tag
-        run: |
-          if ! [[ "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version tag format. Expected vX.Y.Z or vX.Y.Z-prerelease"
-            exit 1
-          fi
-
-        env:
-          REF_NAME: ${{ github.ref_name }}
       - name: Verify package version matches tag
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           TAG_VERSION="${TAG_NAME#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
-            echo "Run: ./scripts/release.sh $TAG_VERSION"
             exit 1
           fi
 
@@ -75,30 +83,17 @@ jobs:
           fi
           echo "dist_tag=${NPM_DIST_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate release highlights
-        id: highlights
+      - name: Prepare release highlights
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
-          TAG_VERSION="${TAG_NAME#v}"
-          cat > release_body.md <<EOF
-          ## ECC ${TAG_VERSION}
-
-          ### What This Release Focuses On
-          - Harness reliability and hook stability across Claude Code, Cursor, OpenCode, and Codex
-          - Stronger eval-driven workflows and quality gates
-          - Better operator UX for autonomous loop execution
-
-          ### Notable Changes
-          - Session persistence and hook lifecycle fixes
-          - Expanded skills and command coverage for harness performance work
-          - Improved release-note generation and changelog hygiene
-
-          ### Notes
-          - npm package: \`ecc-universal\`
-          - Claude marketplace/plugin identifier: \`ecc@ecc\`
-          - For migration tips and compatibility notes, see README and CHANGELOG.
-          EOF
+          # Sanitize and save release body to file
+          node -e "
+            const { sanitizeAnnouncement } = require('./scripts/lib/utils');
+            const fs = require('fs');
+            const body = process.env.RELEASE_BODY || '';
+            fs.writeFileSync('release_body.md', sanitizeAnnouncement(body));
+          "
 
       - name: Pack npm artifact
         id: pack
@@ -136,16 +131,16 @@ jobs:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Create GitHub Release
+      - name: Update GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           body_path: release_body.md
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
+          tag_name: ${{ github.event.release.tag_name }}
 
       - name: Publish npm package
         if: needs.verify.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish "${{ needs.verify.outputs.package_file }}" --access public --provenance --tag "${{ needs.verify.outputs.dist_tag }}"
+          PACKAGE_FILE: ${{ needs.verify.outputs.package_file }}
+          DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
+        run: npm publish "$PACKAGE_FILE" --access public --provenance --tag "$DIST_TAG"

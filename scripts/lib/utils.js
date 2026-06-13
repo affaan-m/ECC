@@ -588,7 +588,21 @@ function grepFile(filePath, pattern) {
   return results;
 }
 
+/**
+ * Sanitize text for announcement payloads (Discord/Markdown)
+ */
+function sanitizeAnnouncement(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/@everyone/g, '@\u200beveryone')
+    .replace(/@here/g, '@\u200bhere')
+    .replace(/discord\.gg\//g, 'discord\u200b.gg/');
+}
+
+module.exports.sanitizeAnnouncement = sanitizeAnnouncement;
+
 module.exports = {
+  sanitizeAnnouncement,
   // Platform info
   isWindows,
   isMacOS,

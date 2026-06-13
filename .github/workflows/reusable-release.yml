@@ -27,6 +27,11 @@ on:
         type: boolean
         default: true
 
+# Prevent duplicate runs
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -40,6 +45,19 @@ jobs:
       package_file: ${{ steps.pack.outputs.package_file }}
 
     steps:
+      - name: Validate release payload
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          if [ -z "$TAG_NAME" ]; then
+            echo "::error::Missing tag input"
+            exit 1
+          fi
+          if ! [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version tag format: $TAG_NAME. Expected vX.Y.Z or vX.Y.Z-prerelease"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -62,24 +80,14 @@ jobs:
       - name: Verify OpenCode package payload
         run: node tests/scripts/build-opencode.test.js
 
-      - name: Validate version tag
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version tag format. Expected vX.Y.Z or vX.Y.Z-prerelease"
-            exit 1
-          fi
-
       - name: Verify package version matches tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG_NAME: ${{ inputs.tag }}
         run: |
-          TAG_VERSION="${INPUT_TAG#v}"
+          TAG_VERSION="${TAG_NAME#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
-            echo "Run: ./scripts/release.sh $TAG_VERSION"
             exit 1
           fi
 
@@ -99,24 +107,6 @@ jobs:
           fi
           echo "dist_tag=${NPM_DIST_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate release highlights
-        env:
-          TAG_NAME: ${{ inputs.tag }}
-        run: |
-          TAG_VERSION="${TAG_NAME#v}"
-          cat > release_body.md <<EOF
-          ## ECC ${TAG_VERSION}
-
-          ### What This Release Focuses On
-          - Harness reliability and cross-platform compatibility
-          - Eval-driven quality improvements
-          - Better workflow and operator ergonomics
-
-          ### Package Notes
-          - npm package: \`ecc-universal\`
-          - Claude marketplace/plugin identifier: \`ecc@ecc\`
-          EOF
-
       - name: Pack npm artifact
         id: pack
         run: |
@@ -129,7 +119,6 @@ jobs:
         with:
           name: ecc-release-artifacts
           path: |
-            release_body.md
             ${{ steps.pack.outputs.package_file }}
           if-no-files-found: error
 
@@ -157,7 +146,6 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ inputs.tag }}
-          body_path: release_body.md
           generate_release_notes: ${{ inputs.generate-notes }}
           prerelease: ${{ contains(inputs.tag, '-') }}
           make_latest: ${{ contains(inputs.tag, '-') && 'false' || 'true' }}
@@ -166,4 +154,6 @@ jobs:
         if: needs.verify.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish "${{ needs.verify.outputs.package_file }}" --access public --provenance --tag "${{ needs.verify.outputs.dist_tag }}"
+          PACKAGE_FILE: ${{ needs.verify.outputs.package_file }}
+          DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
+        run: npm publish "$PACKAGE_FILE" --access public --provenance --tag "$DIST_TAG"

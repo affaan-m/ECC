@@ -95,11 +95,11 @@ function runTests() {
 
   if (test('release workflows mark prerelease tags as GitHub prereleases', () => {
     assert.ok(
-      releaseWorkflowSource.includes('prerelease: ${{ contains(github.ref_name, \'-\') }}'),
+      releaseWorkflowSource.includes('prerelease: ${{ contains(github.event.release.tag_name, \'-\') }}'),
       'release.yml should mark hyphenated tag pushes as GitHub prereleases'
     );
     assert.ok(
-      releaseWorkflowSource.includes('make_latest: ${{ contains(github.ref_name, \'-\') && \'false\' || \'true\' }}'),
+      releaseWorkflowSource.includes('make_latest: ${{ contains(github.event.release.tag_name, \'-\') && \'false\' || \'true\' }}'),
       'release.yml should avoid making hyphenated prereleases the latest GitHub release'
     );
     assert.ok(
