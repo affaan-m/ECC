@@ -8,7 +8,7 @@
 # We have attempted to detect the languages in your repository. Please check
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
-#
+# github/workflows/codeql.yml
 name: "CodeQL Advanced"
 
 on:
@@ -44,8 +44,8 @@ jobs:
       matrix:
         include:
         - language: actions
-          build-mode: none
-        - language: javascript-typescript
+          build-mode: manual
+        - language: 
           build-mode: none
         - language: python
           build-mode: none
