@@ -1390,10 +1390,15 @@ The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketpl
 
 ```bash
 codex plugin marketplace add affaan-m/ECC
-codex plugin list   # ecc@ecc should appear
+codex plugin list
+node scripts/codex/check-plugin-cache.js
 ```
 
-**Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. Until that settles, treat the plugin path as experimental and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
+`codex plugin list` only confirms marketplace registration. Run
+`node scripts/codex/check-plugin-cache.js` after install to verify that the
+installed cache can resolve the manifest's skills, MCP config, and assets.
+
+**Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. If the cache health check reports missing manifest references, treat the plugin path as discovery-only and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
 
 ### What's Included
 

@@ -11,6 +11,7 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
 const syncScript = path.join(repoRoot, 'scripts', 'sync-ecc-to-codex.sh');
@@ -82,8 +83,116 @@ function makeHermeticCodexEnv(homeDir, codexDir, extraEnv = {}) {
   };
 }
 
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function seedPluginCache(codexDir, manifest, files = []) {
+  const cacheDir = path.join(codexDir, 'plugins', 'cache', 'ecc', 'ecc', '2.0.0');
+  writeJson(path.join(cacheDir, '.codex-plugin', 'plugin.json'), manifest);
+  fs.writeFileSync(path.join(cacheDir, 'README.md'), '# cached plugin\n');
+  for (const [relativePath, content] of files) {
+    const target = path.join(cacheDir, relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+  }
+  return cacheDir;
+}
+
+const cacheManifestWithParentRefs = {
+  name: 'ecc',
+  version: '2.0.0',
+  skills: '../../skills/',
+  mcpServers: '../../.mcp.json',
+  interface: {
+    composerIcon: '../../assets/ecc-icon.svg',
+    logo: '../../assets/hero.png',
+  },
+};
+
+const cacheManifestWithLocalRefs = {
+  name: 'ecc',
+  version: '2.0.0',
+  skills: './skills/',
+  mcpServers: './.mcp.json',
+  interface: {
+    composerIcon: './assets/ecc-icon.svg',
+    logo: './assets/hero.png',
+  },
+};
+
 let passed = 0;
 let failed = 0;
+
+if (
+  test('check-plugin-cache fails when the installed cache is missing manifest-referenced files', () => {
+    const homeDir = createTempDir('codex-plugin-cache-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      seedPluginCache(codexDir, cacheManifestWithParentRefs);
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /Plugin cache:/);
+      assert.match(result.stdout, /\[FAIL\] skills missing/);
+      assert.match(result.stdout, /\[FAIL\] mcpServers missing/);
+      assert.match(result.stdout, /codex plugin list only confirms marketplace registration/);
+      assert.match(result.stdout, /sync-ecc-to-codex\.sh/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache passes when cached manifest references resolve inside the cache', () => {
+    const homeDir = createTempDir('codex-plugin-cache-ok-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const cacheDir = seedPluginCache(codexDir, cacheManifestWithLocalRefs, [
+        ['.mcp.json', '{"mcpServers":{}}\n'],
+        ['assets/ecc-icon.svg', '<svg />\n'],
+        ['assets/hero.png', 'png\n'],
+      ]);
+      fs.mkdirSync(path.join(cacheDir, 'skills'), { recursive: true });
+
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[OK\] skills/);
+      assert.match(result.stdout, /\[OK\] mcpServers/);
+      assert.match(result.stdout, /All cached manifest references resolve/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache reports a missing installed cache clearly', () => {
+    const homeDir = createTempDir('codex-plugin-cache-missing-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /Cached plugin manifest missing/);
+      assert.match(result.stdout, /codex plugin marketplace add affaan-m\/ECC/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
 
 // Windows NTFS does not allow double-quote characters in file paths,
 // so the quoted-path shell-injection test is only meaningful on Unix.

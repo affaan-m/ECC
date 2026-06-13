@@ -33,6 +33,17 @@ cache, and local/personal marketplace plugins are not always exposed at
 runtime (see [openai/codex#26037](https://github.com/openai/codex/issues/26037)
 and [affaan-m/ECC#2128](https://github.com/affaan-m/ECC/issues/2128)).
 
+After install, `codex plugin list` is not enough to prove the runtime can load
+the referenced skills and assets. From an ECC checkout, run:
+
+```bash
+node scripts/codex/check-plugin-cache.js
+```
+
+The check inspects the installed cache under `CODEX_HOME` (or `~/.codex`) and
+fails if `.codex-plugin/plugin.json` points at files that were not copied into
+that cache entry.
+
 Until the upstream discovery issues settle, the supported Codex path is the
 manual sync flow documented in the README:
 

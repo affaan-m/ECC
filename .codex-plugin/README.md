@@ -38,6 +38,14 @@ references the root `skills/` and `.mcp.json` so content stays single-sourced.
 After adding or updating the marketplace, restart Codex and install or enable
 `ecc` from the plugin directory.
 
+After install, `codex plugin list` is only a registration check. From an ECC
+checkout, run the cache check to verify that the installed manifest can resolve
+its referenced skills, MCP config, and assets:
+
+```bash
+node scripts/codex/check-plugin-cache.js
+```
+
 > **Plugin mode is currently fragile on Codex.** Marketplace discovery and
 > install work with this layout, but runtime skill loading from local/repo
 > marketplaces is unreliable upstream

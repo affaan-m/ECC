@@ -463,6 +463,7 @@ test('plugins/ecc README documents the upstream Codex fragility', () => {
   assert.ok(fs.existsSync(readmePath), 'Expected plugins/ecc/README.md');
   const source = fs.readFileSync(readmePath, 'utf8');
   assert.ok(source.includes('openai/codex'), 'plugins/ecc README must link the upstream Codex discovery issue');
+  assert.ok(source.includes('check-plugin-cache.js'), 'plugins/ecc README must point at the cache health check');
   assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/ecc README must point at the supported manual sync flow');
 });
 
