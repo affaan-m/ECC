@@ -1,6 +1,8 @@
 ---
 paths:
   - "**/*.vue"
+  - "**/*.ts"
+  - "**/*.tsx"
 ---
 
 # Vue Hooks

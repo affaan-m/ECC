@@ -3,6 +3,7 @@ paths:
   - "**/nuxt.config.*"
   - "**/app.config.*"
   - "**/server/**/*.ts"
+  - "**/*.vue"
 ---
 
 # Nuxt Hooks
@@ -14,7 +15,7 @@ These are Claude Code harness hooks for Nuxt work. They run via the harness, not
 ## Typecheck
 
 - `nuxi typecheck` wraps `vue-tsc`. Requires `vue-tsc` + `typescript` dev deps.
-- Run on `.vue` / `.ts` edit or pre-commit.
+- Run on `.vue` / `.ts` edit or pre-commit. Typecheck is project-wide, so debounce it and wrap it in a timeout (mirror `web/hooks.md`, for example `timeout 60 nuxi typecheck`) so a hung type-check is reaped instead of accumulating across fast edits.
 
 ## Lint
 
@@ -28,8 +29,8 @@ These are Claude Code harness hooks for Nuxt work. They run via the harness, not
 
 ## Suggested PostToolUse chain
 
-- On Edit to `app/**` and `server/**`: run `eslint --fix` then `nuxi typecheck`.
-- Order matters: lint-fix first (mutates the file), typecheck second (verifies the result).
+- On Edit to `app/**` and `server/**`: run `eslint --fix` then `timeout 60 nuxi typecheck`.
+- Order matters: lint-fix first (mutates the file), the timed typecheck second (verifies the result). Debouncing still applies.
 
 ## Reference
 

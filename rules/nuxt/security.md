@@ -39,7 +39,7 @@ paths:
 
 - Server routes run with full network egress. Never pass user-controlled input directly into a server-side `$fetch` URL or host.
 - Validate the param first (h3 utilities above), allowlist the target, pin to `runtimeConfig.public.apiBase`, reject user-supplied absolute URLs.
-- Auto-trigger `/security-review` on any server route touching auth, user input, or external fetch.
+- Auto-trigger `/security-review` only for routes that make external network requests (server `$fetch`), handle auth tokens or credentials, or perform sensitive mutations or authorization checks. Examples: SSRF-prone proxy endpoints, token exchange or password reset, admin actions. Skip benign read-only routes that only accept validated query params.
 
 ## Reference
 

@@ -11,7 +11,7 @@ paths:
 
 > This file extends [common/testing.md](../common/testing.md) with Nuxt specific content.
 
-Package: `@nuxt/test-utils` (current major 4.0.0), Vitest-only runtime. nuxt-vitest / vitest-environment-nuxt are superseded and folded into it.
+Package: `@nuxt/test-utils`. Vitest-first for unit and component tests, with built-in Playwright browser E2E support. nuxt-vitest and vitest-environment-nuxt are superseded and folded into it.
 
 ## Setup
 

@@ -16,6 +16,8 @@ rules/
 │   └── security.md
 ├── typescript/      # TypeScript/JavaScript specific
 ├── angular/         # Angular specific
+├── vue/             # Vue 3 specific
+├── nuxt/            # Nuxt 4 specific
 ├── python/          # Python specific
 ├── golang/          # Go specific
 ├── web/             # Web and frontend specific
@@ -36,6 +38,8 @@ rules/
 # Install common + one or more language-specific rule sets
 ./install.sh typescript
 ./install.sh angular
+./install.sh vue
+./install.sh nuxt
 ./install.sh python
 ./install.sh golang
 ./install.sh web
@@ -70,6 +74,8 @@ cp -r rules/common ~/.claude/rules/ecc/
 # Install language-specific rules based on your project's tech stack
 cp -r rules/typescript ~/.claude/rules/ecc/
 cp -r rules/angular ~/.claude/rules/ecc/
+cp -r rules/vue ~/.claude/rules/ecc/
+cp -r rules/nuxt ~/.claude/rules/ecc/
 cp -r rules/python ~/.claude/rules/ecc/
 cp -r rules/golang ~/.claude/rules/ecc/
 cp -r rules/web ~/.claude/rules/ecc/

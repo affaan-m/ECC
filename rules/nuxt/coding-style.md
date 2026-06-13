@@ -15,7 +15,7 @@ paths:
 ## Directory layout
 
 - Default `srcDir` is `app/`. Framework files live at `app/pages/`, `app/layouts/`, `app/middleware/`, `app/plugins/`, `app/app.config.ts`. `nuxt.config.ts` and `server/` stay at project root.
-- This repo overrides `srcDir` to `src/` for FSD. Framework dirs are remapped: routing at `src/app/routes` (`dir.pages`), layouts at `src/app/layouts`, and `@`/`~` re-aliased to `src/`. Check `nuxt.config.ts` before assuming a path.
+- Some projects override `srcDir` to `src/` for a Feature-Sliced Design layout, remapping `dir.pages` (for example to `src/app/routes`), `dir.layouts`, and the `@`/`~` aliases. Always check `nuxt.config.ts` before assuming a path.
 
 ## Auto-imports discipline
 
