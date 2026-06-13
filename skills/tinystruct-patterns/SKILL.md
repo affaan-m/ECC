@@ -126,7 +126,18 @@ public String upload(Request<?, ?> request) throws ApplicationException {
 
 ## MCP Server and Tools Integration
 
-tinystruct provides native support for the Model Context Protocol (MCP).
+tinystruct provides native support for the Model Context Protocol (MCP) starting with SDK version **`1.7.26`**.
+The MCP APIs (e.g., `org.tinystruct.mcp.MCPTool`, `org.tinystruct.mcp.MCPServer`, `org.tinystruct.mcp.MCPException`) are included directly in the core dependency:
+```xml
+<dependency>
+    <groupId>org.tinystruct</groupId>
+    <artifactId>tinystruct</artifactId>
+    <version>1.7.26</version>
+</dependency>
+```
+
+> **SECURITY WARNING (Prompt Injection):**
+> Tool return values are fed directly back into the AI model's context window. You **MUST** validate and sanitize all caller-supplied arguments before including them in the tool's return string. Failure to sanitize inputs can allow an attacker to inject adversarial instructions (Prompt Injection) that override the model's behavior. Always validate length, character sets, and nullity.
 
 **To create an MCP Tool:**
 1. Extend `org.tinystruct.mcp.MCPTool`.
@@ -152,6 +163,11 @@ public class MyCustomTool extends MCPTool {
         }
     )
     public String hello(String name) throws MCPException {
+        // SECURITY: Validate/sanitize tool inputs before returning to the model
+        // to prevent prompt injection vulnerabilities.
+        if (name == null || name.length() > 50 || !name.matches("^[a-zA-Z0-9 ]+$")) {
+            throw new MCPException("Invalid name provided");
+        }
         return "Hello, " + name + "!";
     }
 }
