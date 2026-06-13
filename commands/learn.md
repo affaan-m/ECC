@@ -37,9 +37,16 @@ Look for:
 
 ## Output Format
 
-Create a skill file at `~/.claude/skills/learned/[pattern-name].md`:
+Create a skill at `~/.claude/skills/<pattern-name>/SKILL.md` (directory format — see the Process note below):
 
 ```markdown
+---
+name: pattern-name
+description: "Use when <observable trigger condition> — <one-line essence of the pattern>"
+user-invocable: false
+origin: auto-extracted
+---
+
 # [Descriptive Pattern Name]
 
 **Extracted:** [Date]
@@ -64,7 +71,7 @@ Create a skill file at `~/.claude/skills/learned/[pattern-name].md`:
 2. Identify the most valuable/reusable insight
 3. Draft the skill file
 4. Ask user to confirm before saving
-5. Save to `~/.claude/skills/learned/`
+5. Save to `~/.claude/skills/<pattern-name>/SKILL.md` — **directory format with frontmatter**. Claude Code only auto-discovers a skill at `<name>/SKILL.md` carrying a `name` + `description`; a flat `skills/learned/<name>.md` (or any file missing frontmatter) is **inert** — never scanned, matched, or loaded. The `description` is the only discovery surface, so lead it with "Use when ..." naming the trigger.
 
 ## Notes
 

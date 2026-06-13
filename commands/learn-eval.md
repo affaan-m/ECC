@@ -22,16 +22,17 @@ Look for:
 
 3. **Determine save location:**
    - Ask: "Would this pattern be useful in a different project?"
-   - **Global** (`~/.claude/skills/learned/`): Generic patterns usable across 2+ projects (bash compatibility, LLM API behavior, debugging techniques, etc.)
-   - **Project** (`.claude/skills/learned/` in current project): Project-specific knowledge (quirks of a particular config file, project-specific architecture decisions, etc.)
+   - **Global** (`~/.claude/skills/<pattern-name>/SKILL.md`): Generic patterns usable across 2+ projects (bash compatibility, LLM API behavior, debugging techniques, etc.)
+   - **Project** (`.claude/skills/<pattern-name>/SKILL.md` in current project): Project-specific knowledge (quirks of a particular config file, project-specific architecture decisions, etc.)
    - When in doubt, choose Global (moving Global → Project is easier than the reverse)
+   - **Directory format is mandatory.** Claude Code only auto-discovers skills at `<name>/SKILL.md` with frontmatter — at session start it scans each skill's `name` + `description` and loads the body only on a match (progressive disclosure). A flat `<name>.md` (e.g. in a `skills/learned/` archive) is **inert**: never scanned, never matched, never loaded. Always write the directory form so the skill is actually reachable.
 
 4. Draft the skill file using this format:
 
 ```markdown
 ---
 name: pattern-name
-description: "Under 130 characters"
+description: "Use when <observable trigger condition>, or when <second trigger> — <one-line essence of the pattern>"
 user-invocable: false
 origin: auto-extracted
 ---
@@ -50,6 +51,13 @@ origin: auto-extracted
 ## When to Use
 [Trigger conditions]
 ```
+
+   **Description rules (the `description` is the ONLY discovery surface):**
+
+   - Claude scans only `name` + `description` at session start and loads the body on a match — so the description must name the *when*, not just the *what*.
+   - Lead with "Use when ..." followed by concrete, observable triggers (file patterns, error strings, task verbs, review situations) — the same conditions as the `## When to Use` section, compressed.
+   - Up to 1024 chars are allowed; spend them on triggers, not philosophy. Vague descriptions ("best practices for X") never match.
+   - `name` must equal the skill's directory name exactly.
 
 5. **Quality gate — Checklist + Holistic verdict**
 
@@ -87,7 +95,11 @@ origin: auto-extracted
 - **Absorb into [X]**: Present target path + additions (diff format) + checklist results + verdict rationale → append after user confirmation
 - **Drop**: Show checklist results + reasoning only (no confirmation needed)
 
-7. Save / Absorb to the determined location
+7. Save / Absorb to the determined location — for a **Save** verdict, write `<location>/<pattern-name>/SKILL.md` (directory form, never a flat file); for **Absorb**, append to the existing skill's `SKILL.md`.
+
+8. **Verify discoverability after writing** (Save verdict only):
+   - `ls <location>/<pattern-name>/SKILL.md` — confirm the path is `<name>/SKILL.md`, not a flat file
+   - confirm the frontmatter parses: starts with `---`, has `name:` matching the directory and a non-empty `description:`
 
 ## Output Format for Step 5
 

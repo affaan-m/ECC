@@ -53,12 +53,20 @@ Look for these pattern types:
 
 ### Step 3: Generate SKILL.md
 
+**Output path — directory format is mandatory**: write to
+`<output-dir>/<skill-name>/SKILL.md`, defaulting to
+`.claude/skills/{repo-name}-patterns/SKILL.md` for a project skill (or
+`~/.claude/skills/<skill-name>/SKILL.md` for a global one). Claude Code only
+auto-discovers skills at `<name>/SKILL.md` with parseable frontmatter; a flat
+`<name>.md` (or anything dropped into a `learned/` archive directory) is
+**inert** — never scanned, matched, or loaded.
+
 Output format:
 
 ```markdown
 ---
 name: {repo-name}-patterns
-description: Coding patterns extracted from {repo-name}
+description: Use when starting a coding session in {repo-name}, or before naming a branch, writing a commit message, placing a test file, or running closeout — conventions and co-change pairs measured from git history
 version: 1.0.0
 source: local-git-analysis
 analyzed_commits: {count}
@@ -77,6 +85,24 @@ analyzed_commits: {count}
 
 ## Testing Patterns
 {detected test conventions}
+```
+
+**Description rules (the `description` is the ONLY discovery surface):**
+
+- At session start Claude scans only `name` + `description` and loads the body
+  on a match — the description must name the *when*, not just the *what*.
+- Lead with "Use when ..." followed by concrete, observable trigger moments
+  (session start in this repo, naming a branch, writing a commit, placing a
+  test file, editing hot modules, running closeout).
+- Up to 1024 chars are allowed; spend them on triggers, not summary prose.
+  "Coding patterns extracted from X" matches almost nothing.
+- `name` must equal the skill's directory name exactly.
+
+**Verify discoverability after writing** (do not skip):
+
+```bash
+ls <output-dir>/<skill-name>/SKILL.md          # path shape is <name>/SKILL.md
+head -8 <output-dir>/<skill-name>/SKILL.md      # starts with ---, has name: + description:
 ```
 
 ### Step 4: Generate Instincts (if --instincts)
@@ -104,12 +130,12 @@ Prefix commits with: feat:, fix:, chore:, docs:, test:, refactor:
 
 ## Example Output
 
-Running `/skill-create` on a TypeScript project might produce:
+Running `/skill-create` on a TypeScript project might produce `.claude/skills/my-app-patterns/SKILL.md`:
 
 ```markdown
 ---
 name: my-app-patterns
-description: Coding patterns from my-app repository
+description: Use when starting a coding session in my-app, or before naming a branch, writing a commit message, adding a component, or placing a test file — conventions measured from 150 commits of git history
 version: 1.0.0
 source: local-git-analysis
 analyzed_commits: 150
