@@ -17,6 +17,9 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
+> [!WARNING]
+> **Official sources only.** This repository — [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC) — and the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield) are the only verified distribution channels. Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware. Always install from the sources above.
+
 > **211.9K+ stars** | **32.5K+ forks** | **230+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
 
 ---
