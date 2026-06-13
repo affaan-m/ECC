@@ -72,10 +72,11 @@ a pointer to this command if the build step is missing.
 
 ## Features
 
-### Agents (12)
+### Agents (26)
 
 | Agent | Description |
 |-------|-------------|
+| build | Primary coding agent for development work |
 | planner | Implementation planning |
 | architect | System design |
 | code-reviewer | Code review |
@@ -88,8 +89,21 @@ a pointer to this command if the build step is missing.
 | go-reviewer | Go code review |
 | go-build-resolver | Go build errors |
 | database-reviewer | Database optimization |
+| docs-lookup | Documentation lookup via Context7 |
+| harness-optimizer | Harness config tuning |
+| java-reviewer | Java code review |
+| java-build-resolver | Java build errors |
+| kotlin-reviewer | Kotlin code review |
+| kotlin-build-resolver | Kotlin build errors |
+| loop-operator | Autonomous loop execution |
+| php-reviewer | PHP code review |
+| python-reviewer | Python code review |
+| rust-reviewer | Rust code review |
+| rust-build-resolver | Rust build errors |
+| cpp-reviewer | C++ code review |
+| cpp-build-resolver | C++ build errors |
 
-### Commands (31)
+### Commands (26)
 
 | Command | Description |
 |---------|-------------|
@@ -119,11 +133,6 @@ a pointer to this command if the build step is missing.
 | `/evolve` | Cluster instincts |
 | `/promote` | Promote project instincts |
 | `/projects` | List known projects |
-| `/harness-audit` | Audit harness reliability and eval readiness |
-| `/loop-start` | Start controlled agentic loops |
-| `/loop-status` | Check loop state and checkpoints |
-| `/quality-gate` | Run quality gates on file/repo scope |
-| `/model-route` | Route tasks by model and budget |
 
 ### Plugin Hooks
 
@@ -132,8 +141,18 @@ a pointer to this command if the build step is missing.
 | Prettier | `file.edited` | Auto-format JS/TS |
 | TypeScript | `tool.execute.after` | Check for type errors |
 | console.log | `file.edited` | Warn about debug statements |
-| Notification | `session.idle` | Desktop notification |
+| Notification | `session.idle` | Desktop notification (cross-platform) |
 | Security | `tool.execute.before` | Check for secrets |
+| Git Push Reminder | `tool.execute.before` | Remind to review before pushing |
+| Doc File Warning | `tool.execute.before` | Warn about unnecessary documentation |
+| Long Command Reminder | `tool.execute.before` | Remind about long-running commands |
+| Session Context | `session.created` | Load project context |
+| Console Log Audit | `session.idle` | Audit edited files for console.log |
+| File Watcher | `file.watcher.updated` | Track file system changes |
+| Todo Progress | `todo.updated` | Log task completion progress |
+| Shell Environment | `shell.env` | Inject environment variables |
+| Session Compacting | `experimental.session.compacting` | Preserve context across compaction |
+| Permission Auto-Approve | `permission.ask` | Auto-approve safe operations |
 
 ### Custom Tools
 
@@ -142,6 +161,11 @@ a pointer to this command if the build step is missing.
 | run-tests | Run test suite with options |
 | check-coverage | Analyze test coverage |
 | security-audit | Security vulnerability scan |
+| format-code | Detect formatter and return command |
+| lint-check | Detect linter and return command |
+| git-summary | Generate git summary with branch, status, and diff |
+| changed-files | List files changed in session as a navigable tree |
+| dependency-analyzer | Analyze dependencies for outdated, vulnerable, and unused packages |
 
 ## Hook Event Mapping
 
