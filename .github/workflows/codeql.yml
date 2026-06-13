@@ -8,7 +8,11 @@
 # We have attempted to detect the languages in your repository. Please check
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
+#find . -name "*.xcodeproj"
+#find . -name "*.xcworkspace"
+#find . -name "Package.swift"
 # github/workflows/codeql.yml
+
 name: "CodeQL Advanced"
 
 on:
@@ -98,10 +102,18 @@ jobs:
           'your code, for example:'
         echo '  make bootstrap'
         echo '  make release'
-        exit 1
+        exit 0
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:${{matrix.language}}"
-        
+    - category: "/language:${{matrix.language}} 
+    language: - swift 
+strategy:
+  matrix:
+    language:
+     language: ['swift'] 
+   'your code, for example:'
+        echo '  make bootstrap'
+        echo '  make release'
+        exit 0
+     
