@@ -18,7 +18,7 @@
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
 > [!WARNING]
-> **Official sources only.** This repository — [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC) — and the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield) are the only verified distribution channels. Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware. Always install from the sources above.
+> **Official sources only.** Install ECC only from verified channels: the GitHub repository [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC), the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield), the [GitHub App](https://github.com/apps/ecc-tools), the plugin slug `ecc@ecc`, and the project website [ecc.tools](https://ecc.tools). Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware.
 
 > **211.9K+ stars** | **32.5K+ forks** | **230+ contributors** | **12+ language ecosystems** | **Cross-harness agent workflows**
 
