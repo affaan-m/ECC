@@ -102,17 +102,6 @@ function seedPluginCache(codexDir, manifest, files = []) {
   return cacheDir;
 }
 
-const cacheManifestWithParentRefs = {
-  name: 'ecc',
-  version: packageVersion,
-  skills: '../../skills/',
-  mcpServers: '../../.mcp.json',
-  interface: {
-    composerIcon: '../../assets/ecc-icon.svg',
-    logo: '../../assets/hero.png',
-  },
-};
-
 const cacheManifestWithLocalRefs = {
   name: 'ecc',
   version: packageVersion,
