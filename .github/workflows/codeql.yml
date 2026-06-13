@@ -49,7 +49,7 @@ jobs:
         include:
         - language: actions
           build-mode: manual
-        - language: swift
+        - language: 
           build-mode: none
         - language: python
           build-mode: none
@@ -104,19 +104,14 @@ jobs:
         echo '  make bootstrap'
         echo '  make release'
         exit 0
-        swift build -v
-        swift build -v
-        shell: /bin/bash -e {0}
+        - swift build -v
+        - swift build -v
+      shell: /bin/bash -e {0}
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
     - category: "/language:${{matrix.language}} 
-    language: - swift 
-strategy:
+    language: 
+   strategy:
   matrix:
+  shell: /bin/bash -e {0}
   
-     language: ['swift'] 
-   'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
-        
