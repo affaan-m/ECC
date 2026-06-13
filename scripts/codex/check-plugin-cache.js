@@ -27,24 +27,48 @@ function usage() {
   ].join('\n'));
 }
 
+function validateCacheSegment(flag, value) {
+  if (
+    typeof value !== 'string' ||
+    value.trim() === '' ||
+    value.includes('\0') ||
+    value.includes('..') ||
+    value.includes('/') ||
+    value.includes('\\') ||
+    path.isAbsolute(value) ||
+    path.win32.isAbsolute(value)
+  ) {
+    throw new Error(`Invalid ${flag}: expected a single cache path segment`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
-  const options = {
+  const defaults = {
     marketplace: 'ecc',
     plugin: 'ecc',
     version: PACKAGE_JSON.version,
     codexHome: process.env.CODEX_HOME || path.join(os.homedir(), '.codex'),
     pluginDir: null,
   };
+  const optionKeys = {
+    '--codex-home': 'codexHome',
+    '--plugin-dir': 'pluginDir',
+    '--marketplace': 'marketplace',
+    '--plugin': 'plugin',
+    '--version': 'version',
+  };
+  let parsed = {};
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') {
-      options.help = true;
+      parsed = { ...parsed, help: true };
       continue;
     }
 
-    const takesValue = ['--codex-home', '--plugin-dir', '--marketplace', '--plugin', '--version'];
-    if (!takesValue.includes(arg)) {
+    const key = optionKeys[arg];
+    if (!key) {
       throw new Error(`Unknown argument: ${arg}`);
     }
 
@@ -54,24 +78,18 @@ function parseArgs(argv) {
     }
     index += 1;
 
-    if (arg === '--codex-home') {
-      options.codexHome = value;
-    } else if (arg === '--plugin-dir') {
-      options.pluginDir = value;
-    } else if (arg === '--marketplace') {
-      options.marketplace = value;
-    } else if (arg === '--plugin') {
-      options.plugin = value;
-    } else if (arg === '--version') {
-      options.version = value;
-    }
+    parsed = { ...parsed, [key]: value };
   }
 
-  options.codexHome = path.resolve(options.codexHome);
-  if (options.pluginDir) {
-    options.pluginDir = path.resolve(options.pluginDir);
-  }
-  return options;
+  const options = { ...defaults, ...parsed };
+  return {
+    ...options,
+    marketplace: validateCacheSegment('--marketplace', options.marketplace),
+    plugin: validateCacheSegment('--plugin', options.plugin),
+    version: validateCacheSegment('--version', options.version),
+    codexHome: path.resolve(options.codexHome),
+    pluginDir: options.pluginDir ? path.resolve(options.pluginDir) : null,
+  };
 }
 
 function log(message) {
@@ -167,8 +185,12 @@ function checkCache(options) {
       log(`Installed versions found: ${versions.join(', ')}`);
       log(`Re-run with --version <version> if you want to inspect a different cache entry.`);
     } else {
-      log('No installed cache entries found for ecc/ecc.');
-      log('Run: codex plugin marketplace add affaan-m/ECC');
+      log(`No installed cache entries found for ${options.marketplace}/${options.plugin}.`);
+      if (options.marketplace === 'ecc' && options.plugin === 'ecc') {
+        log('Run: codex plugin marketplace add affaan-m/ECC');
+      } else {
+        log('Install the requested plugin into the Codex plugin cache.');
+      }
       log('Then run: codex plugin list');
     }
     return 1;
@@ -196,8 +218,13 @@ function checkCache(options) {
   if (failures > 0) {
     log(`${failures} cached manifest reference(s) do not resolve.`);
     log('codex plugin list only confirms marketplace registration; it is not proof of runtime skill loading.');
-    log('Use the supported sync path until the cache contains the referenced files:');
-    log('npm install && bash scripts/sync-ecc-to-codex.sh');
+    const syncScript = path.join(REPO_ROOT, 'scripts', 'sync-ecc-to-codex.sh');
+    if (fs.existsSync(syncScript)) {
+      log('Use the supported sync path until the cache contains the referenced files:');
+      log('npm install && bash scripts/sync-ecc-to-codex.sh');
+    } else {
+      log('Use the supported manual sync workflow from your ECC installation.');
+    }
     return 1;
   }
 

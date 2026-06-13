@@ -15,6 +15,8 @@ const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-pl
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
 const syncScript = path.join(repoRoot, 'scripts', 'sync-ecc-to-codex.sh');
+const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+const packageVersion = packageJson.version;
 const deterministicPackageEnv = {
   CLAUDE_PACKAGE_MANAGER: 'npm',
   CLAUDE_CODE_PACKAGE_MANAGER: 'npm',
@@ -89,7 +91,7 @@ function writeJson(filePath, value) {
 }
 
 function seedPluginCache(codexDir, manifest, files = []) {
-  const cacheDir = path.join(codexDir, 'plugins', 'cache', 'ecc', 'ecc', '2.0.0');
+  const cacheDir = path.join(codexDir, 'plugins', 'cache', 'ecc', 'ecc', packageVersion);
   writeJson(path.join(cacheDir, '.codex-plugin', 'plugin.json'), manifest);
   fs.writeFileSync(path.join(cacheDir, 'README.md'), '# cached plugin\n');
   for (const [relativePath, content] of files) {
@@ -102,7 +104,7 @@ function seedPluginCache(codexDir, manifest, files = []) {
 
 const cacheManifestWithParentRefs = {
   name: 'ecc',
-  version: '2.0.0',
+  version: packageVersion,
   skills: '../../skills/',
   mcpServers: '../../.mcp.json',
   interface: {
@@ -113,7 +115,7 @@ const cacheManifestWithParentRefs = {
 
 const cacheManifestWithLocalRefs = {
   name: 'ecc',
-  version: '2.0.0',
+  version: packageVersion,
   skills: './skills/',
   mcpServers: './.mcp.json',
   interface: {
@@ -186,6 +188,51 @@ if (
       assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /Cached plugin manifest missing/);
       assert.match(result.stdout, /codex plugin marketplace add affaan-m\/ECC/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache rejects traversal in cache path segments', () => {
+    const homeDir = createTempDir('codex-plugin-cache-traversal-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(
+        pluginCacheCheckScript,
+        ['--marketplace', '../outside'],
+        makeHermeticCodexEnv(homeDir, codexDir)
+      );
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /Invalid --marketplace/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache names custom missing cache entries in diagnostics', () => {
+    const homeDir = createTempDir('codex-plugin-cache-custom-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(
+        pluginCacheCheckScript,
+        ['--marketplace', 'custom-market', '--plugin', 'custom-plugin', '--version', '1.2.3'],
+        makeHermeticCodexEnv(homeDir, codexDir)
+      );
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /No installed cache entries found for custom-market\/custom-plugin/);
+      assert.match(result.stdout, /Install the requested plugin into the Codex plugin cache/);
     } finally {
       cleanup(homeDir);
     }
