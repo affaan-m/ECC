@@ -133,7 +133,7 @@ if (
     const codexDir = path.join(homeDir, '.codex');
 
     try {
-      seedPluginCache(codexDir, cacheManifestWithParentRefs);
+      seedPluginCache(codexDir, cacheManifestWithLocalRefs);
       const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
 
       assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
@@ -142,6 +142,32 @@ if (
       assert.match(result.stdout, /\[FAIL\] mcpServers missing/);
       assert.match(result.stdout, /codex plugin list only confirms marketplace registration/);
       assert.match(result.stdout, /sync-ecc-to-codex\.sh/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache rejects manifest references that escape the cache boundary', () => {
+    const homeDir = createTempDir('codex-plugin-cache-manifest-traversal-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      seedPluginCache(codexDir, {
+        name: 'ecc',
+        version: packageVersion,
+        skills: '../../../../../etc/passwd',
+        mcpServers: '../../.mcp.json',
+      });
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[FAIL\] skills escapes cache boundary/);
+      assert.match(result.stdout, /\[FAIL\] mcpServers escapes cache boundary/);
+      assert.doesNotMatch(result.stdout, /etc\/passwd/);
     } finally {
       cleanup(homeDir);
     }

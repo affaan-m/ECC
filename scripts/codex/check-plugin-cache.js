@@ -203,6 +203,12 @@ function checkCache(options) {
   log(`Manifest: ${manifestPath}`);
   for (const entry of refs) {
     const target = path.resolve(cacheDir, entry.ref);
+    const relativeTarget = path.relative(cacheDir, target);
+    if (relativeTarget.startsWith('..') || path.isAbsolute(relativeTarget)) {
+      failures += 1;
+      log(`[FAIL] ${entry.label} escapes cache boundary`);
+      continue;
+    }
     if (pathExists(target, entry.kind)) {
       log(`[OK] ${entry.label} -> ${target}`);
     } else {
