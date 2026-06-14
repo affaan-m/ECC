@@ -25,7 +25,7 @@
 
 - Eager load associations by default to prevent N+1 queries
 - Avoid `default_scope`; use named scopes that callers opt into
-- Use `select_related` equivalents: `.includes`, `.preload`, or `.eager_load` depending on need
+- Use `.includes`, `.preload`, or `.eager_load` depending on need to avoid N+1 queries
 - Counter caches on any `has_many` where the count is displayed in lists
 - Callbacks for data normalization only (`before_validation :normalize_email`); anything with side effects belongs in a service
 - Migrations are reversible by default; document any one-way migration explicitly
@@ -33,11 +33,11 @@
 ```ruby
 # BAD: N+1 query
 posts = Post.published
-posts.each { |post| puts post.author.name }  # one query per post
+posts.each { |post| post.author.name }  # one query per post
 
 # GOOD: Single query with eager load
 posts = Post.published.includes(:author)
-posts.each { |post| puts post.author.name }
+posts.each { |post| post.author.name }
 ```
 
 ### Authentication and Authorization
@@ -153,9 +153,9 @@ module Invoices
 
       ApplicationRecord.transaction do
         invoice.save!
-        send_notifications(invoice)
       end
 
+      send_notifications(invoice)
       Result.new(success?: true, invoice: invoice, errors: nil)
     rescue ActiveRecord::RecordInvalid => e
       Result.new(success?: false, invoice: e.record, errors: e.record.errors)
@@ -185,7 +185,7 @@ end
 ```ruby
 # app/controllers/invoices_controller.rb
 class InvoicesController < ApplicationController
-  before_action :authenticate_user!
+  before_action :require_authentication  # Rails 8 generator default; use authenticate_user! with Devise
 
   def create
     authorize Invoice
