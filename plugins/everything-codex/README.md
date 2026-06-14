@@ -13,13 +13,14 @@ Codex copies the directory to `~/.codex/plugins/cache/...`.
 
 | Plugin path | Source of truth |
 |---|---|
-| `skills/` | `.agents/skills/` Codex-ready skill surface |
+| `skills/` | Full root `skills/` catalog plus Codex metadata/extras from `.agents/skills/` |
 | `.mcp.json` | Root `.mcp.json` |
 | `assets/ecc-icon.svg` / `assets/hero.png` | Root `assets/` |
 
-Keep this bundle synchronized whenever the Codex skill surface, default MCP
-config, or presentation assets change. `tests/plugin-manifest.test.js` compares
-the bundled copies against their source files so drift fails in CI.
+Keep this bundle synchronized whenever the canonical skill surface, Codex
+metadata, default MCP config, or presentation assets change.
+`tests/plugin-manifest.test.js` compares the bundled runtime surface against the
+expected sources so drift fails in CI.
 
 ## Install
 

@@ -15,8 +15,8 @@ This directory contains the **Codex plugin manifest** for ECC.
 - A repo-root Codex manifest at `.codex-plugin/plugin.json`.
 - Self-contained Codex plugin bundles under `plugins/ecc/` and
   `plugins/everything-codex/`.
-- **33 Codex-ready skills** in each marketplace bundle, sourced from
-  `.agents/skills/`.
+- **263 Codex skills** in each marketplace bundle, sourced from the full root
+  `skills/` catalog plus Codex metadata/extras from `.agents/skills/`.
 - **1 default MCP server** in each marketplace bundle, sourced from the root
   `.mcp.json`.
 
@@ -75,9 +75,10 @@ The former defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `seque
 
 ## Notes
 
-- The repo-root `skills/` directory remains the full ECC source surface; the
-  marketplace plugin bundles carry the curated Codex runtime surface from
-  `.agents/skills/`.
+- The repo-root `skills/` directory is the full ECC source surface; marketplace
+  plugin bundles copy that surface and overlay Codex metadata/extras from
+  `.agents/skills/` so enabled plugin skills appear in Codex skill selectors and
+  the app `/` command list.
 - Do not duplicate skill content inside `.codex-plugin/`; bundle runtime content
   under `plugins/ecc/` and `plugins/everything-codex/`.
 - ECC is moving to a skills-first workflow surface. Legacy `commands/` remain for

@@ -181,13 +181,19 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('askClaude() handles subprocess error gracefully', () => {
-    // Use a non-existent command to trigger an error
-    const result = askClaude('sys', 'hist', 'msg');
-    // Should return an error string, not throw
-    assert.strictEqual(typeof result, 'string', 'Should return a string');
-    // If claude is not installed, we get an error message
-    // If claude IS installed, we get an actual response — both are valid
-    assert.ok(result.length > 0, 'Should return non-empty result');
+    const previous = process.env.CLAW_CLAUDE_BIN;
+    process.env.CLAW_CLAUDE_BIN = `claw-test-missing-claude-${Date.now()}`;
+    try {
+      const result = askClaude('sys', 'hist', 'msg');
+      assert.strictEqual(typeof result, 'string', 'Should return a string');
+      assert.ok(result.startsWith('[Error:'), 'Should return a subprocess error string');
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CLAW_CLAUDE_BIN;
+      } else {
+        process.env.CLAW_CLAUDE_BIN = previous;
+      }
+    }
   })) passed++; else failed++;
 
   // ── REPL/Meta tests (3) ───────────────────────────────────────────────

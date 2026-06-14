@@ -17,12 +17,6 @@ Modern frontend patterns for React, Next.js, and performant user interfaces.
 - Handling client-side routing and navigation
 - Building accessible, responsive UI patterns
 
-## Privacy and Data Boundaries
-
-Frontend examples should use synthetic or domain-generic data. Do not collect, log, persist, or display credentials, access tokens, SSNs, health data, payment details, private emails, phone numbers, or other sensitive personal data unless the user explicitly requests a scoped implementation with appropriate validation, redaction, and access controls.
-
-Avoid adding analytics, tracking pixels, third-party scripts, or external data sinks without explicit approval. When handling user data, prefer least-privilege APIs, client-side redaction before logging, and server-side validation for every boundary.
-
 ## Component Patterns
 
 ### Composition Over Inheritance

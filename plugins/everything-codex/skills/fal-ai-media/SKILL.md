@@ -5,6 +5,10 @@ description: Unified media generation via fal.ai MCP — image, video, and audio
 
 # fal.ai Media Generation
 
+> **Drift-prone skill.** fal.ai model IDs, pricing, inputs, and MCP tool names
+> change quickly. Search or fetch the current model metadata before promising a
+> specific model, parameter, output format, or cost.
+
 Generate images, videos, and audio using fal.ai models via MCP.
 
 ## When to Activate
@@ -51,8 +55,8 @@ Best for: quick iterations, drafts, text-to-image, image editing.
 
 ```
 generate(
-  model_name: "fal-ai/nano-banana-2",
-  input: {
+  app_id: "fal-ai/nano-banana-2",
+  input_data: {
     "prompt": "a futuristic cityscape at sunset, cyberpunk style",
     "image_size": "landscape_16_9",
     "num_images": 1,
@@ -66,8 +70,8 @@ Best for: production images, realism, typography, detailed prompts.
 
 ```
 generate(
-  model_name: "fal-ai/nano-banana-pro",
-  input: {
+  app_id: "fal-ai/nano-banana-pro",
+  input_data: {
     "prompt": "professional product photo of wireless headphones on marble surface, studio lighting",
     "image_size": "square",
     "num_images": 1,
@@ -95,8 +99,8 @@ upload(file_path: "/path/to/image.png")
 
 # Then generate with image input
 generate(
-  model_name: "fal-ai/nano-banana-2",
-  input: {
+  app_id: "fal-ai/nano-banana-2",
+  input_data: {
     "prompt": "same scene but in watercolor style",
     "image_url": "<uploaded_url>",
     "image_size": "landscape_16_9"
@@ -113,8 +117,8 @@ Best for: text-to-video, image-to-video with high motion quality.
 
 ```
 generate(
-  model_name: "fal-ai/seedance-1-0-pro",
-  input: {
+  app_id: "fal-ai/seedance-1-0-pro",
+  input_data: {
     "prompt": "a drone flyover of a mountain lake at golden hour, cinematic",
     "duration": "5s",
     "aspect_ratio": "16:9",
@@ -128,8 +132,8 @@ Best for: text/image-to-video with native audio generation.
 
 ```
 generate(
-  model_name: "fal-ai/kling-video/v3/pro",
-  input: {
+  app_id: "fal-ai/kling-video/v3/pro",
+  input_data: {
     "prompt": "ocean waves crashing on a rocky coast, dramatic clouds",
     "duration": "5s",
     "aspect_ratio": "16:9"
@@ -142,8 +146,8 @@ Best for: video with generated sound, high visual quality.
 
 ```
 generate(
-  model_name: "fal-ai/veo-3",
-  input: {
+  app_id: "fal-ai/veo-3",
+  input_data: {
     "prompt": "a bustling Tokyo street market at night, neon signs, crowd noise",
     "aspect_ratio": "16:9"
   }
@@ -155,8 +159,8 @@ Start from an existing image:
 
 ```
 generate(
-  model_name: "fal-ai/seedance-1-0-pro",
-  input: {
+  app_id: "fal-ai/seedance-1-0-pro",
+  input_data: {
     "prompt": "camera slowly zooms out, gentle wind moves the trees",
     "image_url": "<uploaded_image_url>",
     "duration": "5s"
@@ -183,8 +187,8 @@ Text-to-speech with natural, conversational quality.
 
 ```
 generate(
-  model_name: "fal-ai/csm-1b",
-  input: {
+  app_id: "fal-ai/csm-1b",
+  input_data: {
     "text": "Hello, welcome to the demo. Let me show you how this works.",
     "speaker_id": 0
   }
@@ -196,8 +200,8 @@ Generate matching audio from video content.
 
 ```
 generate(
-  model_name: "fal-ai/thinksound",
-  input: {
+  app_id: "fal-ai/thinksound",
+  input_data: {
     "video_url": "<video_url>",
     "prompt": "ambient forest sounds with birds chirping"
   }
@@ -248,7 +252,14 @@ sfx = coll.generate_sound_effect(prompt="thunder crack followed by rain")
 Before generating, check estimated cost:
 
 ```
-estimate_cost(model_name: "fal-ai/nano-banana-pro", input: {...})
+estimate_cost(
+  estimate_type: "unit_price",
+  endpoints: {
+    "fal-ai/nano-banana-pro": {
+      "unit_quantity": 1
+    }
+  }
+)
 ```
 
 ## Model Discovery
@@ -257,7 +268,7 @@ Find models for specific tasks:
 
 ```
 search(query: "text to video")
-find(model_name: "fal-ai/seedance-1-0-pro")
+find(endpoint_ids: ["fal-ai/seedance-1-0-pro"])
 models()
 ```
 

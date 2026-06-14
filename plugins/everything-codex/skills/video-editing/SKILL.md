@@ -202,7 +202,7 @@ Use the `fal-ai-media` skill for:
 
 Use for insert shots, thumbnails, or b-roll that doesn't exist:
 ```
-generate(model_name: "fal-ai/nano-banana-pro", input: {
+generate(app_id: "fal-ai/nano-banana-pro", input_data: {
   "prompt": "professional thumbnail for tech vlog, dark background, code on screen",
   "image_size": "landscape_16_9"
 })
@@ -252,6 +252,8 @@ ffmpeg -i input.mp4 -vf "crop=ih:ih,scale=1080:1080" square.mp4
 ### Reframe with VideoDB
 
 ```python
+from videodb import ReframeMode
+
 # Smart reframe (AI-guided subject tracking)
 reframed = video.reframe(start=0, end=60, target="vertical", mode=ReframeMode.smart)
 ```

@@ -1398,7 +1398,9 @@ Each marketplace plugin bundle carries its own `skills/`, `.mcp.json`, and
 installed cache usable without reaching back to the checkout. The manual sync
 flow above (`scripts/sync-ecc-to-codex.sh`) remains useful for global
 `~/.codex/config.toml` merging, prompt shims, and git hook setup outside plugin
-mode.
+mode. In the Codex app, enabled plugin skills also appear in the `/` command
+list; for example, `/prompt-optimizer` is backed by the bundled
+`prompt-optimizer` skill.
 
 ### What's Included
 
@@ -1406,14 +1408,18 @@ mode.
 |-----------|-------|---------|
 | Config | 1 | `.codex/config.toml` — top-level approvals/sandbox/web_search, MCP servers, notifications, profiles |
 | AGENTS.md | 2 | Root (universal) + `.codex/AGENTS.md` (Codex-specific supplement) |
-| Skills | 33 | `.agents/skills/` — SKILL.md + agents/openai.yaml per skill |
+| Skills | 263 | `plugins/*/skills/` — full `skills/` catalog plus Codex metadata from `.agents/skills/` |
 | MCP Servers | 1 | `chrome-devtools` by default; larger connector sets are opt-in via `mcp-configs/` |
 | Profiles | 2 | `strict` (read-only sandbox) and `yolo` (full auto-approve) |
 | Agent Roles | 3 | `.codex/agents/` — explorer, reviewer, docs-researcher |
 
 ### Skills
 
-Skills at `.agents/skills/` are auto-loaded by Codex:
+Marketplace plugin installs load self-contained `plugins/<name>/skills/`
+bundles. Those bundles include the full root `skills/` catalog plus Codex
+metadata from `.agents/skills/`; enabled plugin skills can be invoked with `$`
+and appear in the Codex app `/` command list. Core Codex metadata skills at
+`.agents/skills/` include:
 
 Canonical Anthropic skills such as `claude-api`, `frontend-design`, and `skill-creator` are intentionally not re-bundled here. Install those from [`anthropics/skills`](https://github.com/anthropics/skills) when you want the official versions.
 

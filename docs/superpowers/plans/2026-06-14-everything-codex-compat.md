@@ -32,7 +32,7 @@ Add helper assertions in `tests/plugin-manifest.test.js` that require marketplac
 
 - [x] **Step 2: Add bundled content assertions**
 
-Assert each plugin's bundled `skills/` mirrors `.agents/skills`, each skill includes `agents/openai.yaml`, bundled `.mcp.json` matches the root file, and bundled assets match root assets.
+Assert each plugin's bundled `skills/` mirrors the full root `skills/` catalog plus Codex metadata/extras from `.agents/skills`, bundled `.mcp.json` matches the root file, and bundled assets match root assets.
 
 - [x] **Step 3: Add docs and npm pack assertions**
 

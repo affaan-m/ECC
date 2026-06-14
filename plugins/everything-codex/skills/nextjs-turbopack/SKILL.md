@@ -36,6 +36,19 @@ next start
 
 Run `next dev` for local development with Turbopack. Use the Bundle Analyzer (see Next.js docs) to optimize code-splitting and trim large dependencies. Prefer App Router and server components where possible.
 
+## Middleware File Naming
+
+Next.js 16 introduced `proxy.ts` as the middleware filename, replacing the older `middleware.ts` convention:
+
+- **Next.js 16+**: use `proxy.ts` at the project root
+- **Pre-Next.js 16**: use `middleware.ts` at the project root
+
+The filename change is tied to the **Next.js version**, not to which bundler (Turbopack or webpack) is in use. Always check the official docs for the version you are reviewing.
+
+**Do not flag `proxy.ts` as a misnamed or missing middleware file in Next.js 16 projects.** The file is correct and intentional. Suggesting a rename to `middleware.ts` will break middleware execution.
+
+Reference: [Next.js proxy docs](https://nextjs.org/docs/app/getting-started/proxy)
+
 ## Best Practices
 
 - Stay on a recent Next.js 16.x for stable Turbopack and caching behavior.

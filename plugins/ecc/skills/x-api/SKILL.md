@@ -5,6 +5,10 @@ description: X/Twitter API integration for posting tweets, threads, reading time
 
 # X API
 
+> **Drift-prone skill.** X API endpoints, access tiers, quotas, and write
+> permissions change frequently. Verify current developer docs and account
+> access before quoting rate limits or implementing a posting/search flow.
+
 Programmatic interaction with X (Twitter) for posting, reading, searching, and analytics.
 
 ## When to Activate

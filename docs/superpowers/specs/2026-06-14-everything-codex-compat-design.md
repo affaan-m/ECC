@@ -23,7 +23,7 @@ Make both target directories self-contained Codex plugin bundles:
 - `plugins/<name>/assets/ecc-icon.svg`
 - `plugins/<name>/assets/hero.png`
 
-The bundled `skills/` directory mirrors `.agents/skills/`, which is the curated Codex-native skill surface with `agents/openai.yaml` metadata. The full root `skills/` tree remains the canonical ECC source surface for other harnesses.
+The bundled `skills/` directory mirrors the full root `skills/` catalog and overlays Codex metadata/extras from `.agents/skills/`. The root `skills/` tree remains the canonical ECC source surface for every harness, while `.agents/skills/` remains the Codex metadata layer.
 
 ## Manifest Requirements
 

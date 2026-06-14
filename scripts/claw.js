@@ -85,6 +85,7 @@ function buildPrompt(systemPrompt, history, userMessage) {
 
 function askClaude(systemPrompt, history, userMessage, model) {
   const fullPrompt = buildPrompt(systemPrompt, history, userMessage);
+  const claudeBin = process.env.CLAW_CLAUDE_BIN || 'claude';
   const args = [];
   if (model) {
     args.push('--model', model);
@@ -98,13 +99,13 @@ function askClaude(systemPrompt, history, userMessage, model) {
   // claude receives an empty prompt). Fix: send the prompt over stdin via `input`
   // and keep only the short, safe flags (`--model`, `-p`) as args.
   // 'claude' is a hardcoded literal here (not user input), so shell mode is safe.
-  const result = spawnSync('claude', args, {
+  const result = spawnSync(claudeBin, args, {
     input: fullPrompt,
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: '' },
     timeout: 300000,
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32' && claudeBin === 'claude',
   });
 
   if (result.error) {

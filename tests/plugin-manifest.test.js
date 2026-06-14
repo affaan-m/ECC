@@ -36,7 +36,15 @@ const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.j
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
 const releaseScriptPath = path.join(repoRoot, 'scripts', 'release.sh');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
-const codexSkillSourceDir = path.join(repoRoot, '.agents', 'skills');
+const canonicalSkillSourceDir = path.join(repoRoot, 'skills');
+const codexMetadataSkillSourceDir = path.join(repoRoot, '.agents', 'skills');
+const codexSkillFrontmatterKeys = new Set([
+  'allowed-tools',
+  'description',
+  'license',
+  'metadata',
+  'name',
+]);
 
 let passed = 0;
 let failed = 0;
@@ -97,6 +105,13 @@ function listCodexSkillNames(rootPath) {
     .sort();
 }
 
+function listBundledCodexSkillNames() {
+  return [...new Set([
+    ...listCodexSkillNames(canonicalSkillSourceDir),
+    ...listCodexSkillNames(codexMetadataSkillSourceDir),
+  ])].sort();
+}
+
 function assertInsideDirectory(targetPath, expectedRoot, message) {
   const relative = path.relative(expectedRoot, targetPath);
   assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), message);
@@ -109,6 +124,31 @@ function assertFileContentsMatch(actualPath, expectedPath, label) {
     fs.readFileSync(expectedPath, 'utf8'),
     `${label} must match ${path.relative(repoRoot, expectedPath)}`
   );
+}
+
+function parseSkillFrontmatter(skillPath, label) {
+  const source = fs.readFileSync(skillPath, 'utf8');
+  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  assert.ok(match, `${label} must include YAML frontmatter`);
+
+  const frontmatter = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const topLevelKey = line.match(/^([A-Za-z0-9_-]+):/);
+    if (topLevelKey) {
+      frontmatter[topLevelKey[1]] = line.slice(topLevelKey[1].length + 1).trim();
+    }
+  }
+  return frontmatter;
+}
+
+function assertCodexSkillFrontmatter(skillPath, expectedName, label) {
+  const frontmatter = parseSkillFrontmatter(skillPath, label);
+  const unexpected = Object.keys(frontmatter)
+    .filter((key) => !codexSkillFrontmatterKeys.has(key))
+    .sort();
+  assert.deepStrictEqual(unexpected, [], `${label} must not expose unsupported Codex frontmatter keys`);
+  assert.strictEqual(frontmatter.name, expectedName, `${label} name must match its folder`);
+  assert.ok(frontmatter.description, `${label} must include a description for slash-menu discovery`);
 }
 
 function assertSelfContainedCodexPlugin({
@@ -128,14 +168,16 @@ function assertSelfContainedCodexPlugin({
   assertInsideDirectory(skillsTarget, pluginDir, `${expectedName} skills path must resolve inside the plugin root`);
   assert.ok(fs.existsSync(skillsTarget), `${expectedName} must bundle a skills/ directory`);
 
-  const expectedSkills = listCodexSkillNames(codexSkillSourceDir);
+  const expectedSkills = listBundledCodexSkillNames();
   const bundledSkills = listCodexSkillNames(skillsTarget);
-  assert.deepStrictEqual(bundledSkills, expectedSkills, `${expectedName} bundled skills must mirror .agents/skills`);
+  assert.deepStrictEqual(bundledSkills, expectedSkills, `${expectedName} bundled skills must mirror canonical skills/ plus Codex metadata skills`);
+  assert.ok(bundledSkills.includes('prompt-optimizer'), `${expectedName} must bundle prompt-optimizer so Codex can expose it in the slash menu`);
 
   for (const skillName of expectedSkills) {
-    assert.ok(
-      fs.existsSync(path.join(skillsTarget, skillName, 'agents', 'openai.yaml')),
-      `${expectedName} bundled skill ${skillName} is missing agents/openai.yaml`
+    assertCodexSkillFrontmatter(
+      path.join(skillsTarget, skillName, 'SKILL.md'),
+      skillName,
+      `${expectedName} bundled skill ${skillName}`
     );
   }
 
