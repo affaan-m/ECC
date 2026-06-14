@@ -46,8 +46,8 @@ jobs:
       matrix:
         include:
         - language: actions
-          build-mode: manual
-        - language: 
+          build-mode: none
+        - language: javescript
           build-mode: none
         - language: python
           build-mode: none
