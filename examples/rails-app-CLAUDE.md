@@ -258,7 +258,7 @@ class ExportAccountingJob < ApplicationJob
 
   def perform(invoice_id)
     invoice = Invoice.find(invoice_id)
-    return if invoice.exported?  # local idempotency check
+    return if invoice.exported_at.present?  # local idempotency check
 
     idempotency_key = "invoice-export-#{invoice.id}"
     AccountingApi.export(invoice, idempotency_key: idempotency_key)
