@@ -51,10 +51,11 @@ posts.each { |post| post.author.name }
 ### Background Jobs
 
 - SolidQueue is the default in Rails 8; Sidekiq remains acceptable for high-throughput cases
-- Pass IDs to jobs, never records; records do not serialize cleanly
+- Pass IDs to jobs, not records; this avoids `ActiveJob::DeserializationError` when records are deleted between enqueue and execute
 - `perform` methods must be idempotent; assume they will run more than once
 - Declare retry behavior explicitly with `retry_on` and `discard_on`
 - Name jobs by action (`SendInvoiceJob`, `ExportAccountingJob`), not by noun
+- For jobs touching external systems, pair the local idempotency check with an API-level idempotency token, and consider row-level locking (`with_lock`) for high-concurrency scenarios
 
 ### Views and Hotwire
 
@@ -155,7 +156,12 @@ module Invoices
         invoice.save!
       end
 
-      send_notifications(invoice)
+      begin
+        send_notifications(invoice)
+      rescue StandardError => e
+        Rails.logger.error("Notification dispatch failed for invoice #{invoice.id}: #{e.message}")
+      end
+
       Result.new(success?: true, invoice: invoice, errors: nil)
     rescue ActiveRecord::RecordInvalid => e
       Result.new(success?: false, invoice: e.record, errors: e.record.errors)
@@ -252,9 +258,10 @@ class ExportAccountingJob < ApplicationJob
 
   def perform(invoice_id)
     invoice = Invoice.find(invoice_id)
-    return if invoice.exported?  # idempotency check
+    return if invoice.exported?  # local idempotency check
 
-    AccountingApi.export(invoice)
+    idempotency_key = "invoice-export-#{invoice.id}"
+    AccountingApi.export(invoice, idempotency_key: idempotency_key)
     invoice.update!(exported_at: Time.current)
   end
 end
