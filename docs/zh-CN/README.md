@@ -7,7 +7,7 @@
 [![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
-[![GitHub App Install](https://img.shields.io/badge/GitHub%20App-150%20installs-2ea44f?logo=github)](https://github.com/marketplace/ecc-tools)
+[![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash\&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript\&logoColor=white)
@@ -80,6 +80,10 @@
 ***
 
 ## 最新动态
+
+### v2.0.0 — 智能体 Harness 操作系统（2026年6月）
+
+2.0 主线稳定版：261 个技能、control-pane 基底（会话适配器 + MCP 清单）、worktree 生命周期服务，以及 [ECC Discord 社区](https://discord.gg/36yGMHGFbR)。
 
 ### v2.0.0-rc.1 — 表面同步、运营工作流与 ECC 2.0 Alpha（2026年4月）
 
@@ -1256,7 +1260,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
 | **秘密检测** | 基于钩子                  | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
 | **自动格式化** | PostToolUse 钩子        | afterFileEdit 钩子 | N/A | file.edited 钩子 |
-| **版本** | 插件 | 插件 | 参考配置 | 2.0.0-rc.1 |
+| **版本** | 插件 | 插件 | 参考配置 | 2.0.0 |
 
 **关键架构决策：**
 
