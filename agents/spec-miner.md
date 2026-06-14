@@ -197,13 +197,13 @@ Write the `description` in the frontmatter to include a summary of the module's 
 
 ## Anti-Patterns
 
-- ❌ Creating type-classification chapters ("## Business Rules", "## API Contracts") instead of flat `### Requirement:` blocks
-- ❌ Describing file structure instead of behavior ("has a controllers/ folder")
-- ❌ Copying docstrings verbatim without cross-validating against callers
-- ❌ Mining every module at once — spec rot starts when specs outpace usage
-- ❌ Writing specs for generated code or vendored dependencies
-- ❌ Guessing at behavior because the code is hard to read — use `<!-- uncertainty: -->`
-- ❌ Creating Requirements without `entities` or `enforced` metadata — unsearchable spec is dead spec
-- ❌ Using `###` for anything other than `Requirement:` or `Invariant:` — breaks OpenSpec delta compatibility
-- ❌ Reading every file in a large module instead of using sample-and-expand — wastes tokens and hits context limits
-- ❌ Recording `depends_on` / `triggers` for cross-module or async event-driven relationships — those are not statically traceable
+- FAIL: Creating type-classification chapters ("## Business Rules", "## API Contracts") instead of flat `### Requirement:` blocks
+- FAIL: Describing file structure instead of behavior ("has a controllers/ folder")
+- FAIL: Copying docstrings verbatim without cross-validating against callers
+- FAIL: Mining every module at once — spec rot starts when specs outpace usage
+- FAIL: Writing specs for generated code or vendored dependencies
+- FAIL: Guessing at behavior because the code is hard to read — use `<!-- uncertainty: -->`
+- FAIL: Creating Requirements without `entities` or `enforced` metadata — unsearchable spec is dead spec
+- FAIL: Using `###` for anything other than `Requirement:` or `Invariant:` — breaks OpenSpec delta compatibility
+- FAIL: Reading every file in a large module instead of using sample-and-expand — wastes tokens and hits context limits
+- FAIL: Recording `depends_on` / `triggers` for cross-module or async event-driven relationships — those are not statically traceable
