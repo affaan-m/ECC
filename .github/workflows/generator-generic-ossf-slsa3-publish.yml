@@ -9,29 +9,40 @@
 # https://github.com/slsa-framework/slsa-github-generator.
 # The provenance file can be verified using https://github.com/slsa-framework/slsa-verifier.
 # For more information about SLSA and how it improves the supply-chain, visit slsa.dev.
-
+#.github/workflows/generator-generic-ossf-slsa3-publish.yml
+#steps.build.outputs.package_file
+#echo "package_file=..." >> $GITHUB_OUTPUT 
 name: SLSA generic generator workflow #1
+
 on:
   workflow_dispatch:
   release:
-    types: [created]
+    types:
+      - published
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: write
+
     outputs:
+      package_file: ${{ steps.build.outputs.package_file }}
       digests: ${{ steps.hash.outputs.digests }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
+        uses: actions/checkout@f4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '20.x'
+          node-version: "20.x"
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
@@ -39,16 +50,33 @@ jobs:
       - name: Build artifacts
         id: build
         run: |
+          set -euo pipefail
+
           npm pack --json > npm-pack.json
-          PACKAGE_FILE=$(node -e "const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); console.log(data[0].filename)")
+
+          PACKAGE_FILE=$(node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8'));
+            console.log(data[0].filename);
+          ")
+
           echo "package_file=${PACKAGE_FILE}" >> "${GITHUB_OUTPUT}"
 
       - name: Generate subject for provenance
         id: hash
         run: |
           set -euo pipefail
-          # Generate the subjects (base64 encoded).
-          echo "digests=$(sha256sum ${{ steps.build.outputs.package_file }} | base64 -w0)" >> "${GITHUB_OUTPUT}"
+
+          FILE="${{ steps.build.outputs.package_file }}"
+
+          if [ ! -f "$FILE" ]; then
+            echo "Package file not found: $FILE"
+            exit 1
+          fi
+
+          DIGESTS=$(sha256sum "$FILE" | base64 -w0)
+
+          echo "digests=${DIGESTS}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -58,12 +86,16 @@ jobs:
           if-no-files-found: error
 
   provenance:
-    needs: [build]
+    needs:
+      - build
+
     permissions:
-      actions: read   # To read the workflow path.
-      id-token: write # To sign the provenance.
-      contents: write # To add assets to a release.
+      actions: read
+      id-token: write
+      contents: write
+
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@68bad40844440577b33778c9f29077a3388838e9 # v1.4.0
+
     with:
-      base64-subjects: "${{ needs.build.outputs.digests }}"
-      upload-assets: true # Optional: Upload to a new release
+      base64-subjects: ${{ needs.build.outputs.digests }}
+      upload-assets: true
