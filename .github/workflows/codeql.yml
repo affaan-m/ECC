@@ -42,7 +42,7 @@ jobs:
       contents: read
 
     strategy:
-      fail-fast: false
+      fail-fast: 
       matrix:
         include:
         - language: actions
