@@ -104,7 +104,7 @@ Write the `description` in the frontmatter to include a summary of the module's 
 ---
 
 ### Requirement: [behavior name]
-<!-- id: [optional: FileName.methodName — stable identifier for delta matching] -->
+<!-- id: FileName.methodName — REQUIRED when enforced is known (Rule #7). Stable anchor for delta matching. -->
 <!-- entities: EntityA, EntityB -->
 <!-- depends_on: [optional: prerequisite Requirement name, same capability only] -->
 <!-- triggers: [optional: downstream Requirement name, same capability only] -->
@@ -124,7 +124,7 @@ Write the `description` in the frontmatter to include a summary of the module's 
 ---
 
 ### Requirement: [another behavior name]
-<!-- id: [optional] -->
+<!-- id: FileName.methodName — REQUIRED when enforced is known (Rule #7) -->
 <!-- entities: EntityC -->
 <!-- enforced: OtherFile.otherMethod() -->
 
