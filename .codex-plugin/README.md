@@ -12,9 +12,13 @@ This directory contains the **Codex plugin manifest** for ECC.
 
 ## What This Provides
 
-- **249 skills** from `./skills/` — reusable Codex workflows for TDD, security,
-  code review, architecture, and more
-- **6 MCP servers** — GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking
+- A repo-root Codex manifest at `.codex-plugin/plugin.json`.
+- Self-contained Codex plugin bundles under `plugins/ecc/` and
+  `plugins/everything-codex/`.
+- **33 Codex-ready skills** in each marketplace bundle, sourced from
+  `.agents/skills/`.
+- **1 default MCP server** in each marketplace bundle, sourced from the root
+  `.mcp.json`.
 
 ## Installation
 
@@ -35,26 +39,25 @@ slug and `everything-codex` for the Codex-branded alias. Both entries point at
 concrete plugin subdirectories under `plugins/` — Codex does not discover
 plugins whose local marketplace `source.path` is the marketplace root (`./`),
 so each entry must target a concrete plugin subdirectory (see
-[#2128](https://github.com/affaan-m/ECC/issues/2128)). Those thin plugin
-folders reference the root `skills/` and `.mcp.json` so content stays
-single-sourced. After adding or updating the marketplace, restart Codex and
-install or enable `ecc` or `everything-codex` from the plugin directory.
+[#2128](https://github.com/affaan-m/ECC/issues/2128)).
 
-> **Plugin mode is currently fragile on Codex.** Marketplace discovery and
-> install work with this layout, but runtime skill loading from local/repo
-> marketplaces is unreliable upstream
-> ([openai/codex#26037](https://github.com/openai/codex/issues/26037)) — Codex
-> copies only the plugin folder into its install cache, so parent-referenced
-> content may not be exposed in a fresh session. The safer, fully supported
-> path today is the manual sync flow:
-> `npm install && bash scripts/sync-ecc-to-codex.sh`.
+Those directories are self-contained Codex plugin bundles. Codex installs
+marketplace plugins into `~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`,
+so each bundle carries its own `skills/`, `.mcp.json`, and `assets/` with
+manifest paths that stay inside the plugin root. After adding or updating the
+marketplace, restart Codex and install or enable `ecc` or `everything-codex`
+from the plugin directory.
+
+The manual sync flow remains useful when you want ECC's global Codex config,
+prompt shims, or git hook setup outside plugin mode:
+`npm install && bash scripts/sync-ecc-to-codex.sh`.
 
 Official Plugin Directory publishing is coming soon. For official OpenAI
 plugin-directory review, package this repo under the `openai/plugins`
 repository shape: `plugins/ecc/.codex-plugin/plugin.json`,
 `plugins/ecc/skills/`, and the supporting README/assets. Until that listing is
 accepted, treat the public repo marketplace as the supported Codex distribution
-path and keep release copy framed as repo-marketplace/manual installation.
+path.
 
 `everything-codex` is an alias entry for Codex presentation; `ecc` remains the
 canonical short slug for existing installs and release compatibility.
@@ -72,8 +75,11 @@ The former defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `seque
 
 ## Notes
 
-- The `skills/` directory at the repo root is the source of truth for the Codex
-  plugin package; do not duplicate skill content inside `.codex-plugin/`.
+- The repo-root `skills/` directory remains the full ECC source surface; the
+  marketplace plugin bundles carry the curated Codex runtime surface from
+  `.agents/skills/`.
+- Do not duplicate skill content inside `.codex-plugin/`; bundle runtime content
+  under `plugins/ecc/` and `plugins/everything-codex/`.
 - ECC is moving to a skills-first workflow surface. Legacy `commands/` remain for
   compatibility on harnesses that still expect slash-entry shims.
 - MCP server credentials are inherited from the launching environment (env vars)

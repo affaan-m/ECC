@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend Patterns"
+  short_description: "React and Next.js frontend patterns"
+  brand_color: "#8B5CF6"
+  default_prompt: "Use $frontend-patterns to apply React and Next.js frontend patterns."
+policy:
+  allow_implicit_invocation: true

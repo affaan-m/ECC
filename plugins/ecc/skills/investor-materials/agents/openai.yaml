@@ -1,0 +1,7 @@
+interface:
+  display_name: "Investor Materials"
+  short_description: "Investor decks, memos, and financial materials"
+  brand_color: "#7C3AED"
+  default_prompt: "Use $investor-materials to draft consistent investor-facing fundraising assets."
+policy:
+  allow_implicit_invocation: true

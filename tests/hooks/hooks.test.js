@@ -1210,9 +1210,20 @@ async function runTests() {
 
   if (
     await asyncTest('creates compaction log', async () => {
-      await runScript(path.join(scriptsDir, 'pre-compact.js'));
-      const logFile = path.join(getCanonicalSessionsDir(os.homedir()), 'compaction-log.txt');
-      assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
+      const isoHome = path.join(os.tmpdir(), `ecc-compact-log-${Date.now()}`);
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+
+      try {
+        await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome
+        });
+        const logFile = path.join(sessionsDir, 'compaction-log.txt');
+        assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
     })
   )
     passed++;

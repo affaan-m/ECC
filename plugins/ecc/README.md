@@ -1,40 +1,38 @@
-# plugins/ecc — Codex Repo-Marketplace Plugin Target
+# plugins/ecc - Codex Repo-Marketplace Plugin Bundle
 
-This directory is the plugin folder that `.agents/plugins/marketplace.json`
-points at. Codex does not discover plugins whose local marketplace
-`source.path` is the marketplace root itself (`./`), so the marketplace entry
-must target a concrete plugin subdirectory — verified against Codex CLI
-0.137.0 and the official plugin docs (`$REPO_ROOT/plugins/<name>`).
+This directory is the stable short-slug Codex plugin bundle that
+`.agents/plugins/marketplace.json` points at.
 
-## Single source of truth
+Codex installs marketplace plugins into its own cache, so this folder is a
+self-contained Codex plugin bundle. The manifest, bundled skills, MCP config,
+and presentation assets all live under this plugin root and can be loaded after
+Codex copies the directory to `~/.codex/plugins/cache/...`.
 
-Per the repo's no-duplication policy, no skill or MCP content is vendored
-here. `.codex-plugin/plugin.json` references the canonical root content with
-parent-relative paths:
+## Bundle Contents
 
-| Manifest field | Resolves to |
+| Plugin path | Source of truth |
 |---|---|
-| `skills` | `skills/` at the repo root |
-| `mcpServers` | `.mcp.json` at the repo root |
-| `interface.composerIcon` / `interface.logo` | `assets/` at the repo root |
+| `skills/` | `.agents/skills/` Codex-ready skill surface |
+| `.mcp.json` | Root `.mcp.json` |
+| `assets/ecc-icon.svg` / `assets/hero.png` | Root `assets/` |
 
-The canonical Codex plugin manifest for the repo-root bundle (used by the
-official `openai/plugins` directory shape and other harness tooling) remains
-at `.codex-plugin/plugin.json`. Keep `name` and `version` in both manifests in
-sync — `tests/plugin-manifest.test.js` enforces this and `scripts/release.sh`
-bumps both.
+Keep this bundle synchronized whenever the Codex skill surface, default MCP
+config, or presentation assets change. `tests/plugin-manifest.test.js` compares
+the bundled copies against their source files so drift fails in CI.
 
-## Current Codex plugin-mode status
+## Install
 
-With this layout, `codex plugin marketplace add affaan-m/ECC` discovers and
-installs `ecc@ecc`. Runtime skill loading from repo marketplaces is still
-unreliable upstream — Codex copies only the plugin folder into its install
-cache, and local/personal marketplace plugins are not always exposed at
-runtime (see [openai/codex#26037](https://github.com/openai/codex/issues/26037)
-and [affaan-m/ECC#2128](https://github.com/affaan-m/ECC/issues/2128)).
+```bash
+codex plugin marketplace add affaan-m/ECC
+codex plugin list
+```
 
-Until the upstream discovery issues settle, the supported Codex path is the
-manual sync flow documented in the README:
+Codex should show `ecc@ecc` from this bundle. The same repo marketplace also
+exposes `everything-codex@ecc` as a Codex-branded alias with identical bundled
+runtime content.
+
+The manual sync flow remains useful when you want ECC's global Codex config,
+prompt shims, or git hook setup outside plugin mode:
 
 ```bash
 npm install && bash scripts/sync-ecc-to-codex.sh

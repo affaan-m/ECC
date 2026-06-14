@@ -528,7 +528,7 @@ async function main() {
   const sessionSearchDirs = getSessionSearchDirs();
   const learnedDir = getLearnedSkillsDir();
   const additionalContextParts = [];
-  const observerContext = resolveProjectContext();
+  let observerContext = null;
   const maxContextChars = getSessionStartMaxContextChars();
   const explicitContextDisabled = isSessionStartContextDisabled();
   const shouldInjectContext = !explicitContextDisabled && maxContextChars !== 0;
@@ -537,6 +537,12 @@ async function main() {
   // Ensure directories exist
   ensureDir(sessionsDir);
   ensureDir(learnedDir);
+
+  try {
+    observerContext = resolveProjectContext();
+  } catch (error) {
+    log(`[SessionStart] Warning: failed to resolve observer project context: ${error.message}`);
+  }
 
   const retentionDays = getSessionRetentionDays();
   if (retentionDays === null) {
@@ -549,12 +555,18 @@ async function main() {
   }
 
   const observerSessionId = resolveSessionId();
-  if (observerSessionId) {
-    writeSessionLease(observerContext, observerSessionId, {
-      hook: 'SessionStart',
-      projectRoot: observerContext.projectRoot
-    });
-    log(`[SessionStart] Registered observer lease for ${observerSessionId}`);
+  if (observerSessionId && observerContext) {
+    try {
+      writeSessionLease(observerContext, observerSessionId, {
+        hook: 'SessionStart',
+        projectRoot: observerContext.projectRoot
+      });
+      log(`[SessionStart] Registered observer lease for ${observerSessionId}`);
+    } catch (error) {
+      log(`[SessionStart] Warning: failed to register observer lease for ${observerSessionId}: ${error.message}`);
+    }
+  } else if (observerSessionId) {
+    log('[SessionStart] Observer project context unavailable; skipping observer lease registration');
   } else {
     log('[SessionStart] No CLAUDE_SESSION_ID available; skipping observer lease registration');
   }
@@ -566,9 +578,11 @@ async function main() {
   }
 
   if (shouldInjectContext) {
-    const instinctSummary = summarizeActiveInstincts(observerContext);
-    if (instinctSummary) {
-      additionalContextParts.push(instinctSummary);
+    if (observerContext) {
+      const instinctSummary = summarizeActiveInstincts(observerContext);
+      if (instinctSummary) {
+        additionalContextParts.push(instinctSummary);
+      }
     }
 
     if (sessionStartMode && sessionStartMode !== 'startup') {

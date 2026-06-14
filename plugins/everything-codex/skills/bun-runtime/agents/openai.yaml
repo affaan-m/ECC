@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bun Runtime"
+  short_description: "Bun runtime, package manager, and test runner"
+  brand_color: "#FBF0DF"
+  default_prompt: "Use $bun-runtime to choose and apply Bun runtime workflows."
+policy:
+  allow_implicit_invocation: true

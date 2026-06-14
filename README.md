@@ -1384,16 +1384,21 @@ Codex macOS app:
 - The reference `.codex/config.toml` intentionally does not pin `model` or `model_provider`, so Codex uses its own current default unless you override it.
 - Optional: copy `.codex/config.toml` to `~/.codex/config.toml` for global defaults; keep the multi-agent role files project-local unless you also copy `.codex/agents/`.
 
-### Codex Plugin Marketplace (experimental)
+### Codex Plugin Marketplace
 
-The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) with two entries: `ecc` for the stable short slug and `everything-codex` as the Codex-branded alias. Both entries point at concrete plugin folders under `plugins/` — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so each entry must target a concrete plugin subdirectory:
+The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) with two entries: `ecc` for the stable short slug and `everything-codex` as the Codex-branded alias. Both entries point at concrete, self-contained Codex plugin bundles under `plugins/` — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so each entry targets a concrete plugin subdirectory:
 
 ```bash
 codex plugin marketplace add affaan-m/ECC
 codex plugin list   # ecc@ecc and everything-codex@ecc should appear
 ```
 
-**Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. Until that settles, treat the plugin path as experimental and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
+Each marketplace plugin bundle carries its own `skills/`, `.mcp.json`, and
+`assets/`, with manifest paths that stay inside the plugin root. That makes the
+installed cache usable without reaching back to the checkout. The manual sync
+flow above (`scripts/sync-ecc-to-codex.sh`) remains useful for global
+`~/.codex/config.toml` merging, prompt shims, and git hook setup outside plugin
+mode.
 
 ### What's Included
 
@@ -1401,8 +1406,8 @@ codex plugin list   # ecc@ecc and everything-codex@ecc should appear
 |-----------|-------|---------|
 | Config | 1 | `.codex/config.toml` — top-level approvals/sandbox/web_search, MCP servers, notifications, profiles |
 | AGENTS.md | 2 | Root (universal) + `.codex/AGENTS.md` (Codex-specific supplement) |
-| Skills | 32 | `.agents/skills/` — SKILL.md + agents/openai.yaml per skill |
-| MCP Servers | 6 | GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking (7 with Supabase via `--update-mcp` sync) |
+| Skills | 33 | `.agents/skills/` — SKILL.md + agents/openai.yaml per skill |
+| MCP Servers | 1 | `chrome-devtools` by default; larger connector sets are opt-in via `mcp-configs/` |
 | Profiles | 2 | `strict` (read-only sandbox) and `yolo` (full auto-approve) |
 | Agent Roles | 3 | `.codex/agents/` — explorer, reviewer, docs-researcher |
 

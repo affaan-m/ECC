@@ -1,0 +1,7 @@
+interface:
+  display_name: "Everything Claude Code"
+  short_description: "Repo workflows for everything-claude-code"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $everything-claude-code to follow this repository's conventions and workflows."
+policy:
+  allow_implicit_invocation: true

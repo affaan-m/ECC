@@ -1,0 +1,7 @@
+interface:
+  display_name: "Eval Harness"
+  short_description: "Eval-driven development harnesses"
+  brand_color: "#EC4899"
+  default_prompt: "Use $eval-harness to define eval-driven development checks."
+policy:
+  allow_implicit_invocation: true

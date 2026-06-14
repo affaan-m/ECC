@@ -36,6 +36,7 @@ const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.j
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
 const releaseScriptPath = path.join(repoRoot, 'scripts', 'release.sh');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
+const codexSkillSourceDir = path.join(repoRoot, '.agents', 'skills');
 
 let passed = 0;
 let failed = 0;
@@ -87,6 +88,71 @@ function collectMarkdownFiles(rootPath) {
     }
   }
   return files;
+}
+
+function listCodexSkillNames(rootPath) {
+  return fs.readdirSync(rootPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(rootPath, entry.name, 'SKILL.md')))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function assertInsideDirectory(targetPath, expectedRoot, message) {
+  const relative = path.relative(expectedRoot, targetPath);
+  assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), message);
+}
+
+function assertFileContentsMatch(actualPath, expectedPath, label) {
+  assert.ok(fs.existsSync(actualPath), `${label} missing at ${actualPath}`);
+  assert.strictEqual(
+    fs.readFileSync(actualPath, 'utf8'),
+    fs.readFileSync(expectedPath, 'utf8'),
+    `${label} must match ${path.relative(repoRoot, expectedPath)}`
+  );
+}
+
+function assertSelfContainedCodexPlugin({
+  manifest,
+  manifestPath,
+  expectedName,
+  expectedDisplayName,
+}) {
+  const pluginDir = path.dirname(path.dirname(manifestPath));
+  assert.strictEqual(manifest.name, expectedName);
+  assert.strictEqual(manifest.interface.displayName, expectedDisplayName);
+
+  assert.strictEqual(manifest.skills, './skills/', `${expectedName} skills path must stay inside the plugin root`);
+  assert.strictEqual(manifest.mcpServers, './.mcp.json', `${expectedName} MCP path must stay inside the plugin root`);
+
+  const skillsTarget = path.resolve(pluginDir, manifest.skills);
+  assertInsideDirectory(skillsTarget, pluginDir, `${expectedName} skills path must resolve inside the plugin root`);
+  assert.ok(fs.existsSync(skillsTarget), `${expectedName} must bundle a skills/ directory`);
+
+  const expectedSkills = listCodexSkillNames(codexSkillSourceDir);
+  const bundledSkills = listCodexSkillNames(skillsTarget);
+  assert.deepStrictEqual(bundledSkills, expectedSkills, `${expectedName} bundled skills must mirror .agents/skills`);
+
+  for (const skillName of expectedSkills) {
+    assert.ok(
+      fs.existsSync(path.join(skillsTarget, skillName, 'agents', 'openai.yaml')),
+      `${expectedName} bundled skill ${skillName} is missing agents/openai.yaml`
+    );
+  }
+
+  assertFileContentsMatch(
+    path.resolve(pluginDir, manifest.mcpServers),
+    path.join(repoRoot, '.mcp.json'),
+    `${expectedName} .mcp.json`
+  );
+
+  assert.strictEqual(manifest.interface.composerIcon, './assets/ecc-icon.svg');
+  assert.strictEqual(manifest.interface.logo, './assets/hero.png');
+  for (const ref of [manifest.interface.composerIcon, manifest.interface.logo]) {
+    const target = path.resolve(pluginDir, ref);
+    assertInsideDirectory(target, pluginDir, `${expectedName} asset path must resolve inside the plugin root`);
+    assert.ok(fs.existsSync(target), `${expectedName} asset ref target missing: ${ref}`);
+    assertFileContentsMatch(target, path.join(repoRoot, ref.replace(/^\.\//, '')), `${expectedName} ${ref}`);
+  }
 }
 
 const rootPackage = loadJsonObject(packageJsonPath, 'package.json');
@@ -428,19 +494,16 @@ test('marketplace local plugin path resolves to a concrete plugin subdirectory (
 });
 
 // ── plugins/ecc marketplace plugin folder ─────────────────────────────────────
-// Thin Codex plugin target for the repo marketplace. Content is single-sourced
-// at the repo root (no vendored skills/MCP copies) per the maintainer direction
-// on #2097; these tests pin the manifest sync and the parent-relative refs.
+// Codex installs local plugins into ~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/.
+// Marketplace plugin folders therefore need to be self-contained: manifest
+// paths must stay inside the plugin root, and runtime assets must be bundled
+// into the folder Codex copies.
 console.log('\n=== plugins/ecc Codex marketplace plugin folder ===\n');
 
 const marketplacePluginManifestPath = path.join(repoRoot, 'plugins', 'ecc', '.codex-plugin', 'plugin.json');
 const marketplacePluginManifest = loadJsonObject(marketplacePluginManifestPath, 'plugins/ecc/.codex-plugin/plugin.json');
 const rootCodexManifest = loadJsonObject(path.join(repoRoot, '.codex-plugin', 'plugin.json'), '.codex-plugin/plugin.json');
 const everythingCodexMarketplacePluginManifestPath = path.join(repoRoot, 'plugins', 'everything-codex', '.codex-plugin', 'plugin.json');
-
-test('plugins/ecc manifest name matches the root Codex manifest', () => {
-  assert.strictEqual(marketplacePluginManifest.name, rootCodexManifest.name);
-});
 
 test('plugins/ecc manifest version matches package.json', () => {
   assert.strictEqual(marketplacePluginManifest.version, expectedVersion);
@@ -450,37 +513,22 @@ test('plugins/ecc manifest version matches the root Codex manifest', () => {
   assert.strictEqual(marketplacePluginManifest.version, rootCodexManifest.version);
 });
 
-test('plugins/ecc manifest reuses root skills and MCP config without vendoring', () => {
-  const pluginDir = path.dirname(path.dirname(marketplacePluginManifestPath));
-
-  const skillsTarget = path.resolve(pluginDir, marketplacePluginManifest.skills);
-  assert.strictEqual(skillsTarget, path.join(repoRoot, 'skills'), `skills ref must resolve to the root skills/ directory, got: ${marketplacePluginManifest.skills}`);
-  assert.ok(fs.existsSync(skillsTarget), 'Root skills/ directory missing');
-
-  const mcpTarget = path.resolve(pluginDir, marketplacePluginManifest.mcpServers);
-  assert.strictEqual(mcpTarget, path.join(repoRoot, '.mcp.json'), `mcpServers ref must resolve to the root .mcp.json, got: ${marketplacePluginManifest.mcpServers}`);
-  assert.ok(fs.existsSync(mcpTarget), 'Root .mcp.json missing');
-
-  assert.ok(!fs.existsSync(path.join(pluginDir, 'skills')), 'plugins/ecc must not vendor a second skills/ copy (see #2097 review)');
-  assert.ok(!fs.existsSync(path.join(pluginDir, '.mcp.json')), 'plugins/ecc must not vendor a second .mcp.json (see #2097 review)');
+test('plugins/ecc is a self-contained Codex plugin bundle', () => {
+  assertSelfContainedCodexPlugin({
+    manifest: marketplacePluginManifest,
+    manifestPath: marketplacePluginManifestPath,
+    expectedName: 'ecc',
+    expectedDisplayName: 'ECC',
+  });
 });
 
-test('plugins/ecc manifest interface assets resolve to root assets', () => {
-  const pluginDir = path.dirname(path.dirname(marketplacePluginManifestPath));
-
-  for (const ref of [marketplacePluginManifest.interface.composerIcon, marketplacePluginManifest.interface.logo]) {
-    const target = path.resolve(pluginDir, ref);
-    assert.ok(target.startsWith(path.join(repoRoot, 'assets') + path.sep), `Asset ref must resolve under root assets/: ${ref}`);
-    assert.ok(fs.existsSync(target), `Asset ref target missing: ${ref}`);
-  }
-});
-
-test('plugins/ecc README documents the upstream Codex fragility', () => {
+test('plugins/ecc README documents supported self-contained Codex plugin mode', () => {
   const readmePath = path.join(repoRoot, 'plugins', 'ecc', 'README.md');
   assert.ok(fs.existsSync(readmePath), 'Expected plugins/ecc/README.md');
   const source = fs.readFileSync(readmePath, 'utf8');
-  assert.ok(source.includes('openai/codex'), 'plugins/ecc README must link the upstream Codex discovery issue');
-  assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/ecc README must point at the supported manual sync flow');
+  assert.ok(source.includes('self-contained Codex plugin bundle'), 'plugins/ecc README must describe the cache-safe bundle layout');
+  assert.ok(source.includes('codex plugin marketplace add affaan-m/ECC'), 'plugins/ecc README must document the marketplace install flow');
+  assert.ok(!/currently fragile|unreliable upstream|parent-relative|not vendored/i.test(source), 'plugins/ecc README must not describe plugin mode as fragile after bundling runtime content');
 });
 
 console.log('\n=== plugins/everything-codex Codex marketplace plugin folder ===\n');
@@ -499,39 +547,23 @@ test('plugins/everything-codex manifest version matches package.json and marketp
   assert.strictEqual(alias.version, manifest.version);
 });
 
-test('plugins/everything-codex manifest reuses root skills and MCP config without vendoring', () => {
+test('plugins/everything-codex is a self-contained Codex plugin bundle', () => {
   const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
-  const pluginDir = path.dirname(path.dirname(everythingCodexMarketplacePluginManifestPath));
-
-  const skillsTarget = path.resolve(pluginDir, manifest.skills);
-  assert.strictEqual(skillsTarget, path.join(repoRoot, 'skills'), `skills ref must resolve to the root skills/ directory, got: ${manifest.skills}`);
-  assert.ok(fs.existsSync(skillsTarget), 'Root skills/ directory missing');
-
-  const mcpTarget = path.resolve(pluginDir, manifest.mcpServers);
-  assert.strictEqual(mcpTarget, path.join(repoRoot, '.mcp.json'), `mcpServers ref must resolve to the root .mcp.json, got: ${manifest.mcpServers}`);
-  assert.ok(fs.existsSync(mcpTarget), 'Root .mcp.json missing');
-
-  assert.ok(!fs.existsSync(path.join(pluginDir, 'skills')), 'plugins/everything-codex must not vendor a second skills/ copy');
-  assert.ok(!fs.existsSync(path.join(pluginDir, '.mcp.json')), 'plugins/everything-codex must not vendor a second .mcp.json');
+  assertSelfContainedCodexPlugin({
+    manifest,
+    manifestPath: everythingCodexMarketplacePluginManifestPath,
+    expectedName: 'everything-codex',
+    expectedDisplayName: 'Everything Codex',
+  });
 });
 
-test('plugins/everything-codex manifest interface assets resolve to root assets', () => {
-  const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
-  const pluginDir = path.dirname(path.dirname(everythingCodexMarketplacePluginManifestPath));
-
-  for (const ref of [manifest.interface.composerIcon, manifest.interface.logo]) {
-    const target = path.resolve(pluginDir, ref);
-    assert.ok(target.startsWith(path.join(repoRoot, 'assets') + path.sep), `Asset ref must resolve under root assets/: ${ref}`);
-    assert.ok(fs.existsSync(target), `Asset ref target missing: ${ref}`);
-  }
-});
-
-test('plugins/everything-codex README documents the upstream Codex fragility', () => {
+test('plugins/everything-codex README documents supported self-contained Codex plugin mode', () => {
   const readmePath = path.join(repoRoot, 'plugins', 'everything-codex', 'README.md');
   assert.ok(fs.existsSync(readmePath), 'Expected plugins/everything-codex/README.md');
   const source = fs.readFileSync(readmePath, 'utf8');
-  assert.ok(source.includes('openai/codex'), 'plugins/everything-codex README must link the upstream Codex discovery issue');
-  assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/everything-codex README must point at the supported manual sync flow');
+  assert.ok(source.includes('self-contained Codex plugin bundle'), 'plugins/everything-codex README must describe the cache-safe bundle layout');
+  assert.ok(source.includes('codex plugin marketplace add affaan-m/ECC'), 'plugins/everything-codex README must document the marketplace install flow');
+  assert.ok(!/currently fragile|unreliable upstream|parent-relative|not vendored/i.test(source), 'plugins/everything-codex README must not describe plugin mode as fragile after bundling runtime content');
 });
 
 test('release.sh updates both Codex marketplace plugin manifests', () => {
@@ -556,6 +588,14 @@ test('README version row matches package.json', () => {
   const match = readme.match(new RegExp(`^\\| \\*\\*Version\\*\\* \\| Plugin \\| Plugin \\| Reference config \\| (${semverPattern}) \\|(?: Instruction layer \\|)?$`, 'm'));
   assert.ok(match, 'Expected README version summary row');
   assert.strictEqual(match[1], expectedVersion);
+});
+
+test('README documents supported Codex plugin marketplace mode', () => {
+  const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  assert.ok(readme.includes('### Codex Plugin Marketplace'), 'Expected README Codex plugin marketplace section');
+  assert.ok(readme.includes('self-contained Codex plugin bundles'), 'README must describe the cache-safe plugin bundle layout');
+  assert.ok(readme.includes('codex plugin marketplace add affaan-m/ECC'), 'README must document the canonical Codex marketplace command');
+  assert.ok(!/Codex Plugin Marketplace \(experimental\)|Plugin mode is currently fragile|treat the plugin path as experimental/i.test(readme), 'README must not call Codex plugin mode experimental after self-contained bundling');
 });
 
 test('user-facing docs do not use overlong legacy marketplace install commands', () => {
@@ -596,6 +636,8 @@ test('.codex-plugin README uses current marketplace add flow', () => {
   assert.ok(readme.includes('codex plugin marketplace add'), 'Expected .codex-plugin README to document codex plugin marketplace add');
   assert.ok(readme.includes('codex plugin marketplace add affaan-m/ECC'), 'Expected .codex-plugin README to document the canonical ECC repo marketplace source');
   assert.ok(readme.includes('Official Plugin Directory publishing is coming soon'), 'Expected .codex-plugin README to document current official directory status');
+  assert.ok(readme.includes('self-contained Codex plugin bundles'), 'Expected .codex-plugin README to document bundled marketplace plugin directories');
+  assert.ok(!/currently fragile|unreliable upstream|parent-referenced/i.test(readme), '.codex-plugin README must not describe marketplace plugin mode as fragile after bundling runtime content');
   assert.ok(!/\bcodex plugin install\b/.test(readme), 'codex plugin install is not a current Codex CLI command');
 });
 
