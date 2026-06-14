@@ -72,6 +72,7 @@
     "manifests/",
     "mcp-configs/",
     "plugins/ecc/",
+    "plugins/everything-codex/",
     "rules/",
     "schemas/",
     "scripts/catalog.js",

@@ -17,6 +17,7 @@ MARKETPLACE_JSON=".claude-plugin/marketplace.json"
 CODEX_MARKETPLACE_JSON=".agents/plugins/marketplace.json"
 CODEX_PLUGIN_JSON=".codex-plugin/plugin.json"
 CODEX_MARKETPLACE_PLUGIN_JSON="plugins/ecc/.codex-plugin/plugin.json"
+CODEX_EVERYTHING_CODEX_PLUGIN_JSON="plugins/everything-codex/.codex-plugin/plugin.json"
 OPENCODE_PACKAGE_JSON=".opencode/package.json"
 OPENCODE_PACKAGE_LOCK_JSON=".opencode/package-lock.json"
 OPENCODE_ECC_HOOKS_PLUGIN=".opencode/plugins/ecc-hooks.ts"
@@ -60,7 +61,7 @@ if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
 fi
 
 # Verify versioned manifests exist
-for FILE in "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"; do
+for FILE in "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$CODEX_EVERYTHING_CODEX_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"; do
   if [[ ! -f "$FILE" ]]; then
     echo "Error: $FILE not found"
     exit 1
@@ -231,12 +232,17 @@ update_codex_marketplace_version() {
       console.error(`Error: ${file} does not contain a marketplace plugins array`);
       process.exit(1);
     }
-    const plugin = marketplace.plugins.find(entry => entry && entry.name === "ecc");
-    if (!plugin || typeof plugin !== "object") {
-      console.error(`Error: could not find ecc plugin entry in ${file}`);
-      process.exit(1);
+    const plugins = marketplace.plugins.filter(entry => entry && (entry.name === "ecc" || entry.name === "everything-codex"));
+    const names = new Set(plugins.map(entry => entry.name));
+    for (const name of ["ecc", "everything-codex"]) {
+      if (!names.has(name)) {
+        console.error(`Error: could not find ${name} plugin entry in ${file}`);
+        process.exit(1);
+      }
     }
-    plugin.version = version;
+    for (const plugin of plugins) {
+      plugin.version = version;
+    }
     fs.writeFileSync(file, `${JSON.stringify(marketplace, null, 2)}\n`);
   ' "$CODEX_MARKETPLACE_JSON" "$VERSION"
 }
@@ -272,6 +278,7 @@ update_version "$MARKETPLACE_JSON" "0,/\"version\": *\"[^\"]*\"/s|\"version\": *
 update_codex_marketplace_version
 update_version "$CODEX_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_version "$CODEX_MARKETPLACE_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
+update_version "$CODEX_EVERYTHING_CODEX_PLUGIN_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_version "$OPENCODE_PACKAGE_JSON" "s|\"version\": *\"[^\"]*\"|\"version\": \"$VERSION\"|"
 update_package_lock_version "$OPENCODE_PACKAGE_LOCK_JSON"
 update_opencode_hook_banner_version
@@ -291,7 +298,7 @@ node tests/scripts/build-opencode.test.js
 node tests/plugin-manifest.test.js
 
 # Stage, commit, tag, and push
-git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
+git add "$ROOT_PACKAGE_JSON" "$PACKAGE_LOCK_JSON" "$ROOT_AGENTS_MD" "$TR_AGENTS_MD" "$ZH_CN_AGENTS_MD" "$AGENT_YAML" "$VERSION_FILE" "$PLUGIN_JSON" "$MARKETPLACE_JSON" "$CODEX_MARKETPLACE_JSON" "$CODEX_PLUGIN_JSON" "$CODEX_MARKETPLACE_PLUGIN_JSON" "$CODEX_EVERYTHING_CODEX_PLUGIN_JSON" "$OPENCODE_PACKAGE_JSON" "$OPENCODE_PACKAGE_LOCK_JSON" "$OPENCODE_ECC_HOOKS_PLUGIN" "$README_FILE" "$ROOT_ZH_CN_README_FILE" "$TR_README_FILE" "$PT_BR_README_FILE" "$ZH_CN_README_FILE" "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 git commit -m "chore: bump plugin version to $VERSION"
 git tag "v$VERSION"
 git push origin main "v$VERSION"

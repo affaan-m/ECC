@@ -30,13 +30,15 @@ codex plugin marketplace add affaan-m/ECC
 codex plugin marketplace add /absolute/path/to/ECC
 ```
 
-The marketplace entry points at `plugins/ecc/` — Codex does not discover
+The marketplace exposes two local Codex entries: `ecc` for the stable short
+slug and `everything-codex` for the Codex-branded alias. Both entries point at
+concrete plugin subdirectories under `plugins/` — Codex does not discover
 plugins whose local marketplace `source.path` is the marketplace root (`./`),
-so the entry must target a concrete plugin subdirectory (see
-[#2128](https://github.com/affaan-m/ECC/issues/2128)). That thin plugin folder
-references the root `skills/` and `.mcp.json` so content stays single-sourced.
-After adding or updating the marketplace, restart Codex and install or enable
-`ecc` from the plugin directory.
+so each entry must target a concrete plugin subdirectory (see
+[#2128](https://github.com/affaan-m/ECC/issues/2128)). Those thin plugin
+folders reference the root `skills/` and `.mcp.json` so content stays
+single-sourced. After adding or updating the marketplace, restart Codex and
+install or enable `ecc` or `everything-codex` from the plugin directory.
 
 > **Plugin mode is currently fragile on Codex.** Marketplace discovery and
 > install work with this layout, but runtime skill loading from local/repo
@@ -53,6 +55,9 @@ repository shape: `plugins/ecc/.codex-plugin/plugin.json`,
 `plugins/ecc/skills/`, and the supporting README/assets. Until that listing is
 accepted, treat the public repo marketplace as the supported Codex distribution
 path and keep release copy framed as repo-marketplace/manual installation.
+
+`everything-codex` is an alias entry for Codex presentation; `ecc` remains the
+canonical short slug for existing installs and release compatibility.
 
 The installed plugin registers under the short slug `ecc` so tool and command names
 stay below provider length limits.

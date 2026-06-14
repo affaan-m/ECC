@@ -34,6 +34,7 @@ const selectiveInstallArchitecturePath = path.join(repoRoot, 'docs', 'SELECTIVE-
 const opencodePackageJsonPath = path.join(repoRoot, '.opencode', 'package.json');
 const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.json');
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
+const releaseScriptPath = path.join(repoRoot, 'scripts', 'release.sh');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
 
 let passed = 0;
@@ -393,6 +394,21 @@ test('marketplace.json plugin version matches package.json', () => {
   assert.strictEqual(marketplace.plugins[0].version, expectedVersion);
 });
 
+test('marketplace.json exposes the Everything Codex alias entry', () => {
+  const alias = marketplace.plugins.find((plugin) => plugin && plugin.name === 'everything-codex');
+  assert.ok(alias, 'Expected marketplace to expose everything-codex alias entry');
+  assert.strictEqual(alias.version, expectedVersion);
+  assert.deepStrictEqual(alias.source, {
+    source: 'local',
+    path: './plugins/everything-codex',
+  });
+  assert.deepStrictEqual(alias.policy, {
+    installation: 'AVAILABLE',
+    authentication: 'ON_INSTALL',
+  });
+  assert.strictEqual(alias.category, 'Productivity');
+});
+
 test('marketplace local plugin path resolves to a concrete plugin subdirectory (#2128)', () => {
   // Codex does not discover plugins whose local marketplace source.path is the
   // marketplace root itself ("./") — verified against Codex CLI 0.137.0 and
@@ -420,6 +436,7 @@ console.log('\n=== plugins/ecc Codex marketplace plugin folder ===\n');
 const marketplacePluginManifestPath = path.join(repoRoot, 'plugins', 'ecc', '.codex-plugin', 'plugin.json');
 const marketplacePluginManifest = loadJsonObject(marketplacePluginManifestPath, 'plugins/ecc/.codex-plugin/plugin.json');
 const rootCodexManifest = loadJsonObject(path.join(repoRoot, '.codex-plugin', 'plugin.json'), '.codex-plugin/plugin.json');
+const everythingCodexMarketplacePluginManifestPath = path.join(repoRoot, 'plugins', 'everything-codex', '.codex-plugin', 'plugin.json');
 
 test('plugins/ecc manifest name matches the root Codex manifest', () => {
   assert.strictEqual(marketplacePluginManifest.name, rootCodexManifest.name);
@@ -464,6 +481,64 @@ test('plugins/ecc README documents the upstream Codex fragility', () => {
   const source = fs.readFileSync(readmePath, 'utf8');
   assert.ok(source.includes('openai/codex'), 'plugins/ecc README must link the upstream Codex discovery issue');
   assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/ecc README must point at the supported manual sync flow');
+});
+
+console.log('\n=== plugins/everything-codex Codex marketplace plugin folder ===\n');
+
+test('plugins/everything-codex manifest uses the Codex alias identity', () => {
+  const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
+  assert.strictEqual(manifest.name, 'everything-codex');
+  assert.strictEqual(manifest.interface.displayName, 'Everything Codex');
+});
+
+test('plugins/everything-codex manifest version matches package.json and marketplace entry', () => {
+  const alias = marketplace.plugins.find((plugin) => plugin && plugin.name === 'everything-codex');
+  const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
+  assert.ok(alias, 'Expected marketplace everything-codex entry');
+  assert.strictEqual(manifest.version, expectedVersion);
+  assert.strictEqual(alias.version, manifest.version);
+});
+
+test('plugins/everything-codex manifest reuses root skills and MCP config without vendoring', () => {
+  const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
+  const pluginDir = path.dirname(path.dirname(everythingCodexMarketplacePluginManifestPath));
+
+  const skillsTarget = path.resolve(pluginDir, manifest.skills);
+  assert.strictEqual(skillsTarget, path.join(repoRoot, 'skills'), `skills ref must resolve to the root skills/ directory, got: ${manifest.skills}`);
+  assert.ok(fs.existsSync(skillsTarget), 'Root skills/ directory missing');
+
+  const mcpTarget = path.resolve(pluginDir, manifest.mcpServers);
+  assert.strictEqual(mcpTarget, path.join(repoRoot, '.mcp.json'), `mcpServers ref must resolve to the root .mcp.json, got: ${manifest.mcpServers}`);
+  assert.ok(fs.existsSync(mcpTarget), 'Root .mcp.json missing');
+
+  assert.ok(!fs.existsSync(path.join(pluginDir, 'skills')), 'plugins/everything-codex must not vendor a second skills/ copy');
+  assert.ok(!fs.existsSync(path.join(pluginDir, '.mcp.json')), 'plugins/everything-codex must not vendor a second .mcp.json');
+});
+
+test('plugins/everything-codex manifest interface assets resolve to root assets', () => {
+  const manifest = loadJsonObject(everythingCodexMarketplacePluginManifestPath, 'plugins/everything-codex/.codex-plugin/plugin.json');
+  const pluginDir = path.dirname(path.dirname(everythingCodexMarketplacePluginManifestPath));
+
+  for (const ref of [manifest.interface.composerIcon, manifest.interface.logo]) {
+    const target = path.resolve(pluginDir, ref);
+    assert.ok(target.startsWith(path.join(repoRoot, 'assets') + path.sep), `Asset ref must resolve under root assets/: ${ref}`);
+    assert.ok(fs.existsSync(target), `Asset ref target missing: ${ref}`);
+  }
+});
+
+test('plugins/everything-codex README documents the upstream Codex fragility', () => {
+  const readmePath = path.join(repoRoot, 'plugins', 'everything-codex', 'README.md');
+  assert.ok(fs.existsSync(readmePath), 'Expected plugins/everything-codex/README.md');
+  const source = fs.readFileSync(readmePath, 'utf8');
+  assert.ok(source.includes('openai/codex'), 'plugins/everything-codex README must link the upstream Codex discovery issue');
+  assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/everything-codex README must point at the supported manual sync flow');
+});
+
+test('release.sh updates both Codex marketplace plugin manifests', () => {
+  const source = fs.readFileSync(releaseScriptPath, 'utf8');
+  assert.ok(source.includes('CODEX_EVERYTHING_CODEX_PLUGIN_JSON="plugins/everything-codex/.codex-plugin/plugin.json"'), 'Expected release.sh to track the Everything Codex manifest');
+  assert.ok(source.includes('update_version "$CODEX_EVERYTHING_CODEX_PLUGIN_JSON"'), 'Expected release.sh to update the Everything Codex manifest version');
+  assert.ok(source.includes('entry.name === "ecc" || entry.name === "everything-codex"'), 'Expected release.sh to update both Codex marketplace entry versions');
 });
 
 test('.opencode/package.json version matches package.json', () => {

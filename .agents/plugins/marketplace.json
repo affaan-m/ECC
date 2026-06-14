@@ -16,6 +16,19 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Productivity"
+    },
+    {
+      "name": "everything-codex",
+      "version": "2.0.0",
+      "source": {
+        "source": "local",
+        "path": "./plugins/everything-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }

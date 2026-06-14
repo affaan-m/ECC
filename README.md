@@ -1386,11 +1386,11 @@ Codex macOS app:
 
 ### Codex Plugin Marketplace (experimental)
 
-The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) whose entry points at the `plugins/ecc/` plugin folder — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so the entry must target a concrete plugin subdirectory:
+The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) with two entries: `ecc` for the stable short slug and `everything-codex` as the Codex-branded alias. Both entries point at concrete plugin folders under `plugins/` — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so each entry must target a concrete plugin subdirectory:
 
 ```bash
 codex plugin marketplace add affaan-m/ECC
-codex plugin list   # ecc@ecc should appear
+codex plugin list   # ecc@ecc and everything-codex@ecc should appear
 ```
 
 **Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. Until that settles, treat the plugin path as experimental and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
