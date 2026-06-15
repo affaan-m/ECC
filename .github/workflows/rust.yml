@@ -1,0 +1,22 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "forky" ]
+  pull_request:
+    branches: [ "forky" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
