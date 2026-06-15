@@ -1586,6 +1586,49 @@ function runTests() {
       'custom phrase inside command substitution should be gated');
   })) passed++; else failed++;
 
+  // --- find -exec destructive detection ---
+
+  if (test('denies find -exec rm {} \\; as destructive', () => {
+    expectDestructiveDeny('find . -name "*.tmp" -exec rm {} \\;',
+      'find -exec rm');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec rm -rf {} \\; as destructive', () => {
+    expectDestructiveDeny('find . -name "*.tmp" -exec rm -rf {} \\;',
+      'find -exec rm -rf');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec rmdir {} \\; as destructive', () => {
+    expectDestructiveDeny('find . -name "*.tmp" -exec rmdir {} \\;',
+      'find -exec rmdir');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec unlink {} \\; as destructive', () => {
+    expectDestructiveDeny('find . -name "*.tmp" -exec unlink {} \\;',
+      'find -exec unlink');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec git reset --hard {} \\; as destructive', () => {
+    expectDestructiveDeny('find . -name "*.tmp" -exec git reset --hard {} \\;',
+      'find -exec git reset --hard');
+  })) passed++; else failed++;
+
+  if (test('allows find -exec echo {} \\; (non-destructive, routine gate)', () => {
+    clearState();
+    const input = { tool_name: 'Bash', tool_input: { command: 'find . -name "*.tmp" -exec echo {} \\;' } };
+    const result = runBashHook(input);
+    assert.strictEqual(result.code, 0, 'exit code should be 0');
+    const output = parseOutput(result.stdout);
+    assert.ok(output, 'should produce JSON output');
+    // Should be denied by routine gate (first bash), not destructive gate
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny',
+      'should be denied by routine gate');
+    assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'),
+      'should not be the destructive deny message');
+    assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('rollback'),
+      'should not mention rollback');
+  })) passed++; else failed++;
+
   // --- Issue #2078 review fix: warning emitted once per *distinct*
   // invalid regex, not once per process. Verifies the same-process
   // path that the reviewers (CodeRabbit + cubic) flagged.
