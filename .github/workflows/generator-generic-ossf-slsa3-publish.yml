@@ -9,10 +9,7 @@
 # https://github.com/slsa-framework/slsa-github-generator.
 # The provenance file can be verified using https://github.com/slsa-framework/slsa-verifier.
 # For more information about SLSA and how it improves the supply-chain, visit slsa.dev.
-#.github/workflows/generator-generic-ossf-slsa3-publish.yml
-#steps.build.outputs.package_file
-#echo "package_file=..." >> $GITHUB_OUTPUT 
-name: SLSA generic generator workflow #1
+name: SLSA generic generator
 
 on:
   workflow_dispatch:
