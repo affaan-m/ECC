@@ -2,8 +2,9 @@
 name: Copilot Task
 about: Assign a coding task to GitHub Copilot agent
 title: "[Copilot] "
-labels: copilot
-assignees: copilot
+labels: ''
+assignees: ''
+
 ---
 
 ## Task Description
