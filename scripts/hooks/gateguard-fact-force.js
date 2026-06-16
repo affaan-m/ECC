@@ -781,7 +781,10 @@ function isReadOnlyGitIntrospection(command) {
   }
 
   if (subcommand === 'diff') {
-    return args.length <= 1 && args.every(arg => ['--name-only', '--name-status'].includes(arg));
+    const allowedDiffArgs = new Set(['--name-only', '--name-status', '--cached', '--staged', '--stat']);
+    // git diff without arguments is read-only introspection
+    if (args.length === 0) return true;
+    return args.length <= 2 && args.every(arg => allowedDiffArgs.has(arg));
   }
 
   if (subcommand === 'log') {
@@ -789,7 +792,25 @@ function isReadOnlyGitIntrospection(command) {
   }
 
   if (subcommand === 'show') {
-    return args.length === 1 && !args[0].startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(args[0]);
+    // Permite: git show <ref>, git show --stat, git show --name-only,
+    // git show <ref> --stat, git show <ref> --name-only
+    if (args.length === 0) return false;
+    if (args.length === 1) {
+      const arg = args[0];
+      if (arg === '--stat' || arg === '--name-only') return true;
+      // ref
+      return !arg.startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(arg);
+    }
+    if (args.length === 2) {
+      const [first, second] = args;
+      // ref + flag
+      if (!first.startsWith('--') && /^[a-zA-Z0-9._:/ -]+$/.test(first) &&
+          (second === '--stat' || second === '--name-only')) {
+        return true;
+      }
+      return false;
+    }
+    return false;
   }
 
   if (subcommand === 'branch') {

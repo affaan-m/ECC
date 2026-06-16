@@ -1745,6 +1745,70 @@ function runTests() {
       'destructive gate is exempt from dampening');
   })) passed++; else failed++;
 
+  // --- Novos comandos Git read-only ---
+  console.log('\n  Novos comandos Git read-only:');
+
+  clearState();
+  if (test('allows git diff --cached', () => {
+    expectAllow('git diff --cached', 'git diff --cached');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git diff --staged', () => {
+    expectAllow('git diff --staged', 'git diff --staged');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git diff --stat', () => {
+    expectAllow('git diff --stat', 'git diff --stat');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git diff --name-only --cached', () => {
+    expectAllow('git diff --name-only --cached', 'git diff --name-only --cached');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git show --stat', () => {
+    expectAllow('git show --stat', 'git show --stat');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git show --name-only', () => {
+    expectAllow('git show --name-only', 'git show --name-only');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git show HEAD --stat', () => {
+    expectAllow('git show HEAD --stat', 'git show HEAD --stat');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('allows git show HEAD --name-only', () => {
+    expectAllow('git show HEAD --name-only', 'git show HEAD --name-only');
+  })) passed++; else failed++;
+
+  // Garantir que comandos destrutivos continuam negados
+  clearState();
+  if (test('still denies git reset --hard', () => {
+    expectDestructiveDeny('git reset --hard', 'git reset --hard');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('still denies git checkout -f', () => {
+    expectDestructiveDeny('git checkout -f main', 'git checkout -f');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('still denies git clean -fd', () => {
+    expectDestructiveDeny('git clean -fd', 'git clean -fd');
+  })) passed++; else failed++;
+
+  clearState();
+  if (test('still denies git push --force', () => {
+    expectDestructiveDeny('git push --force origin main', 'git push --force');
+  })) passed++; else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
