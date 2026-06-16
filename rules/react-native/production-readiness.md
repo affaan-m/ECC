@@ -10,7 +10,7 @@ paths:
 
 ## Architecture
 
-- Ship on the **New Architecture** (default SDK 52+, always-on SDK 55+). Audit native deps for compatibility.
+- Ship on the **New Architecture** (Fabric + TurboModules). It is the default in recent Expo SDKs and is mandatory (cannot be disabled) from SDK 55+. Audit native deps for compatibility.
 - Pin the Expo SDK version; upgrade deliberately with `npx expo install --check` and test on both platforms.
 
 ## Build & Release (EAS)
@@ -27,7 +27,7 @@ paths:
 
 ## Observability
 
-- Integrate crash + error reporting (e.g. **Sentry** via `@sentry/react-native` / `sentry-expo`) in production builds.
+- Integrate crash + error reporting (e.g. **Sentry** via `@sentry/react-native`) in production builds.
 - Add structured logging and, where useful, analytics — but strip verbose logs from release.
 - Capture and surface failed network/mutation states; do not fail silently.
 

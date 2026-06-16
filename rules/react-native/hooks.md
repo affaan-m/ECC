@@ -5,7 +5,7 @@ paths:
 ---
 # React Native / Expo Hooks
 
-> This file extends [common/hooks.md](../common/hooks.md) with React Native / Expo specific automation guidance.
+> This file extends [common/hooks.md](../common/hooks.md) with React Native / Expo-specific automation guidance.
 
 These are recommended PostToolUse automations to keep RN/Expo code healthy. Wire them in your hook runtime (or run manually); adapt commands to your package manager.
 

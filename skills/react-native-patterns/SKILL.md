@@ -10,7 +10,7 @@ Practical patterns for building production React Native apps with Expo. Covers n
 
 Libraries named below (NativeWind, Zustand/Jotai, TanStack Query) are common, well-established options shown for illustration — the patterns matter more than the specific package, and any equivalent works. Zod is used for validation to stay consistent with ECC's existing `typescript/` rules.
 
-These patterns assume the managed Expo workflow (Expo Router, EAS, `expo-*` modules) on the New Architecture (default SDK 52+, always-on SDK 55+). They do NOT assume the browser DOM — React Native has no `<div>`, no URL bar, and no web data-fetching defaults.
+These patterns assume the managed Expo workflow (Expo Router, EAS, `expo-*` modules) on the New Architecture (the default in recent Expo SDKs, mandatory from SDK 55+). They do NOT assume the browser DOM — React Native has no `<div>`, no URL bar, and no web data-fetching defaults.
 
 ## When to Activate
 
@@ -123,7 +123,7 @@ import { FlatList } from 'react-native'
 />
 ```
 
-Use `FlashList` (Shopify) for very large or heterogeneous lists.
+Use `FlashList` (Shopify) for large or heterogeneous lists.
 
 ### Styling: pick one system
 
@@ -181,22 +181,35 @@ const token = await SecureStore.getItemAsync('auth_token')
 
 ```tsx
 // app/(tabs)/orders.tsx
+import { memo, useCallback } from 'react'
 import { FlatList, Text, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 
-const Order = z.object({ id: z.string(), total: z.number(), status: z.string() })
-const Orders = z.array(Order)
+const OrderSchema = z.object({ id: z.string(), total: z.number(), status: z.string() })
+const OrdersSchema = z.array(OrderSchema)
+type Order = z.infer<typeof OrderSchema>
 
 function useOrders() {
   return useQuery({
     queryKey: ['orders'],
-    queryFn: async () => Orders.parse(await api.listOrders()),
+    queryFn: async () => OrdersSchema.parse(await api.listOrders()),
   })
 }
 
+// Memoized so its reference is stable across renders (see the lists guidance).
+const OrderRow = memo(function OrderRow({ item }: { item: Order }) {
+  return (
+    <View className="px-4 py-3 border-b border-neutral-200">
+      <Text className="font-medium">#{item.id}</Text>
+      <Text className="text-neutral-500">{item.status} · ${item.total}</Text>
+    </View>
+  )
+})
+
 export default function OrdersScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useOrders()
+  const renderItem = useCallback(({ item }: { item: Order }) => <OrderRow item={item} />, [])
 
   if (isLoading) return <Centered><Text>Loading…</Text></Centered>
   if (isError) return <Centered><Text accessibilityRole="alert">Could not load orders.</Text></Centered>
@@ -208,12 +221,7 @@ export default function OrdersScreen() {
       keyExtractor={(o) => o.id}
       onRefresh={refetch}
       refreshing={isRefetching}
-      renderItem={({ item }) => (
-        <View className="px-4 py-3 border-b border-neutral-200">
-          <Text className="font-medium">#{item.id}</Text>
-          <Text className="text-neutral-500">{item.status} · ${item.total}</Text>
-        </View>
-      )}
+      renderItem={renderItem}
     />
   )
 }

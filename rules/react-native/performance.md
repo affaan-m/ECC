@@ -34,7 +34,7 @@ paths:
 
 ## Runtime & Build
 
-- Build on the **New Architecture** (Fabric + TurboModules). It is the default from Expo SDK 52 and is always-on / cannot be disabled from SDK 55+. Verify every native dependency is New-Arch compatible before shipping.
+- Build on the **New Architecture** (Fabric + TurboModules). It is the default in recent Expo SDKs (opt-out still available on SDK 53–54) and is mandatory — cannot be disabled — from SDK 55+. Verify every native dependency is New-Arch compatible before shipping.
 - Ensure **Hermes** is enabled (default in modern Expo) for faster startup and lower memory.
 - Defer non-critical work after first paint; lazy-load heavy screens/modules.
 - Use `InteractionManager.runAfterInteractions` for work that can wait until animations finish.
