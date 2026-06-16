@@ -41,5 +41,5 @@ paths:
 
 ## Measuring
 
-- Profile with the React DevTools profiler, Flipper, and the in-app perf monitor.
+- Profile with the React DevTools profiler, the Hermes sampling profiler, and the in-app performance monitor. (Avoid Flipper — it is deprecated and not supported on the New Architecture.)
 - Watch for: long lists without virtualization, oversized images, frequent full-tree re-renders, and synchronous work on the JS thread.
