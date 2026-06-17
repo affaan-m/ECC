@@ -1,6 +1,6 @@
 import pytest
 from llm.core.types import ProviderType
-from llm.providers import AstraflowCNProvider, AstraflowProvider, ClaudeProvider, OpenAIProvider, OllamaProvider, get_provider
+from llm.providers import AstraflowCNProvider, AstraflowProvider, AtlasProvider, ClaudeProvider, OpenAIProvider, OllamaProvider, get_provider
 
 
 class TestGetProvider:
@@ -28,6 +28,11 @@ class TestGetProvider:
         provider = get_provider("astraflow_cn")
         assert isinstance(provider, AstraflowCNProvider)
         assert provider.provider_type == ProviderType.ASTRAFLOW_CN
+
+    def test_get_atlas_provider(self):
+        provider = get_provider("atlas")
+        assert isinstance(provider, AtlasProvider)
+        assert provider.provider_type == ProviderType.ATLAS
 
     def test_get_provider_by_enum(self):
         provider = get_provider(ProviderType.CLAUDE)
