@@ -52,12 +52,12 @@ origin: auto-extracted
 [Trigger conditions]
 ```
 
-   **Description rules (the `description` is the ONLY discovery surface):**
+**Description rules (the `description` is the ONLY discovery surface):**
 
-   - Claude scans only `name` + `description` at session start and loads the body on a match — so the description must name the *when*, not just the *what*.
-   - Lead with "Use when ..." followed by concrete, observable triggers (file patterns, error strings, task verbs, review situations) — the same conditions as the `## When to Use` section, compressed.
-   - Up to 1024 chars are allowed; spend them on triggers, not philosophy. Vague descriptions ("best practices for X") never match.
-   - `name` must equal the skill's directory name exactly.
+- Claude scans only `name` + `description` at session start and loads the body on a match — so the description must name the *when*, not just the *what*.
+- Lead with "Use when ..." followed by concrete, observable triggers (file patterns, error strings, task verbs, review situations) — the same conditions as the `## When to Use` section, compressed.
+- Up to 1024 chars are allowed; spend them on triggers, not philosophy. Vague descriptions ("best practices for X") never match.
+- `name` must equal the skill's directory name exactly.
 
 5. **Quality gate — Checklist + Holistic verdict**
 
