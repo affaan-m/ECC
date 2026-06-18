@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 92,
+  "totalCommands": 93,
   "commands": [
     {
       "command": "aside",
@@ -557,6 +557,28 @@
       "path": "commands/multi-workflow.md"
     },
     {
+      "command": "nuxt-review",
+      "description": "Comprehensive Nuxt 4 review for SSR data fetching, Nitro server routes, runtimeConfig exposure, route rules, middleware, hydration safety, and Nuxt-aware tests. Invokes the nuxt-reviewer agent with Vue and TypeScript companion reviewers as needed.",
+      "type": "testing",
+      "primaryAgents": [
+        "nuxt-reviewer",
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "allAgents": [
+        "nuxt-reviewer",
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "skills": [
+        "nuxt4-patterns",
+        "security-scan",
+        "vite-patterns",
+        "vue-patterns"
+      ],
+      "path": "commands/nuxt-review.md"
+    },
+    {
       "command": "orch-add-feature",
       "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
       "type": "orchestration",
@@ -1012,9 +1034,13 @@
       "planning": 2,
       "refactoring": 1,
       "review": 13,
-      "testing": 53
+      "testing": 54
     },
     "topAgents": [
+      {
+        "agent": "typescript-reviewer",
+        "count": 3
+      },
       {
         "agent": "dart-build-resolver",
         "count": 2
@@ -1024,7 +1050,7 @@
         "count": 2
       },
       {
-        "agent": "typescript-reviewer",
+        "agent": "vue-reviewer",
         "count": 2
       },
       {
@@ -1049,10 +1075,6 @@
       },
       {
         "agent": "kotlin-reviewer",
-        "count": 1
-      },
-      {
-        "agent": "planner",
         "count": 1
       }
     ],
@@ -1090,11 +1112,11 @@
         "count": 3
       },
       {
-        "skill": "cpp-coding-standards",
-        "count": 2
+        "skill": "security-scan",
+        "count": 3
       },
       {
-        "skill": "cpp-testing",
+        "skill": "cpp-coding-standards",
         "count": 2
       }
     ]
