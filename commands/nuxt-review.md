@@ -145,4 +145,4 @@ Recommendation: FAIL: Block merge until CRITICAL and HIGH issues are fixed.
 - Companion agents: `agents/vue-reviewer.md`, `agents/typescript-reviewer.md`
 - Skills: `skills/nuxt4-patterns/`, `skills/vue-patterns/`, `skills/vite-patterns/`
 - Rules: `rules/nuxt/`
-- Commands: `/vue-review`, `/code-review`, `/security-scan`
+- Commands: `/vue-review`, `/code-review`

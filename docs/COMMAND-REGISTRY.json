@@ -572,7 +572,6 @@
       ],
       "skills": [
         "nuxt4-patterns",
-        "security-scan",
         "vite-patterns",
         "vue-patterns"
       ],
@@ -1112,11 +1111,11 @@
         "count": 3
       },
       {
-        "skill": "security-scan",
-        "count": 3
+        "skill": "cpp-coding-standards",
+        "count": 2
       },
       {
-        "skill": "cpp-coding-standards",
+        "skill": "cpp-testing",
         "count": 2
       }
     ]
