@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "auto-format",
+      "description": "Automatically format TypeScript and JavaScript files on save",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx|js)$",
+      "action": {
+        "type": "agent",
+        "prompt": "A TypeScript or JavaScript file was just saved. If there are any obvious formatting issues (indentation, trailing whitespace, import ordering), fix them now."
+      },
+      "enabled": true
+    }
+  ]
+}

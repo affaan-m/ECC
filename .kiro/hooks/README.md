@@ -1,15 +1,114 @@
 # Hooks in Kiro
 
-Kiro supports **two types of hooks**:
+Kiro hooks automate agent and shell actions in response to IDE events.
 
-1. **IDE Hooks** (this directory) - Standalone `.kiro.hook` files that work in the Kiro IDE
-2. **CLI Hooks** - Embedded in agent configuration files for CLI usage
+## Primary Format: JSON (`*.json`)
 
-## IDE Hooks (Standalone Files)
+The canonical hook format is JSON, stored as `<hook-id>.json` in `.kiro/hooks/`.
 
-IDE hooks are `.kiro.hook` files in `.kiro/hooks/` that appear in the Agent Hooks panel in the Kiro IDE.
+### Schema
 
-### Format
+```json
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "hook-name",
+      "description": "What this hook does",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx)$",
+      "action": {
+        "type": "agent",
+        "prompt": "Prompt sent to the agent when triggered."
+      },
+      "enabled": true
+    }
+  ]
+}
+```
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `version` | Always `"v1"` |
+| `hooks` | Array of hook definitions |
+| `hooks[].name` | Hook identifier (kebab-case) |
+| `hooks[].trigger` | Event that fires the hook (see below) |
+| `hooks[].action` | Action to perform |
+| `hooks[].enabled` | Whether the hook is active |
+
+### Optional Fields
+
+| Field | Description |
+|-------|-------------|
+| `hooks[].description` | Human-readable description |
+| `hooks[].matcher` | Regex to filter which events fire (depends on trigger) |
+
+### Available Triggers
+
+| Trigger | Fires when | Matcher tested against |
+|---------|-----------|----------------------|
+| `PreToolUse` | Before a tool is executed | Tool name |
+| `PostToolUse` | After a tool is executed | Tool name |
+| `SessionStart` | New session begins | — |
+| `Stop` | Agent finishes responding | — |
+| `UserPromptSubmit` | User submits a prompt | — |
+| `PreTaskExec` | Before a spec task starts | — |
+| `PostTaskExec` | After a spec task completes | — |
+| `PostFileCreate` | File is created | File path |
+| `PostFileSave` | File is saved | File path |
+| `PostFileDelete` | File is deleted | File path |
+| `Manual` | Manually triggered from panel | — |
+
+### Action Types
+
+**`agent`** — Sends a prompt to the agent:
+```json
+{ "type": "agent", "prompt": "Your instruction here." }
+```
+
+**`command`** — Runs a shell command:
+```json
+{ "type": "command", "command": "npm run lint" }
+```
+
+### Exit Code Semantics (command actions)
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success; stdout forwarded for SessionStart/UserPromptSubmit/PreToolUse |
+| `2` | Block the action (PreToolUse, UserPromptSubmit, PreTaskExec); stderr forwarded |
+| Other | Silent failure, no block |
+
+### Example
+
+```json
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "typecheck-on-edit",
+      "description": "Run TypeScript type checking when TS files are saved",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx)$",
+      "action": {
+        "type": "agent",
+        "prompt": "A TypeScript file was just saved. Check for type errors."
+      },
+      "enabled": true
+    }
+  ]
+}
+```
+
+---
+
+## Legacy Format: `.kiro.hook` (deprecated)
+
+The `*-legacy.kiro.hook` files in this directory use an older IDE-specific format. They are kept for reference but are **no longer the canonical source**. The JSON files above are authoritative.
+
+### Legacy Schema
 
 ```json
 {
@@ -22,72 +121,35 @@ IDE hooks are `.kiro.hook` files in `.kiro/hooks/` that appear in the Agent Hook
     "patterns": ["*.ts", "*.tsx"]
   },
   "then": {
-    "type": "runCommand",
-    "command": "npx tsc --noEmit",
-    "timeout": 30
+    "type": "askAgent",
+    "prompt": "Prompt text."
   }
 }
 ```
 
-### Required Fields
+### Legacy → JSON Trigger Mapping
 
-- `version` - Hook version (e.g., "1.0.0")
-- `enabled` - Whether the hook is active (true/false)
-- `name` - Hook identifier (kebab-case)
-- `description` - Human-readable description
-- `when` - Trigger configuration
-- `then` - Action to perform
+| Legacy `when.type` | JSON `trigger` |
+|--------------------|----------------|
+| `fileEdited` | `PostFileSave` |
+| `fileCreated` | `PostFileCreate` |
+| `fileDeleted` | `PostFileDelete` |
+| `userTriggered` | `Manual` |
+| `promptSubmit` | `UserPromptSubmit` |
+| `agentStop` | `Stop` |
+| `preToolUse` | `PreToolUse` |
+| `postToolUse` | `PostToolUse` |
 
-### Available Trigger Types
+### Legacy → JSON Action Mapping
 
-- `fileEdited` - When a file matching patterns is edited
-- `fileCreated` - When a file matching patterns is created
-- `fileDeleted` - When a file matching patterns is deleted
-- `userTriggered` - Manual trigger from Agent Hooks panel
-- `promptSubmit` - When user submits a prompt
-- `agentStop` - When agent finishes responding
-- `preToolUse` - Before a tool is executed (requires `toolTypes`)
-- `postToolUse` - After a tool is executed (requires `toolTypes`)
+| Legacy `then.type` | JSON `action.type` |
+|--------------------|-------------------|
+| `askAgent` | `agent` |
+| `runCommand` | `command` |
 
-### Action Types
-
-- `runCommand` - Execute a shell command
-  - Optional `timeout` field (in seconds)
-- `askAgent` - Send a prompt to the agent
-
-### Environment Variables
-
-When hooks run, these environment variables are available:
-- `$KIRO_HOOK_FILE` - Path to the file that triggered the hook (for file events)
-
-## CLI Hooks (Embedded in Agents)
-
-CLI hooks are embedded in agent configuration files (`.kiro/agents/*.json`) for use with `kiro-cli`.
-
-### Format
-
-```json
-{
-  "name": "my-agent",
-  "hooks": {
-    "agentSpawn": [
-      {
-        "command": "git status"
-      }
-    ],
-    "postToolUse": [
-      {
-        "matcher": "fs_write",
-        "command": "npx tsc --noEmit"
-      }
-    ]
-  }
-}
-```
-
-See `.kiro/agents/tdd-guide-with-hooks.json` for a complete example.
+---
 
 ## Documentation
 
-- IDE Hooks: https://kiro.dev/docs/hooks/
-- CLI Hooks: https://kiro.dev/docs/cli/hooks/
+- Hooks guide: https://kiro.dev/docs/hooks/
+- CLI hooks: https://kiro.dev/docs/cli/hooks/

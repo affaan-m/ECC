@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "security-check-on-create",
+      "description": "Run a quick security check when new files are created in sensitive directories.",
+      "trigger": "PostFileCreate",
+      "matcher": "(auth|api|middleware)",
+      "action": {
+        "type": "agent",
+        "prompt": "A new file was created in a security-sensitive directory. Check for common security issues: hardcoded secrets, missing input validation, SQL injection risks, missing authentication/authorization checks."
+      },
+      "enabled": true
+    }
+  ]
+}
