@@ -3,12 +3,12 @@
     "hooks": [
         {
             "name": "doc-file-warning",
-            "description": "Warn before creating documentation files to avoid unnecessary documentation",
-            "trigger": "PreToolUse",
-            "matcher": "fs_write",
+            "description": "Warn when documentation files are created without explicit user request",
+            "trigger": "PostFileCreate",
+            "matcher": "(README|CHANGELOG|docs/|\\.md$)",
             "action": {
                 "type": "agent",
-                "prompt": "You are about to create or modify a file. If this is a documentation file (README, CHANGELOG, docs/, etc.) that was not explicitly requested by the user, consider whether it's truly necessary. Documentation should be created only when:\n\n1. Explicitly requested by the user\n2. Required for project setup or usage\n3. Part of a formal specification or requirement\n\nIf you're creating documentation that wasn't requested, briefly explain why it's necessary or skip it. Proceed with the write operation if appropriate."
+                "prompt": "A documentation file was just created. If this was not explicitly requested by the user, consider whether it's truly necessary. Documentation should be created only when:\n\n1. Explicitly requested by the user\n2. Required for project setup or usage\n3. Part of a formal specification or requirement\n\nIf you created documentation that wasn't requested, briefly explain why it's necessary or remove it."
             },
             "enabled": true
         }
