@@ -99,3 +99,9 @@ Pick route rules per route group, not globally. Marketing pages, catalogs, dashb
 - Non-critical data is lazy and has explicit loading UI
 - Route rules match the page's SEO and freshness requirements
 - Heavy interactive islands are lazy-loaded or lazily hydrated
+
+## Related Surfaces
+
+- Agent: `nuxt-reviewer` for Nuxt SSR, Nitro, route rules, runtime config, middleware, and Nuxt-aware tests.
+- Command: `/nuxt-review` as the legacy slash-entry compatibility surface for Nuxt review workflows.
+- Rules: `rules/nuxt/` for installable Nuxt patterns, security, and testing guidance.
