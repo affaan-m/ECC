@@ -208,6 +208,7 @@ commands:
   - multi-frontend
   - multi-plan
   - multi-workflow
+  - nuxt-review
   - orch-add-feature
   - orch-build-mvp
   - orch-change-feature
