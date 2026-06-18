@@ -545,15 +545,24 @@ function isDestructiveBash(command) {
   const extra = getExtraDestructiveRegex();
   if (extra && extra.test(flattened)) return true;
 
-  // Check for destructive find -exec patterns
-  if (isDestructiveFindExec(raw)) return true;
+  // Check for destructive find -exec patterns on raw body segments (before quote-stripping)
+  // so that quoted exec binaries and compound-command prefixes are both handled correctly.
+  // splitCommandSegments strips quotes before splitting, so passing its output to
+  // isDestructiveFindExec would turn `find . -exec 'rm' {} \;` into `find . -exec  {} \;`
+  // — the binary name disappears and the check returns false.  Using raw body text avoids
+  // that false-negative while also catching `&&`, `;`, `|`, and `||` compound forms.
+  const bodies = collectExecutableBodies(raw);
+  for (const body of bodies) {
+    for (const rawSeg of body.split(/[;|&]+/).map(s => s.trim()).filter(Boolean)) {
+      if (isDestructiveFindExec(rawSeg)) return true;
+    }
+  }
 
-  const segments = collectExecutableBodies(raw).flatMap(splitCommandSegments);
+  const segments = bodies.flatMap(splitCommandSegments);
   for (const segment of segments) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
-    if (isDestructiveFindExec(segment)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;

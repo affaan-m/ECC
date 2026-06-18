@@ -1628,6 +1628,11 @@ function runTests() {
       'pipe bypass: find -exec rm');
   })) passed++; else failed++;
 
+  if (test('denies find -exec rm {} \\; after || (OR-chain bypass)', () => {
+    expectDestructiveDeny('false || find . -exec rm {} \\;',
+      'OR-chain bypass: find -exec rm');
+  })) passed++; else failed++;
+
   if (test('allows find -exec echo {} \\; (non-destructive, routine gate)', () => {
     clearState();
     const input = { tool_name: 'Bash', tool_input: { command: 'find . -name "*.tmp" -exec echo {} \\;' } };
