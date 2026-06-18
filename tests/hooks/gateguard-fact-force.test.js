@@ -1613,6 +1613,21 @@ function runTests() {
       'find -exec git reset --hard');
   })) passed++; else failed++;
 
+  if (test('denies find -exec rm {} \\; preceded by && (bypass via compound command)', () => {
+    expectDestructiveDeny('echo x && find . -exec rm {} \\;',
+      'compound command bypass: find -exec rm');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec rm -rf {} \\; preceded by ; (bypass via semicolon)', () => {
+    expectDestructiveDeny('true; find . -name "*.log" -exec rm -rf {} \\;',
+      'semicolon bypass: find -exec rm -rf');
+  })) passed++; else failed++;
+
+  if (test('denies find -exec rm {} \\; in pipeline (bypass via pipe)', () => {
+    expectDestructiveDeny('echo start | find . -exec rm {} \\;',
+      'pipe bypass: find -exec rm');
+  })) passed++; else failed++;
+
   if (test('allows find -exec echo {} \\; (non-destructive, routine gate)', () => {
     clearState();
     const input = { tool_name: 'Bash', tool_input: { command: 'find . -name "*.tmp" -exec echo {} \\;' } };
