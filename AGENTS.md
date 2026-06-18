@@ -47,6 +47,7 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
+| nuxt-reviewer | Nuxt 4 application review | Nuxt projects |
 
 ## Agent Orchestration
 

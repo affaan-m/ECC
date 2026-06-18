@@ -43,6 +43,7 @@
 | rust-build-resolver | Rust 构建错误 | Rust 构建失败 |
 | pytorch-build-resolver | PyTorch 运行时/CUDA/训练错误 | PyTorch 构建/训练失败 |
 | typescript-reviewer | TypeScript/JavaScript 代码审查 | TypeScript/JavaScript 项目 |
+| nuxt-reviewer | Nuxt 4 应用审查 | Nuxt 项目 |
 
 ## 智能体编排
 
