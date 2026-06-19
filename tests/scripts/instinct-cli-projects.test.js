@@ -17,6 +17,23 @@ const cliPath = path.join(
   'instinct-cli.py'
 );
 
+function detectPython3() {
+  for (const bin of ['python3', 'python']) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+    if (r.status === 0 && /Python 3/.test(r.stdout + r.stderr)) return bin;
+  }
+  return null;
+}
+
+const PYTHON3 = detectPython3();
+if (!PYTHON3) {
+  console.log('\n=== Testing instinct-cli.py projects maintenance ===\n');
+  console.log('  - skipped: Python 3 not found in PATH');
+  console.log('\nPassed: 0');
+  console.log('Failed: 0');
+  process.exit(0);
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -101,7 +118,7 @@ function runGit(cwd, args) {
 }
 
 function runCli(root, args, options = {}) {
-  return spawnSync('python3', [cliPath, ...args], {
+  return spawnSync(PYTHON3, [cliPath, ...args], {
     cwd: options.cwd || repoRoot,
     encoding: 'utf8',
     env: {
