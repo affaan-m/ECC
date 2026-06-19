@@ -14,6 +14,8 @@ const {
   openStore,
 } = require('../../scripts/lib/github-coordination/store');
 
+const { DEFAULT_SCHEMA_VERSION } = require('../../scripts/lib/github-coordination/policy');
+
 function test(name, fn) {
   try {
     fn();
@@ -71,8 +73,7 @@ if (test('passes schemaVersion from state when present', () => {
 if (test('uses DEFAULT_SCHEMA_VERSION when state.schemaVersion is absent', () => {
   const store = makeStore();
   upsertCoordinationWorkItem(store, 'a/b', { number: 1, labels: [] }, { status: 'available' }, 'sync');
-  assert.ok(typeof store.calls[0].metadata.schemaVersion === 'string');
-  assert.ok(store.calls[0].metadata.schemaVersion.length > 0);
+  assert.strictEqual(store.calls[0].metadata.schemaVersion, DEFAULT_SCHEMA_VERSION);
 })) passed++; else failed++;
 
 if (test('sets issueUrl from issue.url when present', () => {
@@ -201,4 +202,7 @@ async function runAsyncTests() {
   if (totalFailed > 0) process.exit(1);
 }
 
-runAsyncTests();
+runAsyncTests().catch(err => {
+  console.error(`Unexpected async test failure: ${err.message}`);
+  process.exit(1);
+});
