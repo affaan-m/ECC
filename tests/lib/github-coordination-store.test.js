@@ -14,7 +14,7 @@ const {
   openStore,
 } = require('../../scripts/lib/github-coordination/store');
 
-const { DEFAULT_SCHEMA_VERSION } = require('../../scripts/lib/github-coordination/policy');
+const { DEFAULT_SCHEMA_VERSION, DEFAULT_POLICY } = require('../../scripts/lib/github-coordination/policy');
 
 function test(name, fn) {
   try {
@@ -102,15 +102,15 @@ if (test('sets issueTitle to null when issue.title is absent', () => {
 
 if (test('uses custom policy from options.policy', () => {
   const store = makeStore();
-  const customPolicy = { schemaVersion: 'custom', labels: {}, review: {}, validation: {}, branchModel: {}, project: { enabled: false, fieldNames: {} } };
+  const customPolicy = { schemaVersion: 'custom', labels: {}, review: {}, validation: {}, branchModel: {}, project: { enabled: true, fieldNames: {} } };
   upsertCoordinationWorkItem(store, 'a/b', { number: 1, labels: [] }, { status: 'available' }, 'sync', { policy: customPolicy });
-  assert.ok(store.calls.length === 1);
+  assert.strictEqual(store.calls[0].metadata.projectProjection.enabled, true);
 })) passed++; else failed++;
 
 if (test('falls back to DEFAULT_POLICY when options.policy is absent', () => {
   const store = makeStore();
   upsertCoordinationWorkItem(store, 'a/b', { number: 1, labels: [] }, { status: 'available' }, 'sync', {});
-  assert.ok(store.calls.length === 1);
+  assert.strictEqual(store.calls[0].metadata.projectProjection.enabled, DEFAULT_POLICY.project.enabled);
 })) passed++; else failed++;
 
 if (test('sets priority high when state.status is blocked', () => {
