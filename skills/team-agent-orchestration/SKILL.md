@@ -1,7 +1,8 @@
 ---
 name: team-agent-orchestration
 description: "Run team-based orchestration for agent squads using work items, ownership, agent Kanban, merge gates, and control pane handoffs."
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Team Agent Orchestration

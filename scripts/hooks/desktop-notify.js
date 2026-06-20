@@ -236,15 +236,26 @@ module.exports = { run };
 if (require.main === module) {
   const MAX_STDIN = 1024 * 1024;
   let data = '';
+  let truncated = false;
 
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
     if (data.length < MAX_STDIN) {
-      data += chunk.substring(0, MAX_STDIN - data.length);
+      const remaining = MAX_STDIN - data.length;
+      data += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
     }
   });
   process.stdin.on('end', () => {
     const output = run(data);
+    // Never echo truncated stdin — invalid JSON on stdout is reported as a
+    // Stop hook failure (#2090).
+    if (truncated) {
+      log('[DesktopNotify] stdin exceeded 1MB; suppressing pass-through (fail-open)');
+      return;
+    }
     if (output) process.stdout.write(output);
   });
 }

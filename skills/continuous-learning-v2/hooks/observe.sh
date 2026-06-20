@@ -268,12 +268,24 @@ if [ "$PARSED_OK" != "True" ]; then
   echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
 import json, sys, os, re
 
+# Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
+# schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+# prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]+)"""
-    r"([A-Za-z]+\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,})"
+    r"""(["'"'"'\s:=]{1,8})"""
+    r"((?:bearer|basic|token|bot)\s+)?"
+    r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
+
+import signal
+def _ecc_bail(*_):
+    sys.exit(0)
+try:
+    signal.signal(signal.SIGALRM, _ecc_bail)
+    signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
+except Exception:
+    pass
 
 raw = sys.stdin.read()[:2000]
 raw = _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", raw)
@@ -302,6 +314,15 @@ export TIMESTAMP="$timestamp"
 
 echo "$PARSED" | "$PYTHON_CMD" -c '
 import json, sys, os, re
+import signal
+
+def _ecc_bail(*_):
+    sys.exit(0)
+try:
+    signal.signal(signal.SIGALRM, _ecc_bail)
+    signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
+except Exception:
+    pass
 
 parsed = json.load(sys.stdin)
 observation = {
@@ -315,11 +336,14 @@ observation = {
 
 # Scrub secrets: match common key=value, key: value, and key"value patterns
 # Includes optional auth scheme (e.g., "Bearer", "Basic") before token
+# Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
+# schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+# prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
 _SECRET_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization|credentials?|auth)"
-    r"""(["'"'"'\s:=]+)"""
-    r"([A-Za-z]+\s+)?"
-    r"([A-Za-z0-9_\-/.+=]{8,})"
+    r"""(["'"'"'\s:=]{1,8})"""
+    r"((?:bearer|basic|token|bot)\s+)?"
+    r"([A-Za-z0-9_\-/.+=]{8,256})"
 )
 
 def scrub(val):

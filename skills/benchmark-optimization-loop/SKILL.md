@@ -1,7 +1,8 @@
 ---
 name: benchmark-optimization-loop
 description: Use when the user asks to make something faster, try many variants, run recursive optimization, benchmark latency/throughput/cost, or choose the best implementation by repeated measured tests.
-origin: ECC
+metadata:
+  origin: ECC
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 

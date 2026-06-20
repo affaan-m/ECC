@@ -1,7 +1,8 @@
 ---
 name: dynamic-workflow-mode
 description: "Design task-local harnesses, eval gates, and reusable skill extraction for Claude dynamic workflow mode and other adaptive agent harnesses."
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Dynamic Workflow Mode

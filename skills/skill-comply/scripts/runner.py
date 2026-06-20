@@ -15,6 +15,11 @@ from scripts.scenario_generator import Scenario
 
 SANDBOX_BASE = Path("/tmp/skill-comply-sandbox")
 ALLOWED_MODELS = frozenset({"haiku", "sonnet", "opus"})
+ALLOWED_SETUP_EXECUTABLES = frozenset({
+    "git", "npm", "pip", "pip3",
+    "touch", "mkdir", "cp", "mv", "echo",
+    "chmod", "unzip", "tar",
+})
 # Shell builtins cannot be invoked via subprocess.run; cwd is already
 # controlled by the cwd= keyword. Scenarios that include these in
 # setup_commands (a common shell-style convention) must be tolerated.
@@ -105,6 +110,9 @@ def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
         parts = shlex.split(cmd)
         if not parts or parts[0] in SHELL_BUILTINS:
             # Shell builtins (cd/pushd/popd) cannot run as subprocess; skip.
+            continue
+        if parts[0] not in ALLOWED_SETUP_EXECUTABLES:
+            # Restrict to known-safe executables to prevent arbitrary code execution.
             continue
         try:
             subprocess.run(parts, cwd=sandbox_dir, capture_output=True)

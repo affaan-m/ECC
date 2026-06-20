@@ -183,7 +183,8 @@
         "skills/springboot-patterns",
         "skills/springboot-tdd",
         "skills/springboot-verification",
-        "skills/ui-to-vue"
+        "skills/ui-to-vue",
+        "skills/vue-patterns"
       ],
       "targets": [
         "claude",

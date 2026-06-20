@@ -4,18 +4,99 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+      - "npm"
     groups:
-      minor-and-patch:
+      npm-minor-and-patch:
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
+      npm-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     labels:
       - "dependencies"
       - "ci"
+    groups:
+      actions-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      pip-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+      pip-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "pip"
+    directory: "/skills/skill-comply"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      skill-comply-pip-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+      skill-comply-pip-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directory: "/ecc2"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "rust"
+    groups:
+      cargo-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+      cargo-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

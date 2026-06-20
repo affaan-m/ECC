@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 84,
+  "totalCommands": 92,
   "commands": [
     {
       "command": "aside",
@@ -49,7 +49,7 @@
     },
     {
       "command": "cost-report",
-      "description": "Generate a local Claude Code cost report from a cost-tracker SQLite database.",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -110,6 +110,72 @@
         "security-scan"
       ],
       "path": "commands/ecc-guide.md"
+    },
+    {
+      "command": "epic-claim",
+      "description": "Claim an epic issue, stamp coordination state, and sync local ownership.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature"
+      ],
+      "path": "commands/epic-claim.md"
+    },
+    {
+      "command": "epic-decompose",
+      "description": "Break an epic into task children without creating task branches.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-decompose.md"
+    },
+    {
+      "command": "epic-publish",
+      "description": "Publish a validated epic update back to the issue and local cache.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-publish.md"
+    },
+    {
+      "command": "epic-review",
+      "description": "Mark epic review requested, approved, or changes requested.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-review.md"
+    },
+    {
+      "command": "epic-sync",
+      "description": "Sync epic issue bodies, labels, and local coordination snapshots from GitHub.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-sync.md"
+    },
+    {
+      "command": "epic-unblock",
+      "description": "Sweep blocked epic issues and reopen anything whose dependencies are closed.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-unblock.md"
+    },
+    {
+      "command": "epic-validate",
+      "description": "Validate epic readiness, dependencies, and coordination policy.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-validate.md"
     },
     {
       "command": "evolve",
@@ -919,17 +985,34 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/update-docs.md"
+    },
+    {
+      "command": "vue-review",
+      "description": "Comprehensive Vue.js code review for Composition API correctness, reactivity, composable patterns, template security, accessibility, and Vue-specific performance. Invokes the vue-reviewer agent (and typescript-reviewer alongside on .vue/.ts changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "allAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "skills": [
+        "vue-patterns"
+      ],
+      "path": "commands/vue-review.md"
     }
   ],
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 7,
+      "general": 10,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 9,
-      "testing": 52
+      "review": 13,
+      "testing": 53
     },
     "topAgents": [
       {
@@ -938,6 +1021,10 @@
       },
       {
         "agent": "flutter-reviewer",
+        "count": 2
+      },
+      {
+        "agent": "typescript-reviewer",
         "count": 2
       },
       {
@@ -967,16 +1054,20 @@
       {
         "agent": "planner",
         "count": 1
-      },
-      {
-        "agent": "python-reviewer",
-        "count": 1
       }
     ],
     "topSkills": [
       {
         "skill": "continuous-learning-v2",
         "count": 6
+      },
+      {
+        "skill": "orch-add-feature",
+        "count": 4
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 4
       },
       {
         "skill": "tdd-workflow",
@@ -988,14 +1079,6 @@
       },
       {
         "skill": "flutter-dart-code-review",
-        "count": 3
-      },
-      {
-        "skill": "orch-add-feature",
-        "count": 3
-      },
-      {
-        "skill": "orch-change-feature",
         "count": 3
       },
       {

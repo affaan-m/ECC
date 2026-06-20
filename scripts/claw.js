@@ -32,7 +32,8 @@ function getSessionPath(name) {
 function listSessions(dir) {
   const clawDir = dir || getClawDir();
   if (!fs.existsSync(clawDir)) return [];
-  return fs.readdirSync(clawDir)
+  return fs
+    .readdirSync(clawDir)
     .filter(f => f.endsWith('.md'))
     .map(f => f.replace(/\.md$/, ''));
 }
@@ -55,7 +56,10 @@ function appendTurn(filePath, role, content, timestamp) {
 function normalizeSkillList(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(s => String(s).trim()).filter(Boolean);
-  return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  return String(raw)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
 function loadECCContext(skillList) {
@@ -104,7 +108,7 @@ function askClaude(systemPrompt, history, userMessage, model) {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: '' },
     timeout: 300000,
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32'
   });
 
   if (result.error) {
@@ -120,9 +124,14 @@ function askClaude(systemPrompt, history, userMessage, model) {
 
 function parseTurns(history) {
   const turns = [];
+  // Bound the input: the lazy `[\s\S]*?` body re-scans toward EOF from each
+  // `### [` start, so a very large/adversarial history file can drive O(n^2)
+  // scanning (ReDoS). Session histories are far below this cap.
+  const text = String(history || '');
+  const safe = text.length > 5_000_000 ? text.slice(0, 5_000_000) : text;
   const regex = /### \[([^\]]+)\] ([^\n]+)\n([\s\S]*?)\n---\n/g;
   let match;
-  while ((match = regex.exec(history)) !== null) {
+  while ((match = regex.exec(safe)) !== null) {
     turns.push({ timestamp: match[1], role: match[2], content: match[3] });
   }
   return turns;
@@ -145,12 +154,14 @@ function getSessionMetrics(filePath) {
     userTurns,
     assistantTurns,
     charCount,
-    tokenEstimate,
+    tokenEstimate
   };
 }
 
 function searchSessions(query, dir) {
-  const q = String(query || '').toLowerCase().trim();
+  const q = String(query || '')
+    .toLowerCase()
+    .trim();
   if (!q) return [];
 
   const sessionDir = dir || getClawDir();
@@ -297,7 +308,7 @@ function main() {
     sessionName: initialSessionName,
     sessionPath: getSessionPath(initialSessionName),
     model: DEFAULT_MODEL,
-    skills: normalizeSkillList(process.env.CLAW_SKILLS || ''),
+    skills: normalizeSkillList(process.env.CLAW_SKILLS || '')
   };
 
   let eccContext = loadECCContext(state.skills);
@@ -314,7 +325,7 @@ function main() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const prompt = () => {
-    rl.question('claw> ', (input) => {
+    rl.question('claw> ', input => {
       const line = input.trim();
       if (!line) return prompt();
 
@@ -469,7 +480,7 @@ module.exports = {
   compactSession,
   exportSession,
   branchSession,
-  main,
+  main
 };
 
 if (require.main === module) {

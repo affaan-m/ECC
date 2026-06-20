@@ -1356,7 +1356,12 @@ fn dependency_fingerprint(root: &Path, files: &[&str]) -> Result<String> {
         hasher.update(&content);
         hasher.update([0xff]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 output arrays no longer implement LowerHex; hex-encode manually.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn is_symlink_to(path: &Path, target: &Path) -> Result<bool> {

@@ -101,19 +101,6 @@ function parseReadmeExpectations(readmeContent) {
     { category: 'commands', mode: 'exact', expected: Number(quickStartMatch[3]), source: 'README.md quick-start summary' }
   );
 
-  const releaseNoteMatch = readmeContent.match(
-    /actual OSS surface:\s+(\d+)\s+agents,\s+(\d+)\s+skills,\s+and\s+(\d+)\s+legacy command shims/i
-  );
-  if (!releaseNoteMatch) {
-    throw new Error('README.md is missing the rc.1 release-note catalog summary');
-  }
-
-  expectations.push(
-    { category: 'agents', mode: 'exact', expected: Number(releaseNoteMatch[1]), source: 'README.md rc.1 release-note summary' },
-    { category: 'skills', mode: 'exact', expected: Number(releaseNoteMatch[2]), source: 'README.md rc.1 release-note summary' },
-    { category: 'commands', mode: 'exact', expected: Number(releaseNoteMatch[3]), source: 'README.md rc.1 release-note summary' }
-  );
-
   const projectTreeAgentsMatch = readmeContent.match(/^\|\s*--\s*agents\/\s*#\s*(\d+)\s+specialized subagents for delegation\s*$/im);
   if (!projectTreeAgentsMatch) {
     throw new Error('README.md project tree is missing the agents count');
@@ -427,13 +414,6 @@ function syncEnglishReadme(content, catalog) {
     (_, prefix, __, agentsSuffix, ___, skillsSuffix) =>
       `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count} legacy command shims`,
     'README.md quick-start summary'
-  );
-  nextContent = replaceOrThrow(
-    nextContent,
-    /(actual OSS surface:\s+)(\d+)(\s+agents,\s+)(\d+)(\s+skills,\s+and\s+)(\d+)(\s+legacy command shims)/i,
-    (_, prefix, __, agentsSuffix, ___, skillsSuffix, ____, commandsSuffix) =>
-      `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count}${commandsSuffix}`,
-    'README.md rc.1 release-note summary'
   );
   nextContent = replaceOrThrow(
     nextContent,

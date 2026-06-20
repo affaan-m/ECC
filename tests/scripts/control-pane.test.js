@@ -4,20 +4,15 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const initSqlJs = require('sql.js');
 
-const {
-  createControlPaneServer,
-  parseArgs,
-  runAction,
-} = require('../../scripts/lib/control-pane/server');
-const {
-  main: runControlPaneCli,
-} = require('../../scripts/control-pane');
+const { createControlPaneServer, parseArgs, runAction, isAllowedHostHeader, isAllowedOrigin, buildAllowedHostnames } = require('../../scripts/lib/control-pane/server');
+const { main: runControlPaneCli } = require('../../scripts/control-pane');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'control-pane.js');
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -138,300 +133,491 @@ async function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (await test('parses CLI arguments for local-only serving', async () => {
-    const parsed = parseArgs([
-      'node',
-      'scripts/control-pane.js',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      '8788',
-      '--db',
-      '/tmp/ecc2.db',
-      '--state-db',
-      '/tmp/ecc-state.db',
-      '--query',
-      'Hermes memory',
-      '--no-open',
-    ]);
+  if (
+    await test('parses CLI arguments for local-only serving', async () => {
+      const parsed = parseArgs([
+        'node',
+        'scripts/control-pane.js',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '8788',
+        '--db',
+        '/tmp/ecc2.db',
+        '--state-db',
+        '/tmp/ecc-state.db',
+        '--query',
+        'Hermes memory',
+        '--no-open'
+      ]);
 
-    assert.strictEqual(parsed.host, '127.0.0.1');
-    assert.strictEqual(parsed.port, 8788);
-    assert.strictEqual(parsed.dbPath, '/tmp/ecc2.db');
-    assert.strictEqual(parsed.stateDbPath, '/tmp/ecc-state.db');
-    assert.strictEqual(parsed.query, 'Hermes memory');
-    assert.strictEqual(parsed.openBrowser, false);
-  })) passed++; else failed++;
+      assert.strictEqual(parsed.host, '127.0.0.1');
+      assert.strictEqual(parsed.port, 8788);
+      assert.strictEqual(parsed.dbPath, '/tmp/ecc2.db');
+      assert.strictEqual(parsed.stateDbPath, '/tmp/ecc-state.db');
+      assert.strictEqual(parsed.query, 'Hermes memory');
+      assert.strictEqual(parsed.openBrowser, false);
+    })
+  )
+    passed++;
+  else failed++;
 
-  if (await test('rejects invalid CLI port values', async () => {
-    assert.throws(
-      () => parseArgs(['node', 'scripts/control-pane.js', '--port', '70000']),
-      /Invalid --port value/
-    );
-    assert.throws(
-      () => parseArgs(['node', 'scripts/control-pane.js', '--port', 'wat']),
-      /Invalid --port value/
-    );
-  })) passed++; else failed++;
+  if (
+    await test('rejects invalid CLI port values', async () => {
+      assert.throws(() => parseArgs(['node', 'scripts/control-pane.js', '--port', '70000']), /Invalid --port value/);
+      assert.throws(() => parseArgs(['node', 'scripts/control-pane.js', '--port', 'wat']), /Invalid --port value/);
+    })
+  )
+    passed++;
+  else failed++;
 
-  if (await test('rejects missing state database path values', async () => {
-    assert.throws(
-      () => parseArgs(['node', 'scripts/control-pane.js', '--state-db']),
-      /Invalid --state-db value/
-    );
-    assert.throws(
-      () => parseArgs(['node', 'scripts/control-pane.js', '--state-db', '--query', 'Hermes']),
-      /Invalid --state-db value/
-    );
-  })) passed++; else failed++;
+  if (
+    await test('rejects missing state database path values', async () => {
+      assert.throws(() => parseArgs(['node', 'scripts/control-pane.js', '--state-db']), /Invalid --state-db value/);
+      assert.throws(() => parseArgs(['node', 'scripts/control-pane.js', '--state-db', '--query', 'Hermes']), /Invalid --state-db value/);
+    })
+  )
+    passed++;
+  else failed++;
 
-  if (await test('serves HTML and snapshot JSON from a temp ECC2 database', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-server-'));
-    const dbPath = path.join(tempDir, 'ecc2.db');
+  if (
+    await test('serves HTML and snapshot JSON from a temp ECC2 database', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-server-'));
+      const dbPath = path.join(tempDir, 'ecc2.db');
 
-    try {
-      await writeMinimalDatabase(dbPath);
-      const app = await createControlPaneServer({
-        host: '127.0.0.1',
-        port: 0,
-        dbPath,
-        repoRoot: REPO_ROOT,
-        query: 'control pane',
-        allowActions: false,
-      });
-
-      await app.listen();
       try {
-        const html = await fetchLocal(`${app.url}/`).then(response => response.text());
-        assert.ok(html.includes('ECC Control Pane'));
-        assert.ok(html.includes('id="app"'));
-        assert.ok(html.includes('id="work-items"'));
-        assert.ok(html.includes('function renderWorkItems'));
-        assert.ok(html.includes('function showError'));
-        assert.ok(html.includes('response.ok'));
+        await writeMinimalDatabase(dbPath);
+        const app = await createControlPaneServer({
+          host: '127.0.0.1',
+          port: 0,
+          dbPath,
+          repoRoot: REPO_ROOT,
+          query: 'control pane',
+          allowActions: false
+        });
 
-        const snapshot = await fetchLocal(`${app.url}/api/snapshot?query=control`).then(response => response.json());
-        assert.strictEqual(snapshot.schemaVersion, 'ecc.control-pane.snapshot.v1');
-        assert.strictEqual(snapshot.summary.totalSessions, 1);
-        assert.strictEqual(snapshot.workItems.totalCount, 0);
-        assert.strictEqual(snapshot.sessions[0].id, 'session-a');
+        await app.listen();
+        try {
+          const html = await fetchLocal(`${app.url}/`).then(response => response.text());
+          assert.ok(html.includes('ECC Control Pane'));
+          assert.ok(html.includes('id="app"'));
+          assert.ok(html.includes('id="work-items"'));
+          assert.ok(html.includes('function renderWorkItems'));
+          assert.ok(html.includes('function showError'));
+          assert.ok(html.includes('response.ok'));
+          // Board controls must use escaped data-* attributes + delegated
+          // listeners, never ids concatenated into inline onclick JS (XSS).
+          assert.ok(html.includes('data-wi-action'));
+          assert.ok(!/onclick="ecc(Claim|Move)Item\(/.test(html), 'no inline onclick handlers with interpolated ids');
+
+          const snapshot = await fetchLocal(`${app.url}/api/snapshot?query=control`).then(response => response.json());
+          assert.strictEqual(snapshot.schemaVersion, 'ecc.control-pane.snapshot.v1');
+          assert.strictEqual(snapshot.summary.totalSessions, 1);
+          assert.strictEqual(snapshot.workItems.totalCount, 0);
+          assert.strictEqual(snapshot.sessions[0].id, 'session-a');
+        } finally {
+          await app.close();
+        }
       } finally {
-        await app.close();
+        fs.rmSync(tempDir, { recursive: true, force: true });
       }
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+    })
+  )
+    passed++;
+  else failed++;
 
-  if (await test('serves health, asset, not-found, invalid body, and read-only action responses', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-routes-'));
+  if (
+    await test('serves health, asset, not-found, invalid body, and read-only action responses', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-routes-'));
 
-    try {
-      const app = await createControlPaneServer({
-        host: '127.0.0.1',
-        port: 0,
-        dbPath: path.join(tempDir, 'missing.db'),
-        repoRoot: tempDir,
-        allowActions: false,
-      });
-
-      await app.listen();
       try {
-        const health = await fetchLocal(`${app.url}/api/health`).then(response => response.json());
-        assert.strictEqual(health.ok, true);
-        assert.strictEqual(health.allowActions, false);
-
-        const realAssetApp = await createControlPaneServer({
+        const app = await createControlPaneServer({
           host: '127.0.0.1',
           port: 0,
           dbPath: path.join(tempDir, 'missing.db'),
-          repoRoot: REPO_ROOT,
-          allowActions: false,
+          repoRoot: tempDir,
+          allowActions: false
         });
-        await realAssetApp.listen();
+
+        await app.listen();
         try {
-          const realAsset = await fetchLocal(`${realAssetApp.url}/assets/ecc-icon.svg`);
-          assert.strictEqual(realAsset.status, 200);
-          assert.match(await realAsset.text(), /<svg/);
+          const health = await fetchLocal(`${app.url}/api/health`).then(response => response.json());
+          assert.strictEqual(health.ok, true);
+          assert.strictEqual(health.allowActions, false);
+
+          const realAssetApp = await createControlPaneServer({
+            host: '127.0.0.1',
+            port: 0,
+            dbPath: path.join(tempDir, 'missing.db'),
+            repoRoot: REPO_ROOT,
+            allowActions: false
+          });
+          await realAssetApp.listen();
+          try {
+            const realAsset = await fetchLocal(`${realAssetApp.url}/assets/ecc-icon.svg`);
+            assert.strictEqual(realAsset.status, 200);
+            assert.match(await realAsset.text(), /<svg/);
+          } finally {
+            await realAssetApp.close();
+          }
+
+          const missingAsset = await fetchLocal(`${app.url}/assets/ecc-icon.svg`);
+          assert.strictEqual(missingAsset.status, 404);
+          assert.strictEqual(await missingAsset.text(), 'not found');
+
+          const missing = await fetchLocal(`${app.url}/not-here`).then(response => response.json());
+          assert.strictEqual(missing.ok, false);
+          assert.strictEqual(missing.error, 'not found');
+
+          const blocked = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: 'memory' })
+          }).then(async response => ({ status: response.status, body: await response.json() }));
+          assert.strictEqual(blocked.status, 403);
+          assert.match(blocked.body.error, /disabled/);
+
+          const invalidBody = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{bad json'
+          }).then(async response => ({ status: response.status, body: await response.json() }));
+          assert.strictEqual(invalidBody.status, 403);
         } finally {
-          await realAssetApp.close();
+          await app.close();
         }
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
 
-        const missingAsset = await fetchLocal(`${app.url}/assets/ecc-icon.svg`);
-        assert.strictEqual(missingAsset.status, 404);
-        assert.strictEqual(await missingAsset.text(), 'not found');
+  if (
+    await test('guards copy-only and unknown action requests', async () => {
+      const app = await createControlPaneServer({
+        host: '127.0.0.1',
+        port: 0,
+        repoRoot: REPO_ROOT,
+        allowActions: true
+      });
 
-        const missing = await fetchLocal(`${app.url}/not-here`).then(response => response.json());
-        assert.strictEqual(missing.ok, false);
-        assert.strictEqual(missing.error, 'not found');
-
-        const blocked = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
+      await app.listen();
+      try {
+        const copyOnly = await fetchLocal(`${app.url}/api/actions/open-dashboard`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ query: 'memory' }),
+          body: '{}'
         }).then(async response => ({ status: response.status, body: await response.json() }));
-        assert.strictEqual(blocked.status, 403);
-        assert.match(blocked.body.error, /disabled/);
+        assert.strictEqual(copyOnly.status, 400);
+        assert.strictEqual(copyOnly.body.action, 'open-dashboard');
+        assert.match(copyOnly.body.error, /copy-only/);
+
+        const unknown = await fetchLocal(`${app.url}/api/actions/nope`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}'
+        }).then(async response => ({ status: response.status, body: await response.json() }));
+        assert.strictEqual(unknown.status, 500);
+        assert.match(unknown.body.error, /Unknown control-pane action/);
 
         const invalidBody = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: '{bad json',
+          body: '{bad json'
         }).then(async response => ({ status: response.status, body: await response.json() }));
-        assert.strictEqual(invalidBody.status, 403);
+        assert.strictEqual(invalidBody.status, 500);
+        assert.match(invalidBody.body.error, /JSON/);
       } finally {
         await app.close();
       }
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+    })
+  )
+    passed++;
+  else failed++;
 
-  if (await test('guards copy-only and unknown action requests', async () => {
-    const app = await createControlPaneServer({
-      host: '127.0.0.1',
-      port: 0,
-      repoRoot: REPO_ROOT,
-      allowActions: true,
-    });
+  if (
+    await test('classifies Host and Origin headers against the loopback allowlist', async () => {
+      const allowed = buildAllowedHostnames('127.0.0.1');
+      assert.strictEqual(isAllowedHostHeader('127.0.0.1:8765', allowed), true);
+      assert.strictEqual(isAllowedHostHeader('localhost:8765', allowed), true);
+      assert.strictEqual(isAllowedHostHeader('LOCALHOST:8765', allowed), true);
+      assert.strictEqual(isAllowedHostHeader('[::1]:8765', allowed), true);
+      assert.strictEqual(isAllowedHostHeader('attacker.example.com:8765', allowed), false);
+      assert.strictEqual(isAllowedHostHeader('rebind.dnsbin.io', allowed), false);
+      assert.strictEqual(isAllowedHostHeader('', allowed), false);
+      assert.strictEqual(isAllowedHostHeader(undefined, allowed), false);
 
-    await app.listen();
-    try {
-      const copyOnly = await fetchLocal(`${app.url}/api/actions/open-dashboard`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}',
-      }).then(async response => ({ status: response.status, body: await response.json() }));
-      assert.strictEqual(copyOnly.status, 400);
-      assert.strictEqual(copyOnly.body.action, 'open-dashboard');
-      assert.match(copyOnly.body.error, /copy-only/);
+      // Origin is optional; absence is allowed for non-browser clients.
+      assert.strictEqual(isAllowedOrigin(undefined, allowed), true);
+      assert.strictEqual(isAllowedOrigin('', allowed), true);
+      assert.strictEqual(isAllowedOrigin('http://127.0.0.1:8765', allowed), true);
+      assert.strictEqual(isAllowedOrigin('http://localhost', allowed), true);
+      assert.strictEqual(isAllowedOrigin('http://attacker.example.com', allowed), false);
+      assert.strictEqual(isAllowedOrigin('not-a-url', allowed), false);
 
-      const unknown = await fetchLocal(`${app.url}/api/actions/nope`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}',
-      }).then(async response => ({ status: response.status, body: await response.json() }));
-      assert.strictEqual(unknown.status, 500);
-      assert.match(unknown.body.error, /Unknown control-pane action/);
+      // A non-default configured host should still admit loopback variants.
+      const lan = buildAllowedHostnames('192.168.1.10');
+      assert.strictEqual(isAllowedHostHeader('192.168.1.10:8765', lan), true);
+      assert.strictEqual(isAllowedHostHeader('127.0.0.1:8765', lan), true);
+      assert.strictEqual(isAllowedHostHeader('attacker.example.com:8765', lan), false);
+    })
+  )
+    passed++;
+  else failed++;
 
-      const invalidBody = await fetchLocal(`${app.url}/api/actions/sync-knowledge`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{bad json',
-      }).then(async response => ({ status: response.status, body: await response.json() }));
-      assert.strictEqual(invalidBody.status, 500);
-      assert.match(invalidBody.body.error, /JSON/);
-    } finally {
-      await app.close();
-    }
-  })) passed++; else failed++;
+  if (
+    await test('rejects requests forged with a non-loopback Host header (DNS rebinding gate)', async () => {
+      const app = await createControlPaneServer({
+        host: '127.0.0.1',
+        port: 0,
+        repoRoot: REPO_ROOT,
+        allowActions: true
+      });
 
-  if (await test('runAction captures success, failure, and bounded output', async () => {
-    const repoRoot = REPO_ROOT;
-    const success = await runAction({
-      id: 'node-success',
-      command: process.execPath,
-      args: ['-e', 'process.stdout.write("x".repeat(21010))'],
-      cwd: repoRoot,
-    });
-    assert.strictEqual(success.ok, true);
-    assert.strictEqual(success.code, 0);
-    assert.ok(success.stdout.includes('[truncated '));
+      await app.listen();
+      try {
+        const address = app.server.address();
+        const actualPort = address && typeof address === 'object' ? address.port : 0;
 
-    const failure = await runAction({
-      id: 'node-failure',
-      command: process.execPath,
-      args: ['-e', 'process.stderr.write("bad"); process.exit(7)'],
-      cwd: repoRoot,
-    });
-    assert.strictEqual(failure.ok, false);
-    assert.strictEqual(failure.code, 7);
-    assert.strictEqual(failure.stderr, 'bad');
+        const sendWithHeaders = (method, pathname, headers, body) =>
+          new Promise((resolve, reject) => {
+            const req = http.request({ host: '127.0.0.1', port: actualPort, method, path: pathname, headers }, response => {
+              let chunks = '';
+              response.on('data', chunk => {
+                chunks += chunk.toString('utf8');
+              });
+              response.on('end', () => {
+                resolve({ status: response.statusCode, body: chunks });
+              });
+            });
+            req.on('error', reject);
+            if (body) req.write(body);
+            req.end();
+          });
 
-    const spawnError = await runAction({
-      id: 'spawn-error',
-      command: 'definitely-not-ecc-control-pane-command',
-      args: [],
-      cwd: repoRoot,
-    });
-    assert.strictEqual(spawnError.ok, false);
-    assert.strictEqual(spawnError.code, null);
-    assert.match(spawnError.error, /ENOENT/);
-  })) passed++; else failed++;
+        const forgedHost = await sendWithHeaders('GET', '/api/health', { Host: 'attacker.example.com:1234' });
+        assert.strictEqual(forgedHost.status, 421);
+        assert.match(forgedHost.body, /Misdirected request/);
 
-  if (await test('runAction terminates commands that exceed the local timeout', async () => {
-    const timedOut = await runAction(
-      {
-        id: 'node-timeout',
+        const forgedActionHost = await sendWithHeaders(
+          'POST',
+          '/api/actions/sync-knowledge',
+          { Host: 'attacker.example.com:1234', 'content-type': 'application/json' },
+          JSON.stringify({ query: 'rebound' })
+        );
+        assert.strictEqual(forgedActionHost.status, 421);
+
+        const forgedOrigin = await sendWithHeaders('GET', '/api/health', {
+          Host: '127.0.0.1:' + actualPort,
+          Origin: 'http://attacker.example.com'
+        });
+        assert.strictEqual(forgedOrigin.status, 403);
+        assert.match(forgedOrigin.body, /Forbidden origin/);
+
+        const okHost = await sendWithHeaders('GET', '/api/health', { Host: '127.0.0.1:' + actualPort });
+        assert.strictEqual(okHost.status, 200);
+        const okBody = JSON.parse(okHost.body);
+        assert.strictEqual(okBody.ok, true);
+      } finally {
+        await app.close();
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('runAction captures success, failure, and bounded output', async () => {
+      const repoRoot = REPO_ROOT;
+      const success = await runAction({
+        id: 'node-success',
         command: process.execPath,
-        args: ['-e', 'setTimeout(() => {}, 5000)'],
-        cwd: REPO_ROOT,
-      },
-      { timeoutMs: 25 }
-    );
+        args: ['-e', 'process.stdout.write("x".repeat(21010))'],
+        cwd: repoRoot
+      });
+      assert.strictEqual(success.ok, true);
+      assert.strictEqual(success.code, 0);
+      assert.ok(success.stdout.includes('[truncated '));
 
-    assert.strictEqual(timedOut.ok, false);
-    assert.strictEqual(timedOut.signal, 'SIGTERM');
-  })) passed++; else failed++;
+      const failure = await runAction({
+        id: 'node-failure',
+        command: process.execPath,
+        args: ['-e', 'process.stderr.write("bad"); process.exit(7)'],
+        cwd: repoRoot
+      });
+      assert.strictEqual(failure.ok, false);
+      assert.strictEqual(failure.code, 7);
+      assert.strictEqual(failure.stderr, 'bad');
 
-  if (await test('CLI prints help', async () => {
-    const result = spawnSync('node', [SCRIPT, '--help'], {
-      encoding: 'utf8',
-      cwd: REPO_ROOT,
-    });
+      const spawnError = await runAction({
+        id: 'spawn-error',
+        command: 'definitely-not-ecc-control-pane-command',
+        args: [],
+        cwd: repoRoot
+      });
+      assert.strictEqual(spawnError.ok, false);
+      assert.strictEqual(spawnError.code, null);
+      assert.match(spawnError.error, /ENOENT/);
+    })
+  )
+    passed++;
+  else failed++;
 
-    assert.strictEqual(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes('Usage:'));
-    assert.ok(result.stdout.includes('control-pane'));
-  })) passed++; else failed++;
-
-  if (await test('CLI browser opener handles spawn errors', async () => {
-    const source = fs.readFileSync(SCRIPT, 'utf8');
-
-    assert.match(source, /child\.on\('error'/);
-    assert.match(source, /child\.unref\(\)/);
-  })) passed++; else failed++;
-
-  if (await test('CLI main handles help without starting a server', async () => {
-    const originalLog = console.log;
-    const lines = [];
-    console.log = line => {
-      lines.push(String(line));
-    };
-    try {
-      await runControlPaneCli(['node', 'scripts/control-pane.js', '--help']);
-    } finally {
-      console.log = originalLog;
-    }
-
-    assert.match(lines.join('\n'), /Usage:/);
-    assert.match(lines.join('\n'), /--read-only/);
-  })) passed++; else failed++;
-
-  if (await test('CLI starts a read-only local server and shuts down on SIGTERM', async () => {
-    const child = spawn(process.execPath, [SCRIPT, '--host', '127.0.0.1', '--port', '0', '--read-only', '--no-open'], {
-      cwd: REPO_ROOT,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        ECC2_DB_PATH: path.join(os.tmpdir(), 'missing-ecc2-cli.db'),
-      },
-    });
-    const exitPromise = waitForExit(child);
-
-    try {
-      const ready = await waitForCliReady(child);
-      assert.match(ready.stdout, /ECC Control Pane: http:\/\/127\.0\.0\.1:\d+/);
-      assert.match(ready.stdout, /Actions: read-only/);
-    } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-      const result = await exitPromise;
-      assert.ok(
-        result.code === 0 || result.signal === 'SIGTERM',
-        `expected graceful shutdown or SIGTERM, got code=${result.code} signal=${result.signal}`
+  if (
+    await test('runAction terminates commands that exceed the local timeout', async () => {
+      const timedOut = await runAction(
+        {
+          id: 'node-timeout',
+          command: process.execPath,
+          args: ['-e', 'setTimeout(() => {}, 5000)'],
+          cwd: REPO_ROOT
+        },
+        { timeoutMs: 25 }
       );
-    }
-  })) passed++; else failed++;
+
+      assert.strictEqual(timedOut.ok, false);
+      assert.strictEqual(timedOut.signal, 'SIGTERM');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('CLI prints help', async () => {
+      const result = spawnSync('node', [SCRIPT, '--help'], {
+        encoding: 'utf8',
+        cwd: REPO_ROOT
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(result.stdout.includes('Usage:'));
+      assert.ok(result.stdout.includes('control-pane'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('CLI browser opener handles spawn errors', async () => {
+      const source = fs.readFileSync(SCRIPT, 'utf8');
+
+      assert.match(source, /child\.on\('error'/);
+      assert.match(source, /child\.unref\(\)/);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('CLI main handles help without starting a server', async () => {
+      const originalLog = console.log;
+      const lines = [];
+      console.log = line => {
+        lines.push(String(line));
+      };
+      try {
+        await runControlPaneCli(['node', 'scripts/control-pane.js', '--help']);
+      } finally {
+        console.log = originalLog;
+      }
+
+      assert.match(lines.join('\n'), /Usage:/);
+      assert.match(lines.join('\n'), /--read-only/);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('CLI starts a read-only local server and shuts down on SIGTERM', async () => {
+      const child = spawn(process.execPath, [SCRIPT, '--host', '127.0.0.1', '--port', '0', '--read-only', '--no-open'], {
+        cwd: REPO_ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          ECC2_DB_PATH: path.join(os.tmpdir(), 'missing-ecc2-cli.db')
+        }
+      });
+      const exitPromise = waitForExit(child);
+
+      try {
+        const ready = await waitForCliReady(child);
+        assert.match(ready.stdout, /ECC Control Pane: http:\/\/127\.0\.0\.1:\d+/);
+        assert.match(ready.stdout, /Actions: read-only/);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+        const result = await exitPromise;
+        assert.ok(result.code === 0 || result.signal === 'SIGTERM', `expected graceful shutdown or SIGTERM, got code=${result.code} signal=${result.signal}`);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('interactive board: claim and move work items via POST endpoints', async () => {
+      const { createStateStore } = require('../../scripts/lib/state-store');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-board-'));
+      const stateDbPath = path.join(tempDir, 'state.db');
+
+      try {
+        const store = await createStateStore({ dbPath: stateDbPath });
+        store.upsertWorkItem({ id: 'wi-1', source: 'github-issue', title: 'Unassigned card', status: 'open', priority: 'high', owner: null, metadata: {} });
+        store.upsertWorkItem({ id: 'wi-2', source: 'manual', title: 'Movable card', status: 'open', owner: 'codex', metadata: {} });
+        store.close();
+
+        const post = (app, suffix, body) =>
+          fetchLocal(`${app.url}/api/work-items/${suffix}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+
+        // Read-only server rejects board edits.
+        const ro = await createControlPaneServer({ host: '127.0.0.1', port: 0, stateDbPath, repoRoot: REPO_ROOT, allowActions: false });
+        await ro.listen();
+        try {
+          const denied = await post(ro, 'wi-1/claim', { owner: 'alice' });
+          assert.strictEqual(denied.status, 403);
+        } finally {
+          await ro.close();
+        }
+
+        // Interactive server claims and moves.
+        const app = await createControlPaneServer({ host: '127.0.0.1', port: 0, stateDbPath, repoRoot: REPO_ROOT, allowActions: true });
+        await app.listen();
+        try {
+          const claim = await post(app, 'wi-1/claim', { owner: 'alice', as: 'human' }).then(r => r.json());
+          assert.strictEqual(claim.ok, true);
+          assert.strictEqual(claim.item.owner, 'alice');
+          assert.strictEqual(claim.item.status, 'running');
+          assert.strictEqual(claim.item.metadata.assigneeKind, 'human');
+
+          const move = await post(app, 'wi-2/move', { lane: 'blocked' }).then(r => r.json());
+          assert.strictEqual(move.ok, true);
+          assert.strictEqual(move.item.status, 'blocked');
+
+          // Snapshot reflects the mutations.
+          const snapshot = await fetchLocal(`${app.url}/api/snapshot`).then(r => r.json());
+          const byId = id => snapshot.workItems.items.find(i => i.id === id);
+          assert.strictEqual(byId('wi-1').assigneeKind, 'human');
+          assert.strictEqual(byId('wi-2').kanbanState, 'blocked');
+
+          // Invalid lane is a 400.
+          const bad = await post(app, 'wi-2/move', { lane: 'nope' });
+          assert.strictEqual(bad.status, 400);
+        } finally {
+          await app.close();
+        }
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);

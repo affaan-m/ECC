@@ -1,7 +1,8 @@
 ---
 name: uspto-database
 description: USPTO patent and trademark data workflow for official record lookup, PatentSearch queries, TSDR checks, assignment data, and reproducible IP research logs.
-origin: community
+metadata:
+  origin: community
 ---
 
 # USPTO Database

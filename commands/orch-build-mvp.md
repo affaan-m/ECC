@@ -25,7 +25,7 @@ Invoke the `orch-build-mvp` skill with `$ARGUMENTS` as the doc path. The skill
 (via the shared `orch-pipeline` engine, full pipeline incl. Scaffold) will:
 
 1. Read the spec; extract scope, locked decisions, and a feature list ordered as
-   **thin vertical slices** (one end-to-end path first). → **GATE 1** (approve slice plan).
+**thin vertical slices** (one end-to-end path first). → **GATE 1** (approve slice plan).
 2. Scaffold the first end-to-end slice.
 3. Reuse the GAN harness: translate the SDD into `gan-harness/spec.md` +
    `eval-rubric.md`, then drive `/gan-build "<brief>" --skip-planner`
