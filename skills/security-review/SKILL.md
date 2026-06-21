@@ -67,7 +67,7 @@ export async function createUser(input: unknown) {
     return await db.users.create(validated)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return { success: false, errors: error.errors }
+      return { success: false, errors: error.issues }
     }
     throw error
   }
