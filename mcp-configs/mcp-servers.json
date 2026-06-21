@@ -150,11 +150,11 @@
     },
     "browser-use": {
       "type": "http",
-      "url": "https://api.browser-use.com/mcp",
+      "url": "https://api.browser-use.com/v3/mcp",
       "headers": {
         "x-browser-use-api-key": "YOUR_BROWSER_USE_KEY_HERE"
       },
-      "description": "AI browser agent for web tasks"
+      "description": "AI cloud browser agent (Browser Use v3) — run autonomous web tasks (scrape, fill forms, multi-step flows) from natural language. Tools: run_session, get_session, send_task, stop_session, get_session_messages, list_sessions, list_browser_profiles. Default model claude-sonnet-4.6. Stealth + residential proxies on by default. Requires bu_ API key. See skills/browser-use/SKILL.md."
     },
     "devfleet": {
       "type": "http",
