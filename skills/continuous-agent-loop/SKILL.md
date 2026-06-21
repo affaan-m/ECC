@@ -14,6 +14,8 @@ This is the v1.8+ canonical loop skill name. It supersedes `autonomous-loops` wh
 ```text
 Start
   |
+  +-- Need bounded objective with strict acceptance criteria? -- yes --> goal-loop
+  |
   +-- Need strict CI/PR control? -- yes --> continuous-pr
   |
   +-- Need RFC decomposition? -- yes --> rfc-dag
@@ -30,6 +32,9 @@ Recommended production stack:
 2. quality gates (`plankton-code-quality` + `/quality-gate`)
 3. eval loop (`eval-harness`)
 4. session persistence (`nanoclaw-repl`)
+
+For focused, single-objective work with strict budgets and acceptance criteria,
+use [`goal-loop`](../goal-loop/SKILL.md) instead.
 
 ## Failure Modes
 
