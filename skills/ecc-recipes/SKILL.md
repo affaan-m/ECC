@@ -1,10 +1,9 @@
 ---
 name: ecc-recipes
 description: "Map a described workflow to the right ECC command-GROUP with run-order and stop condition, and browse all command-group recipe families. Adds a family-grouping + run-order + when-to-stop layer on top of the flat command catalog. Advisory only. TRIGGER when the user says which commands for X, what command group runs X, show ECC recipes, list ECC pipelines, or how do I run a workflow with ECC. DO NOT TRIGGER when the user wants the task executed directly, wants a single-command deep doc (use ecc-guide), or wants a draft prompt rewritten (use prompt-optimizer)."
-metadata:
-  origin: community
-  author: KyawZinLatt
-  version: "1.0.0"
+origin: community
+author: KyawZinLatt
+version: "1.0.0"
 ---
 
 # ECC Recipes
@@ -53,7 +52,8 @@ for D in \
   "$HOME"/.claude/commands; do
   [ -d "$D" ] && CMD_DIR="$D" && break
 done
-ls "$CMD_DIR"/*.md | xargs -n1 basename | sed 's/.md$//' | sort
+[ -z "${CMD_DIR:-}" ] && { echo "No ECC commands directory found."; return 1; }
+find "$CMD_DIR" -maxdepth 1 -name '*.md' -exec basename {} .md \; | sort
 ```
 
 Optionally read `manifests/install-*.json` if present for richer grouping. Use
@@ -119,6 +119,8 @@ Run-order:
   /<cmd2>   # job
   /<cmd3>   # job
   STOP when: <condition>
+  WARNING (autonomous loops only): an unbounded loop burns subscription/credits —
+  add a max-iteration or max-cost backstop alongside the completion signal.
 
 Read full docs:
   commands/<cmd1>.md   (or: /ecc-guide <cmd1>)
