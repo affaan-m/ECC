@@ -436,6 +436,20 @@ For environments where installing libmagic is difficult (e.g., minimal container
 use the pure-Python `filetype` package as an alternative:
 
 ```python
+import os
+from django.core.exceptions import ValidationError
+
+ALLOWED_MIMES = {
+    'image/jpeg', 'image/png', 'image/gif', 'application/pdf',
+}
+
+MIME_TO_EXTENSIONS = {
+    'image/jpeg': {'.jpg', '.jpeg'},
+    'image/png': {'.png'},
+    'image/gif': {'.gif'},
+    'application/pdf': {'.pdf'},
+}
+
 import filetype  # pip install filetype
 
 def validate_file_type(value):
