@@ -412,7 +412,7 @@ def validate_file_type(value):
     value.seek(0)
 
     if mime not in ALLOWED_MIMES:
-        raise ValidationError(f'Unsupported file type: {mime}')
+        raise ValidationError('Unsupported file type.')
 
     ext = os.path.splitext(value.name)[1].lower()
     if ext not in MIME_TO_EXTENSIONS.get(mime, set()):
