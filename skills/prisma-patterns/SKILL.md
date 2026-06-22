@@ -127,7 +127,7 @@ Each `PrismaClient` instance opens its own connection pool. Instantiate once.
 // lib/prisma.ts
 
 // Option A — adapter-based initialization (required by newer Prisma installs)
-import { PrismaClient } from 'prisma';       // or '@prisma/client' depending on your version
+import { PrismaClient } from '@prisma/client'; // or the generated client path for your setup
 import { PrismaPg } from '@prisma/adapter-pg';
 
 function createPrismaClient() {
@@ -211,7 +211,7 @@ await prisma.user.update({ where: { id }, data: { deletedAt: null } }); // resto
 ### Error Handling
 
 ```ts
-import { Prisma } from 'prisma'; // or '@prisma/client' depending on your installed version
+import { Prisma } from '@prisma/client'; // or the generated client path for your setup
 
 try {
   await prisma.user.create({ data: { email } });
@@ -246,7 +246,7 @@ DATABASE_URL="postgresql://user:pass@host/db?pgbouncer=true&connection_limit=1"
 // cap pool to 1 per instance; connection_limit and pool_timeout controlled via DATABASE_URL
 
 // Adapter-based setup (if your Prisma install requires an adapter):
-import { PrismaClient } from 'prisma';
+import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 const prisma = new PrismaClient({
