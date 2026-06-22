@@ -439,6 +439,8 @@ use the pure-Python `filetype` package as an alternative:
 import os
 from django.core.exceptions import ValidationError
 
+import filetype  # pip install filetype
+
 ALLOWED_MIMES = {
     'image/jpeg', 'image/png', 'image/gif', 'application/pdf',
 }
@@ -449,8 +451,6 @@ MIME_TO_EXTENSIONS = {
     'image/gif': {'.gif'},
     'application/pdf': {'.pdf'},
 }
-
-import filetype  # pip install filetype
 
 def validate_file_type(value):
     """Validate file type using magic bytes."""
