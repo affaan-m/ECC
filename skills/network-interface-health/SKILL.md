@@ -1,7 +1,8 @@
 ---
 name: network-interface-health
 description: Diagnose interface errors, drops, CRCs, duplex mismatches, flapping, speed negotiation issues, and counter trends on routers, switches, and Linux hosts.
-origin: community
+metadata:
+  origin: community
 ---
 
 # Network Interface Health

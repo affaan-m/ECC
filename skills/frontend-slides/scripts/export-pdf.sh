@@ -52,7 +52,7 @@ for arg in "$@"; do
             ;;
     esac
 done
-set -- "${POSITIONAL[@]}"
+set -- ${POSITIONAL[@]+"${POSITIONAL[@]}"}
 
 # --- Input validation ---
 

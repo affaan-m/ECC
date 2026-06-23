@@ -2,7 +2,7 @@
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
 
-const LEGACY_INSTALL_TARGETS = ['claude', 'cursor', 'antigravity'];
+const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
 
 function dedupeStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(Boolean))];

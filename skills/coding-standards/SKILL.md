@@ -1,7 +1,8 @@
 ---
 name: coding-standards
 description: Baseline cross-project coding conventions for naming, readability, immutability, and code-quality review. Use detailed frontend or backend skills for framework-specific patterns.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Coding Standards & Best Practices
@@ -415,8 +416,9 @@ export async function searchMarkets(
 import { useMemo, useCallback } from 'react'
 
 // PASS: GOOD: Memoize expensive computations
+// Copy before sorting - Array.prototype.sort mutates in place
 const sortedMarkets = useMemo(() => {
-  return markets.sort((a, b) => b.volume - a.volume)
+  return [...markets].sort((a, b) => b.volume - a.volume)
 }, [markets])
 
 // PASS: GOOD: Memoize callbacks

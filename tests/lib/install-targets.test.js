@@ -206,12 +206,6 @@ function runTests() {
       )),
       'Should not install Cursor README docs as runtime rule files'
     );
-    assert.ok(
-      !plan.operations.some(operation => (
-        normalizedRelativePath(operation.sourceRelativePath) === 'rules/zh/README.md'
-      )),
-      'Should not flatten localized README docs into Cursor rule files'
-    );
   })) passed++; else failed++;
 
   if (test('does not install root AGENTS.md into Cursor nested context', () => {

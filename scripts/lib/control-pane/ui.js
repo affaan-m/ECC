@@ -215,6 +215,7 @@ function renderControlPaneHtml() {
 
     .result,
     .connector,
+    .work-item,
     .action {
       padding: 12px 14px;
       border-bottom: 1px solid rgba(52, 64, 56, 0.7);
@@ -224,8 +225,40 @@ function renderControlPaneHtml() {
 
     .result:last-child,
     .connector:last-child,
+    .work-item:last-child,
     .action:last-child {
       border-bottom: 0;
+    }
+
+    .kanban {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(52, 64, 56, 0.7);
+    }
+
+    .kanban-lane {
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid rgba(52, 64, 56, 0.8);
+      border-radius: 6px;
+      background: #141917;
+    }
+
+    .kanban-lane span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .kanban-lane strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 20px;
+      line-height: 1;
     }
 
     .row {
@@ -310,6 +343,7 @@ function renderControlPaneHtml() {
     @media (max-width: 560px) {
       main { padding: 12px; }
       .metrics { grid-template-columns: 1fr; }
+      .kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .query { flex-direction: column; }
       th:nth-child(4), td:nth-child(4) { display: none; }
     }
@@ -337,6 +371,13 @@ function renderControlPaneHtml() {
             <span class="subtle" id="db-path"></span>
           </div>
           <div id="sessions"></div>
+        </section>
+        <section>
+          <div class="section-head">
+            <h2>Work Items</h2>
+            <span class="subtle" id="work-item-count"></span>
+          </div>
+          <div id="work-items"></div>
         </section>
       </div>
       <div class="stack">
@@ -413,7 +454,13 @@ function renderControlPaneHtml() {
 
     function statePill(stateName) {
       const state = String(stateName || 'unknown');
-      const klass = state === 'running' ? 'good' : state === 'failed' ? 'bad' : state === 'pending' ? 'warn' : 'blue';
+      const klass = ['running', 'done'].includes(state)
+        ? 'good'
+        : ['failed', 'blocked'].includes(state)
+          ? 'bad'
+          : ['pending', 'ready'].includes(state)
+            ? 'warn'
+            : 'blue';
       return '<span class="pill ' + klass + '">' + escapeHtml(state) + '</span>';
     }
 
@@ -444,6 +491,67 @@ function renderControlPaneHtml() {
           '<td>' + escapeHtml(session.updatedAt || '-') + '</td>' +
         '</tr>').join('') +
       '</tbody></table>';
+    }
+
+    function renderWorkItems(workItems) {
+      const summary = workItems || { totalCount: 0, openCount: 0, blockedCount: 0, doneCount: 0, kanban: {}, items: [] };
+      const items = Array.isArray(summary.items) ? summary.items : [];
+      const kanban = summary.kanban || {};
+      const needsAssignment = Array.isArray(summary.needsAssignment) ? summary.needsAssignment : [];
+      const assignment = summary.assignment || { agent: 0, human: 0, unassigned: 0 };
+      $('#work-item-count').textContent = summary.openCount + ' open / ' + summary.blockedCount + ' blocked'
+        + ' / ' + (assignment.agent || 0) + ' agent / ' + (assignment.human || 0) + ' human'
+        + (needsAssignment.length ? ' / ' + needsAssignment.length + ' need owner' : '');
+
+      const lanes = ['ready', 'running', 'blocked', 'done'];
+      const laneHtml = '<div class="kanban">' + lanes.map(lane =>
+        '<div class="kanban-lane"><span>' + escapeHtml(lane) + '</span><strong>' + escapeHtml(kanban[lane] || 0) + '</strong></div>'
+      ).join('') + '</div>';
+
+      if (!items.length) {
+        $('#work-items').innerHTML = laneHtml + '<div class="empty">No agent work items found.</div>';
+        return;
+      }
+
+      $('#work-items').innerHTML = laneHtml + items.slice(0, 8).map(item => {
+        const branch = item.branch || (item.metadata && item.metadata.branch) || '';
+        const mergeGate = item.mergeGate || (item.metadata && item.metadata.mergeGate) || '';
+        const blocker = item.blocker || (item.metadata && item.metadata.blocker) || '';
+        const assigneeKind = item.assigneeKind || 'unassigned';
+        const owner = item.assignee || item.owner || (assigneeKind === 'unassigned' ? 'unassigned (JIT)' : item.source) || 'unassigned';
+        // Ids/lanes go into HTML-escaped data-* attributes and are read back via
+        // dataset in delegated listeners below — never concatenated into inline
+        // JS handlers — so a crafted work-item id cannot inject script (XSS).
+        const idAttr = escapeHtml(item.id);
+        const moveButtons = ['ready', 'running', 'blocked', 'done'].map(lane =>
+          '<button type="button" data-wi-action="move" data-wi-id="' + idAttr + '" data-wi-lane="' + lane + '">' + escapeHtml(lane) + '</button>'
+        ).join('');
+        const controls = state.allowActions
+          ? '<div class="row">'
+            + (assigneeKind === 'unassigned' ? '<button type="button" data-wi-action="claim" data-wi-id="' + idAttr + '">Claim</button>' : '')
+            + moveButtons
+            + '</div>'
+          : '';
+        return '<div class="work-item">' +
+          '<div class="row"><strong>' + escapeHtml(item.title || item.id) + '</strong>' + statePill(item.kanbanState || item.status) + '</div>' +
+          '<div class="subtle">[' + escapeHtml(assigneeKind) + '] ' + escapeHtml(owner) + ' - ' + escapeHtml(item.source || 'manual') + (item.priority ? ' - ' + escapeHtml(item.priority) : '') + '</div>' +
+          (branch ? '<div class="subtle">branch: ' + escapeHtml(branch) + '</div>' : '') +
+          (mergeGate ? '<div class="subtle">merge gate: ' + escapeHtml(mergeGate) + '</div>' : '') +
+          (blocker ? '<div class="subtle">blocker: ' + escapeHtml(blocker) + '</div>' : '') +
+          controls +
+        '</div>';
+      }).join('');
+
+      document.querySelectorAll('#work-items [data-wi-action]').forEach(button => {
+        button.addEventListener('click', () => {
+          const id = button.getAttribute('data-wi-id');
+          if (button.getAttribute('data-wi-action') === 'claim') {
+            eccClaimItem(id);
+          } else {
+            eccMoveItem(id, button.getAttribute('data-wi-lane'));
+          }
+        });
+      });
     }
 
     function renderKnowledge(knowledge) {
@@ -523,9 +631,11 @@ function renderControlPaneHtml() {
       const snapshot = await readJsonResponse(response);
       $('#query').value = snapshot.knowledge.query || state.query;
       $('#db-path').textContent = snapshot.database.exists ? snapshot.dbPath : 'database missing';
-      $('#action-status').textContent = snapshot.execution.allowActions ? 'local allowlist' : 'read-only';
+      state.allowActions = Boolean(snapshot.execution.allowActions);
+      $('#action-status').textContent = state.allowActions ? 'local allowlist' : 'read-only';
       renderMetrics(snapshot.summary);
       renderSessions(snapshot.sessions);
+      renderWorkItems(snapshot.workItems);
       renderKnowledge(snapshot.knowledge);
       renderConnectors(snapshot.connectors);
       renderActions(snapshot.actions.map(action => ({
@@ -543,6 +653,38 @@ function renderControlPaneHtml() {
     $('#refresh').addEventListener('click', () => {
       load().catch(error => showError('#app', error));
     });
+
+    async function postWorkItem(pathSuffix, payload) {
+      const response = await fetch('/api/work-items/' + pathSuffix, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      const result = await readJsonResponse(response);
+      if (!result.ok) throw new Error(result.error || 'request failed');
+      await load();
+    }
+
+    window.eccClaimItem = function (id) {
+      if (!state.allowActions) return;
+      const owner = window.prompt('Claim "' + id + '" as (owner name):');
+      if (!owner) return;
+      const as = (window.prompt("Owner kind: 'agent' or 'human'", 'human') || '').trim().toLowerCase();
+      postWorkItem(encodeURIComponent(id) + '/claim', { owner: owner.trim(), as: as === 'agent' ? 'agent' : 'human' })
+        .catch(error => showError('#app', error));
+    };
+    window.eccMoveItem = function (id, lane) {
+      if (!state.allowActions) return;
+      postWorkItem(encodeURIComponent(id) + '/move', { lane })
+        .catch(error => showError('#app', error));
+    };
+
+    // Live board: refresh on a gentle interval; pause while a prompt/tab is hidden.
+    setInterval(() => {
+      if (document.hidden) return;
+      load().catch(() => {});
+    }, 15000);
+
     load().catch(error => showError('#app', error));
   </script>
 </body>
@@ -550,5 +692,5 @@ function renderControlPaneHtml() {
 }
 
 module.exports = {
-  renderControlPaneHtml,
+  renderControlPaneHtml
 };

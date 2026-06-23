@@ -151,12 +151,16 @@ do_install() {
     if [ -d "$REPO_ROOT/skills" ]; then
         for d in "$REPO_ROOT/skills"/*/; do
             [ -d "$d" ] || continue
+            # Strip trailing slash so find emits single-slash paths and the
+            # prefix removal below does not leave a leading slash (which would
+            # produce double-slash manifest entries like skills/foo//bar).
+            d="${d%/}"
             skill_name="$(basename "$d")"
             target_skill_dir="$trae_full_path/skills/$skill_name"
             skill_copied=0
 
             while IFS= read -r source_file; do
-                relative_path="${source_file#$d}"
+                relative_path="${source_file#$d/}"
                 target_path="$target_skill_dir/$relative_path"
 
                 mkdir -p "$(dirname "$target_path")"

@@ -11,6 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
+const { normalizePluginRootForPlatform } = require(SCRIPT);
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-hook-bootstrap-'));
@@ -66,6 +67,50 @@ function runTests() {
     assert.strictEqual(result.status, 0);
     assert.strictEqual(result.stdout, '{"ok":true}');
     assert.strictEqual(result.stderr, '');
+  })) passed++; else failed++;
+
+  if (test('normalizes Windows Git Bash POSIX drive roots', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/z/Work/ECC/scripts/hooks/check-console-log.js', 'win32'),
+      'Z:/Work/ECC/scripts/hooks/check-console-log.js'
+    );
+  })) passed++; else failed++;
+
+  if (test('leaves already-Windows roots unchanged', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('C:/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('D:\\Users\\x\\.claude\\plugins\\ecc', 'win32'),
+      'D:\\Users\\x\\.claude\\plugins\\ecc'
+    );
+  })) passed++; else failed++;
+
+  if (test('leaves POSIX-looking roots unchanged off Windows', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'darwin'),
+      '/c/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'linux'),
+      '/c/Users/x/.claude/plugins/ecc'
+    );
+  })) passed++; else failed++;
+
+  if (test('does not mangle UNC or non-drive absolute paths on Windows', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('\\\\server\\share\\ecc', 'win32'),
+      '\\\\server\\share\\ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/workspace/ecc', 'win32'),
+      '/workspace/ecc'
+    );
   })) passed++; else failed++;
 
   if (test('node mode runs target script with plugin root environment', () => {

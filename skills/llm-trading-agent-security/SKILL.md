@@ -1,7 +1,8 @@
 ---
 name: llm-trading-agent-security
 description: Security patterns for autonomous trading agents with wallet or transaction authority. Covers prompt injection, spend limits, pre-send simulation, circuit breakers, MEV protection, and key handling.
-origin: ECC direct-port adaptation
+metadata:
+  origin: ECC direct-port adaptation
 version: "1.0.0"
 ---
 

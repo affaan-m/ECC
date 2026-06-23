@@ -403,16 +403,17 @@ fn run_notification_command(_program: &str, _args: &[String]) -> Result<()> {
 
 #[cfg(not(test))]
 fn send_webhook_request(target: &WebhookTarget, payload: serde_json::Value) -> Result<()> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(5))
-        .timeout_read(std::time::Duration::from_secs(5))
-        .build();
+    let agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(5)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(5)))
+        .build()
+        .new_agent();
     let response = agent
         .post(&target.url)
         .send_json(payload)
         .with_context(|| format!("POST {}", target.url))?;
 
-    if response.status() >= 200 && response.status() < 300 {
+    if response.status().is_success() {
         Ok(())
     } else {
         anyhow::bail!("{} returned {}", target.url, response.status());

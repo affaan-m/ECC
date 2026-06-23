@@ -53,7 +53,9 @@
       "kind": "commands",
       "description": "Core slash-command library and command docs.",
       "paths": [
-        "commands"
+        "commands",
+        "scripts/harness-audit.js",
+        "scripts/skills-health.js"
       ],
       "targets": [
         "claude",
@@ -181,7 +183,8 @@
         "skills/springboot-patterns",
         "skills/springboot-tdd",
         "skills/springboot-verification",
-        "skills/ui-to-vue"
+        "skills/ui-to-vue",
+        "skills/vue-patterns"
       ],
       "targets": [
         "claude",
@@ -560,8 +563,6 @@
       "kind": "orchestration",
       "description": "Worktree/tmux orchestration runtime and workflow docs.",
       "paths": [
-        "commands/multi-workflow.md",
-        "commands/sessions.md",
         "scripts/lib/orchestration-session.js",
         "scripts/lib/tmux-worktree-orchestrator.js",
         "scripts/orchestrate-codex-worker.sh",
@@ -619,6 +620,7 @@
       "kind": "skills",
       "description": "Agentic engineering, autonomous loops, agent harness construction, and LLM pipeline optimization skills.",
       "paths": [
+        "scripts/claw.js",
         "skills/agent-architecture-audit",
         "skills/agent-harness-construction",
         "skills/agentic-engineering",
@@ -631,12 +633,14 @@
         "skills/continuous-agent-loop",
         "skills/cost-aware-llm-pipeline",
         "skills/data-scraper-agent",
+        "skills/dynamic-workflow-mode",
         "skills/enterprise-agent-ops",
         "skills/nanoclaw-repl",
         "skills/prompt-optimizer",
         "skills/ralphinho-rfc-pipeline",
         "skills/regex-vs-llm-structured-text",
         "skills/search-first",
+        "skills/team-agent-orchestration",
         "skills/token-budget-advisor",
         "skills/team-builder"
       ],

@@ -50,7 +50,7 @@ ECC ไม่ใช่แค่ชุดไฟล์คอนฟิก แต่
 
 ```bash
 # เพิ่ม marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # ติดตั้ง plugin
 /plugin install ecc@ecc

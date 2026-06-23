@@ -386,7 +386,7 @@ function findPluginInstall(rootDir) {
 }
 
 function getRepoChecks(rootDir) {
-  const packageJson = JSON.parse(readText(rootDir, 'package.json'));
+  const packageJson = safeParseJson(safeRead(rootDir, 'package.json'));
   const commandPrimary = safeRead(rootDir, 'commands/harness-audit.md').trim();
   const commandParity = safeRead(rootDir, '.opencode/commands/harness-audit.md').trim();
   const hooksJson = safeRead(rootDir, 'hooks/hooks.json');
@@ -499,7 +499,7 @@ function getRepoChecks(rootDir) {
       scopes: ['repo'],
       path: 'package.json',
       description: 'Test script runs validator chain before tests',
-      pass: typeof packageJson.scripts?.test === 'string' && packageJson.scripts.test.includes('validate-commands.js') && packageJson.scripts.test.includes('tests/run-all.js'),
+      pass: typeof packageJson?.scripts?.test === 'string' && packageJson?.scripts?.test.includes('validate-commands.js') && packageJson?.scripts?.test.includes('tests/run-all.js'),
       fix: 'Update package.json test script to run validators plus tests/run-all.js.',
     },
     {

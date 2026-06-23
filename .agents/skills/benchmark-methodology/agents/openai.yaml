@@ -1,0 +1,7 @@
+interface:
+  display_name: "Benchmark Methodology"
+  short_description: "Score competitors across nine weighted dimensions"
+  brand_color: "#F59E0B"
+  default_prompt: "Use $benchmark-methodology to score a tiered competitor set."
+policy:
+  allow_implicit_invocation: true

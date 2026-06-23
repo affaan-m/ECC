@@ -16,7 +16,7 @@ alwaysApply: true
 - Orchestrating multi-agent workflows
 - Complex coding tasks
 
-**Opus 4.5** (Deepest reasoning):
+**Opus 4.6** (Deepest reasoning):
 - Complex architectural decisions
 - Maximum reasoning requirements
 - Research and analysis tasks
@@ -41,7 +41,7 @@ Extended thinking is enabled by default, reserving up to 31,999 tokens for inter
 Control extended thinking via:
 - **Toggle**: Option+T (macOS) / Alt+T (Windows/Linux)
 - **Config**: Set `alwaysThinkingEnabled` in `~/.claude/settings.json`
-- **Budget cap**: `export MAX_THINKING_TOKENS=10000`
+- **Budget cap**: `export MAX_THINKING_TOKENS=10000` (bash) or `$env:MAX_THINKING_TOKENS = "10000"` (PowerShell)
 - **Verbose mode**: Ctrl+O to see thinking output
 
 For complex tasks requiring deep reasoning:

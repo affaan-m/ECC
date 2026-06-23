@@ -16,10 +16,10 @@ paths:
 const apiKey = "sk-proj-xxxxx"
 
 // ALWAYS: Environment variables
-const apiKey = process.env.OPENAI_API_KEY
+const apiKey = process.env.API_KEY
 
 if (!apiKey) {
-  throw new Error('OPENAI_API_KEY not configured')
+  throw new Error('API_KEY not configured')
 }
 ```
 

@@ -161,7 +161,11 @@ process.stdin.on('data', chunk => {
 });
 
 const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
-const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)\b/;
+// Trailing (?![\w-]) rather than \b: \b treats a hyphen as a word boundary, so
+// `dev\b` matches the `dev` prefix of distinct scripts like `dev-setup` /
+// `dev-docs` / `dev-build` and wrongly blocks them. The lookahead still matches
+// the dev server (`dev`, `dev;`, `dev:ssr`, ...) but not a `dev-<suffix>` script.
+const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)(?![\w-])/;
 
 /**
  * Collect every command-line segment we should evaluate. Returns the top-level

@@ -1,147 +1,97 @@
 ---
 name: cost-tracking
-description: Track and report Claude Code token usage, spending, and budgets from a local cost-tracking database. Use when the user asks about costs, spending, usage, tokens, budgets, or cost breakdowns by project, tool, session, or date.
-origin: community
+description: Track and report Claude Code token usage, spending, and budgets from the local ECC cost-tracker metrics log. Use when the user asks about costs, spending, usage, tokens, budgets, or cost breakdowns by model, session, or date.
+metadata:
+  origin: community
 ---
 
 # Cost Tracking
 
-Use this skill to analyze Claude Code cost and usage history from a local SQLite
-database. It is intended for users who already have a cost-tracking hook or
-plugin writing usage rows to `~/.claude-cost-tracker/usage.db`.
+Use this skill to analyze Claude Code cost and usage history from the metrics log
+that ECC's `stop:cost-tracker` hook writes.
 
-Source: salvaged from stale community PR #1304 by `MayurBhavsar`.
+## Where the data lives
+
+The tracker appends one JSON object per session-stop to
+`~/.claude/metrics/costs.jsonl`. Each row is a **cumulative snapshot for that
+session**, so to total spend you take the **latest row per `session_id`** and
+sum across sessions — summing every row multiply-counts.
+
+Row schema:
+
+| Field | Meaning |
+| --- | --- |
+| `timestamp` | ISO timestamp of the snapshot |
+| `session_id` | Claude Code session identifier |
+| `transcript_path` | Path to the session transcript |
+| `model` | Model used |
+| `input_tokens` / `output_tokens` | Token counts |
+| `cache_write_tokens` / `cache_read_tokens` | Prompt-cache token counts |
+| `estimated_cost_usd` | Precomputed cumulative cost in USD for the session |
+
+Prefer `estimated_cost_usd` over hand-calculating pricing — model and cache
+prices change, and the tracker is the source of truth.
 
 ## When to Use
 
 - The user asks "how much have I spent?", "what did this session cost?", or
   "what is my token usage?"
 - The user mentions budgets, spending limits, overruns, or cost controls.
-- The user wants a cost breakdown by project, tool, session, model, or date.
-- The user wants to compare today against yesterday or inspect a recent trend.
-- The user asks for a CSV export of recent usage records.
+- The user wants a cost breakdown by model, session, or date, or a CSV export.
 
 ## How It Works
 
-First verify prerequisites:
+First verify the log exists (use `node`, not `sqlite3` — the tracker writes
+JSONL, and `node` is cross-platform):
 
 ```bash
-command -v sqlite3 >/dev/null && echo "sqlite3 available" || echo "sqlite3 missing"
-test -f ~/.claude-cost-tracker/usage.db && echo "Database found" || echo "Database not found"
+node -e 'const fs=require("fs"),os=require("os"),p=require("path");const f=p.join(os.homedir(),".claude","metrics","costs.jsonl");console.log(fs.existsSync(f)?"cost log found":"cost log not found: "+f)'
 ```
 
-If the database is missing, do not fabricate usage data. Tell the user that cost
-tracking is not configured and suggest installing or enabling a trusted local
-cost-tracking hook/plugin.
+If the log is missing, do not fabricate usage data. Tell the user that cost
+tracking populates after the first session ends with the `stop:cost-tracker`
+hook enabled.
 
-The expected `usage` table usually contains one row per tool call or model
-interaction. Column names vary by tracker, but the examples below assume:
-
-| Column | Meaning |
-| --- | --- |
-| `timestamp` | ISO timestamp for the usage event |
-| `project` | Project or repository name |
-| `tool_name` | Tool or event name |
-| `input_tokens` | Input token count, when recorded |
-| `output_tokens` | Output token count, when recorded |
-| `cost_usd` | Precomputed cost in USD |
-| `session_id` | Claude Code session identifier |
-| `model` | Model used for the event |
-
-Prefer `cost_usd` over hand-calculating pricing. Model prices and cache pricing
-change over time, and the tracker should be the source of truth for how each row
-was priced.
-
-## Examples
-
-### Quick Summary
+## Example — summary, by model, last 7 days
 
 ```bash
-sqlite3 ~/.claude-cost-tracker/usage.db "
-  SELECT
-    'Today: $' || ROUND(COALESCE(SUM(CASE WHEN date(timestamp) = date('now') THEN cost_usd END), 0), 4) ||
-    ' | Total: $' || ROUND(COALESCE(SUM(cost_usd), 0), 4) ||
-    ' | Calls: ' || COUNT(*) ||
-    ' | Sessions: ' || COUNT(DISTINCT session_id)
-  FROM usage;
-"
+node -e '
+const fs=require("fs"),os=require("os"),path=require("path");
+const f=path.join(os.homedir(),".claude","metrics","costs.jsonl");
+if(!fs.existsSync(f)){console.log("cost log not found: "+f);process.exit(0);}
+const rows=fs.readFileSync(f,"utf8").split(/\r?\n/).filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean);
+const bySession=new Map();
+for(const r of rows){const k=r.session_id||r.transcript_path||r.timestamp;const p=bySession.get(k);if(!p||String(r.timestamp)>String(p.timestamp))bySession.set(k,r);}
+const latest=[...bySession.values()];
+const cost=r=>Number(r.estimated_cost_usd)||0, day=r=>String(r.timestamp||"").slice(0,10), sum=a=>a.reduce((s,r)=>s+cost(r),0), f4=n=>"$"+n.toFixed(4);
+const today=new Date().toISOString().slice(0,10), yest=new Date(Date.now()-864e5).toISOString().slice(0,10);
+console.log("today: "+f4(sum(latest.filter(r=>day(r)===today)))+" | yesterday: "+f4(sum(latest.filter(r=>day(r)===yest)))+" | total: "+f4(sum(latest))+" ("+latest.length+" sessions)");
+const m=new Map();for(const r of latest){const k=r.model||"(unknown)";m.set(k,(m.get(k)||0)+cost(r));}
+console.log("by model:");[...m.entries()].sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>console.log("  "+f4(v)+"  "+k));
+'
 ```
 
-### Cost By Project
-
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT project, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY project
-  ORDER BY cost DESC;
-"
-```
-
-### Cost By Tool
-
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT tool_name, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY tool_name
-  ORDER BY cost DESC;
-"
-```
-
-### Last Seven Days
-
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT date(timestamp) AS date, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY date(timestamp)
-  ORDER BY date DESC
-  LIMIT 7;
-"
-```
-
-### Session Drilldown
-
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT session_id,
-    MIN(timestamp) AS started,
-    MAX(timestamp) AS ended,
-    ROUND(SUM(cost_usd), 4) AS cost,
-    COUNT(*) AS calls
-  FROM usage
-  GROUP BY session_id
-  ORDER BY started DESC
-  LIMIT 10;
-"
-```
+For a session drilldown or CSV export, iterate the same `latest` set (or the raw
+rows for CSV) and print the fields you need.
 
 ## Reporting Guidance
 
-When presenting cost data, include:
-
-1. Today's spend and yesterday comparison.
-2. Total spend across the tracked database.
-3. Top projects ranked by cost.
-4. Top tools ranked by cost.
-5. Session count and average cost per session when enough data exists.
-
-For small amounts, format currency with four decimal places. For larger amounts,
-two decimals are enough.
+When presenting cost data, include today's spend vs yesterday, total across all
+sessions, a by-model breakdown, and session count. Format sub-dollar amounts
+with four decimals, larger amounts with two.
 
 ## Anti-Patterns
 
-- Do not estimate costs from raw token counts when `cost_usd` is present.
-- Do not assume the database exists without checking.
-- Do not run unbounded `SELECT *` exports on large databases.
+- Do not sum every row — they are cumulative per session; reduce to the latest
+  row per `session_id` first.
+- Do not estimate costs from raw token counts when `estimated_cost_usd` is present.
+- Do not assume the log exists without checking.
 - Do not hard-code current model pricing in user-facing answers.
-- Do not recommend installing unreviewed hooks or plugins that execute arbitrary
-  code.
+- Do not recommend installing unreviewed hooks or plugins that execute arbitrary code.
 
 ## Related
 
-- `/cost-report` - Command-form report using the same database.
+- `/cost-report` - Command-form report over the same metrics log.
 - `cost-aware-llm-pipeline` - Model-routing and budget-design patterns.
 - `token-budget-advisor` - Context and token-budget planning.
 - `strategic-compact` - Context compaction to reduce repeated token spend.

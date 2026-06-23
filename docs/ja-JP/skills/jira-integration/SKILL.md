@@ -65,6 +65,15 @@ MCP が利用できない場合は、`curl` またはヘルパースクリプト
 
 シェル環境変数、シークレットマネージャー、またはリポジトリにコミットしないローカル環境ファイルに保存してください。
 
+直接 `curl` 例では、Jira ユーザー設定を標準入力で渡し、認証情報がコマンドライン引数に出ないようにします。
+
+```bash
+jira_curl() {
+  printf 'user = "%s:%s"\n' "$JIRA_EMAIL" "$JIRA_API_TOKEN" |
+    curl -s -K - "$@"
+}
+```
+
 ## MCP ツールリファレンス
 
 `mcp-atlassian` MCP サーバーが設定されている場合、以下のツールが利用可能です。
@@ -88,7 +97,7 @@ MCP が利用できない場合は、`curl` またはヘルパースクリプト
 ### チケットの取得
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234" | jq '{
     key: .key,
@@ -105,7 +114,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### コメントの取得
 
 ```bash
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   -H "Content-Type: application/json" \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234?fields=comment" | jq '.fields.comment.comments[] | {
     author: .author.displayName,
@@ -117,7 +126,7 @@ curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### コメントの追加
 
 ```bash
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "body": {
@@ -136,11 +145,11 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 
 ```bash
 # 1. 利用可能なトランジションを取得
-curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions" | jq '.transitions[] | {id, name: .name}'
 
 # 2. トランジションを実行（TRANSITION_ID を置き換える）
-curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"transition": {"id": "TRANSITION_ID"}}' \
   "$JIRA_URL/rest/api/3/issue/PROJ-1234/transitions"
@@ -149,7 +158,7 @@ curl -s -X POST -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
 ### JQL での検索
 
 ```bash
-curl -s -G -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+jira_curl -G \
   --data-urlencode "jql=project = PROJ AND status = 'In Progress'" \
   "$JIRA_URL/rest/api/3/search"
 ```

@@ -12,12 +12,12 @@ description: Performance optimization guidelines including model selection strat
 - Pair programming and code generation
 - Worker agents in multi-agent systems
 
-**Claude Sonnet 4.5** (Best coding model):
+**Claude Sonnet 4.6** (Best coding model):
 - Main development work
 - Orchestrating multi-agent workflows
 - Complex coding tasks
 
-**Claude Opus 4.5** (Deepest reasoning):
+**Claude Opus 4.6** (Deepest reasoning):
 - Complex architectural decisions
 - Maximum reasoning requirements
 - Research and analysis tasks

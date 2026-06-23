@@ -79,6 +79,39 @@ function runTests() {
   else failed++;
 
   if (
+    test('different edits to the SAME file produce different hashes (no false loop)', () => {
+      const h1 = hashToolCall('Edit', { file_path: 'a.kt', old_string: 'foo', new_string: 'bar' });
+      const h2 = hashToolCall('Edit', { file_path: 'a.kt', old_string: 'baz', new_string: 'qux' });
+      assert.notStrictEqual(h1, h2);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('identical Edit (same file + same change) still hashes the same', () => {
+      const args = { file_path: 'a.kt', old_string: 'foo', new_string: 'bar' };
+      assert.strictEqual(hashToolCall('Edit', args), hashToolCall('Edit', { ...args }));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('large edits diverging only after 2048 chars still hash differently', () => {
+      // Shared prefix longer than the old HASH_INPUT_LIMIT (2048) truncation
+      // point; the payloads differ only afterwards. Hashing the full payload
+      // (digest truncated, not input) must keep them distinct.
+      const prefix = 'x'.repeat(4000);
+      const h1 = hashToolCall('Write', { file_path: 'big.txt', content: prefix + 'AAA' });
+      const h2 = hashToolCall('Write', { file_path: 'big.txt', content: prefix + 'BBB' });
+      assert.notStrictEqual(h1, h2);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('non-file tools hash by stable input to avoid false loop collisions', () => {
       const h1 = hashToolCall('Glob', { pattern: '**/*.js', path: '/repo/a' });
       const h2 = hashToolCall('Glob', { pattern: '**/*.md', path: '/repo/a' });

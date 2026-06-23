@@ -1,7 +1,8 @@
 ---
 name: laravel-patterns
 description: Laravel architecture patterns, routing/controllers, Eloquent ORM, service layers, queues, events, caching, and API resources for production apps.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Laravel Development Patterns

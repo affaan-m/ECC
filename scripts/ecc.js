@@ -106,6 +106,7 @@ ECC selective-install CLI
 Usage:
   ecc <command> [args...]
   ecc [install args...]
+  ecc --dry-run <command> [args...]
 
 Commands:
 ${PRIMARY_COMMANDS.map(command => `  ${command.padEnd(15)} ${COMMANDS[command].description}`).join('\n')}
@@ -114,6 +115,9 @@ Compatibility:
   ecc-install        Legacy install entrypoint retained for existing flows
   ecc [args...]      Without a command, args are routed to "install"
   ecc help <command> Show help for a specific command
+
+Global Flags:
+  --dry-run          Preview actions without executing (sets ECC_DRY_RUN=1)
 
 Examples:
   ecc typescript
@@ -152,7 +156,21 @@ function resolveCommand(argv) {
     return { mode: 'help' };
   }
 
-  const [firstArg, ...restArgs] = args;
+  if (args.includes('--dry-run')) {
+    process.env.ECC_DRY_RUN = '1';
+  }
+
+  let cmdStart = 0;
+  while (cmdStart < args.length && args[cmdStart] === '--dry-run') {
+    cmdStart++;
+  }
+
+  if (cmdStart >= args.length) {
+    return { mode: 'help' };
+  }
+
+  const firstArg = args[cmdStart];
+  const restArgs = args.slice(cmdStart + 1);
 
   if (firstArg === '--help' || firstArg === '-h') {
     return { mode: 'help' };

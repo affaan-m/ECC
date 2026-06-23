@@ -219,6 +219,65 @@ test('projects merge deduplicates instincts, appends observations, and removes s
   }
 });
 
+test('status warns when legacy ~/.claude/homunculus contains files', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus', 'instincts', 'personal');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'old-instinct.yaml'), '---\nid: old\n---\nOld instinct.\n');
+
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /LEGACY DATA DETECTED/);
+    assert.match(result.stdout, /legacy path/i);
+    assert.match(result.stdout, /migration script/i);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when legacy dir is empty', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus');
+    fs.mkdirSync(legacyDir, { recursive: true });
+
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when no legacy dir exists', () => {
+  const root = createTempDir();
+  try {
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when CLV2_HOMUNCULUS_DIR points at legacy path', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus', 'instincts', 'personal');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'active.yaml'), '---\nid: active\n---\nActive.\n');
+
+    const result = runCli(root, ['status'], {
+      env: { CLV2_HOMUNCULUS_DIR: path.join(root, 'home', '.claude', 'homunculus') },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
 test('status migrates legacy no-remote linked worktree project dirs to main worktree id', () => {
   const root = createTempDir();
   const repoParent = createTempDir();

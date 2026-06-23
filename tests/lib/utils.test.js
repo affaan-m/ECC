@@ -115,7 +115,79 @@ function runTests() {
     const sessionsDir = utils.getSessionsDir();
     const claudeDir = utils.getClaudeDir();
     assert.ok(sessionsDir.startsWith(claudeDir), 'Sessions should be under Claude dir');
-    assert.ok(sessionsDir.endsWith(path.join('.claude', 'session-data')) || sessionsDir.endsWith('/.claude/session-data'), 'Should use canonical session-data directory');
+    assert.ok(sessionsDir.endsWith('session-data'), 'Should use canonical session-data directory');
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome honors ECC_AGENT_DATA_HOME', () => {
+    const original = process.env.ECC_AGENT_DATA_HOME;
+    const overrideRoot = path.join(utils.getTempDir(), `ecc-agent-data-${Date.now()}`);
+    try {
+      process.env.ECC_AGENT_DATA_HOME = overrideRoot;
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      const reloaded = require('../../scripts/lib/utils');
+      assert.strictEqual(reloaded.getAgentDataHome(), path.resolve(overrideRoot));
+      assert.strictEqual(reloaded.getClaudeDir(), path.resolve(overrideRoot));
+      assert.strictEqual(
+        reloaded.getSessionsDir(),
+        path.join(path.resolve(overrideRoot), 'session-data')
+      );
+      assert.strictEqual(
+        reloaded.getLearnedSkillsDir(),
+        path.join(path.resolve(overrideRoot), 'skills', 'learned')
+      );
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      if (original === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = original;
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome defaults to ~/.cursor/ecc when CURSOR_VERSION is set', () => {
+    const originalVersion = process.env.CURSOR_VERSION;
+    const originalHome = process.env.ECC_AGENT_DATA_HOME;
+    try {
+      delete process.env.ECC_AGENT_DATA_HOME;
+      process.env.CURSOR_VERSION = 'test-cursor';
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      delete require.cache[require.resolve('../../scripts/lib/agent-data-home')];
+      const reloaded = require('../../scripts/lib/utils');
+      const expected = path.join(reloaded.getHomeDir(), '.cursor', 'ecc');
+      assert.strictEqual(reloaded.getAgentDataHome(), expected);
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      delete require.cache[require.resolve('../../scripts/lib/agent-data-home')];
+      if (originalVersion === undefined) {
+        delete process.env.CURSOR_VERSION;
+      } else {
+        process.env.CURSOR_VERSION = originalVersion;
+      }
+      if (originalHome === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = originalHome;
+      }
+    }
+  })) passed++; else failed++;
+
+  if (test('getAgentDataHome expands tilde in ECC_AGENT_DATA_HOME', () => {
+    const original = process.env.ECC_AGENT_DATA_HOME;
+    try {
+      process.env.ECC_AGENT_DATA_HOME = path.join('~', '.cursor', 'ecc-test');
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      const reloaded = require('../../scripts/lib/utils');
+      const expected = path.join(reloaded.getHomeDir(), '.cursor', 'ecc-test');
+      assert.strictEqual(reloaded.getAgentDataHome(), expected);
+    } finally {
+      delete require.cache[require.resolve('../../scripts/lib/utils')];
+      if (original === undefined) {
+        delete process.env.ECC_AGENT_DATA_HOME;
+      } else {
+        process.env.ECC_AGENT_DATA_HOME = original;
+      }
+    }
   })) passed++; else failed++;
 
   if (test('getSessionSearchDirs includes canonical and legacy paths', () => {
@@ -1415,7 +1487,19 @@ function runTests() {
     const realFile = path.join(tmpDir, 'real.txt');
     fs.writeFileSync(realFile, 'content');
     const brokenLink = path.join(tmpDir, 'broken.txt');
-    fs.symlinkSync('/nonexistent/path/does/not/exist', brokenLink);
+    try {
+      fs.symlinkSync('/nonexistent/path/does/not/exist', brokenLink);
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
 
     try {
       const results = utils.findFiles(tmpDir, '*.txt');

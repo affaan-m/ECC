@@ -61,6 +61,12 @@ const publicCommandNamespaceDocs = [
   'docs/zh-TW/README.md',
 ];
 
+const manualClaudeSkillInstallDocs = [
+  'README.md',
+  'docs/de-DE/README.md',
+  'docs/ru/README.md',
+];
+
 for (const relativePath of pluginAndManualInstallDocs) {
   const content = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
@@ -92,6 +98,21 @@ for (const relativePath of publicCommandNamespaceDocs) {
     assert.ok(
       content.includes('/ecc:plan'),
       'Expected docs to show the short plugin command namespace'
+    );
+  });
+}
+
+for (const relativePath of manualClaudeSkillInstallDocs) {
+  const content = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+
+  test(`${relativePath} keeps manual Claude skill installs top-level`, () => {
+    assert.ok(
+      !/^\s*#?\s*(mkdir\s+-p|md\s+.*|cp\s+.*|copy\s+.*|cpi\s+.*|New-Item\s+.*|Copy-Item\s+.*)\s+.*(~|\$HOME)[\\/]\.claude[\\/]skills[\\/]ecc([\\/]|\b)/mi.test(content),
+      'Claude Code does not discover skills installed by commands targeting ~/.claude/skills/ecc'
+    );
+    assert.ok(
+      content.includes('~/.claude/skills/'),
+      'Expected manual install docs to copy skills into direct ~/.claude/skills children'
     );
   });
 }

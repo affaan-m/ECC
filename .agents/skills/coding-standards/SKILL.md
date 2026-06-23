@@ -414,8 +414,9 @@ export async function searchMarkets(
 import { useMemo, useCallback } from 'react'
 
 // PASS: GOOD: Memoize expensive computations
+// Copy before sorting - Array.prototype.sort mutates in place
 const sortedMarkets = useMemo(() => {
-  return markets.sort((a, b) => b.volume - a.volume)
+  return [...markets].sort((a, b) => b.volume - a.volume)
 }, [markets])
 
 // PASS: GOOD: Memoize callbacks

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 79,
+  "totalCommands": 92,
   "commands": [
     {
       "command": "aside",
@@ -49,7 +49,7 @@
     },
     {
       "command": "cost-report",
-      "description": "Generate a local Claude Code cost report from a cost-tracker SQLite database.",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -110,6 +110,72 @@
         "security-scan"
       ],
       "path": "commands/ecc-guide.md"
+    },
+    {
+      "command": "epic-claim",
+      "description": "Claim an epic issue, stamp coordination state, and sync local ownership.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature"
+      ],
+      "path": "commands/epic-claim.md"
+    },
+    {
+      "command": "epic-decompose",
+      "description": "Break an epic into task children without creating task branches.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-decompose.md"
+    },
+    {
+      "command": "epic-publish",
+      "description": "Publish a validated epic update back to the issue and local cache.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-publish.md"
+    },
+    {
+      "command": "epic-review",
+      "description": "Mark epic review requested, approved, or changes requested.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-review.md"
+    },
+    {
+      "command": "epic-sync",
+      "description": "Sync epic issue bodies, labels, and local coordination snapshots from GitHub.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-sync.md"
+    },
+    {
+      "command": "epic-unblock",
+      "description": "Sweep blocked epic issues and reopen anything whose dependencies are closed.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-unblock.md"
+    },
+    {
+      "command": "epic-validate",
+      "description": "Validate epic readiness, dependencies, and coordination policy.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-validate.md"
     },
     {
       "command": "evolve",
@@ -491,6 +557,67 @@
       "path": "commands/multi-workflow.md"
     },
     {
+      "command": "orch-add-feature",
+      "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature"
+      ],
+      "path": "commands/orch-add-feature.md"
+    },
+    {
+      "command": "orch-build-mvp",
+      "description": "Orchestrate bootstrapping a working MVP from a design/spec doc — ingest, slice, scaffold, TDD, review, gated commit (reuses the GAN harness). Wrapper for the orch-build-mvp skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-build-mvp"
+      ],
+      "path": "commands/orch-build-mvp.md"
+    },
+    {
+      "command": "orch-change-feature",
+      "description": "Orchestrate altering an existing, working feature to new desired behavior — update tests to the new spec, change impl, review, gated commit. Wrapper for the orch-change-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-change-feature.md"
+    },
+    {
+      "command": "orch-fix-defect",
+      "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, gated commit. Wrapper for the orch-fix-defect skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-fix-defect.md"
+    },
+    {
+      "command": "orch-refine-code",
+      "description": "Orchestrate a behavior-preserving refactor — confirm tests green, restructure without changing behavior, keep green, review, gated commit. Wrapper for the orch-refine-code skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-change-feature",
+        "orch-fix-defect",
+        "orch-refine-code"
+      ],
+      "path": "commands/orch-refine-code.md"
+    },
+    {
       "command": "plan-prd",
       "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
       "type": "testing",
@@ -637,8 +764,8 @@
     },
     {
       "command": "quality-gate",
-      "description": "Run the ECC quality pipeline for a file or project scope and report remediation steps.",
-      "type": "general",
+      "description": "Run the ECC formatter quality gate for a single file and report remediation steps.",
+      "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [],
@@ -858,17 +985,34 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/update-docs.md"
+    },
+    {
+      "command": "vue-review",
+      "description": "Comprehensive Vue.js code review for Composition API correctness, reactivity, composable patterns, template security, accessibility, and Vue-specific performance. Invokes the vue-reviewer agent (and typescript-reviewer alongside on .vue/.ts changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "allAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "skills": [
+        "vue-patterns"
+      ],
+      "path": "commands/vue-review.md"
     }
   ],
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 8,
-      "orchestration": 6,
+      "general": 10,
+      "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 9,
-      "testing": 51
+      "review": 13,
+      "testing": 53
     },
     "topAgents": [
       {
@@ -877,6 +1021,10 @@
       },
       {
         "agent": "flutter-reviewer",
+        "count": 2
+      },
+      {
+        "agent": "typescript-reviewer",
         "count": 2
       },
       {
@@ -906,16 +1054,20 @@
       {
         "agent": "planner",
         "count": 1
-      },
-      {
-        "agent": "python-reviewer",
-        "count": 1
       }
     ],
     "topSkills": [
       {
         "skill": "continuous-learning-v2",
         "count": 6
+      },
+      {
+        "skill": "orch-add-feature",
+        "count": 4
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 4
       },
       {
         "skill": "tdd-workflow",
@@ -930,6 +1082,10 @@
         "count": 3
       },
       {
+        "skill": "orch-fix-defect",
+        "count": 3
+      },
+      {
         "skill": "rust-patterns",
         "count": 3
       },
@@ -939,18 +1095,6 @@
       },
       {
         "skill": "cpp-testing",
-        "count": 2
-      },
-      {
-        "skill": "ecc-guide",
-        "count": 2
-      },
-      {
-        "skill": "golang-patterns",
-        "count": 2
-      },
-      {
-        "skill": "golang-testing",
         "count": 2
       }
     ]

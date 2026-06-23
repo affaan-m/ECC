@@ -1,7 +1,8 @@
 ---
 name: team-builder
 description: Interactive agent picker for composing and dispatching parallel teams
-origin: community
+metadata:
+  origin: community
 ---
 
 # Team Builder
