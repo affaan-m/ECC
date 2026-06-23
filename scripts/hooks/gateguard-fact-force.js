@@ -1020,7 +1020,7 @@ function editGateMsg(filePath) {
     '',
     `Before editing ${safe}, present these facts:`,
     '',
-    '1. List ALL files that import/require this file (use Grep)',
+    '1. List ALL files that import/require this file (search the tree — Glob/Grep, or find/grep via Bash)',
     '2. List the public functions/classes affected by this change',
     '3. If this file reads/writes data files, show field names, structure, and date format (use redacted or synthetic values, not raw production data)',
     "4. Quote the user's current instruction verbatim",

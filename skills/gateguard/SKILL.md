@@ -53,7 +53,7 @@ MultiEdit is handled identically — each file in the batch is gated individuall
 ```
 Before editing {file_path}, present these facts:
 
-1. List ALL files that import/require this file (use Grep)
+1. List ALL files that import/require this file (search the tree — Glob/Grep, or find/grep via Bash)
 2. List the public functions/classes affected by this change
 3. If this file reads/writes data files, show field names, structure,
    and date format (use redacted or synthetic values, not raw production data)
@@ -66,7 +66,7 @@ Before editing {file_path}, present these facts:
 Before creating {file_path}, present these facts:
 
 1. Name the file(s) and line(s) that will call this new file
-2. Confirm no existing file serves the same purpose (use Glob)
+2. Confirm no existing file serves the same purpose (search the tree — Glob/Grep, or find/grep via Bash)
 3. If this file reads/writes data files, show field names, structure,
    and date format (use redacted or synthetic values, not raw production data)
 4. Quote the user's current instruction verbatim
