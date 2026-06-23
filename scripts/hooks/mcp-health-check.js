@@ -338,6 +338,21 @@ function probeCommandServer(serverName, config) {
     // through shell mode.
     const UNSAFE_SHELL_CHARS = /[&|<>^%!()\s;]/;
 
+    // When spawning via cmd.exe (shell:true) on Windows, Node concatenates
+    // command + args WITHOUT quoting (DEP0190). An arg containing a space —
+    // such as a path under "C:\Program Files" — gets re-split by cmd.exe.
+    // Build a properly-quoted command line instead and pass it as a single
+    // string with no args array, so cmd.exe sees each token as one unit.
+    function quoteWin(token) {
+      // If the token has no characters that need quoting, return it as-is.
+      if (!/[\s"&|<>^%!();]/.test(token)) {
+        return token;
+      }
+      // Escape embedded double quotes by doubling them, then wrap in double
+      // quotes. cmd.exe uses "" as an escaped quote inside a quoted string.
+      return '"' + token.replace(/"/g, '""') + '"';
+    }
+
     function attempt(idx) {
       const tryCommand = candidates[idx];
       const isLast = idx + 1 >= candidates.length;
@@ -375,12 +390,26 @@ function probeCommandServer(serverName, config) {
 
       let child;
       try {
-        child = spawn(tryCommand, args, {
-          env: mergedEnv,
-          cwd: process.cwd(),
-          stdio: ['pipe', 'ignore', 'pipe'],
-          shell: useShell
-        });
+        if (useShell) {
+          // Build a single quoted command line for cmd.exe. Passing an args
+          // array with shell:true causes Node to concatenate without quoting
+          // (DEP0190), which splits space-containing args (e.g. paths under
+          // "C:\Program Files") at every space boundary.
+          const quotedCmdline = [tryCommand, ...args].map(quoteWin).join(' ');
+          child = spawn(quotedCmdline, {
+            env: mergedEnv,
+            cwd: process.cwd(),
+            stdio: ['pipe', 'ignore', 'pipe'],
+            shell: true
+          });
+        } else {
+          child = spawn(tryCommand, args, {
+            env: mergedEnv,
+            cwd: process.cwd(),
+            stdio: ['pipe', 'ignore', 'pipe'],
+            shell: false
+          });
+        }
       } catch (error) {
         if ((error.code === 'ENOENT' || error.code === 'EINVAL') && !isLast) {
           retryNext();
