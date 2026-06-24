@@ -250,11 +250,20 @@ process.exit(7);
   // Windows-only: PowerShell preference and .sh fallback behaviour.
   if (process.platform === 'win32') {
     if (test('shell mode selects PowerShell when BASH is unset on Windows', () => {
+      // Skip if no PowerShell is available.
+      const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore' });
+      const ps = psProbe.error
+        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore' }).error
+          ? null : 'powershell.exe'
+        : 'pwsh.exe';
+      if (!ps) {
+        console.log('    SKIP: no PowerShell found');
+        return;
+      }
+
       const root = createTempDir();
       try {
-        // A .ps1 script that echoes its first argument plus stdin to stdout.
-        // UTF8 encoding set explicitly — PowerShell 5.1 defaults to UTF-16LE
-        // which Node's spawnSync reads as garbage without a BOM.
+        // UTF8 encoding set explicitly — PowerShell 5.1 defaults to UTF-16LE.
         writeFile(root, path.join('scripts', 'hook.ps1'), [
           '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
           '$OutputEncoding = [System.Text.Encoding]::UTF8',
@@ -310,15 +319,17 @@ process.exit(7);
       try {
         writeFile(root, path.join('scripts', 'hook.sh'), 'printf unreachable\n');
 
+        // Keep PowerShell on PATH so it is resolved as the shell, then strip
+        // bash candidates so the .sh fallback path hits the skip-warning branch.
         const result = run(['shell', path.join('scripts', 'hook.sh')], {
           root,
           input: 'raw-input',
-          // Empty PATH removes bash.exe; empty BASH clears the override.
-          env: { PATH: '', BASH: '' },
+          env: { BASH: '', PATH: process.env.SystemRoot
+            ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0;${process.env.SystemRoot}\\System32`
+            : '' },
         });
 
         assert.strictEqual(result.status, 0);
-        // Fails open: original input passed through.
         assert.strictEqual(result.stdout, 'raw-input');
         assert.ok(
           result.stderr.includes('no bash binary found') ||

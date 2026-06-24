@@ -80,6 +80,7 @@ function findShellBinary() {
     const probe = spawnSync(candidate, isPowerShellBin(candidate) ? psProbeArgs : shProbeArgs, {
       stdio: 'ignore',
       windowsHide: true,
+      timeout: 30000,
     });
     if (!probe.error) {
       _cachedShell = candidate;
@@ -101,7 +102,7 @@ function findBashBinary() {
   candidates.push('bash.exe', 'bash');
 
   for (const candidate of candidates) {
-    const probe = spawnSync(candidate, ['-c', ':'], { stdio: 'ignore', windowsHide: true });
+    const probe = spawnSync(candidate, ['-c', ':'], { stdio: 'ignore', windowsHide: true, timeout: 30000 });
     if (!probe.error) {
       _cachedBash = candidate;
       return _cachedBash;
@@ -166,7 +167,9 @@ function spawnShell(rootDir, relPath, raw, args) {
   }
 
   const shellArgs = isPs
-    ? ['-NoProfile', '-NonInteractive', '-File', scriptPath, ...args]
+    // -ExecutionPolicy Bypass: default Windows policy (Restricted) blocks -File
+    // execution of .ps1 scripts; Bypass scopes only to this child process.
+    ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]
     : [scriptPath, ...args];
 
   return spawnSync(shell, shellArgs, {
