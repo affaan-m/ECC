@@ -150,7 +150,7 @@ describe('Semantic Search', () => {
 
 ### Step 3: Run Tests (They Should Fail)
 ```bash
-npm test
+<test>
 # Tests should fail - we haven't implemented yet
 ```
 
@@ -191,7 +191,7 @@ If the repository is under Git, stage the minimal fix now but defer the checkpoi
 
 ### Step 5: Run Tests Again
 ```bash
-npm test
+<test>
 # Tests should now pass
 ```
 
@@ -219,7 +219,7 @@ Recommended commit message format:
 
 ### Step 7: Verify Coverage
 ```bash
-npm run test:coverage
+<coverage>
 # Verify 80%+ coverage achieved
 ```
 
@@ -466,7 +466,7 @@ jest.mock('@/lib/openai', () => ({
 
 ### Run Coverage Report
 ```bash
-npm run test:coverage
+<coverage>
 ```
 
 ### Coverage Thresholds
@@ -537,21 +537,21 @@ test('updates user', () => {
 
 ### Watch Mode During Development
 ```bash
-npm test -- --watch
+<test-watch>
 # Tests run automatically on file changes
 ```
 
 ### Pre-Commit Hook
 ```bash
 # Runs before every commit
-npm test && npm run lint
+<test> && npm run lint
 ```
 
 ### CI/CD Integration
 ```yaml
 # GitHub Actions
 - name: Run Tests
-  run: npm test -- --coverage
+  run: <coverage>
 - name: Upload Coverage
   uses: codecov/codecov-action@v3
 ```
