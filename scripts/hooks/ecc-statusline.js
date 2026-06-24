@@ -52,7 +52,7 @@ function buildContextBar(remaining) {
   if (used < 50) return ` \x1b[32m${bar} ${used}%\x1b[0m`;
   if (used < 65) return ` \x1b[33m${bar} ${used}%\x1b[0m`;
   if (used < 80) return ` \x1b[38;5;208m${bar} ${used}%\x1b[0m`;
-  return ` \x1b[5;31m${bar} ${used}%\x1b[0m`;
+  return ` \x1b[1;31m${bar} ${used}%\x1b[0m`;
 }
 
 /**
@@ -137,7 +137,7 @@ function runStatusline() {
           parts.push(dur);
         }
         if (parts.length > 0) {
-          metricsStr = `\x1b[36m${parts.join(' ')}\x1b[0m`;
+          metricsStr = `\x1b[38;5;117m${parts.join(' ')}\x1b[0m`;
         }
       }
 
@@ -149,7 +149,7 @@ function runStatusline() {
       const segments = [`\x1b[2m${model}\x1b[0m`];
 
       if (task) {
-        segments.push(`\x1b[1m${task}\x1b[0m`);
+        segments.push(`\x1b[1;97m${task}\x1b[0m`);
       }
       if (metricsStr) {
         segments.push(metricsStr);

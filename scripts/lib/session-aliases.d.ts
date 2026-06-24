@@ -1,6 +1,6 @@
 /**
  * Session Aliases Library for Claude Code.
- * Manages named aliases for session files, stored in ~/.claude/session-aliases.json.
+ * Manages named aliases for session files, stored in $ECC_AGENT_DATA_HOME/session-aliases.json (default ~/.claude).
  */
 
 /** Internal alias storage entry */

@@ -10,7 +10,8 @@ description: >-
   complex multi-PR task, or describes work that needs multiple sessions.
   DO NOT TRIGGER when: task is completable in a single PR or fewer
   than 3 tool calls, or user says "just do it".
-origin: community
+metadata:
+  origin: community
 ---
 
 # Blueprint — Construction Plan Generator

@@ -2514,6 +2514,29 @@ async function runTests() {
   else failed++;
 
   if (
+    test('inline hook bootstraps avoid escaped double quotes for Git Bash', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          for (const hook of entry.hooks) {
+            const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
+            if (typeof commandText === 'string' && commandText.startsWith('node -e ')) {
+              assert.ok(
+                !commandText.includes('\\"'),
+                `${eventName}/${entry.id || entry.matcher || 'hook'} should not ship escaped double quotes in node -e payload`,
+              );
+            }
+          }
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('all hook commands use node or approved shell wrappers', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
@@ -3114,7 +3137,9 @@ async function runTests() {
       const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
 
       assert.ok(observerLoopSource.includes('ECC_OBSERVER_MAX_TURNS'), 'observer-loop should allow max-turn overrides');
-      assert.ok(observerLoopSource.includes('max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"'), 'observer-loop should default to 20 turns');
+      assert.ok(observerLoopSource.includes('max_turns=$(( analysis_count / 10 ))'), 'observer-loop should auto-scale max_turns from the analysis batch size when no override is set');
+      assert.ok(observerLoopSource.includes('if [ "$max_turns" -lt 20 ]; then max_turns=20; fi'), 'observer-loop should clamp the auto-scaled budget to a floor of 20 turns');
+      assert.ok(observerLoopSource.includes('if [ "$max_turns" -gt 100 ]; then max_turns=100; fi'), 'observer-loop should clamp the auto-scaled budget to a cap of 100 turns');
       assert.ok(!observerLoopSource.includes('--max-turns 3'), 'observer-loop should not hardcode a 3-turn limit');
       assert.ok(observerLoopSource.includes('ECC_SKIP_OBSERVE=1'), 'observer-loop should suppress observe.sh for automated sessions');
       assert.ok(observerLoopSource.includes('ECC_HOOK_PROFILE=minimal'), 'observer-loop should run automated analysis with the minimal hook profile');
@@ -3277,11 +3302,14 @@ async function runTests() {
 
         assert.strictEqual(result.code, 0, `observe.sh should exit successfully, stderr: ${result.stderr}`);
 
-        const projectsDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus', 'projects');
-        const projectIds = fs.readdirSync(projectsDir);
-        assert.strictEqual(projectIds.length, 1, 'observe.sh should create one project-scoped observation directory');
+        const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+        const projectsDir = path.join(homunculusDir, 'projects');
+        assert.ok(
+          !fs.existsSync(projectsDir) || fs.readdirSync(projectsDir).length === 0,
+          'observe.sh should not create a project-scoped directory for a non-git cwd'
+        );
 
-        const observationsPath = path.join(projectsDir, projectIds[0], 'observations.jsonl');
+        const observationsPath = path.join(homunculusDir, 'observations.jsonl');
         const observations = fs.readFileSync(observationsPath, 'utf8').trim().split('\n').filter(Boolean);
         assert.ok(observations.length > 0, 'observe.sh should append at least one observation');
 
@@ -4980,6 +5008,103 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=0', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-off-${Date.now()}`);
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+
+      const expiredFile = path.join(sessionsDir, '2026-01-01-keepme-session.tmp');
+      fs.writeFileSync(expiredFile, '# Old Session\n\nSHOULD STILL EXIST');
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(expiredFile, ninetyDaysAgo, ninetyDaysAgo);
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome,
+          ECC_SESSION_RETENTION_DAYS: '0',
+        });
+
+        assert.strictEqual(result.code, 0);
+        assert.ok(fs.existsSync(expiredFile), 'Should keep all sessions when retention is opt-out=0');
+        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'),
+          `Should log pruning disabled, stderr: ${result.stderr}`);
+        assert.ok(!result.stderr.includes('Pruned'), `Should not log any pruning, stderr: ${result.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=off', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-offstr-${Date.now()}`);
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+
+      const expiredFile = path.join(sessionsDir, '2025-12-15-keepme-session.tmp');
+      fs.writeFileSync(expiredFile, '# Forensic Session\n\nKEEP ME');
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(expiredFile, sixtyDaysAgo, sixtyDaysAgo);
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome,
+          ECC_SESSION_RETENTION_DAYS: 'off',
+        });
+
+        assert.strictEqual(result.code, 0);
+        assert.ok(fs.existsSync(expiredFile), 'Should keep all sessions when retention is opt-out=off');
+        assert.ok(result.stderr.includes('Pruning disabled via ECC_SESSION_RETENTION_DAYS'),
+          `Should log pruning disabled, stderr: ${result.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('falls back to default retention when ECC_SESSION_RETENTION_DAYS is garbage', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-garbage-${Date.now()}`);
+      const sessionsDir = getCanonicalSessionsDir(isoHome);
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
+
+      const expiredFile = path.join(sessionsDir, '2026-01-01-pruneme-session.tmp');
+      fs.writeFileSync(expiredFile, '# Old Session\n\nDELETE ME');
+      const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(expiredFile, fortyDaysAgo, fortyDaysAgo);
+
+      try {
+        const result = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          HOME: isoHome,
+          USERPROFILE: isoHome,
+          ECC_SESSION_RETENTION_DAYS: 'bogus-value',
+        });
+
+        assert.strictEqual(result.code, 0);
+        assert.ok(!fs.existsSync(expiredFile),
+          'Should fall back to default 30-day retention and prune the 40-day-old file');
+        assert.ok(result.stderr.includes('Pruned 1 expired session'),
+          `Should log pruning at default retention, stderr: ${result.stderr}`);
+        assert.ok(!result.stderr.includes('Pruning disabled'),
+          'Should NOT treat garbage as opt-out');
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   console.log('\nRound 55: session-start.js (newest session selection):');
 
   if (
@@ -5160,17 +5285,15 @@ async function runTests() {
   console.log('\nRound 59: check-console-log.js (stdin exceeding 1MB — truncation):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit
+    await asyncTest('suppresses pass-through for oversized stdin (fail-open, #2090)', async () => {
+      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit. Echoing the
+      // truncated string would emit a JSON document cut mid-stream, which the
+      // harness reports as a Stop hook JSON validation failure.
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, '', 'Truncated stdin must not be echoed (empty stdout = no opinion)');
     })
   )
     passed++;

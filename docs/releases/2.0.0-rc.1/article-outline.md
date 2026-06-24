@@ -31,6 +31,10 @@ The leverage comes from treating the harness, reusable workflow layer, and opera
 - hooks and verification discipline
 - security and review patterns
 - operator workflow skills around content, research, and business ops
+- queue, discussion, Linear, legacy, and release-evidence checks that make the
+  operating state inspectable
+- supply-chain IOC scanning and no-lifecycle install hardening after the
+  Mini Shai-Hulud/TanStack campaign
 
 ### 3. Why Hermes Is the Operator Layer
 
@@ -45,8 +49,21 @@ The leverage comes from treating the harness, reusable workflow layer, and opera
 - cross-harness architecture doc
 - Hermes import guidance
 - clearer 2.0 positioning in the repo
+- preview-pack smoke gate
+- launch drafts for GitHub release copy, X, LinkedIn, article, Telegram/Hermes
+  handoff, and demo prompts
 
-### 5. What Stays Local
+### 5. What Changed Since v1.10.0
+
+- Claude Code remains the core target, but ECC now treats Codex, OpenCode,
+  Cursor, Gemini, Zed, and terminal-only workflows as shared execution surfaces.
+- The release process now has repeatable platform, discussion, observability,
+  supply-chain, Linear progress, and preview-pack checks.
+- AgentShield and ECC Tools work is mirrored into the roadmap so enterprise
+  security, hosted review, policy promotion, and billing-readiness lanes do not
+  drift away from the main release.
+
+### 6. What Stays Local
 
 - secrets and auth
 - raw workspace exports
@@ -54,7 +71,7 @@ The leverage comes from treating the harness, reusable workflow layer, and opera
 - operator-specific automations that have not been sanitized
 - deeper CRM, finance, and Google Workspace playbooks
 
-### 6. Closing Point
+### 7. Closing Point
 
 The goal is not to copy one exact stack.
 

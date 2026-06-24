@@ -1,7 +1,8 @@
 ---
 name: scholar-evaluation
 description: Structured scholarly-work evaluation for papers, proposals, literature reviews, methods sections, evidence quality, citation support, and research-writing feedback.
-origin: community
+metadata:
+  origin: community
 ---
 
 # Scholar Evaluation

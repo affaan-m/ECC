@@ -1,4 +1,4 @@
-**语言：** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md)
+**语言：** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md)
 
 # Everything Claude Code
 
@@ -7,7 +7,7 @@
 [![Contributors](https://img.shields.io/github/contributors/affaan-m/everything-claude-code?style=flat)](https://github.com/affaan-m/everything-claude-code/graphs/contributors)
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![npm ecc-agentshield](https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield%20weekly%20downloads\&logo=npm)](https://www.npmjs.com/package/ecc-agentshield)
-[![GitHub App Install](https://img.shields.io/badge/GitHub%20App-150%20installs-2ea44f?logo=github)](https://github.com/marketplace/ecc-tools)
+[![GitHub App Install](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.ecc.tools%2Fbadge%2Finstalls&logo=github)](https://github.com/marketplace/ecc-tools)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Shell](https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash\&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript\&logoColor=white)
@@ -25,7 +25,7 @@
 
 **语言 / Language / 語言 / Dil / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md)
 
 </div>
 
@@ -80,6 +80,10 @@
 ***
 
 ## 最新动态
+
+### v2.0.0 — 智能体 Harness 操作系统（2026年6月）
+
+2.0 主线稳定版：261 个技能、control-pane 基底（会话适配器 + MCP 清单）、worktree 生命周期服务，以及 [ECC Discord 社区](https://discord.gg/36yGMHGFbR)。
 
 ### v2.0.0-rc.1 — 表面同步、运营工作流与 ECC 2.0 Alpha（2026年4月）
 
@@ -167,7 +171,7 @@
 
 ```bash
 # Add marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Install plugin
 /plugin install ecc@ecc
@@ -224,7 +228,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 60 个智能体、228 项技能和 75 个命令了。
+**搞定！** 你现在可以使用 67 个智能体、271 项技能和 92 个命令了。
 
 ***
 
@@ -603,7 +607,7 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 
 ```bash
 # Add this repo as a marketplace
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # Install the plugin
 /plugin install ecc@ecc
@@ -637,16 +641,16 @@ Claude Code v2.1+ **会自动加载** 任何已安装插件中的 `hooks/hooks.j
 >
 > # 选项 A：用户级规则（适用于所有项目）
 > mkdir -p ~/.claude/rules
-> cp -r everything-claude-code/rules/common/* ~/.claude/rules/
-> cp -r everything-claude-code/rules/typescript/* ~/.claude/rules/   # 选择您的技术栈
-> cp -r everything-claude-code/rules/python/* ~/.claude/rules/
-> cp -r everything-claude-code/rules/golang/* ~/.claude/rules/
-> cp -r everything-claude-code/rules/php/* ~/.claude/rules/
+> cp -r everything-claude-code/rules/common ~/.claude/rules/common
+> cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # 选择您的技术栈
+> cp -r everything-claude-code/rules/python ~/.claude/rules/python
+> cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
+> cp -r everything-claude-code/rules/php ~/.claude/rules/php
 >
 > # 选项 B：项目级规则（仅适用于当前项目）
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/common/* .claude/rules/
-> cp -r everything-claude-code/rules/typescript/* .claude/rules/     # 选择您的技术栈
+> cp -r everything-claude-code/rules/common .claude/rules/common
+> cp -r everything-claude-code/rules/typescript .claude/rules/typescript     # 选择您的技术栈
 > ```
 
 ***
@@ -663,11 +667,11 @@ git clone https://github.com/affaan-m/everything-claude-code.git
 cp everything-claude-code/agents/*.md ~/.claude/agents/
 
 # Copy rules (common + language-specific)
-cp -r everything-claude-code/rules/common/* ~/.claude/rules/
-cp -r everything-claude-code/rules/typescript/* ~/.claude/rules/   # pick your stack
-cp -r everything-claude-code/rules/python/* ~/.claude/rules/
-cp -r everything-claude-code/rules/golang/* ~/.claude/rules/
-cp -r everything-claude-code/rules/php/* ~/.claude/rules/
+cp -r everything-claude-code/rules/common ~/.claude/rules/common
+cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # pick your stack
+cp -r everything-claude-code/rules/python ~/.claude/rules/python
+cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
+cp -r everything-claude-code/rules/php ~/.claude/rules/php
 
 # Copy maintained commands
 cp everything-claude-code/commands/*.md ~/.claude/commands/
@@ -885,7 +889,7 @@ claude
 cp everything-claude-code/agents/*.md ~/.claude/agents/
 
 # Just rules
-cp -r everything-claude-code/rules/common/* ~/.claude/rules/
+cp -r everything-claude-code/rules/common ~/.claude/rules/common
 ```
 
 每个组件都是完全独立的。
@@ -1134,15 +1138,15 @@ opencode
 
 ### 功能对等
 
-| 功能特性 | Claude Code | OpenCode | 状态 |
-|---------|-------------|----------|--------|
-| 智能体 | PASS: 60 个 | PASS: 12 个 | **Claude Code 领先** |
-| 命令 | PASS: 75 个 | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 228 项 | PASS: 37 项 | **Claude Code 领先** |
+| 功能特性 | Claude Code   | OpenCode | 状态 |
+|---------|---------------|----------|--------|
+| 智能体 | PASS: 67 个    | PASS: 12 个 | **Claude Code 领先** |
+| 命令 | PASS: 92 个    | PASS: 35 个 | **Claude Code 领先** |
+| 技能 | PASS: 271 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
-| 规则 | PASS: 29 条 | PASS: 13 条指令 | **Claude Code 领先** |
-| MCP 服务器 | PASS: 14 个 | PASS: 完整 | **完全对等** |
-| 自定义工具 | PASS: 通过钩子 | PASS: 6 个原生工具 | **OpenCode 更优** |
+| 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
+| MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
+| 自定义工具 | PASS: 通过钩子    | PASS: 6 个原生工具 | **OpenCode 更优** |
 
 ### 通过插件实现的钩子支持
 
@@ -1242,21 +1246,21 @@ npm install ecc-universal
 
 ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以下是每个平台的比较：
 
-| 功能特性 | Claude Code | Cursor IDE | Codex CLI | OpenCode |
-|---------|------------|------------|-----------|----------|
-| **智能体** | 60 | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
-| **命令** | 75 | 共享 | 基于指令 | 35 |
-| **技能** | 228 | 共享 | 10 (原生格式) | 37 |
-| **钩子事件** | 8 种类型 | 15 种类型 | 暂无 | 11 种类型 |
-| **钩子脚本** | 20+ 个脚本 | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
-| **规则** | 34 (通用 + 语言) | 34 (YAML 前页) | 基于指令 | 13 条指令 |
-| **自定义工具** | 通过钩子 | 通过钩子 | N/A | 6 个原生工具 |
-| **MCP 服务器** | 14 | 共享 (mcp.json) | 4 (基于命令) | 完整 |
-| **配置格式** | settings.json | hooks.json + rules/ | config.toml | opencode.json |
+| 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
+|---------|-----------------------|------------|-----------|----------|
+| **智能体** | 67                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **命令** | 92                    | 共享 | 基于指令 | 35 |
+| **技能** | 271                   | 共享 | 10 (原生格式) | 37 |
+| **钩子事件** | 8 种类型                 | 15 种类型 | 暂无 | 11 种类型 |
+| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
+| **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |
+| **自定义工具** | 通过钩子                  | 通过钩子 | N/A | 6 个原生工具 |
+| **MCP 服务器** | 14                    | 共享 (mcp.json) | 4 (基于命令) | 完整 |
+| **配置格式** | settings.json         | hooks.json + rules/ | config.toml | opencode.json |
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
-| **秘密检测** | 基于钩子 | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
-| **自动格式化** | PostToolUse 钩子 | afterFileEdit 钩子 | N/A | file.edited 钩子 |
-| **版本** | 插件 | 插件 | 参考配置 | 2.0.0-rc.1 |
+| **秘密检测** | 基于钩子                  | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
+| **自动格式化** | PostToolUse 钩子        | afterFileEdit 钩子 | N/A | file.edited 钩子 |
+| **版本** | 插件 | 插件 | 参考配置 | 2.0.0 |
 
 **关键架构决策：**
 

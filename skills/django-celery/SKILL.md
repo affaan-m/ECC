@@ -1,7 +1,8 @@
 ---
 name: django-celery
 description: Django + Celery async task patterns — configuration, task design, beat scheduling, retries, canvas workflows, monitoring, and testing. Use when adding background jobs, scheduled tasks, or async processing to a Django app.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Django + Celery Async Task Patterns
@@ -22,7 +23,7 @@ Production-grade patterns for background task processing in Django using Celery 
 ### Installation
 
 ```bash
-pip install celery[redis] django-celery-results django-celery-beat
+pip install 'celery[redis]' django-celery-results django-celery-beat
 ```
 
 ### `celery.py` — App Entrypoint

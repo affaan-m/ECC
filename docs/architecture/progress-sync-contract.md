@@ -9,7 +9,7 @@ status update can claim a lane is current.
 | Surface | Role | Current rule |
 | --- | --- | --- |
 | GitHub PRs/issues/discussions | Public queue and review state | Recheck live counts before every significant merge batch and before release approval. |
-| Linear project | Executive roadmap and stakeholder status update | Post project status updates while issue capacity blocks issue creation. Create/reuse issues only when workspace capacity is available. |
+| Linear project | Executive roadmap and stakeholder status update | Use project documents and project/issue comments because project status updates are disabled in this workspace; create/reuse issues for durable execution lanes. |
 | Local handoff | Durable operator continuity | Update the active handoff after every merge batch, queue drain, skipped release gate, or blocked external action. |
 | Repo roadmap | Auditable planning mirror | Keep `docs/ECC-2.0-GA-ROADMAP.md` aligned to merged PR evidence and unresolved gates. |
 | `scripts/work-items.js` | Local tracker bridge | Sync GitHub PRs/issues into the SQLite work-items store for status snapshots and blocked follow-up. |
@@ -41,9 +41,12 @@ After a significant merge batch, update Linear and the handoff with:
 4. Deferred or skipped work and the explicit reason.
 5. The next one or two implementation slices.
 
-When Linear issue capacity is unavailable, use a project status update instead
-of creating placeholder issues. When issue capacity is available, create or
-reuse exact-title issues and link them to the repo evidence.
+When Linear project status updates are unavailable, use a project document plus
+project/issue comments instead of creating placeholder issues. Issue capacity is
+available for durable execution lanes, but do not use that issue capacity as a
+substitute for evidence-backed project status. Create or reuse exact-title
+issues only when the lane needs a durable execution owner, and link those issues
+to repo evidence.
 
 ## Realtime Boundary
 

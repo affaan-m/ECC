@@ -44,6 +44,7 @@ yarn-error.log*
 .pnpm-debug.log*
 .yarn/
 lerna-debug.log*
+*.tgz
 
 # Build outputs
 dist/
@@ -77,6 +78,7 @@ examples/sessions/*.tmp
 marketing/
 .dmux/
 .dmux-hooks/
+.claude/settings.local.json
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
@@ -98,3 +100,5 @@ ecc2/target/
 .opencode/package-lock.json
 .opencode/node_modules/
 assets/images/security/badrudi-exploit.mp4
+
+.aider*

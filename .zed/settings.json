@@ -1,0 +1,41 @@
+{
+  "agent": {
+    "tool_permissions": {
+      "default": "confirm",
+      "tools": {
+        "terminal": {
+          "default": "confirm",
+          "always_deny": [
+            {
+              "pattern": "rm\\s+-rf\\s+(/|~)"
+            },
+            {
+              "pattern": "(^|\\s)(cat|sed|grep|rg)\\s+.*\\.(env|pem|key)(\\s|$)"
+            }
+          ],
+          "always_confirm": [
+            {
+              "pattern": "sudo\\s"
+            },
+            {
+              "pattern": "(npm|pnpm|yarn|bun)\\s+(install|add|dlx|exec|x)\\b"
+            },
+            {
+              "pattern": "gh\\s+(auth|api|repo|release|pr|issue)\\b"
+            }
+          ]
+        },
+        "edit_file": {
+          "always_deny": [
+            {
+              "pattern": "\\.env"
+            },
+            {
+              "pattern": "\\.(pem|key|p12|pfx)$"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

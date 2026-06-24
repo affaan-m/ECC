@@ -1,6 +1,6 @@
 # Migration Guide: Claude Code to OpenCode
 
-This guide helps you migrate from Claude Code to OpenCode while using the Everything Claude Code (ECC) configuration.
+This guide helps you migrate from Claude Code to OpenCode while using the ECC configuration.
 
 ## Overview
 
@@ -365,4 +365,4 @@ If you need to switch back:
 
 For issues specific to:
 - **OpenCode CLI**: Report to OpenCode's issue tracker
-- **ECC Configuration**: Report to [github.com/affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- **ECC Configuration**: Report to [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)

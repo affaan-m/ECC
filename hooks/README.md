@@ -110,6 +110,15 @@ export ECC_SESSION_START_MAX_CHARS=4000
 
 # Disable SessionStart additional context entirely
 export ECC_SESSION_START_CONTEXT=off
+
+# Keep context/scope/loop warnings but suppress API-rate cost estimates
+export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
+```
+
+Windows PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', 'User')
 ```
 
 Profiles:

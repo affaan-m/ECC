@@ -7,12 +7,13 @@
  * the actual code. This hook steers the agent back to fixing the source.
  *
  * Exit codes:
- *   0 = allow (not a config file)
- *   2 = block (config file modification attempted)
+ *   0 = allow (not a config file, or first-time creation of one)
+ *   2 = block (existing config file modification attempted)
  */
 
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 
 const MAX_STDIN = 1024 * 1024;
@@ -58,7 +59,7 @@ const PROTECTED_FILES = new Set([
   '.stylelintrc.yml',
   '.markdownlint.json',
   '.markdownlint.yaml',
-  '.markdownlintrc',
+  '.markdownlintrc'
 ]);
 
 function parseInput(inputOrRaw) {
@@ -94,13 +95,41 @@ function run(inputOrRaw, options = {}) {
 
   const basename = path.basename(filePath);
   if (PROTECTED_FILES.has(basename)) {
+    // Allow first-time creation — there's no existing config to weaken.
+    // The hook's purpose is blocking modifications; writing a brand-new
+    // config file in a project that has none is a legitimate bootstrap
+    // path (e.g. scaffolding ESLint into a fresh repo).
+    //
+    // Fail closed on any stat error other than ENOENT. Use lstatSync so a
+    // symlink at the protected path is treated as present even if its target
+    // is missing — a dangling symlink at e.g. .eslintrc.js still represents
+    // an existing config entry that an agent should not silently replace.
+    // fs.existsSync would swallow EACCES/EPERM as false; lstatSync exposes
+    // the error code so we can treat only genuine "path not found" (ENOENT)
+    // as absent.
+    let exists = true;
+    try {
+      fs.lstatSync(filePath);
+      // lstat succeeded — something (file, dir, or symlink) exists here.
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        exists = false;
+      }
+      // Any other error (EACCES, EPERM, ELOOP, etc.) leaves exists=true
+      // so the guard is never silently weakened.
+    }
+
+    if (!exists) {
+      return { exitCode: 0 };
+    }
+
     return {
       exitCode: 2,
       stderr:
         `BLOCKED: Modifying ${basename} is not allowed. ` +
         'Fix the source code to satisfy linter/formatter rules instead of ' +
         'weakening the config. If this is a legitimate config change, ' +
-        'disable the config-protection hook temporarily.',
+        'disable the config-protection hook temporarily.'
     };
   }
 
@@ -125,7 +154,7 @@ process.stdin.on('data', chunk => {
 process.stdin.on('end', () => {
   const result = run(raw, {
     truncated,
-    maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN,
+    maxStdin: Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN
   });
 
   if (result.stderr) {

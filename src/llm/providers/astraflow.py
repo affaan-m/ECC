@@ -15,6 +15,7 @@ from llm.core.interface import (
     RateLimitError,
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
+from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 
 ASTRAFLOW_BASE_URL = "https://api.umodelverse.ai/v1"
 ASTRAFLOW_CN_BASE_URL = "https://api.modelverse.cn/v1"
@@ -55,7 +56,7 @@ class _AstraflowBaseProvider(LLMProvider):
         env_model = os.environ.get(self.model_env)
         fallback_model = os.environ.get(self.fallback_model_env) if self.fallback_model_env else None
         self.default_model = default_model or env_model or fallback_model or DEFAULT_ASTRAFLOW_MODEL
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
         self._models = [
             ModelInfo(
                 name=self.default_model,
@@ -79,6 +80,8 @@ class _AstraflowBaseProvider(LLMProvider):
                 params["tools"] = [tool.to_openai_tool() for tool in llm_input.tools]
 
             response = self.client.chat.completions.create(**params)
+            if not response.choices or response.choices[0].message is None:
+                raise ValueError(EMPTY_FILTERED_RESPONSE_ERROR)
             choice = response.choices[0]
 
             tool_calls = None

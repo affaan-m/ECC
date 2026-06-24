@@ -43,7 +43,7 @@ test('adapter compliance matrix covers the required harness surfaces', () => {
     'OpenCode',
     'Cursor',
     'Gemini',
-    'Zed-adjacent',
+    'Zed',
     'dmux',
     'Orca',
     'Superset',
@@ -56,6 +56,14 @@ test('adapter compliance matrix covers the required harness surfaces', () => {
 
 test('adapter compliance source data validates required evidence fields', () => {
   assert.deepStrictEqual(validateAdapterRecords(), []);
+
+  const zedRecord = ADAPTER_RECORDS.find(record => record.id === 'zed');
+  assert.ok(zedRecord, 'Expected Zed adapter record');
+  assert.strictEqual(zedRecord.state, 'Adapter-backed');
+  assert.ok(
+    zedRecord.install_or_onramp.includes('`./install.sh --profile minimal --target zed`'),
+    'Expected Zed installer onramp'
+  );
 
   for (const record of ADAPTER_RECORDS) {
     assert.ok(record.install_or_onramp.length > 0, `${record.id} needs an install or onramp`);

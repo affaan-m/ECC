@@ -6,6 +6,45 @@ mod session;
 mod tui;
 mod worktree;
 
+#[cfg(test)]
+pub(crate) mod test_support {
+    use anyhow::{Context, Result};
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    static CURRENT_DIR_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    pub(crate) struct CurrentDirGuard {
+        _lock: MutexGuard<'static, ()>,
+        original_dir: PathBuf,
+    }
+
+    impl CurrentDirGuard {
+        pub(crate) fn enter(target_dir: &Path) -> Result<Self> {
+            let lock = CURRENT_DIR_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .expect("current-dir test lock poisoned");
+            let original_dir =
+                std::env::current_dir().context("Failed to capture current test directory")?;
+            std::env::set_current_dir(target_dir).with_context(|| {
+                format!("Failed to enter test directory {}", target_dir.display())
+            })?;
+
+            Ok(Self {
+                _lock: lock,
+                original_dir,
+            })
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original_dir);
+        }
+    }
+}
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -10828,14 +10867,7 @@ mod tests {
 
         let tempdb = TestDir::new("legacy-schedule-import-live-db")?;
         let db = StateStore::open(&tempdb.path().join("state.db"))?;
-        struct CurrentDirGuard(PathBuf);
-        impl Drop for CurrentDirGuard {
-            fn drop(&mut self) {
-                let _ = std::env::set_current_dir(&self.0);
-            }
-        }
-        let _cwd_guard = CurrentDirGuard(std::env::current_dir()?);
-        std::env::set_current_dir(&target_repo)?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&target_repo)?;
         let report = import_legacy_schedules(&db, &config::Config::default(), root, false)?;
 
         assert!(!report.dry_run);
@@ -11038,14 +11070,7 @@ Route existing installs to portal first before checkout.
 
         let tempdb = TestDir::new("legacy-remote-import-live-db")?;
         let db = StateStore::open(&tempdb.path().join("state.db"))?;
-        struct CurrentDirGuard(PathBuf);
-        impl Drop for CurrentDirGuard {
-            fn drop(&mut self) {
-                let _ = std::env::set_current_dir(&self.0);
-            }
-        }
-        let _cwd_guard = CurrentDirGuard(std::env::current_dir()?);
-        std::env::set_current_dir(&target_repo)?;
+        let _cwd_guard = crate::test_support::CurrentDirGuard::enter(&target_repo)?;
 
         let report = import_legacy_remote_dispatch(&db, &Config::default(), root, false)?;
 

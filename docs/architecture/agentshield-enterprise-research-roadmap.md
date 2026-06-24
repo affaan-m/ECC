@@ -1,6 +1,7 @@
 # AgentShield Enterprise Research Roadmap
 
-Generated: 2026-05-12
+Generated: 2026-05-12; refreshed with May 18 AgentShield fleet-ticket and
+Mini Shai-Hulud IOC evidence.
 
 This is a planning artifact for the next AgentShield enterprise iteration. It
 does not modify AgentShield code. The goal is to turn the current scanner,
@@ -84,12 +85,53 @@ AgentShield is already more than a static lint tool:
 - Enterprise hooks exist: policy packs, exception metadata, expiring/expired
   exception reporting, SARIF code scanning, and job-summary output.
 - Accuracy work is active: `runtimeConfidence`, template/example weighting,
-  docs-example downgrades, hook-manifest resolution, false-positive audit
-  guidance, and corpus readiness.
+  docs-example downgrades, installed Claude plugin-cache confidence,
+  hook-manifest resolution, false-positive audit guidance, and corpus readiness.
+- Evidence-pack consumption is now first-class enough for downstream tools:
+  `agentshield evidence-pack inspect` verifies a bundle and emits compact
+  JSON/text summaries for report score, finding counts, runtime confidence,
+  policy, baseline, supply-chain, CI context, remediation, and malformed
+  artifact errors.
+- Fleet-level evidence-pack consumption now has a local routing primitive:
+  `agentshield evidence-pack fleet <dirs...> [--json]` aggregates multiple
+  inspected bundles into ready, security-blocker, policy-review,
+  baseline-regression, supply-chain-review, and invalid routes.
+- ECC-Tools now consumes that fleet primitive in hosted security review:
+  `agentshield-evidence/fleet-summary.json` routes invalid packs, security
+  blockers, policy reviews, baseline regressions, and supply-chain reviews into
+  hosted findings.
 
-The next iteration should not be "add more regex rules" by default. The higher
-leverage move is to make AgentShield remember, compare, route, and enforce
-security posture across time, repos, teams, and harnesses.
+May 16 update: AgentShield PR #87 merged as
+`26bb44650663816d07180e0d20c1895e431a326c`. It classifies installed Claude
+plugin cache content as `runtimeConfidence: plugin-cache`, keeps non-secret
+plugin-cache score impact at `0.5x`, avoids downgrading repository-local
+non-Claude `plugins/cache` paths, and makes plugin-cache classification win
+before cached hook implementations would otherwise appear as active `hook-code`.
+AgentShield PR #88 merged as
+`65ed6e2a87545dc99d962b58413f49096a4d70ec`. It adds
+`agentshield evidence-pack inspect <dir> [--json]`, validates the bundle before
+readback, summarizes every consumer-facing evidence artifact, and keeps
+malformed-but-valid JSON artifacts from crashing inspection.
+AgentShield PR #89 merged as
+`521ada9091bb6d818511ab8589ae675b920c106a`. It adds
+`agentshield evidence-pack fleet <dirs...> [--json]`, verifies each pack through
+the inspect path, aggregates finding, policy, baseline, supply-chain, and
+remediation totals, and assigns each pack to a deterministic fleet route.
+AgentShield commit `840952a7a07f820f24081c43df656d7f7295f23b` adds
+Linear/operator-ready fleet review ticket payloads with priority, labels,
+titles, and Markdown bodies. The same commit expands current Mini
+Shai-Hulud/TanStack IOC coverage for the in-cluster Vault endpoint and
+temporary lockfile breadcrumb, with local typecheck, lint, full tests,
+`git diff --check`, and GitHub CI/Self-Scan/Action-test evidence.
+
+The next iteration after fleet routing should not be "add more regex rules" by
+default. ECC-Tools follow-up routing now consumes fleet summaries and surfaces
+source evidence paths in hosted findings, and the first cross-harness policy
+slice now links AgentShield fleet route target paths to harness-owner review.
+AgentShield fleet output now also emits `reviewItems` with source evidence paths
+and owner-ready recommendations plus copy-ready ticket payloads for routed
+packs. The higher leverage move is durable operator approval/readback and
+workflow automation for routed fleet findings.
 
 ## Enterprise Gaps
 
@@ -323,6 +365,8 @@ The AgentShield enterprise iteration is not complete until these are true:
 - Built CLI smoke tests cover the new flags or report modes.
 - GitHub Action self-test covers the new CI-visible output.
 - Documentation names the free/local path and the paid/team path separately.
+- Runtime-confidence changes include live scan evidence proving lower-confidence
+  plugin/package surfaces stay visible instead of being suppressed.
 - Evidence produced by the feature is deterministic enough for CI diffing.
 - ECC-Tools can consume the finding fingerprints or backlog export without
   exceeding GitHub/Linear object caps.

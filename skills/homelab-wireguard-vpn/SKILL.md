@@ -1,7 +1,8 @@
 ---
 name: homelab-wireguard-vpn
 description: WireGuard VPN server setup, peer configuration, key generation, split tunneling vs full tunnel routing, and remote access to a home network from mobile and laptop clients.
-origin: community
+metadata:
+  origin: community
 ---
 
 # Homelab WireGuard VPN
@@ -218,8 +219,8 @@ stays reachable after an IP change.
     restart: unless-stopped
 
 # ddns.env (chmod 600, not committed to git):
-#   SETTINGS_CLOUDFLARE_ZONE_ID=your_zone_id
-#   SETTINGS_CLOUDFLARE_TOKEN=your_api_token
+# SETTINGS_CLOUDFLARE_ZONE_ID=your_zone_id
+# SETTINGS_CLOUDFLARE_TOKEN=your_api_token
 
 # Option 2: DuckDNS (free, simple)
   Sign up at duckdns.org → get a token and subdomain (myhome.duckdns.org)

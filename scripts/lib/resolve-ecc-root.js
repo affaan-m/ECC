@@ -110,7 +110,22 @@ function resolveEccRoot(options = {}) {
  *   const _r = <paste INLINE_RESOLVE>;
  *   const sm = require(_r + '/scripts/lib/session-manager');
  */
-const INLINE_RESOLVE = `(()=>{var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var p=require('path'),f=require('fs'),h=require('os').homedir(),d=p.join(h,'.claude'),q=p.join('scripts','lib','utils.js');if(f.existsSync(p.join(d,q)))return d;for(var s of ${JSON.stringify(PLUGIN_ROOT_SEGMENTS)}){var l=p.join(d,'plugins',...s);if(f.existsSync(p.join(l,q)))return l}try{for(var g of ${JSON.stringify(PLUGIN_CACHE_SLUGS)}){var b=p.join(d,'plugins','cache',g);for(var o of f.readdirSync(b,{withFileTypes:true})){if(!o.isDirectory())continue;for(var v of f.readdirSync(p.join(b,o.name),{withFileTypes:true})){if(!v.isDirectory())continue;var c=p.join(b,o.name,v.name);if(f.existsSync(p.join(c,q)))return c}}}}catch(x){}return d})()`;
+function inlineSingleQuote(value) {
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function inlineArray(values) {
+  return `[${values.map(inlineSingleQuote).join(',')}]`;
+}
+
+function inlineNestedArray(values) {
+  return `[${values.map(inlineArray).join(',')}]`;
+}
+
+const INLINE_PLUGIN_ROOT_SEGMENTS = inlineNestedArray(PLUGIN_ROOT_SEGMENTS);
+const INLINE_PLUGIN_CACHE_SLUGS = inlineArray(PLUGIN_CACHE_SLUGS);
+
+const INLINE_RESOLVE = `(()=>{var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var p=require('path'),f=require('fs'),h=require('os').homedir(),d=p.join(h,'.claude'),q=p.join('scripts','lib','utils.js');if(f.existsSync(p.join(d,q)))return d;for(var s of ${INLINE_PLUGIN_ROOT_SEGMENTS}){var l=p.join(d,'plugins',...s);if(f.existsSync(p.join(l,q)))return l}try{for(var g of ${INLINE_PLUGIN_CACHE_SLUGS}){var b=p.join(d,'plugins','cache',g);for(var o of f.readdirSync(b,{withFileTypes:true})){if(!o.isDirectory())continue;for(var v of f.readdirSync(p.join(b,o.name),{withFileTypes:true})){if(!v.isDirectory())continue;var c=p.join(b,o.name,v.name);if(f.existsSync(p.join(c,q)))return c}}}}catch(x){}return d})()`;
 
 module.exports = {
   resolveEccRoot,

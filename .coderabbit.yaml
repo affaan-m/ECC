@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+tone_instructions: "Be direct, concise, and evidence-led. Prioritize actionable findings over praise."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  review_status: true
+  review_details: true
+  commit_status: true
+  fail_commit_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: |
+        Treat workflow changes as security-sensitive. Flag unpinned third-party actions, broad write permissions, persisted checkout credentials in write-token jobs, pull_request_target misuse, and untrusted GitHub context interpolated into shell commands.
+    - path: "{scripts,bin}/**"
+      instructions: |
+        Focus on command injection, unsafe subprocess usage, path traversal, SSRF, secret exposure, and missing tests for new CLI behavior.
+    - path: "skills/**/scripts/**"
+      instructions: |
+        Review generated or imported scripts as untrusted-input tooling. Flag RCE, path traversal, network fetches without validation, and writes outside the expected workspace.
+    - path: "{skills,commands,agents,rules}/**"
+      instructions: |
+        Focus on prompt-injection resilience, tool-permission scope, destructive action guards, and secret exfiltration risks.
+    - path: "{SECURITY.md,docs/security/**}"
+      instructions: |
+        Check that official distribution surfaces, disclosure guidance, and supply-chain rules stay accurate and do not endorse unofficial packages.
+
+chat:
+  auto_reply: true

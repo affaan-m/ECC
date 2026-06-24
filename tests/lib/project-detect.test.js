@@ -207,6 +207,39 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('does not misclassify preact as react (substring guard)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"preact":"10.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(!result.frameworks.includes('react'), `preact wrongly detected as react: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not misclassify reactive as react (substring guard)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"reactive":"1.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(!result.frameworks.includes('react'), `reactive wrongly detected as react: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
+  if (test('still detects react from react-dom alone (prefix-delimiter match preserved)', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'package.json', '{"dependencies":{"react-dom":"18.0.0"}}');
+      const result = detectProjectType(dir);
+      assert.ok(result.frameworks.includes('react'), `react-dom should still map to react: ${JSON.stringify(result.frameworks)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   if (test('detects angular from angular.json', () => {
     const dir = createTempDir();
     try {

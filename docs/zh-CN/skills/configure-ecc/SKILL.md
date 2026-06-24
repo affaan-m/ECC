@@ -239,13 +239,13 @@ cp -R "${src%/}" "$TARGET/skills/$(basename "${src%/}")"
 执行安装：
 
 ```bash
-# Common rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/common/* $TARGET/rules/
+# Common rules
+cp -r $ECC_ROOT/rules/common $TARGET/rules/common
 
-# Language-specific rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/typescript/* $TARGET/rules/   # if selected
-cp -r $ECC_ROOT/rules/python/* $TARGET/rules/        # if selected
-cp -r $ECC_ROOT/rules/golang/* $TARGET/rules/        # if selected
+# Language-specific rules (preserve per-language directories)
+cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # if selected
+cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # if selected
+cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # if selected
 ```
 
 **重要**：如果用户选择了任何特定语言的规则但**没有**选择通用规则，警告他们：

@@ -14,7 +14,7 @@
 * 编排多智能体工作流
 * 复杂的编码任务
 
-**Opus 4.5** (最深的推理能力):
+**Opus 4.6** (最深的推理能力):
 
 * 复杂的架构决策
 * 最高级别的推理需求
@@ -43,7 +43,7 @@
 
 * **切换**：Option+T (macOS) / Alt+T (Windows/Linux)
 * **配置**：在 `~/.claude/settings.json` 中设置 `alwaysThinkingEnabled`
-* **预算上限**：`export MAX_THINKING_TOKENS=10000`
+* **预算上限**：`export MAX_THINKING_TOKENS=10000`（bash）或 `$env:MAX_THINKING_TOKENS = "10000"`（PowerShell）
 * **详细模式**：Ctrl+O 查看思考输出
 
 对于需要深度推理的复杂任务:

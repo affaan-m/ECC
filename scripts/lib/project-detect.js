@@ -390,7 +390,20 @@ function detectProjectType(projectDir) {
           depList = elixirDeps;
           break;
       }
-      hasDep = rule.packageKeys.some(key => depList.some(dep => dep.toLowerCase().includes(key.toLowerCase())));
+      // Boundary-aware match: a dependency matches a packageKey only when it
+      // equals the key, or the key is a prefix immediately followed by a
+      // delimiter (/ . _ -). Plain substring matching wrongly classified
+      // `preact` / `reactive` as `react`. This still matches the real cases:
+      // react-dom, @remix-run/node, spring-boot-starter, org.springframework.boot,
+      // github.com/labstack/echo/v4, phoenix_live_view.
+      hasDep = rule.packageKeys.some(key => {
+        const k = key.toLowerCase();
+        return depList.some(dep => {
+          const d = dep.toLowerCase();
+          if (!d.startsWith(k)) return false;
+          return d.length === k.length || /[/._-]/.test(d[k.length]);
+        });
+      });
     }
 
     if (hasMarker || hasDep) {

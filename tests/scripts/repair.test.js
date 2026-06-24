@@ -12,6 +12,7 @@ const INSTALL_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-appl
 const DOCTOR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'doctor.js');
 const REPAIR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'repair.js');
 const REPO_ROOT = path.join(__dirname, '..', '..');
+const CLI_TIMEOUT_MS = 30000;
 const CURRENT_PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')
 ).version;
@@ -51,7 +52,7 @@ function runNode(scriptPath, args = [], options = {}) {
       env,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 10000,
+      timeout: options.timeout || CLI_TIMEOUT_MS,
     });
 
     return { code: 0, stdout, stderr: '' };
@@ -59,7 +60,7 @@ function runNode(scriptPath, args = [], options = {}) {
     return {
       code: error.status || 1,
       stdout: error.stdout || '',
-      stderr: error.stderr || '',
+      stderr: error.stderr || error.message || '',
     };
   }
 }

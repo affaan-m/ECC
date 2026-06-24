@@ -34,8 +34,8 @@ paths:
 - Run dependency checks when the lockfile changes:
 
 ```bash
-bundle audit check --update
-bundle exec brakeman --no-pager
+bundle exec bundle-audit check --update
+bundle exec brakeman --no-progress
 ```
 
 - Review new gems for maintainer activity, native extension risk, transitive dependencies, and whether the same behavior can be implemented with Rails core.

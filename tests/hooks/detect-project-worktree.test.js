@@ -181,29 +181,14 @@ test('detect-project.sh sets PROJECT_NAME and non-global PROJECT_ID for worktree
       }
     });
 
-    // Create a worktree-like directory with .git as a file
     const worktreeDir = path.join(testDir, 'my-worktree');
-    fs.mkdirSync(worktreeDir, { recursive: true });
-
-    // Set up the worktree directory structure in the main repo
-    const worktreesDir = path.join(mainRepo, '.git', 'worktrees', 'my-worktree');
-    fs.mkdirSync(worktreesDir, { recursive: true });
-
-    // Create the gitdir file and commondir in the worktree metadata
-    const mainGitDir = path.join(mainRepo, '.git');
-    fs.writeFileSync(
-      path.join(worktreesDir, 'commondir'),
-      '../..\n'
-    );
-    fs.writeFileSync(
-      path.join(worktreesDir, 'HEAD'),
-      fs.readFileSync(path.join(mainGitDir, 'HEAD'), 'utf8')
-    );
-
-    // Write .git file in the worktree directory (this is what git worktree creates)
-    fs.writeFileSync(
-      path.join(worktreeDir, '.git'),
-      `gitdir: ${worktreesDir}\n`
+    execSync(`git worktree add "${worktreeDir}" -b feature/project-id`, {
+      cwd: mainRepo,
+      stdio: 'pipe'
+    });
+    assert.ok(
+      fs.statSync(path.join(worktreeDir, '.git')).isFile(),
+      'linked worktree should expose .git as a file'
     );
 
     // Source detect-project.sh from the worktree directory and capture results
@@ -243,6 +228,61 @@ test('detect-project.sh sets PROJECT_NAME and non-global PROJECT_ID for worktree
       vars.PROJECT_ID && vars.PROJECT_ID !== 'global',
       `PROJECT_ID should not be "global", got: "${vars.PROJECT_ID || ''}"`
     );
+  } finally {
+    cleanupDir(testDir);
+  }
+});
+
+test('detect-project.sh uses the main worktree hash when no remote exists', () => {
+  const testDir = createTempDir();
+
+  try {
+    const mainRepo = path.join(testDir, 'main-repo');
+    const worktreeDir = path.join(testDir, 'feature-worktree');
+    const homeDir = path.join(testDir, 'home');
+    fs.mkdirSync(mainRepo, { recursive: true });
+    fs.mkdirSync(homeDir, { recursive: true });
+    execSync('git init', { cwd: mainRepo, stdio: 'pipe' });
+    execSync('git commit --allow-empty -m "init"', {
+      cwd: mainRepo,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test@test.com',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test@test.com'
+      }
+    });
+    execSync(`git worktree add "${worktreeDir}" -b feature/no-remote`, {
+      cwd: mainRepo,
+      stdio: 'pipe'
+    });
+
+    function detectId(targetDir) {
+      const script = `
+        export HOME="${toBashPath(homeDir)}"
+        export USERPROFILE="${toBashPath(homeDir)}"
+        export CLAUDE_PROJECT_DIR="${toBashPath(targetDir)}"
+        source "${toBashPath(detectProjectPath)}" >/dev/null
+        printf "%s" "$PROJECT_ID"
+      `;
+      return execFileSync('bash', ['-lc', script], {
+        cwd: targetDir,
+        timeout: 10000,
+        env: {
+          ...process.env,
+          HOME: toBashPath(homeDir),
+          USERPROFILE: toBashPath(homeDir),
+          CLAUDE_PROJECT_DIR: toBashPath(targetDir)
+        }
+      }).toString();
+    }
+
+    const mainId = detectId(mainRepo);
+    const worktreeId = detectId(worktreeDir);
+    assert.ok(mainId && mainId !== 'global', 'main repo should get a project id');
+    assert.strictEqual(worktreeId, mainId, 'linked worktree should share the main worktree project id');
   } finally {
     cleanupDir(testDir);
   }

@@ -131,9 +131,20 @@ test('legacy command shim table tracks the current archive contents', () => {
 test('stale salvage backlog records the remaining manual-review tail', () => {
   const source = read('docs/legacy-artifact-inventory.md');
 
-  assert.ok(source.includes('#1687 zh-CN localization tail'));
+  for (const pr of [
+    '#1687 zh-CN localization tail',
+    '#1609 Persian README translation',
+    '#1563 zh-TW README sync',
+    '#1564 Turkish README sync',
+    '#1565 pt-BR README sync',
+  ]) {
+    assert.ok(source.includes(pr), `Missing manual-review inventory row for ${pr}`);
+  }
+
   assert.ok(source.includes('Translator/manual review'));
   assert.ok(source.includes('#1746-#1752'));
+  assert.ok(source.includes('ITO-55'));
+  assert.ok(source.includes('no automatic import remains release-blocking'));
 });
 
 if (failed > 0) {

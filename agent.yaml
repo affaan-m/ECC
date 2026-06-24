@@ -1,6 +1,6 @@
 spec_version: "0.1.0"
-name: everything-claude-code
-version: 2.0.0-rc.1
+name: ecc
+version: 2.0.0
 description: "Initial gitagent export surface for ECC's shared skill catalog, governance, and identity. Native agents, commands, and hooks remain authoritative in the repository while manifest coverage expands."
 author: affaan-m
 license: MIT
@@ -122,6 +122,9 @@ skills:
   - quarkus-tdd
   - quarkus-verification
   - ralphinho-rfc-pipeline
+  - react-patterns
+  - react-performance
+  - react-testing
   - regex-vs-llm-structured-text
   - repo-scan
   - returns-reverse-logistics
@@ -163,6 +166,13 @@ commands:
   - cpp-review
   - cpp-test
   - ecc-guide
+  - epic-claim
+  - epic-decompose
+  - epic-publish
+  - epic-review
+  - epic-sync
+  - epic-unblock
+  - epic-validate
   - evolve
   - fastapi-review
   - feature-dev
@@ -191,12 +201,18 @@ commands:
   - learn-eval
   - loop-start
   - loop-status
+  - marketing-campaign
   - model-route
   - multi-backend
   - multi-execute
   - multi-frontend
   - multi-plan
   - multi-workflow
+  - orch-add-feature
+  - orch-build-mvp
+  - orch-change-feature
+  - orch-fix-defect
+  - orch-refine-code
   - plan
   - plan-prd
   - pm2
@@ -212,6 +228,9 @@ commands:
   - prune
   - python-review
   - quality-gate
+  - react-build
+  - react-review
+  - react-test
   - refactor-clean
   - resume-session
   - review-pr
@@ -228,6 +247,7 @@ commands:
   - test-coverage
   - update-codemaps
   - update-docs
+  - vue-review
 tags:
   - agent-harness
   - developer-tools

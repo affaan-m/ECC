@@ -1,39 +1,257 @@
 # ECC 2.0 GA Roadmap
 
-This roadmap is the durable repo mirror for the Linear project:
+This roadmap is the durable repo mirror for the active Linear project:
 
-<https://linear.app/ecctools/project/ecc-20-ga-harness-os-security-platform-de2a0ecace6f>
+<https://linear.app/itomarkets/project/ecc-platform-roadmap-52b328ee03e1>
 
-Linear issue creation is currently blocked by the workspace active issue limit,
-so the live execution truth is split across:
+Linear issue creation is available again in the Ito Markets workspace. The live
+execution truth is split across:
 
-- the Linear project description, status updates, and milestones;
+- the Linear project documents, issue lanes, dependencies, and milestones;
 - this repo document;
 - merged PR evidence;
 - handoffs under `~/.cluster-swarm/handoffs/`.
 
+The May 19 release/growth execution map lives at
+[`docs/releases/2.0.0/ecc-2-hypergrowth-release-command-center.md`](releases/2.0.0/ecc-2-hypergrowth-release-command-center.md).
+It is the operator surface for the final ECC 2.0 repo identity, video suite,
+partner/sponsor funnel, consulting/talk funnel, and social launch plan.
+
+## 2026-05-20 Delta
+
+- The tracked platform audit is still green on May 20 with 0 open PRs,
+  0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A gaps,
+  0 conflicting PRs, and 0 blocking dirty files across `affaan-m/ECC`,
+  `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and
+  `ECC-Tools/ECC-website`.
+- The new #2015 setup-location Q&A was answered and marked accepted. The
+  answer keeps install guidance conservative: do not install into `C:\`; use a
+  normal workspace, install the `ecc@ecc` Claude plugin once, copy only needed
+  rule folders when using manual rules, and avoid stacking plugin plus full
+  manual install.
+- ECC-Tools PRs #80-#88 landed the next hosted-platform batch: runtime
+  receipts now require failure reasons; AgentShield fleet approval IDs survive
+  hosted security review and render into comments/check-runs; Linear follow-up
+  sync reuses deterministic external IDs; hosted AgentShield remediation items
+  sync to Linear; hosted job observability events are emitted for queued,
+  completed, blocked, failed, and budget-blocked states; and both hosted job
+  status comments and hosted depth-plan check-runs read back recent
+  observability/budget events. PR #88 adds the authenticated observability API
+  readback for operator dashboards and production smoke tests.
+- AgentShield PR #94 landed the next cross-harness adapter slice: Zed and
+  VS Code are first-class adapter detections, `.zed/settings.json` and
+  `.zed/tasks.json` are discoverable scan inputs, and `.zed/setup.mjs` now
+  trips the same AI-tool persistence IOC rule as `.vscode/setup.mjs`.
+- AgentShield PR #95 cleared the remaining default-branch Dependabot alert by
+  moving transitive `brace-expansion` 5.x lockfile entries to `5.0.6`; the
+  post-merge Dependabot open-alert API now returns `[]`, and local
+  `npm audit --audit-level=moderate` returns 0 vulnerabilities.
+- ECC PR #2019 merged the Marketplace Pro selected-target release-gate sync
+  into this repo as `30f60710d4e0424fc70d9bbdc105009db141d9d8`. The post-merge
+  main CI run `26135974576` completed green across lint, coverage, security,
+  validation, and the full OS/package-manager matrix.
+- ECC PR #2020 merged the selected-target announcement-gate mirror as
+  `c2471fe5c535310f8a8008c9ed7ea9f6757b33f2`. The post-merge main CI run
+  `26136949698` completed green across lint, coverage, security, validation,
+  and the full OS/package-manager matrix.
+- ECC-Tools PR #90 added the selected-target official announcement gate for
+  `billing:announcement-gate -- --select-ready-target`; safe production
+  preflight no longer requires a raw GitHub login and now blocks only on the
+  local/internal `INTERNAL_API_SECRET` input before live execution.
+- ECC-Tools PR #91 added `--env-file` support to both billing gate scripts so
+  ignored local operator credential files can supply `INTERNAL_API_SECRET`,
+  Cloudflare auth, Wrangler auth mode, or target fallbacks without printing
+  secret contents. Verify, Security Audit, and Workers Builds passed before
+  merge as `72119a1`, and main CI run `26137280847` completed successfully after
+  merge.
+- ECC-Tools PR #92 added a non-breaking `INTERNAL_OPERATOR_API_SECRET` bearer
+  accepted by privileged internal API routes without rotating the existing
+  `INTERNAL_API_SECRET`; Verify, Security Audit, and Workers Builds passed
+  before merge as `18d80197be779619283e0b37e2952bac53819a07`, and the merged
+  Worker was deployed to `api.ecc.tools`.
+- The May 20 live native-payments gate now passes: the vault-backed Wrangler
+  readback selected a ready Marketplace Pro target with fingerprint
+  `e953a74209fe`, both key families present, webhook evidence ready, 0 KV
+  blockers, and the official
+  `npm run billing:announcement-gate -- --select-ready-target` returned
+  `announcementGateReady: true`, 0 required actions, 0 blockers, and audit
+  summary 6 pass / 1 warn / 0 fail through the new operator bearer path.
+- ECC-Tools PR #93 recorded that live billing evidence in the app launch
+  checklist and distribution roadmap as
+  `d3d62df83fa075660fa4530c3e0edc311a4355fe`; public native-payments copy is no
+  longer blocked by billing evidence, but publication timing remains behind the
+  final release, plugin, live URL, and owner-approval gates.
+- Linear ITO-54 and the ECC Platform Roadmap now have the May 20 ECC-Tools
+  hosted observability update comments
+  `74dcc101-3be5-4173-be13-62b80d54f569` and
+  `348ea8f5-2a2d-46d9-a0fe-ed99653e7fe5`, after earlier PR #84/#85 comments
+  recorded remediation sync and hosted observability events. PR #88 is recorded
+  in Linear comments `291e2a4b-06e3-4672-a057-cdb141478161` and
+  `b2d35de0-ca49-44cb-982a-ddec229e7691`; AgentShield #94 is recorded in
+  ITO-49 comment `faed69dd-35f5-469d-acb5-ddde6a70d6a1` and project comment
+  `70187c1e-d481-4181-b418-09bd65d54b5e`; AgentShield #95 is recorded in
+  ITO-49 comment `371fc3e4-611f-4d20-a23f-67db1260b418`, ITO-57 comment
+  `bd06e252-15c1-4256-b667-caa3f64f5968`, and project comment
+  `22c2c388-2fd1-4dea-a939-6141f40c9a21`.
+- Linear ITO-61 and the ECC Platform Roadmap now have the May 20 Marketplace
+  Pro release-gate comments `467d148a-712a-4777-aad9-95593e9f1739` and
+  `7642ee9c-3107-400c-a229-53e2895a8914`, recording ECC-Tools #89, ECC #2019,
+  the green post-merge CI run, and the remaining internal bearer-token gate.
+  The repo mirror now also records ECC-Tools #90 and #91 as the selected-target
+  announcement gate and billing gate env-file operator-path follow-up.
+
+## 2026-05-19 Delta
+
+- The public repo identity is now `affaan-m/ECC`; release, package, plugin,
+  workflow, and launch-copy surfaces should use that URL for current public
+  links.
+- The late May 19 queue drain added the deterministic `release:approval-gate`
+  on ECC `main`, merged ECC-Tools billing-announcement redaction hardening, and
+  cleared the JARVIS Dependabot/deploy repair tail. The tracked platform audit
+  is now green with 0 open PRs, 0 open issues, and 0 discussion gaps across all
+  five tracked repos, but release/publication actions remain owner and live-URL
+  gated.
+- The ECC 2.0 release story should lead with the product shape directly:
+  harness-native operator system, reusable skills/rules/hooks/MCP conventions,
+  `ecc2/` alpha control plane, Hermes as optional operator shell, and ECC Tools
+  Pro/Sponsors/consulting as the business surface.
+- Copy should avoid presenting this as a repo rename or config-pack migration.
+  The release proof should show the system through install flow, cross-harness
+  demos, security evidence, hosted product evidence, and the video suite.
+
 ## Current Evidence
 
-As of 2026-05-13:
+As of 2026-05-20:
 
-- GitHub queues are clean across `affaan-m/everything-claude-code`,
+- GitHub queues are clean across `affaan-m/ECC`,
   `affaan-m/agentshield`, `affaan-m/JARVIS`, `ECC-Tools/ECC-Tools`, and
-  `ECC-Tools/ECC-website`: the latest sweep found 0 open PRs and 0 open
-  issues across all five repos.
-- GitHub discussions are also clean across those tracked repos:
-  the latest GraphQL sweep found 52 total trunk discussions with 0 open,
-  and 0 total/open discussions on AgentShield, JARVIS, ECC-Tools, and the
-  ECC-Tools website.
-- The final open public GitHub issue, #1314, was closed as a non-actionable
-  external badge/listing notification with a courtesy comment.
-- Linear issue creation for this project was re-tested after GitHub cleanup and
-  is still blocked by the workspace free issue limit. Seven roadmap-lane issue
-  creation attempts all returned the same limit error, so this repo mirror and
-  Linear project status updates remain the active tracking surfaces until the
-  workspace is upgraded or issue capacity is freed.
-- `npm run harness:audit -- --format json` reports 70/70 on current `main`.
+  `ECC-Tools/ECC-website`: the latest `platform-audit` sweep found 0 open PRs,
+  0 open issues, 0 discussion maintainer-touch gaps, 0 answerable Q&A missing
+  accepted answers, and 0 blocking dirty files. The current
+  `scripts/work-items.js list --json` output also reports `totalCount: 0`, so
+  there are no open or blocked local work items in the SQLite bridge.
+- Owner-wide queue cleanup is also inside the requested budget:
+  `docs/releases/2.0.0-rc.1/owner-queue-cleanup-2026-05-18.md` records the
+  live `gh search` sweep that closed 24 stale dependency-bot PRs and 72 stale
+  legacy payments/0EM roadmap issues, then closed the 9 remaining stale,
+  generated, conflicting, or test/noise PRs and the 5 remaining legacy,
+  outreach, or placeholder issues. The broader `affaan-m` owner namespace is
+  now at 0 open PRs and 0 open issues by live `gh search`. Archived repos
+  touched during closure were restored to archived state.
+- GitHub discussions are current across those tracked repos:
+  `affaan-m/ECC` has 60 total discussions and 0 without
+  maintainer touch after the May 19 #2003 AURA integration proposal was routed
+  as an external-adapter proposal, not core wallet/escrow coupling, and the
+  May 20 #2015 setup-location Q&A was answered and accepted; AgentShield,
+  JARVIS, ECC Tools, and the ECC Tools website have discussions disabled or 0
+  total discussions. `docs/architecture/discussion-response-playbook.md` now
+  supplies the ITO-59 response categories, public templates, security-escalation
+  path, and readback rules for future discussion batches.
+- The current Linear roadmap contains 16 issue lanes (`ITO-44` through
+  `ITO-59`) and five milestones: Security and Access Baseline, ECC 2.0 Preview
+  and Publication, AgentShield Enterprise Iteration, ECC Tools Next-Level
+  Platform, and Legacy Audit and Salvage.
+- Linear live sync is current for the May 19 PR #2002 merge and discussion
+  batch: the ECC platform project has the post-PR #2002 sync document
+  `ecc-may-19-post-pr-2002-sync-64cef8f668e0`, project comment
+  `a6411e3a-8c8e-4a58-adba-687e77d4c543`, and issue comments on ITO-44,
+  ITO-47, ITO-48, ITO-49, ITO-51, ITO-54, and ITO-56. ITO-47, ITO-48,
+  ITO-49, ITO-51, ITO-54, and ITO-56 were moved to In Progress because those
+  lanes now have current implementation/evidence and remaining gate/readback
+  work. ITO-57 still has the May 18 emergency supply-chain refresh comment
+  (`3fe5b2b7-c4fe-401c-a317-b40d72119cb3`). Linear project status updates are
+  disabled in this workspace, so project documents and comments are the
+  supported external status surface.
+- The latest May 18 merge batch on `main` includes PR #1970 workflow-security
+  validator bypass fixes, PR #1971 metrics bridge cost-reporting and warning
+  de-dup fixes, PR #1972 `uncloud` skill activation structure, PR #1976
+  OpenAI/AstraFlow provider response guards, ECC-Tools Wrangler OAuth billing
+  readback mirror evidence, the `04d4d819` defensive-deny IOC scanner hardening
+  recheck, `7911af4a` release OIDC publishing-scope hardening, `97567a91`
+  release workflow line-ending normalization, and release evidence with a
+  refreshed operator dashboard.
+- `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-19.md` records the
+  current May 19 queue-zero state, canonical ECC identity merge, release video
+  suite gate, partner/sponsor/talk outreach pack, owner approval packet
+  (`owner-approval-packet-2026-05-19.md`), current preview-pack smoke digest
+  `eebb8a66c33e`, local 2568-test suite, PR #2001 merge and GitHub Actions run
+  `26102500291` success, PR #2002's owner-approval dashboard gate refresh and
+  GitHub Actions run `26103853507`, PR #2004's Linear readiness evidence sync
+  and GitHub Actions run `26105012698`, plus PR #2005's post-PR #2004
+  evidence refresh and GitHub Actions run `26106321921`, PR #2008's supply-chain
+  evidence gate fix and GitHub Actions run `26108473648`, post-PR #2006 main CI
+  run `26109953093`, and PR #2009's project-registry hygiene GitHub Actions run
+  `26111313938`, post-PR #2009 main CI run `26111946778`, post-PR #2011
+  GateGuard main CI run `26113695068`, and post-PR #2013 release-approval-gate
+  main CI run `26128749863`. The late May 19 sync target also includes
+  ECC-Tools PR #79 billing-announcement redaction hardening and JARVIS PR #15
+  / PR #16 queue/deploy repair, with JARVIS main CI, CodeQL, and Deploy green
+  after the workflow repair. The Linear external project status surface now has
+  both the post-PR #2002 sync document and the late-pass document
+  `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f`, plus project
+  comment `d42bf0e2-7a8e-4934-9f3f-e281498ee805`. The supply-chain gate now
+  also records the `@types/node@25.7.0` pin and `brace-expansion` lock refresh
+  needed for current npm audit/signature verification.
+- The May 20 ECC-Tools hosted-platform pass extends that evidence with PR #80
+  through PR #88, all merged after green GitHub Verify/Security Audit/Workers
+  Builds checks. Local validation for the final depth-plan observability slice
+  passed the focused hosted depth-plan route test, the full route suite
+  (89/89), typecheck, lint, full ECC-Tools Vitest suite (683/683), and
+  `git diff --check`. PR #88 additionally exposes authenticated hosted
+  observability readback at `/api/analysis/observability` for operator
+  dashboards and production smoke tests; its local verification passed
+  typecheck, lint, the full ECC-Tools Vitest suite (686/686), and
+  `git diff --check`.
+- AgentShield PR #94 adds Zed and VS Code to the first-class adapter registry
+  after local verification with typecheck, lint, the focused core scanner/rule
+  tests, full `npm test` (1822 tests), `npm run build`, and `git diff --check`.
+  GitHub checks passed across GitGuardian, scan suite, self-scan,
+  self-scan examples, Node 18/20/22 CI, CodeRabbit, and Cubic after rerunning a
+  transient GitHub artifact-upload failure.
+- AgentShield PR #95 resolves Dependabot #20 / `GHSA-jxxr-4gwj-5jf2` /
+  `CVE-2026-45149` by updating the vulnerable `brace-expansion` 5.x
+  transitive lockfile entries to `5.0.6`. Local validation passed
+  `npm audit --audit-level=moderate`, typecheck, lint, full `npm test`
+  (1822 tests), build, and whitespace checks; GitHub checks passed across
+  Verify Node 18/20/22, self-scan, self-scan examples, Test GitHub Action,
+  GitGuardian, CodeRabbit, and Cubic.
+- `docs/releases/2.0.0-rc.1/operator-readiness-dashboard-2026-05-20.md`
+  regenerates the ITO-44 prompt-to-artifact dashboard from live platform audit
+  evidence: PR queue, issue queue, discussion queue, local worktree gate,
+  dashboard generation, and supply-chain loop are current; the dashboard now
+  also tracks the `$1,728/mo` to `$10,000/mo` hypergrowth baseline, release
+  video-suite lane, partner/sponsor/talk outbound pack, and owner approval
+  packet; publication, plugin, billing, AgentShield, ECC Tools, Linear release
+  gate sync, and final outbound approval remain the next work.
+- `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-17.md` records the
+  May 17 queue-zero state, Japanese localization merge, Dependabot TypeScript
+  and Node type merges, post-merge ja-JP lint repair, Mini Shai-Hulud/TanStack
+  local protection recheck, npm audit/signature checks, current operator
+  dashboard, and GitHub CI success for `99dd6ac0`.
+- `docs/releases/2.0.0-rc.1/publication-evidence-2026-05-16.md` records the
+  queue, discussion, Linear roadmap, ECC Tools access, Mini Shai-Hulud/TanStack
+  full-campaign follow-up, scheduled supply-chain watch coverage, no-lifecycle
+  CI install hardening, GitHub Actions cache purge, AgentShield #85
+  registry-signature verification, AgentShield #86 evidence-pack CI provenance,
+  AgentShield #87 plugin-cache runtime-confidence classification, AgentShield
+  #88 evidence-pack inspect/readback, AgentShield #89 evidence-pack fleet
+  routing, AgentShield #90 fleet review items, AgentShield #91
+  checksum-backed policy export, AgentShield #92 checksum-verified policy
+  promotion, ECC-Tools #75 billing-gate tightening,
+  ECC-Tools #76 AgentShield fleet-summary consumption, ECC-Tools #77 hosted
+  finding evidence paths, ECC-Tools #78 harness policy-route linking, PR #1947
+  supply-chain protection, and May 16 release-evidence
+  refresh.
+- `npm run harness:audit -- --format json` reports 80/80 on current `main`.
 - `npm run observability:ready` reports 21/21 readiness on current `main`,
   including the GitHub/Linear/handoff/roadmap progress-sync contract.
+- GitHub CI run `26017368895` completed successfully for
+  `04d4d81938b20ac2bac1f0025145ab77d6a59f5f`, including Validate Components,
+  Coverage, Lint, Security Scan, and the full Node/package-manager matrix.
+- Supply-Chain Watch run `26009825837` completed successfully for
+  `3b7e0ba30a027ffd3319c2f145c63076c296d80a`, including no-lifecycle install,
+  npm audit/signature verification, scanner fixtures, advisory-source
+  fixtures, IOC/advisory artifact generation, and workflow-security validation.
 - PR #1846 merged as `797f283036904128bb1b348ae62019eb9f08cf39` and made
   npm registry signature verification a durable workflow-security gate:
   workflows that run `npm audit` now need `npm audit signatures`.
@@ -41,6 +259,12 @@ As of 2026-05-13:
   `docs/security/supply-chain-incident-response.md`, plus a workflow-security
   validator rule blocking `pull_request_target` workflows from restoring or
   saving shared dependency caches.
+- PR #1940 merged as `6951b8d5d29d13cac6b89b461104ad03838553de` and added a
+  scheduled supply-chain watch workflow that emits a durable IOC report.
+- PR #1941 merged as `f7035b5644ffc857879b71c39353b2141f17c3f0` and hardened
+  CI dependency installs against lifecycle-hook compromise by disabling package
+  manager lifecycle scripts, removing Actions dependency cache use, and adding
+  validator coverage so those patterns cannot be reintroduced silently.
 - PR #1850 merged as `248673271455e9dc85b8add2a6ab76107b718639` and removed
   shell access from read-only analyzer agents and zh-CN copies, reducing
   AgentShield high findings on that surface without changing operator agents.
@@ -69,6 +293,24 @@ As of 2026-05-13:
   and expanded the built-in attack corpus with an env proxy hijack scenario
   covering proxy/runtime mutation, env-token exfiltration, DNS exfiltration,
   credential-store access, and clipboard access.
+- AgentShield PR #87 merged as `26bb44650663816d07180e0d20c1895e431a326c`
+  and added installed Claude plugin-cache runtime confidence. Cached plugin
+  findings now emit `runtimeConfidence: plugin-cache`, non-secret score impact
+  stays at the intended `0.5x`, repository-local non-Claude `plugins/cache`
+  paths are not downgraded, and cached hook implementations no longer appear as
+  active top-level `hook-code`.
+- AgentShield PR #88 merged as `65ed6e2a87545dc99d962b58413f49096a4d70ec`
+  and added `agentshield evidence-pack inspect` for downstream consumers.
+  Evidence-pack bundles now have compact JSON/text readback for report score,
+  finding counts, runtime confidence, policy, baseline, supply-chain, CI
+  context, remediation phases, and malformed artifact errors without manually
+  opening every bundle file.
+- AgentShield PR #89 merged as `521ada9091bb6d818511ab8589ae675b920c106a`
+  and added `agentshield evidence-pack fleet <dirs...> [--json]` for
+  downstream fleet routing. Multiple verified evidence packs now aggregate into
+  ready, security-blocker, policy-review, baseline-regression,
+  supply-chain-review, and invalid routes with finding, policy, baseline,
+  supply-chain, and remediation totals.
 - JARVIS PR #13 merged as `127efabbfb5033ae53d7a53e1546aa3c33d6f962`
   and hardened CI/deploy workflows with npm registry signature verification,
   disabled persisted checkout credentials in write-permission jobs, and pinned
@@ -171,6 +413,138 @@ As of 2026-05-13:
   head, scores their artifacts and findings against evaluator/RAG corpus
   expectations, and treats matching hosted artifacts as promotion evidence
   before reporting a gap.
+- ECC-Tools PR #70 merged as `7001d805ac981fe220b4575159f469fbea9dbb76`
+  and added retrieval planning for hosted promotion:
+  the check now emits ranked retrieval candidates from cached hosted artifacts,
+  hosted findings, expected evidence paths, and changed source paths, plus a
+  model prompt seed that tells the later hosted judge not to promote from
+  changed paths alone.
+- ECC-Tools PR #71 merged as `d41e59ff00fe1bd0b0c96386e56bc5269d7b9c15`
+  and added the first model-backed hosted promotion judge contract:
+  the check now emits a provider-neutral `hosted-promotion-judge.v1` request
+  contract and fails closed unless hosted retrieval evidence, entitlement,
+  remaining budget, and provider configuration are present. It still does not
+  make live model calls.
+- ECC-Tools PR #72 merged as `973bc51e5436dd279ae5a890cce9811485eef0b5`
+  and executes the hosted promotion model judge behind explicit gates:
+  `PR_HOSTED_PROMOTION_MODEL_JUDGE_MODE=execute` now calls the configured
+  provider only after hosted retrieval evidence, entitlement, budget, provider,
+  and executor gates pass; the check remains non-blocking, strict-JSON-only,
+  and rejects uncited or non-hosted model output without echoing raw responses.
+- ECC-Tools commit `05d4e8296e37ba72e471beaa23ea4c81eb2aa31f`
+  adds operator-readable audit traces to hosted promotion model judging:
+  check-runs now render a deterministic request fingerprint and
+  allowed-citation count alongside the accepted decision, without exposing raw
+  provider output.
+- ECC-Tools PR #73 merged as `7d0538c9354e18adbfc72ef00d858949a817fa48`
+  and added a fail-closed native-payments announcement gate to
+  `/api/billing/readiness`: public payment claims now require
+  `announcementGate.ready === true` from a Marketplace-managed test account
+  before launch copy can move past release review.
+- ECC-Tools commit `91a441b92342b842832ac28b018ee46f0c4a906f`
+  adds `npm run billing:announcement-gate -- --preflight` so operators can
+  verify the Marketplace test account, internal API token presence, and
+  billing-readiness endpoint before making the privileged readback call.
+- ECC-Tools commit `eb6941290b2fa70db01a51084e9e79a160238468`
+  recorded the first live production readback state: Cloudflare Worker secret
+  names include `INTERNAL_API_SECRET`, but no Marketplace-managed account could
+  pass the announcement gate yet.
+- ECC-Tools commit `95d0bec69dbcf364ed084e983a40d0a94d443d16`
+  adds repeatable aggregate production KV readback with
+  `npm run billing:kv-readback`: the latest API-authenticated run found 253
+  `account-billing:*` records and 253 `billing-state:*` records, but 0
+  Marketplace-managed Pro `billing-state:*` records, so native-payments copy
+  remains blocked until `--require-ready` and the official internal
+  announcement gate pass.
+- ECC-Tools commit `285967807ea7b5eb3146bc984fb2229db67d4290`
+  requires GitHub Marketplace webhook provenance on Pro billing-state records
+  before native-payments announcement readiness can pass. The CI run
+  `26013559229` succeeded for the pushed head.
+- ECC-Tools commit `42653f9140c232961280d961ed76a6142433cfa1`
+  adds `npm run billing:kv-readback -- --wrangler` so operators can run the
+  aggregate production KV readback through an authenticated Wrangler OAuth
+  session instead of requiring a separate Cloudflare API token/global key. CI
+  run `26016223013` succeeded, and the latest live readback found 253
+  `account-billing:*` records and 253 `billing-state:*` records with 194
+  marketplace/free states, 59 Stripe/pro states, 0 Marketplace Pro states, 0
+  ready-like Marketplace Pro states, and 0 parse failures. Native-payments
+  copy remains blocked until a real Marketplace-managed Pro webhook creates
+  billing-state provenance and `--require-ready` plus the official internal
+  announcement gate pass.
+- ECC-Tools commit `632e059e51b6e1297ba118807c8b5b2adbac74ce`
+  adds target account billing readback with `npm run billing:kv-readback -- --account <github-login> --require-ready`.
+  The report redacts the account login and raw KV keys, emits only a stable
+  fingerprint plus sanitized readiness booleans, and now requires both
+  `account-billing:<login>` and `billing-state:<login>` before a target
+  Marketplace Pro test account can pass the native-payments announcement
+  readback gate. CI run `26018941515` succeeded. The 2026-05-18 live recheck
+  split out Linear ITO-61 for the target-account blocker.
+- ECC-Tools commit `d5f60db` adds sanitized Marketplace-source provenance
+  counts to `npm run billing:kv-readback`, including
+  `marketplaceSourceRecords`, `marketplaceSourceWithWebhookEvidence`,
+  `marketplaceSourceWithoutWebhookEvidence`, `byMarketplacePlanName`, and
+  `byMarketplaceEventAction`. The 2026-05-18 live Wrangler OAuth readback now
+  works and found 256 account-billing records, 256 billing-state records, 197
+  Marketplace-source records, 59 Stripe-source records, 53 Pro records, 0
+  Marketplace Pro records, 4 Marketplace webhook-provenance records, all
+  `Open Source` purchases, and 193 Marketplace-source records without webhook
+  provenance. Native-payments copy remains blocked by Linear ITO-61 until a
+  real Marketplace-managed Pro webhook creates target account provenance and
+  `billing:kv-readback -- --wrangler --wrangler-bin ./node_modules/.bin/wrangler --account <github-login> --require-ready`
+  plus the official internal announcement gate pass.
+- ECC-Tools commit `13cd3fc` normalizes billing-state key casing so
+  Marketplace webhook writes and announcement readbacks agree on GitHub login
+  case; current-head CI `26037611421` passed. The code-side readback hardening
+  remains green, but it does not create live Marketplace Pro state.
+- ECC-Tools commit `69ca535` surfaces hosted team-learning feedback controls:
+  harness compatibility and team-backlog routing now show retention days,
+  deletion route/SLA, and opt-out route before adaptive recommendations are
+  routed into team-owned queues. Linear ITO-52 is Done with CI `26054455434`.
+- ECC-Tools commit `e56fc1a` updates the lockfile for
+  `brace-expansion@5.0.6` and fixed Dependabot alert 44 for CVE-2026-45149;
+  GitHub API reported `state: fixed` at `2026-05-18T19:10:15Z` and current-head
+  CI `26054671308` passed.
+- ECC-Tools PR #89 merged as `512bca6b99cdaa67058a6aa9a4e7e7f0b1d9873a`
+  and adds
+  `npm run billing:kv-readback -- --select-ready-target --require-ready` so
+  operators can prove a ready Marketplace Pro account without passing or
+  printing the login. The 2026-05-20 production Wrangler OAuth readback found
+  ready-like Marketplace Pro records with webhook provenance and 0 parse
+  failures. The selected target report printed only a stable fingerprint,
+  confirmed both key families, `marketplace` source, `pro` tier, seat ready,
+  webhook evidence ready, automatic overage disabled, and 0 blockers. The old
+  "no Marketplace-managed Pro target billing-state" blocker is cleared. Linear
+  comment `f14ed2fe-a219-470c-8119-63429e197027` records the redacted readback
+  counts.
+- ECC-Tools PR #90 merged as
+  `16a5bb33ee5ce7c31d2ad8d041e5afac03308f05` after Verify, Security Audit,
+  and Workers Builds passed. It adds the selected-target official announcement
+  gate through `/api/billing/readiness?selectReadyTarget=1` and
+  `npm run billing:announcement-gate -- --select-ready-target`, so operators no
+  longer need to pass or print a raw GitHub login for the official
+  native-payments gate. The 2026-05-20 safe production preflight requested a
+  selected ready target and narrowed the remaining blocker to the missing
+  local/internal `INTERNAL_API_SECRET` bearer token. Native-payments copy remains
+  blocked until that token path is available and the live
+  `billing:announcement-gate -- --select-ready-target` call passes.
+- ECC-Tools PR #91 merged as `72119a1acc6f5a0cd3bb5d90afd6e87fd1fefd05`
+  after Verify, Security Audit, and Workers Builds passed. It adds the billing
+  gate env-file operator path with `--env-file` support for the announcement
+  gate and KV readback scripts, plus sentinel tests proving loaded secrets and
+  account logins are not printed.
+- ECC-Tools PR #92 merged as `18d80197be779619283e0b37e2952bac53819a07` after
+  Verify, Security Audit, and Workers Builds passed. It adds the optional
+  `INTERNAL_OPERATOR_API_SECRET` recovery bearer so operators can run privileged
+  internal readiness gates without replacing the primary `INTERNAL_API_SECRET`;
+  the merged Worker was deployed to `api.ecc.tools` before the live gate run.
+- ECC-Tools PR #93 merged as `d3d62df83fa075660fa4530c3e0edc311a4355fe` after
+  Verify, Security Audit, and Workers Builds passed. It records the live
+  2026-05-20 billing evidence in the app launch checklist and roadmap:
+  selected ready Marketplace Pro target, fingerprint `e953a74209fe`, 0 KV
+  blockers, preflight ready, `announcementGateReady: true`, 0 required actions,
+  0 blockers, and audit summary 6 pass / 1 warn / 0 fail. Native-payments copy
+  is no longer blocked by billing evidence, but final announcement timing still
+  requires the release, plugin, live URL, and owner-approval gates.
 - Handoff `ecc-supply-chain-audit-20260513-0645.md` under
   `~/.cluster-swarm/handoffs/`
   records the May 13 supply-chain sweep: no active lockfile/manifest hit for
@@ -230,8 +604,8 @@ As of 2026-05-13:
   and classifies `legacy-command-shims/` as an opt-in archive/no-action
   surface.
 - `docs/stale-pr-salvage-ledger.md` records stale PR salvage outcomes,
-  skipped PRs, superseded work, and the remaining #1687 translator/manual
-  review tail.
+  skipped PRs, superseded work, and the remaining #1687, #1609, #1563, #1564,
+  and #1565 translator/manual review tail now attached to Linear ITO-55.
 - AgentShield PR #53 reduced two context-rule false positives and closed the
   remaining AgentShield issues.
 - AgentShield PR #55 added GitHub Action organization-policy enforcement with
@@ -414,6 +788,125 @@ As of 2026-05-13:
 - ECC-Tools PR #69 extends that gate to score cached completed hosted job
   outputs for the current PR head, so hosted artifacts can satisfy corpus
   evidence expectations before the check reports a promotion gap.
+- ECC-Tools PR #76 consumes AgentShield PR #89 fleet output in hosted security
+  review: `agentshield-evidence/fleet-summary.json` is now classified as
+  `evidence-pack-fleet`, invalid packs and security-blocker routes become
+  high-severity hosted findings, and policy, baseline, and supply-chain routes
+  produce owner-ready review findings.
+- ECC-Tools PR #77 merged as `31fd883b3f0cee135aee4839b01d34855b7867f6`
+  and adds an `Evidence` column to hosted job PR comments and check-run
+  details, surfacing up to three source evidence paths for each finding so
+  AgentShield fleet-derived findings point operators back to the exact bundle
+  artifact.
+- ECC-Tools PR #78 merged as `0d4eb949aa56f56da88e6654273a22ffb95983a1`
+  and links AgentShield fleet routes into hosted harness compatibility review:
+  fleet summaries are collected as harness evidence, target paths are mapped to
+  Claude, Codex, OpenCode, MCP, plugin, and cross-harness owners, and routed
+  findings carry source evidence paths for operator review.
+- ECC-Tools PR #79 merged as `67ee247ae1b7b50ecc1261ed5d62d65cc8390da8`
+  and redacts billing announcement gate account output: the billing preflight
+  and live readback now print stable account fingerprints and sanitized
+  readiness booleans instead of raw account logins or KV key names.
+- ECC-Tools PR #80 merged as `4efc8cc858022f84c844690f3298633b081c4398`
+  and requires runtime receipt failure reasons before harness runtime receipts
+  can count as hosted observability evidence.
+- ECC-Tools PR #81 merged as `1fbf635f492284f75ba7166c029c39eb8cc15794`
+  and preserves AgentShield fleet approval IDs through hosted security review
+  so policy-promotion follow-ups keep owner-review identity stable.
+- ECC-Tools PR #82 merged as `7a7b4d096a176ae80b3a2076c09d45601e36013a`
+  and renders AgentShield fleet approval IDs in hosted comments and check-runs,
+  giving operators a direct bridge from hosted security review back to
+  AgentShield policy-promotion review items.
+- ECC-Tools PR #83 merged as `b6b107f33961bef18a85fb619f3a976eb5d752dd`
+  and makes Linear follow-up sync reuse deterministic external IDs before title
+  fallback, preventing duplicate deferred backlog issues during repeated
+  `/ecc-tools followups sync-linear` runs.
+- ECC-Tools PR #84 merged as `73bac7058071c55cb30c6b8ac6db779b3660c02c`
+  and syncs hosted AgentShield remediation items to Linear when the workspace
+  token/team are configured; hosted result comments now include created/reused
+  Linear remediation links.
+- ECC-Tools PR #85 merged as `1637e0f2bfa0a889387f2c20675680ccc5528123`
+  and emits hosted job observability events for queued, completed, blocked,
+  failed, and budget-blocked states into `ANALYSIS_CACHE`, including budget
+  snapshots and result counts.
+- ECC-Tools PR #86 merged as `5a9e94d3ff860307c3e7fd9fd065f0de2bd633dd`
+  and reads recent hosted observability events in
+  `/ecc-tools analyze --job status`, so status comments show budget snapshots,
+  blocked results, and budget-blocked outcomes alongside latest job runs.
+- ECC-Tools PR #87 merged as `508fbc02b63cf1fcb5af2f3624608fa66e53b5d4`
+  and adds the same hosted observability readback to hosted depth-plan
+  check-runs, keeping the PR check surface aligned with status comments.
+- ECC-Tools PR #88 merged as `c836ac3fb24ed7e2ae38cd61e41c9651ac9c00f8`
+  and exposes authenticated hosted observability API readback at
+  `/api/analysis/observability`, summarizing recent hosted events by event type
+  and job while skipping malformed stale KV records. The deployment runbook now
+  includes the production smoke command for operator/dashboard readback.
+- AgentShield PR #90 merged as `6d1c57c92000541d65a3b6bc366f0322d7d0dacc`
+  and adds durable fleet `reviewItems`: `agentshield evidence-pack fleet --json`
+  now returns owner-ready review items with route, severity, repository/target
+  context, source evidence paths, reason, and recommendation; the text CLI
+  prints the same routed follow-up list for operators.
+- AgentShield PR #91 merged as `73e1e3586dc4513a462e39c9799f75eea104e110`
+  and adds durable policy pack export: `agentshield policy export` writes one
+  JSON policy per selected pack plus a checksum-backed `manifest.json`, with
+  pack selection, owners, name prefixes, and JSON output for branch-protection
+  review or downstream policy promotion.
+- AgentShield PR #92 merged as `e7e259dc6212b63a8e03a253ca6b8c1e3c2abff7`
+  and adds the protected promotion gate for those bundles:
+  `agentshield policy promote` verifies the export manifest and selected
+  policy SHA-256 digest, rejects tampered policy JSON, requires explicit pack
+  selection for multi-pack manifests, and supports dry-run JSON review before
+  writing the active `.agentshield/policy.json`.
+- AgentShield PR #94 merged as `4caee27acfadb50a4cd024e738b5c3cbd4b0bb03`
+  and adds editor-native adapter coverage for Zed and VS Code. Zed
+  `.zed/settings.json`, `.zed/tasks.json`, and `.zed` hook-code files are now
+  scan inputs, adapter reports expose Zed MCP/tool-permission/task metadata and
+  VS Code workspace/task/extension metadata, and `.zed/setup.mjs` is covered by
+  the AI-tool persistence IOC rule.
+- AgentShield PR #95 merged as `25d91f0002214c408da4ceaac7def20bad40ca10`
+  and clears the `brace-expansion` Dependabot alert. The lockfile now resolves
+  the vulnerable transitive 5.x copies to `5.0.6`; the remaining 1.x copy is
+  outside the advisory range.
+- AgentShield main commit `87aec47fb55d04ea28d494852d4f664c268c5601`
+  extends policy promotion with durable `reviewItems` for manifest digest
+  evidence, policy-owner approval, protected rollout PR handoff, and runtime
+  smoke testing. Local validation passed `npm run typecheck`, `npm run lint`,
+  and `npm test`; GitHub Actions run `25985170621` completed successfully
+  across Node 18, 20, and 22 plus self-scan examples, and the sibling
+  AgentShield Self-Scan/Test GitHub Action runs also completed successfully.
+- AgentShield main commit `28d08c7f9961eaa54804b26e6352d23b64ae2776`
+  adds package-manager hardening drift detection for `.npmrc`, `.pnpmrc`,
+  `.yarnrc`, `.yarnrc.yml`, `pnpm-workspace.yaml`, and
+  `pnpm-workspace.yml`, including plaintext registry credential detection,
+  explicit lifecycle-script enablement, and missing or weak release-age
+  cooldown findings. Local validation passed focused rule/scanner tests,
+  `npm run typecheck`, `npm run lint`, `npm run build`, full
+  `npm test -- --run`, and `git diff --check`; GitHub Actions run
+  `25986170958` completed successfully, and the sibling AgentShield Self-Scan
+  and Test GitHub Action runs passed.
+- AgentShield main commit `659f569190f85f6f0808353e096d66c0a6d7817e`
+  updates all workflow action pins to current SHA-pinned
+  `actions/checkout@v6.0.2` and `actions/setup-node@v6.4.0`; GitHub Actions
+  run `25986221319` completed successfully and the prior Node 20 action-runtime
+  deprecation annotation was gone from the final CI watch output.
+- AgentShield main commit `ee585cd` corrects package-manager hardening
+  guidance after local verification showed npm `10.9.4` rejects
+  `min-release-age`: npm configs are now scanned for lifecycle/token drift and
+  unsupported release-age keys, while enforceable cooldown findings stay on
+  pnpm `minimumReleaseAge` / `minimum-release-age` and Yarn
+  `npmMinimalAgeGate`. Local validation passed package-manager/scanner tests,
+  `npm run typecheck`, `npm run lint`, `npm run build`, and
+  `git diff --check`; GitHub Actions run `25986719058`, Test GitHub Action run
+  `25986719054`, and AgentShield Self-Scan run `25986719066` completed
+  successfully.
+- AgentShield main commit `1124535345d7040242ecd3803f65bcd4dcaf6ec2`
+  exposes package-manager hardening through the GitHub Action so CI/hosted
+  consumers can route registry credential, lifecycle-script, and release-age
+  gate drift separately from generic finding counts. Local validation passed
+  focused action tests, `npm run typecheck`, `npm run lint`, `npm run build`,
+  full `npm test`, and `git diff --check`; GitHub Actions CI run
+  `25994354007`, Test GitHub Action run `25994354011`, and AgentShield
+  Self-Scan run `25994354026` completed successfully.
 - ECC PR #1803 landed the contributor Quarkus handling branch after maintainer
   cleanup, current-`main` alignment, full local validation, and preservation of
   the author's removal of incomplete ja-JP and zh-CN Quarkus translations.
@@ -439,7 +932,7 @@ As of 2026-05-13:
 
 - Keep public PRs and issues below 20, with zero as the preferred release-lane
   target.
-- Maintain 70/70 harness audit and 21/21 observability readiness after every
+- Maintain 80/80 harness audit and 21/21 observability readiness after every
   GA-readiness batch.
 - Do not publish release or social announcements until the GitHub release,
   npm/package state, billing state, and plugin submission surfaces are verified
@@ -447,7 +940,9 @@ As of 2026-05-13:
 - Do not treat closed stale PRs as discarded. Pair each cleanup batch with a
   salvage pass: inspect the closed diffs, port useful compatible work on
   maintainer-owned branches, and credit the source PR.
-- Do not create new Linear issues until the active issue limit is cleared.
+- Use Linear project documents/comments for project-level updates because
+  project status updates are disabled in this workspace; create or update
+  issues when a lane needs a durable execution owner.
 
 ## Prompt-To-Artifact Execution Checklist
 
@@ -456,23 +951,23 @@ is not complete unless the evidence column exists and has been freshly verified.
 
 | Prompt requirement | Required artifact or gate | Current evidence | Status |
 | --- | --- | --- | --- |
-| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `everything-claude-code`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-13 after merging ECC #1860, AgentShield #78, JARVIS #13, and ECC-Tools #53 | Complete |
-| Keep public issues below 20 | Repo-family issue recheck | 0 open issues across `everything-claude-code`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-13 | Complete |
-| Manage repository discussions | Repo-family discussion recheck | GraphQL sweep returned 52 total trunk discussions with 0 open; AgentShield, JARVIS, ECC-Tools, and ECC-Tools website returned 0 total/open discussions | Complete |
-| Manage PR discussions | PR review/comment closure plus merge/close state | ECC #1860, AgentShield #78, JARVIS #13, and ECC-Tools #53/#54 merged after current-head CI/builds; no open tracked PRs remain | Complete |
-| Salvage useful stale work | `docs/stale-pr-salvage-ledger.md` | Ledger records salvaged, superseded, skipped, and manual-review tails; #1815-#1818 added cost tracking, skill scout, frontend design guidance, code-reviewer false-positive guardrails, and the May 12 gap pass | Complete except translation/manual review tail |
-| ECC 2.0 preview pack ready | Release docs, quickstart, publication readiness, release notes | `docs/releases/2.0.0-rc.1/` and readiness docs are in-tree; May 13 evidence refresh records harness, adapter, observability, Node, lint, release-surface, npm publish-surface, and Rust checks | Needs final clean-checkout release approval |
+| Keep public PRs below 20 | Repo-family PR recheck | 0 open PRs across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on the late 2026-05-19 platform audit after merging ECC PR #2013, ECC-Tools PR #79, JARVIS PR #15, and JARVIS PR #16 | Complete |
+| Keep public issues below 20 | Repo-family issue recheck | 0 open issues across `ECC`, AgentShield, JARVIS, `ECC-Tools/ECC-Tools`, and `ECC-Tools/ECC-website` on 2026-05-19 after the live platform audit refresh | Complete |
+| Manage repository discussions | Repo-family discussion recheck plus response playbook | Platform audit reports 0 discussion maintainer-touch gaps and 0 answerable Q&A missing accepted answers; trunk has 59 total discussions after #2003 was routed with a maintainer response; `docs/architecture/discussion-response-playbook.md` distinguishes support, maintainer coordination, stale/concluded, release, informational, and security-sensitive response paths | Complete |
+| Manage PR discussions | PR review/comment closure plus merge/close state | ECC #1990-#2013 merged through the harness audit, canonical identity, release video suite, growth outreach, evidence refresh, visual QA, suite-count, owner-approval packet, owner-approval dashboard gate, Linear readiness evidence, supply-chain evidence gate, per-project Claude Code adapter, continuous-learning project-registry hygiene, GateGuard quoted git introspection, and deterministic release-approval gate batch; ECC-Tools #79 and JARVIS #15/#16 also merged; no open tracked PRs remain | Complete |
+| Salvage useful stale work | `docs/stale-pr-salvage-ledger.md` plus `docs/legacy-artifact-inventory.md` | Ledger records salvaged, superseded, skipped, and manual-review tails; #1815-#1818 added cost tracking, skill scout, frontend design guidance, code-reviewer false-positive guardrails, and the May 12 gap pass; #1687, #1609, #1563, #1564, and #1565 localization tails are attached to Linear ITO-55 for language-owner review and no automatic import remains release-blocking | Complete; repeat legacy scan before release |
+| ECC 2.0 preview pack ready | Release docs, quickstart, publication readiness, release notes | `docs/releases/2.0.0-rc.1/` and readiness docs are in-tree; May 19/20 evidence records queue-zero state, canonical ECC identity, release video suite, growth outreach pack, owner approval packet, local 2568-test suite, PR #2001 merge and GitHub Actions run `26102500291`, PR #2002 owner-approval dashboard gate refresh and GitHub Actions run `26103853507`, PR #2004 Linear readiness evidence sync and GitHub Actions run `26105012698`, PR #2008 supply-chain evidence gate CI run `26108473648`, post-PR #2006 main CI run `26109953093`, PR #2009 project-registry hygiene GitHub Actions run `26111313938`, post-PR #2009 main CI run `26111946778`, post-PR #2011 GateGuard main CI run `26113695068`, post-PR #2013 release-approval main CI run `26128749863`, post-PR #2019 main CI run `26135974576`, post-PR #2020 main CI run `26136949698`, ECC-Tools #91 main CI run `26137280847`, May 20 operator dashboard, `owner-approval-packet-2026-05-19.md`, `release-approval-gate.js`, and preview-pack smoke digest `eebb8a66c33e` | Needs final release approval |
 | Hermes specialized skills included safely | Hermes setup/import docs and sanitized skill surface | Hermes setup and import playbook are public; secrets stay local | Needs final release review |
 | Naming and rename readiness | Naming matrix across package/plugin/docs/social surfaces | `docs/releases/2.0.0-rc.1/naming-and-publication-matrix.md` records current package, repo, Claude plugin, Codex plugin, OpenCode, and npm availability evidence | Complete for rc.1; post-rc rename remains future work |
 | Claude and Codex plugin publication | Contact/submission path with required artifacts and status | Publication readiness, naming matrix, and May 12 dry-run evidence document plugin validation, clean-checkout Claude tag/install smoke, and Codex marketplace CLI shape | Needs explicit approval for real tag/push and marketplace submission |
-| Articles, tweets, and announcements | X thread, LinkedIn copy, GitHub release copy, push checklist | Draft launch collateral exists under rc.1 release docs | Needs URL-backed refresh |
-| AgentShield enterprise iteration | Policy gates, SARIF, packs, provenance, corpus, HTML reports, exception lifecycle audit, baseline drift Action/CLI surfaces, evidence-pack redaction, harness adapter registry, enterprise research roadmap, supply-chain hardened release path, CI-safe baseline fingerprints, corpus accuracy recommendations, remediation workflow phases, env proxy hijack corpus coverage | PRs #53, #55-#64, #67-#69, and #78-#82 landed with test evidence; native PDF export deferred in favor of self-contained HTML plus print-to-PDF until explicit enterprise demand appears; `docs/architecture/agentshield-enterprise-research-roadmap.md` now has baseline drift, evidence-pack bundle, redaction, adapter-registry, supply-chain hardening, hashed baseline fingerprints, corpus accuracy recommendation, remediation workflow, and env proxy hijack corpus slices landed | Next hosted evidence-pack workflow depth |
-| ECC Tools next-level app | Billing audit, PR checks, deep analyzer, sync backlog, evaluator/RAG corpus, analysis-depth readiness, hosted execution planning, hosted CI diagnostics, hosted security evidence review, hosted harness compatibility audit, hosted reference-set evaluation, hosted AI routing/cost review, hosted team backlog routing, hosted depth-plan check-run, PR-comment hosted job dispatch, hosted job result history/check-runs, hosted result status command, status-aware depth-plan recommendations, hosted promotion readiness, hosted promotion output scoring | PRs #26-#43 plus #53-#69 landed with test evidence, including AgentShield evidence-pack gap routing, canonical bundle recognition, supply-chain signature gates, PR draft follow-up Linear tracking, evidence-backed/deep-ready repository classification, the `/api/analysis/depth-plan` hosted job plan, `/api/analysis/jobs/ci-diagnostics`, `/api/analysis/jobs/security-evidence-review`, `/api/analysis/jobs/harness-compatibility-audit`, `/api/analysis/jobs/reference-set-evaluation`, `/api/analysis/jobs/ai-routing-cost-review`, `/api/analysis/jobs/team-backlog-routing`, the `ECC Tools / Hosted Depth Plan` check-run, `/ecc-tools analyze --job ...` PR-comment dispatch, non-blocking per-hosted-job result check-runs backed by 30-day result cache records, `/ecc-tools analyze --job status` cache lookup, cache-aware next-job recommendations in the depth-plan check-run, the `ECC Tools / Hosted Promotion Readiness` corpus-backed PR check-run, and deterministic hosted-output scoring against cached completed job artifacts/findings | Next work is retrieval/model-backed hosted promotion after deterministic output scoring |
+| Articles, tweets, and announcements | X thread, LinkedIn copy, GitHub release copy, push checklist, partner/sponsor/talk pack | Draft launch collateral and approval-gated outreach copy exist under rc.1 release docs | Needs URL-backed refresh and human approval before posting or sending |
+| AgentShield enterprise iteration | Policy gates, SARIF, packs, provenance, corpus, HTML reports, exception lifecycle audit, baseline drift Action/CLI surfaces, evidence-pack redaction, harness adapter registry, editor-native Zed/VS Code adapter coverage, Dependabot alert closure, enterprise research roadmap, supply-chain hardened release path, CI-safe baseline fingerprints, corpus accuracy recommendations, remediation workflow phases, env proxy hijack corpus coverage, Mini Shai-Hulud full-campaign package IOCs, CI-provenance evidence packs, plugin-cache runtime-confidence triage, evidence-pack consumer readback, fleet-level evidence-pack routing, fleet review items, fleet review ticket payloads, checksum-backed policy export, checksum-verified policy promotion, policy promotion review items, package-manager hardening drift detection, npm age-gate guidance correction, workflow action-runtime pin refresh, package-manager hardening Action outputs, policy-promotion Action outputs, ECC-Tools hosted consumption of promotion Action outputs, ECC-Tools operator-visible promotion output values, and ECC-Tools hosted promotion judge audit traces | PRs #53, #55-#64, #67-#69, #78-#92, #94, and #95 landed with test evidence, ECC-Tools #76 consumes the fleet-summary output in hosted security review, #77 surfaces source evidence paths in hosted finding output, and #78 links fleet routes to harness owner review; AgentShield #91 adds `agentshield policy export` bundles for branch-protection review and downstream promotion; AgentShield #92 adds `agentshield policy promote` with digest verification, tamper rejection, explicit pack selection, dry-run review, and JSON output before writing active policy; AgentShield #94 adds Zed/VS Code adapter detection, `.zed/settings.json` and `.zed/tasks.json` scan discovery, and `.zed/setup.mjs` AI-tool persistence IOC coverage; AgentShield #95 clears the `brace-expansion` Dependabot alert with a patched lockfile and 0 open Dependabot alerts after merge; AgentShield commit `87aec47` adds `reviewItems` for digest evidence, owner review, protected rollout PR handoff, and runtime smoke testing with green local and remote CI; AgentShield commit `28d08c7` adds package-manager hardening drift detection for plaintext registry credentials, lifecycle-script enablement, and weak pnpm/Yarn release-age cooldowns with green local and remote CI; AgentShield commit `659f569` refreshes all workflow action runtime pins to SHA-pinned checkout v6.0.2 and setup-node v6.4.0 with green remote CI and no remaining action-runtime deprecation annotation; AgentShield commit `ee585cd` corrects npm release-age guidance by flagging unsupported npm age keys and keeping enforceable cooldown findings on pnpm/Yarn with green local and remote CI; AgentShield commit `1124535` exposes package-manager hardening status/count outputs and a redacted job-summary section for registry credentials, lifecycle scripts, and release-age gates with green local and remote CI; AgentShield commit `1593925` exposes policy-promotion status/count/digest outputs plus job-summary review items for owner approval, protected rollout, and runtime smoke, and marks runtime smoke verified when the same Action job scans with the promoted policy; AgentShield commit `840952a` adds Linear/operator-ready fleet review ticket payloads and expands current Mini Shai-Hulud IOC breadcrumbs with green local and remote CI; ECC-Tools commit `8658951` routes those policy-promotion Action outputs into hosted security review findings and Hosted Promotion Readiness scoring; ECC-Tools commit `16c537f` renders policy-promotion status, pack, review item count, action-required count, and digest in hosted security job comments/check-runs; ECC-Tools commit `05d4e82` renders hosted promotion judge request fingerprints and allowed-citation counts without raw provider output; native PDF export deferred in favor of self-contained HTML plus print-to-PDF until explicit enterprise demand appears; `docs/architecture/agentshield-enterprise-research-roadmap.md` now has baseline drift, evidence-pack bundle, redaction, adapter-registry, supply-chain hardening, hashed baseline fingerprints, corpus accuracy recommendation, remediation workflow, env proxy hijack corpus, Mini Shai-Hulud full-campaign package-table, `ci-context.json` provenance, `plugin-cache` confidence, `evidence-pack inspect` readback, `evidence-pack fleet` routing, fleet `reviewItems`, fleet review ticket payloads, policy export, policy promotion, policy promotion `reviewItems`, package-manager hardening Action outputs, policy-promotion Action outputs, hosted consumption of promotion Action outputs, operator-visible promotion output values, hosted promotion judge audit traces, editor-native adapter coverage, and Dependabot closure landed | Next workflow automation should deepen live operator approval/readback after Marketplace/payment gates |
+| ECC Tools next-level app | Billing audit, PR checks, deep analyzer, sync backlog, evaluator/RAG corpus, hosted promotion judge audit trace, native-payments readback, ready Marketplace Pro target selection, selected-target announcement gate, billing gate env-file operator path, hosted observability, AgentShield fleet-summary hosted routing, hosted finding evidence paths, harness-route policy linking, policy-promotion Action-output hosted telemetry, and operator-visible promotion output values | PRs #26-#43 plus #53-#93 landed with test evidence across hosted analysis, hosted promotion readiness, model-judge execution, native-payments announcement gating, AgentShield evidence consumption, hosted remediation/Linear sync, hosted observability readback, ready Marketplace Pro target selection, selected-target official announcement gating, and env-file operator loading; ECC-Tools #89 merged as `512bca6` after Verify, Security Audit, and Workers Builds passed, and the 2026-05-20 production Wrangler OAuth readback found ready-like Marketplace Pro records with webhook provenance, selected a target with both key families, and reported 0 blockers without printing the login; ECC-Tools #90 merged as `16a5bb3` after Verify, Security Audit, and Workers Builds passed, and production preflight now requests `/api/billing/readiness?selectReadyTarget=1` without a raw login; ECC-Tools #91 merged as `72119a1` with `--env-file` support for ignored local billing credentials and sentinel no-secret/no-login output tests; ECC-Tools #92 merged as `18d8019`, deployed the non-breaking `INTERNAL_OPERATOR_API_SECRET` path to `api.ecc.tools`, and the 2026-05-20 live selected-target gate returned `announcementGateReady: true` with 0 required actions and 0 blockers; ECC-Tools #93 merged as `d3d62df` to record the live billing evidence in the app launch checklist and roadmap | Repeat KV readback and selected-target announcement gate immediately before launch; keep native-payments copy behind final release, plugin, live URL, and owner-approval gates |
 | GitGuardian/Dependabot/CodeRabbit-style checks | Non-blocking taxonomy, deterministic follow-up checks, and local supply-chain gates | ECC-Tools risk taxonomy check plus follow-up signals landed, including Skill Quality, Deep Analyzer Evidence, Analyzer Corpus Evidence, RAG/Evaluator Evidence, PR Review/Salvage Evidence, and AgentShield evidence-pack evidence; #1846 added npm registry signature gates; #1848 added the supply-chain incident-response playbook and `pull_request_target` cache-poisoning validator guard; #1851 added the privileged checkout credential-persistence guard; AgentShield #78, JARVIS #13, and ECC-Tools #53 applied the same hardening outside trunk | Current supply-chain gate complete; deeper hosted review features remain future |
-| Harness-agnostic learning system | Audit, adapter matrix, observability, traces, promotion loop | Audit/adapters/observability gates plus `docs/architecture/evaluator-rag-prototype.md`, `examples/evaluator-rag-prototype/`, and ECC-Tools PR #40 define read-only stale-salvage, billing-readiness, CI-failure-diagnosis, harness-config-quality, AgentShield policy-exception, skill-quality evidence, deep-analyzer evidence, and RAG/evaluator comparison scenarios with trace, report, playbook, verifier, and predictive-check artifacts; ECC-Tools PRs #68/#69 now turn that corpus into a deterministic PR check-run gate with cached hosted-output scoring | Deterministic hosted PR check and cached output scoring integrated; hosted retrieval remains future |
-| Linear roadmap is detailed | Linear project status plus repo mirror | Repo mirror exists; issue creation was retried on 2026-05-12 and remains blocked by the workspace free issue limit; this May 13 sync adds ECC #1860, AgentShield #78-#82, JARVIS #13, ECC-Tools #53-#69, resolved queue/discussion counts, and Linear project status updates through ECC-Tools #69 | Needs recurring status updates after each merge batch |
+| Harness-agnostic learning system | Audit, adapter matrix, observability, traces, promotion loop | Audit/adapters/observability gates plus `docs/architecture/evaluator-rag-prototype.md`, `examples/evaluator-rag-prototype/`, and ECC-Tools PR #40 define read-only stale-salvage, billing-readiness, CI-failure-diagnosis, harness-config-quality, AgentShield policy-exception, skill-quality evidence, deep-analyzer evidence, and RAG/evaluator comparison scenarios with trace, report, playbook, verifier, and predictive-check artifacts; ECC-Tools PRs #68-#72 now turn that corpus into a deterministic PR check-run gate with cached hosted-output scoring, ranked retrieval candidates, a model prompt seed, a fail-closed hosted model-judge request contract, and opt-in live model execution behind strict hosted-evidence gates | Deterministic hosted PR check, cached output scoring, retrieval planning, judge contract, and gated model execution integrated |
+| Linear roadmap is detailed | Linear project document/comments plus repo mirror | Repo mirror exists and issue creation works again; the May 19 sync adds post-PR #2002 document `ecc-may-19-post-pr-2002-sync-64cef8f668e0`, project comment `a6411e3a-8c8e-4a58-adba-687e77d4c543`, ITO-44/47/48/49/51/54/56 issue comments, and In Progress state for ITO-47, ITO-48, ITO-49, ITO-51, ITO-54, and ITO-56; the late-pass batch adds document `ecc-may-19-late-queue-zero-and-release-gate-sync-1c26f65e6b3f`, project comment `d42bf0e2-7a8e-4934-9f3f-e281498ee805`, and ITO-44/50/54/56/61 comments for PR #2013, ECC-Tools #79, and JARVIS #15/#16 because project status updates are disabled in the workspace | Needs recurring document/comment updates after each significant merge batch |
 | Flow separation and progress tracking | Flow lanes with owner artifacts and update cadence | This roadmap defines lanes below and `docs/architecture/progress-sync-contract.md` makes GitHub/Linear/handoff/roadmap sync part of the readiness gate | Active |
-| Realtime Linear sync | Project updates while issue limit is blocked; issues later | ECC-Tools #39 implements opt-in Linear API sync for deferred follow-up backlog items, and ECC-Tools #54 adds copy-ready PR drafts to that backlog when draft PR shells are not opened; `docs/architecture/progress-sync-contract.md` defines the local file-backed realtime boundary while issue capacity is blocked | Needs workspace capacity/config rollout |
+| Realtime Linear sync | Project documents/comments plus issue comments for lane updates | ECC-Tools #39 implements opt-in Linear API sync for deferred follow-up backlog items, and ECC-Tools #54 adds copy-ready PR drafts to that backlog when draft PR shells are not opened; `docs/architecture/progress-sync-contract.md` defines the local file-backed realtime boundary; May 18 and May 19 live connector comments were posted to the ECC platform project and lane issues after project status updates returned disabled | Needs workspace config/product rollout for hosted issue sync |
 | Observability for self-use | Local readiness gate, traces, status snapshots, HUD/status contract, risk ledger, progress-sync contract | `npm run observability:ready` reports 21/21 | Complete for local gate |
 | Proper release and notifications | Release tag, npm publish state, plugin state, social posts | Publication readiness gate exists with May 12 dry-run and May 13 readiness evidence | Not complete; approval/live URLs required |
 
@@ -489,10 +984,10 @@ repo evidence and merge commits.
 | Queue hygiene and salvage | GitHub PR/issue state, salvage ledger | Append ledger entries for any future stale closures | Every cleanup batch |
 | Release and publication | rc.1 release docs, publication readiness doc | Naming matrix and plugin submission/contact checklist | Before any tag |
 | Harness OS core | Audit, adapter matrix, observability docs, `ecc2/` | HUD/session-control acceptance spec | Weekly until GA |
-| Evaluation and RAG | Reference-set validation, harness audit, traces, ECC-Tools corpus | Read-only evaluator/RAG prototype plus stale-salvage, billing-readiness, CI-failure-diagnosis, harness-config-quality, AgentShield policy-exception, skill-quality evidence, deep-analyzer evidence, and RAG/evaluator comparison fixtures; ECC-Tools #68 publishes the corpus as a hosted promotion readiness check-run, and #69 scores cached hosted job outputs against the same corpus | Hosted retrieval/model-backed promotion plan |
-| AgentShield enterprise | AgentShield PR evidence and roadmap notes | Remediation workflow depth or corpus expansion follow-up | Next implementation batch |
-| ECC Tools app | ECC-Tools PR evidence, billing audit, risk taxonomy, evaluator/RAG corpus | ECC-Tools #53 published the supply-chain workflow hardening branch, #54 tracks copy-ready PR drafts in the Linear/project backlog, #55 classifies analysis-depth readiness, #56 exposes the hosted execution plan, #57 executes the first hosted CI diagnostics job, #58 executes the hosted security evidence review job, #59 executes the hosted harness compatibility audit, #60 executes the hosted reference-set evaluation, #61 executes the hosted AI routing/cost review, #62 executes hosted team backlog routing, #63 publishes the hosted depth-plan check-run, #64 dispatches hosted jobs from PR comments, #65 persists hosted result history/check-runs, #66 exposes hosted job status from PR comments, #67 makes depth-plan recommendations cache-aware, #68 publishes hosted promotion readiness from the evaluator/RAG corpus, and #69 scores cached hosted job outputs against that corpus; next work is retrieval/model-backed hosted promotion | Next implementation batch |
-| Linear progress | Linear project status updates, `docs/architecture/progress-sync-contract.md`, and this mirror | Status update with queue/evidence/missing gates | Every significant merge batch |
+| Evaluation and RAG | Reference-set validation, harness audit, traces, ECC-Tools corpus | Read-only evaluator/RAG prototype plus stale-salvage, billing-readiness, CI-failure-diagnosis, harness-config-quality, AgentShield policy-exception, skill-quality evidence, deep-analyzer evidence, and RAG/evaluator comparison fixtures; ECC-Tools #68 publishes the corpus as a hosted promotion readiness check-run, #69 scores cached hosted job outputs against the same corpus, #70 emits ranked retrieval candidates plus a model prompt seed, #71 adds a fail-closed hosted model-judge request contract, and #72 executes that judge only when explicitly enabled and backed by hosted retrieval citations; ECC-Tools `16c537f` surfaces policy-promotion Action output values in hosted security comments/checks; ECC-Tools `05d4e82` adds hosted model-judge audit traces with request fingerprints and allowed-citation counts | Marketplace Pro billing-state verification with webhook provenance |
+| AgentShield enterprise | AgentShield PR evidence and roadmap notes | Fleet routing landed in #89 after evidence-pack inspect/readback shipped in #88; #90 emits fleet `reviewItems`; #91 exports checksum-backed policy bundles; #92 promotes checksum-verified policies from those bundles into active policy files; #94 adds Zed and VS Code adapter detection, Zed project scan discovery, and `.zed/setup.mjs` persistence IOC coverage; #95 closes the `brace-expansion` Dependabot alert with 0 open alerts after merge; AgentShield `87aec47` adds policy promotion `reviewItems`; `28d08c7` adds package-manager hardening drift detection; `659f569` refreshes workflow action runtime pins; `ee585cd` corrects unsupported npm release-age guidance and keeps enforceable cooldown findings on pnpm/Yarn; `1124535` exposes package-manager hardening Action outputs for CI/hosted routing; `1593925` exposes policy-promotion Action outputs and runtime-smoke job-summary evidence; `840952a` adds fleet review ticket payloads and current Mini Shai-Hulud IOC breadcrumbs; ECC-Tools #76 consumes fleet summaries, #77 surfaces source evidence paths in hosted findings, #78 links fleet routes to harness owners, ECC-Tools `8658951` consumes policy-promotion Action outputs, and ECC-Tools `16c537f` renders operator-visible output values | Deepen live operator approval/readback after Marketplace/payment gates |
+| ECC Tools app | ECC-Tools PR evidence, billing audit, risk taxonomy, evaluator/RAG corpus | ECC-Tools #53 published the supply-chain workflow hardening branch, #54 tracks copy-ready PR drafts in the Linear/project backlog, #55 classifies analysis-depth readiness, #56 exposes the hosted execution plan, #57 executes the first hosted CI diagnostics job, #58 executes the hosted security evidence review job, #59 executes the hosted harness compatibility audit, #60 executes the hosted reference-set evaluation, #61 executes the hosted AI routing/cost review, #62 executes hosted team backlog routing, #63 publishes the hosted depth-plan check-run, #64 dispatches hosted jobs from PR comments, #65 persists hosted result history/check-runs, #66 exposes hosted job status from PR comments, #67 makes depth-plan recommendations cache-aware, #68 publishes hosted promotion readiness from the evaluator/RAG corpus, #69 scores cached hosted job outputs against that corpus, #70 emits ranked retrieval candidates plus a model prompt seed, #71 emits the gated `hosted-promotion-judge.v1` contract without live model calls, #72 adds opt-in live model-judge execution behind hosted-evidence and strict JSON/citation gates, #73 adds a fail-closed native-payments `announcementGate` to billing readiness, #74 adds `npm run billing:announcement-gate` for operator verification, #75 tightens the billing announcement gate for live Marketplace readback, #76 routes AgentShield fleet-summary evidence into hosted security findings, #77 adds source evidence paths to hosted finding output, #78 links AgentShield fleet target paths to hosted harness owner findings, `8658951` routes AgentShield policy-promotion Action outputs into hosted security review and promotion readiness, `16c537f` renders policy-promotion status/pack/count/digest values in hosted security comments/checks, `05d4e82` renders hosted promotion judge request fingerprints plus allowed-citation audit traces, `91a441b` adds billing announcement preflight output for required readback inputs, `eb69412` records the initial production readback state, `95d0bec` adds aggregate `billing:kv-readback` evidence, `2859678` requires Marketplace webhook provenance in billing readiness, `42653f9` adds Wrangler OAuth readback with live aggregate production counts, `632e059` adds sanitized target-account billing readback for the exact Marketplace test account, ECC-Tools #89 adds selected-ready-target KV readback, ECC-Tools #90 adds selected-target official announcement gating without raw login input, and ECC-Tools #91 adds `--env-file` support for ignored local billing credentials without printing secrets or logins | Obtain or rotate the local/internal `INTERNAL_API_SECRET` bearer-token path, via exported env or ignored `--env-file`, then run the live selected-target billing announcement gate |
+| Linear progress | Linear project status updates, `docs/architecture/progress-sync-contract.md`, generated `operator:dashboard` output, and this mirror | Status update with queue/evidence/missing gates | Every significant merge batch |
 
 The project status update should always include:
 
@@ -551,7 +1046,7 @@ Acceptance:
   Zed-adjacent surfaces, dmux, Orca, Superset, Ghast, and terminal-only use.
 - Each adapter has supported assets, unsupported surfaces, install path,
   verification command, and risk notes.
-- Harness audit remains 70/70 and gains a public onramp that explains how teams
+- Harness audit remains 80/80 and gains a public onramp that explains how teams
   use the scorecard.
 - Reference findings are converted into concrete adapter, observability, or
   operator-surface deltas.
@@ -706,14 +1201,72 @@ Acceptance:
    baselines; PR #80 added prioritized corpus accuracy recommendations for
    failed regression gates; PR #81 added ordered remediation workflow phases;
    PR #82 expanded corpus coverage for env proxy hijacks and out-of-band
-   exfiltration; and ECC-Tools PRs #42/#43 now route and recognize evidence
-   packs. The next slice is hosted evidence-pack workflow depth.
-2. Plan retrieval/model-backed hosted promotion on top of the #69 deterministic
-   hosted output scoring contract, keeping vector/model judgment behind fixture
-   evaluation until the retrieval contract is stable.
+   exfiltration; PRs #83-#85 hardened Mini Shai-Hulud IOC coverage and
+   release-path supply-chain verification; PR #86 added whitelisted
+   `ci-context.json` workflow, commit, run, and runtime provenance to evidence
+   packs; PR #87 classified installed Claude plugin caches separately from
+   active top-level runtime config, including cached hook implementations; PR
+   #88 added `agentshield evidence-pack inspect` JSON/text readback for
+   downstream consumers; PR #89 added `agentshield evidence-pack fleet`
+   summary/routing across multiple inspected bundles; ECC-Tools PRs #42/#43 now
+   route and recognize evidence packs; ECC-Tools PR #76 consumes fleet
+   summaries in hosted security review; ECC-Tools PR #77 surfaces source
+   evidence paths in hosted PR comments and check-runs; ECC-Tools PR #78
+   links AgentShield fleet target paths into hosted harness owner findings; and
+   AgentShield PR #90 emits fleet `reviewItems` with source evidence paths and
+   owner-ready recommendations; AgentShield PR #91 exports checksum-backed
+   policy bundles for branch-protection review and downstream policy
+   promotion; AgentShield PR #92 promotes checksum-verified policy bundles
+   into active policy files with dry-run JSON review; AgentShield commit
+   `87aec47` adds policy promotion `reviewItems` for digest evidence,
+   owner-review, protected-rollout PR handoff, and runtime smoke testing;
+   AgentShield commit `28d08c7` adds package-manager hardening drift detection;
+   AgentShield commit `659f569` clears the action-runtime deprecation warnings
+   with current SHA-pinned v6 actions; AgentShield commit `ee585cd` corrects
+   npm release-age guidance so unsupported npm age keys are findings while
+   enforceable cooldown findings stay on pnpm/Yarn; AgentShield commit
+   `1124535` exposes package-manager hardening Action outputs for registry
+   credentials, lifecycle-script drift, and release-age gate drift; and
+   AgentShield commit `1593925` exposes policy-promotion Action outputs for
+   owner approval, protected rollout, digest evidence, and runtime-smoke
+   review items, ECC-Tools commit `8658951` consumes those outputs in hosted
+   security review and Hosted Promotion Readiness scoring, and ECC-Tools
+   commit `16c537f` renders promotion status, pack, review item count,
+   remaining action count, and digest in hosted security comments/check-runs.
+   AgentShield commit `840952a` adds Linear/operator-ready fleet review ticket
+   payloads and expands current Mini Shai-Hulud IOC breadcrumbs, with green
+   local and remote CI. AgentShield commit `4e36aab` hardens CI package installs
+   after the expanded Mini Shai-Hulud refresh, with CI, Test GitHub Action,
+   Self-Scan, and Dependabot Update workflows green.
+   ECC-Tools commit `05d4e82` adds hosted promotion judge audit traces with
+   deterministic request fingerprints and allowed-citation counts, without
+   exposing raw provider output.
+   ECC-Tools commit `91a441b` adds a billing announcement preflight command
+   for checking Marketplace readback inputs before privileged API calls.
+   ECC-Tools commit `2859678` requires Marketplace webhook provenance in
+   billing-state before native-payments announcement readiness can pass.
+   ECC-Tools commit `42653f9` adds Wrangler OAuth KV readback and confirms the
+   current blocker is not Cloudflare read access; it is the absence of a
+   ready-like Marketplace Pro billing-state record with webhook provenance.
+   ECC-Tools commit `632e059` adds sanitized target-account readback, and PRs
+   #89/#90/#91 move the final operator path to selected-target readback,
+   selected-target announcement gating, and ignored env-file credential loading
+   without printing account logins or raw KV key names.
+   ECC-Tools PR #79 redacts the billing announcement gate account output;
+   PR #80 requires failure reasons in runtime receipts; PRs #81/#82 preserve
+   and render AgentShield fleet approval IDs; PR #83 makes Linear follow-up
+   sync idempotent by external ID; PR #84 syncs hosted AgentShield
+   remediation items into Linear; PR #85 emits hosted job observability events
+   including budget-blocked outcomes; PRs #86/#87 read those events back into
+   hosted status comments and hosted depth-plan check-runs; and PR #88 exposes
+   authenticated hosted observability API readback for operator dashboards.
+2. Run `npm run billing:announcement-gate -- --preflight
+   --select-ready-target`, adding `--env-file /path/to/ecc-tools.env` when the
+   local bearer token is stored in an ignored operator file, then run the same
+   command without `--preflight` and require `announcementGate.ready === true`
+   before any native GitHub payments announcement.
 3. Enable/configure the merged Linear backlog sync path after workspace issue
    capacity clears or the Linear workspace is upgraded, then verify PR-draft
    salvage items land in the expected project.
 4. Use the ECC-Tools evaluator/RAG corpus as the promotion gate before adding
-   hosted retrieval, vector storage, model-backed judging, or automated
-   check-run promotion.
+   deeper hosted retrieval, vector storage, or automated check-run promotion.

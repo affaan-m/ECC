@@ -9,10 +9,11 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { sanitizeSessionId, readBridge } = require('../lib/session-bridge');
+const { sanitizeSessionId, readBridge, renameWithRetry } = require('../lib/session-bridge');
 
 const CONTEXT_WARNING_PCT = 35;
 const CONTEXT_CRITICAL_PCT = 25;
@@ -22,7 +23,20 @@ const COST_CRITICAL_USD = 50;
 const FILES_WARNING_COUNT = 20;
 const LOOP_THRESHOLD = 3;
 const STALE_SECONDS = 60;
-const DEBOUNCE_CALLS = 5;
+
+function isEnabledEnv(value, defaultValue = true) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return defaultValue;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  return defaultValue;
+}
+
+function costWarningsEnabled(env = process.env) {
+  return isEnabledEnv(env.ECC_CONTEXT_MONITOR_COST_WARNINGS, true);
+}
 
 /**
  * Get debounce state file path.
@@ -42,20 +56,35 @@ function readWarnState(sessionId) {
   try {
     return JSON.parse(fs.readFileSync(getWarnPath(sessionId), 'utf8'));
   } catch {
-    return { callsSinceWarn: 0, lastSeverity: null };
+    return { callsSinceWarn: 0, lastSeverity: null, lastMessage: null };
   }
 }
 
 /**
- * Write debounce state.
+ * Write debounce state atomically (unique-suffix tmp then rename).
+ *
+ * The tmp path includes `process.pid` plus a random nonce so concurrent
+ * PostToolUse subprocesses writing to the same session's warn-state
+ * file do not clobber each other's tmp mid-write. Without the unique
+ * suffix, two writers race over a shared `${target}.tmp` and produce
+ * either a corrupted payload or an ENOENT throw on the second rename.
+ *
+ * Same pattern as `writeBridgeAtomic` in `scripts/lib/session-bridge.js`
+ * and `writeCostWarningIfChanged` in `scripts/hooks/ecc-metrics-bridge.js`.
+ *
  * @param {string} sessionId
  * @param {object} state
  */
 function writeWarnState(sessionId, state) {
   const target = getWarnPath(sessionId);
-  const tmp = `${target}.tmp`;
+  const tmp = `${target}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
-  fs.renameSync(tmp, target);
+  try {
+    renameWithRetry(tmp, target);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw err;
+  }
 }
 
 /**
@@ -84,7 +113,7 @@ function detectLoop(recentTools) {
  * Evaluate all warning conditions against bridge data.
  * Returns array of {severity, type, message} sorted by severity desc.
  */
-function evaluateConditions(bridge) {
+function evaluateConditions(bridge, options = {}) {
   const warnings = [];
   const remaining = bridge.context_remaining_pct;
 
@@ -109,25 +138,27 @@ function evaluateConditions(bridge) {
   }
 
   // Cost warnings
-  const cost = bridge.total_cost_usd || 0;
-  if (cost > COST_CRITICAL_USD) {
-    warnings.push({
-      severity: 3,
-      type: 'cost',
-      message: `COST CRITICAL: Session cost is $${cost.toFixed(2)}. ` + 'Stop and inform the user about high cost before continuing.'
-    });
-  } else if (cost > COST_WARNING_USD) {
-    warnings.push({
-      severity: 2,
-      type: 'cost',
-      message: `COST WARNING: Session cost is $${cost.toFixed(2)}. ` + 'Review whether the current approach justifies the expense.'
-    });
-  } else if (cost > COST_NOTICE_USD) {
-    warnings.push({
-      severity: 1,
-      type: 'cost',
-      message: `COST NOTICE: Session cost is $${cost.toFixed(2)}. ` + 'Consider whether the current approach is efficient.'
-    });
+  if (options.costWarnings !== false) {
+    const cost = bridge.total_cost_usd || 0;
+    if (cost > COST_CRITICAL_USD) {
+      warnings.push({
+        severity: 3,
+        type: 'cost',
+        message: `COST CRITICAL: session total ~$${cost.toFixed(2)} (over $${COST_CRITICAL_USD}). Informational only — not an instruction to stop.`
+      });
+    } else if (cost > COST_WARNING_USD) {
+      warnings.push({
+        severity: 2,
+        type: 'cost',
+        message: `COST WARNING: session total ~$${cost.toFixed(2)} (over $${COST_WARNING_USD}). Informational only.`
+      });
+    } else if (cost > COST_NOTICE_USD) {
+      warnings.push({
+        severity: 1,
+        type: 'cost',
+        message: `COST NOTICE: session total ~$${cost.toFixed(2)}. Informational only.`
+      });
+    }
   }
 
   // File scope warning
@@ -185,32 +216,45 @@ function run(rawInput) {
     // If bridge is stale, null out context data (still check cost/scope/loop)
     const evalBridge = isStale ? { ...bridge, context_remaining_pct: null } : bridge;
 
-    const warnings = evaluateConditions(evalBridge);
-    if (warnings.length === 0) return rawInput;
-
-    // Debounce logic
-    const warnState = readWarnState(sessionId);
-    warnState.callsSinceWarn = (warnState.callsSinceWarn || 0) + 1;
-
-    const topSeverity = severityLabel(warnings[0].severity);
-    const severityEscalated = topSeverity === 'critical' && warnState.lastSeverity !== 'critical';
-
-    const isFirst = !warnState.lastSeverity;
-    if (!isFirst && warnState.callsSinceWarn < DEBOUNCE_CALLS && !severityEscalated) {
-      writeWarnState(sessionId, warnState);
+    const warnings = evaluateConditions(evalBridge, { costWarnings: costWarningsEnabled() });
+    if (warnings.length === 0) {
+      // Clear dedupe state when the condition resolves, so the SAME warning text
+      // recurring later (context dips, recovers, dips again; a loop that stops
+      // then restarts) is surfaced again instead of being suppressed as a
+      // duplicate. Only write when there is state to clear — most tool calls
+      // have no warning, and this keeps the common path free of disk writes.
+      const prior = readWarnState(sessionId);
+      if (prior.lastMessage) {
+        writeWarnState(sessionId, { callsSinceWarn: 0, lastSeverity: null, lastMessage: null });
+      }
       return rawInput;
     }
-
-    // Reset debounce, emit warning
-    warnState.callsSinceWarn = 0;
-    warnState.lastSeverity = topSeverity;
-    writeWarnState(sessionId, warnState);
 
     // Combine top 2 warnings
     const message = warnings
       .slice(0, 2)
       .map(w => w.message)
       .join('\n');
+
+    // Dedupe on message content, not a call counter. The previous logic
+    // re-emitted the *same* warning every DEBOUNCE_CALLS tool calls, so a
+    // single unchanged condition (e.g. a cost figure that only refreshes at
+    // turn boundaries) printed the identical line ~20 times in one turn. Now a
+    // warning is surfaced only when its text changes (cost moved, a new file
+    // count, a new loop) or when we newly escalate to critical — genuinely new
+    // information — and is otherwise suppressed.
+    const warnState = readWarnState(sessionId);
+    const topSeverity = severityLabel(warnings[0].severity);
+    const escalatedToCritical = topSeverity === 'critical' && warnState.lastSeverity !== 'critical';
+    const sameMessage = warnState.lastMessage === message;
+
+    if (sameMessage && !escalatedToCritical) {
+      return rawInput;
+    }
+
+    warnState.lastSeverity = topSeverity;
+    warnState.lastMessage = message;
+    writeWarnState(sessionId, warnState);
 
     const output = {
       hookSpecificOutput: {
@@ -239,4 +283,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, evaluateConditions, detectLoop, severityLabel };
+module.exports = { run, evaluateConditions, detectLoop, severityLabel, costWarningsEnabled };

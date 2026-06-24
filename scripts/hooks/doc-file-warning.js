@@ -14,6 +14,7 @@
 'use strict';
 
 const path = require('path');
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
 let data = '';
@@ -58,10 +59,11 @@ function run(inputOrRaw, _options = {}) {
   if (filePath && isSuspiciousDocPath(filePath)) {
     return {
       exitCode: 0,
-      stderr:
-        '[Hook] WARNING: Ad-hoc documentation filename detected\n' +
-        `[Hook] File: ${filePath}\n` +
+      additionalContext: [
+        '[Hook] WARNING: Ad-hoc documentation filename detected',
+        `[Hook] File: ${filePath}`,
         '[Hook] Consider using a structured path (e.g. docs/, .claude/, skills/, .github/, benchmarks/, templates/)',
+      ],
     };
   }
 
@@ -86,5 +88,9 @@ process.stdin.on('end', () => {
     process.stderr.write(result.stderr + '\n');
   }
 
-  process.stdout.write(data);
+  if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
+    process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
+  } else {
+    process.stdout.write(data);
+  }
 });

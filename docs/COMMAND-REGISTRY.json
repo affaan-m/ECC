@@ -1,0 +1,1102 @@
+{
+  "schemaVersion": 1,
+  "totalCommands": 92,
+  "commands": [
+    {
+      "command": "aside",
+      "description": "Answer a quick side question without interrupting or losing context from the current task. Resume work automatically after answering.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/aside.md"
+    },
+    {
+      "command": "auto-update",
+      "description": "Pull the latest ECC repo changes and reinstall the current managed targets.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/auto-update.md"
+    },
+    {
+      "command": "build-fix",
+      "description": "Detect the project build system and incrementally fix build/type errors with minimal safe changes.",
+      "type": "refactoring",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/build-fix.md"
+    },
+    {
+      "command": "checkpoint",
+      "description": "Create, verify, or list workflow checkpoints after running verification checks.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/checkpoint.md"
+    },
+    {
+      "command": "code-review",
+      "description": "Code review — local uncommitted changes or GitHub PR (pass PR number/URL for PR mode)",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/code-review.md"
+    },
+    {
+      "command": "cost-report",
+      "description": "Generate a local Claude Code cost report from the ECC cost-tracker metrics log.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/cost-report.md"
+    },
+    {
+      "command": "cpp-build",
+      "description": "Fix C++ build errors, CMake issues, and linker problems incrementally. Invokes the cpp-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "cpp-build-resolver"
+      ],
+      "allAgents": [
+        "cpp-build-resolver"
+      ],
+      "skills": [
+        "cpp-coding-standards"
+      ],
+      "path": "commands/cpp-build.md"
+    },
+    {
+      "command": "cpp-review",
+      "description": "Comprehensive C++ code review for memory safety, modern C++ idioms, concurrency, and security. Invokes the cpp-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "cpp-reviewer"
+      ],
+      "allAgents": [
+        "cpp-reviewer"
+      ],
+      "skills": [
+        "cpp-coding-standards",
+        "cpp-testing"
+      ],
+      "path": "commands/cpp-review.md"
+    },
+    {
+      "command": "cpp-test",
+      "description": "Enforce TDD workflow for C++. Write GoogleTest tests first, then implement. Verify coverage with gcov/lcov.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "cpp-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/cpp-test.md"
+    },
+    {
+      "command": "ecc-guide",
+      "description": "Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "ecc-guide",
+        "security-scan"
+      ],
+      "path": "commands/ecc-guide.md"
+    },
+    {
+      "command": "epic-claim",
+      "description": "Claim an epic issue, stamp coordination state, and sync local ownership.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature"
+      ],
+      "path": "commands/epic-claim.md"
+    },
+    {
+      "command": "epic-decompose",
+      "description": "Break an epic into task children without creating task branches.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-decompose.md"
+    },
+    {
+      "command": "epic-publish",
+      "description": "Publish a validated epic update back to the issue and local cache.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-publish.md"
+    },
+    {
+      "command": "epic-review",
+      "description": "Mark epic review requested, approved, or changes requested.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-review.md"
+    },
+    {
+      "command": "epic-sync",
+      "description": "Sync epic issue bodies, labels, and local coordination snapshots from GitHub.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-sync.md"
+    },
+    {
+      "command": "epic-unblock",
+      "description": "Sweep blocked epic issues and reopen anything whose dependencies are closed.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-unblock.md"
+    },
+    {
+      "command": "epic-validate",
+      "description": "Validate epic readiness, dependencies, and coordination policy.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/epic-validate.md"
+    },
+    {
+      "command": "evolve",
+      "description": "Analyze instincts and suggest or generate evolved structures",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/evolve.md"
+    },
+    {
+      "command": "fastapi-review",
+      "description": "Review a FastAPI application for architecture, async correctness, dependency injection, Pydantic schemas, security, performance, and testability.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/fastapi-review.md"
+    },
+    {
+      "command": "feature-dev",
+      "description": "Guided feature development with codebase understanding and architecture focus",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/feature-dev.md"
+    },
+    {
+      "command": "flutter-build",
+      "description": "Fix Dart analyzer errors and Flutter build failures incrementally. Invokes the dart-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "dart-build-resolver"
+      ],
+      "allAgents": [
+        "dart-build-resolver"
+      ],
+      "skills": [
+        "flutter-dart-code-review"
+      ],
+      "path": "commands/flutter-build.md"
+    },
+    {
+      "command": "flutter-review",
+      "description": "Review Flutter/Dart code for idiomatic patterns, widget best practices, state management, performance, accessibility, and security. Invokes the flutter-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "flutter-reviewer"
+      ],
+      "allAgents": [
+        "flutter-reviewer"
+      ],
+      "skills": [
+        "flutter-dart-code-review"
+      ],
+      "path": "commands/flutter-review.md"
+    },
+    {
+      "command": "flutter-test",
+      "description": "Run Flutter/Dart tests, report failures, and incrementally fix test issues. Covers unit, widget, golden, and integration tests.",
+      "type": "testing",
+      "primaryAgents": [
+        "dart-build-resolver",
+        "flutter-reviewer"
+      ],
+      "allAgents": [
+        "dart-build-resolver",
+        "flutter-reviewer"
+      ],
+      "skills": [
+        "flutter-dart-code-review"
+      ],
+      "path": "commands/flutter-test.md"
+    },
+    {
+      "command": "gan-build",
+      "description": "Run a generator/evaluator build loop for implementation tasks with bounded iterations and scoring.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/gan-build.md"
+    },
+    {
+      "command": "gan-design",
+      "description": "Run a generator/evaluator design loop for frontend or visual work with bounded iterations and scoring.",
+      "type": "planning",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/gan-design.md"
+    },
+    {
+      "command": "go-build",
+      "description": "Fix Go build errors, go vet warnings, and linter issues incrementally. Invokes the go-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "go-build-resolver"
+      ],
+      "allAgents": [
+        "go-build-resolver"
+      ],
+      "skills": [
+        "golang-patterns"
+      ],
+      "path": "commands/go-build.md"
+    },
+    {
+      "command": "go-review",
+      "description": "Comprehensive Go code review for idiomatic patterns, concurrency safety, error handling, and security. Invokes the go-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "go-reviewer"
+      ],
+      "allAgents": [
+        "go-reviewer"
+      ],
+      "skills": [
+        "golang-patterns",
+        "golang-testing"
+      ],
+      "path": "commands/go-review.md"
+    },
+    {
+      "command": "go-test",
+      "description": "Enforce TDD workflow for Go. Write table-driven tests first, then implement. Verify 80%+ coverage with go test -cover.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "golang-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/go-test.md"
+    },
+    {
+      "command": "gradle-build",
+      "description": "Fix Gradle build errors for Android and KMP projects",
+      "type": "build",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/gradle-build.md"
+    },
+    {
+      "command": "harness-audit",
+      "description": "Run a deterministic repository harness audit and return a prioritized scorecard.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/harness-audit.md"
+    },
+    {
+      "command": "hookify-configure",
+      "description": "Enable or disable hookify rules interactively",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/hookify-configure.md"
+    },
+    {
+      "command": "hookify-help",
+      "description": "Get help with the hookify system",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/hookify-help.md"
+    },
+    {
+      "command": "hookify-list",
+      "description": "List all configured hookify rules",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/hookify-list.md"
+    },
+    {
+      "command": "hookify",
+      "description": "Create hooks to prevent unwanted behaviors from conversation analysis or explicit instructions",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/hookify.md"
+    },
+    {
+      "command": "instinct-export",
+      "description": "Export instincts from project/global scope to a file",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/instinct-export.md"
+    },
+    {
+      "command": "instinct-import",
+      "description": "Import instincts from file or URL into project/global scope",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/instinct-import.md"
+    },
+    {
+      "command": "instinct-status",
+      "description": "Show learned instincts (project + global) with confidence",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/instinct-status.md"
+    },
+    {
+      "command": "jira",
+      "description": "Retrieve a Jira ticket, analyze requirements, update status, or add comments. Uses the jira-integration skill and MCP or REST API.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "jira-integration"
+      ],
+      "path": "commands/jira.md"
+    },
+    {
+      "command": "kotlin-build",
+      "description": "Fix Kotlin/Gradle build errors, compiler warnings, and dependency issues incrementally. Invokes the kotlin-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "kotlin-build-resolver"
+      ],
+      "allAgents": [
+        "kotlin-build-resolver"
+      ],
+      "skills": [
+        "kotlin-patterns"
+      ],
+      "path": "commands/kotlin-build.md"
+    },
+    {
+      "command": "kotlin-review",
+      "description": "Comprehensive Kotlin code review for idiomatic patterns, null safety, coroutine safety, and security. Invokes the kotlin-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "kotlin-reviewer"
+      ],
+      "allAgents": [
+        "kotlin-reviewer"
+      ],
+      "skills": [
+        "kotlin-patterns",
+        "kotlin-testing"
+      ],
+      "path": "commands/kotlin-review.md"
+    },
+    {
+      "command": "kotlin-test",
+      "description": "Enforce TDD workflow for Kotlin. Write Kotest tests first, then implement. Verify 80%+ coverage with Kover.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "kotlin-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/kotlin-test.md"
+    },
+    {
+      "command": "learn-eval",
+      "description": "Extract reusable patterns from the session, self-evaluate quality before saving, and determine the right save location (Global vs Project).",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/learn-eval.md"
+    },
+    {
+      "command": "learn",
+      "description": "Extract reusable patterns from the current session and save them as candidate skills or guidance.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/learn.md"
+    },
+    {
+      "command": "loop-start",
+      "description": "Start a managed autonomous loop pattern with safety defaults and explicit stop conditions.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/loop-start.md"
+    },
+    {
+      "command": "loop-status",
+      "description": "Inspect active loop state, progress, failure signals, and recommended intervention.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/loop-status.md"
+    },
+    {
+      "command": "marketing-campaign",
+      "description": "Plan and execute a full marketing campaign. Accepts a product brief and returns positioning, landing page copy, email sequence, social posts, ad variants, video scripts, and a content calendar. Can also review existing copy for conversion quality.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "marketing-campaign"
+      ],
+      "path": "commands/marketing-campaign.md"
+    },
+    {
+      "command": "model-route",
+      "description": "Recommend the best model tier for the current task based on complexity, risk, and budget.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/model-route.md"
+    },
+    {
+      "command": "multi-backend",
+      "description": "Run a backend-focused multi-model workflow for APIs, algorithms, data, and business logic.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/multi-backend.md"
+    },
+    {
+      "command": "multi-execute",
+      "description": "Execute a multi-model implementation plan while preserving Claude as the only filesystem writer.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/multi-execute.md"
+    },
+    {
+      "command": "multi-frontend",
+      "description": "Run a frontend-focused multi-model workflow for components, layouts, animation, and UI polish.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/multi-frontend.md"
+    },
+    {
+      "command": "multi-plan",
+      "description": "Create a multi-model implementation plan without modifying production code.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "accessibility"
+      ],
+      "path": "commands/multi-plan.md"
+    },
+    {
+      "command": "multi-workflow",
+      "description": "Run a full multi-model development workflow with research, planning, execution, optimization, and review.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/multi-workflow.md"
+    },
+    {
+      "command": "orch-add-feature",
+      "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD, review, gated commit. Wrapper that kicks off the orch-add-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature"
+      ],
+      "path": "commands/orch-add-feature.md"
+    },
+    {
+      "command": "orch-build-mvp",
+      "description": "Orchestrate bootstrapping a working MVP from a design/spec doc — ingest, slice, scaffold, TDD, review, gated commit (reuses the GAN harness). Wrapper for the orch-build-mvp skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-build-mvp"
+      ],
+      "path": "commands/orch-build-mvp.md"
+    },
+    {
+      "command": "orch-change-feature",
+      "description": "Orchestrate altering an existing, working feature to new desired behavior — update tests to the new spec, change impl, review, gated commit. Wrapper for the orch-change-feature skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-change-feature.md"
+    },
+    {
+      "command": "orch-fix-defect",
+      "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, gated commit. Wrapper for the orch-fix-defect skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-add-feature",
+        "orch-change-feature",
+        "orch-fix-defect"
+      ],
+      "path": "commands/orch-fix-defect.md"
+    },
+    {
+      "command": "orch-refine-code",
+      "description": "Orchestrate a behavior-preserving refactor — confirm tests green, restructure without changing behavior, keep green, review, gated commit. Wrapper for the orch-refine-code skill.",
+      "type": "orchestration",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "orch-change-feature",
+        "orch-fix-defect",
+        "orch-refine-code"
+      ],
+      "path": "commands/orch-refine-code.md"
+    },
+    {
+      "command": "plan-prd",
+      "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/plan-prd.md"
+    },
+    {
+      "command": "plan",
+      "description": "Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.",
+      "type": "testing",
+      "primaryAgents": [
+        "planner"
+      ],
+      "allAgents": [
+        "planner"
+      ],
+      "skills": [],
+      "path": "commands/plan.md"
+    },
+    {
+      "command": "pm2",
+      "description": "Analyze a project and generate PM2 service commands for detected frontend, backend, or database services.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/pm2.md"
+    },
+    {
+      "command": "pr",
+      "description": "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/pr.md"
+    },
+    {
+      "command": "project-init",
+      "description": "Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "ecc-guide"
+      ],
+      "path": "commands/project-init.md"
+    },
+    {
+      "command": "projects",
+      "description": "List known projects and their instinct statistics",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/projects.md"
+    },
+    {
+      "command": "promote",
+      "description": "Promote project-scoped instincts to global scope",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/promote.md"
+    },
+    {
+      "command": "prp-commit",
+      "description": "Quick commit with natural language file targeting — describe what to commit in plain English",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/prp-commit.md"
+    },
+    {
+      "command": "prp-implement",
+      "description": "Execute an implementation plan with rigorous validation loops",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/prp-implement.md"
+    },
+    {
+      "command": "prp-plan",
+      "description": "Create comprehensive feature implementation plan with codebase analysis and pattern extraction",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/prp-plan.md"
+    },
+    {
+      "command": "prp-pr",
+      "description": "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/prp-pr.md"
+    },
+    {
+      "command": "prp-prd",
+      "description": "Interactive PRD generator - problem-first, hypothesis-driven product spec with back-and-forth questioning",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/prp-prd.md"
+    },
+    {
+      "command": "prune",
+      "description": "Delete pending instincts older than 30 days that were never promoted",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "continuous-learning-v2"
+      ],
+      "path": "commands/prune.md"
+    },
+    {
+      "command": "python-review",
+      "description": "Comprehensive Python code review for PEP 8 compliance, type hints, security, and Pythonic idioms. Invokes the python-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "python-reviewer"
+      ],
+      "allAgents": [
+        "python-reviewer"
+      ],
+      "skills": [
+        "python-patterns",
+        "python-testing"
+      ],
+      "path": "commands/python-review.md"
+    },
+    {
+      "command": "quality-gate",
+      "description": "Run the ECC formatter quality gate for a single file and report remediation steps.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/quality-gate.md"
+    },
+    {
+      "command": "react-build",
+      "description": "Fix React build failures (Vite, webpack, Next.js, CRA, Parcel, esbuild, Bun) incrementally — JSX/TSX compile errors, hydration mismatches, server/client component boundary failures, missing types. Invokes the react-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "react-build-resolver"
+      ],
+      "allAgents": [
+        "react-build-resolver"
+      ],
+      "skills": [
+        "frontend-patterns",
+        "react-patterns"
+      ],
+      "path": "commands/react-build.md"
+    },
+    {
+      "command": "react-review",
+      "description": "Comprehensive React/JSX code review for hook correctness, render performance, server/client component boundaries, accessibility, and React-specific security. Invokes the react-reviewer agent (and typescript-reviewer alongside on TSX/JSX changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "allAgents": [
+        "react-reviewer",
+        "typescript-reviewer"
+      ],
+      "skills": [
+        "accessibility",
+        "react-patterns",
+        "react-testing"
+      ],
+      "path": "commands/react-review.md"
+    },
+    {
+      "command": "react-test",
+      "description": "Enforce TDD workflow for React. Write React Testing Library tests first (behavior-focused, accessibility-first), then implement components. Detects Vitest or Jest and verifies coverage targets.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "accessibility",
+        "e2e-testing",
+        "react-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/react-test.md"
+    },
+    {
+      "command": "refactor-clean",
+      "description": "Safely identify and remove dead code with verification after each change.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/refactor-clean.md"
+    },
+    {
+      "command": "resume-session",
+      "description": "Load the most recent session file from ~/.claude/session-data/ and resume work with full context from where the last session ended.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/resume-session.md"
+    },
+    {
+      "command": "review-pr",
+      "description": "Comprehensive PR review using specialized agents",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/review-pr.md"
+    },
+    {
+      "command": "rust-build",
+      "description": "Fix Rust build errors, borrow checker issues, and dependency problems incrementally. Invokes the rust-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "rust-build-resolver"
+      ],
+      "allAgents": [
+        "rust-build-resolver"
+      ],
+      "skills": [
+        "rust-patterns"
+      ],
+      "path": "commands/rust-build.md"
+    },
+    {
+      "command": "rust-review",
+      "description": "Comprehensive Rust code review for ownership, lifetimes, error handling, unsafe usage, and idiomatic patterns. Invokes the rust-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "rust-reviewer"
+      ],
+      "allAgents": [
+        "rust-reviewer"
+      ],
+      "skills": [
+        "rust-patterns",
+        "rust-testing"
+      ],
+      "path": "commands/rust-review.md"
+    },
+    {
+      "command": "rust-test",
+      "description": "Enforce TDD workflow for Rust. Write tests first, then implement. Verify 80%+ coverage with cargo-llvm-cov.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "rust-patterns",
+        "rust-testing"
+      ],
+      "path": "commands/rust-test.md"
+    },
+    {
+      "command": "santa-loop",
+      "description": "Adversarial dual-review convergence loop — two independent model reviewers must both approve before code ships.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/santa-loop.md"
+    },
+    {
+      "command": "save-session",
+      "description": "Save current session state to a dated file in ~/.claude/session-data/ so work can be resumed in a future session with full context.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/save-session.md"
+    },
+    {
+      "command": "security-scan",
+      "description": "Run AgentShield against agent, hook, MCP, permission, and secret surfaces.",
+      "type": "review",
+      "primaryAgents": [
+        "security-reviewer"
+      ],
+      "allAgents": [
+        "security-reviewer"
+      ],
+      "skills": [
+        "security-scan"
+      ],
+      "path": "commands/security-scan.md"
+    },
+    {
+      "command": "sessions",
+      "description": "Manage Claude Code session history, aliases, and session metadata.",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/sessions.md"
+    },
+    {
+      "command": "setup-pm",
+      "description": "Configure your preferred package manager (npm/pnpm/yarn/bun)",
+      "type": "build",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/setup-pm.md"
+    },
+    {
+      "command": "skill-create",
+      "description": "Analyze local git history to extract coding patterns and generate SKILL.md files. Local version of the Skill Creator GitHub App.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/skill-create.md"
+    },
+    {
+      "command": "skill-health",
+      "description": "Show skill portfolio health dashboard with charts and analytics",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/skill-health.md"
+    },
+    {
+      "command": "test-coverage",
+      "description": "Analyze coverage, identify gaps, and generate missing tests toward the target threshold.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/test-coverage.md"
+    },
+    {
+      "command": "update-codemaps",
+      "description": "Scan project structure and generate token-lean architecture codemaps.",
+      "type": "planning",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/update-codemaps.md"
+    },
+    {
+      "command": "update-docs",
+      "description": "Sync documentation from source-of-truth files such as scripts, schemas, routes, and exports.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/update-docs.md"
+    },
+    {
+      "command": "vue-review",
+      "description": "Comprehensive Vue.js code review for Composition API correctness, reactivity, composable patterns, template security, accessibility, and Vue-specific performance. Invokes the vue-reviewer agent (and typescript-reviewer alongside on .vue/.ts changes).",
+      "type": "testing",
+      "primaryAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "allAgents": [
+        "typescript-reviewer",
+        "vue-reviewer"
+      ],
+      "skills": [
+        "vue-patterns"
+      ],
+      "path": "commands/vue-review.md"
+    }
+  ],
+  "statistics": {
+    "byType": {
+      "build": 2,
+      "general": 10,
+      "orchestration": 11,
+      "planning": 2,
+      "refactoring": 1,
+      "review": 13,
+      "testing": 53
+    },
+    "topAgents": [
+      {
+        "agent": "dart-build-resolver",
+        "count": 2
+      },
+      {
+        "agent": "flutter-reviewer",
+        "count": 2
+      },
+      {
+        "agent": "typescript-reviewer",
+        "count": 2
+      },
+      {
+        "agent": "cpp-build-resolver",
+        "count": 1
+      },
+      {
+        "agent": "cpp-reviewer",
+        "count": 1
+      },
+      {
+        "agent": "go-build-resolver",
+        "count": 1
+      },
+      {
+        "agent": "go-reviewer",
+        "count": 1
+      },
+      {
+        "agent": "kotlin-build-resolver",
+        "count": 1
+      },
+      {
+        "agent": "kotlin-reviewer",
+        "count": 1
+      },
+      {
+        "agent": "planner",
+        "count": 1
+      }
+    ],
+    "topSkills": [
+      {
+        "skill": "continuous-learning-v2",
+        "count": 6
+      },
+      {
+        "skill": "orch-add-feature",
+        "count": 4
+      },
+      {
+        "skill": "orch-change-feature",
+        "count": 4
+      },
+      {
+        "skill": "tdd-workflow",
+        "count": 4
+      },
+      {
+        "skill": "accessibility",
+        "count": 3
+      },
+      {
+        "skill": "flutter-dart-code-review",
+        "count": 3
+      },
+      {
+        "skill": "orch-fix-defect",
+        "count": 3
+      },
+      {
+        "skill": "rust-patterns",
+        "count": 3
+      },
+      {
+        "skill": "cpp-coding-standards",
+        "count": 2
+      },
+      {
+        "skill": "cpp-testing",
+        "count": 2
+      }
+    ]
+  }
+}

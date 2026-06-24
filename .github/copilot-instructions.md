@@ -83,10 +83,11 @@ Use AAA structure (Arrange / Act / Assert) and descriptive test names that expla
 
 Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 
-PR checklist before requesting review:
+PR checklist before requesting sponsored review:
 - CI passing, merge conflicts resolved, branch up to date with target
 - Full diff reviewed (`git diff [base-branch]...HEAD`)
 - Test plan included in PR description
+- Code review is handled by CodeRabbit and Greptile. Do not add or route PR code review through Copilot, Claude, Codex, or other reviewer bots.
 
 ## Code Quality Checklist
 
@@ -107,7 +108,6 @@ Use these prompts in Copilot Chat for deeper workflows:
 |--------|-------------|---------|
 | `/plan` | Complex feature | Phased implementation plan |
 | `/tdd` | New feature or bug fix | Test-driven development cycle |
-| `/code-review` | After writing code | Quality and security review |
 | `/security-review` | Before a release | Deep security analysis |
 | `/build-fix` | Build/CI failure | Systematic error resolution |
 | `/refactor` | Code maintenance | Dead code cleanup and simplification |

@@ -2,13 +2,26 @@
 
 ## When to Use
 
-Use the system and usage patterns described here when you need to handle stateful interactions across CLI and HTTP modes, manage user sessions in web applications, or implement loosely coupled communication between application modules using an event-driven architecture.
+Use these patterns to handle request state, manage web sessions, implement Server-Sent Events (SSE), handle file uploads, or perform outbound HTTP networking.
 
 ## How It Works
 
-The framework's `Context` serves as the primary data store for request-specific state. In CLI mode, flags passed as `--key value` are automatically parsed and stored in the `Context` with the `--` prefix, allowing action methods to retrieve command parameters easily. For web applications, the system provides standard session management via the `Request` object, enabling the storage of user data across multiple HTTP requests.
+### Context and CLI Arguments
+`Context` is the primary data store for request-specific state. CLI flags passed as `--key value` are stored in `Context` as `"--key"`.
 
-The internal `EventDispatcher` facilitates an asynchronous event bus. By defining custom `Event` classes and registering handlers (typically within an application's `init()` method), you can trigger background tasks—such as sending emails or logging audit trails—without blocking the main execution path.
+### Session Management
+Pluggable architecture. Default is `MemorySessionRepository`. Configure Redis in `application.properties`:
+```properties
+default.session.repository=org.tinystruct.http.RedisSessionRepository
+redis.host=127.0.0.1
+redis.port=6379
+```
+
+### Server-Sent Events (SSE)
+Built-in support for real-time push. The `HttpServer` automatically handles the SSE lifecycle when it detects the `Accept: text/event-stream` header. Connections are tracked by session ID in `SSEPushManager`.
+
+### Outbound Networking
+Use `URLRequest` and `HTTPHandler` for making HTTP requests to external services.
 
 ## Examples
 
@@ -23,52 +36,62 @@ public String echo() {
 }
 ```
 
-### Session Management (Web Mode)
+### Session Management
 ```java
 @Action(value = "login", mode = Mode.HTTP_POST)
-public String login(Request request) {
+public String login(Request<?, ?> request) {
     request.getSession().setAttribute("userId", "42");
     return "Logged in";
 }
+```
 
-@Action("profile")
-public String profile(Request request) {
-    Object userId = request.getSession().getAttribute("userId");
-    if (userId == null) return "Not logged in";
-    return "User: " + userId;
+### Server-Sent Events (SSE)
+```java
+@Action("sse/connect")
+public String connect() {
+    return "{\"type\":\"connect\",\"message\":\"Connected\"}";
+}
+
+// In another method or event handler:
+String sessionId = getContext().getId();
+SSEPushManager.getInstance().push(sessionId, new Builder().put("msg", "hello"));
+```
+
+### File Uploads
+```java
+import org.tinystruct.data.FileEntity;
+
+@Action(value = "upload", mode = Mode.HTTP_POST)
+public String upload(Request<?, ?> request) throws ApplicationException {
+    List<FileEntity> files = request.getAttachments();
+    if (files != null) {
+        for (FileEntity file : files) {
+            // file.getFilename(), file.getContent()
+        }
+    }
+    return "Uploaded";
+}
+```
+
+### Outbound HTTP
+```java
+import org.tinystruct.net.URLRequest;
+import org.tinystruct.net.handlers.HTTPHandler;
+
+URLRequest request = new URLRequest(new URL("https://api.example.com"));
+request.setMethod("POST").setBody("{\"data\":\"val\"}");
+
+HTTPHandler handler = new HTTPHandler();
+var response = handler.handleRequest(request);
+if (response.getStatusCode() == 200) {
+    String body = response.getBody();
 }
 ```
 
 ### Event System
+Register handlers in `init()` for asynchronous task execution.
 ```java
-// 1. Define an event
-public class OrderCreatedEvent implements org.tinystruct.system.Event<Order> {
-    private final Order order;
-    public OrderCreatedEvent(Order order) { this.order = order; }
-
-    @Override public String getName() { return "order_created"; }
-    @Override public Order getPayload() { return order; }
-}
-
-// 2. Register a handler
-EventDispatcher.getInstance().registerHandler(OrderCreatedEvent.class, event -> {
-    CompletableFuture.runAsync(() -> sendConfirmationEmail(event.getPayload()));
+EventDispatcher.getInstance().registerHandler(MyEvent.class, event -> {
+    CompletableFuture.runAsync(() -> doHeavyWork(event.getPayload()));
 });
-
-// 3. Dispatch
-EventDispatcher.getInstance().dispatch(new OrderCreatedEvent(newOrder));
-```
-
-### Running the Application
-```bash
-# CLI mode
-bin/dispatcher hello
-bin/dispatcher echo --words "Hello" --import com.example.HelloApp
-
-# HTTP server (listens on :8080 by default)
-bin/dispatcher start --import org.tinystruct.system.HttpServer
-
-# Database utilities
-bin/dispatcher generate --table users
-bin/dispatcher sql-query "SELECT * FROM users"
 ```

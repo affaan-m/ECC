@@ -82,6 +82,14 @@ test('observe.sh touches observer activity marker on each observation', () => {
   assert.ok(content.includes('touch "$ACTIVITY_FILE"'), 'observe.sh should update activity marker during observation capture');
 });
 
+test('observe.sh avoids persistence-looking cleanup and lazy-start signatures', () => {
+  const content = fs.readFileSync(observeShPath, 'utf8');
+  assert.doesNotMatch(content, /\brm\s+-f\b/, 'observe.sh should avoid rm -f signatures that look destructive to security scanners');
+  assert.doesNotMatch(content, /\bnohup\b/, 'observe.sh should not launch the observer with nohup from the hook path');
+  assert.doesNotMatch(content, />\s*\/dev\/null\s+2>&1\s*&(?:\s|$)/, 'observe.sh should preserve lazy-start logs instead of suppressing output');
+  assert.ok(content.includes('_START_OBSERVER_LOGGED'), 'observe.sh should lazy-start through a logged helper');
+});
+
 // ──────────────────────────────────────────────────────
 // Test group 2: observer-loop.sh re-entrancy guard
 // ──────────────────────────────────────────────────────

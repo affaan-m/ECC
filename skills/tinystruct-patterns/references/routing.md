@@ -2,13 +2,17 @@
 
 ## When to Use
 
-Use the `@Action` annotation in your applications to define routes for both CLI commands and HTTP endpoints. It is appropriate whenever you need to map logic to a specific path, handle parameterized requests (e.g., retrieving a resource by ID), or restrict execution to specific HTTP methods (GET, POST, etc.) while maintaining a consistent command structure across environments.
+Use the `@Action` annotation in your applications to define routes for both CLI commands and HTTP endpoints. It is appropriate whenever you need to map logic to a specific path, handle parameterized requests, or restrict execution to specific HTTP methods while maintaining a consistent command structure across environments.
 
 ## How It Works
 
-The `ActionRegistry` parses `@Action` annotations to build a routing table. For parameterized methods, the framework automatically maps Java parameter types (int, String, etc.) to corresponding regex segments to generate an internal matching pattern. For instance, `getUser(int id)` generates a regex targeting digits, while `search(String query)` targets generic path segments.
+The `ActionRegistry` parses `@Action` annotations to build a routing table. For parameterized methods, the framework automatically maps Java parameter types to corresponding regex segments.
 
-When a request is dispatched, the `ActionRegistry` automatically injects dependencies like `Request` and `Response` into the action method if they are specified as parameters, drawing them directly from the current request's `Context`. Execution is further filtered by the `Mode` value, allowing a single path to invoke different logic depending on whether the trigger was a terminal command or a specific type of HTTP request.
+### Regex Generation Rules
+- `getUser(int id)` → pattern: `^/?user/(-?\d+)$`
+- `search(String query)` → pattern: `^/?search/([^/]+)$`
+
+Supported parameter types: `String`, `int/Integer`, `long/Long`, `float/Float`, `double/Double`, `boolean/Boolean`, `char/Character`, `short/Short`, `byte/Byte`, `Date` (parsed as `yyyy-MM-dd HH:mm:ss`).
 
 ### Mode Values
 
@@ -22,6 +26,8 @@ When a request is dispatched, the `ActionRegistry` automatically injects depende
 | `HTTP_DELETE` | HTTP DELETE only |
 | `HTTP_PATCH` | HTTP PATCH only |
 
+> **Note:** You can map HTTP method names to `Mode` using `Action.Mode.fromName(String methodName)`. Unknown or null values return `Mode.DEFAULT`.
+
 ## Examples
 
 ### Basic Action Declaration
@@ -29,29 +35,30 @@ When a request is dispatched, the `ActionRegistry` automatically injects depende
 @Action(
     value = "path/subpath",          // required: URI segment or CLI command
     description = "What it does",    // shown in --help output
-    mode = Mode.HTTP_POST,           // default: Mode.DEFAULT (both CLI + HTTP)
-    options = {},                    // CLI option flags
-    example = "curl -X POST http://localhost:8080/path/subpath/42"
+    mode = Mode.DEFAULT,             // default: Mode.DEFAULT
+    example = "bin/dispatcher path/subpath/42"
 )
 public String myAction(int id) { ... }
 ```
 
-### Parameterized Paths (Regex Generation)
+### Parameterized Paths
 ```java
 @Action("user/{id}")
 public String getUser(int id) { ... }
-// → pattern: ^/?user/(-?\d+)$
-
-@Action("search")
-public String search(String query) { ... }
-// → pattern: ^/?search/([^/]+)$
+// → CLI: bin/dispatcher user/42
+// → HTTP: /?q=user/42
 ```
 
-### Request and Response Injection
+### Dependency Injection
+`ActionRegistry` automatically injects `Request` and/or `Response` from `Context` if they are parameters:
+
 ```java
 @Action(value = "upload", mode = Mode.HTTP_POST)
 public String upload(Request<?, ?> req, Response<?, ?> res) throws ApplicationException {
-    // req.getParameter("file"), res.setHeader(...), etc.
+    // Access raw request/response if needed
     return "ok";
 }
 ```
+
+### Path Matching Priority
+If two methods share the same path, the framework uses the first match in the `ActionRegistry`. Use explicit `Mode` values to disambiguate (e.g., separating a GET for a form and a POST for submission).

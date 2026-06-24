@@ -1,0 +1,20 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node \"<plugin-root>/scripts/hooks/ecc-statusline.js\"",
+    "description": "ECC statusline: model | task | $cost tools files duration | dir | context bar"
+  },
+  "_comments": {
+    "setup": "Replace <plugin-root> with your ECC installation path. For plugin installs, use the resolved path from CLAUDE_PLUGIN_ROOT.",
+    "display": "Shows model name, current task, session cost, tool count, files modified, session duration, directory, and context usage bar with color thresholds.",
+    "colors": {
+      "green": "Context used < 50%",
+      "yellow": "Context used < 65%",
+      "orange": "Context used < 80%",
+      "red_blink": "Context used >= 80%"
+    },
+    "output_example": "Opus 4.6 | Fixing auth bug | $1.23 47t 5f 15m | myproject ███████░░░ 68%",
+    "dependencies": "Reads bridge file from ecc-metrics-bridge.js PostToolUse hook. Both must be installed for full metrics display.",
+    "usage": "Copy the statusLine object to your ~/.claude/settings.json"
+  }
+}
