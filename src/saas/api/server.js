@@ -19,6 +19,22 @@
  */
 
 const http = require('http');
+
+// ─── Static file serving ──────────────────────────────────────────────────────
+const publicDir = require('path').join(__dirname, 'public');
+function serveStatic(nodeReq, nodeRes) {
+  const fs = require('fs');
+  const path = require('path');
+  let filePath = path.join(publicDir, nodeReq.url === '/' ? 'index.html' : nodeReq.url);
+  if (!filePath.startsWith(publicDir)) { nodeRes.writeHead(403); nodeRes.end(); return true; }
+  if (!fs.existsSync(filePath)) filePath = path.join(publicDir, 'index.html');
+  const ext = path.extname(filePath);
+  const mime = {'.js':'application/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'}[ext] || 'text/plain';
+  nodeRes.writeHead(200, {'Content-Type': mime});
+  fs.createReadStream(filePath).pipe(nodeRes);
+  return true;
+}
+
 const { requireAuth } = require('../middleware/auth');
 const planGate = require('../middleware/plan-gate');
 const { handleWebhook } = require('../routes/webhooks');
@@ -146,6 +162,12 @@ async function handleRequest(nodeReq, nodeRes) {
     }
   }
 
+  
+  // Serve dashboard static files
+  if (require('fs').existsSync(publicDir) && !pathname.startsWith('/incidents') && !pathname.startsWith('/webhooks') && !pathname.startsWith('/billing') && !pathname.startsWith('/runbooks') && pathname !== '/health') {
+    serveStatic(nodeReq, nodeRes);
+    return;
+  }
   const route = matchRoute(method, pathname);
 
   if (!route) {
@@ -247,3 +269,5 @@ if (require.main === module) {
 }
 
 module.exports = { handleRequest };
+
+// This block is appended at load time — ignore if already present
