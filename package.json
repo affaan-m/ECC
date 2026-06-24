@@ -359,6 +359,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "ajv": "^8.18.0",
+    "pg": "^8.22.0",
     "sql.js": "^1.14.1"
   },
   "devDependencies": {
