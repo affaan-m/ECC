@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenGuard — AI Cost & Carbon Optimizer</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/" class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-text">TokenGuard</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#impact">Green Impact</a></li>
+    </ul>
+    <div class="nav-cta">
+      <a href="/dashboard" class="btn btn-secondary">Dashboard</a>
+      <a href="#start" class="btn btn-primary">Start Free</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">
+    <span class="badge-dot"></span>
+    Supports Claude · OpenAI · Vertex AI · Bedrock
+  </div>
+  <h1 class="hero-title">
+    Cut AI costs by <span class="highlight">40–70%</span><br>
+    and your carbon footprint too
+  </h1>
+  <p class="hero-sub">
+    TokenGuard sits between your teams and AI APIs. It automatically optimizes prompts,
+    caches responses, and gives you real-time insight into token spend and CO₂ emissions —
+    without changing a line of your code.
+  </p>
+  <div class="hero-actions">
+    <a href="#start" class="btn btn-primary btn-lg">Get started free</a>
+    <a href="/dashboard" class="btn btn-outline btn-lg">Live Demo Dashboard</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hstat">
+      <span class="hstat-val" id="live-saved-cost">$0</span>
+      <span class="hstat-label">Saved this month</span>
+    </div>
+    <div class="hstat-divider"></div>
+    <div class="hstat">
+      <span class="hstat-val" id="live-saved-co2">0 g</span>
+      <span class="hstat-label">CO₂ avoided</span>
+    </div>
+    <div class="hstat-divider"></div>
+    <div class="hstat">
+      <span class="hstat-val" id="live-requests">0</span>
+      <span class="hstat-label">Requests optimized</span>
+    </div>
+  </div>
+</section>
+
+<!-- LOGO STRIP -->
+<section class="logos">
+  <p class="logos-label">Works with every major AI provider</p>
+  <div class="logos-row">
+    <span class="provider-chip">Claude (Anthropic)</span>
+    <span class="provider-chip">OpenAI / GPT</span>
+    <span class="provider-chip">Google Vertex AI</span>
+    <span class="provider-chip">AWS Bedrock</span>
+    <span class="provider-chip">Mistral</span>
+    <span class="provider-chip">Llama 3</span>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="section">
+  <div class="section-inner">
+    <div class="section-tag">How it works</div>
+    <h2 class="section-title">One proxy URL. Instant savings.</h2>
+    <p class="section-sub">Change your base URL to TokenGuard. We handle everything else.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Point your SDK</h3>
+        <p>Change <code>baseUrl</code> to <code>https://api.tokenguard.io/proxy/openai</code>. No SDK changes needed.</p>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>We optimize</h3>
+        <p>Prompts are compressed, deduplicated, and cached. Repeated queries return instantly — zero upstream cost.</p>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Track savings</h3>
+        <p>Real-time dashboard shows dollars saved, tokens avoided, and grams of CO₂ not emitted per team.</p>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-block-header">
+        <span class="code-lang">Python — OpenAI SDK</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><code><span class="c"># Before</span>
+client = openai.OpenAI(api_key="sk-...")
+
+<span class="c"># After — one line change</span>
+client = openai.OpenAI(
+    api_key="sk-...",
+    base_url="https://api.tokenguard.io/proxy/openai"
+)
+<span class="c"># That's it. TokenGuard optimizes every call automatically.</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="section section-alt">
+  <div class="section-inner">
+    <div class="section-tag">Features</div>
+    <h2 class="section-title">Everything you need to spend less, emit less</h2>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🗜️</div>
+        <h3>Prompt Compression</h3>
+        <p>Strips whitespace, filler phrases, and redundant markup before sending. Typical savings: 5–15% on every request.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Semantic Cache</h3>
+        <p>Identical or near-identical prompts return the cached response instantly — 100% token savings, sub-millisecond latency.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>Cost Analytics</h3>
+        <p>Per-team, per-model, per-hour cost breakdown. Set budgets and get alerts before spend goes over.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌿</div>
+        <h3>Carbon Dashboard</h3>
+        <p>Every token saved = less GPU compute = less CO₂. We track and certify your emissions reduction in real time.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔀</div>
+        <h3>Model Routing</h3>
+        <p>Automatically route simple queries to smaller, cheaper models and complex ones to frontier models.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔐</div>
+        <h3>Zero Data Retention</h3>
+        <p>We never store your prompt content. Only token counts, costs, and metadata are logged.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CARBON IMPACT -->
+<section id="impact" class="section">
+  <div class="section-inner impact-inner">
+    <div class="impact-text">
+      <div class="section-tag">Green AI</div>
+      <h2 class="section-title">Every saved token helps the planet</h2>
+      <p>AI inference is energy-intensive. A single GPT-4 request can emit 4–10× the CO₂ of a Google Search. When enterprises run millions of queries a day, the impact compounds.</p>
+      <p>TokenGuard quantifies and reduces that footprint — giving you sustainability reporting your ESG team can actually use.</p>
+      <ul class="impact-list">
+        <li>Real-time gCO₂ per request</li>
+        <li>Monthly carbon savings certificates (PDF)</li>
+        <li>Scope 3 AI emissions reporting</li>
+        <li>Benchmarked against industry averages</li>
+      </ul>
+      <a href="/dashboard" class="btn btn-primary">See live carbon dashboard</a>
+    </div>
+    <div class="impact-visual">
+      <div class="carbon-card">
+        <div class="carbon-label">This session saved</div>
+        <div class="carbon-val" id="impact-co2">0.0 g</div>
+        <div class="carbon-eq">CO₂ equivalent</div>
+        <div class="carbon-bar-wrap">
+          <div class="carbon-bar" id="impact-bar" style="width:0%"></div>
+        </div>
+        <div class="carbon-compare">= <span id="impact-compare">0</span> searches avoided</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" class="section section-alt">
+  <div class="section-inner">
+    <div class="section-tag">Pricing</div>
+    <h2 class="section-title">Pay a fraction of what you save</h2>
+    <p class="section-sub">TokenGuard pays for itself on day one.</p>
+
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-tier">Starter</div>
+        <div class="price-amount">Free</div>
+        <div class="price-period">forever</div>
+        <ul class="price-features">
+          <li>Up to 1M tokens/month</li>
+          <li>Prompt compression</li>
+          <li>Basic cache</li>
+          <li>Cost dashboard</li>
+          <li>1 team</li>
+        </ul>
+        <a href="#start" class="btn btn-outline">Get started</a>
+      </div>
+      <div class="price-card price-featured">
+        <div class="price-badge">Most popular</div>
+        <div class="price-tier">Growth</div>
+        <div class="price-amount">$49</div>
+        <div class="price-period">/month</div>
+        <ul class="price-features">
+          <li>Up to 50M tokens/month</li>
+          <li>Aggressive optimization</li>
+          <li>Semantic cache</li>
+          <li>Model routing</li>
+          <li>Carbon certificates</li>
+          <li>5 teams</li>
+        </ul>
+        <a href="#start" class="btn btn-primary">Start trial</a>
+      </div>
+      <div class="price-card">
+        <div class="price-tier">Enterprise</div>
+        <div class="price-amount">Custom</div>
+        <div class="price-period">volume discounts</div>
+        <ul class="price-features">
+          <li>Unlimited tokens</li>
+          <li>On-premise deployment</li>
+          <li>SLA + support</li>
+          <li>SSO / SAML</li>
+          <li>ESG reporting API</li>
+          <li>Unlimited teams</li>
+        </ul>
+        <a href="mailto:hello@tokenguard.io" class="btn btn-outline">Contact sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="start" class="cta-section">
+  <h2>Start saving tokens today</h2>
+  <p>No credit card. 5-minute setup. Instant ROI.</p>
+  <div class="cta-form">
+    <input type="email" placeholder="your@company.com" class="cta-input">
+    <button class="btn btn-primary btn-lg" onclick="alert('Coming soon! Check the dashboard for now.')">Get early access</button>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-text">TokenGuard</span>
+    </div>
+    <div class="footer-links">
+      <a href="/dashboard">Dashboard</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/abhijeetbt/ecc">GitHub</a>
+    </div>
+    <p class="footer-copy">© 2026 TokenGuard. Built for a greener AI future.</p>
+  </div>
+</footer>
+
+<script>
+async function loadLiveStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('live-saved-cost').textContent = '$' + (d.savedCost || 0).toFixed(2);
+    document.getElementById('live-saved-co2').textContent = (d.savedCo2 || 0).toFixed(1) + ' g';
+    document.getElementById('live-requests').textContent = (d.requests || 0).toLocaleString();
+
+    const co2 = d.savedCo2 || 0;
+    document.getElementById('impact-co2').textContent = co2.toFixed(2) + ' g';
+    document.getElementById('impact-compare').textContent = Math.round(co2 / 0.3);
+    document.getElementById('impact-bar').style.width = Math.min(100, co2 / 10 * 100) + '%';
+  } catch {}
+}
+loadLiveStats();
+setInterval(loadLiveStats, 10000);
+
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').innerText;
+  navigator.clipboard.writeText(code).then(() => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); });
+}
+</script>
+</body>
+</html>

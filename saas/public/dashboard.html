@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenGuard Dashboard</title>
+<link rel="stylesheet" href="/css/dashboard.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="dark">
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span>⚡</span>
+      <span>TokenGuard</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="snav active" data-view="overview">Overview</a>
+      <a href="#" class="snav" data-view="requests">Requests</a>
+      <a href="#" class="snav" data-view="carbon">Carbon</a>
+      <a href="#" class="snav" data-view="teams">Teams</a>
+      <a href="#" class="snav" data-view="settings">Settings</a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="/" class="back-link">← Back to site</a>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <header class="topbar">
+      <h1 class="topbar-title">Overview</h1>
+      <div class="topbar-right">
+        <span class="live-dot"></span>
+        <span class="live-label">Live</span>
+        <span class="topbar-time" id="clock"></span>
+      </div>
+    </header>
+
+    <!-- METRIC CARDS -->
+    <div class="metric-grid">
+      <div class="metric-card green">
+        <div class="metric-icon">💰</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-cost">$0.00</div>
+          <div class="metric-label">Total Cost Saved</div>
+          <div class="metric-sub" id="m-cost-sub">across all providers</div>
+        </div>
+      </div>
+      <div class="metric-card blue">
+        <div class="metric-icon">🎯</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-tokens">0</div>
+          <div class="metric-label">Tokens Saved</div>
+          <div class="metric-sub" id="m-tokens-sub">vs unoptimized</div>
+        </div>
+      </div>
+      <div class="metric-card teal">
+        <div class="metric-icon">🌿</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-co2">0 g</div>
+          <div class="metric-label">CO₂ Avoided</div>
+          <div class="metric-sub" id="m-co2-sub">grams CO₂-equivalent</div>
+        </div>
+      </div>
+      <div class="metric-card purple">
+        <div class="metric-icon">⚡</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-cache">0%</div>
+          <div class="metric-label">Cache Hit Rate</div>
+          <div class="metric-sub" id="m-cache-sub">instant responses</div>
+        </div>
+      </div>
+      <div class="metric-card orange">
+        <div class="metric-icon">📡</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-requests">0</div>
+          <div class="metric-label">Total Requests</div>
+          <div class="metric-sub">optimized by TokenGuard</div>
+        </div>
+      </div>
+      <div class="metric-card red">
+        <div class="metric-icon">📉</div>
+        <div class="metric-body">
+          <div class="metric-val" id="m-saving-pct">0%</div>
+          <div class="metric-label">Avg Token Reduction</div>
+          <div class="metric-sub">per optimized prompt</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW -->
+    <div class="charts-row">
+      <div class="chart-card wide">
+        <div class="chart-header">
+          <h3>Tokens Saved (24h)</h3>
+          <div class="chart-controls">
+            <button class="chip active" onclick="loadChart(24, this)">24h</button>
+            <button class="chip" onclick="loadChart(72, this)">3d</button>
+            <button class="chip" onclick="loadChart(168, this)">7d</button>
+          </div>
+        </div>
+        <canvas id="chart-tokens" height="120"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><h3>Carbon Impact</h3></div>
+        <canvas id="chart-co2" height="120"></canvas>
+      </div>
+    </div>
+
+    <!-- RECENT REQUESTS -->
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Recent Requests</h3>
+        <button class="chip" onclick="loadRecent()">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table class="req-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Model</th>
+              <th>Org</th>
+              <th>Tokens In</th>
+              <th>Tokens Saved</th>
+              <th>Cost Saved</th>
+              <th>CO₂ Saved</th>
+              <th>Techniques</th>
+              <th>Cache</th>
+            </tr>
+          </thead>
+          <tbody id="req-tbody">
+            <tr><td colspan="9" class="empty-row">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CARBON CERTIFICATE PREVIEW -->
+    <div class="cert-card" id="carbon-cert">
+      <div class="cert-icon">🏆</div>
+      <div class="cert-body">
+        <h3>Carbon Reduction Certificate</h3>
+        <p>Your organization has avoided <strong id="cert-co2">0 g</strong> of CO₂ emissions
+           (equivalent to <strong id="cert-searches">0</strong> Google searches).
+           <br>Download your ESG report for sustainability reporting.</p>
+        <button class="btn btn-primary" onclick="downloadCert()">Download Certificate (PDF)</button>
+      </div>
+    </div>
+
+    <!-- TEAMS VIEW (hidden initially) -->
+    <div class="teams-panel hidden" id="teams-panel">
+      <div class="table-card">
+        <div class="table-header"><h3>Team Savings Leaderboard</h3></div>
+        <div class="table-wrap">
+          <table class="req-table">
+            <thead>
+              <tr><th>Team / Org ID</th><th>Requests</th><th>Tokens Saved</th><th>Cost Saved</th><th>CO₂ Avoided</th><th>Cache Hits</th></tr>
+            </thead>
+            <tbody id="teams-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+let tokenChart = null, co2Chart = null;
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+// Load stats
+async function loadStats() {
+  const r = await fetch('/api/stats');
+  const d = await r.json();
+
+  document.getElementById('m-cost').textContent = '$' + (d.savedCost || 0).toFixed(4);
+  document.getElementById('m-tokens').textContent = fmtNum(d.savedTokens || 0);
+  document.getElementById('m-co2').textContent = (d.savedCo2 || 0).toFixed(3) + ' g';
+  document.getElementById('m-requests').textContent = fmtNum(d.requests || 0);
+
+  const cacheRate = d.requests > 0 ? (d.cacheHits / d.requests * 100) : 0;
+  document.getElementById('m-cache').textContent = cacheRate.toFixed(1) + '%';
+
+  // Avg saving pct from recent
+  document.getElementById('cert-co2').textContent = (d.savedCo2 || 0).toFixed(2) + ' g';
+  document.getElementById('cert-searches').textContent = Math.round((d.savedCo2 || 0) / 0.3);
+}
+
+async function loadRecent() {
+  const r = await fetch('/api/recent?n=30');
+  const rows = await r.json();
+  const tbody = document.getElementById('req-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty-row">No requests yet. Point your AI SDK at the proxy.</td></tr>'; return; }
+
+  let totalSavingPct = 0, count = 0;
+  tbody.innerHTML = rows.map(row => {
+    if (row.savingPct) { totalSavingPct += row.savingPct; count++; }
+    const techniques = (row.techniques || []).map(t => `<span class="tag">${t}</span>`).join('');
+    return `<tr>
+      <td><span class="provider-dot ${row.provider}">${row.provider || '-'}</span></td>
+      <td class="mono small">${(row.model || '-').slice(0, 30)}</td>
+      <td class="mono small">${row.orgId || '-'}</td>
+      <td class="num">${fmtNum(row.inputTokens || 0)}</td>
+      <td class="num green-text">-${fmtNum(row.savedTokens || 0)}</td>
+      <td class="num green-text">$${(row.savedCost || 0).toFixed(5)}</td>
+      <td class="num teal-text">${(row.savedCo2 || 0).toFixed(3)}g</td>
+      <td>${techniques || '<span class="tag dim">none</span>'}</td>
+      <td>${row.cacheHit ? '<span class="badge-hit">HIT</span>' : '<span class="badge-miss">MISS</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  if (count > 0) document.getElementById('m-saving-pct').textContent = (totalSavingPct / count).toFixed(1) + '%';
+}
+
+async function loadChart(hours, btn) {
+  if (btn) {
+    document.querySelectorAll('.chart-controls .chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const r = await fetch(`/api/timeseries?hours=${hours}`);
+  const series = await r.json();
+  const labels = series.map(s => s.hour.slice(11));
+  const tokenData = series.map(s => s.savedTokens);
+  const co2Data = series.map(s => s.savedCost * 1000); // proxy for co2
+
+  if (tokenChart) tokenChart.destroy();
+  tokenChart = new Chart(document.getElementById('chart-tokens'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Tokens Saved',
+        data: tokenData,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 2,
+      }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } }
+  });
+
+  if (co2Chart) co2Chart.destroy();
+  co2Chart = new Chart(document.getElementById('chart-co2'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cost Saved (m$)',
+        data: co2Data,
+        backgroundColor: 'rgba(20,184,166,0.7)',
+      }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } }
+  });
+}
+
+async function loadTeams() {
+  const r = await fetch('/api/orgs');
+  const orgs = await r.json();
+  const tbody = document.getElementById('teams-tbody');
+  const rows = Object.entries(orgs).sort((a, b) => b[1].savedCost - a[1].savedCost);
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No team data yet.</td></tr>'; return; }
+  tbody.innerHTML = rows.map(([id, d]) => `<tr>
+    <td class="mono">${id}</td>
+    <td class="num">${fmtNum(d.requests)}</td>
+    <td class="num green-text">${fmtNum(d.savedTokens)}</td>
+    <td class="num green-text">$${d.savedCost.toFixed(4)}</td>
+    <td class="num teal-text">${d.savedCo2.toFixed(3)}g</td>
+    <td class="num">${d.cacheHits}</td>
+  </tr>`).join('');
+}
+
+// Nav switching
+document.querySelectorAll('.snav').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('.snav').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    const view = a.dataset.view;
+    document.querySelector('.topbar-title').textContent = a.textContent.trim();
+    const tp = document.getElementById('teams-panel');
+    if (view === 'teams') { tp.classList.remove('hidden'); loadTeams(); }
+    else tp.classList.add('hidden');
+  });
+});
+
+function fmtNum(n) { return Number(n).toLocaleString(); }
+
+function downloadCert() {
+  alert('Certificate PDF generation requires a production backend. This demo shows live data from your TokenGuard proxy.');
+}
+
+// Init
+loadStats();
+loadRecent();
+loadChart(24);
+setInterval(loadStats, 5000);
+setInterval(loadRecent, 10000);
+</script>
+</body>
+</html>

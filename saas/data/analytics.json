@@ -1,0 +1,2010 @@
+{
+  "requests": [
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 502,
+      "outputTokens": 484,
+      "savedTokens": 110,
+      "savedCost": 0.00033,
+      "savedCo2": 0.022000000000000002,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 21.91235059760956,
+      "ts": 1782325153368
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1921,
+      "outputTokens": 769,
+      "savedTokens": 299,
+      "savedCost": 0.000897,
+      "savedCo2": 0.059800000000000006,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 15.564809994794379,
+      "ts": 1782325153368
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 895,
+      "savedCost": 0.002685,
+      "savedCo2": 0.17900000000000002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153369
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2002,
+      "outputTokens": 591,
+      "savedTokens": 340,
+      "savedCost": 0.00102,
+      "savedCo2": 0.068,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 16.98301698301698,
+      "ts": 1782325153369
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 1045,
+      "savedCost": 0.003135,
+      "savedCo2": 0.20900000000000002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153369
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 345,
+      "outputTokens": 240,
+      "savedTokens": 99,
+      "savedCost": 0.000297,
+      "savedCo2": 0.0198,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 28.695652173913043,
+      "ts": 1782325153370
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1718,
+      "outputTokens": 732,
+      "savedTokens": 78,
+      "savedCost": 0.000234,
+      "savedCo2": 0.015600000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 4.540162980209546,
+      "ts": 1782325153370
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 1074,
+      "savedCost": 0.003222,
+      "savedCo2": 0.21480000000000002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153370
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 836,
+      "outputTokens": 55,
+      "savedTokens": 167,
+      "savedCost": 0.000501,
+      "savedCo2": 0.0334,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 19.976076555023923,
+      "ts": 1782325153370
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 2177,
+      "outputTokens": 653,
+      "savedTokens": 596,
+      "savedCost": 0.001788,
+      "savedCo2": 0.1192,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 27.377124483233807,
+      "ts": 1782325153370
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1159,
+      "outputTokens": 741,
+      "savedTokens": 1,
+      "savedCost": 0.000003,
+      "savedCo2": 0.0002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 0.08628127696289906,
+      "ts": 1782325153371
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 947,
+      "outputTokens": 126,
+      "savedTokens": 0,
+      "savedCost": 0,
+      "savedCo2": 0,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 0,
+      "ts": 1782325153371
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1719,
+      "outputTokens": 459,
+      "savedTokens": 154,
+      "savedCost": 0.000462,
+      "savedCo2": 0.0308,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 8.9586969168121,
+      "ts": 1782325153371
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1756,
+      "outputTokens": 72,
+      "savedTokens": 305,
+      "savedCost": 0.000915,
+      "savedCo2": 0.061000000000000006,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 17.36902050113895,
+      "ts": 1782325153371
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 413,
+      "savedCost": 0.001239,
+      "savedCo2": 0.0826,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153372
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 289,
+      "outputTokens": 339,
+      "savedTokens": 56,
+      "savedCost": 0.00016800000000000002,
+      "savedCo2": 0.0112,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 19.377162629757784,
+      "ts": 1782325153372
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 194,
+      "savedCost": 0.000582,
+      "savedCo2": 0.0388,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153372
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1172,
+      "outputTokens": 639,
+      "savedTokens": 109,
+      "savedCost": 0.00032700000000000003,
+      "savedCo2": 0.0218,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 9.300341296928327,
+      "ts": 1782325153372
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 251,
+      "savedCost": 0.000753,
+      "savedCo2": 0.0502,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153373
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2129,
+      "outputTokens": 178,
+      "savedTokens": 333,
+      "savedCost": 0.000999,
+      "savedCo2": 0.0666,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 15.641146077970877,
+      "ts": 1782325153373
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 582,
+      "outputTokens": 606,
+      "savedTokens": 98,
+      "savedCost": 0.000294,
+      "savedCo2": 0.0196,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 16.83848797250859,
+      "ts": 1782325153373
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 596,
+      "savedCost": 0.001788,
+      "savedCo2": 0.1192,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153373
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1690,
+      "outputTokens": 64,
+      "savedTokens": 435,
+      "savedCost": 0.001305,
+      "savedCo2": 0.08700000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 25.7396449704142,
+      "ts": 1782325153373
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1608,
+      "outputTokens": 794,
+      "savedTokens": 372,
+      "savedCost": 0.001116,
+      "savedCo2": 0.07440000000000001,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 23.134328358208954,
+      "ts": 1782325153374
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 579,
+      "outputTokens": 108,
+      "savedTokens": 3,
+      "savedCost": 0.000009,
+      "savedCo2": 0.0006000000000000001,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 0.5181347150259068,
+      "ts": 1782325153374
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 807,
+      "outputTokens": 689,
+      "savedTokens": 160,
+      "savedCost": 0.00048,
+      "savedCo2": 0.032,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 19.82651796778191,
+      "ts": 1782325153374
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 535,
+      "savedCost": 0.001605,
+      "savedCo2": 0.10700000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153374
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 472,
+      "outputTokens": 549,
+      "savedTokens": 21,
+      "savedCost": 0.000063,
+      "savedCo2": 0.004200000000000001,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 4.4491525423728815,
+      "ts": 1782325153375
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 382,
+      "outputTokens": 746,
+      "savedTokens": 80,
+      "savedCost": 0.00024,
+      "savedCo2": 0.016,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 20.94240837696335,
+      "ts": 1782325153375
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1403,
+      "outputTokens": 435,
+      "savedTokens": 401,
+      "savedCost": 0.001203,
+      "savedCo2": 0.08020000000000001,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 28.5816108339273,
+      "ts": 1782325153375
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 556,
+      "outputTokens": 54,
+      "savedTokens": 23,
+      "savedCost": 0.000069,
+      "savedCo2": 0.0046,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 4.136690647482014,
+      "ts": 1782325153376
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1215,
+      "outputTokens": 555,
+      "savedTokens": 202,
+      "savedCost": 0.000606,
+      "savedCo2": 0.040400000000000005,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 16.62551440329218,
+      "ts": 1782325153376
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 799,
+      "outputTokens": 395,
+      "savedTokens": 62,
+      "savedCost": 0.000186,
+      "savedCo2": 0.012400000000000001,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 7.759699624530664,
+      "ts": 1782325153376
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 834,
+      "outputTokens": 814,
+      "savedTokens": 125,
+      "savedCost": 0.000375,
+      "savedCo2": 0.025,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 14.98800959232614,
+      "ts": 1782325153376
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1219,
+      "outputTokens": 281,
+      "savedTokens": 29,
+      "savedCost": 0.000087,
+      "savedCo2": 0.0058000000000000005,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 2.3789991796554553,
+      "ts": 1782325153377
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 835,
+      "savedCost": 0.002505,
+      "savedCo2": 0.167,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153377
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 447,
+      "outputTokens": 198,
+      "savedTokens": 33,
+      "savedCost": 0.00009900000000000001,
+      "savedCo2": 0.0066,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 7.38255033557047,
+      "ts": 1782325153377
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 330,
+      "outputTokens": 639,
+      "savedTokens": 71,
+      "savedCost": 0.000213,
+      "savedCo2": 0.0142,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 21.515151515151516,
+      "ts": 1782325153378
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 364,
+      "savedCost": 0.001092,
+      "savedCo2": 0.0728,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153378
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1344,
+      "outputTokens": 702,
+      "savedTokens": 199,
+      "savedCost": 0.000597,
+      "savedCo2": 0.0398,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 14.806547619047619,
+      "ts": 1782325153378
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1473,
+      "outputTokens": 273,
+      "savedTokens": 283,
+      "savedCost": 0.000849,
+      "savedCo2": 0.056600000000000004,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 19.212491513917175,
+      "ts": 1782325153379
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 505,
+      "outputTokens": 384,
+      "savedTokens": 116,
+      "savedCost": 0.000348,
+      "savedCo2": 0.023200000000000002,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 22.970297029702973,
+      "ts": 1782325153379
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 2152,
+      "outputTokens": 680,
+      "savedTokens": 463,
+      "savedCost": 0.001389,
+      "savedCo2": 0.0926,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 21.514869888475836,
+      "ts": 1782325153379
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 779,
+      "outputTokens": 616,
+      "savedTokens": 49,
+      "savedCost": 0.000147,
+      "savedCo2": 0.0098,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 6.290115532734275,
+      "ts": 1782325153380
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 342,
+      "savedCost": 0.001026,
+      "savedCo2": 0.0684,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153380
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 479,
+      "savedCost": 0.0014370000000000001,
+      "savedCo2": 0.09580000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153380
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 757,
+      "savedCost": 0.002271,
+      "savedCo2": 0.1514,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153381
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2037,
+      "outputTokens": 715,
+      "savedTokens": 580,
+      "savedCost": 0.00174,
+      "savedCo2": 0.116,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 28.473244968090327,
+      "ts": 1782325153381
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 2023,
+      "outputTokens": 69,
+      "savedTokens": 54,
+      "savedCost": 0.000162,
+      "savedCo2": 0.0108,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 2.6693030153237767,
+      "ts": 1782325153382
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 2030,
+      "outputTokens": 654,
+      "savedTokens": 437,
+      "savedCost": 0.001311,
+      "savedCo2": 0.0874,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 21.527093596059114,
+      "ts": 1782325153382
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 400,
+      "outputTokens": 457,
+      "savedTokens": 68,
+      "savedCost": 0.000204,
+      "savedCo2": 0.013600000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 17,
+      "ts": 1782325153382
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2132,
+      "outputTokens": 837,
+      "savedTokens": 194,
+      "savedCost": 0.000582,
+      "savedCo2": 0.0388,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 9.099437148217635,
+      "ts": 1782325153383
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 2011,
+      "outputTokens": 303,
+      "savedTokens": 219,
+      "savedCost": 0.000657,
+      "savedCo2": 0.0438,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 10.890104425658876,
+      "ts": 1782325153383
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 759,
+      "outputTokens": 307,
+      "savedTokens": 226,
+      "savedCost": 0.000678,
+      "savedCo2": 0.045200000000000004,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 29.77602108036891,
+      "ts": 1782325153384
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 575,
+      "savedCost": 0.001725,
+      "savedCo2": 0.115,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153384
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 764,
+      "outputTokens": 489,
+      "savedTokens": 60,
+      "savedCost": 0.00018,
+      "savedCo2": 0.012,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 7.853403141361256,
+      "ts": 1782325153385
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 612,
+      "outputTokens": 581,
+      "savedTokens": 97,
+      "savedCost": 0.000291,
+      "savedCo2": 0.0194,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 15.849673202614378,
+      "ts": 1782325153386
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 202,
+      "savedCost": 0.000606,
+      "savedCo2": 0.040400000000000005,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153386
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 191,
+      "savedCost": 0.000573,
+      "savedCo2": 0.038200000000000005,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153387
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 670,
+      "savedCost": 0.00201,
+      "savedCo2": 0.134,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153387
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 699,
+      "outputTokens": 367,
+      "savedTokens": 33,
+      "savedCost": 0.00009900000000000001,
+      "savedCo2": 0.0066,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 4.721030042918455,
+      "ts": 1782325153387
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 521,
+      "outputTokens": 599,
+      "savedTokens": 147,
+      "savedCost": 0.000441,
+      "savedCo2": 0.029400000000000003,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 28.21497120921305,
+      "ts": 1782325153388
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 344,
+      "outputTokens": 187,
+      "savedTokens": 69,
+      "savedCost": 0.00020700000000000002,
+      "savedCo2": 0.013800000000000002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 20.058139534883722,
+      "ts": 1782325153388
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 950,
+      "savedCost": 0.00285,
+      "savedCo2": 0.19,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153389
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 573,
+      "outputTokens": 568,
+      "savedTokens": 134,
+      "savedCost": 0.000402,
+      "savedCo2": 0.0268,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 23.38568935427574,
+      "ts": 1782325153389
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 365,
+      "outputTokens": 159,
+      "savedTokens": 73,
+      "savedCost": 0.000219,
+      "savedCo2": 0.0146,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 20,
+      "ts": 1782325153390
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1085,
+      "outputTokens": 108,
+      "savedTokens": 221,
+      "savedCost": 0.0006630000000000001,
+      "savedCo2": 0.0442,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 20.368663594470046,
+      "ts": 1782325153390
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 273,
+      "outputTokens": 639,
+      "savedTokens": 54,
+      "savedCost": 0.000162,
+      "savedCo2": 0.0108,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 19.78021978021978,
+      "ts": 1782325153391
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 2100,
+      "outputTokens": 553,
+      "savedTokens": 109,
+      "savedCost": 0.00032700000000000003,
+      "savedCo2": 0.0218,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 5.190476190476191,
+      "ts": 1782325153391
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 989,
+      "savedCost": 0.002967,
+      "savedCo2": 0.1978,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153392
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 753,
+      "outputTokens": 491,
+      "savedTokens": 224,
+      "savedCost": 0.0006720000000000001,
+      "savedCo2": 0.0448,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 29.747675962815407,
+      "ts": 1782325153392
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 494,
+      "outputTokens": 756,
+      "savedTokens": 34,
+      "savedCost": 0.000102,
+      "savedCo2": 0.0068000000000000005,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 6.882591093117409,
+      "ts": 1782325153393
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1210,
+      "outputTokens": 201,
+      "savedTokens": 282,
+      "savedCost": 0.0008460000000000001,
+      "savedCo2": 0.056400000000000006,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 23.305785123966942,
+      "ts": 1782325153393
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1286,
+      "outputTokens": 602,
+      "savedTokens": 269,
+      "savedCost": 0.000807,
+      "savedCo2": 0.0538,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 20.917573872472783,
+      "ts": 1782325153394
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 2130,
+      "outputTokens": 554,
+      "savedTokens": 46,
+      "savedCost": 0.000138,
+      "savedCo2": 0.0092,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 2.15962441314554,
+      "ts": 1782325153394
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1874,
+      "outputTokens": 283,
+      "savedTokens": 86,
+      "savedCost": 0.000258,
+      "savedCo2": 0.0172,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 4.5891141942369265,
+      "ts": 1782325153394
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 2045,
+      "outputTokens": 317,
+      "savedTokens": 111,
+      "savedCost": 0.000333,
+      "savedCo2": 0.0222,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 5.427872860635697,
+      "ts": 1782325153394
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1194,
+      "outputTokens": 364,
+      "savedTokens": 231,
+      "savedCost": 0.000693,
+      "savedCo2": 0.046200000000000005,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 19.34673366834171,
+      "ts": 1782325153394
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 912,
+      "outputTokens": 80,
+      "savedTokens": 60,
+      "savedCost": 0.00018,
+      "savedCo2": 0.012,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 6.578947368421052,
+      "ts": 1782325153395
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1166,
+      "outputTokens": 459,
+      "savedTokens": 224,
+      "savedCost": 0.0006720000000000001,
+      "savedCo2": 0.0448,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 19.210977701543737,
+      "ts": 1782325153395
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1309,
+      "outputTokens": 823,
+      "savedTokens": 63,
+      "savedCost": 0.000189,
+      "savedCo2": 0.0126,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 4.81283422459893,
+      "ts": 1782325153396
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 2180,
+      "outputTokens": 670,
+      "savedTokens": 218,
+      "savedCost": 0.0006540000000000001,
+      "savedCo2": 0.0436,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 10,
+      "ts": 1782325153396
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1824,
+      "outputTokens": 461,
+      "savedTokens": 3,
+      "savedCost": 0.000009,
+      "savedCo2": 0.0006000000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 0.1644736842105263,
+      "ts": 1782325153396
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 738,
+      "savedCost": 0.0022140000000000003,
+      "savedCo2": 0.1476,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153396
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1188,
+      "outputTokens": 353,
+      "savedTokens": 198,
+      "savedCost": 0.000594,
+      "savedCo2": 0.0396,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 16.666666666666664,
+      "ts": 1782325153397
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 391,
+      "outputTokens": 788,
+      "savedTokens": 29,
+      "savedCost": 0.000087,
+      "savedCo2": 0.0058000000000000005,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 7.41687979539642,
+      "ts": 1782325153397
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 373,
+      "outputTokens": 678,
+      "savedTokens": 59,
+      "savedCost": 0.000177,
+      "savedCo2": 0.0118,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 15.81769436997319,
+      "ts": 1782325153397
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1301,
+      "outputTokens": 626,
+      "savedTokens": 339,
+      "savedCost": 0.0010170000000000001,
+      "savedCo2": 0.0678,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 26.056879323597233,
+      "ts": 1782325153397
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 834,
+      "outputTokens": 726,
+      "savedTokens": 185,
+      "savedCost": 0.000555,
+      "savedCo2": 0.037000000000000005,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 22.18225419664269,
+      "ts": 1782325153397
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 840,
+      "savedCost": 0.00252,
+      "savedCo2": 0.168,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153398
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 369,
+      "outputTokens": 55,
+      "savedTokens": 17,
+      "savedCost": 0.000051,
+      "savedCo2": 0.0034000000000000002,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 4.607046070460704,
+      "ts": 1782325153398
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1081,
+      "outputTokens": 816,
+      "savedTokens": 1,
+      "savedCost": 0.000003,
+      "savedCo2": 0.0002,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 0.09250693802035154,
+      "ts": 1782325153398
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 501,
+      "savedCost": 0.001503,
+      "savedCo2": 0.10020000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153398
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1619,
+      "outputTokens": 510,
+      "savedTokens": 350,
+      "savedCost": 0.00105,
+      "savedCo2": 0.07,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 21.618282890673253,
+      "ts": 1782325153399
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1389,
+      "outputTokens": 59,
+      "savedTokens": 352,
+      "savedCost": 0.001056,
+      "savedCo2": 0.0704,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 25.341972642188626,
+      "ts": 1782325153399
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 456,
+      "savedCost": 0.001368,
+      "savedCo2": 0.0912,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153399
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 819,
+      "outputTokens": 610,
+      "savedTokens": 107,
+      "savedCost": 0.000321,
+      "savedCo2": 0.021400000000000002,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 13.064713064713066,
+      "ts": 1782325153399
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1268,
+      "outputTokens": 706,
+      "savedTokens": 46,
+      "savedCost": 0.000138,
+      "savedCo2": 0.0092,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 3.627760252365931,
+      "ts": 1782325153400
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 304,
+      "savedCost": 0.000912,
+      "savedCo2": 0.0608,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153400
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1754,
+      "outputTokens": 281,
+      "savedTokens": 183,
+      "savedCost": 0.000549,
+      "savedCo2": 0.0366,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 10.433295324971494,
+      "ts": 1782325153400
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 838,
+      "outputTokens": 757,
+      "savedTokens": 180,
+      "savedCost": 0.00054,
+      "savedCo2": 0.036000000000000004,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 21.479713603818613,
+      "ts": 1782325153400
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 2198,
+      "outputTokens": 149,
+      "savedTokens": 330,
+      "savedCost": 0.00099,
+      "savedCo2": 0.066,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 15.013648771610555,
+      "ts": 1782325153401
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 437,
+      "outputTokens": 453,
+      "savedTokens": 15,
+      "savedCost": 0.000045,
+      "savedCo2": 0.003,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 3.4324942791762014,
+      "ts": 1782325153401
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2179,
+      "outputTokens": 510,
+      "savedTokens": 127,
+      "savedCost": 0.000381,
+      "savedCo2": 0.025400000000000002,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 5.828361633776962,
+      "ts": 1782325153401
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 456,
+      "outputTokens": 196,
+      "savedTokens": 31,
+      "savedCost": 0.000093,
+      "savedCo2": 0.006200000000000001,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 6.798245614035088,
+      "ts": 1782325153401
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 426,
+      "outputTokens": 342,
+      "savedTokens": 23,
+      "savedCost": 0.000069,
+      "savedCo2": 0.0046,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 5.39906103286385,
+      "ts": 1782325153402
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 1961,
+      "outputTokens": 558,
+      "savedTokens": 471,
+      "savedCost": 0.001413,
+      "savedCo2": 0.0942,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 24.01835798062213,
+      "ts": 1782325153402
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 956,
+      "savedCost": 0.002868,
+      "savedCo2": 0.1912,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153402
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1628,
+      "outputTokens": 72,
+      "savedTokens": 144,
+      "savedCost": 0.000432,
+      "savedCo2": 0.028800000000000003,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 8.845208845208845,
+      "ts": 1782325153402
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 1186,
+      "outputTokens": 504,
+      "savedTokens": 173,
+      "savedCost": 0.000519,
+      "savedCo2": 0.0346,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 14.586846543001686,
+      "ts": 1782325153403
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 422,
+      "savedCost": 0.001266,
+      "savedCo2": 0.0844,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153403
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 508,
+      "outputTokens": 665,
+      "savedTokens": 46,
+      "savedCost": 0.000138,
+      "savedCo2": 0.0092,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 9.05511811023622,
+      "ts": 1782325153403
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": false,
+      "inputTokens": 1813,
+      "outputTokens": 413,
+      "savedTokens": 299,
+      "savedCost": 0.000897,
+      "savedCo2": 0.059800000000000006,
+      "techniques": [
+        "whitespace-compression"
+      ],
+      "savingPct": 16.49200220628792,
+      "ts": 1782325153404
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 573,
+      "savedCost": 0.001719,
+      "savedCo2": 0.11460000000000001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153404
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": false,
+      "inputTokens": 859,
+      "outputTokens": 102,
+      "savedTokens": 5,
+      "savedCost": 0.000015,
+      "savedCo2": 0.001,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 0.5820721769499418,
+      "ts": 1782325153404
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 1586,
+      "outputTokens": 769,
+      "savedTokens": 158,
+      "savedCost": 0.00047400000000000003,
+      "savedCo2": 0.0316,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 9.962168978562422,
+      "ts": 1782325153404
+    },
+    {
+      "orgId": "acme-corp",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 192,
+      "savedCost": 0.000576,
+      "savedCo2": 0.038400000000000004,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153405
+    },
+    {
+      "orgId": "stripe-team",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "cacheHit": false,
+      "inputTokens": 708,
+      "outputTokens": 285,
+      "savedTokens": 91,
+      "savedCost": 0.000273,
+      "savedCo2": 0.0182,
+      "techniques": [
+        "system-deduplication",
+        "whitespace-compression"
+      ],
+      "savingPct": 12.85310734463277,
+      "ts": 1782325153405
+    },
+    {
+      "orgId": "datadog-ml",
+      "provider": "google",
+      "model": "gemini-1.5-pro",
+      "cacheHit": true,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "savedTokens": 309,
+      "savedCost": 0.000927,
+      "savedCo2": 0.0618,
+      "techniques": [
+        "cache-hit"
+      ],
+      "savingPct": 100,
+      "ts": 1782325153405
+    },
+    {
+      "orgId": "uber-eng",
+      "provider": "bedrock",
+      "model": "meta.llama3-70b-instruct-v1",
+      "cacheHit": false,
+      "inputTokens": 2123,
+      "outputTokens": 399,
+      "savedTokens": 197,
+      "savedCost": 0.000591,
+      "savedCo2": 0.039400000000000004,
+      "techniques": [
+        "user-message-truncation",
+        "whitespace-compression"
+      ],
+      "savingPct": 9.279321714554875,
+      "ts": 1782325153406
+    }
+  ],
+  "orgs": {
+    "acme-corp": {
+      "requests": 30,
+      "savedTokens": 5510,
+      "savedCost": 0.01653,
+      "savedCo2": 1.1020000000000003,
+      "cacheHits": 5
+    },
+    "stripe-team": {
+      "requests": 30,
+      "savedTokens": 8603,
+      "savedCost": 0.025809000000000002,
+      "savedCo2": 1.7206000000000004,
+      "cacheHits": 6
+    },
+    "datadog-ml": {
+      "requests": 30,
+      "savedTokens": 7655,
+      "savedCost": 0.022965,
+      "savedCo2": 1.5310000000000001,
+      "cacheHits": 11
+    },
+    "uber-eng": {
+      "requests": 30,
+      "savedTokens": 9534,
+      "savedCost": 0.028602,
+      "savedCo2": 1.9068000000000005,
+      "cacheHits": 7
+    }
+  },
+  "totals": {
+    "requests": 120,
+    "inputTokens": 106245,
+    "outputTokens": 41695,
+    "savedTokens": 31302,
+    "savedCost": 0.09390599999999995,
+    "savedCo2": 6.2604000000000015,
+    "cacheHits": 29
+  }
+}

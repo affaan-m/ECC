@@ -1,0 +1,26 @@
+{
+  "name": "tokenguard",
+  "version": "1.0.0",
+  "description": "AI Token Cost & Carbon Optimizer — proxy middleware for Claude, OpenAI, Vertex AI, Bedrock",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node tests/run.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^3.0.0",
+    "node-fetch": "^3.3.2",
+    "better-sqlite3": "^9.4.3",
+    "tiktoken": "^1.0.15",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0",
+    "uuid": "^9.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
