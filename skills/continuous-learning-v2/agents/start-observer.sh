@@ -215,8 +215,8 @@ case "$ACTION" in
       CLV2_OBSERVER_PROMPT_PATTERN="$CLV2_OBSERVER_PROMPT_PATTERN" \
       "$OBSERVER_LOOP_SCRIPT" >> "$LOG_FILE" 2>&1 &
 
-    # Wait for PID file
-    sleep 2
+    # Wait for PID file (poll up to 10s, exits early when it appears)
+    for _i in $(seq 1 50); do [ -f "$PID_FILE" ] && break; sleep 0.2; done
 
     # Check for confirmation-seeking output in the observer log
     if tail -n +"$((start_line + 1))" "$LOG_FILE" 2>/dev/null | grep -E -i -q "$CLV2_OBSERVER_PROMPT_PATTERN"; then
