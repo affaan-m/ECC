@@ -19,9 +19,12 @@
  */
 
 const http = require('http');
-const { requireAuth, requireScope } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
+const planGate = require('../middleware/plan-gate');
 const { handleWebhook } = require('../routes/webhooks');
 const incidents = require('../routes/incidents');
+const billing = require('../routes/billing');
+const diagnosis = require('../routes/diagnosis');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const MAX_BODY_BYTES = 64 * 1024;
@@ -65,6 +68,20 @@ function matchRoute(method, pathname) {
     return { handler: 'webhook', params: { token: parts[1] } };
   }
 
+  // Billing routes
+  if (parts[0] === 'billing') {
+    if (method === 'GET'  && parts[1] === 'plans')   return { handler: 'listPlans',           auth: false };
+    if (method === 'POST' && parts[1] === 'checkout') return { handler: 'createCheckout',      auth: true  };
+    if (method === 'POST' && parts[1] === 'portal')   return { handler: 'createPortal',        auth: true  };
+    if (method === 'POST' && parts[1] === 'webhook')  return { handler: 'stripeWebhook',       auth: false };
+    if (method === 'GET'  && parts[1] === 'usage')    return { handler: 'getBillingUsage',     auth: true  };
+  }
+
+  // Runbook generation
+  if (parts[0] === 'runbooks' && parts[1] === 'generate' && method === 'POST') {
+    return { handler: 'generateRunbook', auth: true, plan: 'ai_diagnosis' };
+  }
+
   if (parts[0] === 'incidents') {
     if (parts.length === 1) {
       if (method === 'GET') return { handler: 'listIncidents', auth: true };
@@ -80,6 +97,12 @@ function matchRoute(method, pathname) {
     }
     if (parts.length === 3 && parts[2] === 'resolve') {
       if (method === 'POST') return { handler: 'resolveIncident', auth: true, params: { id: parts[1] } };
+    }
+    if (parts.length === 3 && parts[2] === 'diagnose') {
+      if (method === 'POST') return { handler: 'diagnoseIncident', auth: true, plan: 'ai_diagnosis', params: { id: parts[1] } };
+    }
+    if (parts.length === 3 && parts[2] === 'postmortem') {
+      if (method === 'POST') return { handler: 'generatePostmortem', auth: true, plan: 'ai_diagnosis', params: { id: parts[1] } };
     }
   }
 
@@ -152,18 +175,39 @@ async function handleRequest(nodeReq, nodeRes) {
     return handleWebhook(req, res);
   }
 
+  // Public routes (no auth)
+  if (route.handler === 'listPlans') return billing.listPlans(req, res);
+  if (route.handler === 'stripeWebhook') {
+    req.rawBody = JSON.stringify(body); // pass raw body for sig verification
+    return billing.handleStripeWebhook(req, res);
+  }
+
   // All other routes require authentication
   await new Promise((resolve) => requireAuth(req, res, resolve));
   if (!req.org) return; // requireAuth already responded
 
+  // Plan gating for AI features
+  if (route.plan) {
+    const gate = planGate.feature(route.plan);
+    let gated = false;
+    await new Promise((resolve) => gate(req, { status: (c) => ({ json: (b) => { res.status(c).json(b); gated = true; resolve(); } }) }, resolve));
+    if (gated) return;
+  }
+
   const handlers = {
-    listIncidents:   incidents.listIncidents,
-    getIncident:     incidents.getIncident,
-    createIncident:  incidents.createIncident,
-    updateIncident:  incidents.updateIncident,
-    getEvents:       incidents.getEvents,
-    addEvent:        incidents.addEvent,
-    resolveIncident: incidents.resolveIncident,
+    listIncidents:    incidents.listIncidents,
+    getIncident:      incidents.getIncident,
+    createIncident:   incidents.createIncident,
+    updateIncident:   incidents.updateIncident,
+    getEvents:        incidents.getEvents,
+    addEvent:         incidents.addEvent,
+    resolveIncident:  incidents.resolveIncident,
+    createCheckout:   billing.createCheckout,
+    createPortal:     billing.createPortal,
+    getBillingUsage:  billing.getUsage,
+    diagnoseIncident: diagnosis.diagnoseIncident,
+    generatePostmortem: diagnosis.generatePostmortem,
+    generateRunbook:  diagnosis.generateRunbook,
   };
 
   const fn = handlers[route.handler];

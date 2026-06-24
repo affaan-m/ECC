@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS incidents (
   mitigation    TEXT,                           -- action taken
   resolved_at   TIMESTAMPTZ,
   duration_secs INTEGER GENERATED ALWAYS AS (
-    EXTRACT(EPOCH FROM (COALESCE(resolved_at, NOW()) - created_at))::INTEGER
+    EXTRACT(EPOCH FROM (resolved_at - created_at))::INTEGER
   ) STORED,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
