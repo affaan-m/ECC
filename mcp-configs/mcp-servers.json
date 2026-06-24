@@ -122,6 +122,14 @@
       "args": ["-y", "@magicuidesign/mcp@latest"],
       "description": "Magic UI components"
     },
+    "memxus": {
+      "type": "http",
+      "url": "https://mcp.memxus.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MEMXUS_API_KEY_HERE"
+      },
+      "description": "Universal persistent memory across Claude Code, Cursor, Gemini CLI and any AI tool — save context once, recall it in every session. Connects GitHub + Notion automatically. Free at memxus.com"
+    },
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/your/projects"],
