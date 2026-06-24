@@ -251,9 +251,9 @@ process.exit(7);
   if (process.platform === 'win32') {
     if (test('shell mode selects PowerShell when BASH is unset on Windows', () => {
       // Skip if no PowerShell is available.
-      const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore' });
+      const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
       const ps = psProbe.error
-        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore' }).error
+        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 }).error
           ? null : 'powershell.exe'
         : 'pwsh.exe';
       if (!ps) {
@@ -286,7 +286,7 @@ process.exit(7);
 
     if (test('shell mode falls back to bash for .sh scripts when PowerShell is the resolved shell', () => {
       // Skip if no bash is available (headless CI without Git for Windows).
-      const bashProbe = spawnSync('bash.exe', ['-c', ':'], { stdio: 'ignore' });
+      const bashProbe = spawnSync('bash.exe', ['-c', ':'], { stdio: 'ignore', timeout: 5000 });
       if (bashProbe.error) {
         console.log('    SKIP: bash.exe not found');
         return;
