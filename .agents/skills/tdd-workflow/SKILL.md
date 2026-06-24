@@ -66,13 +66,13 @@ Do not assume `npm test`. The commands in the steps and examples below use `<tes
 
 Runner command matrix:
 
-| Runner | `<test>` | `<test-watch>` | `<coverage>` |
-|--------|----------|----------------|--------------|
-| npm | `npm test` | `npm test -- --watch` | `npm run test:coverage` |
-| pnpm | `pnpm test` | `pnpm test --watch` | `pnpm test:coverage` |
-| yarn | `yarn test` | `yarn test --watch` | `yarn test:coverage` |
-| Bun (script runs jest/vitest) | `bun run test` | `bun run test --watch` | `bun run test:coverage` |
-| Bun (native `bun:test`) | `bun test` | `bun test --watch` | `bun test --coverage` |
+| Runner | `<test>` | `<test-watch>` | `<coverage>` | `<lint>` |
+|--------|----------|----------------|--------------|----------|
+| npm | `npm test` | `npm test -- --watch` | `npm run test:coverage` | `npm run lint` |
+| pnpm | `pnpm test` | `pnpm test --watch` | `pnpm test:coverage` | `pnpm lint` |
+| yarn | `yarn test` | `yarn test --watch` | `yarn test:coverage` | `yarn lint` |
+| Bun (script runs jest/vitest) | `bun run test` | `bun run test --watch` | `bun run test:coverage` | `bun run lint` |
+| Bun (native `bun:test`) | `bun test` | `bun test --watch` | `bun test --coverage` | `bun run lint` |
 
 > `bun test` (Bun's built-in runner) is **not** the same as `bun run test` (which runs the `package.json` `test` script). Picking the wrong one is a common failure — e.g. invoking Jest through `npx`/`bun run` in an ESM-only project breaks, while `bun test` runs the suite natively. Confirm which the project expects before the RED gate, then substitute `<test>` / `<coverage>` everywhere `npm test` appears below.
 
@@ -427,7 +427,7 @@ test('updates user', () => {
 ### Pre-Commit Hook
 ```bash
 # Runs before every commit
-<test> && npm run lint
+<test> && <lint>
 ```
 
 ### CI/CD Integration
