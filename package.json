@@ -40,6 +40,7 @@
     "url": "https://github.com/affaan-m/ECC/issues"
   },
   "files": [
+    ".pi/",
     ".agents/",
     ".claude-plugin/",
     ".codex/",
@@ -352,19 +353,39 @@
     "test": "node scripts/ci/check-unicode-safety.js && node scripts/ci/validate-agents.js && node scripts/ci/validate-commands.js && node scripts/ci/validate-rules.js && node scripts/ci/validate-skills.js && node scripts/ci/validate-hooks.js && node scripts/ci/validate-install-manifests.js && node scripts/ci/validate-no-personal-paths.js && npm run catalog:check && npm run command-registry:check && node tests/run-all.js",
     "coverage": "c8 --all --include=\"scripts/**/*.js\" --check-coverage --lines 80 --functions 80 --branches 79 --statements 80 --reporter=text --reporter=lcov node tests/run-all.js",
     "build:opencode": "node scripts/build-opencode.js",
-    "prepack": "npm run build:opencode",
+    "build:pi": "node scripts/build-pi.js",
+    "prepack": "npm run build:opencode && npm run build:pi",
     "dashboard": "python3 ./ecc_dashboard.py",
     "dashboard:web": "node scripts/dashboard-web.js"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "ajv": "^8.18.0",
     "sql.js": "^1.14.1"
   },
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/index.ts"
+    ],
+    "skills": [
+      "./.pi/skills"
+    ],
+    "prompts": [
+      "./.pi/prompts"
+    ],
+    "agents": [
+      "./.pi/agents"
+    ],
+    "chains": [
+      "./.pi/chains"
+    ]
+  },
   "devDependencies": {
+    "@earendil-works/pi-agent-core": "^0.80.2",
+    "@earendil-works/pi-coding-agent": "^0.80.2",
     "@eslint/js": "^9.39.2",
     "@opencode-ai/plugin": "^1.16.2",
-    "@types/node": "25.9.2",
+    "@types/node": "^25.9.2",
+    "ajv": "^8.20.0",
     "c8": "^11.0.0",
     "eslint": "^9.39.2",
     "globals": "^17.4.0",
