@@ -3151,6 +3151,17 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    test('start-observer waits for PID file via poll instead of fixed sleep (#2295)', () => {
+      const startObserverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'start-observer.sh'), 'utf8');
+
+      assert.ok(!/^\s*sleep 2\s*$/m.test(startObserverSource), 'start-observer.sh should not use the fixed `sleep 2` wait after spawning the observer loop');
+      assert.ok(/for _i in \$\(seq 1 50\); do \[ -f "\$PID_FILE" \] && break; sleep 0\.2; done/.test(startObserverSource), 'start-observer.sh should poll $PID_FILE (50 × 0.2s) so startup tolerates slow filesystems');
+    })
+  )
+    passed++;
+  else failed++;
+
   if (SKIP_BASH) {
     console.log('  ⊘ detect-project exports the resolved Python command (skipped on Windows)');
     passed++;
