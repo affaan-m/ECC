@@ -218,6 +218,47 @@ function runTests() {
     assert.strictEqual(stdout, JSON.stringify(input));
   }) ? passed++ : failed++);
 
+  // 11. Regression: requiring the hook in-process (run-with-flags fast path) must not
+  //     attach module-scope stdin listeners to the dispatcher process.
+  (test('require() does not attach stdin listeners (in-process safe)', () => {
+    const resolved = require.resolve(script);
+    delete require.cache[resolved];
+    const endBefore = process.stdin.listenerCount('end');
+    const dataBefore = process.stdin.listenerCount('data');
+    const mod = require(resolved);
+    assert.strictEqual(process.stdin.listenerCount('end'), endBefore,
+      'require() must not attach a stdin "end" listener');
+    assert.strictEqual(process.stdin.listenerCount('data'), dataBefore,
+      'require() must not attach a stdin "data" listener');
+    assert.strictEqual(typeof mod.run, 'function', 'run() must remain exported');
+    assert.strictEqual(typeof mod.main, 'function', 'main() must be exported for entrypoints');
+  }) ? passed++ : failed++);
+
+  // 12. Regression: exported run() still classifies correctly in-process, no stdin needed.
+  (test('exported run() works in-process for warned and allowed files', () => {
+    delete require.cache[require.resolve(script)];
+    const { run } = require(script);
+    const warned = run(JSON.stringify({ tool_input: { file_path: 'TODO.md' } }));
+    assert.ok(Array.isArray(warned.additionalContext)
+      && warned.additionalContext.join('\n').includes('WARNING'),
+      'warned file should return additionalContext with WARNING');
+    const allowed = run(JSON.stringify({ tool_input: { file_path: 'README.md' } }));
+    assert.ok(!('additionalContext' in allowed), 'allowed file should not return additionalContext');
+  }) ? passed++ : failed++);
+
+  // 13. Regression: pre-write-doc-warn.js backward-compat entrypoint still emits the warning.
+  (test('pre-write-doc-warn.js shim still warns via main()', () => {
+    const shim = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'pre-write-doc-warn.js');
+    const r = spawnSync('node', [shim], {
+      encoding: 'utf8',
+      input: JSON.stringify({ tool_input: { file_path: 'TODO.md' } }),
+      timeout: 10000,
+    });
+    assert.strictEqual(r.status || 0, 0, 'shim should exit 0');
+    assert.ok(JSON.parse(r.stdout).hookSpecificOutput.additionalContext.includes('TODO.md'),
+      'shim should still emit the ad-hoc filename warning');
+  }) ? passed++ : failed++);
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
