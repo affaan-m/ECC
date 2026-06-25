@@ -69,6 +69,12 @@ function run(inputOrRaw, _options = {}) {
   return { exitCode: 0 };
 }
 
+/**
+ * Stdin entrypoint for direct/spawnSync execution: reads the hook payload from
+ * stdin (capped at MAX_STDIN), runs the policy, and writes the PreToolUse result
+ * to stdout. Must only run when invoked directly, never on require(), so the
+ * stdin listeners are not leaked into a parent that loads this hook in-process.
+ */
 function main() {
   let data = '';
   process.stdin.setEncoding('utf8');
