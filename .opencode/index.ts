@@ -48,9 +48,9 @@ export const metadata = {
   description: "Everything Claude Code plugin for OpenCode",
   author: "affaan-m",
   features: {
-    agents: 65,
-    commands: 85,
-    skills: 262,
+    agents: 16,
+    commands: 40,
+    skills: 65,
     hookEvents: [
       "file.edited",
       "tool.execute.before",
