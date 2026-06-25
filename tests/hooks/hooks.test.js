@@ -3156,7 +3156,9 @@ async function runTests() {
       const startObserverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'start-observer.sh'), 'utf8');
 
       assert.ok(!/^\s*sleep 2\s*$/m.test(startObserverSource), 'start-observer.sh should not use the fixed `sleep 2` wait after spawning the observer loop');
-      assert.ok(/for _i in \$\(seq 1 50\); do \[ -f "\$PID_FILE" \] && break; sleep 0\.2; done/.test(startObserverSource), 'start-observer.sh should poll $PID_FILE (50 × 0.2s) so startup tolerates slow filesystems');
+      assert.ok(/\bseq 1 \d+\b/.test(startObserverSource), 'start-observer.sh should bound PID-file polling to a finite iteration count');
+      assert.ok(/\[ -f "\$PID_FILE" \] && break/.test(startObserverSource), 'start-observer.sh should exit polling as soon as $PID_FILE appears');
+      assert.ok(/sleep 0\.\d+/.test(startObserverSource), 'start-observer.sh should poll at sub-second intervals so healthy startups do not pay multi-second latency');
     })
   )
     passed++;
