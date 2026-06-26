@@ -34,18 +34,22 @@ Workflow({
 })
 ```
 
+Invalid input throws (the gate **fails closed**): a missing/empty `diff`, malformed JSON, or a non-array `changedFiles` is rejected with a clear error rather than silently approving an unreviewed payload.
+
 ### Returns
 
 ```jsonc
 {
-  "verdict": "APPROVE" | "CHANGES_REQUESTED",
+  "verdict": "APPROVE" | "CHANGES_REQUESTED", // CHANGES_REQUESTED if any blocker OR a dimension failed
+  "incomplete": false,            // true when one or more review dimensions failed to run
+  "failedDimensions": [ /* { dimension, error } — e.g. a security reviewer that died */ ],
   "blocking": [ /* confirmed CRITICAL/HIGH — must clear before Gate 2 */ ],
   "advisory": [ /* MEDIUM/LOW + adversarially-refuted findings */ ],
-  "stats": { "dimensions": 3, "raw": 11, "unique": 4, "verified": 4, "refuted": 0 }
+  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "verified": 4, "refuted": 0 }
 }
 ```
 
-The main loop presents `blocking` at Gate 2; the human still approves the commit.
+The main loop presents `blocking` at Gate 2; the human still approves the commit. If a reviewer agent dies (terminal error or skip), that dimension is recorded in `failedDimensions` and the verdict never reports a clean `APPROVE` — an unreviewed security dimension must not pass as approved.
 
 ## Not in this PR (follow-ups)
 

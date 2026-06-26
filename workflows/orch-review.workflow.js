@@ -19,12 +19,16 @@ export const meta = {
 //     language?:    string,    // e.g. "typescript" — selects a language reviewer
 //     changedFiles?: string[], // paths touched, used for the security trigger
 //   }
+// Invalid input (missing/empty diff, bad JSON, non-array changedFiles) throws —
+// the gate fails closed rather than silently approving an unreviewed payload.
 //
 // Returns:
-//   { verdict: 'APPROVE' | 'CHANGES_REQUESTED',
-//     blocking: Finding[],   // confirmed CRITICAL/HIGH — must clear before Gate 2
-//     advisory: Finding[],   // MEDIUM/LOW + refuted findings, informational
-//     stats: { dimensions, raw, verified, refuted } }
+//   { verdict: 'APPROVE' | 'CHANGES_REQUESTED',  // CHANGES_REQUESTED if any blocker OR a dimension failed
+//     incomplete: boolean,        // true when one or more review dimensions failed to run
+//     failedDimensions: { dimension, error }[],
+//     blocking: Finding[],        // confirmed CRITICAL/HIGH — must clear before Gate 2
+//     advisory: Finding[],        // MEDIUM/LOW + refuted findings, informational
+//     stats: { dimensions, failed, raw, unique, verified, refuted } }
 // ---------------------------------------------------------------------------
 
 // Language → ECC reviewer agent. Mirrors the agents present in agents/.
@@ -125,13 +129,24 @@ function verifyPrompt(finding, diff) {
 
 // --- main -----------------------------------------------------------------
 
-// `args` arrives verbatim. Defensively accept a JSON-encoded string too, so the
-// workflow works whether the caller passes an object or a stringified payload.
-const input = typeof args === 'string' ? JSON.parse(args) : args || {};
-
+// `args` arrives verbatim. Accept a JSON-encoded string too, so the workflow
+// works whether the caller passes an object or a stringified payload.
+// Fail CLOSED on invalid input: a review gate must never silently APPROVE a
+// payload it could not actually review.
+let input;
+try {
+  input = typeof args === 'string' ? JSON.parse(args) : args ?? {};
+} catch {
+  throw new Error('orch-review: args must be an object or valid JSON');
+}
+if (typeof input !== 'object' || input === null) {
+  throw new Error('orch-review: args must be an object');
+}
 if (typeof input.diff !== 'string' || input.diff.trim() === '') {
-  log('orch-review: no diff supplied in args.diff — nothing to review.');
-  return { verdict: 'APPROVE', blocking: [], advisory: [], stats: { dimensions: 0, raw: 0, verified: 0, refuted: 0 } };
+  throw new Error('orch-review: args.diff must be a non-empty unified diff');
+}
+if (input.changedFiles != null && !Array.isArray(input.changedFiles)) {
+  throw new Error('orch-review: args.changedFiles must be an array of paths');
 }
 
 const diff = input.diff;
@@ -156,19 +171,26 @@ log(`Reviewing across ${dimensions.length} dimension(s): ${dimensions.map(d => d
 // independent reviewers routinely flag the same line, so we need the full set
 // before we can dedup. Verifying first and deduping later would waste verifier
 // calls on duplicates (e.g. one SQL-injection bug reported by all 3 dimensions).
+// A reviewer can fail two ways: agent() returns null on a terminal error/skip,
+// or the thunk rejects. Capture both per-dimension so a lost dimension is never
+// silently dropped — an unreviewed security dimension must not pass as APPROVE.
 const reviews = await parallel(
   dimensions.map(
     d => () =>
-      agent(reviewPrompt(d.label, diff), { agentType: d.agentType, phase: 'Review', label: `review:${d.key}`, schema: FINDINGS_SCHEMA }).then(r => ({
-        dim: d.key,
-        findings: (r && r.findings) || []
-      }))
+      agent(reviewPrompt(d.label, diff), { agentType: d.agentType, phase: 'Review', label: `review:${d.key}`, schema: FINDINGS_SCHEMA })
+        .then(r => (r === null ? { dim: d.key, ok: false, error: 'agent returned null (terminal failure or skip)', findings: [] } : { dim: d.key, ok: true, findings: r.findings || [] }))
+        .catch(err => ({ dim: d.key, ok: false, error: String((err && err.message) || err), findings: [] }))
   )
 );
 
+const failedDimensions = reviews.filter(r => r && !r.ok).map(r => ({ dimension: r.dim, error: r.error }));
+if (failedDimensions.length > 0) {
+  log(`WARNING: ${failedDimensions.length} review dimension(s) failed: ${failedDimensions.map(f => f.dimension).join(', ')}. Verdict will fail closed.`);
+}
+
 // Dedup across dimensions. The evidence snippet (the offending code) is the most
 // stable key — titles are phrased differently and line numbers drift per reviewer.
-const tagged = reviews.filter(Boolean).flatMap(r => r.findings.map(f => ({ ...f, dimension: r.dim })));
+const tagged = reviews.filter(r => r && r.ok).flatMap(r => r.findings.map(f => ({ ...f, dimension: r.dim })));
 const byKey = new Map();
 for (const f of tagged) {
   const key = `${f.file}::${normalize(f.evidence)}`;
@@ -200,9 +222,13 @@ const refuted = verified.filter(f => !(f.verdict && f.verdict.isReal));
 
 log(`Done: ${confirmed.length} confirmed blocking, ${refuted.length} refuted, ${advisory.length} advisory.`);
 
+// Fail closed: APPROVE only when every dimension actually ran AND nothing blocks.
+const incomplete = failedDimensions.length > 0;
 return {
-  verdict: confirmed.length > 0 ? 'CHANGES_REQUESTED' : 'APPROVE',
+  verdict: confirmed.length > 0 || incomplete ? 'CHANGES_REQUESTED' : 'APPROVE',
+  incomplete,
+  failedDimensions,
   blocking: confirmed,
   advisory: [...advisory, ...refuted.map(f => ({ ...f, note: 'refuted by adversarial verifier' }))],
-  stats: { dimensions: dimensions.length, raw: tagged.length, unique: unique.length, verified: confirmed.length, refuted: refuted.length }
+  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, verified: confirmed.length, refuted: refuted.length }
 };
