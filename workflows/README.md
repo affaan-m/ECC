@@ -42,7 +42,8 @@ Invalid input throws (the gate **fails closed**): a missing/empty `diff`, malfor
 {
   "verdict": "APPROVE" | "CHANGES_REQUESTED", // CHANGES_REQUESTED if any blocker OR a dimension failed
   "incomplete": false,            // true when one or more review dimensions failed to run
-  "failedDimensions": [ /* { dimension, error } — e.g. a security reviewer that died */ ],
+  "failedDimensions": [ /* { dimension, error } — error is a bounded label, never raw subagent text:
+                           "agent returned null (terminal failure or skip)" | "review agent failed" */ ],
   "blocking": [ /* confirmed CRITICAL/HIGH + unverifiable ones — must clear before Gate 2 */ ],
   "advisory": [ /* MEDIUM/LOW + adversarially-refuted findings */ ],
   "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "confirmed": 4, "unverified": 0, "refuted": 0 }
