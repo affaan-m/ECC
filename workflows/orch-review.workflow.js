@@ -26,9 +26,9 @@ export const meta = {
 //   { verdict: 'APPROVE' | 'CHANGES_REQUESTED',  // CHANGES_REQUESTED if any blocker OR a dimension failed
 //     incomplete: boolean,        // true when one or more review dimensions failed to run
 //     failedDimensions: { dimension, error }[],
-//     blocking: Finding[],        // confirmed CRITICAL/HIGH — must clear before Gate 2
+//     blocking: Finding[],        // confirmed CRITICAL/HIGH + unverifiable ones — must clear before Gate 2
 //     advisory: Finding[],        // MEDIUM/LOW + refuted findings, informational
-//     stats: { dimensions, failed, raw, unique, confirmed, refuted } }
+//     stats: { dimensions, failed, raw, unique, confirmed, unverified, refuted } }
 // ---------------------------------------------------------------------------
 
 // Language → ECC reviewer agent. Mirrors the agents present in agents/.
@@ -180,7 +180,11 @@ const reviews = await parallel(
     d => () =>
       agent(reviewPrompt(d.label, diff), { agentType: d.agentType, phase: 'Review', label: `review:${d.key}`, schema: FINDINGS_SCHEMA })
         .then(r => (r === null ? { dim: d.key, ok: false, error: 'agent returned null (terminal failure or skip)', findings: [] } : { dim: d.key, ok: true, findings: r.findings || [] }))
-        .catch(err => ({ dim: d.key, ok: false, error: String((err && err.message) || err), findings: [] }))
+        // Log the raw error for operators; never return provider/runtime internals to the caller.
+        .catch(err => {
+          log(`Review dimension ${d.key} failed: ${String((err && err.message) || err)}`);
+          return { dim: d.key, ok: false, error: 'review agent failed', findings: [] };
+        })
   )
 );
 
@@ -215,27 +219,36 @@ const verified = await parallel(
   unique.filter(isBlocking).map(
     f => () =>
       agent(verifyPrompt(f, diff), { phase: 'Verify', label: `verify:${f.file}:${normalize(f.evidence).slice(0, 40)}`, schema: VERDICT_SCHEMA })
-        .then(v => ({ ...f, verdict: v || { isReal: false, confidence: 0, reasoning: 'verifier returned null (terminal failure or skip)' } }))
-        // Symmetry with the review stage: a rejected verifier must not crash the
-        // run or null out the slot. Keep the finding as blocking (fail closed) —
-        // an unverifiable CRITICAL must not be silently demoted to advisory.
-        .catch(err => ({ ...f, verdict: { isReal: true, confidence: 0, reasoning: `verifier error, kept as blocking: ${String((err && err.message) || err)}` } }))
+        // A null return (terminal failure/skip) or a rejection means we could NOT
+        // verify the finding. Mark it `unverified` rather than refuted so it stays
+        // blocking (fail closed) — an unverifiable CRITICAL must never be demoted
+        // to advisory just because the verifier did not run.
+        .then(v => (v ? { ...f, verdict: v } : { ...f, unverified: true, verdict: { isReal: false, confidence: 0, reasoning: 'verifier returned null (terminal failure or skip)' } }))
+        .catch(err => {
+          log(`Verifier failed for ${f.file}: ${String((err && err.message) || err)}`);
+          return { ...f, unverified: true, verdict: { isReal: false, confidence: 0, reasoning: 'verifier error' } };
+        })
   )
 );
 
 const verifiedClean = verified.filter(Boolean);
-const confirmed = verifiedClean.filter(f => f.verdict && f.verdict.isReal);
-const refuted = verifiedClean.filter(f => !(f.verdict && f.verdict.isReal));
+const confirmed = verifiedClean.filter(f => !f.unverified && f.verdict && f.verdict.isReal);
+const unverified = verifiedClean.filter(f => f.unverified);
+const refuted = verifiedClean.filter(f => !f.unverified && !(f.verdict && f.verdict.isReal));
 
-log(`Done: ${confirmed.length} confirmed blocking, ${refuted.length} refuted, ${advisory.length} advisory.`);
+// Unverifiable blockers stay in `blocking` (fail closed), tagged so the human
+// at Gate 2 knows they were not independently confirmed.
+const blocking = [...confirmed, ...unverified.map(f => ({ ...f, note: 'could not be verified — kept as blocking' }))];
 
-// Fail closed: APPROVE only when every dimension actually ran AND nothing blocks.
+log(`Done: ${confirmed.length} confirmed, ${unverified.length} unverified (kept blocking), ${refuted.length} refuted, ${advisory.length} advisory.`);
+
+// Fail closed: APPROVE only when every dimension ran AND nothing blocks.
 const incomplete = failedDimensions.length > 0;
 return {
-  verdict: confirmed.length > 0 || incomplete ? 'CHANGES_REQUESTED' : 'APPROVE',
+  verdict: blocking.length > 0 || incomplete ? 'CHANGES_REQUESTED' : 'APPROVE',
   incomplete,
   failedDimensions,
-  blocking: confirmed,
+  blocking,
   advisory: [...advisory, ...refuted.map(f => ({ ...f, note: 'refuted by adversarial verifier' }))],
-  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, confirmed: confirmed.length, refuted: refuted.length }
+  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, confirmed: confirmed.length, unverified: unverified.length, refuted: refuted.length }
 };

@@ -43,13 +43,13 @@ Invalid input throws (the gate **fails closed**): a missing/empty `diff`, malfor
   "verdict": "APPROVE" | "CHANGES_REQUESTED", // CHANGES_REQUESTED if any blocker OR a dimension failed
   "incomplete": false,            // true when one or more review dimensions failed to run
   "failedDimensions": [ /* { dimension, error } — e.g. a security reviewer that died */ ],
-  "blocking": [ /* confirmed CRITICAL/HIGH — must clear before Gate 2 */ ],
+  "blocking": [ /* confirmed CRITICAL/HIGH + unverifiable ones — must clear before Gate 2 */ ],
   "advisory": [ /* MEDIUM/LOW + adversarially-refuted findings */ ],
-  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "confirmed": 4, "refuted": 0 }
+  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "confirmed": 4, "unverified": 0, "refuted": 0 }
 }
 ```
 
-The main loop presents `blocking` at Gate 2; the human still approves the commit. If a reviewer agent dies (terminal error or skip), that dimension is recorded in `failedDimensions` and the verdict never reports a clean `APPROVE` — an unreviewed security dimension must not pass as approved.
+The main loop presents `blocking` at Gate 2; the human still approves the commit. The gate fails closed at every stage: if a reviewer dies the dimension is recorded in `failedDimensions` (verdict never a clean `APPROVE`), and if a *verifier* dies or returns null the blocker is kept in `blocking` (tagged "could not be verified") rather than demoted to advisory — an unreviewed security dimension or an unverifiable CRITICAL must not pass as approved.
 
 ## Not in this PR (follow-ups)
 
