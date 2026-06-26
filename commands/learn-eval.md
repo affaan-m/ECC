@@ -33,7 +33,6 @@ Look for:
 ---
 name: pattern-name
 description: "Use when <observable trigger condition>, or when <second trigger> — <one-line essence of the pattern>"
-user-invocable: false
 origin: auto-extracted
 ---
 

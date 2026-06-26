@@ -43,7 +43,6 @@ Create a skill at `~/.claude/skills/<pattern-name>/SKILL.md` (directory format â
 ---
 name: pattern-name
 description: "Use when <observable trigger condition> â€” <one-line essence of the pattern>"
-user-invocable: false
 origin: auto-extracted
 ---
 
