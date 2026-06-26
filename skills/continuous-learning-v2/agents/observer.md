@@ -121,16 +121,7 @@ Validate and sanitize all user input before processing.
 
 When creating instincts, determine scope based on these heuristics:
 
-| Pattern Type | Scope | Examples |
-|-------------|-------|---------|
-| Language/framework conventions | **project** | "Use React hooks", "Follow Django REST patterns" |
-| File structure preferences | **project** | "Tests in `__tests__`/", "Components in src/components/" |
-| Code style | **project** | "Use functional style", "Prefer dataclasses" |
-| Error handling strategies | **project** (usually) | "Use Result type for errors" |
-| Security practices | **global** | "Validate user input", "Sanitize SQL" |
-| General best practices | **global** | "Write tests first", "Always handle errors" |
-| Tool workflow preferences | **global** | "Grep before Edit", "Read before Write" |
-| Git practices | **global** | "Conventional commits", "Small focused commits" |
+> **Scope Decision Guide** – See the canonical table in `skills/continuous-learning-v2/SKILL.md` (lines 271‑282).
 
 **When in doubt, default to `scope: project`** — it's safer to be project-specific and promote later than to contaminate the global space.
 
