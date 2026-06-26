@@ -45,7 +45,7 @@ Invalid input throws (the gate **fails closed**): a missing/empty `diff`, malfor
   "failedDimensions": [ /* { dimension, error } — e.g. a security reviewer that died */ ],
   "blocking": [ /* confirmed CRITICAL/HIGH — must clear before Gate 2 */ ],
   "advisory": [ /* MEDIUM/LOW + adversarially-refuted findings */ ],
-  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "verified": 4, "refuted": 0 }
+  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "confirmed": 4, "refuted": 0 }
 }
 ```
 

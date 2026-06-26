@@ -28,7 +28,7 @@ export const meta = {
 //     failedDimensions: { dimension, error }[],
 //     blocking: Finding[],        // confirmed CRITICAL/HIGH — must clear before Gate 2
 //     advisory: Finding[],        // MEDIUM/LOW + refuted findings, informational
-//     stats: { dimensions, failed, raw, unique, verified, refuted } }
+//     stats: { dimensions, failed, raw, unique, confirmed, refuted } }
 // ---------------------------------------------------------------------------
 
 // Language → ECC reviewer agent. Mirrors the agents present in agents/.
@@ -76,7 +76,7 @@ const FINDINGS_SCHEMA = {
           severity: { type: 'string', enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] },
           file: { type: 'string' },
           line: { type: ['integer', 'null'] },
-          evidence: { type: 'string', description: 'the offending snippet or exact location' },
+          evidence: { type: 'string', minLength: 1, description: 'the offending snippet or exact location' },
           proof: { type: 'string', description: 'why it is a real problem (required for HIGH/CRITICAL)' },
           fix: { type: 'string', description: 'concrete suggested remediation' }
         }
@@ -135,7 +135,7 @@ function verifyPrompt(finding, diff) {
 // payload it could not actually review.
 let input;
 try {
-  input = typeof args === 'string' ? JSON.parse(args) : args ?? {};
+  input = typeof args === 'string' ? JSON.parse(args) : (args ?? {});
 } catch {
   throw new Error('orch-review: args must be an object or valid JSON');
 }
@@ -193,7 +193,10 @@ if (failedDimensions.length > 0) {
 const tagged = reviews.filter(r => r && r.ok).flatMap(r => r.findings.map(f => ({ ...f, dimension: r.dim })));
 const byKey = new Map();
 for (const f of tagged) {
-  const key = `${f.file}::${normalize(f.evidence)}`;
+  // Prefer the evidence snippet; fall back to title+line so empty-evidence
+  // findings in the same file don't all collapse onto one `${file}::` key.
+  const evidenceKey = normalize(f.evidence);
+  const key = evidenceKey ? `${f.file}::${evidenceKey}` : `${f.file}::${normalize(f.title)}::${f.line ?? 'na'}`;
   const prev = byKey.get(key);
   if (!prev) {
     byKey.set(key, { ...f, dimensions: [f.dimension] });
@@ -210,7 +213,7 @@ const advisory = unique.filter(f => !isBlocking(f));
 const verified = await parallel(
   unique.filter(isBlocking).map(
     f => () =>
-      agent(verifyPrompt(f, diff), { phase: 'Verify', label: `verify:${f.file}`, schema: VERDICT_SCHEMA }).then(v => ({
+      agent(verifyPrompt(f, diff), { phase: 'Verify', label: `verify:${f.file}:${normalize(f.evidence).slice(0, 40)}`, schema: VERDICT_SCHEMA }).then(v => ({
         ...f,
         verdict: v || { isReal: false, confidence: 0, reasoning: 'verifier failed' }
       }))
@@ -230,5 +233,5 @@ return {
   failedDimensions,
   blocking: confirmed,
   advisory: [...advisory, ...refuted.map(f => ({ ...f, note: 'refuted by adversarial verifier' }))],
-  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, verified: confirmed.length, refuted: refuted.length }
+  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, confirmed: confirmed.length, refuted: refuted.length }
 };
