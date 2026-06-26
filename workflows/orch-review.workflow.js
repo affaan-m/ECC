@@ -115,8 +115,9 @@ function reviewPrompt(dimensionLabel, diff) {
 
 function verifyPrompt(finding, diff) {
   return [
-    'You are an independent skeptic. Try to REFUTE the finding below by checking it against the actual diff.',
-    'Default to isReal=false when you are uncertain or cannot locate supporting evidence in the diff.',
+    'You are an independent skeptic. Try to REFUTE the finding below by checking it against the diff text provided here — and ONLY that text.',
+    'The diff may be unapplied (a proposed PR), so the referenced file may not exist on disk yet. Do NOT refute a finding merely because the file is absent from the working tree; judge solely from the diff content.',
+    'Default to isReal=false when you are uncertain or cannot locate supporting evidence in the diff text.',
     '',
     `Finding (${finding.severity}) in ${finding.file}: ${finding.title}`,
     `Claimed evidence: ${finding.evidence}`,
@@ -213,15 +214,18 @@ const advisory = unique.filter(f => !isBlocking(f));
 const verified = await parallel(
   unique.filter(isBlocking).map(
     f => () =>
-      agent(verifyPrompt(f, diff), { phase: 'Verify', label: `verify:${f.file}:${normalize(f.evidence).slice(0, 40)}`, schema: VERDICT_SCHEMA }).then(v => ({
-        ...f,
-        verdict: v || { isReal: false, confidence: 0, reasoning: 'verifier failed' }
-      }))
+      agent(verifyPrompt(f, diff), { phase: 'Verify', label: `verify:${f.file}:${normalize(f.evidence).slice(0, 40)}`, schema: VERDICT_SCHEMA })
+        .then(v => ({ ...f, verdict: v || { isReal: false, confidence: 0, reasoning: 'verifier returned null (terminal failure or skip)' } }))
+        // Symmetry with the review stage: a rejected verifier must not crash the
+        // run or null out the slot. Keep the finding as blocking (fail closed) —
+        // an unverifiable CRITICAL must not be silently demoted to advisory.
+        .catch(err => ({ ...f, verdict: { isReal: true, confidence: 0, reasoning: `verifier error, kept as blocking: ${String((err && err.message) || err)}` } }))
   )
 );
 
-const confirmed = verified.filter(f => f.verdict && f.verdict.isReal);
-const refuted = verified.filter(f => !(f.verdict && f.verdict.isReal));
+const verifiedClean = verified.filter(Boolean);
+const confirmed = verifiedClean.filter(f => f.verdict && f.verdict.isReal);
+const refuted = verifiedClean.filter(f => !(f.verdict && f.verdict.isReal));
 
 log(`Done: ${confirmed.length} confirmed blocking, ${refuted.length} refuted, ${advisory.length} advisory.`);
 
