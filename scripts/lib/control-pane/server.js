@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const { buildControlPaneAction } = require('./actions');
 const { buildControlPaneSnapshot, resolveControlPaneConfig } = require('./state');
 const { renderControlPaneHtml } = require('./ui');
+const { renderProximityVizHtml } = require('./proximity-viz');
 const { claimWorkItem, moveWorkItem } = require('./work-item-mutations');
 
 // Run a single write against the local work-item store, then close it. Kept
@@ -262,6 +263,25 @@ function createControlPaneServer(options = {}) {
           allowActions
         });
         sendJson(res, 200, snapshot);
+        return;
+      }
+
+      // 3D agent-airspace visualization (Layer 4 observability).
+      if (req.method === 'GET' && requestUrl.pathname === '/proximity') {
+        sendText(res, 200, renderProximityVizHtml(), 'text/html; charset=utf-8');
+        return;
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/api/proximity') {
+        const snapshot = await buildControlPaneSnapshot({
+          repoRoot,
+          dbPath: resolvedConfig.dbPath,
+          stateDbPath: resolvedConfig.stateDbPath,
+          config: resolvedConfig,
+          allowActions,
+          includeProximity: true
+        });
+        sendJson(res, 200, snapshot.proximity || { enabled: true, advisories: [], positions: [], links: [], counts: {} });
         return;
       }
 

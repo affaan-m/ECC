@@ -27,6 +27,7 @@ import ipaddress
 import socket
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
@@ -394,22 +395,36 @@ def detect_project() -> dict:
     }
 
 
+@contextmanager
+def _registry_lock():
+    """Serialize registry read-modify-write across concurrent sessions.
+
+    Acquires the same advisory lock for every registry writer (``_update_registry``
+    and ``_write_registry``) so ``projects delete/gc/merge`` cannot interleave with
+    a concurrent observe-time update and corrupt ``projects.json``. No-op on
+    platforms without ``fcntl`` (Windows).
+    """
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
+    lock_fd = None
+    try:
+        if _HAS_FCNTL:
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+
 def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
     """Update the projects.json registry.
 
     Uses file locking (where available) to prevent concurrent sessions from
     overwriting each other's updates.
     """
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
-    lock_fd = None
-
-    try:
-        # Acquire advisory lock to serialize read-modify-write
-        if _HAS_FCNTL:
-            lock_fd = open(lock_path, "w")
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-
+    with _registry_lock():
         try:
             with open(REGISTRY_FILE, encoding="utf-8") as f:
                 registry = json.load(f)
@@ -429,10 +444,6 @@ def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_file, REGISTRY_FILE)
-    finally:
-        if lock_fd is not None:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
 
 
 def load_registry() -> dict:
@@ -445,15 +456,19 @@ def load_registry() -> dict:
 
 
 def _write_registry(registry: dict) -> None:
-    """Write the project registry atomically."""
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(registry, f, indent=2)
-        f.write("\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_file, REGISTRY_FILE)
+    """Write the project registry atomically.
+
+    Holds the same advisory lock as ``_update_registry`` so concurrent
+    ``projects delete/gc/merge`` and observe-time updates cannot corrupt the file.
+    """
+    with _registry_lock():
+        tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(registry, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, REGISTRY_FILE)
 
 
 def _validate_project_id(project_id: str) -> bool:
@@ -573,7 +588,14 @@ def _project_counts(project_id: str) -> dict:
 
 
 def _remove_project_storage(project_id: str) -> None:
-    project_dir = PROJECTS_DIR / project_id
+    # Defense-in-depth: resolve and confirm the target is contained within
+    # PROJECTS_DIR before recursively deleting, even though callers validate the
+    # project id. A relaxed validator or a future caller must never be able to
+    # turn this into an arbitrary-directory delete.
+    projects_root = PROJECTS_DIR.resolve()
+    project_dir = (PROJECTS_DIR / project_id).resolve()
+    if project_dir == projects_root or projects_root not in project_dir.parents:
+        raise ValueError(f"refusing to remove {project_dir}: escapes {projects_root}")
     if project_dir.exists():
         shutil.rmtree(project_dir)
 

@@ -46,6 +46,8 @@ load_registry = _mod.load_registry
 _validate_instinct_id = _mod._validate_instinct_id
 _validate_import_url = _mod._validate_import_url
 _update_registry = _mod._update_registry
+_write_registry = _mod._write_registry
+_remove_project_storage = _mod._remove_project_storage
 _confidence_bar = _mod._confidence_bar
 
 
@@ -1043,3 +1045,41 @@ def test_update_registry_atomic_replaces_file(patch_globals):
     assert "abc123" in data
     leftovers = list(tree["registry_file"].parent.glob(".projects.json.tmp.*"))
     assert leftovers == []
+
+
+def test_write_registry_atomic_no_tmp_leftovers(patch_globals):
+    # Issue #2294: _write_registry now holds the registry lock like
+    # _update_registry. It must still write atomically with no stray tmp files.
+    tree = patch_globals
+    _write_registry({"keep": {"name": "demo", "root": "/repo", "remote": ""}})
+    data = json.loads(tree["registry_file"].read_text())
+    assert data == {"keep": {"name": "demo", "root": "/repo", "remote": ""}}
+    leftovers = list(tree["registry_file"].parent.glob(".projects.json.tmp.*"))
+    assert leftovers == []
+
+
+def test_remove_project_storage_deletes_contained_dir(patch_globals):
+    tree = patch_globals
+    target = tree["projects_dir"] / "proj-1"
+    (target / "instincts").mkdir(parents=True)
+    (target / "instincts" / "x.md").write_text("hi", encoding="utf-8")
+    _remove_project_storage("proj-1")
+    assert not target.exists()
+
+
+def test_remove_project_storage_missing_dir_is_noop(patch_globals):
+    # No raise when the contained dir simply does not exist.
+    _remove_project_storage("never-created")
+
+
+def test_remove_project_storage_blocks_traversal(patch_globals):
+    # Issue #2297: defense-in-depth — a traversal id must be refused even when a
+    # caller skips _validate_project_id, so this can never delete outside
+    # PROJECTS_DIR.
+    with pytest.raises(ValueError):
+        _remove_project_storage("../../etc")
+
+
+def test_remove_project_storage_blocks_root_itself(patch_globals):
+    with pytest.raises(ValueError):
+        _remove_project_storage(".")
