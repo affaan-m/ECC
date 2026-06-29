@@ -368,7 +368,7 @@
     "c8": "^11.0.0",
     "eslint": "^9.39.2",
     "globals": "^17.4.0",
-    "markdownlint-cli": "^0.48.0",
+    "markdownlint-cli": "^0.49.0",
     "typescript": "^6.0.3"
   },
   "engines": {
