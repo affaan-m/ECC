@@ -251,6 +251,24 @@ function isCommitNoVerifyShortFlag(value) {
   return value === '-n' || /^-n[a-zA-Z]/.test(value);
 }
 
+// Message/value options shared by the non-'commit' subcommands that still
+// accept --no-verify (merge, cherry-pick, am, rebase). Git consumes the next
+// token as the option's value, so a standalone '--no-verify' given as that
+// value (e.g. `git merge -m --no-verify branch`, where '--no-verify' is the
+// literal merge-commit message) is NOT a bypass flag and must not be matched.
+// Kept deliberately narrow: only the message options that take a value, so it
+// can never let a real bare '--no-verify'/'-n' bypass through.
+const NON_COMMIT_OPTIONS_WITH_VALUE = new Set(['-m', '--message', '-F', '--file']);
+const NON_COMMIT_OPTIONS_WITH_INLINE_VALUE = ['--message=', '--file='];
+
+function nonCommitOptionConsumesNextValue(value) {
+  return NON_COMMIT_OPTIONS_WITH_VALUE.has(value);
+}
+
+function nonCommitOptionContainsInlineValue(value) {
+  return NON_COMMIT_OPTIONS_WITH_INLINE_VALUE.some(prefix => value.startsWith(prefix));
+}
+
 /**
  * Check if a position in the input is inside a shell comment.
  */
@@ -400,6 +418,19 @@ function hasNoVerifyFlag(input, command, offset) {
       }
 
       if (commitOptionContainsInlineValue(value)) {
+        continue;
+      }
+    } else {
+      // merge/cherry-pick/am/rebase: skip the value of a message option so a
+      // '--no-verify' that is that value (the literal commit message) is not
+      // misread as a bypass flag. A bare '--no-verify' (no preceding -m/-F) is
+      // still matched below, so real bypass attempts keep being blocked.
+      if (nonCommitOptionConsumesNextValue(value)) {
+        skipNext = true;
+        continue;
+      }
+
+      if (nonCommitOptionContainsInlineValue(value)) {
         continue;
       }
     }

@@ -55,8 +55,12 @@ function extractCommandSubstitutions(input) {
           if (i + 1 < source.length) {
             body += source[i + 1];
             i += 2;
-            continue;
+          } else {
+            // Trailing backslash at end of an unterminated span: advance past
+            // it so it is not appended a second time by the fallthrough below.
+            i += 1;
           }
+          continue;
         }
         if (inner === '`') {
           break;

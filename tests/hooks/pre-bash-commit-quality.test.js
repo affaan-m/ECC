@@ -289,5 +289,46 @@ if (test('stdin entry point truncates oversized input and preserves pass-through
   assert.ok(result.stderr.includes('[Hook] Error:'), 'truncated JSON should be logged and allowed');
 })) passed++; else failed++;
 
+// --- Secret-scanner placeholder exclusion (false-positive fix, no false-negative) ---
+
+if (test('isPlaceholderSecret suppresses obvious non-secret placeholders', () => {
+  for (const v of ['process.env.API_KEY', '${API_KEY}', '<YOUR_KEY>', 'REPLACE_ME', 'CHANGEME', 'YOUR_API_KEY', '']) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), true, `should suppress placeholder: ${JSON.stringify(v)}`);
+  }
+})) passed++; else failed++;
+
+if (test('isPlaceholderSecret does NOT suppress real high-entropy secrets', () => {
+  for (const v of [
+    'sk-live-abcdef0123456789ABCDEF',          // prefixed
+    '9F8A7B6C5D4E3F2A1B0C9D8E7F6A5B4C',          // uppercase hex
+    'JBSWY3DPEHPK3PXP',                           // base32 TOTP/HMAC seed
+    '1234567890123456',                          // digit-only token
+    'PROD_7F3A9C2E_LIVE_8821',                    // uppercase-with-underscore token
+    'AbCd1234EfGh5678'                            // mixed token
+  ]) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), false, `must NOT suppress real secret: ${v}`);
+  }
+})) passed++; else failed++;
+
+// --- Quote-aware commit-message extraction (truncation fix) ---
+
+if (test('captures full double-quoted -m message containing an apostrophe', () => {
+  const res = hook.validateCommitMessage(`git commit -m "fix: don't crash on empty input"`);
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, "fix: don't crash on empty input");
+})) passed++; else failed++;
+
+if (test('captures full single-quoted -m message containing a double quote', () => {
+  const res = hook.validateCommitMessage(`git commit -m 'fix: handle the "edge" case'`);
+  assert.strictEqual(res.message, 'fix: handle the "edge" case');
+})) passed++; else failed++;
+
+if (test('measures length of the full message past an apostrophe (not the truncated prefix)', () => {
+  const subject = "fix: it's a deliberately long commit subject that comfortably exceeds seventy-two chars";
+  const res = hook.validateCommitMessage(`git commit -m "${subject}"`);
+  assert.strictEqual(res.message, subject);
+  assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
+})) passed++; else failed++;
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

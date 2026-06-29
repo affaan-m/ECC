@@ -160,6 +160,24 @@ if (test('blocks --no-verify on git push', () => {
   assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Non-commit message-option value is not a bypass flag (false-positive fix) ---
+
+if (test('allows --no-verify as the -m message value on git merge', () => {
+  const r = runHook({ tool_input: { command: 'git merge -m --no-verify feature-branch' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks a bare --no-verify flag on git merge', () => {
+  const r = runHook({ tool_input: { command: 'git merge --no-verify feature-branch' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks a real --no-verify after a consumed -m message on git merge', () => {
+  const r = runHook({ tool_input: { command: 'git merge -m "msg" --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 // --- Non-git commands pass through ---
 
 if (test('allows non-git commands', () => {

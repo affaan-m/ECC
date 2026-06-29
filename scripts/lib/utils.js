@@ -284,6 +284,7 @@ async function readStdinJson(options = {}) {
   return new Promise((resolve) => {
     let data = '';
     let settled = false;
+    let overflowed = false;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -304,9 +305,19 @@ async function readStdinJson(options = {}) {
 
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (data.length < maxSize) {
-        data += chunk;
+      if (overflowed) return;
+      // Stop at a clean chunk boundary before crossing maxSize so we never
+      // append a partial chunk. Previously a large-but-valid payload was
+      // silently truncated into invalid JSON and parsed as `{}`; surface the
+      // overflow on stderr so the dropped input is observable, not silent.
+      if (data.length + chunk.length > maxSize) {
+        overflowed = true;
+        process.stderr.write(
+          `[readStdinJson] stdin exceeded ${maxSize} bytes; input truncated and treated as empty\n`
+        );
+        return;
       }
+      data += chunk;
     });
 
     process.stdin.on('end', () => {
