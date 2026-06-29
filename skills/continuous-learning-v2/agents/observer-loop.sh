@@ -235,12 +235,14 @@ PROMPT
   # on all platforms, not just when the observer happens to be launched from the project root.
   cd "$PROJECT_DIR" || { echo "[$(date)] Failed to cd to PROJECT_DIR ($PROJECT_DIR), skipping analysis" >> "$LOG_FILE"; rm -f "$analysis_file"; return; }
 
-  # Prevent observe.sh from recording this automated Haiku session as observations.
+  # Prevent observe.sh from recording this automated observer session as observations.
   # Pass prompt via -p flag instead of stdin redirect for Windows compatibility (#842).
   # prompt_content is already loaded in-memory so this no longer depends on the
   # mktemp absolute path continuing to resolve after cwd changes (#1296).
   # Model is configurable via ECC_OBSERVER_MODEL (defaults to haiku for cost efficiency);
-  # e.g. ECC_OBSERVER_MODEL=opus for higher-quality instinct extraction.
+  # e.g. ECC_OBSERVER_MODEL=opus for higher-quality instinct extraction. Heavier models are
+  # slower — consider raising ECC_OBSERVER_TIMEOUT_SECONDS (default 120s) so the watchdog
+  # doesn't kill the analysis mid-run.
   ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model "${ECC_OBSERVER_MODEL:-haiku}" --max-turns "$max_turns" --print \
     --allowedTools "Read,Write" \
     -p "$prompt_content" >> "$LOG_FILE" 2>&1 &
