@@ -1,5 +1,6 @@
 import pytest
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
+
+from llm.core.types import Message, Role, ToolDefinition
 from llm.prompt import PromptBuilder, adapt_messages_for_provider
 from llm.prompt.builder import PromptConfig
 
@@ -77,6 +78,16 @@ class TestAdaptMessagesForProvider:
         messages = [Message(role=Role.USER, content="Hello")]
         result = adapt_messages_for_provider(messages, "openai")
         assert len(result) == 1
+
+
+    @pytest.mark.parametrize("provider", ["astraflow", "astraflow_cn"])
+    def test_adapt_for_astraflow_uses_native_openai_tools(self, provider):
+        messages = [Message(role=Role.USER, content="Search for something")]
+        tools = [ToolDefinition(name="search", description="Search the web", parameters={})]
+
+        result = adapt_messages_for_provider(messages, provider, tools)
+
+        assert result == messages
 
     def test_adapt_for_ollama(self):
         messages = [Message(role=Role.USER, content="Hello")]

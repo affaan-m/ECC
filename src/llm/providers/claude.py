@@ -13,13 +13,25 @@ from llm.core.interface import (
     LLMProvider,
     RateLimitError,
 )
-from llm.core.types import LLMInput, LLMOutput, Message, ModelInfo, ProviderType, ToolCall
+from llm.core.types import (
+    LLMInput,
+    LLMOutput,
+    ModelInfo,
+    ProviderType,
+    ToolCall,
+)
 
 
 class ClaudeProvider(LLMProvider):
     provider_type = ProviderType.CLAUDE
 
-    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        default_model: str | None = None,
+    ) -> None:
+        self.default_model = default_model or "claude-sonnet-4-7"
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"), base_url=base_url)
         self._models = [
             ModelInfo(
@@ -51,7 +63,7 @@ class ClaudeProvider(LLMProvider):
     def generate(self, input: LLMInput) -> LLMOutput:
         try:
             params: dict[str, Any] = {
-                "model": input.model or "claude-sonnet-4-7",
+                "model": input.model or self.default_model,
                 "messages": [msg.to_dict() for msg in input.messages],
                 "temperature": input.temperature,
             }
@@ -114,4 +126,4 @@ class ClaudeProvider(LLMProvider):
         return bool(self.client.api_key)
 
     def get_default_model(self) -> str:
-        return "claude-sonnet-4-7"
+        return self.default_model

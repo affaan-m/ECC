@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
-from llm.providers.claude import ClaudeProvider
-from llm.providers.openai import OpenAIProvider
-from llm.providers.ollama import OllamaProvider
+from llm.core.types import Message, Role, ToolDefinition
 
 
 @dataclass
@@ -36,13 +33,14 @@ class PromptBuilder:
             raise ValueError("Pass either config or PromptBuilder keyword options, not both")
 
         if config is None:
-            overrides = {
-                "system_template": system_template,
-                "user_template": user_template,
-                "include_tools_in_system": include_tools_in_system,
-                "tool_format": tool_format,
-            }
-            config = PromptConfig(**{key: value for key, value in overrides.items() if value is not None})
+            config = PromptConfig(
+                system_template=system_template,
+                user_template=user_template,
+                include_tools_in_system=(
+                    include_tools_in_system if include_tools_in_system is not None else True
+                ),
+                tool_format=tool_format or "native",
+            )
 
         self.config = config
 
@@ -100,6 +98,14 @@ _PROVIDER_TEMPLATE_MAP: dict[str, dict[str, Any]] = {
         "tool_format": "anthropic",
     },
     "openai": {
+        "include_tools_in_system": False,
+        "tool_format": "openai",
+    },
+    "astraflow": {
+        "include_tools_in_system": False,
+        "tool_format": "openai",
+    },
+    "astraflow_cn": {
         "include_tools_in_system": False,
         "tool_format": "openai",
     },

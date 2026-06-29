@@ -1,6 +1,15 @@
 import pytest
+
 from llm.core.types import ProviderType
-from llm.providers import AstraflowCNProvider, AstraflowProvider, AtlasProvider, ClaudeProvider, OpenAIProvider, OllamaProvider, get_provider
+from llm.providers import (
+    AstraflowCNProvider,
+    AstraflowProvider,
+    AtlasProvider,
+    ClaudeProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    get_provider,
+)
 
 
 class TestGetProvider:
@@ -42,23 +51,38 @@ class TestGetProvider:
         with pytest.raises(ValueError, match="Unknown provider type"):
             get_provider("invalid")
 
-    def test_saved_llm_env_selects_provider(self, monkeypatch, tmp_path):
+    def test_saved_llm_env_selects_provider_and_default_model(self, monkeypatch, tmp_path):
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("LLM_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)
-        tmp_path.joinpath(".llm.env").write_text("LLM_PROVIDER=ollama\nLLM_MODEL=llama3.2\n")
+        tmp_path.joinpath(".llm.env").write_text("LLM_PROVIDER=openai\nLLM_MODEL=gpt-4.1-mini\n")
 
         provider = get_provider()
 
-        assert isinstance(provider, OllamaProvider)
+        assert isinstance(provider, OpenAIProvider)
+        assert provider.get_default_model() == "gpt-4.1-mini"
 
-    def test_env_provider_overrides_saved_llm_env(self, monkeypatch, tmp_path):
+    def test_env_provider_overrides_saved_llm_env_without_saved_model_leakage(self, monkeypatch, tmp_path):
         monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
         monkeypatch.chdir(tmp_path)
-        tmp_path.joinpath(".llm.env").write_text("LLM_PROVIDER=openai\n")
+        tmp_path.joinpath(".llm.env").write_text("LLM_PROVIDER=openai\nLLM_MODEL=gpt-4.1-mini\n")
 
         provider = get_provider()
 
         assert isinstance(provider, OllamaProvider)
+        assert provider.get_default_model() == "llama3.2"
+
+    def test_env_model_sets_provider_default(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("LLM_MODEL", "mistral")
+        monkeypatch.chdir(tmp_path)
+        tmp_path.joinpath(".llm.env").write_text("LLM_PROVIDER=openai\nLLM_MODEL=gpt-4.1-mini\n")
+
+        provider = get_provider()
+
+        assert isinstance(provider, OllamaProvider)
+        assert provider.get_default_model() == "mistral"
 
     def test_env_provider_is_normalized(self, monkeypatch):
         monkeypatch.setenv("LLM_PROVIDER", "OLLAMA")

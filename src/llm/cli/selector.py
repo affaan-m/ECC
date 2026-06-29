@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import sys
-from enum import Enum
+from enum import StrEnum
 
 
-class Color(str, Enum):
+class Color(StrEnum):
     RESET = "\033[0m"
     BOLD = "\033[1m"
     GREEN = "\033[92m"
@@ -15,6 +15,41 @@ class Color(str, Enum):
     BLUE = "\033[94m"
     CYAN = "\033[96m"
 
+
+_DEFAULT_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("claude", "Anthropic Claude ( Sonnet, Opus, Haiku)"),
+    ("openai", "OpenAI GPT (4o, 4o-mini, 3.5-turbo)"),
+    ("ollama", "Local Ollama models"),
+    ("astraflow", "UModelVerse global OpenAI-compatible models"),
+    ("astraflow_cn", "UModelVerse China OpenAI-compatible models"),
+)
+
+_DEFAULT_MODELS_PER_PROVIDER: dict[str, tuple[tuple[str, str], ...]] = {
+    "claude": (
+        ("claude-opus-4-5", "Claude Opus 4.5 - Most capable"),
+        ("claude-sonnet-4-7", "Claude Sonnet 4.7 - Balanced"),
+        ("claude-haiku-4-7", "Claude Haiku 4.7 - Fast"),
+    ),
+    "openai": (
+        ("gpt-4o", "GPT-4o - Most capable"),
+        ("gpt-4o-mini", "GPT-4o-mini - Fast & affordable"),
+        ("gpt-4-turbo", "GPT-4 Turbo - Legacy powerful"),
+        ("gpt-3.5-turbo", "GPT-3.5 - Legacy fast"),
+    ),
+    "ollama": (
+        ("llama3.2", "Llama 3.2 - General purpose"),
+        ("mistral", "Mistral - Fast & efficient"),
+        ("codellama", "CodeLlama - Code specialized"),
+    ),
+    "astraflow": (
+        ("gpt-4o-mini", "GPT-4o mini - Default OpenAI-compatible model"),
+        ("deepseek-ai/DeepSeek-V3-0324", "DeepSeek V3 - UModelVerse global"),
+    ),
+    "astraflow_cn": (
+        ("gpt-4o-mini", "GPT-4o mini - Default OpenAI-compatible model"),
+        ("deepseek-ai/DeepSeek-V3-0324", "DeepSeek V3 - UModelVerse China"),
+    ),
+}
 
 def print_banner() -> None:
     banner = f"""{Color.CYAN}
@@ -96,30 +131,12 @@ def interactive_select(
     print_banner()
 
     if providers is None:
-        providers = [
-            ("claude", "Anthropic Claude ( Sonnet, Opus, Haiku)"),
-            ("openai", "OpenAI GPT (4o, 4o-mini, 3.5-turbo)"),
-            ("ollama", "Local Ollama models"),
-        ]
+        providers = list(_DEFAULT_PROVIDERS)
 
     if models_per_provider is None:
         models_per_provider = {
-            "claude": [
-                ("claude-opus-4-5", "Claude Opus 4.5 - Most capable"),
-                ("claude-sonnet-4-7", "Claude Sonnet 4.7 - Balanced"),
-                ("claude-haiku-4-7", "Claude Haiku 4.7 - Fast"),
-            ],
-            "openai": [
-                ("gpt-4o", "GPT-4o - Most capable"),
-                ("gpt-4o-mini", "GPT-4o-mini - Fast & affordable"),
-                ("gpt-4-turbo", "GPT-4 Turbo - Legacy powerful"),
-                ("gpt-3.5-turbo", "GPT-3.5 - Legacy fast"),
-            ],
-            "ollama": [
-                ("llama3.2", "Llama 3.2 - General purpose"),
-                ("mistral", "Mistral - Fast & efficient"),
-                ("codellama", "CodeLlama - Code specialized"),
-            ],
+            provider: list(models)
+            for provider, models in _DEFAULT_MODELS_PER_PROVIDER.items()
         }
 
     provider = select_provider(providers)

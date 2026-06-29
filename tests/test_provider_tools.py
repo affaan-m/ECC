@@ -84,6 +84,16 @@ def test_openai_provider_serializes_tools_for_chat_completions():
     ]
 
 
+def test_openai_provider_uses_configured_default_model_for_chat_completions():
+    provider = OpenAIProvider(api_key="test", default_model="gpt-4.1-mini")
+    client = _OpenAIClient()
+    provider.client = client
+
+    provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+    assert client.completions.params["model"] == "gpt-4.1-mini"
+
+
 def test_openai_provider_can_be_constructed_without_credentials(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -128,3 +138,13 @@ def test_claude_provider_serializes_tools_for_messages_api():
             "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
         }
     ]
+
+
+def test_claude_provider_uses_configured_default_model_for_messages_api():
+    provider = ClaudeProvider(api_key="test", default_model="claude-opus-4-5")
+    client = _AnthropicClient()
+    provider.client = client
+
+    provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+    assert client.messages.params["model"] == "claude-opus-4-5"

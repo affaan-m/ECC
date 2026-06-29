@@ -14,14 +14,26 @@ from llm.core.interface import (
     LLMProvider,
     RateLimitError,
 )
-from llm.core.types import LLMInput, LLMOutput, Message, ModelInfo, ProviderType, ToolCall
+from llm.core.types import (
+    LLMInput,
+    LLMOutput,
+    ModelInfo,
+    ProviderType,
+    ToolCall,
+)
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 
 
 class OpenAIProvider(LLMProvider):
     provider_type = ProviderType.OPENAI
 
-    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        default_model: str | None = None,
+    ) -> None:
+        self.default_model = default_model or "gpt-4o-mini"
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url,
@@ -65,7 +77,7 @@ class OpenAIProvider(LLMProvider):
     def generate(self, input: LLMInput) -> LLMOutput:
         try:
             params: dict[str, Any] = {
-                "model": input.model or "gpt-4o-mini",
+                "model": input.model or self.default_model,
                 "messages": [msg.to_dict() for msg in input.messages],
                 "temperature": input.temperature,
             }
@@ -122,4 +134,4 @@ class OpenAIProvider(LLMProvider):
         return bool(self.client.api_key)
 
     def get_default_model(self) -> str:
-        return "gpt-4o-mini"
+        return self.default_model

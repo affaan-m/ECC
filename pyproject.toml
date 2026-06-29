@@ -49,7 +49,13 @@ packages = ["src/llm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 asyncio_mode = "auto"
+addopts = ["--strict-markers"]
+markers = [
+    "unit: fast isolated tests that do not require network or external services",
+    "integration: tests that may exercise provider integrations or external services",
+]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
@@ -64,7 +70,7 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-src-path = ["src"]
+src = ["src"]
 target-version = "py311"
 
 [tool.ruff.lint]
@@ -73,6 +79,6 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
-src_paths = ["src"]
+mypy_path = "src"
 warn_return_any = true
 warn_unused_ignores = true
