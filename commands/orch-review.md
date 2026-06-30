@@ -38,6 +38,12 @@ If the diff is empty, stop: "Nothing to review."
 
 **PR Mode:**
 
+First derive a **safe numeric PR id** from `$ARGUMENTS` — never pass the raw
+argument to the shell. Accept either a bare integer, or the trailing number of a
+`https://github.com/<owner>/<repo>/pull/<N>` URL. Reject anything else (extra
+text, shell metacharacters, a non-PR URL) and stop with an error. Use only the
+extracted integer `<NUMBER>` below:
+
 ```bash
 gh pr diff <NUMBER>                       # diff text
 gh pr view <NUMBER> --json files \
@@ -78,7 +84,7 @@ finding. It returns:
   "failedDimensions": [ /* { dimension, error } */ ],
   "blocking": [ /* confirmed CRITICAL/HIGH + unverifiable findings */ ],
   "advisory": [ /* MEDIUM/LOW + adversarially-refuted findings */ ],
-  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4 }
+  "stats": { "dimensions": 3, "failed": 0, "raw": 11, "unique": 4, "confirmed": 3, "unverified": 0, "uncertain": 0, "refuted": 1 }
 }
 ```
 
@@ -107,7 +113,7 @@ a hand-rolled review and do not imply the diff was approved.
 
 - **No `gh` CLI (PR Mode)**: stop and tell the user PR Mode needs `gh`; suggest
   Local Mode against a checked-out branch instead.
-- **Very large diff**: the workflow caps reviewer concurrency automatically, so a
+- **Large diff**: the workflow caps reviewer concurrency automatically, so a
   large diff is slower but safe; warn the user it may take longer.
 - **Binary or generated files**: drop them from `changedFiles` before invoking —
   they add noise to the security trigger without reviewable content.

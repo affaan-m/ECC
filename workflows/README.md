@@ -52,8 +52,15 @@ Invalid input throws (the gate **fails closed**): a missing/empty `diff`, malfor
 
 The main loop presents `blocking` at Gate 2; the human still approves the commit. The gate fails closed at every stage: if a reviewer dies the dimension is recorded in `failedDimensions` (verdict never a clean `APPROVE`), and if a *verifier* dies or returns null the blocker is kept in `blocking` (tagged "could not be verified") rather than demoted to advisory — an unreviewed security dimension or an unverifiable CRITICAL must not pass as approved.
 
+## Invoking it
+
+`/orch-review` (`commands/orch-review.md`) is the command surface: it gathers the
+diff (local uncommitted changes or a GitHub PR), calls this workflow, and reports
+the blocking/advisory split at Gate 2.
+
 ## Not in this PR (follow-ups)
 
-- A `/orch-review` command + skill trigger (plus the mirrored i18n docs and surface tests ECC requires for a new command surface).
+- i18n mirrors (`docs/<locale>/commands/orch-review.md`) for the `/orch-review` command (not CI-enforced; only a subset of commands are translated today).
+- Wiring `/orch-review` into the `orch-pipeline` Review phase as the native option.
 - Installer / manifest wiring so the script ships to `~/.claude/` on install.
 - Porting the **Research** sweep and **Plan** judge-panel segments next.
