@@ -262,12 +262,8 @@ const REFUTE_MIN_CONFIDENCE = 0.8;
 const verifiedClean = verified.filter(Boolean);
 const confirmed = verifiedClean.filter(f => !f.unverified && f.verdict && f.verdict.isReal);
 const unverified = verifiedClean.filter(f => f.unverified);
-const refuted = verifiedClean.filter(
-  f => !f.unverified && f.verdict && !f.verdict.isReal && (f.verdict.confidence ?? 0) >= REFUTE_MIN_CONFIDENCE
-);
-const uncertain = verifiedClean.filter(
-  f => !f.unverified && f.verdict && !f.verdict.isReal && (f.verdict.confidence ?? 0) < REFUTE_MIN_CONFIDENCE
-);
+const refuted = verifiedClean.filter(f => !f.unverified && f.verdict && !f.verdict.isReal && (f.verdict.confidence ?? 0) >= REFUTE_MIN_CONFIDENCE);
+const uncertain = verifiedClean.filter(f => !f.unverified && f.verdict && !f.verdict.isReal && (f.verdict.confidence ?? 0) < REFUTE_MIN_CONFIDENCE);
 
 // Unverifiable AND low-confidence-refuted blockers stay in `blocking` (fail
 // closed), tagged so the human at Gate 2 knows they were not cleared.
@@ -287,5 +283,14 @@ return {
   failedDimensions,
   blocking,
   advisory: [...advisory, ...refuted.map(f => ({ ...f, note: 'refuted by adversarial verifier' }))],
-  stats: { dimensions: dimensions.length, failed: failedDimensions.length, raw: tagged.length, unique: unique.length, confirmed: confirmed.length, unverified: unverified.length, uncertain: uncertain.length, refuted: refuted.length }
+  stats: {
+    dimensions: dimensions.length,
+    failed: failedDimensions.length,
+    raw: tagged.length,
+    unique: unique.length,
+    confirmed: confirmed.length,
+    unverified: unverified.length,
+    uncertain: uncertain.length,
+    refuted: refuted.length
+  }
 };
