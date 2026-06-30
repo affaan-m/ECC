@@ -100,11 +100,11 @@ Before finalizing a growth log entry:
 
 ## Anti-Patterns
 
-- ❌ "Fixed bug in payment module" (event, not pattern)
-- ❌ Copying the git commit message verbatim (commits describe what changed; logs extract why it matters)
-- ❌ Writing an entry for every commit (only when a pattern emerges)
-- ❌ Skipping the transferable sentence (without it, it's just a diary — this is non-negotiable)
-- ❌ Duplicating the same pattern under different titles (violates Bole Principle — search before writing)
+- Avoid: "Fixed bug in payment module" (event, not pattern)
+- Avoid: Copying the git commit message verbatim (commits describe what changed; logs extract why it matters)
+- Avoid: Writing an entry for every commit (only when a pattern emerges)
+- Avoid: Skipping the transferable sentence (without it, it's just a diary — this is non-negotiable)
+- Avoid: Duplicating the same pattern under different titles (violates Bole Principle — search before writing)
 
 ## Storage
 
