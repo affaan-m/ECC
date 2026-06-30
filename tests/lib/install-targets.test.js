@@ -547,6 +547,42 @@ function runTests() {
     assert.ok(byTarget.supports('qwen-home'));
   })) passed++; else failed++;
 
+  if (test('codex install plan keeps the native .codex AGENTS payload canonical', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+
+    const plan = planInstallTargetScaffold({
+      target: 'codex',
+      repoRoot,
+      homeDir,
+      modules: [
+        {
+          id: 'agents-core',
+          paths: ['.agents', 'agents', 'AGENTS.md'],
+        },
+        {
+          id: 'platform-configs',
+          paths: ['.codex'],
+        },
+      ],
+    });
+
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'AGENTS.md'
+      )),
+      'Codex installs should not include the generic root AGENTS.md source'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.codex'
+        && operation.destinationPath === path.join(homeDir, '.codex')
+        && operation.strategy === 'sync-root-children'
+      )),
+      'Codex installs should sync the native .codex payload into ~/.codex'
+    );
+  })) passed++; else failed++;
+
   if (test('resolves zed adapter root and install-state path from project root', () => {
     const adapter = getInstallTargetAdapter('zed');
     const projectRoot = '/workspace/app';
@@ -996,6 +1032,41 @@ function runTests() {
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
+  })) passed++; else failed++;
+
+  if (test('opencode install plan keeps the native .opencode payload canonical', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+
+    const plan = planInstallTargetScaffold({
+      target: 'opencode',
+      repoRoot,
+      homeDir,
+      modules: [
+        {
+          id: 'commands-core',
+          paths: ['commands'],
+        },
+        {
+          id: 'platform-configs',
+          paths: ['.opencode'],
+        },
+      ],
+    });
+
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath).startsWith('.opencode/commands')
+      )),
+      'OpenCode installs should not duplicate shared command docs under .opencode/commands'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.opencode/README.md'
+        && operation.destinationPath === path.join(homeDir, '.opencode', 'README.md')
+      )),
+      'OpenCode installs should still sync native .opencode files'
+    );
   })) passed++; else failed++;
 
   if (test('opencode adapter validate reports a partial build (entry present, runtime dirs absent)', () => {
