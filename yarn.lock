@@ -59,10 +59,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@eslint/js@npm:^9.39.2":
-  version: 9.39.2
-  resolution: "@eslint/js@npm:9.39.2"
-  checksum: 10c0/00f51c52b04ac79faebfaa65a9652b2093b9c924e945479f1f3945473f78aee83cbc76c8d70bbffbf06f7024626575b16d97b66eab16182e1d0d39daff2f26f5
+"@eslint/js@npm:^10.0.1":
+  version: 10.0.1
+  resolution: "@eslint/js@npm:10.0.1"
+  peerDependencies:
+    eslint: ^10.0.0
+  peerDependenciesMeta:
+    eslint:
+      optional: true
+  checksum: 10c0/9f3fcaf71ba7fdf65d82e8faad6ecfe97e11801cc3c362b306a88ea1ed1344ae0d35330dddb0e8ad18f010f6687a70b75491b9e01c8af57acd7987cee6b3ec6c
   languageName: node
   linkType: hard
 
@@ -502,7 +507,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "ecc-universal@workspace:."
   dependencies:
-    "@eslint/js": "npm:^9.39.2"
+    "@eslint/js": "npm:^10.0.1"
     "@iarna/toml": "npm:^2.2.5"
     "@opencode-ai/plugin": "npm:^1.0.0"
     "@types/node": "npm:^20.19.24"

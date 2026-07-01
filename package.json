@@ -262,7 +262,7 @@
     "sql.js": "^1.14.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@opencode-ai/plugin": "^1.0.0",
     "@types/node": "^20.19.24",
     "c8": "^11.0.0",
