@@ -269,7 +269,7 @@
     "eslint": "^9.39.2",
     "globals": "^17.4.0",
     "markdownlint-cli": "^0.48.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3" 
   },
   "engines": {
     "node": ">=18"
