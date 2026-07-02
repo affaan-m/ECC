@@ -161,39 +161,33 @@ ORDER BY market_id, date;
 ### Bulk Insert (Recommended)
 
 ```typescript
-import { ClickHouse } from 'clickhouse'
+import { createClient } from '@clickhouse/client'
 
-const clickhouse = new ClickHouse({
-  url: process.env.CLICKHOUSE_URL,
-  port: 8123,
-  basicAuth: {
-    username: process.env.CLICKHOUSE_USER,
-    password: process.env.CLICKHOUSE_PASSWORD
-  }
+const clickhouse = createClient({
+  url: process.env.CLICKHOUSE_URL ?? 'http://localhost:8123',
+  username: process.env.CLICKHOUSE_USER,
+  password: process.env.CLICKHOUSE_PASSWORD
 })
 
 // PASS: Batch insert (efficient)
 async function bulkInsertTrades(trades: Trade[]) {
-  const values = trades.map(trade => `(
-    '${trade.id}',
-    '${trade.market_id}',
-    '${trade.user_id}',
-    ${trade.amount},
-    '${trade.timestamp.toISOString()}'
-  )`).join(',')
-
-  await clickhouse.query(`
-    INSERT INTO trades (id, market_id, user_id, amount, timestamp)
-    VALUES ${values}
-  `).toPromise()
+  await clickhouse.insert({
+    table: 'trades',
+    values: trades.map(trade => ({
+      id: trade.id,
+      market_id: trade.market_id,
+      user_id: trade.user_id,
+      amount: trade.amount,
+      timestamp: trade.timestamp.toISOString()
+    })),
+    format: 'JSONEachRow'
+  })
 }
 
 // FAIL: Individual inserts (slow)
 async function insertTrade(trade: Trade) {
   // Don't do this in a loop!
-  await clickhouse.query(`
-    INSERT INTO trades VALUES ('${trade.id}', ...)
-  `).toPromise()
+  await clickhouse.insert({ table: 'trades', values: [trade], format: 'JSONEachRow' })
 }
 ```
 
@@ -201,17 +195,14 @@ async function insertTrade(trade: Trade) {
 
 ```typescript
 // For continuous data ingestion
-import { createWriteStream } from 'fs'
-import { pipeline } from 'stream/promises'
+import { Readable } from 'node:stream'
 
-async function streamInserts() {
-  const stream = clickhouse.insert('trades').stream()
-
-  for await (const batch of dataSource) {
-    stream.write(batch)
-  }
-
-  await stream.end()
+async function streamInserts(dataSource: AsyncIterable<Record<string, unknown>>) {
+  await clickhouse.insert({
+    table: 'trades',
+    values: Readable.from(dataSource, { objectMode: true }),
+    format: 'JSONEachRow'
+  })
 }
 ```
 

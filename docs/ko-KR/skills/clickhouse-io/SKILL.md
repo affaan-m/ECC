@@ -161,36 +161,33 @@ ORDER BY market_id, date;
 ### 배치 삽입 (권장)
 
 ```typescript
-import { ClickHouse } from 'clickhouse'
+import { createClient } from '@clickhouse/client'
 
-const clickhouse = new ClickHouse({
-  url: process.env.CLICKHOUSE_URL,
-  port: 8123,
-  basicAuth: {
-    username: process.env.CLICKHOUSE_USER,
-    password: process.env.CLICKHOUSE_PASSWORD
-  }
+const clickhouse = createClient({
+  url: process.env.CLICKHOUSE_URL ?? 'http://localhost:8123',
+  username: process.env.CLICKHOUSE_USER,
+  password: process.env.CLICKHOUSE_PASSWORD
 })
 
 // PASS: 배치 삽입 (효율적)
 async function bulkInsertTrades(trades: Trade[]) {
-  const rows = trades.map(trade => ({
-    id: trade.id,
-    market_id: trade.market_id,
-    user_id: trade.user_id,
-    amount: trade.amount,
-    timestamp: trade.timestamp.toISOString()
-  }))
-
-  await clickhouse.insert('trades', rows)
+  await clickhouse.insert({
+    table: 'trades',
+    values: trades.map(trade => ({
+      id: trade.id,
+      market_id: trade.market_id,
+      user_id: trade.user_id,
+      amount: trade.amount,
+      timestamp: trade.timestamp.toISOString()
+    })),
+    format: 'JSONEachRow'
+  })
 }
 
 // FAIL: 개별 삽입 (느림)
 async function insertTrade(trade: Trade) {
   // 루프 안에서 이렇게 하지 마세요!
-  await clickhouse.query(`
-    INSERT INTO trades VALUES ('${trade.id}', ...)
-  `).toPromise()
+  await clickhouse.insert({ table: 'trades', values: [trade], format: 'JSONEachRow' })
 }
 ```
 
@@ -198,17 +195,14 @@ async function insertTrade(trade: Trade) {
 
 ```typescript
 // 연속적인 데이터 수집용
-import { createWriteStream } from 'fs'
-import { pipeline } from 'stream/promises'
+import { Readable } from 'node:stream'
 
-async function streamInserts() {
-  const stream = clickhouse.insert('trades').stream()
-
-  for await (const batch of dataSource) {
-    stream.write(batch)
-  }
-
-  await stream.end()
+async function streamInserts(dataSource: AsyncIterable<Record<string, unknown>>) {
+  await clickhouse.insert({
+    table: 'trades',
+    values: Readable.from(dataSource, { objectMode: true }),
+    format: 'JSONEachRow'
+  })
 }
 ```
 
