@@ -262,14 +262,14 @@
     "sql.js": "^1.14.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@opencode-ai/plugin": "^1.0.0",
-    "@types/node": "^20.19.24",
+    "@types/node": "^26.1.0",
     "c8": "^11.0.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.6.0",
     "globals": "^17.4.0",
-    "markdownlint-cli": "^0.48.0",
-    "typescript": "^5.9.3"
+    "markdownlint-cli": "^0.49.0",
+    "typescript": "^6.0.3" 
   },
   "engines": {
     "node": ">=18"
