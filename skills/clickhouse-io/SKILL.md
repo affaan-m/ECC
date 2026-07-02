@@ -187,7 +187,17 @@ async function bulkInsertTrades(trades: Trade[]) {
 // FAIL: Individual inserts (slow)
 async function insertTrade(trade: Trade) {
   // Don't do this in a loop!
-  await clickhouse.insert({ table: 'trades', values: [trade], format: 'JSONEachRow' })
+  await clickhouse.insert({
+    table: 'trades',
+    values: [{
+      id: trade.id,
+      market_id: trade.market_id,
+      user_id: trade.user_id,
+      amount: trade.amount,
+      timestamp: trade.timestamp.toISOString()
+    }],
+    format: 'JSONEachRow'
+  })
 }
 ```
 
@@ -387,14 +397,18 @@ pgClient.query('LISTEN market_updates')
 pgClient.on('notification', async (msg) => {
   const update = JSON.parse(msg.payload)
 
-  await clickhouse.insert('market_updates', [
-    {
-      market_id: update.id,
-      event_type: update.operation,  // INSERT, UPDATE, DELETE
-      timestamp: new Date(),
-      data: JSON.stringify(update.new_data)
-    }
-  ])
+  await clickhouse.insert({
+    table: 'market_updates',
+    values: [
+      {
+        market_id: update.id,
+        event_type: update.operation,  // INSERT, UPDATE, DELETE
+        timestamp: new Date(),
+        data: JSON.stringify(update.new_data)
+      }
+    ],
+    format: 'JSONEachRow'
+  })
 })
 ```
 
