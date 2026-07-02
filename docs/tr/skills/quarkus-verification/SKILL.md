@@ -186,7 +186,7 @@ mvn quarkus:list-extensions
 ### OWASP ZAP (API Güvenlik Testi)
 
 ```bash
-docker run -t owasp/zap2docker-stable zap-api-scan.py \
+docker run -t ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
   -t http://localhost:8080/q/openapi \
   -f openapi
 ```
