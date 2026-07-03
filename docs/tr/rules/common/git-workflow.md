@@ -9,7 +9,7 @@
 
 Types: feat, fix, refactor, docs, test, chore, perf, ci
 
-Not: Attribution ~/.claude/settings.json aracılığıyla global olarak devre dışı bırakıldı.
+Not: Ortak yazar atfını devre dışı bırakmak için `~/.claude/settings.json` içinde `"includeCoAuthoredBy": false` ayarlayın; Claude Code varsayılan olarak `Co-Authored-By` ekler ve ECC bu ayarı içermez.
 
 ## Pull Request İş Akışı
 

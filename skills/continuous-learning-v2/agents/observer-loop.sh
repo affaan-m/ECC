@@ -145,7 +145,10 @@ analyze_observations() {
   MAX_ANALYSIS_LINES="${ECC_OBSERVER_MAX_ANALYSIS_LINES:-500}"
   observer_tmp_dir="${PROJECT_DIR}/.observer-tmp"
   mkdir -p "$observer_tmp_dir"
-  analysis_file="$(mktemp "${observer_tmp_dir}/ecc-observer-analysis.XXXXXX.jsonl")"
+  # Keep the XXXXXX run at the very end of the template: BSD/macOS mktemp only
+  # substitutes a trailing X run, so a suffix after it (e.g. `.jsonl`) produces a
+  # literal, non-random name that wedges every later cycle with "File exists" (#2417).
+  analysis_file="$(mktemp "${observer_tmp_dir}/ecc-observer-analysis.jsonl.XXXXXX")"
   tail -n "$MAX_ANALYSIS_LINES" "$OBSERVATIONS_FILE" > "$analysis_file"
   analysis_count=$(wc -l < "$analysis_file" 2>/dev/null || echo 0)
   echo "[$(date)] Using last $analysis_count of $obs_count observations for analysis" >> "$LOG_FILE"
