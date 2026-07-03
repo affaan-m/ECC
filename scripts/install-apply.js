@@ -42,6 +42,8 @@ Targets:
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
+  hermes       - Install shared rules/skills/commands into ~/.hermes/
+  openclaw     - Install shared rules/skills/commands into ~/.openclaw/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
