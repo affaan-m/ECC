@@ -1,6 +1,6 @@
 ---
 name: council-multi-model
-description: Extend the council with a heterogeneous (non-Claude) model in two ways -- (A) reviewing an existing draft/plan/PR to catch the same-source blind spot Claude-only voices share, or (B) proposing independently in parallel (Mixture-of-Agents style) when there is no existing draft yet, then aggregating without collapsing disagreement. For the heaviest decisions the two chain: propose+aggregate first, judge the aggregation second. Includes a preflight that checks whether the Codex SDK is usable and falls back to the plain council when it is not. Use for ambiguous decisions where you worry several Claude voices could miss the same thing, or where you want independent parallel answers instead of one drafted-then-reviewed.
+description: Extend the council with a heterogeneous (non-Claude) model in two ways -- (A) reviewing an existing draft/plan/PR to catch the same-source blind spot Claude-only voices share, or (B) proposing independently in parallel (Mixture-of-Agents style) when there is no existing draft yet, then aggregating without collapsing disagreement. For the heaviest decisions the two chain: propose+aggregate first, judge the aggregation second. Prefers calling Codex directly through an MCP tool when one is configured; falls back to a local SDK script, then to the plain council when neither is usable. Use for ambiguous decisions where you worry several Claude voices could miss the same thing, or where you want independent parallel answers instead of one drafted-then-reviewed.
 metadata:
   origin: ECC
 ---
@@ -16,7 +16,7 @@ The `council` skill convenes four advisors for an ambiguous decision, but all fo
 
 For the heaviest decisions, chain them: run **B** first (propose + aggregate), then feed the aggregated result through **A**'s review step for one more independent pass. See "Chaining" below for the honesty caveat this requires.
 
-The heterogeneous reviewer is **Codex**, reached through the `openai-codex` SDK, which reuses a local ChatGPT subscription and so spends no API credits. This aligns with the Codex tooling the repository already ships (`scripts/codex`, `orchestrate-codex-worker.sh`). Because not every machine has Codex configured, the skill **preflights** availability and falls back cleanly to the plain Claude-only council when it is absent.
+The heterogeneous reviewer is **Codex**. **Prefer calling it directly through the `mcp__codex__codex` MCP tool** when one is configured in the session's tool list - zero relay, talks straight to OpenAI's official backend, no API spend. **Fall back to the local `openai-codex` SDK script** when no such MCP tool is available (same subscription reuse, no API spend). This aligns with the Codex tooling the repository already ships (`scripts/codex`, `orchestrate-codex-worker.sh`). Because not every setup has either path configured, the skill **preflights** availability and falls back cleanly to the plain Claude-only council when neither is usable.
 
 This skill is a thin extension. Run `council` for everything except the added nodes; this file only describes what is added.
 
@@ -47,7 +47,7 @@ Steps 1 to 5 are identical to `council`: extract the real question, gather minim
 
 ### 5.5 Heterogeneous review
 
-**First, preflight.** Check whether the Codex SDK is usable before relying on it:
+**First, preflight.** Prefer the `mcp__codex__codex` MCP tool if it is available in this session's tool list (check via a tool-search, or just note whether it was offered to you). If it is not available, fall back to the SDK script and check whether it is usable:
 
 ```bash
 SKILL="$HOME/.claude/skills/council-multi-model"
@@ -57,16 +57,28 @@ SKILL="$HOME/.claude/skills/council-multi-model"
 "$SKILL/.venv/bin/python" "$SKILL/scripts/check_codex.py" --probe
 ```
 
-`check_codex.py` prints `AVAILABLE` (exit 0) when the SDK is installed and ChatGPT auth is present, or `UNAVAILABLE: <reason>` (non-zero) otherwise. If it is **UNAVAILABLE**, skip straight to marking the review **absent** (below) and present the plain Claude-only council - do not block.
+`check_codex.py` prints `AVAILABLE` (exit 0) when the SDK is installed and ChatGPT auth is present, or `UNAVAILABLE: <reason>` (non-zero) otherwise. If **neither** the MCP tool nor the SDK is usable, skip straight to marking the review **absent** (below) and present the plain Claude-only council - do not block.
 
-**If AVAILABLE**, feed the **step 5 verdict draft** plus the **step 4 raw disagreement** to Codex. Let it **review only**; do not let it enter the debate. Write the review prompt to a file to avoid shell escaping, then call:
+**If the MCP tool is available (primary path)**, feed the **step 5 verdict draft** plus the **step 4 raw disagreement** to Codex directly - no temp file, no shell escaping to worry about:
+
+```
+mcp__codex__codex(
+    prompt=<the review prompt below, filled in>,
+    sandbox="read-only",       # opines only, never edits
+    approval-policy="never"    # no interactive approval for a review-only call
+)
+```
+
+Read the review text from the response's `content` field.
+
+**If only the SDK is available (fallback path)**, write the review prompt to a file to avoid shell escaping, then call:
 
 ```bash
 "$SKILL/.venv/bin/python" "$SKILL/scripts/ask_codex.py" \
     --prompt-file /path/to/review_prompt.txt --role heterogeneous-review
 ```
 
-Review prompt shape (write into `review_prompt.txt`):
+Either path uses the same review prompt shape (write into `review_prompt.txt` for the SDK path, or inline into `prompt` for the MCP path):
 
 ```text
 You are a heterogeneous reviewer auditing a decision draft produced by
@@ -128,7 +140,7 @@ Not "form a position first, then launch reviewers" - here **everyone answers the
 
 - In-context Architect: writes its **own complete answer** (not a running position to be reviewed later).
 - Three Claude subagents (Skeptic / Pragmatist / Critic): each writes its **own complete answer**, same constraint.
-- Codex, if the preflight (see Entry A's 5.5) says **AVAILABLE**: also writes its **own complete answer** to the identical question, via `ask_codex.py` with `--role independent-proposal` instead of `--role heterogeneous-review`.
+- Codex, if the preflight (see Entry A's 5.5) says available: also writes its **own complete answer** to the identical question - via `mcp__codex__codex` (primary path) with the question as `prompt`, or via `ask_codex.py --role independent-proposal` (fallback path) instead of `--role heterogeneous-review`.
 
 None of the voices see each other's answers before writing. This is the core difference from Entry A: in A, Codex reviews Claude's synthesis; in B, Codex is a **peer proposer**, not yet a reviewer.
 
@@ -178,10 +190,11 @@ For heavy decisions you can spend one more independent pass **judging the aggreg
 
 ## Dependencies and self-check
 
-- `scripts/check_codex.py` - preflight: is the Codex SDK importable and is ChatGPT auth present. Run it first; fall back to the plain council on UNAVAILABLE.
-- `scripts/ask_codex.py` - the Codex call via the `openai-codex` SDK, reusing the ChatGPT subscription (no API spend). Used for both `--role heterogeneous-review` (Entry A) and `--role independent-proposal` (Entry B). Read-only sandbox: it opines, never edits.
-- `scripts/setup.sh` - one-time `.venv` (python3 + openai-codex). The `.venv` is gitignored, not committed.
-- The heterogeneous model defaults to Codex - currently the only non-Claude model this skill can reach. If it cannot be reached, the skill degrades to plain `council` (Entry A) or Claude-only parallel proposals (Entry B) and marks the gap explicitly rather than hiding it.
+- `mcp__codex__codex` (and `mcp__codex__codex-reply` for follow-ups) - **primary path** when a Codex MCP server is configured in this session. Call directly with `sandbox="read-only"` and `approval-policy="never"` for review/proposal calls; no temp files, no shell escaping.
+- `scripts/check_codex.py` - preflight for the **fallback path**: is the Codex SDK importable and is ChatGPT auth present. Only needed when the MCP tool is unavailable.
+- `scripts/ask_codex.py` - the fallback Codex call via the `openai-codex` SDK, reusing the ChatGPT subscription (no API spend). Used for both `--role heterogeneous-review` (Entry A) and `--role independent-proposal` (Entry B) when MCP is unavailable. Read-only sandbox: it opines, never edits.
+- `scripts/setup.sh` - one-time `.venv` (python3 + openai-codex) for the fallback path. The `.venv` is gitignored, not committed.
+- The heterogeneous model defaults to Codex - currently the only non-Claude model this skill can reach, reachable through either path above. If neither path is reachable, the skill degrades to plain `council` (Entry A) or Claude-only parallel proposals (Entry B) and marks the gap explicitly rather than hiding it.
 
 ## Persistence
 
