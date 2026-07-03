@@ -305,6 +305,49 @@ npm pkg set packageManager="pnpm@8.15.0"
 rm package-lock.json  # If using pnpm/yarn/bun
 ```
 
+### Antivirus False Positives
+
+**Symptom:** An antivirus product silently deletes or quarantines a skill file
+during or after install. A commonly reported case is ESET flagging
+`skills/data-scraper-agent/SKILL.md` as `GenAISkill.IC`, but any skill that
+describes AI-driven automation, scraping, or scheduling can trip the same
+generic heuristic.
+
+**Causes:**
+- Heuristic (signature-less) detection reacting to prose that reads like an
+  automated data-collection agent — LLM calls, schedulers, HTTP fetching
+- ECC skills are plain Markdown with no executable payload, so a detection on a
+  `SKILL.md` file is a false positive, not a live threat
+- Per-file hashes change between releases, so a hash-pinned exclusion goes stale
+  on the next update
+
+**Solutions:**
+```bash
+# 1. Confirm it is a false positive with a multi-engine scan.
+# A single-engine heuristic hit that comes back clean elsewhere is the
+# signature of a false positive. Upload the file to a multi-engine scanner
+# (e.g. VirusTotal) rather than trusting one product's verdict.
+
+# 2. Add a directory-level exclusion FIRST, before restoring anything.
+# Real-time protection will re-quarantine the file the instant you restore
+# it unless the location is already excluded. A directory exclusion also
+# survives updates, unlike a per-file hash. Add the ECC skills tree to your
+# AV allowlist:
+#   - installed skills:  ~/.claude/skills/
+#   - this repo:         <repo>/skills/
+# In ESET: Advanced setup -> Detection engine -> Exclusions -> add the folder.
+
+# 3. Restore the deleted file from the repo instead of the AV quarantine.
+git checkout -- skills/data-scraper-agent/SKILL.md
+# Or re-fetch it by re-running the install/update for your harness.
+```
+
+If a detection points at a file you did **not** expect to contain skill content,
+or a multi-engine scan flags it broadly, treat it as a genuine finding and
+report it at
+[github.com/affaan-m/everything-claude-code/issues](https://github.com/affaan-m/everything-claude-code/issues)
+with the file path and detection name.
+
 ---
 
 ## Performance Issues
