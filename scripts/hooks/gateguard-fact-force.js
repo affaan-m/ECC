@@ -116,10 +116,9 @@ function getExemptMatchers() {
     .map(glob => {
       const source = glob
         .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
-        .replace(/\*\*/g, '__GATEGUARD_DOUBLE_STAR__') // ** placeholder (cross-segment)
-        .replace(/\*/g, '[^/]*')               // * -> within a segment
-        .replace(/__GATEGUARD_DOUBLE_STAR__/g, '.*') // ** -> across segments
-        .replace(/\?/g, '.');
+        .split('**')                           // ** boundaries (cross-segment)
+        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
+        .join('.*');                           // ** -> across segments
       try {
         return new RegExp(source);
       } catch (_) {
