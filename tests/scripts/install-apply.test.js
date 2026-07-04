@@ -338,6 +338,28 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('full profile dry-runs include delivery-gate in the install plan', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const result = run(['--profile', 'full', '--dry-run', '--json'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.dryRun, true);
+      assert.ok(parsed.plan.selectedModuleIds.includes('workflow-quality'));
+      assert.ok(
+        parsed.plan.operations.some(operation => (
+          operation.sourceRelativePath.startsWith('skills/delivery-gate/')
+        )),
+        'Full profile dry-run should include the delivery-gate skill'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   if (test('supports minimal profile dry-runs without hooks through the installer', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
