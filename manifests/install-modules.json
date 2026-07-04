@@ -18,7 +18,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -45,7 +46,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -72,7 +74,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -116,7 +119,8 @@
         "scripts/auto-update.js",
         "scripts/setup-package-manager.js",
         ".hermes",
-        ".openclaw"
+        ".openclaw",
+        ".kimi"
       ],
       "targets": [
         "claude",
@@ -131,7 +135,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -288,7 +293,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [
         "platform-configs"

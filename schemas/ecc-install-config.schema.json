@@ -30,7 +30,8 @@
         "qwen",
         "zed",
         "hermes",
-        "openclaw"
+        "openclaw",
+        "kimi"
       ]
     },
     "profile": {

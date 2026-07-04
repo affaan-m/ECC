@@ -8,6 +8,7 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.cursor': 'cursor',
   '.gemini': 'gemini',
   '.hermes': 'hermes',
+  '.kimi': 'kimi',
   '.joycode': 'joycode',
   '.opencode': 'opencode',
   '.openclaw': 'openclaw',
