@@ -193,6 +193,9 @@ jobs:
       - name: Run Python tests
         run: python -m pytest tests/test_*.py -m "not integration"
 
+      - name: Run memory-dream regression tests
+        run: python -B skills/memory-dream/scripts/test_dream.py
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest

@@ -56,7 +56,7 @@ class _AstraflowBaseProvider(LLMProvider):
         env_model = os.environ.get(self.model_env)
         fallback_model = os.environ.get(self.fallback_model_env) if self.fallback_model_env else None
         self.default_model = default_model or env_model or fallback_model or DEFAULT_ASTRAFLOW_MODEL
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self._models = [
             ModelInfo(
                 name=self.default_model,

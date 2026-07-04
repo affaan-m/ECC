@@ -292,6 +292,7 @@ def _execute_one_pass(
     sequence of names and the per-pass logic (timing, error
     handling, metric recording) is testable on its own.
     """
+    db_error_class = _db_error_class()
     t0 = time.monotonic()
     try:
         results = _run_pass(

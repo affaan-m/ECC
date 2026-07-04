@@ -348,7 +348,9 @@ class TestSchemaHygieneSql(unittest.TestCase):
         end = sql.index("-- 6f. Clean up old audit_log rows", start)
         body = sql[start:end]
         self.assertNotIn("m.id::text", body)
+        self.assertIn("when e.source_id ~*", body)
         self.assertIn("e.source_id::uuid", body)
+        self.assertIn("when e.target_id ~*", body)
         self.assertIn("e.target_id::uuid", body)
 
     def test_worker_sets_service_rls_context_before_cleanup(self):

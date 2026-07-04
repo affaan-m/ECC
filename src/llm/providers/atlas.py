@@ -69,7 +69,7 @@ class AtlasProvider(LLMProvider):
         self.base_url = base_url or os.environ.get(self.base_url_env, self.default_base_url)
         env_model = os.environ.get(self.model_env)
         self.default_model = default_model or env_model or DEFAULT_ATLAS_MODEL
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self._models = [
             ModelInfo(
                 name=self.default_model,
