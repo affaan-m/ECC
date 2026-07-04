@@ -340,6 +340,27 @@ class TestEndToEndDryRun(unittest.TestCase):
         self.assertIn("hygiene pass", r.stderr)
         self.assertIn("no work", r.stderr)
 
+    def test_install_script_writes_trusted_service_database_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "HOME": tmp}
+            r = subprocess.run(
+                ["bash", str(SCRIPTS_DIR / "install-hygiene-worker.sh")],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            plist_path = Path(tmp) / "Library" / "LaunchAgents" / "com.ecc.hygiene.plist"
+            self.assertTrue(plist_path.exists())
+            plist = plist_path.read_text(encoding="utf-8")
+            self.assertIn("postgresql://agent_memory_service@/agent_memory", plist)
+            self.assertNotIn("postgresql:///agent_memory", plist)
+            self.assertNotIn("<HOME>", plist)
+            self.assertNotIn("<REPO_ROOT>", plist)
+            self.assertNotIn("<PYTHON_PATH>", plist)
+
 
 class TestSchemaHygieneSql(unittest.TestCase):
     def test_cleanup_orphan_edges_does_not_cast_indexed_memory_id(self):

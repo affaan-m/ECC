@@ -55,9 +55,11 @@ class _FakeTransaction:
 
 
 class _FakeControllerConn:
-    def __init__(self, *, owner, pending=False):
+    def __init__(self, *, owner, pending=False, trusted_service=True, proposal_user="u_test"):
         self.owner = owner
         self.pending = pending
+        self.trusted_service = trusted_service
+        self.proposal_user = proposal_user
         self.calls: list[tuple[str, object]] = []
 
     def __enter__(self):
@@ -74,10 +76,32 @@ class _FakeControllerConn:
 
     def execute(self, sql, params=None):
         self.calls.append((sql, params))
+        if "select memory.is_service_role()" in sql:
+            return _FakeResult(one={"is_service_role": self.trusted_service})
         if "select user_id" in sql and "from memory.dream_runs" in sql:
             return _FakeResult(one={"user_id": self.owner})
+        if "select count(*) as n" in sql and "from memory.dream_proposals p" in sql:
+            return _FakeResult(one={"n": 1 if self.pending else 0})
         if "select 1" in sql and "from memory.dream_proposals" in sql:
             return _FakeResult(one={"?column?": 1} if self.pending else None)
+        if "select\n            p.id, p.run_id, p.row_id, p.action," in sql:
+            return _FakeResult(many=[{
+                "id": "11111111-1111-1111-1111-111111111111",
+                "run_id": "00000000-0000-0000-0000-000000000000",
+                "row_id": "22222222-2222-2222-2222-222222222222",
+                "action": "keep",
+                "proposed_replacement": None,
+                "proposed_superseded_by_id": None,
+                "confidence": 0.9,
+                "rationale": "",
+                "reviewer_action": None,
+                "reviewed_at": None,
+                "created_at": "2026-07-01T00:00:00Z",
+                "memory_type": "semantic",
+                "category": "fact",
+                "content": "remember this",
+                "row_summary": "",
+            }] if self.pending else [])
         if "from memory.dream_proposals p" in sql:
             return _FakeResult(many=[])
         if "update memory.dream_proposals" in sql:
@@ -369,6 +393,64 @@ class TestImports(unittest.TestCase):
         self.assertFalse(any("set status = 'completed'" in sql for sql, _ in fake.calls))
         self.assertFalse(any("set status = 'discarded'" in sql for sql, _ in fake.calls))
         self.assertTrue(any("adopted_count = adopted_count + %s" in sql for sql, _ in fake.calls))
+
+    def test_legacy_admin_requires_trusted_service_role(self):
+        import controller
+
+        fake = _FakeControllerConn(owner=None, pending=True, trusted_service=False)
+        original = controller._connect
+        controller._connect = lambda *a, **kw: fake
+        try:
+            result = controller.adopt_run(
+                "00000000-0000-0000-0000-000000000000",
+                user_id="u_test",
+                allow_legacy_admin=True,
+            )
+            self.assertTrue(result.errors)
+            self.assertIn("trusted database service role", result.errors[0])
+            with self.assertRaises(PermissionError):
+                controller.discard_run(
+                    "00000000-0000-0000-0000-000000000000",
+                    user_id="u_test",
+                    allow_legacy_admin=True,
+                )
+            with self.assertRaises(PermissionError):
+                controller.pending_proposals_count(
+                    run_id="00000000-0000-0000-0000-000000000000",
+                    user_id="u_test",
+                    allow_legacy_admin=True,
+                )
+            with self.assertRaises(PermissionError):
+                controller.list_proposals(
+                    "00000000-0000-0000-0000-000000000000",
+                    user_id="u_test",
+                    allow_legacy_admin=True,
+                )
+        finally:
+            controller._connect = original
+
+    def test_legacy_admin_lists_and_counts_nullable_owner_with_explicit_user_scope(self):
+        import controller
+
+        fake = _FakeControllerConn(owner=None, pending=True, trusted_service=True)
+        original = controller._connect
+        controller._connect = lambda *a, **kw: fake
+        try:
+            count = controller.pending_proposals_count(
+                run_id="00000000-0000-0000-0000-000000000000",
+                user_id="u_test",
+                allow_legacy_admin=True,
+            )
+            proposals = controller.list_proposals(
+                "00000000-0000-0000-0000-000000000000",
+                user_id="u_test",
+                allow_legacy_admin=True,
+            )
+        finally:
+            controller._connect = original
+
+        self.assertEqual(count, 1)
+        self.assertEqual(len(proposals), 1)
 
     def test_synthesizer_invalid_json_error_does_not_include_response_preview(self):
         from synthesizer import parse_response

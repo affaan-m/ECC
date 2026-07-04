@@ -245,13 +245,24 @@ def _legacy_admin_enabled(allow_legacy_admin: bool = False) -> bool:
     return allow_legacy_admin
 
 
-def _run_is_authorized(
+def _service_authority_available(conn) -> bool:
+    row = conn.execute(
+        "select memory.is_service_role() as is_service_role",
+    ).fetchone()
+    return bool(row and row["is_service_role"])
+
+
+def _assert_legacy_admin_authority(conn) -> None:
+    if not _service_authority_available(conn):
+        raise PermissionError(
+            "legacy admin review requires a trusted database service role",
+        )
+
+
+def _get_run_owner(
     conn,
     run_id: str,
-    user_id: str,
-    *,
-    allow_legacy_admin: bool = False,
-) -> bool:
+) -> str | None | object:
     row = conn.execute(
         """
         select user_id
@@ -261,9 +272,29 @@ def _run_is_authorized(
         (run_id,),
     ).fetchone()
     if row is None:
-        return False
-    owner = row["user_id"]
-    return owner == user_id or (owner is None and _legacy_admin_enabled(allow_legacy_admin))
+        return _MISSING
+    return row["user_id"]
+
+
+_MISSING = object()
+
+
+def _authorize_run(
+    conn,
+    run_id: str,
+    user_id: str,
+    *,
+    allow_legacy_admin: bool = False,
+) -> tuple[bool, bool]:
+    owner = _get_run_owner(conn, run_id)
+    if owner is _MISSING:
+        return False, False
+    if owner == user_id:
+        return True, False
+    if owner is None and _legacy_admin_enabled(allow_legacy_admin):
+        _assert_legacy_admin_authority(conn)
+        return True, True
+    return False, False
 
 
 def _run_has_pending_proposals(conn, run_id: str) -> bool:
@@ -296,37 +327,54 @@ def discard_run(
     legacy_admin = _legacy_admin_enabled(allow_legacy_admin)
     with _connect(database_url) as conn:
         _set_session_context(conn, expected_user)
-        if not _run_is_authorized(
+        authorized, legacy_nullable_run = _authorize_run(
             conn,
             run_id,
             expected_user,
             allow_legacy_admin=legacy_admin,
-        ):
+        )
+        if not authorized:
             raise PermissionError(
                 f"run {run_id} is not authorized for user_id={expected_user}"
             )
-        row = conn.execute(
-            """
-            update memory.dream_proposals
-            set reviewer_action = 'rejected',
-                reviewed_at = now()
-            where run_id = %s
-              and reviewer_action is null
-              and exists (
-                  select 1
-                  from memory.dream_runs r
-                  join memory.typed_memory m on m.id = dream_proposals.row_id
-                  where r.run_id = dream_proposals.run_id
-                    and m.user_id = %s
-                    and (
-                        r.user_id = %s
-                        or (r.user_id is null and %s)
-                    )
-              )
-            returning id
-            """,
-            (run_id, expected_user, expected_user, legacy_admin),
-        ).fetchall()
+        if legacy_nullable_run:
+            row = conn.execute(
+                """
+                update memory.dream_proposals
+                set reviewer_action = 'rejected',
+                    reviewed_at = now()
+                where run_id = %s
+                  and reviewer_action is null
+                  and exists (
+                      select 1
+                      from memory.typed_memory m
+                      where m.id = dream_proposals.row_id
+                        and m.user_id = %s
+                  )
+                returning id
+                """,
+                (run_id, expected_user),
+            ).fetchall()
+        else:
+            row = conn.execute(
+                """
+                update memory.dream_proposals
+                set reviewer_action = 'rejected',
+                    reviewed_at = now()
+                where run_id = %s
+                  and reviewer_action is null
+                  and exists (
+                      select 1
+                      from memory.dream_runs r
+                      join memory.typed_memory m on m.id = dream_proposals.row_id
+                      where r.run_id = dream_proposals.run_id
+                        and m.user_id = %s
+                        and r.user_id = %s
+                  )
+                returning id
+                """,
+                (run_id, expected_user, expected_user),
+            ).fetchall()
         if not _run_has_pending_proposals(conn, run_id):
             conn.execute(
                 "update memory.dream_runs set status = 'discarded', finished_at = now() "
@@ -377,12 +425,21 @@ def adopt_run(
 
     with _connect(database_url) as conn:
         _set_session_context(conn, expected_user)
-        if not _run_is_authorized(
-            conn,
-            run_id,
-            expected_user,
-            allow_legacy_admin=legacy_admin,
-        ):
+        try:
+            authorized, legacy_nullable_run = _authorize_run(
+                conn,
+                run_id,
+                expected_user,
+                allow_legacy_admin=legacy_admin,
+            )
+        except PermissionError as exc:
+            return AdoptResult(
+                adopted=0,
+                rejected=0,
+                skipped=0,
+                errors=[str(exc)],
+            )
+        if not authorized:
             return AdoptResult(
                 adopted=0,
                 rejected=0,
@@ -394,50 +451,73 @@ def adopt_run(
                 # Lock the proposals we're about to apply.
                 if proposal_ids is not None:
                     pid_list = list(proposal_ids)
-                    proposals = conn.execute(
-                        """
-                        select p.*, m.user_id, m.memory_type, m.category, m.content
-                        from memory.dream_proposals p
-                        join memory.typed_memory m on m.id = p.row_id
-                        where p.run_id = %s
-                          and p.id = ANY(%s::uuid[])
-                          and m.user_id = %s
-                          and p.reviewer_action is null
-                          and exists (
-                              select 1
-                              from memory.dream_runs r
-                              where r.run_id = p.run_id
-                                and (
-                                    r.user_id = %s
-                                    or (r.user_id is null and %s)
-                                )
-                          )
-                        for update
-                        """,
-                        (run_id, pid_list, expected_user, expected_user, legacy_admin),
-                    ).fetchall()
+                    if legacy_nullable_run:
+                        proposals = conn.execute(
+                            """
+                            select p.*, m.user_id, m.memory_type, m.category, m.content
+                            from memory.dream_proposals p
+                            join memory.typed_memory m on m.id = p.row_id
+                            where p.run_id = %s
+                              and p.id = ANY(%s::uuid[])
+                              and m.user_id = %s
+                              and p.reviewer_action is null
+                            for update
+                            """,
+                            (run_id, pid_list, expected_user),
+                        ).fetchall()
+                    else:
+                        proposals = conn.execute(
+                            """
+                            select p.*, m.user_id, m.memory_type, m.category, m.content
+                            from memory.dream_proposals p
+                            join memory.typed_memory m on m.id = p.row_id
+                            where p.run_id = %s
+                              and p.id = ANY(%s::uuid[])
+                              and m.user_id = %s
+                              and p.reviewer_action is null
+                              and exists (
+                                  select 1
+                                  from memory.dream_runs r
+                                  where r.run_id = p.run_id
+                                    and r.user_id = %s
+                              )
+                            for update
+                            """,
+                            (run_id, pid_list, expected_user, expected_user),
+                        ).fetchall()
                 else:
-                    proposals = conn.execute(
-                        """
-                        select p.*, m.user_id, m.memory_type, m.category, m.content
-                        from memory.dream_proposals p
-                        join memory.typed_memory m on m.id = p.row_id
-                        where p.run_id = %s
-                          and m.user_id = %s
-                          and p.reviewer_action is null
-                          and exists (
-                              select 1
-                              from memory.dream_runs r
-                              where r.run_id = p.run_id
-                                and (
-                                    r.user_id = %s
-                                    or (r.user_id is null and %s)
-                                )
-                          )
-                        for update
-                        """,
-                        (run_id, expected_user, expected_user, legacy_admin),
-                    ).fetchall()
+                    if legacy_nullable_run:
+                        proposals = conn.execute(
+                            """
+                            select p.*, m.user_id, m.memory_type, m.category, m.content
+                            from memory.dream_proposals p
+                            join memory.typed_memory m on m.id = p.row_id
+                            where p.run_id = %s
+                              and m.user_id = %s
+                              and p.reviewer_action is null
+                            for update
+                            """,
+                            (run_id, expected_user),
+                        ).fetchall()
+                    else:
+                        proposals = conn.execute(
+                            """
+                            select p.*, m.user_id, m.memory_type, m.category, m.content
+                            from memory.dream_proposals p
+                            join memory.typed_memory m on m.id = p.row_id
+                            where p.run_id = %s
+                              and m.user_id = %s
+                              and p.reviewer_action is null
+                              and exists (
+                                  select 1
+                                  from memory.dream_runs r
+                                  where r.run_id = p.run_id
+                                    and r.user_id = %s
+                              )
+                            for update
+                            """,
+                            (run_id, expected_user, expected_user),
+                        ).fetchall()
 
                 for prop in proposals:
                     confidence = float(prop["confidence"])
@@ -920,6 +1000,7 @@ def pending_proposals_count(
     run_id: str | None = None,
     user_id: str | None = None,
     database_url: str | None = None,
+    allow_legacy_admin: bool = False,
 ) -> int:
     """Number of proposals whose ``reviewer_action`` is null, optionally
     filtered to a specific run and/or user.
@@ -929,21 +1010,38 @@ def pending_proposals_count(
     prevents cross-user operational metadata leakage in multi-actor
     stores.
     """
-    sql = (
-        "select count(*) as n "
-        "from memory.dream_proposals p "
-        "join memory.typed_memory m on m.id = p.row_id "
-        "where p.reviewer_action is null"
-    )
-    params: list = []
-    if run_id is not None:
-        sql += " and p.run_id = %s"
-        params.append(run_id)
-    if user_id is not None:
-        sql += " and m.user_id = %s"
-        params.append(user_id)
     with _connect(database_url) as conn:
         _set_session_context(conn, user_id)
+        legacy_nullable_run = False
+        if run_id is not None and user_id is not None:
+            authorized, legacy_nullable_run = _authorize_run(
+                conn,
+                run_id,
+                user_id,
+                allow_legacy_admin=allow_legacy_admin,
+            )
+            if not authorized:
+                return 0
+        sql = (
+            "select count(*) as n "
+            "from memory.dream_proposals p "
+            "join memory.typed_memory m on m.id = p.row_id "
+            "where p.reviewer_action is null"
+        )
+        params: list = []
+        if run_id is not None:
+            sql += " and p.run_id = %s"
+            params.append(run_id)
+        if user_id is not None:
+            sql += " and m.user_id = %s"
+            params.append(user_id)
+        if run_id is not None and user_id is not None and not legacy_nullable_run:
+            sql += (
+                " and exists ("
+                "select 1 from memory.dream_runs r "
+                "where r.run_id = p.run_id and r.user_id = %s)"
+            )
+            params.append(user_id)
         return int(conn.execute(sql, params).fetchone()["n"])
 
 
@@ -953,6 +1051,7 @@ def list_proposals(
     include_reviewed: bool = False,
     user_id: str | None = None,
     database_url: str | None = None,
+    allow_legacy_admin: bool = False,
 ) -> list[dict]:
     """Return all proposals for a run, optionally excluding already-reviewed ones."""
     sql = """
@@ -967,15 +1066,28 @@ def list_proposals(
         join memory.dream_runs r on r.run_id = p.run_id
         where p.run_id = %s
     """
-    params: list = [run_id]
-    if user_id is not None:
-        sql += " and r.user_id = %s and m.user_id = %s"
-        params.extend([user_id, user_id])
-    if not include_reviewed:
-        sql += " and p.reviewer_action is null"
-    sql += " order by p.created_at"
     with _connect(database_url) as conn:
         _set_session_context(conn, user_id)
+        legacy_nullable_run = False
+        if user_id is not None:
+            authorized, legacy_nullable_run = _authorize_run(
+                conn,
+                run_id,
+                user_id,
+                allow_legacy_admin=allow_legacy_admin,
+            )
+            if not authorized:
+                return []
+        params: list = [run_id]
+        if user_id is not None:
+            sql += " and m.user_id = %s"
+            params.append(user_id)
+            if not legacy_nullable_run:
+                sql += " and r.user_id = %s"
+                params.append(user_id)
+        if not include_reviewed:
+            sql += " and p.reviewer_action is null"
+        sql += " order by p.created_at"
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 

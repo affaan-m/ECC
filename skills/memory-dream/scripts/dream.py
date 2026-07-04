@@ -241,12 +241,20 @@ def cmd_status(args) -> int:
 
 def cmd_proposals(args) -> int:
     user_id = args.user_id or DEFAULT_ACTOR_ID
-    proposals = controller.list_proposals(
-        args.run_id,
-        include_reviewed=args.all,
-        user_id=user_id,
-        database_url=args.database_url,
-    )
+    if args.allow_legacy_admin and not args.user_id:
+        print("ERROR: --allow-legacy-admin requires an explicit --user-id.")
+        return 1
+    try:
+        proposals = controller.list_proposals(
+            args.run_id,
+            include_reviewed=args.all,
+            user_id=user_id,
+            database_url=args.database_url,
+            allow_legacy_admin=args.allow_legacy_admin,
+        )
+    except PermissionError as exc:
+        print(f"ERROR: {exc}")
+        return 1
     if not proposals:
         print(f"no proposals for run_id={args.run_id}")
         return 0
@@ -293,10 +301,20 @@ def cmd_diff(args) -> int:
 
 def cmd_adopt(args) -> int:
     user_id = args.user_id or DEFAULT_ACTOR_ID
+    if args.allow_legacy_admin and not args.user_id:
+        print("ERROR: --allow-legacy-admin requires an explicit --user-id.")
+        return 1
     if not args.yes:
-        pending = controller.pending_proposals_count(
-            run_id=args.run_id, user_id=user_id, database_url=args.database_url,
-        )
+        try:
+            pending = controller.pending_proposals_count(
+                run_id=args.run_id,
+                user_id=user_id,
+                database_url=args.database_url,
+                allow_legacy_admin=args.allow_legacy_admin,
+            )
+        except PermissionError as exc:
+            print(f"ERROR: {exc}")
+            return 1
         if pending == 0:
             print(f"no pending proposals for run_id={args.run_id}")
             return 1
@@ -328,10 +346,20 @@ def cmd_adopt(args) -> int:
 
 def cmd_discard(args) -> int:
     user_id = args.user_id or DEFAULT_ACTOR_ID
+    if args.allow_legacy_admin and not args.user_id:
+        print("ERROR: --allow-legacy-admin requires an explicit --user-id.")
+        return 1
     if not args.yes:
-        pending = controller.pending_proposals_count(
-            run_id=args.run_id, user_id=user_id, database_url=args.database_url,
-        )
+        try:
+            pending = controller.pending_proposals_count(
+                run_id=args.run_id,
+                user_id=user_id,
+                database_url=args.database_url,
+                allow_legacy_admin=args.allow_legacy_admin,
+            )
+        except PermissionError as exc:
+            print(f"ERROR: {exc}")
+            return 1
         if pending == 0:
             print(f"no pending proposals for run_id={args.run_id}")
             return 1
@@ -432,6 +460,11 @@ def main() -> int:
     p_prop.add_argument("--user-id", help=f"Expected run owner (default: $ACTOR_ID or {DEFAULT_ACTOR_ID})")
     p_prop.add_argument("--all", action="store_true",
                         help="Include already-reviewed proposals")
+    p_prop.add_argument(
+        "--allow-legacy-admin",
+        action="store_true",
+        help="Allow review of legacy/admin dream_runs with a null owner; proposals stay scoped to --user-id",
+    )
     p_prop.set_defaults(func=cmd_proposals)
 
     p_diff = sub.add_parser("diff", help="Print diff markdown for a run")
