@@ -2511,7 +2511,8 @@ async function runTests() {
       assert.ok(bootstrapSrc.includes('session:start'), 'Bootstrap should invoke the session:start profile');
       assert.ok(bootstrapSrc.includes('run-with-flags.js'), 'Bootstrap should resolve the runner script');
       assert.ok(bootstrapSrc.includes('CLAUDE_PLUGIN_ROOT'), 'Bootstrap should consult CLAUDE_PLUGIN_ROOT');
-      assert.ok(bootstrapSrc.includes('plugins'), 'Bootstrap should probe known plugin roots');
+      assert.ok(bootstrapSrc.includes('resolve-ecc-root'), 'Bootstrap should delegate to the committed resolver module');
+      assert.ok(bootstrapSrc.includes('resolveEccRoot({ probe: rel })'), 'Bootstrap should call resolveEccRoot with the hook probe');
     })
   )
     passed++;
@@ -2532,7 +2533,7 @@ async function runTests() {
         assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
         assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
-        assert.ok(commandText.includes('plugins'), 'Lifecycle hook should probe known plugin roots');
+        assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
         assert.ok(!commandText.includes('head -n 1'), 'Lifecycle hook should not pick the first matching plugin path');
       }

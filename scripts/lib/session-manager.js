@@ -18,6 +18,10 @@ const {
   log
 } = require('./utils');
 
+function resolveCreatedTime(stats) {
+  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
+}
+
 // Session filename pattern: YYYY-MM-DD-[session-id]-session.tmp
 // The session-id is optional (old format) and can include letters, digits,
 // underscores, and hyphens, but must not start with a hyphen.
@@ -116,7 +120,7 @@ function getSessionCandidates(options = {}) {
         hasContent: stats.size > 0,
         size: stats.size,
         modifiedTime: stats.mtime,
-        createdTime: stats.birthtime || stats.ctime
+        createdTime: resolveCreatedTime(stats)
       });
     }
   }
@@ -151,7 +155,7 @@ function buildSessionRecord(sessionPath, metadata) {
     hasContent: stats.size > 0,
     size: stats.size,
     modifiedTime: stats.mtime,
-    createdTime: stats.birthtime || stats.ctime
+    createdTime: resolveCreatedTime(stats)
   };
 }
 
