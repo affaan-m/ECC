@@ -18,10 +18,6 @@ const {
   log
 } = require('./utils');
 
-function resolveCreatedTime(stats) {
-  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
-}
-
 // Session filename pattern: YYYY-MM-DD-[session-id]-session.tmp
 // The session-id is optional (old format) and can include letters, digits,
 // underscores, and hyphens, but must not start with a hyphen.
