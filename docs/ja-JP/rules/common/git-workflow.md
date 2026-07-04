@@ -10,7 +10,7 @@
 
 タイプ: feat, fix, refactor, docs, test, chore, perf, ci
 
-注記: Attribution は ~/.claude/settings.json でグローバルに無効化されています。
+注記: コミットの共同作成者の属性を無効にするには、`~/.claude/settings.json` に `"includeCoAuthoredBy": false` を設定します。Claude Code は既定で `Co-Authored-By` を付与し、ECC はこの設定を同梱しません。
 
 ## Pull Request ワークフロー
 

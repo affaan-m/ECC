@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 92,
+  "totalCommands": 93,
   "commands": [
     {
       "command": "aside",
@@ -618,6 +618,15 @@
       "path": "commands/orch-refine-code.md"
     },
     {
+      "command": "orch-review",
+      "description": "Run the orch-review native Workflow over a diff (local changes or a GitHub PR) and report blocking vs advisory findings. Surface for the orch-review workflow.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/orch-review.md"
+    },
+    {
       "command": "plan-prd",
       "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
       "type": "testing",
@@ -1011,7 +1020,7 @@
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 13,
+      "review": 14,
       "testing": 53
     },
     "topAgents": [

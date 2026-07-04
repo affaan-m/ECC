@@ -512,6 +512,95 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('honors ECC_MAX_INJECTED_INSTINCTS for injected instincts', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-max-instincts-${Date.now()}`);
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      for (let i = 1; i <= 8; i++) {
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: max-instinct-${i}\nconfidence: 0.9\n---\n## Action\nDo configurable thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 6 instinct(s)'), `default cap should inject 6, stderr: ${def.stderr}`);
+
+        const capped = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3' });
+        assert.strictEqual(capped.code, 0);
+        assert.ok(capped.stderr.includes('Injecting 3 instinct(s)'), `override should inject 3, stderr: ${capped.stderr}`);
+
+        const garbage = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: 'not-a-number' });
+        assert.strictEqual(garbage.code, 0);
+        assert.ok(garbage.stderr.includes('Injecting 6 instinct(s)'), `garbage override should fall back to default 6, stderr: ${garbage.stderr}`);
+
+        // A partial/non-integer value must be rejected whole, not truncated.
+        const partial = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3.9' });
+        assert.strictEqual(partial.code, 0);
+        assert.ok(partial.stderr.includes('Injecting 6 instinct(s)'), `non-integer override (3.9) should fall back to default 6, not truncate to 3, stderr: ${partial.stderr}`);
+
+        // Non-decimal numeric syntax (exponent, hex) must be rejected too.
+        // If "1e2" were accepted as 100, all 8 fixtures would inject; the
+        // default cap of 6 proves it fell back.
+        const exponent = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '1e2' });
+        assert.strictEqual(exponent.code, 0);
+        assert.ok(exponent.stderr.includes('Injecting 6 instinct(s)'), `exponent override (1e2) should fall back to default 6, stderr: ${exponent.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('honors ECC_INSTINCT_CONFIDENCE_THRESHOLD for injected instincts', async () => {
+      const isoHome = path.join(os.tmpdir(), `ecc-instinct-threshold-${Date.now()}`);
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // 4 high-confidence (0.9) + 4 low-confidence (0.6) instincts.
+      for (let i = 1; i <= 8; i++) {
+        const confidence = i <= 4 ? '0.9' : '0.6';
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: thr-instinct-${i}\nconfidence: ${confidence}\n---\n## Action\nDo threshold thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 4 instinct(s)'), `default 0.7 threshold should inject only the four 0.9 instincts, stderr: ${def.stderr}`);
+
+        const raised = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.95' });
+        assert.strictEqual(raised.code, 0);
+        assert.ok(!raised.stderr.includes('instinct(s) into session context'), `0.95 threshold should filter out all instincts, stderr: ${raised.stderr}`);
+
+        const lowered = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.5' });
+        assert.strictEqual(lowered.code, 0);
+        assert.ok(lowered.stderr.includes('Injecting 6 instinct(s)'), `0.5 threshold should pass all eight but cap at the default 6, stderr: ${lowered.stderr}`);
+
+        // Non-decimal syntax must fall back to the default 0.7, not be read
+        // as hex. If "0x1" were accepted as 1.0, zero instincts would inject
+        // (none are at full confidence); the default 0.7 injects the four 0.9s.
+        const hex = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0x1' });
+        assert.strictEqual(hex.code, 0);
+        assert.ok(hex.stderr.includes('Injecting 4 instinct(s)'), `hex threshold (0x1) should fall back to the 0.7 default and inject the four 0.9 instincts, stderr: ${hex.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('disables session-start additional context when requested', async () => {
       const isoHome = path.join(os.tmpdir(), `ecc-disabled-start-${Date.now()}`);
       const sessionsDir = getLegacySessionsDir(isoHome);
@@ -2511,7 +2600,8 @@ async function runTests() {
       assert.ok(bootstrapSrc.includes('session:start'), 'Bootstrap should invoke the session:start profile');
       assert.ok(bootstrapSrc.includes('run-with-flags.js'), 'Bootstrap should resolve the runner script');
       assert.ok(bootstrapSrc.includes('CLAUDE_PLUGIN_ROOT'), 'Bootstrap should consult CLAUDE_PLUGIN_ROOT');
-      assert.ok(bootstrapSrc.includes('plugins'), 'Bootstrap should probe known plugin roots');
+      assert.ok(bootstrapSrc.includes('resolve-ecc-root'), 'Bootstrap should delegate to the committed resolver module');
+      assert.ok(bootstrapSrc.includes('resolveEccRoot({ probe: rel })'), 'Bootstrap should call resolveEccRoot with the hook probe');
     })
   )
     passed++;
@@ -2532,7 +2622,7 @@ async function runTests() {
         assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
         assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
-        assert.ok(commandText.includes('plugins'), 'Lifecycle hook should probe known plugin roots');
+        assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
         assert.ok(!commandText.includes('head -n 1'), 'Lifecycle hook should not pick the first matching plugin path');
       }
@@ -3060,6 +3150,19 @@ async function runTests() {
       assert.ok(observerLoopSource.includes('prompt_content="$(cat "$prompt_file" 2>/dev/null || true)"'), 'observer-loop should read prompt_file into memory before claude is spawned');
       assert.ok(observerLoopSource.includes('-p "$prompt_content"'), 'observer-loop should pass in-memory prompt content to claude');
       assert.ok(!observerLoopSource.includes('-p "$(cat "$prompt_file")"'), 'observer-loop should not re-read prompt_file at invocation time');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('start-observer waits for PID file via poll instead of fixed sleep (#2295)', () => {
+      const startObserverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'start-observer.sh'), 'utf8');
+
+      assert.ok(!/^\s*sleep 2\s*$/m.test(startObserverSource), 'start-observer.sh should not use the fixed `sleep 2` wait after spawning the observer loop');
+      assert.ok(/\bseq 1 \d+\b/.test(startObserverSource), 'start-observer.sh should bound PID-file polling to a finite iteration count');
+      assert.ok(/\[ -f "\$PID_FILE" \] && break/.test(startObserverSource), 'start-observer.sh should exit polling as soon as $PID_FILE appears');
+      assert.ok(/sleep 0\.\d+/.test(startObserverSource), 'start-observer.sh should poll at sub-second intervals so healthy startups do not pay multi-second latency');
     })
   )
     passed++;

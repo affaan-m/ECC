@@ -10,7 +10,7 @@
 
 类型：feat, fix, refactor, docs, test, chore, perf, ci
 
-注意：通过 ~/.claude/settings.json 全局禁用了归因。
+注意：若要禁用共同作者归因，请在 `~/.claude/settings.json` 中设置 `"includeCoAuthoredBy": false`；Claude Code 默认会附加 `Co-Authored-By`，而 ECC 不会附带此设置。
 
 ## 拉取请求工作流程
 

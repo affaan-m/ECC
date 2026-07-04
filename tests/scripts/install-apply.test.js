@@ -123,6 +123,40 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('rewrites namespaced skill links to the ecc/ rules path (#2340)', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const result = run(['typescript'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const claudeRoot = path.join(homeDir, '.claude');
+      const skillPath = path.join(claudeRoot, 'skills', 'ecc', 'react-patterns', 'SKILL.md');
+      assert.ok(fs.existsSync(skillPath), 'react-patterns SKILL.md should be installed');
+
+      const content = fs.readFileSync(skillPath, 'utf8');
+      assert.ok(
+        content.includes('../../../rules/ecc/react/'),
+        'source-relative rules link should be rewritten for the ecc/ namespace'
+      );
+      assert.ok(
+        !content.includes('](../../rules/'),
+        'no un-namespaced ](../../rules/ links should remain'
+      );
+
+      // The rewritten link must resolve to a file that actually exists on disk.
+      const linkTarget = path.join(
+        path.dirname(skillPath),
+        '../../../rules/ecc/react/hooks.md'
+      );
+      assert.ok(fs.existsSync(linkTarget), 'rewritten link target should exist');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   if (test('installs Cursor configs and writes install-state', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');

@@ -10,7 +10,7 @@
 
 類型：feat、fix、refactor、docs、test、chore、perf、ci
 
-注意：歸屬透過 ~/.claude/settings.json 全域停用。
+注意：若要停用共同作者歸屬，請在 `~/.claude/settings.json` 中設定 `"includeCoAuthoredBy": false`；Claude Code 預設會附加 `Co-Authored-By`，而 ECC 不會隨附這個設定。
 
 ## Pull Request 工作流程
 
