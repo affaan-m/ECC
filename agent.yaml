@@ -213,6 +213,7 @@ commands:
   - orch-change-feature
   - orch-fix-defect
   - orch-refine-code
+  - orch-review
   - plan
   - plan-prd
   - pm2

@@ -94,6 +94,46 @@ function getExtraDestructiveRegex() {
   return extraDestructiveCacheRegex;
 }
 
+// Operator-supplied path exemptions. Comma-separated globs (`GATEGUARD_EXEMPT_GLOBS`)
+// matched against the normalized (forward-slash, lowercased) file path. First-touch
+// fact-forcing is skipped for a matching Edit/Write/MultiEdit target — intended for
+// low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports
+// this / what schema" carries no signal. Memoized on the env value; fail-open (a
+// malformed pattern is dropped, never throws). `*` matches within a path segment,
+// `**` across segments, `?` a single char.
+let exemptCacheKey = null;
+let exemptCacheRegexes = null;
+function getExemptMatchers() {
+  const raw = process.env.GATEGUARD_EXEMPT_GLOBS || '';
+  if (raw === exemptCacheKey) {
+    return exemptCacheRegexes;
+  }
+  exemptCacheKey = raw;
+  exemptCacheRegexes = raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(glob => {
+      const source = glob
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
+        .split('**')                           // ** boundaries (cross-segment)
+        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
+        .join('.*');                           // ** -> across segments
+      try {
+        return new RegExp(source);
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  return exemptCacheRegexes;
+}
+
+function isExemptPath(filePath) {
+  const norm = normalizeForMatch(filePath);
+  return getExemptMatchers().some(re => re.test(norm));
+}
+
 function isRoutineBashGateDisabled() {
   return ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.GATEGUARD_BASH_ROUTINE_DISABLED));
 }
@@ -1151,7 +1191,7 @@ function run(rawInput) {
 
   if (toolName === 'Edit' || toolName === 'Write') {
     const filePath = toolInput.file_path || '';
-    if (!filePath || isClaudeSettingsPath(filePath)) {
+    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath)) {
       return rawInput; // allow
     }
 
@@ -1182,7 +1222,7 @@ function run(rawInput) {
     const edits = toolInput.edits || [];
     for (const edit of edits) {
       const filePath = edit.file_path || '';
-      if (filePath && !isClaudeSettingsPath(filePath) && !isChecked(filePath)) {
+      if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath) && !isChecked(filePath)) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();

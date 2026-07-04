@@ -5,6 +5,30 @@ const path = require('path');
 
 const { writeInstallState } = require('../install-state');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
+const { buildInstallIndex, isNamespacedSource, rewriteRelativeLinks } = require('./link-rewrite');
+
+function isMarkdownPath(filePath) {
+  return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
+
+// Map every copy-file operation to { sourceRel, destRel } so relative links in
+// namespaced markdown can be rewritten to the file's actual installed location
+// (issue #2340). Returns null when the plan lacks the data needed to do so.
+function buildLinkIndexForPlan(plan) {
+  if (!plan || !plan.targetRoot || !Array.isArray(plan.operations)) {
+    return null;
+  }
+  const mappings = [];
+  for (const operation of plan.operations) {
+    if (operation.kind === 'copy-file' && operation.sourceRelativePath) {
+      mappings.push({
+        sourceRel: operation.sourceRelativePath,
+        destRel: path.relative(plan.targetRoot, operation.destinationPath),
+      });
+    }
+  }
+  return buildInstallIndex(mappings);
+}
 
 function readJsonObject(filePath, label) {
   let parsed;
@@ -118,6 +142,7 @@ function buildResolvedClaudeHooks(plan) {
 function applyInstallPlan(plan) {
   const resolvedClaudeHooksPlan = buildResolvedClaudeHooks(plan);
   const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
+  const linkIndex = buildLinkIndexForPlan(plan);
 
   for (const operation of plan.operations) {
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
@@ -146,6 +171,25 @@ function applyInstallPlan(plan) {
       const sourceConfig = readJsonObject(operation.sourcePath, 'MCP config');
       const filteredConfig = filterMcpConfig(sourceConfig, disabledServers).config;
       fs.writeFileSync(operation.destinationPath, formatJson(filteredConfig), 'utf8');
+      continue;
+    }
+
+    // Namespaced markdown (e.g. skills/<id> -> skills/ecc/<id>) needs its
+    // relative cross-directory links rewritten so they resolve after install
+    // (issue #2340). Files whose install path is unchanged (no namespace
+    // injected) and all non-markdown files stay on the byte-for-byte copy path.
+    if (
+      linkIndex
+      && operation.kind === 'copy-file'
+      && operation.sourceRelativePath
+      && isMarkdownPath(operation.destinationPath)
+      && isNamespacedSource(operation.sourceRelativePath, linkIndex)
+    ) {
+      const rewritten = rewriteRelativeLinks(
+        fs.readFileSync(operation.sourcePath, 'utf8'),
+        { sourceRel: operation.sourceRelativePath, index: linkIndex }
+      );
+      fs.writeFileSync(operation.destinationPath, rewritten, 'utf8');
       continue;
     }
 

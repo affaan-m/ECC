@@ -16,7 +16,10 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -41,7 +44,10 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -66,7 +72,10 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -108,7 +117,10 @@
         ".zed",
         "mcp-configs",
         "scripts/auto-update.js",
-        "scripts/setup-package-manager.js"
+        "scripts/setup-package-manager.js",
+        ".hermes",
+        ".openclaw",
+        ".kimi"
       ],
       "targets": [
         "claude",
@@ -121,7 +133,10 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -276,7 +291,10 @@
         "codebuddy",
         "joycode",
         "qwen",
-        "zed"
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
       ],
       "dependencies": [
         "platform-configs"
