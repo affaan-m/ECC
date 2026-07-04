@@ -15,7 +15,7 @@ from llm.core.interface import (
     RateLimitError,
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
-from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR, openai_compat_client_api_key
 
 ATLAS_BASE_URL = "https://api.atlascloud.ai/v1"
 DEFAULT_ATLAS_MODEL = "deepseek-ai/deepseek-v4-pro"
@@ -69,7 +69,7 @@ class AtlasProvider(LLMProvider):
         self.base_url = base_url or os.environ.get(self.base_url_env, self.default_base_url)
         env_model = os.environ.get(self.model_env)
         self.default_model = default_model or env_model or DEFAULT_ATLAS_MODEL
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.client = OpenAI(api_key=openai_compat_client_api_key(self.api_key), base_url=self.base_url)
         self._models = [
             ModelInfo(
                 name=self.default_model,
