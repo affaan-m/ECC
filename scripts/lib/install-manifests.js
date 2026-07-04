@@ -659,6 +659,7 @@ function resolveInstallPlan(options = {}) {
       projectRoot: targetPlanningInput.projectRoot,
       homeDir: targetPlanningInput.homeDir,
       modules: selectedModules,
+      allowValidationFailure: options.allowValidationFailure === true,
     })
     : null;
 

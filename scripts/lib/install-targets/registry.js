@@ -48,7 +48,7 @@ function planInstallTargetScaffold(options = {}) {
   };
   const validationIssues = adapter.validate(planningInput);
   const blockingIssues = validationIssues.filter(issue => issue.severity === 'error');
-  if (blockingIssues.length > 0) {
+  if (blockingIssues.length > 0 && !options.allowValidationFailure) {
     throw new Error(blockingIssues.map(issue => issue.message).join('; '));
   }
   const targetRoot = adapter.resolveRoot(planningInput);
