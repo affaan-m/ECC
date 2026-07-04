@@ -318,10 +318,10 @@ Open questions:
 - For the `injection_attempt_rate` chart, do we trust runtime `reason` string matching, or do we need a structured `matchedRule` field shipped from `EvalResult` (which has `matchedRule`) instead of only `RuntimeLogEntry` (which drops it)? Proposal: extend the runtime shipper to include `matchedRule` so injection attribution is structured, not string-parsed.
 
 Relevant grounding files (all absolute):
-- `/Users/affoon/GitHub/ECC/agentshield/src/evidence-pack/index.ts` (`EvidencePackInspectionResult`, `EvidencePackFleetOperatorReadback`, `EvidencePackFleetReviewItem`, `bundleDigest`, `BUNDLE_DIGEST_EXCLUDED_FILES`, `createRedactor`, `buildReplacements`)
-- `/Users/affoon/GitHub/ECC/agentshield/src/runtime/types.ts` (`RuntimeLogEntry`, `EvalResult`, `RuntimePolicy`) and `/Users/affoon/GitHub/ECC/agentshield/src/runtime/evaluator.ts` (`evaluateToolCall`, `logEvalResult`)
-- `/Users/affoon/GitHub/ECC/agentshield/src/watch/types.ts` (`DriftResult`, `WatchConfig`) and `/Users/affoon/GitHub/ECC/agentshield/src/watch/index.ts` (`formatWebhookPayload`, `dispatchAlert`)
-- `/Users/affoon/GitHub/ECC/agentshield/src/baseline/types.ts` (`SerializedBaseline`, `SerializedFinding`, `BaselineComparison`) and `/Users/affoon/GitHub/ECC/agentshield/src/baseline/index.ts` (`fingerprintFinding`)
-- `/Users/affoon/GitHub/ECC/agentshield/src/policy/types.ts` (`PolicyEvaluation`, `PolicyPack`, `PolicyExceptionSummary`)
-- `/Users/affoon/GitHub/ECC/agentshield/src/types.ts` (`Finding`, `RuntimeConfidence`, `FindingCategory`, `SecurityReport`, `SecurityScore`)
-- `/Users/affoon/GitHub/ECC/agentshield/README.md` (GitHub Action inputs/outputs, ecc-tools GitHub App, `ecc-agentshield` npm, ECC Tools Pro $19/seat/mo)
+- `agentshield/src/evidence-pack/index.ts` (`EvidencePackInspectionResult`, `EvidencePackFleetOperatorReadback`, `EvidencePackFleetReviewItem`, `bundleDigest`, `BUNDLE_DIGEST_EXCLUDED_FILES`, `createRedactor`, `buildReplacements`)
+- `agentshield/src/runtime/types.ts` (`RuntimeLogEntry`, `EvalResult`, `RuntimePolicy`) and `agentshield/src/runtime/evaluator.ts` (`evaluateToolCall`, `logEvalResult`)
+- `agentshield/src/watch/types.ts` (`DriftResult`, `WatchConfig`) and `agentshield/src/watch/index.ts` (`formatWebhookPayload`, `dispatchAlert`)
+- `agentshield/src/baseline/types.ts` (`SerializedBaseline`, `SerializedFinding`, `BaselineComparison`) and `agentshield/src/baseline/index.ts` (`fingerprintFinding`)
+- `agentshield/src/policy/types.ts` (`PolicyEvaluation`, `PolicyPack`, `PolicyExceptionSummary`)
+- `agentshield/src/types.ts` (`Finding`, `RuntimeConfidence`, `FindingCategory`, `SecurityReport`, `SecurityScore`)
+- `agentshield/README.md` (GitHub Action inputs/outputs, ecc-tools GitHub App, `ecc-agentshield` npm, ECC Tools Pro $19/seat/mo)
