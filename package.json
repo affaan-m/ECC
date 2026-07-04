@@ -261,6 +261,8 @@
     "skills/nodejs-keccak256/",
     "skills/nutrient-document-processing/",
     "skills/latency-critical-systems/",
+    "skills/orch-spec-delta/",
+    "skills/orch-spec-lifecycle/",
     "skills/perl-patterns/",
     "skills/perl-security/",
     "skills/perl-testing/",

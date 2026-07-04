@@ -325,6 +325,8 @@
         "skills/production-audit",
         "skills/skill-scout",
         "skills/skill-stocktake",
+        "skills/orch-spec-lifecycle",
+        "skills/orch-spec-delta",
         "skills/strategic-compact",
         "skills/tdd-workflow",
         "skills/verification-loop",

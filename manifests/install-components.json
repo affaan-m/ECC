@@ -227,6 +227,22 @@
       ]
     },
     {
+      "id": "skill:orch-spec-lifecycle",
+      "family": "skill",
+      "description": "Full OpenSpec lifecycle orchestration: spec-miner → fuzzer → to-test → tdd-guide → code-reviewer.",
+      "modules": [
+        "workflow-quality"
+      ]
+    },
+    {
+      "id": "skill:orch-spec-delta",
+      "family": "skill",
+      "description": "Per-PR OpenSpec delta orchestration: delta-writer → planner → tdd-guide → code-reviewer.",
+      "modules": [
+        "workflow-quality"
+      ]
+    },
+    {
       "id": "lang:swift",
       "family": "language",
       "description": "Swift, SwiftUI, and Apple platform engineering guidance.",
@@ -402,6 +418,54 @@
       "id": "agent:planner",
       "family": "agent",
       "description": "Feature implementation planning agent.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-miner",
+      "family": "agent",
+      "description": "Brownfield behavioral spec extraction agent for OpenSpec.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-fuzzer",
+      "family": "agent",
+      "description": "Semantic behavioral fuzzer that generates adversarial test cases from OpenSpec specs.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-delta-writer",
+      "family": "agent",
+      "description": "OpenSpec delta writer that compares git diffs against baseline specs and produces ADDED/MODIFIED/REMOVED blocks.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-to-test",
+      "family": "agent",
+      "description": "Test skeleton generator that converts OpenSpec Scenario blocks to framework-specific test files.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-freshness-checker",
+      "family": "agent",
+      "description": "Spec staleness checker that compares Last-verified commit hashes against HEAD for CI gating.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
+      "id": "agent:spec-guardian",
+      "family": "agent",
+      "description": "Continuous spec health monitor that runs weekly checks for stale specs, coverage gaps, and delta backlog.",
       "modules": [
         "agents-core"
       ]

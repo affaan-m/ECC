@@ -22,9 +22,10 @@ When invoked:
 
 1. **Gather context** — Run `git diff --staged` and `git diff` to see all changes. If no diff, check recent commits with `git log --oneline -5`.
 2. **Understand scope** — Identify which files changed, what feature/fix they relate to, and how they connect.
-3. **Read surrounding code** — Don't review changes in isolation. Read the full file and understand imports, dependencies, and call sites.
-4. **Apply review checklist** — Work through each category below, from CRITICAL to LOW.
-5. **Report findings** — Use the output format below. Only report issues you are confident about (>80% sure it is a real problem).
+3. **Check spec compliance** — If `openspec/specs/` or `openspec/deltas/` exist, run the spec compliance check below BEFORE proceeding to the general review checklist.
+4. **Read surrounding code** — Don't review changes in isolation. Read the full file and understand imports, dependencies, and call sites.
+5. **Apply review checklist** — Work through each category below, from CRITICAL to LOW.
+6. **Report findings** — Use the output format below. Only report issues you are confident about (>80% sure it is a real problem).
 
 ## Confidence-Based Filtering
 
@@ -109,6 +110,64 @@ specific to this codebase:
 
 When tempted to flag one of the above, ask: "Would a senior engineer on this
 team actually change this in review?" If no, skip.
+
+## Spec Compliance Verification
+
+When `openspec/specs/` or `openspec/deltas/` exist, run this check BEFORE the general review checklist. Spec violations are always HIGH severity — the code disagrees with its own documented contract.
+
+### Step 1: Find Relevant Specs
+
+Grep changed files against `<!-- enforced: -->` comments in all specs:
+
+```bash
+grep -rl '<!-- enforced:' openspec/specs/ | xargs grep -l '<changed-file>'
+```
+
+If no specs reference the changed files, skip spec compliance — this code isn't spec'd yet.
+
+### Step 2: Verify Invariants
+
+For each `### Invariant:` whose `<!-- enforced: -->` points into a changed file, verify the invariant still holds:
+
+- Read the invariant's description
+- Read the enforcement point in the changed code
+- Check: does the new code guarantee what the invariant promises?
+- If the code weakens or removes the guarantee → flag as HIGH: "Code changes violate invariant [name] — [description of violation]"
+
+### Step 3: Verify Requirements
+
+For each `### Requirement:` whose `<!-- enforced: -->` points into a changed file, verify scenarios still pass:
+
+- Read each `#### Scenario:` under the requirement
+- Trace the WHEN→THEN path through the changed code
+- Check: does the code still produce the expected outcomes?
+- If a scenario can no longer be satisfied → flag as HIGH: "Code changes break scenario [name] in Requirement [name]"
+
+### Step 4: Check Delta Compliance
+
+If `openspec/deltas/<capability>/delta.md` exists for the current branch:
+
+- **ADDED Requirements**: Are they actually implemented? Grep for the new `<!-- enforced: -->` location — it should exist in the diff.
+- **MODIFIED Requirements**: Does the code match the updated description and scenarios? Read both the old and new enforcement points.
+- **REMOVED Requirements**: Has the old behavior actually been removed? The old `<!-- enforced: -->` code should be gone or gated.
+
+| Delta Section | Check | Violation If |
+|---|---|---|
+| ADDED | New enforcement point exists | File or method not found in diff |
+| MODIFIED | Code matches updated spec | Code still matches OLD spec |
+| REMOVED | Old code is deleted/gated | Old enforcement still active |
+
+### Spec Compliance Output Format
+
+```
+[HIGH] Spec violation: Invariant 'balance must equal sum of transactions'
+File: src/ledger/reconciliation.js:142
+Spec: openspec/specs/ledger/spec.md
+Issue: The changed code now updates the balance without recalculating the sum of transactions.
+This breaks the invariant that balance = SUM(transactions).
+Delta: The MODIFIED Requirement in openspec/deltas/ledger/delta.md says the invariant
+should have been relaxed — but no delta entry exists for this invariant.
+```
 
 ## Review Checklist
 

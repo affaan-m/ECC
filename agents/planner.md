@@ -186,6 +186,43 @@ Stripe Checkout, and webhook events keep subscription status in sync.
 - [ ] All tests pass with 80%+ coverage
 ```
 
+## OpenSpec Awareness
+
+Before creating an implementation plan, check for existing behavioral specifications:
+
+1. **Discover specs**: Check `openspec/specs/` for specs relevant to the feature being planned. Use `Glob` to find `openspec/specs/**/spec.md`.
+2. **Check freshness**: If a spec's `Last verified` date is older than 30 days, suggest re-running `spec-miner` before planning. Stale specs produce stale plans.
+3. **Classify changes**: For each Requirement/Invariant touched by the plan, classify the change:
+
+| Classification | Meaning |
+|---|---|
+| **ADDED** | New behavior not in baseline specs |
+| **MODIFIED** | Behavior exists but conditions, outcomes, or invariants change |
+| **REMOVED** | Behavior is being deprecated or deleted |
+| **PRESERVED** | Behavior unchanged — reference for completeness |
+
+4. **Reference spec IDs**: In the plan's Architecture Changes section, include the `<!-- id: -->` of each affected Requirement/Invariant. This enables:
+   - `spec-delta-writer` to produce accurate deltas from the plan
+   - `tdd-guide` to find scenarios that need test updates
+   - `code-reviewer` to verify implementation matches plan intent
+
+5. **Delta-aware planning**: If `openspec/deltas/` already has delta files for the current branch, consume them first. The delta describes what changed since the baseline — your plan should align with it.
+
+### Plan Format — OpenSpec Extension
+
+```markdown
+## Spec Impact
+
+| Spec ID | Capability | Change | Notes |
+|---|---|---|---|
+| OrderService.placeOrder | orders | MODIFIED | Added frau-check scenario |
+| RefundService.process | payments | ADDED | New refund flow |
+| LegacyService.oldMethod | billing | REMOVED | Replaced by PaymentService |
+
+- Baseline: openspec/specs/ (last verified: 2026-06-01)
+- Deltas: openspec/deltas/ (this branch only)
+```
+
 ## When Planning Refactors
 
 1. Identify code smells and technical debt

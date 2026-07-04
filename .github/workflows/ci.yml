@@ -171,6 +171,17 @@ jobs:
         run: node scripts/ci/validate-no-personal-paths.js
         continue-on-error: false
 
+      - name: Validate OpenSpec syntax
+        run: node scripts/ci/validate-openspec-syntax.js
+        continue-on-error: false
+
+      - name: Check spec freshness
+        run: node scripts/ci/check-spec-freshness.js
+        continue-on-error: false
+        env:
+          ECC_SPEC_STALE_DAYS: '30'
+          ECC_SPEC_STALE_WARN_ONLY: 'true'
+
   python-tests:
     name: Python Tests
     runs-on: ubuntu-latest
