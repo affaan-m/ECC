@@ -29,7 +29,9 @@ description: Suggests manual context compaction at logical intervals to preserve
 
 ## Hook 設定
 
-新增到你的 `~/.claude/settings.json`：
+**以外掛安裝？** 無需任何設定。外掛的 `hooks/hooks.json` 已經註冊了 `suggest-compact.js`（Hook ID `pre:edit-write:suggest-compact`，在 `standard` 與 `strict` hook 設定檔中生效）。請勿將下方區塊複製到 `~/.claude/settings.json` — 外掛安裝中不存在 `~/.claude/scripts/`，且重複註冊外掛 hook 會導致重複執行。
+
+**如果是手動安裝**（`./install.sh`），新增到你的 `~/.claude/settings.json`：
 
 ```json
 {

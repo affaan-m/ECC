@@ -1,5 +1,6 @@
 ---
 inclusion: auto
+name: git-workflow
 description: Git workflow guidelines for conventional commits and pull request process
 ---
 

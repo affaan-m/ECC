@@ -188,6 +188,7 @@ To create your own, add a markdown file to `.kiro/steering/` with YAML frontmatt
 ```yaml
 ---
 inclusion: auto        # auto | fileMatch | manual
+name: my-steering      # required if inclusion is auto
 description: Brief explanation of what this steering file contains
 fileMatchPattern: "*.ts"  # required if inclusion is fileMatch
 ---

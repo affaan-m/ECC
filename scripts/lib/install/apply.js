@@ -5,28 +5,29 @@ const path = require('path');
 
 const { writeInstallState } = require('../install-state');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
-const { rewriteNamespaceLinks } = require('./rewrite-namespace-links');
+const { buildInstallIndex, isNamespacedSource, rewriteRelativeLinks } = require('./link-rewrite');
 
-const CLAUDE_ECC_NAMESPACE = 'ecc';
+function isMarkdownPath(filePath) {
+  return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
 
-// Claude home/project installs inject `skills/ecc/` and `rules/ecc/`. Markdown
-// copied under those namespaced roots may carry source-relative links to a
-// sibling top-level dir that break post-install; rewrite them on copy.
-function getNamespaceLinkRewrite(plan, destinationPath) {
-  if (!plan.adapter || (plan.adapter.target !== 'claude' && plan.adapter.target !== 'claude-project')) {
+// Map every copy-file operation to { sourceRel, destRel } so relative links in
+// namespaced markdown can be rewritten to the file's actual installed location
+// (issue #2340). Returns null when the plan lacks the data needed to do so.
+function buildLinkIndexForPlan(plan) {
+  if (!plan || !plan.targetRoot || !Array.isArray(plan.operations)) {
     return null;
   }
-  if (!plan.targetRoot || !destinationPath.toLowerCase().endsWith('.md')) {
-    return null;
+  const mappings = [];
+  for (const operation of plan.operations) {
+    if (operation.kind === 'copy-file' && operation.sourceRelativePath) {
+      mappings.push({
+        sourceRel: operation.sourceRelativePath,
+        destRel: path.relative(plan.targetRoot, operation.destinationPath),
+      });
+    }
   }
-  const namespacedRoots = [
-    path.join(plan.targetRoot, 'skills', CLAUDE_ECC_NAMESPACE) + path.sep,
-    path.join(plan.targetRoot, 'rules', CLAUDE_ECC_NAMESPACE) + path.sep,
-  ];
-  if (!namespacedRoots.some(root => destinationPath.startsWith(root))) {
-    return null;
-  }
-  return CLAUDE_ECC_NAMESPACE;
+  return buildInstallIndex(mappings);
 }
 
 function readJsonObject(filePath, label) {
@@ -141,6 +142,7 @@ function buildResolvedClaudeHooks(plan) {
 function applyInstallPlan(plan) {
   const resolvedClaudeHooksPlan = buildResolvedClaudeHooks(plan);
   const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
+  const linkIndex = buildLinkIndexForPlan(plan);
 
   for (const operation of plan.operations) {
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
@@ -172,12 +174,21 @@ function applyInstallPlan(plan) {
       continue;
     }
 
-    const namespace = operation.kind === 'copy-file'
-      ? getNamespaceLinkRewrite(plan, operation.destinationPath)
-      : null;
-    if (namespace) {
-      const original = fs.readFileSync(operation.sourcePath, 'utf8');
-      const rewritten = rewriteNamespaceLinks(original, namespace);
+    // Namespaced markdown (e.g. skills/<id> -> skills/ecc/<id>) needs its
+    // relative cross-directory links rewritten so they resolve after install
+    // (issue #2340). Files whose install path is unchanged (no namespace
+    // injected) and all non-markdown files stay on the byte-for-byte copy path.
+    if (
+      linkIndex
+      && operation.kind === 'copy-file'
+      && operation.sourceRelativePath
+      && isMarkdownPath(operation.destinationPath)
+      && isNamespacedSource(operation.sourceRelativePath, linkIndex)
+    ) {
+      const rewritten = rewriteRelativeLinks(
+        fs.readFileSync(operation.sourcePath, 'utf8'),
+        { sourceRel: operation.sourceRelativePath, index: linkIndex }
+      );
       fs.writeFileSync(operation.destinationPath, rewritten, 'utf8');
       continue;
     }

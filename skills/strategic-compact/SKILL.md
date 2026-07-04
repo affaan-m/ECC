@@ -40,7 +40,9 @@ Tool count alone is a weak proxy for window pressure: a few large file reads or 
 
 ## Hook Setup
 
-Add to your `~/.claude/settings.json`:
+**Installed as a plugin?** No setup is needed. The plugin's `hooks/hooks.json` already registers `suggest-compact.js` (hook id `pre:edit-write:suggest-compact`, active in the `standard` and `strict` hook profiles). Do not copy the block below into `~/.claude/settings.json` — `~/.claude/scripts/` does not exist on plugin installs, and duplicating a plugin hook causes double execution.
+
+**If installed manually** (`./install.sh`), add to your `~/.claude/settings.json`:
 
 ```json
 {
