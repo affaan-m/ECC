@@ -136,7 +136,7 @@ When language-specific rules and common rules conflict, **language-specific rule
 
 `common/coding-style.md` recommends immutability as a default principle. A language-specific `golang/coding-style.md` can override this:
 
-> Idiomatic Go uses pointer receivers for struct mutation — see [common/coding-style.md](../common/coding-style.md) for the general principle, but Go-idiomatic mutation is preferred here.
+> Idiomatic Go uses pointer receivers for struct mutation — see [common/coding-style.md](common/coding-style.md) for the general principle, but Go-idiomatic mutation is preferred here.
 
 ### Common rules with override notes
 
