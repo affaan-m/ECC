@@ -388,6 +388,19 @@ class TestSchemaHygieneSql(unittest.TestCase):
         self.assertLess(user_idx, cleanup_idx)
         self.assertLess(authority_idx, cleanup_idx)
 
+    def test_hygiene_deleted_tables_allow_service_delete_under_forced_rls(self):
+        sql = (REPO_ROOT / "init_schema.sql").read_text(encoding="utf-8")
+        for policy_name, table_name in (
+            ("retrieval_log_service_delete", "memory.retrieval_logs"),
+            ("trace_events_service_delete", "memory.trace_events"),
+            ("audit_service_delete", "memory.audit_log"),
+        ):
+            start = sql.index(f"create policy {policy_name} on {table_name}")
+            end = sql.index(";", start)
+            policy = sql[start:end]
+            self.assertIn("for delete", policy)
+            self.assertIn("using (memory.is_service_role())", policy)
+
     def test_launchd_uses_trusted_service_identity(self):
         plist = (REPO_ROOT / "docs" / "launchd" / "com.ecc.hygiene.plist").read_text(
             encoding="utf-8",

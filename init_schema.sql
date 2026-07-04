@@ -530,6 +530,10 @@ create policy retrieval_log_insert on memory.retrieval_logs
         or user_id = memory.get_current_user_id()
     );
 
+create policy retrieval_log_service_delete on memory.retrieval_logs
+    for delete
+    using (memory.is_service_role());
+
 -- 4e. audit_log RLS
 alter table memory.audit_log enable row level security;
 alter table memory.audit_log force row level security;
@@ -547,6 +551,10 @@ create policy audit_insert on memory.audit_log
         memory.is_service_role()
         or user_id = memory.get_current_user_id()
     );
+
+create policy audit_service_delete on memory.audit_log
+    for delete
+    using (memory.is_service_role());
 
 -- 4f. pending_org_approvals RLS
 alter table memory.pending_org_approvals enable row level security;
@@ -592,6 +600,10 @@ create policy trace_events_insert on memory.trace_events
         memory.is_service_role()
         or user_id = memory.get_current_user_id()
     );
+
+create policy trace_events_service_delete on memory.trace_events
+    for delete
+    using (memory.is_service_role());
 
 -- 4h. diagnostic_reports RLS
 alter table memory.diagnostic_reports enable row level security;
