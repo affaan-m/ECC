@@ -50,7 +50,7 @@ function compareStringArrays(left, right) {
   return leftValues.every((value, index) => value === rightValues[index]);
 }
 
-function hasOpencodeBuildWarning(issues) {
+function hasOpencodeBuildError(issues) {
   return Array.isArray(issues) && issues.some(issue => issue.code === OPENCODE_PLUGIN_NOT_BUILT_CODE);
 }
 
@@ -938,7 +938,7 @@ function createRepairPlanFromRecord(record, context, options = {}) {
     excludeComponentIds: state.request.excludeComponents || [],
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
-    allowValidationFailure: options.allowValidationFailure === true
+    exemptValidationCodes: options.exemptValidationCodes || [],
   });
 
   return {
@@ -984,12 +984,12 @@ function repairInstalledStates(options = {}) {
 
     try {
       const needsOpencodeBuild = record.adapter.target === 'opencode'
-        && hasOpencodeBuildWarning(getOpencodeBuildValidationIssues(context));
+        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
       const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
 
       if (needsOpencodeBuild && options.dryRun) {
         const desiredPlan = createRepairPlanFromRecord(record, context, {
-          allowValidationFailure: true
+          exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
         });
         const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
         const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
@@ -997,11 +997,11 @@ function repairInstalledStates(options = {}) {
 
         return {
           adapter: record.adapter,
-          status: plannedRepairs.length > 0 ? 'planned' : 'ok',
+          status: 'planned',
           installStatePath: record.installStatePath,
           repairedPaths: [],
           plannedRepairs,
-          stateRefreshed: plannedRepairs.length === 0,
+          stateRefreshed: false,
           error: null
         };
       }

@@ -140,7 +140,13 @@ function writeOpencodeState(homeDir, overrides = {}) {
 
 function withTemporarilyMovedPath(filePath, callback) {
   if (!fs.existsSync(filePath)) {
-    return callback(null);
+    try {
+      return callback(null);
+    } finally {
+      if (fs.existsSync(filePath)) {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      }
+    }
   }
 
   const backupPath = `${filePath}.backup-${process.pid}-${Date.now()}`;
@@ -876,6 +882,30 @@ function runTests() {
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('withTemporarilyMovedPath cleans up newly created paths when nothing was pre-existing', () => {
+    const filePath = path.join(REPO_ROOT, '.opencode', 'dist');
+    const backupPath = `${filePath}.backup-${process.pid}-test`;
+
+    try {
+      fs.rmSync(filePath, { recursive: true, force: true });
+      fs.rmSync(backupPath, { recursive: true, force: true });
+
+      const result = withTemporarilyMovedPath(filePath, receivedBackupPath => {
+        assert.strictEqual(receivedBackupPath, null);
+        fs.mkdirSync(path.join(filePath, 'plugins'), { recursive: true });
+        fs.mkdirSync(path.join(filePath, 'tools'), { recursive: true });
+        fs.writeFileSync(path.join(filePath, 'index.js'), '// temp build\n');
+        return 'callback-result';
+      });
+
+      assert.strictEqual(result, 'callback-result');
+      assert.ok(!fs.existsSync(filePath), 'Temporary path should be removed after the callback');
+    } finally {
+      fs.rmSync(filePath, { recursive: true, force: true });
+      fs.rmSync(backupPath, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 

@@ -714,7 +714,7 @@ function createManifestInstallPlan(options = {}) {
     includeComponentIds: options.includeComponentIds || [],
     excludeComponentIds: options.excludeComponentIds || [],
     target,
-    allowValidationFailure: options.allowValidationFailure === true
+    exemptValidationCodes: options.exemptValidationCodes || [],
   });
   const adapter = getInstallTargetAdapter(target);
   const operations = plan.operations.flatMap(operation => materializeScaffoldOperation(sourceRoot, operation));
