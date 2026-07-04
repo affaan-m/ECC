@@ -1165,21 +1165,35 @@ src/main.ts
   })) passed++; else failed++;
 
   if (test('createdTime falls back to ctime when birthtime is epoch-zero', () => {
-    // Some filesystems (e.g. overlayfs in containers) report birthtime as
-    // epoch 0. A Date object is always truthy, so `birthtime || ctime` would
-    // never fall back; the source compares birthtimeMs > 0 instead. Verify the
-    // resolved createdTime is always a non-zero Date regardless of birthtime.
-    const stats = fs.statSync(r33FilePath);
-    assert.ok(stats.ctime instanceof Date, 'ctime should exist');
-    const expected = stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
-    assert.ok(expected.getTime() > 0, 'Resolved created time should be non-zero');
-    const session = sessionManager.getSessionById('r33birth');
-    assert.ok(session, 'Should find the session');
-    assert.strictEqual(
-      session.createdTime.getTime(),
-      expected.getTime(),
-      'createdTime should fall back to ctime when birthtime is epoch-zero'
-    );
+    const originalStatSync = fs.statSync;
+    const realStats = originalStatSync(r33FilePath);
+    const fallbackCtime = new Date('2024-01-02T03:04:05.000Z');
+
+    fs.statSync = targetPath => {
+      if (path.resolve(targetPath) === path.resolve(r33FilePath)) {
+        return {
+          ...realStats,
+          birthtime: new Date(0),
+          birthtimeMs: 0,
+          ctime: fallbackCtime,
+          ctimeMs: fallbackCtime.getTime()
+        };
+      }
+      return originalStatSync(targetPath);
+    };
+
+    try {
+      const session = sessionManager.getSessionById('r33birth');
+      assert.ok(session, 'Should find the session');
+      assert.ok(session.createdTime instanceof Date, 'createdTime should be a Date');
+      assert.strictEqual(
+        session.createdTime.getTime(),
+        fallbackCtime.getTime(),
+        'createdTime should fall back to ctime when birthtime is epoch-zero'
+      );
+    } finally {
+      fs.statSync = originalStatSync;
+    }
   })) passed++; else failed++;
 
   // Cleanup Round 33 HOME override

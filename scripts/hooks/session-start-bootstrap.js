@@ -29,18 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-
-const CURRENT_PLUGIN_SLUG = 'ecc';
-const LEGACY_PLUGIN_SLUG = 'everything-claude-code';
-const KNOWN_PLUGIN_PATHS = [
-  [CURRENT_PLUGIN_SLUG],
-  [`${CURRENT_PLUGIN_SLUG}@${CURRENT_PLUGIN_SLUG}`],
-  ['marketplaces', CURRENT_PLUGIN_SLUG],
-  [LEGACY_PLUGIN_SLUG],
-  [`${LEGACY_PLUGIN_SLUG}@${LEGACY_PLUGIN_SLUG}`],
-  ['marketplaces', LEGACY_PLUGIN_SLUG],
-];
-const CACHE_PLUGIN_SLUGS = [CURRENT_PLUGIN_SLUG, LEGACY_PLUGIN_SLUG];
+const { resolveEccRoot } = require('../lib/resolve-ecc-root');
 
 // Read the raw JSON event from stdin
 const raw = fs.readFileSync(0, 'utf8');
@@ -48,74 +37,9 @@ const raw = fs.readFileSync(0, 'utf8');
 // Path (relative to plugin root) to the hook runner
 const rel = path.join('scripts', 'hooks', 'run-with-flags.js');
 
-/**
- * Returns true when `candidate` looks like a valid ECC plugin root, i.e. the
- * run-with-flags.js runner exists inside it.
- *
- * @param {unknown} candidate
- * @returns {boolean}
- */
-function hasRunnerRoot(candidate) {
-  const value = typeof candidate === 'string' ? candidate.trim() : '';
-  return value.length > 0 && fs.existsSync(path.join(path.resolve(value), rel));
-}
-
-/**
- * Resolves the ECC plugin root using the following priority order:
- *   1. CLAUDE_PLUGIN_ROOT environment variable
- *   2. ~/.claude (direct install)
- *   3. Several well-known plugin sub-paths under ~/.claude/plugins/ (current + legacy)
- *   4. Versioned cache directories under ~/.claude/plugins/cache/{ecc,everything-claude-code}/
- *   5. Falls back to ~/.claude if nothing else matches
- *
- * @returns {string}
- */
-function resolvePluginRoot() {
-  const envRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
-  if (hasRunnerRoot(envRoot)) {
-    return path.resolve(envRoot.trim());
-  }
-
-  const home = require('os').homedir();
-  const claudeDir = path.join(home, '.claude');
-
-  if (hasRunnerRoot(claudeDir)) {
-    return claudeDir;
-  }
-
-  const knownPaths = KNOWN_PLUGIN_PATHS.map((segments) =>
-    path.join(claudeDir, 'plugins', ...segments)
-  );
-
-  for (const candidate of knownPaths) {
-    if (hasRunnerRoot(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Walk versioned cache: ~/.claude/plugins/cache/{ecc,everything-claude-code}/<org>/<version>/
-  try {
-    for (const slug of CACHE_PLUGIN_SLUGS) {
-      const cacheBase = path.join(claudeDir, 'plugins', 'cache', slug);
-      for (const org of fs.readdirSync(cacheBase, { withFileTypes: true })) {
-        if (!org.isDirectory()) continue;
-        for (const version of fs.readdirSync(path.join(cacheBase, org.name), { withFileTypes: true })) {
-          if (!version.isDirectory()) continue;
-          const candidate = path.join(cacheBase, org.name, version.name);
-          if (hasRunnerRoot(candidate)) {
-            return candidate;
-          }
-        }
-      }
-    }
-  } catch {
-    // cache directory may not exist; that's fine
-  }
-
-  return claudeDir;
-}
-
-const root = resolvePluginRoot();
+// Resolve the ECC plugin root via the shared resolver, probing for the runner
+// so a valid root is one that actually contains run-with-flags.js.
+const root = resolveEccRoot({ probe: rel });
 const script = path.join(root, rel);
 
 if (fs.existsSync(script)) {
