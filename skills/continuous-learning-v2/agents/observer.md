@@ -121,7 +121,7 @@ Validate and sanitize all user input before processing.
 
 When creating instincts, determine scope based on these heuristics:
 
-> **Scope Decision Guide** – See the canonical table in `skills/continuous-learning-v2/SKILL.md` (lines 271‑282).
+> **Scope Decision Guide** – See the canonical table under the "Scope Decision Guide" heading in `skills/continuous-learning-v2/SKILL.md`.
 
 **When in doubt, default to `scope: project`** — it's safer to be project-specific and promote later than to contaminate the global space.
 
