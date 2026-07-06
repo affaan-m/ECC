@@ -458,10 +458,13 @@ function summarizeActiveInstincts(observerContext) {
     }))
     .filter(instinct => instinct.action)
     .sort((left, right) => {
+      // Primary: combined confidence + relevance. When relevance is off every
+      // _relevance is 0, so this reduces to the prior confidence-only ordering.
+      // Tie-breaks on a genuinely equal combined score: project scope first,
+      // then id (deterministic).
       const leftScore = left.confidence + left._relevance;
       const rightScore = right.confidence + right._relevance;
       if (rightScore !== leftScore) return rightScore - leftScore;
-      if (right.confidence !== left.confidence) return right.confidence - left.confidence;
       if (left._scopeLabel !== right._scopeLabel) return left._scopeLabel === 'project' ? -1 : 1;
       return String(left.id).localeCompare(String(right.id));
     })
