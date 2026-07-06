@@ -272,6 +272,7 @@
         "skills/eval-harness",
         "skills/hookify-rules",
         "skills/iterative-retrieval",
+        "skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
         "skills/skill-scout",

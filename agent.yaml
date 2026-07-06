@@ -108,6 +108,7 @@ skills:
   - perl-security
   - perl-testing
   - plankton-code-quality
+  - plan-canvas
   - plan-orchestrate
   - postgres-patterns
   - product-lens
@@ -215,6 +216,7 @@ commands:
   - orch-refine-code
   - orch-review
   - plan
+  - plan-canvas
   - plan-prd
   - pm2
   - projects

@@ -107,6 +107,7 @@
     "scripts/lib/",
     "scripts/list-installed.js",
     "scripts/loop-status.js",
+    "scripts/plan-canvas.js",
     "scripts/orchestration-status.js",
     "scripts/orchestrate-codex-worker.sh",
     "scripts/orchestrate-worktrees.js",
@@ -249,6 +250,7 @@
     "skills/perl-patterns/",
     "skills/perl-security/",
     "skills/perl-testing/",
+    "skills/plan-canvas/",
     "skills/plankton-code-quality/",
     "skills/parallel-execution-optimizer/",
     "skills/postgres-patterns/",
@@ -326,6 +328,7 @@
   "bin": {
     "ecc": "scripts/ecc.js",
     "ecc-control-pane": "scripts/control-pane.js",
+    "ecc-plan-canvas": "scripts/plan-canvas.js",
     "ecc-install": "scripts/install-apply.js"
   },
   "scripts": {
