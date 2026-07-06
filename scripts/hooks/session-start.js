@@ -24,6 +24,11 @@ const { resolveProjectContext, writeSessionLease, resolveSessionId, getHomunculu
 const { getPackageManager, getSelectionPrompt } = require('../lib/package-manager');
 const { listAliases } = require('../lib/session-aliases');
 const { detectProjectType } = require('../lib/project-detect');
+const {
+  isRelevanceRankingEnabled,
+  detectStackKeywords,
+  computeRelevanceBoost,
+} = require('../lib/instinct-relevance');
 const path = require('path');
 const fs = require('fs');
 
@@ -422,6 +427,20 @@ function summarizeActiveInstincts(observerContext) {
   const confidenceThreshold = getInstinctConfidenceThreshold();
   const maxInjected = getMaxInjectedInstincts();
 
+  // Relevance ranking (issue #2371 part b): at SessionStart there is no user
+  // task yet, so relevance is location/stack based. Project-scoped and
+  // stack-matching instincts get a small additive boost over their confidence.
+  // Gated by ECC_INSTINCT_RELEVANCE_RANKING (default on); when off, or when no
+  // stack is detected and nothing is project-scoped, every boost is 0 and the
+  // ranking collapses to confidence-only (unchanged behaviour).
+  // Detect the stack from the real project source tree (projectRoot), not the
+  // homunculus state dir (projectDir). In a global session projectRoot is empty,
+  // so detectStackKeywords falls back to process.cwd().
+  const relevanceEnabled = isRelevanceRankingEnabled();
+  const stackKeywords = relevanceEnabled
+    ? detectStackKeywords(observerContext.projectRoot || undefined)
+    : new Set();
+
   const deduped = new Map();
   for (const instinct of scopedInstincts) {
     if (!instinct.id || instinct.confidence < confidenceThreshold) continue;
@@ -435,9 +454,13 @@ function summarizeActiveInstincts(observerContext) {
     .map(instinct => ({
       ...instinct,
       action: extractInstinctAction(instinct.content),
+      _relevance: relevanceEnabled ? computeRelevanceBoost(instinct, stackKeywords) : 0,
     }))
     .filter(instinct => instinct.action)
     .sort((left, right) => {
+      const leftScore = left.confidence + left._relevance;
+      const rightScore = right.confidence + right._relevance;
+      if (rightScore !== leftScore) return rightScore - leftScore;
       if (right.confidence !== left.confidence) return right.confidence - left.confidence;
       if (left._scopeLabel !== right._scopeLabel) return left._scopeLabel === 'project' ? -1 : 1;
       return String(left.id).localeCompare(String(right.id));

@@ -601,6 +601,61 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('ranks stack-relevant instincts above higher-confidence unrelated ones (#2371)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-relevance-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // A stack-matching 0.75 instinct and an unrelated higher-confidence 0.9.
+      fs.writeFileSync(
+        path.join(instinctsDir, 'terraform-first.md'),
+        '---\nid: terraform-first\nconfidence: 0.75\ndomain: terraform\n---\n## Action\nRun terraform plan before every apply.\n'
+      );
+      fs.writeFileSync(
+        path.join(instinctsDir, 'unrelated-high.md'),
+        '---\nid: unrelated-high\nconfidence: 0.9\ndomain: python\n---\n## Action\nPin Python dependencies in requirements.txt.\n'
+      );
+      // A project root that detects as terraform via a *.tf marker.
+      const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-tf-project-'));
+      fs.writeFileSync(path.join(projectRoot, 'main.tf'), 'resource "null_resource" "x" {}\n');
+
+      const baseEnv = {
+        HOME: isoHome,
+        USERPROFILE: isoHome,
+        CLV2_HOMUNCULUS_DIR: homunculusDir,
+        CLAUDE_PROJECT_DIR: projectRoot,
+      };
+
+      try {
+        const on = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(on.code, 0);
+        const ctxOn = getSessionStartAdditionalContext(on.stdout);
+        const tfOn = ctxOn.indexOf('Run terraform plan before every apply.');
+        const pyOn = ctxOn.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOn !== -1 && pyOn !== -1, `both instincts should inject, ctx: ${ctxOn}`);
+        assert.ok(tfOn < pyOn, `stack-matching 0.75 should rank above unrelated 0.9 when relevance is on, ctx: ${ctxOn}`);
+
+        // Opting out restores pure confidence ordering (0.9 before 0.75).
+        const off = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          ...baseEnv,
+          ECC_INSTINCT_RELEVANCE_RANKING: 'off',
+        });
+        assert.strictEqual(off.code, 0);
+        const ctxOff = getSessionStartAdditionalContext(off.stdout);
+        const tfOff = ctxOff.indexOf('Run terraform plan before every apply.');
+        const pyOff = ctxOff.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOff !== -1 && pyOff !== -1, `both instincts should still inject, ctx: ${ctxOff}`);
+        assert.ok(pyOff < tfOff, `with ranking off, higher-confidence 0.9 should rank first, ctx: ${ctxOff}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('disables session-start additional context when requested', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-disabled-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);

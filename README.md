@@ -1365,6 +1365,13 @@ export ECC_MAX_INJECTED_INSTINCTS=6
 # Minimum confidence an instinct needs to be injected, 0-1 (default: 0.7)
 export ECC_INSTINCT_CONFIDENCE_THRESHOLD=0.7
 
+# SessionStart ranks injected instincts by confidence + project/stack relevance
+# (default: on). Project-scoped instincts, and instincts whose domain/trigger
+# matches the detected stack (languages, frameworks, plus terraform/dbt markers),
+# get a small ranking boost so they surface above unrelated higher-confidence
+# ones. Set to off/false/0/no to rank by confidence alone.
+export ECC_INSTINCT_RELEVANCE_RANKING=on
+
 # Keep context/scope/loop warnings but suppress API-rate cost estimates
 export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
 ```
