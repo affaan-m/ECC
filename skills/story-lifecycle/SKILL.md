@@ -188,7 +188,7 @@ When decomposing:
    - Tests: delegate to `tdd-workflow` or `tdd-guide`
    - Docs: update inline
 6. Walk through each acceptance criterion and verify it is met
-7. Mark story status as `done`, update the epic's stories table, and update the matching row in `.stories/sprints/sprint-<n>.md`'s stories table to `done`
+7. Mark story status as `done`, update the epic's stories table, and — **only if `Sprint` is not `unassigned`** — update the matching row in `.stories/sprints/sprint-<n>.md`'s stories table to `done`
 
 ### 5. status
 
