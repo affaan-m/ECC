@@ -6,9 +6,9 @@
  *
  * - `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
  *   partition the prompt, so their sum is the true context size of the turn.
- * - The context window is detected from the model id (`[1m]` marker) or from
- *   the observed token count (anything above 200k implies a 1M window even
- *   when logs drop the suffix).
+ * - The context window is detected from the model id (`[1m]` marker or a
+ *   known large-window model family) or from the observed token count
+ *   (anything above 200k implies a 1M window even when logs drop the suffix).
  * - Thresholds are window-scaled and env-overridable; re-reminders fire in
  *   fixed token "buckets" above the threshold so the suggestion only repeats
  *   after real context growth.
@@ -27,6 +27,16 @@ const DEFAULT_CONTEXT_INTERVAL_TOKENS = 60000;
 const DEFAULT_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MAX_TOKEN_SETTING = 10000000;
 const LARGE_WINDOW_MODEL_MARKER = '[1m]';
+// Model families whose default (not opt-in) context window is 1M, so their ids
+// never carry the `[1m]` marker (#2461). Checked in order, first match wins.
+// Deliberately excludes families where 1M is opt-in (e.g. Opus/Sonnet 4.x) —
+// those signal the large window via the `[1m]` marker when it is active.
+// Best-effort and expected to lag new releases; the env overrides below remain
+// the escape hatch for unlisted models.
+const KNOWN_MODEL_WINDOW_TOKENS = [
+  ['claude-fable-5', LARGE_CONTEXT_WINDOW_TOKENS],
+  ['claude-mythos-5', LARGE_CONTEXT_WINDOW_TOKENS]
+];
 
 /**
  * Read the trailing `tailBytes` of a file as UTF-8.
@@ -132,9 +142,10 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 
 /**
  * Detect the context window size for a turn.
- * 1M when the model id carries the `[1m]` marker, or when the observed token
- * count already exceeds the standard 200k window (covers logs that drop the
- * suffix); otherwise the standard 200k window.
+ * 1M when the model id carries the `[1m]` marker or belongs to a known
+ * default-1M model family (#2461), or when the observed token count already
+ * exceeds the standard 200k window (covers logs that drop the suffix);
+ * otherwise the standard 200k window.
  */
 function resolveContextWindowTokens(tokens, model) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
@@ -146,8 +157,18 @@ function resolveContextWindowTokens(tokens, model) {
     return envWindow;
   }
 
-  if (typeof model === 'string' && model.includes(LARGE_WINDOW_MODEL_MARKER)) {
-    return LARGE_CONTEXT_WINDOW_TOKENS;
+  if (typeof model === 'string') {
+    if (model.includes(LARGE_WINDOW_MODEL_MARKER)) {
+      return LARGE_CONTEXT_WINDOW_TOKENS;
+    }
+
+    // Newer large-window families ship without the [1m] marker and would
+    // otherwise fall through to the 200k default until usage crosses 200k,
+    // overstating context percentage ~5x (#2461).
+    const known = KNOWN_MODEL_WINDOW_TOKENS.find(([substring]) => model.includes(substring));
+    if (known) {
+      return known[1];
+    }
   }
 
   if (Number.isFinite(tokens) && tokens > STANDARD_CONTEXT_WINDOW_TOKENS) {

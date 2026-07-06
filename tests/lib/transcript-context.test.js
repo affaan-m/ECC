@@ -180,6 +180,15 @@ test('detects a 1M window when observed tokens exceed 200k (marker dropped)', ()
   assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
+test('detects a 1M window for known large-window models without a [1m] marker (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(187000, 'claude-fable-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('still defaults unknown models at low token counts to the 200k window (no false positives)', () => {
+  assert.strictEqual(resolveContextWindowTokens(187000, 'claude-haiku-4-5'), STANDARD_CONTEXT_WINDOW_TOKENS);
+});
+
 test('treats an empty model id as standard window', () => {
   assert.strictEqual(resolveContextWindowTokens(100000, ''), STANDARD_CONTEXT_WINDOW_TOKENS);
 });
