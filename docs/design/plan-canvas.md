@@ -1,9 +1,11 @@
 # Plan Canvas — interactive plan review in the browser
 
 Status: implemented (`feat/plan-canvas`)
-Inspired by: [lavish-axi](https://github.com/kunchenguid/lavish-axi) by @kunchenguid — the
+Inspired by: [lavish-axi](https://github.com/kunchenguid/lavish-axi) by @kunchenguid, the
 idea of a local, annotate-and-chat review loop over agent-generated artifacts. Plan Canvas is
 an original, ECC-native implementation of that idea, not a port.
+
+![Plan Canvas reviewing a plan on the left while the agent works in the terminal on the right](assets/plan-canvas-demo.png)
 
 ## Problem
 
