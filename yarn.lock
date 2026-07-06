@@ -593,6 +593,7 @@ __metadata:
     ecc: scripts/ecc.js
     ecc-control-pane: scripts/control-pane.js
     ecc-install: scripts/install-apply.js
+    ecc-plan-canvas: scripts/plan-canvas.js
   languageName: unknown
   linkType: soft
 

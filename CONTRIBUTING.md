@@ -464,7 +464,19 @@ How you tested this.
 - [ ] Clear descriptions
 ```
 
-### 3. Review Process
+### 3. Before You Push (avoid red CI)
+
+Run `npm test` locally. It is the same gauntlet CI runs, and it catches almost everything below.
+
+- **Changed `package.json`?** If you touched `bin`, `files`, or dependencies, run `yarn install --mode=update-lockfile` and commit the `yarn.lock` change. CI runs Yarn in hardened mode on public PRs and fails if the lockfile would be modified, so a stale `yarn.lock` breaks the build on its own.
+- **Added a skill, command, agent, hook, or CLI tool?** Wire up every surface it belongs to:
+  - `package.json` (`bin` and `files`), `manifests/install-components.json`, `manifests/install-modules.json`, and `agent.yaml`
+  - Regenerate the catalog (`npm run catalog:sync`) and command registry (`npm run command-registry:write`)
+  - Update the docs tables (`README.md`, `COMMANDS-QUICK-REF.md`, `docs/COMMAND-AGENT-MAP.md`)
+  - New script path? Add it to the publish surface allowlist (`tests/scripts/npm-publish-surface.test.js`)
+  - Cross-harness: for Codex, add `.agents/skills/<name>/` plus `agents/openai.yaml`. The Codex frontmatter validator only allows `name`, `description`, `metadata`, `license`, and `allowed-tools`, so drop keys like `version` from that copy.
+
+### 4. Review Process
 
 1. Maintainers review within 48 hours
 2. Address feedback if requested
