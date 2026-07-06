@@ -14,23 +14,11 @@ const COMPONENT_FAMILY_PREFIXES = {
   skill: 'skill:',
   locale: 'locale:',
 };
-const SUPPORTED_LOCALES = Object.freeze(['ja', 'zh-CN', 'ko-KR', 'pt-BR', 'ru', 'tr', 'vi-VN', 'zh-TW', 'de-DE']);
+const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'zh-TW']);
 const LOCALE_ALIAS_TO_COMPONENT_ID = Object.freeze({
-  'ja': 'locale:ja',
-  'ja-JP': 'locale:ja',
   'zh-CN': 'locale:zh-cn',
   'zh': 'locale:zh-cn',
-  'ko-KR': 'locale:ko-kr',
-  'ko': 'locale:ko-kr',
-  'pt-BR': 'locale:pt-br',
-  'pt': 'locale:pt-br',
-  'ru': 'locale:ru',
-  'tr': 'locale:tr',
-  'vi-VN': 'locale:vi-vn',
-  'vi': 'locale:vi-vn',
   'zh-TW': 'locale:zh-tw',
-  'de-DE': 'locale:de-de',
-  'de': 'locale:de-de',
 });
 
 function listSupportedLocales() {

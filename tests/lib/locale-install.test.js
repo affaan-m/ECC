@@ -46,65 +46,103 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('component catalog includes locale entries', () => {
+  if (test('component catalog includes only supported locale entries', () => {
     const components = listInstallComponents({ family: 'locale' });
-    assert.ok(components.some(component => component.id === 'locale:ja'));
+    // Only zh-cn and zh-tw locales are supported after i18n slim-down
     assert.ok(components.some(component => component.id === 'locale:zh-cn'));
-    assert.ok(components.some(component => component.id === 'locale:de-de'));
+    assert.ok(components.some(component => component.id === 'locale:zh-tw'));
+    assert.ok(!components.some(component => component.id === 'locale:ja'));
+    assert.ok(!components.some(component => component.id === 'locale:de-de'));
+    assert.ok(!components.some(component => component.id === 'locale:ko-kr'));
+    assert.ok(!components.some(component => component.id === 'locale:pt-br'));
+    assert.ok(!components.some(component => component.id === 'locale:tr'));
+    assert.ok(!components.some(component => component.id === 'locale:vi-vn'));
+    assert.ok(!components.some(component => component.id === 'locale:de-de'));
+    assert.ok(!components.some(component => component.id === 'locale:ru'));
     assert.ok(components.every(component => component.family === 'locale'));
   })) passed++; else failed++;
 
-  if (test('locale component resolves to the translated docs module', () => {
+  if (test('locale component resolves to the zh-cn translated docs module', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-'));
     try {
       const plan = resolveInstallPlan({
-        includeComponentIds: ['locale:ja'],
+        includeComponentIds: ['locale:zh-cn'],
         target: 'claude',
         homeDir,
       });
 
-      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-ja-jp']);
+      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-zh-cn']);
       assert.ok(
         plan.operations.some(operation => (
-          normalizePlanPath(operation.sourceRelativePath) === 'docs/ja-JP'
-          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/ja-JP')
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/zh-CN'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/zh-CN')
         )),
-        'Should map docs/ja-JP to ~/.claude/docs/ja-JP'
+        'Should map docs/zh-CN to ~/.claude/docs/zh-CN'
       );
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 
-  if (test('locale:de-de resolves to the German translated docs module', () => {
-    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-de-'));
+  if (test('locale:zh-tw resolves to the Traditional Chinese translated docs module', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-plan-zh-tw-'));
     try {
       const plan = resolveInstallPlan({
-        includeComponentIds: ['locale:de-de'],
+        includeComponentIds: ['locale:zh-tw'],
         target: 'claude',
         homeDir,
       });
 
-      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-de-de']);
+      assert.deepStrictEqual(plan.selectedModuleIds, ['docs-zh-tw']);
       assert.ok(
         plan.operations.some(operation => (
-          normalizePlanPath(operation.sourceRelativePath) === 'docs/de-DE'
-          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/de-DE')
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/zh-TW'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/zh-TW')
         )),
-        'Should map docs/de-DE to ~/.claude/docs/de-DE'
+        'Should map docs/zh-TW to ~/.claude/docs/zh-TW'
       );
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 
-  if (test('end-to-end: --locale de dry-run includes docs-de-de operations', () => {
-    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-de-'));
-    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-de-project-'));
+  if (test('end-to-end: unknown locale dry-run errors out', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-unknown-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-unknown-project-'));
+
+    try {
+      let error = null;
+      try {
+        runInstallApply([
+          '--locale', 'ja',
+          '--dry-run',
+          '--json',
+        ], {
+          cwd: projectDir,
+          env: { HOME: homeDir },
+        });
+      } catch (err) {
+        error = err;
+      }
+      assert.ok(error, 'Unknown locale should cause install-apply to fail');
+      assert.ok(
+        error.message.includes('Unsupported locale')
+        || error.message.includes('locale:ja'),
+        `Expected unknown locale error, got: ${error.message}`
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('end-to-end: --locale zh-CN dry-run includes docs-zh-cn operations', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-zh-CN-'));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-zh-CN-project-'));
 
     try {
       const output = runInstallApply([
-        '--locale', 'de',
+        '--locale', 'zh-CN',
         '--dry-run',
         '--json',
       ], {
@@ -114,14 +152,14 @@ function runTests() {
       const json = JSON.parse(output);
 
       assert.strictEqual(json.plan.mode, 'manifest');
-      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:de-de']);
-      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-de-de']);
+      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:zh-cn']);
+      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-zh-cn']);
       assert.ok(
         json.plan.operations.some(operation => (
-          normalizePlanPath(operation.sourceRelativePath) === 'docs/de-DE/README.md'
-          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/de-DE/README.md')
+          normalizePlanPath(operation.sourceRelativePath) === 'docs/zh-CN/README.md'
+          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/zh-CN/README.md')
         )),
-        'Should copy translated README into ~/.claude/docs/de-DE'
+        'Should copy translated README into ~/.claude/docs/zh-CN'
       );
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
@@ -129,71 +167,39 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('end-to-end: --locale ja dry-run includes docs-ja-jp operations', () => {
-    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-'));
-    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-dry-run-project-'));
-
-    try {
-      const output = runInstallApply([
-        '--locale', 'ja',
-        '--dry-run',
-        '--json',
-      ], {
-        cwd: projectDir,
-        env: { HOME: homeDir },
-      });
-      const json = JSON.parse(output);
-
-      assert.strictEqual(json.plan.mode, 'manifest');
-      assert.deepStrictEqual(json.plan.includedComponentIds, ['locale:ja']);
-      assert.deepStrictEqual(json.plan.selectedModuleIds, ['docs-ja-jp']);
-      assert.ok(
-        json.plan.operations.some(operation => (
-          normalizePlanPath(operation.sourceRelativePath) === 'docs/ja-JP/README.md'
-          && normalizePlanPath(operation.destinationPath).endsWith('/.claude/docs/ja-JP/README.md')
-        )),
-        'Should copy translated README into ~/.claude/docs/ja-JP'
-      );
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-      fs.rmSync(projectDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('end-to-end: legacy language plus --locale keeps legacy install and docs', () => {
+  if (test('end-to-end: legacy language plus unknown locale errors', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-legacy-dry-run-'));
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-legacy-dry-run-project-'));
 
     try {
-      const output = runInstallApply([
-        'typescript',
-        '--locale', 'ja',
-        '--dry-run',
-        '--json',
-      ], {
-        cwd: projectDir,
-        env: { HOME: homeDir },
-      });
-      const json = JSON.parse(output);
-
-      assert.strictEqual(json.plan.mode, 'legacy-compat');
-      assert.deepStrictEqual(json.plan.legacyLanguages, ['typescript']);
-      assert.ok(json.plan.includedComponentIds.includes('locale:ja'));
-      assert.ok(json.plan.selectedModuleIds.includes('framework-language'));
-      assert.ok(json.plan.selectedModuleIds.includes('docs-ja-jp'));
+      let error = null;
+      try {
+        runInstallApply([
+          'typescript',
+          '--locale', 'ja',
+          '--dry-run',
+          '--json',
+        ], {
+          cwd: projectDir,
+          env: { HOME: homeDir },
+        });
+      } catch (err) {
+        error = err;
+      }
+      assert.ok(error, 'Unknown locale with legacy language should fail');
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 
-  if (test('end-to-end: --locale ja installs translated docs side-by-side', () => {
+  if (test('end-to-end: --locale zh-TW installs translated docs side-by-side', () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-'));
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'locale-install-project-'));
 
     try {
       runInstallApply([
-        '--locale', 'ja',
+        '--locale', 'zh-TW',
       ], {
         cwd: projectDir,
         env: { HOME: homeDir },
@@ -201,8 +207,8 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       assert.ok(
-        fs.existsSync(path.join(claudeRoot, 'docs', 'ja-JP', 'README.md')),
-        'Should install Japanese README under docs/ja-JP'
+        fs.existsSync(path.join(claudeRoot, 'docs', 'zh-TW', 'README.md')),
+        'Should install Traditional Chinese README under docs/zh-TW'
       );
       assert.ok(
         !fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'configure-ecc', 'SKILL.md')),
@@ -211,8 +217,8 @@ function runTests() {
 
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      assert.deepStrictEqual(state.request.includeComponents, ['locale:ja']);
-      assert.deepStrictEqual(state.resolution.selectedModules, ['docs-ja-jp']);
+      assert.deepStrictEqual(state.request.includeComponents, ['locale:zh-tw']);
+      assert.deepStrictEqual(state.resolution.selectedModules, ['docs-zh-tw']);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
       fs.rmSync(projectDir, { recursive: true, force: true });

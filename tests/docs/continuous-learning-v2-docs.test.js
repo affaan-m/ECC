@@ -24,9 +24,6 @@ function test(name, fn) {
 const skillDocs = [
   'skills/continuous-learning-v2/SKILL.md',
   'docs/zh-CN/skills/continuous-learning-v2/SKILL.md',
-  'docs/tr/skills/continuous-learning-v2/SKILL.md',
-  'docs/ko-KR/skills/continuous-learning-v2/SKILL.md',
-  'docs/ja-JP/skills/continuous-learning-v2/SKILL.md',
   'docs/zh-TW/skills/continuous-learning-v2/SKILL.md',
 ];
 

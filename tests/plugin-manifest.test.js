@@ -110,11 +110,8 @@ test('AGENTS.md version line matches package.json', () => {
   assert.strictEqual(match[1], expectedVersion);
 });
 
-test('docs/tr/AGENTS.md version line matches package.json', () => {
-  const agentsSource = fs.readFileSync(trAgentsPath, 'utf8');
-  const match = agentsSource.match(new RegExp(`^\\*\\*Sürüm:\\*\\* (${semverPattern})$`, 'm'));
-  assert.ok(match, 'Expected docs/tr/AGENTS.md to declare a top-level version line');
-  assert.strictEqual(match[1], expectedVersion);
+test('docs/tr/AGENTS.md was removed in i18n slim-down', () => {
+  assert.ok(!fs.existsSync(trAgentsPath), 'docs/tr/AGENTS.md should be deleted after i18n slim-down');
 });
 
 test('docs/zh-CN/AGENTS.md version line matches package.json', () => {
@@ -156,14 +153,12 @@ test('.opencode/plugins/ecc-hooks.ts active plugin banner matches package.json',
   assert.strictEqual(match[1], expectedVersion);
 });
 
-test('docs/pt-BR/README.md latest release heading matches package.json', () => {
-  const source = fs.readFileSync(ptBrReadmePath, 'utf8');
-  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/pt-BR/README.md to advertise the current release heading');
+test('docs/pt-BR/README.md was removed in i18n slim-down', () => {
+  assert.ok(!fs.existsSync(ptBrReadmePath), 'docs/pt-BR/README.md should be deleted after i18n slim-down');
 });
 
-test('docs/tr/README.md latest release heading matches package.json', () => {
-  const source = fs.readFileSync(trReadmePath, 'utf8');
-  assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/tr/README.md to advertise the current release heading');
+test('docs/tr/README.md was removed in i18n slim-down', () => {
+  assert.ok(!fs.existsSync(trReadmePath), 'docs/tr/README.md should be deleted after i18n slim-down');
 });
 
 test('README.zh-CN.md latest release heading matches package.json', () => {
@@ -175,6 +170,7 @@ test('docs/zh-CN/README.md latest release heading matches package.json', () => {
   const source = fs.readFileSync(zhCnReadmePath, 'utf8');
   assert.ok(source.includes(`### v${expectedVersion} `), 'Expected docs/zh-CN/README.md to advertise the current release heading');
 });
+
 
 // ── Claude plugin manifest ────────────────────────────────────────────────────
 console.log('\n=== .claude-plugin/plugin.json ===\n');

@@ -24,9 +24,8 @@ function test(name, fn) {
 const publicInstallDocs = [
   'README.md',
   'README.zh-CN.md',
-  'docs/pt-BR/README.md',
   'docs/zh-CN/README.md',
-  'docs/ja-JP/skills/configure-ecc/SKILL.md',
+  'docs/zh-TW/README.md',
   'docs/zh-CN/skills/configure-ecc/SKILL.md',
 ];
 
@@ -53,18 +52,12 @@ const pluginAndManualInstallDocs = [
 const publicCommandNamespaceDocs = [
   'README.md',
   'README.zh-CN.md',
-  'docs/pt-BR/README.md',
-  'docs/tr/README.md',
-  'docs/ko-KR/README.md',
-  'docs/ja-JP/README.md',
   'docs/zh-CN/README.md',
   'docs/zh-TW/README.md',
 ];
 
 const manualClaudeSkillInstallDocs = [
   'README.md',
-  'docs/de-DE/README.md',
-  'docs/ru/README.md',
 ];
 
 for (const relativePath of pluginAndManualInstallDocs) {

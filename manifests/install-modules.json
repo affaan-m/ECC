@@ -806,22 +806,6 @@
       "stability": "stable"
     },
     {
-      "id": "docs-ja-jp",
-      "kind": "docs",
-      "description": "Japanese (ja-JP) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/ja-JP"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
       "id": "docs-zh-cn",
       "kind": "docs",
       "description": "Simplified Chinese (zh-CN) translated reference docs for agents, commands, skills, and rules.",
@@ -838,107 +822,11 @@
       "stability": "stable"
     },
     {
-      "id": "docs-ko-kr",
-      "kind": "docs",
-      "description": "Korean (ko-KR) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/ko-KR"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
-      "id": "docs-pt-br",
-      "kind": "docs",
-      "description": "Brazilian Portuguese (pt-BR) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/pt-BR"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
-      "id": "docs-ru",
-      "kind": "docs",
-      "description": "Russian (ru) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/ru"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
-      "id": "docs-tr",
-      "kind": "docs",
-      "description": "Turkish (tr) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/tr"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
-      "id": "docs-vi-vn",
-      "kind": "docs",
-      "description": "Vietnamese (vi-VN) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/vi-VN"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
       "id": "docs-zh-tw",
       "kind": "docs",
       "description": "Traditional Chinese (zh-TW) translated reference docs for agents, commands, skills, and rules.",
       "paths": [
         "docs/zh-TW"
-      ],
-      "targets": [
-        "claude",
-        "claude-project"
-      ],
-      "dependencies": [],
-      "defaultInstall": false,
-      "cost": "heavy",
-      "stability": "stable"
-    },
-    {
-      "id": "docs-de-de",
-      "kind": "docs",
-      "description": "German (de-DE) translated reference docs for agents, commands, skills, and rules.",
-      "paths": [
-        "docs/de-DE"
       ],
       "targets": [
         "claude",

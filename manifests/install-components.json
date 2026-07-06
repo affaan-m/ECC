@@ -559,14 +559,6 @@
       ]
     },
     {
-      "id": "locale:ja",
-      "family": "locale",
-      "description": "Japanese (ja-JP) translated reference docs installed to ~/.claude/docs/ja-JP/.",
-      "modules": [
-        "docs-ja-jp"
-      ]
-    },
-    {
       "id": "locale:zh-cn",
       "family": "locale",
       "description": "Simplified Chinese (zh-CN) translated reference docs installed to ~/.claude/docs/zh-CN/.",
@@ -575,59 +567,11 @@
       ]
     },
     {
-      "id": "locale:ko-kr",
-      "family": "locale",
-      "description": "Korean (ko-KR) translated reference docs installed to ~/.claude/docs/ko-KR/.",
-      "modules": [
-        "docs-ko-kr"
-      ]
-    },
-    {
-      "id": "locale:pt-br",
-      "family": "locale",
-      "description": "Brazilian Portuguese (pt-BR) translated reference docs installed to ~/.claude/docs/pt-BR/.",
-      "modules": [
-        "docs-pt-br"
-      ]
-    },
-    {
-      "id": "locale:ru",
-      "family": "locale",
-      "description": "Russian (ru) translated reference docs installed to ~/.claude/docs/ru/.",
-      "modules": [
-        "docs-ru"
-      ]
-    },
-    {
-      "id": "locale:tr",
-      "family": "locale",
-      "description": "Turkish (tr) translated reference docs installed to ~/.claude/docs/tr/.",
-      "modules": [
-        "docs-tr"
-      ]
-    },
-    {
-      "id": "locale:vi-vn",
-      "family": "locale",
-      "description": "Vietnamese (vi-VN) translated reference docs installed to ~/.claude/docs/vi-VN/.",
-      "modules": [
-        "docs-vi-vn"
-      ]
-    },
-    {
       "id": "locale:zh-tw",
       "family": "locale",
       "description": "Traditional Chinese (zh-TW) translated reference docs installed to ~/.claude/docs/zh-TW/.",
       "modules": [
         "docs-zh-tw"
-      ]
-    },
-    {
-      "id": "locale:de-de",
-      "family": "locale",
-      "description": "German (de-DE) translated reference docs installed to ~/.claude/docs/de-DE/.",
-      "modules": [
-        "docs-de-de"
       ]
     }
   ]

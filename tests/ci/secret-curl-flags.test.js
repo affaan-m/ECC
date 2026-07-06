@@ -11,7 +11,6 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 
 const jiraDocs = [
   'skills/jira-integration/SKILL.md',
-  'docs/ja-JP/skills/jira-integration/SKILL.md',
   'docs/zh-CN/skills/jira-integration/SKILL.md',
 ];
 

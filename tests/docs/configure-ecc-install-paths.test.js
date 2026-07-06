@@ -9,7 +9,6 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const configureEccDocs = [
   'skills/configure-ecc/SKILL.md',
   'docs/zh-CN/skills/configure-ecc/SKILL.md',
-  'docs/ja-JP/skills/configure-ecc/SKILL.md',
 ];
 
 let passed = 0;
