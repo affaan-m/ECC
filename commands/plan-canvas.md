@@ -16,8 +16,8 @@ skill for the full workflow and rules.
 
 1. Resolve the artifact: the given path, else the most recently modified
    `.claude/plans/*.plan.md`, else ask what to review.
-2. `node scripts/plan-canvas.js open <artifact>` — opens the user's browser.
-3. `node scripts/plan-canvas.js await <artifact>` — block until feedback,
+2. `ecc-plan-canvas open <artifact>` — opens the user's browser.
+3. `ecc-plan-canvas await <artifact>` — block until feedback,
    verdict, or session end; leave it running.
 4. Apply feedback to the artifact file (the canvas live-reloads), answer with
    `await <artifact> --reply "..."`, and repeat until the user approves or

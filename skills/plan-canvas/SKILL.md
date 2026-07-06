@@ -30,19 +30,21 @@ remote URLs. The canvas serves local artifact files only.
 
 ## How It Works
 
-The CLI lives at `scripts/plan-canvas.js` in the ECC root (plugin installs:
-`$CLAUDE_PLUGIN_ROOT/scripts/plan-canvas.js`; npm: `ecc-plan-canvas`). It
-manages a detached loopback server (`127.0.0.1:4517`) shared by all sessions,
-keyed by artifact path — no session ids to track.
+Invoke the CLI as `ecc-plan-canvas` — the bin shipped by the `ecc-universal`
+package (on PATH after a global/plugin install; `node "$CLAUDE_PLUGIN_ROOT/scripts/plan-canvas.js"`
+also works for plugin installs). Run it from the project you are reviewing in;
+it works from any working directory. It manages a detached loopback server
+(`127.0.0.1:4517`) shared by all sessions, keyed by artifact path — no session
+ids to track.
 
 ```bash
 # 1. Open the artifact in the user's browser (returns immediately)
-node scripts/plan-canvas.js open .claude/plans/feature.plan.md
+ecc-plan-canvas open .claude/plans/feature.plan.md
 
 # 2. Block until the human responds. Leave running; re-run if interrupted —
 #    queued feedback is never lost. Run in the background if your harness
 #    time-limits foreground commands.
-node scripts/plan-canvas.js await .claude/plans/feature.plan.md
+ecc-plan-canvas await .claude/plans/feature.plan.md
 ```
 
 `await` prints JSON when the human acts:
@@ -69,10 +71,10 @@ node scripts/plan-canvas.js await .claude/plans/feature.plan.md
 **3. Respond in the canvas**, then keep listening — one command does both:
 
 ```bash
-node scripts/plan-canvas.js await <file> --reply "Split Phase 2 as requested — take a look."
+ecc-plan-canvas await <file> --reply "Split Phase 2 as requested — take a look."
 ```
 
-**4. End** when review concludes: `node scripts/plan-canvas.js end <file>`.
+**4. End** when review concludes: `ecc-plan-canvas end <file>`.
 
 ## Rules
 
@@ -97,10 +99,10 @@ node scripts/plan-canvas.js await <file> --reply "Split Phase 2 as requested —
 `.claude/plans/notifications.plan.md` and must WAIT for confirmation:
 
 ```bash
-node scripts/plan-canvas.js open .claude/plans/notifications.plan.md
-node scripts/plan-canvas.js await .claude/plans/notifications.plan.md
+ecc-plan-canvas open .claude/plans/notifications.plan.md
+ecc-plan-canvas await .claude/plans/notifications.plan.md
 # → {"status":"feedback","items":[{"kind":"verdict","verdict":"approve"}]}
-node scripts/plan-canvas.js end .claude/plans/notifications.plan.md
+ecc-plan-canvas end .claude/plans/notifications.plan.md
 # plan is confirmed — begin implementation
 ```
 
@@ -108,7 +110,7 @@ node scripts/plan-canvas.js end .claude/plans/notifications.plan.md
 
 ```bash
 # await returned annotations → edit the .plan.md (canvas live-reloads)
-node scripts/plan-canvas.js await <file> --reply "Reworked the risk table."
+ecc-plan-canvas await <file> --reply "Reworked the risk table."
 # → blocks again until the next response
 ```
 

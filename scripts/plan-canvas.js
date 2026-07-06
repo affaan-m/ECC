@@ -193,7 +193,7 @@ async function cmdOpen(file, args, { stateDir, port }) {
     url,
     browser: launched ? 'opened' : 'not opened',
     next_step:
-      'Run `plan-canvas await <file>` and leave it running; it returns when the human sends feedback, a verdict, or ends the session.'
+      'Run `ecc-plan-canvas await <file>` and leave it running; it returns when the human sends feedback, a verdict, or ends the session.'
   };
 }
 
@@ -240,7 +240,7 @@ async function cmdAwait(file, args, { stateDir, port }) {
   if (result.status === 'feedback') {
     result.next_step = result.sessionEnded
       ? 'The user sent this feedback and ended the session. Address it and report in chat; do not reopen the canvas uninvited.'
-      : 'Address the feedback, then run `await <file> --reply "<what you changed>"` to answer in the canvas and keep listening.';
+      : 'Address the feedback, then run `ecc-plan-canvas await <file> --reply "<what you changed>"` to answer in the canvas and keep listening.';
   } else if (result.status === 'ended') {
     result.next_step =
       result.endedBy === 'user'
