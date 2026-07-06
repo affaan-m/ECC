@@ -13,6 +13,42 @@ const path = require('path');
 
 const { escapeHtml } = require('./markdown');
 
+// Pinned Mermaid ESM build, loaded in the browser only when an artifact
+// actually contains a diagram. Override with a local/vendored URL (e.g. an
+// air-gapped mirror) via ECC_PLAN_CANVAS_MERMAID_URL. If the fetch fails, the
+// diagram source stays visible as a styled code block — nothing breaks.
+const DEFAULT_MERMAID_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
+
+function mermaidUrl(env = process.env) {
+  const override = env.ECC_PLAN_CANVAS_MERMAID_URL;
+  return override && String(override).trim() ? String(override).trim() : DEFAULT_MERMAID_URL;
+}
+
+// Browser module that renders `<pre class="mermaid">` blocks, themed to match
+// the ECC canvas. Kept import-only so a CDN failure degrades gracefully.
+function mermaidLoaderScript(url) {
+  return `<script type="module">
+  try {
+    const mermaid = (await import(${JSON.stringify(url)})).default;
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'dark',
+      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      themeVariables: {
+        primaryColor: '#13161e', primaryBorderColor: '#6885e8', primaryTextColor: '#dfe2e9',
+        lineColor: '#80859a', secondaryColor: '#191d2a', tertiaryColor: '#101218',
+        background: '#080a0e', mainBkg: '#13161e', clusterBkg: '#0d0f14'
+      }
+    });
+    await mermaid.run({ querySelector: '.mermaid' });
+  } catch (err) {
+    document.querySelectorAll('.mermaid').forEach(el => el.classList.add('mermaid-unrendered'));
+    console.warn('Mermaid render skipped:', err && err.message);
+  }
+</script>`;
+}
+
 // Design tokens shared by the chrome and the markdown artifact template.
 const TOKENS_CSS = `
   :root{
@@ -409,6 +445,7 @@ function renderCanvasHtml(session, { clientPath = '/client.js', cssPath = '/canv
 
 // ECC-styled document template for rendered markdown plan artifacts.
 function renderMarkdownArtifactHtml(bodyHtml, { title, sdkSrc }) {
+  const hasMermaid = bodyHtml.includes('class="mermaid"');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -443,12 +480,17 @@ ${TOKENS_CSS}
   tbody tr:hover{background:var(--surface-hover)}
   hr{border:none;border-top:1px solid var(--border);margin:1.6em 0}
   img{max-width:100%;border-radius:var(--radius-sm)}
+  pre.mermaid{font-family:var(--mono);font-size:12.5px;line-height:1.55;white-space:pre-wrap}
+  pre.mermaid[data-processed]{background:transparent;border:none;padding:4px 0;text-align:center;overflow-x:auto}
+  pre.mermaid[data-processed] svg{max-width:100%;height:auto}
+  pre.mermaid.mermaid-unrendered:before{content:'diagram source (renderer unavailable)';display:block;font-family:var(--font);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px}
 </style>
 </head>
 <body>
 <article class="doc">
 ${bodyHtml}
 </article>
+${hasMermaid ? mermaidLoaderScript(mermaidUrl()) : ''}
 <script src="${sdkSrc}"></script>
 </body>
 </html>`;

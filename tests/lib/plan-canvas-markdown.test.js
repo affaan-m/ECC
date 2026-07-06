@@ -370,6 +370,33 @@ function runTests() {
     assert.strictEqual(renderMarkdown('  \n\n  '), '');
   })) passed++; else failed++;
 
+  console.log('\nMermaid diagrams:');
+
+  if (test('```mermaid becomes <pre class="mermaid">, not a code block', () => {
+    const html = renderMarkdown('```mermaid\nflowchart LR\n  A --> B\n```');
+    assert.ok(html.includes('<pre class="mermaid">'), 'expected mermaid container');
+    assert.ok(!html.includes('language-mermaid'), 'should not render as a code block');
+  })) passed++; else failed++;
+
+  if (test('mermaid arrows are entity-escaped so textContent decodes them', () => {
+    // The browser decodes &gt; back to > in textContent, so the renderer
+    // still receives valid `-->` while HTML injection is prevented.
+    const html = renderMarkdown('```mermaid\nA --> B\n```');
+    assert.ok(html.includes('A --&gt; B'));
+  })) passed++; else failed++;
+
+  if (test('script tags inside a mermaid block are inert', () => {
+    const html = renderMarkdown('```mermaid\n<script>alert(1)</script>\n```');
+    assert.ok(!html.includes('<script>alert(1)</script>'));
+    assert.ok(html.includes('&lt;script&gt;'));
+  })) passed++; else failed++;
+
+  if (test('a </pre> in the source cannot break out of the container', () => {
+    const html = renderMarkdown('```mermaid\nA</pre><img src=x onerror=1>\n```');
+    assert.ok(!html.includes('</pre><img'));
+    assert.ok(html.includes('&lt;/pre&gt;&lt;img'));
+  })) passed++; else failed++;
+
   // Summary
   console.log('\n=== Test Results ===');
   console.log(`Passed: ${passed}`);

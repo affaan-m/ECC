@@ -182,6 +182,19 @@ async function main() {
     assert.ok(res.body.includes('<table>'));
     assert.ok(res.body.includes('<script src="/sdk.js">'));
     assert.strictEqual(res.headers['content-security-policy'], undefined);
+    // No diagram in this plan → no Mermaid loader shipped.
+    assert.ok(!res.body.includes('mermaid.run'));
+  })) passed++; else failed++;
+
+  if (await test('a plan containing ```mermaid serves the themed Mermaid loader', async () => {
+    const diagram = path.join(tmp, 'flow.plan.md');
+    fs.writeFileSync(diagram, '# Flow\n\n```mermaid\nflowchart LR\n  A --> B\n```\n');
+    const opened = jsonBody(await request(port, 'POST', '/api/sessions', { body: { file: diagram } }));
+    const res = await request(port, 'GET', `/artifact/${opened.key}/`);
+    assert.ok(res.body.includes('<pre class="mermaid">'), 'diagram container present');
+    assert.ok(res.body.includes('mermaid.run'), 'loader injected');
+    assert.ok(res.body.includes("securityLevel: 'strict'"), 'sanitizing config present');
+    await request(port, 'POST', '/api/end', { body: { file: diagram } });
   })) passed++; else failed++;
 
   if (await test('HTML artifacts pass through with the SDK injected before </body>', async () => {

@@ -191,6 +191,13 @@ function renderMarkdown(text) {
         i += 1;
       }
       i += 1; // skip closing fence (or run off EOF)
+      if (lang === 'mermaid') {
+        // Mermaid reads the element's textContent, and the browser decodes
+        // character references there — so escaping keeps `-->`/`<` intact for
+        // the renderer while preventing HTML injection or a </pre> breakout.
+        out.push('<pre class="mermaid">' + escapeHtml(body.join('\n')) + '</pre>');
+        continue;
+      }
       const cls = lang ? ' class="language-' + lang + '"' : '';
       out.push('<pre><code' + cls + '>' + escapeHtml(body.join('\n')) + '</code></pre>');
       continue;
