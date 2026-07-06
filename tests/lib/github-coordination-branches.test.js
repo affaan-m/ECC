@@ -222,10 +222,22 @@ if (test('returns closed issues when dependency is in closed state', () => {
   assert.deepStrictEqual(result, [5]);
 })) passed++; else failed++;
 
-if (test('skips (stderr warning) when dependency issue is not in allIssues list', () => {
+if (test('warns via stderr and skips when dependency issue is not in allIssues list', () => {
   const issues = [{ number: 99, state: 'closed' }];
-  const result = verifyDependenciesClosed('r/r', [5], {}, issues);
+  const originalWrite = process.stderr.write;
+  let stderrOutput = '';
+  process.stderr.write = (chunk) => {
+    stderrOutput += chunk;
+    return true;
+  };
+  let result;
+  try {
+    result = verifyDependenciesClosed('r/r', [5], {}, issues);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
   assert.deepStrictEqual(result, []);
+  assert.ok(stderrOutput.includes('dependency issue #5 not found'), `expected stderr warning, got: ${stderrOutput}`);
 })) passed++; else failed++;
 
 console.log('\ndefaultCoordinationState — edge branches:');
