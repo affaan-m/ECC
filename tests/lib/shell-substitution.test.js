@@ -73,6 +73,10 @@ test('ignores parens inside double quotes', () => {
 test('returns [] when there is no subshell', () => {
   assert.deepStrictEqual(extractSubshellGroups('echo hello'), []);
 });
+test('handles null/undefined input', () => {
+  assert.deepStrictEqual(extractSubshellGroups(null), []);
+  assert.deepStrictEqual(extractSubshellGroups(undefined), []);
+});
 
 // extractBraceGroups
 console.log('\nextractBraceGroups:');
@@ -90,6 +94,10 @@ test('extracts nested brace groups recursively', () => {
 });
 test('returns [] when there is no brace group', () => {
   assert.deepStrictEqual(extractBraceGroups('echo hello'), []);
+});
+test('handles null/undefined input', () => {
+  assert.deepStrictEqual(extractBraceGroups(null), []);
+  assert.deepStrictEqual(extractBraceGroups(undefined), []);
 });
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
