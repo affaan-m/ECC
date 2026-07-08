@@ -304,9 +304,28 @@ async function readStdinJson(options = {}) {
 
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (data.length < maxSize) {
-        data += chunk;
+      if (settled) return;
+      // Oversized input: treat as empty and settle IMMEDIATELY rather than
+      // waiting for `end`/timeout (which would parse whatever partial prefix
+      // is already buffered, or stall a long stream until the timeout). A
+      // large-but-valid payload was previously truncated into invalid JSON and
+      // parsed as `{}`; surface the overflow on stderr so it is observable.
+      if (data.length + chunk.length > maxSize) {
+        settled = true;
+        clearTimeout(timer);
+        data = '';
+        process.stdin.removeAllListeners('data');
+        process.stdin.removeAllListeners('end');
+        process.stdin.removeAllListeners('error');
+        if (process.stdin.pause) process.stdin.pause();
+        if (process.stdin.unref) process.stdin.unref();
+        process.stderr.write(
+          `[readStdinJson] stdin exceeded ${maxSize} bytes; input truncated and treated as empty\n`
+        );
+        resolve({});
+        return;
       }
+      data += chunk;
     });
 
     process.stdin.on('end', () => {

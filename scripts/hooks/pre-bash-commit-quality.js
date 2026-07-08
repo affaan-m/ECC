@@ -58,8 +58,31 @@ function shouldCheckFile(filePath) {
 }
 
 /**
+ * Decide whether a captured api-key value is an OBVIOUS non-secret placeholder so
+ * the heuristic generic api-key rule does not emit a false positive. Deliberately
+ * narrow: only suppresses whole-value env references / interpolations / angle-bracket
+ * tokens and a short explicit whitelist of placeholder + env-var NAME tokens. It must
+ * NOT suppress arbitrary high-entropy data (uppercase-hex, base32, digit-only, mixed
+ * tokens), since the generic rule is the only net catching non-prefixed secrets and a
+ * false-negative there is the safety-critical failure this hook exists to prevent.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isPlaceholderSecret(value) {
+  const v = (value || '').trim();
+  if (v.length === 0) return true;                                  // empty value
+  if (/^process\.env\.[A-Za-z0-9_]+$/.test(v)) return true;          // entire value is a process.env.NAME reference
+  if (/^\$\{[^}]*\}$/.test(v)) return true;                          // entire value is a ${...} interpolation
+  if (/^<[^<>]*>$/.test(v)) return true;                             // entire value is a <PLACEHOLDER> token
+  // Short explicit whitelist of placeholder + env-var NAME tokens (whole-value match only).
+  // No general all-caps clause: real all-caps/hex/base32/digit secrets must still flag.
+  if (/^(REPLACE_ME|CHANGE_?ME|YOUR[_-]?API[_-]?KEY|YOUR[_-]?KEY[_-]?HERE|API[_-]?KEY|SECRET|TOKEN|KEY|TODO|TBD|FIXME|XXX+)$/i.test(v)) return true;
+  return false;
+}
+
+/**
  * Find issues in file content
- * @param {string} filePath 
+ * @param {string} filePath
  * @returns {object[]} Array of issues found
  */
 function findFileIssues(filePath) {
@@ -112,11 +135,21 @@ function findFileIssues(filePath) {
         { pattern: /sk-[a-zA-Z0-9]{20,}/, name: 'OpenAI API key' },
         { pattern: /ghp_[a-zA-Z0-9]{36}/, name: 'GitHub PAT' },
         { pattern: /AKIA[A-Z0-9]{16}/, name: 'AWS Access Key' },
-        { pattern: /api[_-]?key\s*[=:]\s*['"][^'"]+['"]/i, name: 'API key' }
+        // Capture the quoted value so obvious non-secret placeholders can be excluded
+        { pattern: /api[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, name: 'API key', valueGroup: 1 },
+        // Unquoted form (API_KEY=..., api_key: ... without quotes). Scoped to a
+        // single alnum/underscore/hyphen token of 12+ chars containing at least
+        // one digit — real secrets are near-always alphanumeric, whereas bare
+        // identifiers/expressions common in this hook's checkable languages
+        // (config.apiKey, getApiKey(), process.env.API_KEY) are pure-alpha or
+        // contain '.'/'(' that fall outside the character class, so they don't
+        // match. Kept deliberately narrow to avoid flagging ordinary code.
+        { pattern: /api[_-]?key\s*[=:]\s*(?!['"])((?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{12,})/i, name: 'API key', valueGroup: 1 }
       ];
       
-      for (const { pattern, name } of secretPatterns) {
-        if (pattern.test(line)) {
+      for (const { pattern, name, valueGroup } of secretPatterns) {
+        const secretMatch = line.match(pattern);
+        if (secretMatch && !(valueGroup && isPlaceholderSecret(secretMatch[valueGroup]))) {
           issues.push({
             type: 'secret',
             message: `Potential ${name} exposed at line ${lineNum}`,
@@ -139,11 +172,14 @@ function findFileIssues(filePath) {
  * @returns {object|null} Validation result or null if no message to validate
  */
 function validateCommitMessage(command) {
-  // Extract commit message from command
-  const messageMatch = command.match(/(?:-m|--message)[=\s]+["']?([^"']+)["']?/);
+  // Extract commit message from command (quote-aware: when quoted, capture to the
+  // matching closing quote, consuming escaped chars (\") so an embedded escaped
+  // quote does not truncate the subject, and allowing the OTHER quote char inside
+  // the body; when unquoted, capture the full remaining tail, not just the first token)
+  const messageMatch = command.match(/(?:-m|--message)[=\s]+(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^"']+?)\s*$)/);
   if (!messageMatch) return null;
   
-  const message = messageMatch[1];
+  const message = messageMatch[1] ?? messageMatch[2] ?? messageMatch[3];
   const issues = [];
   
   // Check conventional commit format
@@ -445,4 +481,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, evaluate };
+module.exports = { run, evaluate, validateCommitMessage, findFileIssues, isPlaceholderSecret };
