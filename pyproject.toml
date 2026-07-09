@@ -34,8 +34,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/affaan-m/everything-claude-code"
-Repository = "https://github.com/affaan-m/everything-claude-code"
+Homepage = "https://github.com/affaan-m/ECC"
+Repository = "https://github.com/affaan-m/ECC"
 
 [project.scripts]
 llm-select = "llm.cli.selector:main"
