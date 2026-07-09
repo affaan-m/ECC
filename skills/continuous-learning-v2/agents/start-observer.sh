@@ -37,7 +37,7 @@ PYTHON_CMD="${CLV2_PYTHON_CMD:-}"
 
 # shellcheck disable=SC1091
 . "${SKILL_ROOT}/scripts/lib/homunculus-dir.sh"
-CONFIG_DIR="$(_ecc_resolve_homunculus_dir)"
+CONFIG_DIR="$(_clv2_resolve_homunculus_dir)"
 if [ -n "${CLV2_CONFIG:-}" ]; then
   CONFIG_FILE="$CLV2_CONFIG"
 elif [ -f "${CONFIG_DIR}/config.json" ]; then
