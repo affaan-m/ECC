@@ -119,6 +119,17 @@ function runTests() {
     assert.strictEqual(output.tool_input.command, 'npm run develop');
   })) passed++; else failed++;
 
+  if (test('returns raw input verbatim for non-dev commands (no re-serialization)', () => {
+    // Re-serializing (JSON.stringify(JSON.parse(raw))) drops the trailing
+    // newline real hook stdin carries; the bash dispatcher then flags the
+    // event as "modified" and echoes the full input into the transcript on
+    // every Bash call.
+    const raw = JSON.stringify({ tool_input: { command: 'npm test' } }) + '\n';
+    const result = runScript(raw);
+    assert.strictEqual(result.code, 0);
+    assert.strictEqual(result.stdout, raw);
+  })) passed++; else failed++;
+
   console.log('\nEdge cases:');
 
   if (test('handles empty input gracefully', () => {

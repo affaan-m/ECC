@@ -55,11 +55,12 @@ if (fs.existsSync(script)) {
     }
   );
 
+  // Forward only the child's real output (e.g. session-start context).
+  // Empty stdout + exit 0 means "no opinion" — echoing the raw event back
+  // just duplicates it into the transcript.
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
+  if (stdout && stdout !== raw) {
     process.stdout.write(stdout);
-  } else {
-    process.stdout.write(raw);
   }
 
   if (result.stderr) {
@@ -82,4 +83,3 @@ if (fs.existsSync(script)) {
 process.stderr.write(
   '[SessionStart] WARNING: could not resolve ECC plugin root; skipping session-start hook\n'
 );
-process.stdout.write(raw);

@@ -20,15 +20,14 @@ function writeStderr(stderr) {
   }
 }
 
+// Only forward the child's real output. Empty stdout + exit 0 already means
+// "no opinion" to the harness; echoing the raw hook payload back (or
+// forwarding a child's echo of it) bloats every transcript entry by the full
+// tool_input/tool_response payload.
 function passthrough(raw, result) {
   const stdout = typeof result?.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
+  if (stdout && stdout !== raw) {
     process.stdout.write(stdout);
-    return;
-  }
-
-  if (!Number.isInteger(result?.status) || result.status === 0) {
-    process.stdout.write(raw);
   }
 }
 
@@ -218,7 +217,6 @@ function main() {
   );
 
   if (!mode || !relPath || !rootDir) {
-    process.stdout.write(raw);
     process.exit(0);
   }
 
@@ -230,12 +228,10 @@ function main() {
       result = spawnShell(rootDir, relPath, raw, args);
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}\n`);
-      process.stdout.write(raw);
       process.exit(0);
     }
   } catch (error) {
     writeStderr(`[Hook] bootstrap resolution failed: ${error.message}\n`);
-    process.stdout.write(raw);
     process.exit(0);
   }
 

@@ -82,7 +82,11 @@ function run(rawInput) {
       }
     }
 
-    return JSON.stringify(input);
+    // Pass through the ORIGINAL raw input, not a re-serialization: live hook
+    // stdin carries a trailing newline, so JSON.stringify(input) differed from
+    // rawInput by one byte and the bash dispatcher treated every Bash call as
+    // "modified", echoing the full input event into the transcript.
+    return typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput);
   } catch {
     // Invalid input — pass through original data unchanged
     return typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput);

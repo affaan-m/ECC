@@ -88,15 +88,16 @@ if (
 else failed++;
 
 if (
-  test('normal-sized payload still passes through unchanged', () => {
+  test('normal-sized payload with no hook opinion emits nothing', () => {
     const payload = JSON.stringify({
       tool_name: 'Write',
       tool_input: { file_path: '/tmp/small.js', content: 'const x = 1;\n' }
     });
     const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload);
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
-    assert.ok(result.stdout.length > 0, 'normal payloads keep the pass-through behavior');
-    JSON.parse(result.stdout); // stdout must remain valid JSON
+    // Empty stdout + exit 0 = "no opinion". Echoing the payload back appended
+    // the full tool_input/tool_response to the transcript on every tool call.
+    assert.strictEqual(result.stdout, '', 'no-opinion payloads must not echo');
   })
 )
   passed++;
@@ -120,31 +121,42 @@ if (
 else failed++;
 
 if (
-  test('payload just under the cap echoes through completely (no 64KB pipe cut)', () => {
-    // process.exit() right after stdout.write() used to drop everything past
-    // the ~64KB pipe buffer, cutting the echoed JSON mid-stream.
+  test('fallthrough paths (missing hookId) emit nothing even for large payloads', () => {
     const content = 'y'.repeat(MAX_STDIN - 1024);
     const payload = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '/tmp/edge.md', content } });
     assert.ok(payload.length < MAX_STDIN, 'fixture must stay under the stdin cap');
     const result = runRunner([], payload);
     assert.strictEqual(result.status, 0);
-    assert.strictEqual(result.stdout.length, payload.length, 'echo must not be cut at the pipe buffer');
-    assert.strictEqual(result.stdout, payload, 'sub-cap payloads still echo through fallthrough paths');
+    assert.strictEqual(result.stdout, '', 'fallthrough paths must not echo the payload');
   })
 )
   passed++;
 else failed++;
 
 if (
-  test('disabled-hook passthrough of a >64KB payload stays valid JSON', () => {
+  test('disabled-hook path emits nothing regardless of payload size', () => {
     const payload = JSON.stringify({
       tool_name: 'Write',
       tool_input: { file_path: '/tmp/medium.md', content: 'z'.repeat(256 * 1024) }
     });
     const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload, { ECC_DISABLED_HOOKS: 'pre:write:doc-file-warning' });
     assert.strictEqual(result.status, 0);
-    assert.strictEqual(result.stdout, payload);
-    JSON.parse(result.stdout);
+    assert.strictEqual(result.stdout, '', 'disabled hooks must not echo the payload');
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('a hook with a real opinion still emits its output (not suppressed)', () => {
+    const payload = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/tmp/NOTES.md', content: 'adhoc' }
+    });
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload);
+    assert.strictEqual(result.status, 0);
+    const parsed = JSON.parse(result.stdout);
+    assert.ok(parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext, 'real hook output must be forwarded');
   })
 )
   passed++;

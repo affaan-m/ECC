@@ -106,6 +106,10 @@ function runBashHook(input, env = {}) {
 }
 
 function parseOutput(stdout) {
+  // Empty stdout = "no opinion" (allow): the runner no longer echoes the
+  // input event back into the transcript. Surface it as an explicit allow
+  // marker so call sites can keep asserting "not deny".
+  if (!stdout) return { allowed: true };
   try {
     return JSON.parse(stdout);
   } catch (_) {
@@ -165,9 +169,6 @@ function runTests() {
       // OR if hookSpecificOutput exists, it must not be deny
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'should not deny second edit on same file');
-      } else {
-        // Pass-through: output matches original input (allow)
-        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
       }
     })
   )
@@ -211,8 +212,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'unpersistable state must not deny a retry that can never be recorded');
-      } else {
-        assert.strictEqual(output.tool_name, 'Write', 'pass-through should preserve input');
       }
       assert.ok(result.stderr.includes('GateGuard state could not be persisted'), 'should warn that state persistence failed');
     })
@@ -245,8 +244,6 @@ function runTests() {
       assert.ok(output2, 'second call should produce valid JSON output');
       if (output2.hookSpecificOutput) {
         assert.notStrictEqual(output2.hookSpecificOutput.permissionDecision, 'deny', 'should not deny destructive bash retry after facts presented');
-      } else {
-        assert.strictEqual(output2.tool_name, 'Bash', 'pass-through should preserve input');
       }
     })
   )
@@ -272,8 +269,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'safe lease-protected force push should not be denied');
-      } else {
-        assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
       }
     })
   )
@@ -366,8 +361,6 @@ function runTests() {
       assert.ok(output2, 'second call should produce valid JSON output');
       if (output2.hookSpecificOutput) {
         assert.notStrictEqual(output2.hookSpecificOutput.permissionDecision, 'deny', 'should not deny second routine bash');
-      } else {
-        assert.strictEqual(output2.tool_name, 'Bash', 'pass-through should preserve input');
       }
     })
   )
@@ -406,8 +399,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'should not deny unknown tool');
-      } else {
-        assert.strictEqual(output.tool_name, 'Read', 'pass-through should preserve input');
       }
     })
   )
@@ -457,9 +448,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'should not deny when hook is disabled');
-      } else {
-        // When disabled, hook passes through raw input
-        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
       }
     })
   )
@@ -478,7 +466,6 @@ function runTests() {
       const output = parseOutput(result.stdout);
 
       assert.ok(output, 'should produce valid JSON output');
-      assert.strictEqual(output.tool_name, 'Write', 'disabled gate should pass through raw input');
       assert.ok(!output.hookSpecificOutput, 'disabled gate should not deny the operation');
       assert.ok(!fs.existsSync(stateFile), 'disabled gate should not create or mutate gate state');
     })
@@ -498,7 +485,6 @@ function runTests() {
       const output = parseOutput(result.stdout);
 
       assert.ok(output, 'should produce valid JSON output');
-      assert.strictEqual(output.tool_name, 'Bash', 'disabled gate should pass Bash through raw input');
       assert.ok(!output.hookSpecificOutput, 'disabled gate should not deny Bash');
       assert.ok(!fs.existsSync(stateFile), 'disabled gate should not create or mutate gate state');
     })
@@ -754,8 +740,6 @@ function runTests() {
       const secondOutput = parseOutput(second.stdout);
       if (secondOutput.hookSpecificOutput) {
         assert.notStrictEqual(secondOutput.hookSpecificOutput.permissionDecision, 'deny', 'retry should be allowed when raw session_id is stable');
-      } else {
-        assert.strictEqual(secondOutput.tool_name, 'Bash');
       }
     })
   )
@@ -775,8 +759,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'settings edits must not be blocked by gateguard');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit');
       }
     })
   )
@@ -796,8 +778,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'read-only git introspection should not be blocked');
-      } else {
-        assert.strictEqual(output.tool_name, 'Bash');
       }
     })
   )
@@ -851,8 +831,6 @@ function runTests() {
       const secondOutput = parseOutput(second.stdout);
       if (secondOutput.hookSpecificOutput) {
         assert.notStrictEqual(secondOutput.hookSpecificOutput.permissionDecision, 'deny', 'retry should be allowed when long raw session_id is stable');
-      } else {
-        assert.strictEqual(secondOutput.tool_name, 'Bash');
       }
     })
   )
@@ -867,7 +845,8 @@ function runTests() {
       const result = runHook(rawInput);
 
       assert.strictEqual(result.code, 0, 'exit code should be 0');
-      assert.strictEqual(result.stdout, rawInput, 'malformed JSON should pass through unchanged');
+      // Pass-through is now silent: the runner no longer echoes stdin back.
+      assert.strictEqual(result.stdout, '', 'malformed JSON must fail open without echoing');
     })
   )
     passed++;
@@ -898,8 +877,6 @@ function runTests() {
         assert.ok(output, `should produce JSON output for ${command}`);
         if (output.hookSpecificOutput) {
           assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${command} should not be denied`);
-        } else {
-          assert.strictEqual(output.tool_name, 'Bash', `${command} should pass through`);
         }
       }
     })
@@ -997,8 +974,6 @@ function runTests() {
       const secondOutput = parseOutput(second.stdout);
       if (secondOutput.hookSpecificOutput) {
         assert.notStrictEqual(secondOutput.hookSpecificOutput.permissionDecision, 'deny', 'retry should be allowed when transcript_path is stable');
-      } else {
-        assert.strictEqual(secondOutput.tool_name, 'Bash');
       }
     })
   )
@@ -1032,8 +1007,6 @@ function runTests() {
       const secondOutput = parseOutput(second.stdout);
       if (secondOutput.hookSpecificOutput) {
         assert.notStrictEqual(secondOutput.hookSpecificOutput.permissionDecision, 'deny', 'retry should be allowed when project fallback is stable');
-      } else {
-        assert.strictEqual(secondOutput.tool_name, 'Bash');
       }
     })
   )
@@ -1376,8 +1349,6 @@ function runTests() {
     assert.ok(output, `${label}: should produce JSON output`);
     if (output.hookSpecificOutput) {
       assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${label}: should not deny`);
-    } else {
-      assert.strictEqual(output.tool_name, 'Bash', `${label}: pass-through should preserve input`);
     }
   }
 
@@ -1766,8 +1737,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'routine bash should not be denied when env opts out');
-      } else {
-        assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
       }
     })
   )
@@ -2390,8 +2359,6 @@ function runTests() {
       assert.ok(output, 'should produce valid JSON output');
       if (output.hookSpecificOutput) {
         assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'exempt path must not be denied');
-      } else {
-        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
       }
     })
   )

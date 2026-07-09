@@ -92,7 +92,9 @@ function runTests() {
       result.stderr.includes('target=/tmp/test.md'),
       `Expected stderr to contain target file path, got: ${result.stderr}`
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    // Dry-run is silent on stdout (preview goes to stderr): echoing stdin
+    // back duplicated the full hook payload into the transcript.
+    assert.strictEqual(result.stdout, '', 'Expected no stdout in dry-run mode');
   })) passed++; else failed++;
 
   if (test('dry-run preview includes command for bash hooks', () => {
@@ -121,7 +123,9 @@ function runTests() {
       result.stderr.includes('command=git commit --no-verify'),
       `Expected stderr to contain command, got: ${result.stderr}`
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    // Dry-run is silent on stdout (preview goes to stderr): echoing stdin
+    // back duplicated the full hook payload into the transcript.
+    assert.strictEqual(result.stdout, '', 'Expected no stdout in dry-run mode');
   })) passed++; else failed++;
 
   if (test('dry-run preview handles non-JSON stdin gracefully', () => {
@@ -150,7 +154,9 @@ function runTests() {
       !result.stderr.includes('tool='),
       'Expected no tool= when stdin is not JSON'
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    // Dry-run is silent on stdout (preview goes to stderr): echoing stdin
+    // back duplicated the full hook payload into the transcript.
+    assert.strictEqual(result.stdout, '', 'Expected no stdout in dry-run mode');
   })) passed++; else failed++;
 
   if (test('dry-run preview handles empty stdin gracefully', () => {

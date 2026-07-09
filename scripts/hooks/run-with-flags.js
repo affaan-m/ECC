@@ -59,9 +59,15 @@ function exitWithStdout(text, exitCode) {
   process.stdout.write(text, () => process.exit(exitCode));
 }
 
+// "No opinion" is signalled by empty stdout + exit 0 — never by echoing the
+// input back. Hooks that return the raw input unchanged mean "pass through";
+// echoing it (tool_input + tool_response + originalFile content) appended
+// 18-75KB of duplicate JSON to the transcript on every tool call, which adds
+// up to hundreds of MB per week on active projects.
 function resolveHookResult(raw, output) {
   if (typeof output === 'string' || Buffer.isBuffer(output)) {
-    return { stdout: String(output), exitCode: 0 };
+    const text = String(output);
+    return { stdout: text === raw ? '' : text, exitCode: 0 };
   }
 
   if (output && typeof output === 'object') {
@@ -72,25 +78,18 @@ function resolveHookResult(raw, output) {
       return { stdout: buildPreToolUseAdditionalContext(output.additionalContext), exitCode };
     }
     if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
-      return { stdout: String(output.stdout ?? ''), exitCode };
+      const text = String(output.stdout ?? '');
+      return { stdout: text === raw ? '' : text, exitCode };
     }
-    return { stdout: exitCode === 0 ? raw : '', exitCode };
+    return { stdout: '', exitCode };
   }
 
-  return { stdout: raw, exitCode: 0 };
+  return { stdout: '', exitCode: 0 };
 }
 
 function resolveLegacySpawnStdout(raw, result) {
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
-    return stdout;
-  }
-
-  if (Number.isInteger(result.status) && result.status === 0) {
-    return raw;
-  }
-
-  return '';
+  return stdout === raw ? '' : stdout;
 }
 
 function getPluginRoot() {
@@ -145,31 +144,29 @@ async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
 
-  // Oversized payloads: never echo the truncated string — a JSON document
-  // cut mid-stream is treated by the harness as a hook failure, blocking the
-  // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
-  // pass-through paths fail open. The hook itself still runs and receives
-  // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
-  // security hooks like config-protection can still choose to block.
-  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
+  // Empty stdout + exit 0 means "no opinion", so skip/disabled/error paths
+  // fail open without echoing the payload back into the transcript. The hook
+  // itself still runs and receives the truncated flag (run() context /
+  // ECC_HOOK_INPUT_TRUNCATED), so security hooks like config-protection can
+  // still choose to block (#2222).
+  const sanitizeEcho = text => (text === raw ? '' : text);
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    process.exit(0);
     return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    process.exit(0);
     return;
   }
 
   if (isDryRun()) {
     const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
     process.stderr.write(preview);
-    process.stdout.write(raw);
     process.exit(0);
   }
 
@@ -180,13 +177,13 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    process.exit(0);
     return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    process.exit(0);
     return;
   }
 
@@ -222,7 +219,7 @@ async function main() {
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout(sanitizeEcho(raw), 0);
+      process.exit(0);
     }
     return;
   }

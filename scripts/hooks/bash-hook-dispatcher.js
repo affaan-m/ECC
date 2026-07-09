@@ -150,7 +150,10 @@ function runHooks(rawInput, hooks) {
       }
       if (result.exitCode !== 0) {
         return {
-          output: rawModified ? currentRaw : '',
+          // Belt-and-braces: never emit something byte-equal to the original
+          // input event (a re-serialization roundtrip is not a real
+          // modification and echoing it bloats the transcript).
+          output: rawModified && currentRaw !== rawInput ? currentRaw : '',
           stderr,
           additionalContext,
           exitCode: result.exitCode,
@@ -164,7 +167,7 @@ function runHooks(rawInput, hooks) {
   return {
     output: additionalContext
       ? buildPreToolUseAdditionalContext(additionalContext)
-      : rawModified
+      : rawModified && currentRaw !== rawInput
         ? currentRaw
         : '',
     stderr,
