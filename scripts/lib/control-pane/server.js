@@ -24,42 +24,14 @@ async function withStateStore(stateDbPath, fn) {
   }
 }
 
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
-
-// Extract the hostname portion of an HTTP Host header value, stripping any
-// port. Returns null when the header is missing or malformed. Used to gate
-// requests against a local-only allowlist so DNS-rebinding cannot pivot a
-// browser tab into the loopback control-pane API.
-function parseHostHeader(value) {
-  if (!value || typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\[[^\]]+\]|[^:]+)(?::\d+)?$/);
-  if (!match) return null;
-  return match[1].toLowerCase();
-}
-
-function buildAllowedHostnames(configuredHost) {
-  const set = new Set(LOOPBACK_HOSTNAMES);
-  if (configuredHost) set.add(String(configuredHost).toLowerCase());
-  return set;
-}
-
-function isAllowedHostHeader(hostHeader, allowedHostnames) {
-  const hostname = parseHostHeader(hostHeader);
-  if (!hostname) return false;
-  return allowedHostnames.has(hostname);
-}
-
-function isAllowedOrigin(originHeader, allowedHostnames) {
-  if (!originHeader || typeof originHeader !== 'string') return true;
-  try {
-    const url = new URL(originHeader);
-    return allowedHostnames.has(url.hostname.toLowerCase());
-  } catch {
-    return false;
-  }
-}
+// Host/Origin gating lives in scripts/lib/loopback-guard.js so every ECC
+// loopback server shares one hardened implementation; re-exported below to
+// keep this module's public API stable.
+const {
+  buildAllowedHostnames,
+  isAllowedHostHeader,
+  isAllowedOrigin
+} = require('../loopback-guard');
 
 function usage() {
   return [

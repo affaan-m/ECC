@@ -2376,6 +2376,86 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Exempt globs: GATEGUARD_EXEMPT_GLOBS skips first-touch fact-forcing ---
+  clearState();
+  if (
+    test('exempts an Edit whose path matches GATEGUARD_EXEMPT_GLOBS', () => {
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/proj/tests/test_x.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**' });
+      assert.strictEqual(result.code, 0, 'exit code should be 0');
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'exempt path must not be denied');
+      } else {
+        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does NOT exempt a non-matching path under the same globs', () => {
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/proj/src/core/x.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'non-matching path still gated');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('supports multiple comma-separated exempt globs (Write + non-match)', () => {
+      const globs = '**/tests/**,**/scratchpad/**';
+      clearState();
+      const exempt = runHook(
+        { tool_name: 'Write', tool_input: { file_path: '/tmp/x/scratchpad/s.js', content: 'x' } },
+        { GATEGUARD_EXEMPT_GLOBS: globs }
+      );
+      const exemptOut = parseOutput(exempt.stdout);
+      assert.ok(exemptOut, 'should produce JSON output');
+      if (exemptOut.hookSpecificOutput) {
+        assert.notStrictEqual(exemptOut.hookSpecificOutput.permissionDecision, 'deny', 'scratchpad path exempt');
+      }
+      clearState();
+      const gated = runHook(
+        { tool_name: 'Write', tool_input: { file_path: '/proj/src/s.js', content: 'x' } },
+        { GATEGUARD_EXEMPT_GLOBS: globs }
+      );
+      const gatedOut = parseOutput(gated.stdout);
+      assert.ok(gatedOut, 'should produce JSON output');
+      assert.strictEqual(gatedOut.hookSpecificOutput.permissionDecision, 'deny', 'src path still gated');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('is default-off: unset GATEGUARD_EXEMPT_GLOBS gates tests/ as before', () => {
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/proj/tests/test_x.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'no exemptions when unset');
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {

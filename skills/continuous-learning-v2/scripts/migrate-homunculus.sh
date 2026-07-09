@@ -7,7 +7,7 @@ OLD="${HOME}/.claude/homunculus"
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/lib/homunculus-dir.sh"
-NEW="$(_ecc_resolve_homunculus_dir)"
+NEW="$(_clv2_resolve_homunculus_dir)"
 
 if [ "$NEW" = "$OLD" ]; then
   echo "Resolved destination equals source ($OLD); nothing to migrate."

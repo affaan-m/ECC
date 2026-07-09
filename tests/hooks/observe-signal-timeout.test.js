@@ -3,14 +3,14 @@
  *
  * observe.sh arms a signal.SIGALRM alarm (8s) inside its inline-Python blocks so
  * the observation writer self-terminates before the async hook's 10s timeout can
- * orphan it (#2278). Before #2300 the handler `_ecc_bail` called sys.exit(0) with
+ * orphan it (#2278). Before #2300 the handler `_clv2_bail` called sys.exit(0) with
  * no logging, so a timeout silently dropped the in-flight observation: nothing was
  * logged and the shell saw a clean exit. The fix adds a stderr visibility line to
  * each handler while keeping exit 0 (changing to a non-zero exit would make the
  * Claude hook report a block, per the repo's "always exit 0; log to stderr" rule).
  *
  * Two checks:
- *   1. Static regression guard — every `_ecc_bail` handler in observe.sh writes to
+ *   1. Static regression guard — every `_clv2_bail` handler in observe.sh writes to
  *      sys.stderr before sys.exit(0).
  *   2. Behavioral check — the REAL handler text extracted from observe.sh, when its
  *      alarm fires, exits 0 and emits the `[observe]` visibility token on stderr
@@ -73,14 +73,14 @@ const observeShPath = path.join(
 
 const observeSrc = fs.readFileSync(observeShPath, 'utf8');
 
-// Extract each `_ecc_bail` handler body: the `def` line plus the indented lines
+// Extract each `_clv2_bail` handler body: the `def` line plus the indented lines
 // that follow it, up to (and including) the first dedented `sys.exit(0)` line at
 // the same indentation as the def's body.
 function extractHandlers(src) {
   const lines = src.split('\n');
   const handlers = [];
   for (let i = 0; i < lines.length; i += 1) {
-    if (/^def _ecc_bail\(\*_\):\s*$/.test(lines[i])) {
+    if (/^def _clv2_bail\(\*_\):\s*$/.test(lines[i])) {
       const body = [lines[i]];
       for (let j = i + 1; j < lines.length; j += 1) {
         // Stop when we hit a line that is not indented (next top-level stmt).
@@ -103,15 +103,15 @@ const handlers = extractHandlers(observeSrc);
 // The #2300 timeout handlers are the ones that log the `[observe] SIGALRM
 // timeout` marker. Selecting by marker (rather than by array index) keeps the
 // behavioral check pinned to the timeout handlers even if an unrelated
-// `_ecc_bail` is ever added elsewhere in observe.sh.
+// `_clv2_bail` is ever added elsewhere in observe.sh.
 const timeoutHandlers = handlers.filter(body =>
   body.includes('[observe] SIGALRM timeout')
 );
 
-test('observe.sh defines at least two _ecc_bail timeout handlers', () => {
+test('observe.sh defines at least two _clv2_bail timeout handlers', () => {
   assert.ok(
     handlers.length >= 2,
-    `expected >= 2 _ecc_bail handlers, found ${handlers.length}`
+    `expected >= 2 _clv2_bail handlers, found ${handlers.length}`
   );
   assert.ok(
     timeoutHandlers.length >= 2,
@@ -119,7 +119,7 @@ test('observe.sh defines at least two _ecc_bail timeout handlers', () => {
   );
 });
 
-test('every _ecc_bail handler logs to stderr before exiting (regression guard)', () => {
+test('every _clv2_bail handler logs to stderr before exiting (regression guard)', () => {
   handlers.forEach((body, idx) => {
     const stderrIdx = body.indexOf('file=sys.stderr');
     const exitIdx = body.indexOf('sys.exit(0)');
@@ -142,7 +142,7 @@ test('every _ecc_bail handler logs to stderr before exiting (regression guard)',
   });
 });
 
-test('_ecc_bail handlers keep exit code 0 (no exit 2 / block regression)', () => {
+test('_clv2_bail handlers keep exit code 0 (no exit 2 / block regression)', () => {
   handlers.forEach((body, idx) => {
     assert.ok(
       /sys\.exit\(0\)/.test(body),
@@ -160,7 +160,7 @@ function runHandlerTimeout(python, handler) {
   const program = [
     'import sys, signal, time',
     handler,
-    'signal.signal(signal.SIGALRM, _ecc_bail)',
+    'signal.signal(signal.SIGALRM, _clv2_bail)',
     'signal.alarm(1)',
     'time.sleep(3)',
     'print("REACHED_END_SHOULD_NOT_HAPPEN")',
@@ -178,7 +178,7 @@ function runHandlerTimeout(python, handler) {
 // the worst case. A behavioral check on only one handler would not catch a
 // regression that silenced another.
 timeoutHandlers.forEach((handler, idx) => {
-  test(`real _ecc_bail timeout handler #${idx + 1}: SIGALRM fire emits stderr token and exits 0`, () => {
+  test(`real _clv2_bail timeout handler #${idx + 1}: SIGALRM fire emits stderr token and exits 0`, () => {
     const python = findPython();
     if (!python) {
       // Fail fast rather than returning (which the harness would record as a

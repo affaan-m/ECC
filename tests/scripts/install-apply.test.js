@@ -123,6 +123,40 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('rewrites namespaced skill links to the ecc/ rules path (#2340)', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const result = run(['typescript'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+
+      const claudeRoot = path.join(homeDir, '.claude');
+      const skillPath = path.join(claudeRoot, 'skills', 'ecc', 'react-patterns', 'SKILL.md');
+      assert.ok(fs.existsSync(skillPath), 'react-patterns SKILL.md should be installed');
+
+      const content = fs.readFileSync(skillPath, 'utf8');
+      assert.ok(
+        content.includes('../../../rules/ecc/react/'),
+        'source-relative rules link should be rewritten for the ecc/ namespace'
+      );
+      assert.ok(
+        !content.includes('](../../rules/'),
+        'no un-namespaced ](../../rules/ links should remain'
+      );
+
+      // The rewritten link must resolve to a file that actually exists on disk.
+      const linkTarget = path.join(
+        path.dirname(skillPath),
+        '../../../rules/ecc/react/hooks.md'
+      );
+      assert.ok(fs.existsSync(linkTarget), 'rewritten link target should exist');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
   if (test('installs Cursor configs and writes install-state', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
@@ -332,6 +366,28 @@ function runTests() {
       assert.ok(result.stdout.includes('Included components: (none)'));
       assert.ok(result.stdout.includes('Selected modules: rules-core, agents-core, commands-core, hooks-runtime, platform-configs, workflow-quality'));
       assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json')));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('full profile dry-runs include delivery-gate in the install plan', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const result = run(['--profile', 'full', '--dry-run', '--json'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.dryRun, true);
+      assert.ok(parsed.plan.selectedModuleIds.includes('workflow-quality'));
+      assert.ok(
+        parsed.plan.operations.some(operation => (
+          String(operation.sourceRelativePath || '').replace(/\\/g, '/').startsWith('skills/delivery-gate/')
+        )),
+        'Full profile dry-run should include the delivery-gate skill'
+      );
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

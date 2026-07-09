@@ -1165,16 +1165,35 @@ src/main.ts
   })) passed++; else failed++;
 
   if (test('createdTime falls back to ctime when birthtime is epoch-zero', () => {
-    // This tests the || fallback logic: stats.birthtime || stats.ctime
-    // On some FS, birthtime may be epoch 0 (falsy as a Date number comparison
-    // but truthy as a Date object). The fallback is defensive.
-    const stats = fs.statSync(r33FilePath);
-    // Both birthtime and ctime should be valid Dates on any modern OS
-    assert.ok(stats.ctime instanceof Date, 'ctime should exist');
-    // The fallback expression `birthtime || ctime` should always produce a valid Date
-    const fallbackResult = stats.birthtime || stats.ctime;
-    assert.ok(fallbackResult instanceof Date, 'Fallback should produce a Date');
-    assert.ok(fallbackResult.getTime() > 0, 'Fallback date should be non-zero');
+    const originalStatSync = fs.statSync;
+    const realStats = originalStatSync(r33FilePath);
+    const fallbackCtime = new Date('2024-01-02T03:04:05.000Z');
+
+    fs.statSync = targetPath => {
+      if (path.resolve(targetPath) === path.resolve(r33FilePath)) {
+        return {
+          ...realStats,
+          birthtime: new Date(0),
+          birthtimeMs: 0,
+          ctime: fallbackCtime,
+          ctimeMs: fallbackCtime.getTime()
+        };
+      }
+      return originalStatSync(targetPath);
+    };
+
+    try {
+      const session = sessionManager.getSessionById('r33birth');
+      assert.ok(session, 'Should find the session');
+      assert.ok(session.createdTime instanceof Date, 'createdTime should be a Date');
+      assert.strictEqual(
+        session.createdTime.getTime(),
+        fallbackCtime.getTime(),
+        'createdTime should fall back to ctime when birthtime is epoch-zero'
+      );
+    } finally {
+      fs.statSync = originalStatSync;
+    }
   })) passed++; else failed++;
 
   // Cleanup Round 33 HOME override
