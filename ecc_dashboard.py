@@ -9,7 +9,7 @@ import sys
 try:
     import tkinter as tk
     from tkinter import ttk, scrolledtext, messagebox
-except ModuleNotFoundError:
+except ImportError:
     sys.stderr.write(
         "ECC Dashboard requires Tkinter, which is missing from this Python install.\n"
         "Install it, then re-run `npm run dashboard`:\n"
@@ -811,7 +811,7 @@ A cross-platform desktop application for
 managing and exploring ECC components.
 
 Version: 1.10.0
-Project: github.com/affaan-m/everything-claude-code"""
+Project: github.com/affaan-m/ECC"""
         
         ttk.Label(about_frame, text=about_text, justify=tk.LEFT).pack(anchor=tk.W)
     
