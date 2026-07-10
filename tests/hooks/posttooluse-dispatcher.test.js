@@ -191,7 +191,7 @@ function runTests() {
     const values = [
       'x'.repeat(1024 * 1024 + 1024),
       'é'.repeat(600000),
-      '😀'.repeat(300000),
+      '\u{1F600}'.repeat(300000),
     ];
 
     for (const value of values) {
