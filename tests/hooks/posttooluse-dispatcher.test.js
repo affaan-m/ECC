@@ -344,6 +344,30 @@ function runTests() {
   else failed++;
 
   if (
+    test('failing hook exit code propagates to the real dispatcher process status', () => {
+      const script = [
+        `const dispatcher = require(${JSON.stringify(dispatcherPath)});`,
+        'dispatcher.SYNC_HOOKS.length = 0;',
+        "dispatcher.SYNC_HOOKS.push({ id: 'post:test:fail', matcher: '*', profiles: 'standard,strict', run: () => ({ exitCode: 7 }) });",
+        "process.argv[2] = 'sync';",
+        'dispatcher.cli();'
+      ].join('');
+      const result = spawnSync(process.execPath, ['-e', script], {
+        cwd: repoRoot,
+        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: {}, tool_response: {} }),
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_PLUGIN_ROOT: repoRoot, ECC_POSTTOOLUSE_PASSTHROUGH: '1' },
+        timeout: 10000
+      });
+      assert.strictEqual(result.status, 7, 'OS-level exit status should reflect the failing hook');
+      assert.ok(result.stderr.includes('post:test:fail exited with code 7'), result.stderr);
+      assert.strictEqual(result.stdout, '', 'failed runs must not restore pass-through output');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('console warning hook is safe to require in-process', () => {
       const script = [`const hook = require(${JSON.stringify(path.join(repoRoot, 'scripts', 'hooks', 'post-edit-console-warn.js'))});`, "if (typeof hook.run !== 'function') process.exit(2);"].join(
         ''
