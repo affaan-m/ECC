@@ -119,13 +119,13 @@ Trigger Claude Code agents remotely for event-driven workflows.
 **Dispatch patterns:**
 
 ```bash
-# Trigger from CI/CD
-curl -X POST "https://api.anthropic.com/dispatch" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
-  -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
+# Trigger from CI/CD — run Claude Code headless inside the pipeline
+# (e.g., a GitHub Actions step; there is no hosted Anthropic "dispatch" endpoint)
+claude -p "Build failed on main. Read the CI logs in ci-failure.log, diagnose, and fix." \
+  --allowedTools "Read,Edit,Bash,Grep,Glob"
 
 # Trigger from webhook
-# GitHub webhook → dispatch → Claude agent → fix → PR
+# GitHub webhook → your listener → spawns `claude -p` in the repo → fix → PR
 
 # Trigger from another agent
 claude -p "Analyze the output of the security scan and create issues for findings"
@@ -186,24 +186,29 @@ description: Persistent task queue for autonomous operation
 
 ## Setup Guide
 
-### Step 1: Configure MCP Servers
+### Step 1: Wire Up Memory, Scheduling, and Browser Control
 
-Ensure these are in `~/.claude.json`:
+Use the capabilities that actually ship with Claude Code — Anthropic does not
+publish npm packages for these:
+
+- **Memory**: Claude Code's built-in persistent memory
+  (`~/.claude/projects/<project>/memory/` + `MEMORY.md` index). For a graph
+  layer, add a community memory MCP server of your choice to `mcpServers`
+  after reviewing its source.
+- **Scheduling**: Claude Code's native scheduled/background tasks (Cron tools
+  in supported clients) or plain OS schedulers (Windows Task Scheduler,
+  cron/launchd) invoking `claude -p "..."`.
+- **Browser / computer control**: the Claude in Chrome extension
+  (`mcp__claude-in-chrome__*` tools) or a Playwright MCP server.
+
+Example `mcpServers` entry (only add servers you have vetted):
 
 ```json
 {
   "mcpServers": {
-    "memory": {
+    "playwright": {
       "command": "npx",
-      "args": ["-y", "@anthropic/memory-mcp-server"]
-    },
-    "scheduled-tasks": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/scheduled-tasks-mcp-server"]
-    },
-    "computer-use": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/computer-use-mcp-server"]
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }
