@@ -16,6 +16,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const hooksJsonPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const runWithFlagsPath = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
 const observeRunner = require(path.join(repoRoot, 'scripts', 'hooks', 'observe-runner.js'));
+const postToolUseDispatcher = require(path.join(repoRoot, 'scripts', 'hooks', 'posttooluse-dispatcher.js'));
 
 function test(name, fn) {
   try {
@@ -115,14 +116,14 @@ function runTests() {
   let failed = 0;
 
   if (test('observe hooks use node-mode runner instead of shell-mode dispatch', () => {
-    for (const hookId of ['pre:observe:continuous-learning', 'post:observe:continuous-learning']) {
-      const command = loadHook(hookId);
-      const phase = hookId.startsWith('pre:') ? 'pre:observe' : 'post:observe';
+    const preCommand = loadHook('pre:observe:continuous-learning');
+    assert.ok(preCommand.includes('node scripts/hooks/run-with-flags.js pre:observe scripts/hooks/observe-runner.js standard,strict'));
+    assert.ok(!preCommand.includes('shell scripts/hooks/run-with-flags-shell.sh'));
+    assert.ok(!preCommand.includes('skills/continuous-learning-v2/hooks/observe.sh'));
 
-      assert.ok(command.includes(`node scripts/hooks/run-with-flags.js ${phase} scripts/hooks/observe-runner.js standard,strict`));
-      assert.ok(!command.includes('shell scripts/hooks/run-with-flags-shell.sh'), `${hookId} should not use shell-mode bootstrap`);
-      assert.ok(!command.includes('skills/continuous-learning-v2/hooks/observe.sh'), `${hookId} should not call observe.sh directly from hooks.json`);
-    }
+    const postHook = postToolUseDispatcher.ASYNC_HOOKS.find(hook => hook.id === 'post:observe:continuous-learning');
+    assert.ok(postHook, 'PostToolUse dispatcher should retain the observe hook ID');
+    assert.strictEqual(postHook.script, 'scripts/hooks/observe-runner.js');
   })) passed++; else failed++;
 
   if (test('run-with-flags passes hookId to direct run exports', () => {
