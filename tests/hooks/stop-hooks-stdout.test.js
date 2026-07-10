@@ -206,39 +206,25 @@ const multibytePayload = stopPayload(400 * 1024, '한');
 assert.ok(multibytePayload.length < MAX_STDIN, 'fixture must stay below the runner character cap');
 assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the default byte buffer');
 
-if (
-  test('registered Stop wrappers preserve a multibyte sub-cap payload', () => {
-    for (const entry of hooksConfig.hooks.Stop) {
-      assert.ok(
-        entry.hooks[0].command.includes('maxBuffer:16*1024*1024'),
-        `${entry.id}: registered wrapper must raise the child output buffer`
+for (const entry of hooksConfig.hooks.Stop) {
+  if (
+    test(`${entry.id} registered wrapper preserves a multibyte sub-cap payload`, () => {
+      const result = runRegisteredStopHook(entry, multibytePayload);
+      assert.strictEqual(
+        result.status,
+        0,
+        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
       );
       assert.ok(
-        entry.hooks[0].command.includes('process.stdout.write(out,done)') &&
-          entry.hooks[0].command.includes('process.stderr.write(err,done)'),
-        `${entry.id}: registered wrapper must wait for both output streams`
+        result.stdout === multibytePayload,
+        `${entry.id}: registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
       );
-      assert.ok(
-        !entry.hooks[0].command.includes('process.exitCode='),
-        `${entry.id}: registered wrapper must not rely on natural stream exit`
-      );
-    }
-
-    const result = runRegisteredStopHook(representativeStopEntry, multibytePayload);
-    assert.strictEqual(
-      result.status,
-      0,
-      `${representativeStopEntry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-    );
-    assert.ok(
-      result.stdout === multibytePayload,
-      `registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-    );
-    JSON.parse(result.stdout);
-  })
-)
-  passed++;
-else failed++;
+      JSON.parse(result.stdout);
+    })
+  )
+    passed++;
+  else failed++;
+}
 
 for (const [hookId, script] of STOP_HOOKS) {
   if (
