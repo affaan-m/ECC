@@ -29,7 +29,7 @@ const SYNC_HOOKS = [
   { id: 'post:governance-capture', matcher: 'Bash|Write|Edit|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/governance-capture.js', run: runGovernanceCapture },
   { id: 'post:session-activity-tracker', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/session-activity-tracker.js', run: runSessionActivityTracker },
   { id: 'post:ecc-metrics-bridge', matcher: '*', profiles: 'minimal,standard,strict', script: 'scripts/hooks/ecc-metrics-bridge.js', run: runMetricsBridge },
-  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor },
+  { id: 'post:ecc-context-monitor', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/ecc-context-monitor.js', run: runContextMonitor }
 ];
 
 const ASYNC_HOOKS = [
@@ -41,10 +41,10 @@ const ASYNC_HOOKS = [
     run(raw) {
       const result = runPostBash(raw);
       return { stdout: result.output, stderr: result.stderr, exitCode: result.exitCode };
-    },
+    }
   },
   { id: 'post:quality-gate', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/quality-gate.js', run: runQualityGate },
-  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve },
+  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve }
 ];
 
 function getPluginRoot(env = process.env) {
@@ -52,11 +52,14 @@ function getPluginRoot(env = process.env) {
 }
 
 function matchesTool(matcher, toolName) {
-  return matcher === '*' || String(matcher || '')
-    .split('|')
-    .map(value => value.trim())
-    .filter(Boolean)
-    .includes(String(toolName || ''));
+  return (
+    matcher === '*' ||
+    String(matcher || '')
+      .split('|')
+      .map(value => value.trim())
+      .filter(Boolean)
+      .includes(String(toolName || ''))
+  );
 }
 
 function isEnabled(hook, env) {
@@ -66,7 +69,9 @@ function isEnabled(hook, env) {
       .map(normalizeId)
       .filter(Boolean)
   );
-  const requestedProfile = String(env.ECC_HOOK_PROFILE || 'standard').trim().toLowerCase();
+  const requestedProfile = String(env.ECC_HOOK_PROFILE || 'standard')
+    .trim()
+    .toLowerCase();
   const profile = VALID_PROFILES.has(requestedProfile) ? requestedProfile : 'standard';
   return !disabled.has(normalizeId(hook.id)) && parseProfiles(hook.profiles).includes(profile);
 }
@@ -109,15 +114,15 @@ function normalizeResult(raw, output) {
     stdout = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PostToolUse',
-        additionalContext: String(output.additionalContext ?? ''),
-      },
+        additionalContext: String(output.additionalContext ?? '')
+      }
     });
   }
 
   return {
     stdout: stdout !== raw ? stdout : '',
     stderr: typeof output.stderr === 'string' ? output.stderr : '',
-    exitCode: Number.isInteger(output.exitCode) ? output.exitCode : 0,
+    exitCode: Number.isInteger(output.exitCode) ? output.exitCode : 0
   };
 }
 
@@ -126,11 +131,50 @@ function appendLine(current, next) {
   return current + (String(next).endsWith('\n') ? String(next) : `${next}\n`);
 }
 
+function parseAdditionalContext(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    const output = parsed?.hookSpecificOutput;
+    if (output?.hookEventName !== 'PostToolUse') return null;
+    return typeof output.additionalContext === 'string' ? output.additionalContext : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeHookStdout(outputs) {
+  if (outputs.length === 0) return { stdout: '', warning: '' };
+  if (outputs.length === 1) return { stdout: outputs[0].stdout, warning: '' };
+
+  const contexts = outputs.map(output => parseAdditionalContext(output.stdout));
+  if (contexts.every(context => context !== null)) {
+    return {
+      stdout: JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: contexts.join('\n')
+        }
+      }),
+      warning: ''
+    };
+  }
+
+  const kept = outputs[outputs.length - 1];
+  const dropped = outputs
+    .slice(0, -1)
+    .map(output => output.id)
+    .join(', ');
+  return {
+    stdout: kept.stdout,
+    warning: `[Hook] stdout from ${dropped} dropped in favor of ${kept.id}; raw stdout cannot be merged`
+  };
+}
+
 function runHooks(raw, hooks, options = {}) {
   const env = options.env || process.env;
   const toolName = options.toolName ?? extractToolName(raw);
   const pluginRoot = getPluginRoot(env);
-  let stdout = '';
+  const outputs = [];
   let stderr = '';
   let exitCode = 0;
 
@@ -142,14 +186,17 @@ function runHooks(raw, hooks, options = {}) {
     }
 
     try {
-      const result = normalizeResult(raw, hook.run(raw, {
-        hookId: hook.id,
-        pluginRoot,
-        scriptPath: path.join(pluginRoot, hook.script || ''),
-        truncated: options.truncated === true,
-        maxStdin: MAX_STDIN,
-      }));
-      if (result.stdout) stdout = result.stdout;
+      const result = normalizeResult(
+        raw,
+        hook.run(raw, {
+          hookId: hook.id,
+          pluginRoot,
+          scriptPath: path.join(pluginRoot, hook.script || ''),
+          truncated: options.truncated === true,
+          maxStdin: MAX_STDIN
+        })
+      );
+      if (result.stdout) outputs.push({ id: hook.id, stdout: result.stdout });
       stderr = appendLine(stderr, result.stderr);
       if (result.exitCode !== 0) {
         if (exitCode === 0) exitCode = result.exitCode;
@@ -160,7 +207,9 @@ function runHooks(raw, hooks, options = {}) {
     }
   }
 
-  return { stdout, stderr, exitCode };
+  const merged = mergeHookStdout(outputs);
+  if (merged.warning) stderr = appendLine(stderr, merged.warning);
+  return { stdout: merged.stdout, stderr, exitCode };
 }
 
 function readStdinRaw() {
@@ -201,10 +250,13 @@ async function main() {
   const mode = process.argv[2] === 'async' ? 'async' : 'sync';
   const { raw, truncated } = await readStdinRaw();
   const dispatcherId = `post:dispatcher:${mode}`;
-  const dispatcherEnabled = isEnabled({
-    id: dispatcherId,
-    profiles: 'minimal,standard,strict',
-  }, process.env);
+  const dispatcherEnabled = isEnabled(
+    {
+      id: dispatcherId,
+      profiles: 'minimal,standard,strict'
+    },
+    process.env
+  );
   const hooks = dispatcherEnabled ? (mode === 'async' ? ASYNC_HOOKS : SYNC_HOOKS) : [];
   const result = runHooks(raw, hooks, { truncated });
   if (truncated) {
@@ -213,25 +265,29 @@ async function main() {
   if (result.stderr) process.stderr.write(result.stderr);
   const stdout = resolveMainStdout(raw, result, {
     passthrough: process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1',
-    truncated,
+    truncated
   });
   if (stdout) process.stdout.write(stdout);
   process.exitCode = result.exitCode;
 }
 
-if (require.main === module || require.main === undefined) {
+function cli() {
   main().catch(error => {
     process.stderr.write(`[Hook] PostToolUse dispatcher failed: ${error.message}\n`);
     process.exitCode = 0;
   });
 }
 
+if (require.main === module) cli();
+
 module.exports = {
   ASYNC_HOOKS,
   SYNC_HOOKS,
+  cli,
   matchesTool,
   main,
+  mergeHookStdout,
   normalizeResult,
   resolveMainStdout,
-  runHooks,
+  runHooks
 };
