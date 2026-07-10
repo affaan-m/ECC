@@ -36,7 +36,8 @@ const ASYNC_HOOKS = [
   {
     id: 'post:bash:dispatcher',
     matcher: 'Bash',
-    profiles: 'standard,strict',
+    // main ran this phase unconditionally; sub-hooks gate themselves internally
+    profiles: 'minimal,standard,strict',
     script: 'scripts/hooks/post-bash-dispatcher.js',
     run(raw) {
       const result = runPostBash(raw);

@@ -215,6 +215,13 @@ function runTests() {
       assert.strictEqual(minimalSync.status, 0, minimalSync.stderr);
       assert.deepStrictEqual(previewedIds(minimalSync.stderr), ['post:ecc-metrics-bridge']);
 
+      const minimalAsync = runDispatcher('async', 'Bash', {
+        ECC_DRY_RUN: '1',
+        ECC_HOOK_PROFILE: 'minimal'
+      });
+      assert.strictEqual(minimalAsync.status, 0, minimalAsync.stderr);
+      assert.deepStrictEqual(previewedIds(minimalAsync.stderr), ['post:bash:dispatcher'], 'bash dispatcher phase must stay reachable in minimal profile like main; its sub-hooks gate themselves');
+
       const disabled = runDispatcher('sync', 'Edit', {
         ECC_DRY_RUN: '1',
         ECC_DISABLED_HOOKS: 'post:edit:accumulator'
