@@ -25,6 +25,12 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" && "$CWD_SKILLS_DIR" != */.cl
   echo "Warning: CWD_SKILLS_DIR does not look like a .claude/skills path: $CWD_SKILLS_DIR" >&2
 fi
 
+# Skip the project scan when it resolves to the same directory as the global
+# dir (e.g., invoked from $HOME) — otherwise every skill is double-counted.
+if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" && "$(cd "$CWD_SKILLS_DIR" && pwd -P)" == "$(cd "$GLOBAL_DIR" && pwd -P)" ]]; then
+  CWD_SKILLS_DIR=""
+fi
+
 # Extract a frontmatter field (handles both quoted and unquoted single-line values).
 # Does NOT support multi-line YAML blocks (| or >) or nested YAML keys.
 extract_field() {
@@ -106,7 +112,14 @@ scan_dir_to_json() {
     u7="${u7:-0}"
     u30=$(echo "$obs_30d_counts" | awk -v f="$file" '$2 == f {print $1}' | head -1)
     u30="${u30:-0}"
-    dp="${file/#$HOME/~}"
+    # Canonicalize the path (see quick-diff.sh): cygpath -m on Windows so the
+    # stored form matches what MSYS argument conversion hands to native jq.exe;
+    # escaped ~ elsewhere to avoid tilde re-expansion back into $HOME.
+    if command -v cygpath >/dev/null 2>&1; then
+      dp=$(cygpath -m "$file")
+    else
+      dp="${file/#$HOME/\~}"
+    fi
 
     jq -n \
       --arg path "$dp" \
@@ -151,20 +164,23 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" ]]; then
   project_count=$(echo "$project_skills" | jq 'length')
 fi
 
-# Merge global + project skills into one array
-all_skills=$(jq -s 'add' <(echo "$global_skills") <(echo "$project_skills"))
+# Merge global + project skills into one array.
+# Feed both arrays via stdin instead of process substitution — native Windows
+# jq.exe cannot open MSYS /proc/<pid>/fd paths produced by <(...).
+all_skills=$(printf '%s\n%s\n' "$global_skills" "$project_skills" | jq -s 'add')
 
-jq -n \
+# Pass the (potentially large) skills array via stdin rather than --argjson —
+# Windows enforces a ~32KB argv limit that a full inventory easily exceeds.
+printf '%s' "$all_skills" | jq \
   --arg global_found "$global_found" \
   --argjson global_count "$global_count" \
   --arg project_found "$project_found" \
   --arg project_path "$project_path" \
   --argjson project_count "$project_count" \
-  --argjson skills "$all_skills" \
   '{
     scan_summary: {
       global: { found: ($global_found == "true"), count: $global_count },
       project: { found: ($project_found == "true"), path: $project_path, count: $project_count }
     },
-    skills: $skills
+    skills: .
   }'
