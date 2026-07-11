@@ -257,7 +257,13 @@ function renderMarkdown(text) {
         items.push({ indent: m[1].length, marker: m[2], text: m[3] });
         i += 1;
       }
-      out.push(buildList(items, 0, items[0].indent).html);
+      // Anchor the list on its shallowest item, not items[0]. Using
+      // items[0].indent as the base drops any later item that is less
+      // indented than the first: buildList's `indent >= base` guard skips
+      // it, silently losing list content when a block's first item is
+      // over-indented.
+      const baseIndent = Math.min(...items.map((it) => it.indent));
+      out.push(buildList(items, 0, baseIndent).html);
       continue;
     }
 
