@@ -180,6 +180,15 @@ test('detects a 1M window when observed tokens exceed 200k (marker dropped)', ()
   assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
+test('detects a 1M window for a known 1M-native model id without the [1m] marker (#2461)', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
+test('matches a known 1M-native model id carrying a vendor/date prefix or suffix', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'anthropic/claude-fable-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
 test('treats an empty model id as standard window', () => {
   assert.strictEqual(resolveContextWindowTokens(100000, ''), STANDARD_CONTEXT_WINDOW_TOKENS);
 });
