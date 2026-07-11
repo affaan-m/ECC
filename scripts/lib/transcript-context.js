@@ -28,6 +28,14 @@ const DEFAULT_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MAX_TOKEN_SETTING = 10000000;
 const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 
+// Model ids whose native default context window is 1M but which do NOT carry
+// the `[1m]` marker (that marker denotes a 1M beta enabled on a 200k-base
+// model). These newer models ship 1M as the standard window, so an unmarked id
+// that also stays under the 200k observed-token heuristic would otherwise be
+// mis-sized as the 200k default and overstate context usage (#2461). Matched as
+// a substring so vendor/date prefixes or suffixes still resolve.
+const KNOWN_LARGE_WINDOW_MODELS = ['claude-fable-5', 'claude-mythos-5'];
+
 /**
  * Read the trailing `tailBytes` of a file as UTF-8.
  * Returns null when the file is missing or unreadable.
@@ -132,9 +140,10 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 
 /**
  * Detect the context window size for a turn.
- * 1M when the model id carries the `[1m]` marker, or when the observed token
- * count already exceeds the standard 200k window (covers logs that drop the
- * suffix); otherwise the standard 200k window.
+ * 1M when the model id carries the `[1m]` marker, matches a known 1M-native
+ * model id (e.g. `claude-fable-5`), or when the observed token count already
+ * exceeds the standard 200k window (covers logs that drop the suffix);
+ * otherwise the standard 200k window.
  */
 function resolveContextWindowTokens(tokens, model) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
@@ -147,6 +156,10 @@ function resolveContextWindowTokens(tokens, model) {
   }
 
   if (typeof model === 'string' && model.includes(LARGE_WINDOW_MODEL_MARKER)) {
+    return LARGE_CONTEXT_WINDOW_TOKENS;
+  }
+
+  if (typeof model === 'string' && KNOWN_LARGE_WINDOW_MODELS.some((id) => model.includes(id))) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
   }
 
