@@ -198,7 +198,7 @@ function getPythonDeps(projectDir) {
         const trimmed = line.trim();
         if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('-')) {
           const name = trimmed
-            .split(/[>=<![;]/)[0]
+            .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
           if (name) deps.push(name);
@@ -220,7 +220,7 @@ function getPythonDeps(projectDir) {
         block.match(/"([^"]+)"/g)?.forEach(m => {
           const name = m
             .replace(/"/g, '')
-            .split(/[>=<![;]/)[0]
+            .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
           if (name) deps.push(name);
