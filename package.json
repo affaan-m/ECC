@@ -410,7 +410,7 @@
     "ecc-plan-canvas": "scripts/plan-canvas.js"
   },
   "scripts": {
-    "postinstall": "echo '\\n  ecc-universal installed!\\n  Run: npx ecc typescript\\n  Compat: npx ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n'",
+    "welcome": "echo '\\n  ecc-universal installed!\\n  Run: npx ecc typescript\\n  Compat: npx ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n'",
     "catalog:check": "node scripts/ci/catalog.js --text",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
@@ -441,19 +441,19 @@
     "dashboard:web": "node scripts/dashboard-web.js"
   },
   "dependencies": {
-    "@iarna/toml": "^2.2.5",
-    "ajv": "^8.20.0",
-    "sql.js": "^1.14.1"
+    "@iarna/toml": "2.2.5",
+    "ajv": "8.20.0",
+    "sql.js": "1.14.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "@opencode-ai/plugin": "^1.16.2",
+    "@eslint/js": "9.39.2",
+    "@opencode-ai/plugin": "1.17.3",
     "@types/node": "25.9.2",
-    "c8": "^11.0.0",
-    "eslint": "^10.6.0",
-    "globals": "^17.4.0",
-    "markdownlint-cli": "^0.48.0",
-    "typescript": "^6.0.3"
+    "c8": "11.0.0",
+    "eslint": "10.6.0",
+    "globals": "17.4.0",
+    "markdownlint-cli": "0.48.0",
+    "typescript": "6.0.3"
   },
   "engines": {
     "node": ">=18"

@@ -695,8 +695,8 @@ function dedupeCopyFileOperations(operations) {
   // actually determines the installed content. Recording the shadowed earlier
   // writes in install-state makes `doctor` report perpetual drift and drives
   // `repair` to clobber the override with the generic source (issue #2414).
-  // Keep only the last `copy-file` per destination — matching the sequential
-  // apply order in applyInstallPlan — and leave every other operation kind
+  // Keep only the last `copy-file` per destination - matching the sequential
+  // apply order in applyInstallPlan - and leave every other operation kind
   // (e.g. accumulating `merge-json` writes into a shared config) untouched and
   // in order.
   const lastCopyIndexByDestination = new Map();

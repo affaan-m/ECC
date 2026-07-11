@@ -189,7 +189,7 @@
     {
       "id": "capability:prediction-markets",
       "family": "capability",
-      "description": "Public, non-advisory prediction-market and Itô basket research workflows with gated Itô API access.",
+      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
       "modules": [
         "prediction-market-skills"
       ]
