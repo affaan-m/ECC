@@ -32,6 +32,7 @@ If build fails, STOP and fix before continuing.
 
 ### Phase 2: Type Check
 ```bash
+set -o pipefail
 # TypeScript projects
 npx --no-install tsc --noEmit 2>&1 | head -30
 
