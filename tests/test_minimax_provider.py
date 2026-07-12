@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import cast
 
 import httpx
 import pytest
@@ -20,7 +21,7 @@ class _OpenAICompletions:
     def __init__(self) -> None:
         self.params = None
 
-    def create(self, **params):
+    def create(self, **params: object) -> SimpleNamespace:
         self.params = params
         return SimpleNamespace(
             choices=[
@@ -41,12 +42,13 @@ class _OpenAIClient:
 
 
 class _AnthropicMessages:
-    def __init__(self) -> None:
+    def __init__(self, response: SimpleNamespace | None = None) -> None:
         self.params = None
+        self.response = response
 
-    def create(self, **params):
+    def create(self, **params: object) -> SimpleNamespace:
         self.params = params
-        return SimpleNamespace(
+        return self.response or SimpleNamespace(
             content=[SimpleNamespace(type="text", text="ok")],
             model=params["model"],
             usage=SimpleNamespace(input_tokens=1, output_tokens=2),
@@ -55,8 +57,8 @@ class _AnthropicMessages:
 
 
 class _AnthropicClient:
-    def __init__(self) -> None:
-        self.messages = _AnthropicMessages()
+    def __init__(self, response: SimpleNamespace | None = None) -> None:
+        self.messages = _AnthropicMessages(response)
 
 
 def _tool() -> ToolDefinition:
@@ -67,7 +69,7 @@ def _tool() -> ToolDefinition:
     )
 
 
-def test_minimax_provider_exposes_both_target_models(monkeypatch):
+def test_minimax_provider_exposes_both_target_models(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("MINIMAX_BASE_URL", raising=False)
     monkeypatch.delenv("MINIMAX_MODEL", raising=False)
@@ -98,7 +100,7 @@ def test_minimax_provider_lists_custom_default_model():
 
 
 def test_minimax_provider_uses_openai_chat_completions():
-    provider = MiniMaxProvider(api_key="test")
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_BASE_URL)
     client = _OpenAIClient()
     provider.client = client
 
@@ -154,6 +156,21 @@ def test_minimax_provider_uses_anthropic_messages():
     assert client.messages.params["tools"][0]["input_schema"]["type"] == "object"
 
 
+def test_minimax_anthropic_provider_rejects_empty_responses():
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
+    provider.client = _AnthropicClient(
+        SimpleNamespace(
+            content=[],
+            model=DEFAULT_MINIMAX_MODEL,
+            usage=SimpleNamespace(input_tokens=1, output_tokens=0),
+            stop_reason="end_turn",
+        )
+    )
+
+    with pytest.raises(ValueError, match="empty or filtered response"):
+        provider.generate(LLMInput(messages=[Message(role=Role.USER, content="hi")]))
+
+
 @pytest.mark.parametrize(
     ("base_url", "expected_host"),
     [
@@ -162,9 +179,9 @@ def test_minimax_provider_uses_anthropic_messages():
     ],
 )
 def test_openai_base_url_yields_one_chat_completions_path(
-    monkeypatch,
-    base_url,
-    expected_host,
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+    expected_host: str,
 ):
     requests: list[httpx.Request] = []
 
@@ -194,10 +211,10 @@ def test_openai_base_url_yields_one_chat_completions_path(
 
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
 
-    def openai_client(**kwargs):
+    def openai_client(**kwargs: object) -> OpenAISDK:
         return OpenAISDK(
-            api_key=kwargs["api_key"],
-            base_url=kwargs["base_url"],
+            api_key=cast(str, kwargs["api_key"]),
+            base_url=cast(str, kwargs["base_url"]),
             http_client=http_client,
         )
 
@@ -225,9 +242,9 @@ def test_openai_base_url_yields_one_chat_completions_path(
     ],
 )
 def test_anthropic_base_url_yields_one_v1_messages_path(
-    monkeypatch,
-    configured_base_url,
-    expected_host,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_base_url: str,
+    expected_host: str,
 ):
     requests: list[httpx.Request] = []
 
@@ -249,10 +266,10 @@ def test_anthropic_base_url_yields_one_v1_messages_path(
 
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
 
-    def anthropic_client(**kwargs):
+    def anthropic_client(**kwargs: object) -> AnthropicSDK:
         return AnthropicSDK(
-            api_key=kwargs["api_key"],
-            base_url=kwargs["base_url"],
+            api_key=cast(str, kwargs["api_key"]),
+            base_url=cast(str, kwargs["base_url"]),
             http_client=http_client,
         )
 
