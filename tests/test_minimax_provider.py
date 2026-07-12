@@ -127,9 +127,7 @@ def test_minimax_provider_uses_openai_chat_completions() -> None:
 
 
 def test_minimax_provider_uses_anthropic_messages() -> None:
-    provider = MiniMaxProvider(
-        api_key="test", base_url=f"{MINIMAX_ANTHROPIC_BASE_URL}/v1"
-    )
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
     client = _AnthropicClient()
     provider.client = client
 
@@ -240,9 +238,7 @@ def test_openai_base_url_yields_one_chat_completions_path(
     ("configured_base_url", "expected_host"),
     [
         ("https://api.minimax.io/anthropic", "api.minimax.io"),
-        ("https://api.minimax.io/anthropic/v1", "api.minimax.io"),
         ("https://api.minimaxi.com/anthropic", "api.minimaxi.com"),
-        ("https://api.minimaxi.com/anthropic/v1", "api.minimaxi.com"),
     ],
 )
 def test_anthropic_base_url_yields_one_v1_messages_path(

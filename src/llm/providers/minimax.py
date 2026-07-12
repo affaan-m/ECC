@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from anthropic import Anthropic
 from openai import OpenAI
@@ -28,15 +28,7 @@ DEFAULT_MINIMAX_ANTHROPIC_MAX_TOKENS = 16_000
 
 def _uses_anthropic_messages(base_url: str) -> bool:
     path = urlsplit(base_url).path.rstrip("/")
-    return path.endswith(("/anthropic", "/anthropic/v1"))
-
-
-def _anthropic_sdk_base_url(base_url: str) -> str:
-    parsed = urlsplit(base_url.rstrip("/"))
-    path = parsed.path.rstrip("/")
-    if path.endswith("/anthropic/v1"):
-        path = path.removesuffix("/v1")
-    return urlunsplit(parsed._replace(path=path))
+    return path.endswith("/anthropic")
 
 
 def _parse_tool_arguments(raw_arguments: str | None) -> dict[str, Any]:
@@ -73,11 +65,7 @@ class MiniMaxProvider(LLMProvider):
             self.base_url_env, self.default_base_url
         )
         self._uses_anthropic = _uses_anthropic_messages(configured_base_url)
-        self.base_url = (
-            _anthropic_sdk_base_url(configured_base_url)
-            if self._uses_anthropic
-            else configured_base_url
-        )
+        self.base_url = configured_base_url
         self.default_model = (
             default_model or os.environ.get(self.model_env) or DEFAULT_MINIMAX_MODEL
         )
