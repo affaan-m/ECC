@@ -1,6 +1,16 @@
 import pytest
+
 from llm.core.types import ProviderType
-from llm.providers import AstraflowCNProvider, AstraflowProvider, AtlasProvider, ClaudeProvider, MiniMaxProvider, OpenAIProvider, OllamaProvider, get_provider
+from llm.providers import (
+    AstraflowCNProvider,
+    AstraflowProvider,
+    AtlasProvider,
+    ClaudeProvider,
+    MiniMaxProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    get_provider,
+)
 
 
 class TestGetProvider:
