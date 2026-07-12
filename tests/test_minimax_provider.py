@@ -16,6 +16,8 @@ from llm.providers.minimax import (
     MiniMaxProvider,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class _OpenAICompletions:
     def __init__(self) -> None:
@@ -69,7 +71,9 @@ def _tool() -> ToolDefinition:
     )
 
 
-def test_minimax_provider_exposes_both_target_models(monkeypatch: pytest.MonkeyPatch):
+def test_minimax_provider_exposes_both_target_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("MINIMAX_BASE_URL", raising=False)
     monkeypatch.delenv("MINIMAX_MODEL", raising=False)
@@ -89,7 +93,7 @@ def test_minimax_provider_exposes_both_target_models(monkeypatch: pytest.MonkeyP
     assert models[MINIMAX_M2_7_MODEL].supports_vision is False
 
 
-def test_minimax_provider_lists_custom_default_model():
+def test_minimax_provider_lists_custom_default_model() -> None:
     provider = MiniMaxProvider(api_key="test", default_model="custom-model")
 
     assert {model.name for model in provider.list_models()} == {
@@ -99,7 +103,7 @@ def test_minimax_provider_lists_custom_default_model():
     }
 
 
-def test_minimax_provider_uses_openai_chat_completions():
+def test_minimax_provider_uses_openai_chat_completions() -> None:
     provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_BASE_URL)
     client = _OpenAIClient()
     provider.client = client
@@ -122,7 +126,7 @@ def test_minimax_provider_uses_openai_chat_completions():
     assert client.completions.params["tools"][0]["type"] == "function"
 
 
-def test_minimax_provider_uses_anthropic_messages():
+def test_minimax_provider_uses_anthropic_messages() -> None:
     provider = MiniMaxProvider(
         api_key="test", base_url=f"{MINIMAX_ANTHROPIC_BASE_URL}/v1"
     )
@@ -156,7 +160,7 @@ def test_minimax_provider_uses_anthropic_messages():
     assert client.messages.params["tools"][0]["input_schema"]["type"] == "object"
 
 
-def test_minimax_anthropic_provider_rejects_empty_responses():
+def test_minimax_anthropic_provider_rejects_empty_responses() -> None:
     provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
     provider.client = _AnthropicClient(
         SimpleNamespace(
@@ -182,7 +186,7 @@ def test_openai_base_url_yields_one_chat_completions_path(
     monkeypatch: pytest.MonkeyPatch,
     base_url: str,
     expected_host: str,
-):
+) -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -245,7 +249,7 @@ def test_anthropic_base_url_yields_one_v1_messages_path(
     monkeypatch: pytest.MonkeyPatch,
     configured_base_url: str,
     expected_host: str,
-):
+) -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
