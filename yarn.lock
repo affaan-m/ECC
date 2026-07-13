@@ -59,7 +59,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@eslint/js@npm:^9.39.2":
+"@eslint/js@npm:9.39.2":
   version: 9.39.2
   resolution: "@eslint/js@npm:9.39.2"
   checksum: 10c0/00f51c52b04ac79faebfaa65a9652b2093b9c924e945479f1f3945473f78aee83cbc76c8d70bbffbf06f7024626575b16d97b66eab16182e1d0d39daff2f26f5
@@ -114,7 +114,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@iarna/toml@npm:^2.2.5":
+"@iarna/toml@npm:2.2.5":
   version: 2.2.5
   resolution: "@iarna/toml@npm:2.2.5"
   checksum: 10c0/d095381ad4554aca233b7cf5a91f243ef619e5e15efd3157bc640feac320545450d14b394aebbf6f02a2047437ced778ae598d5879a995441ab7b6c0b2c2f201
@@ -203,7 +203,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@opencode-ai/plugin@npm:^1.16.2":
+"@opencode-ai/plugin@npm:1.17.3":
   version: 1.17.3
   resolution: "@opencode-ai/plugin@npm:1.17.3"
   dependencies:
@@ -333,6 +333,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ajv@npm:8.20.0":
+  version: 8.20.0
+  resolution: "ajv@npm:8.20.0"
+  dependencies:
+    fast-deep-equal: "npm:^3.1.3"
+    fast-uri: "npm:^3.0.1"
+    json-schema-traverse: "npm:^1.0.0"
+    require-from-string: "npm:^2.0.2"
+  checksum: 10c0/5df9a1c8f83863cde1bd3a9ddb426f599718f88e3dc9153616c79fb28e0be455335830d7f21d745576519f057b371352daa31047b6a33d7036fe08777d60cf2a
+  languageName: node
+  linkType: hard
+
 "ajv@npm:^6.14.0":
   version: 6.14.0
   resolution: "ajv@npm:6.14.0"
@@ -342,18 +354,6 @@ __metadata:
     json-schema-traverse: "npm:^0.4.1"
     uri-js: "npm:^4.2.2"
   checksum: 10c0/a2bc39b0555dc9802c899f86990eb8eed6e366cddbf65be43d5aa7e4f3c4e1a199d5460fd7ca4fb3d864000dbbc049253b72faa83b3b30e641ca52cb29a68c22
-  languageName: node
-  linkType: hard
-
-"ajv@npm:^8.20.0":
-  version: 8.20.0
-  resolution: "ajv@npm:8.20.0"
-  dependencies:
-    fast-deep-equal: "npm:^3.1.3"
-    fast-uri: "npm:^3.0.1"
-    json-schema-traverse: "npm:^1.0.0"
-    require-from-string: "npm:^2.0.2"
-  checksum: 10c0/5df9a1c8f83863cde1bd3a9ddb426f599718f88e3dc9153616c79fb28e0be455335830d7f21d745576519f057b371352daa31047b6a33d7036fe08777d60cf2a
   languageName: node
   linkType: hard
 
@@ -403,7 +403,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"c8@npm:^11.0.0":
+"c8@npm:11.0.0":
   version: 11.0.0
   resolution: "c8@npm:11.0.0"
   dependencies:
@@ -578,17 +578,17 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "ecc-universal@workspace:."
   dependencies:
-    "@eslint/js": "npm:^9.39.2"
-    "@iarna/toml": "npm:^2.2.5"
-    "@opencode-ai/plugin": "npm:^1.16.2"
+    "@eslint/js": "npm:9.39.2"
+    "@iarna/toml": "npm:2.2.5"
+    "@opencode-ai/plugin": "npm:1.17.3"
     "@types/node": "npm:25.9.2"
-    ajv: "npm:^8.20.0"
-    c8: "npm:^11.0.0"
-    eslint: "npm:^10.6.0"
-    globals: "npm:^17.4.0"
-    markdownlint-cli: "npm:^0.48.0"
-    sql.js: "npm:^1.14.1"
-    typescript: "npm:^6.0.3"
+    ajv: "npm:8.20.0"
+    c8: "npm:11.0.0"
+    eslint: "npm:10.6.0"
+    globals: "npm:17.4.0"
+    markdownlint-cli: "npm:0.48.0"
+    sql.js: "npm:1.14.1"
+    typescript: "npm:6.0.3"
   bin:
     ecc: scripts/ecc.js
     ecc-control-pane: scripts/control-pane.js
@@ -676,7 +676,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint@npm:^10.6.0":
+"eslint@npm:10.6.0":
   version: 10.6.0
   resolution: "eslint@npm:10.6.0"
   dependencies:
@@ -907,7 +907,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"globals@npm:^17.4.0":
+"globals@npm:17.4.0":
   version: 17.4.0
   resolution: "globals@npm:17.4.0"
   checksum: 10c0/2be9e8c2b9035836f13d420b22f0247a328db82967d3bebfc01126d888ed609305f06c05895914e969653af5c6ba35fd7a0920f3e6c869afa60666c810630feb
@@ -1206,7 +1206,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"markdownlint-cli@npm:^0.48.0":
+"markdownlint-cli@npm:0.48.0":
   version: 0.48.0
   resolution: "markdownlint-cli@npm:0.48.0"
   dependencies:
@@ -1876,7 +1876,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sql.js@npm:^1.14.1":
+"sql.js@npm:1.14.1":
   version: 1.14.1
   resolution: "sql.js@npm:1.14.1"
   checksum: 10c0/3491b7642b8b6d89926e4cf1807c01697df7e3f7283b94aaebc026e6c38aaf9496065e9daf25de3109e51df835150d4f795f5249f22a1d3e6a3bb1f2e32c0710
@@ -1998,7 +1998,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^6.0.3":
+"typescript@npm:6.0.3":
   version: 6.0.3
   resolution: "typescript@npm:6.0.3"
   bin:
@@ -2008,7 +2008,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A^6.0.3#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>":
   version: 6.0.3
   resolution: "typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>::version=6.0.3&hash=5786d5"
   bin:
