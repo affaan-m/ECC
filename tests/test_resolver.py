@@ -1,6 +1,16 @@
 import pytest
+
 from llm.core.types import ProviderType
-from llm.providers import AstraflowCNProvider, AstraflowProvider, AtlasProvider, ClaudeProvider, OpenAIProvider, OllamaProvider, get_provider
+from llm.providers import (
+    AstraflowCNProvider,
+    AstraflowProvider,
+    AtlasProvider,
+    ClaudeProvider,
+    MiniMaxProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    get_provider,
+)
 
 
 class TestGetProvider:
@@ -33,6 +43,11 @@ class TestGetProvider:
         provider = get_provider("atlas")
         assert isinstance(provider, AtlasProvider)
         assert provider.provider_type == ProviderType.ATLAS
+
+    def test_get_minimax_provider(self):
+        provider = get_provider("minimax")
+        assert isinstance(provider, MiniMaxProvider)
+        assert provider.provider_type == ProviderType.MINIMAX
 
     def test_get_provider_by_enum(self):
         provider = get_provider(ProviderType.CLAUDE)
