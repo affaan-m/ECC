@@ -135,7 +135,8 @@ def test_generate_does_not_pass_cache_control_as_top_level_param() -> None:
     # When a system prompt is present, cache_control should ride on the last
     # system content block so ephemeral prompt caching still works.
     system = params.get("system")
-    assert isinstance(system, list) and system, "system should be a non-empty list of blocks"
+    assert isinstance(system, list), "system should be sent as a list of content blocks"
+    assert system, "system content-block list should not be empty"
     assert system[-1].get("cache_control") == {"type": "ephemeral"}
 
 
