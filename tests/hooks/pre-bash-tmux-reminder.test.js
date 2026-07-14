@@ -27,24 +27,55 @@ function test(name, fn) {
   }
 }
 
-function runScript(input) {
-  const env = { ...process.env };
-  delete env.TMUX;
+function invokeHook(cmd, extraEnv = {}) {
+  // Immutably drop TMUX from the base env; callers can re-add it via extraEnv.
+  const { TMUX: _tmuxDropped, ...envWithoutTmux } = process.env;
+  const env = { ...envWithoutTmux, ...extraEnv };
+
   const result = spawnSync('node', [script], {
     encoding: 'utf8',
-    input: typeof input === 'string' ? input : JSON.stringify(input),
+    input: JSON.stringify({ tool_input: { command: cmd } }),
     timeout: 10000,
     env,
   });
+
+  // Fail loudly on spawn errors instead of coercing status to 0, which
+  // would make broken tests silently pass.
+  if (result.error) {
+    throw new Error(`spawnSync failed for "${cmd}": ${result.error.message}`);
+  }
+  if (result.signal) {
+    throw new Error(`spawnSync terminated by signal ${result.signal} for "${cmd}"`);
+  }
+  if (result.status === null || result.status === undefined) {
+    throw new Error(`spawnSync returned no exit status for "${cmd}"`);
+  }
+
   return {
-    code: result.status || 0,
+    code: result.status,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
   };
 }
 
+function runRaw(rawInput) {
+  const { TMUX: _tmuxDropped, ...env } = process.env;
+  const result = spawnSync('node', [script], {
+    encoding: 'utf8',
+    input: rawInput,
+    timeout: 10000,
+    env,
+  });
+  if (result.error) throw new Error(`spawnSync failed: ${result.error.message}`);
+  if (result.signal) throw new Error(`spawnSync terminated by signal ${result.signal}`);
+  if (result.status === null || result.status === undefined) {
+    throw new Error('spawnSync returned no exit status');
+  }
+  return { code: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
+}
+
 function assertReminder(cmd) {
-  const result = runScript({ tool_input: { command: cmd } });
+  const result = invokeHook(cmd);
   assert.strictEqual(result.code, 0, `exit code for "${cmd}"`);
   assert.ok(
     result.stdout.includes('Consider running in tmux'),
@@ -53,7 +84,7 @@ function assertReminder(cmd) {
 }
 
 function assertNoReminder(cmd) {
-  const result = runScript({ tool_input: { command: cmd } });
+  const result = invokeHook(cmd);
   assert.strictEqual(result.code, 0, `exit code for "${cmd}"`);
   assert.ok(
     !result.stdout.includes('Consider running in tmux'),
@@ -61,71 +92,78 @@ function assertNoReminder(cmd) {
   );
 }
 
+function tally(counter, ok) {
+  if (ok) counter.passed++;
+  else counter.failed++;
+}
+
+function runYarnTests(counter) {
+  console.log('Yarn matches (regression: subcommand must be required):');
+  tally(counter, test('fires for yarn install', () => assertReminder('yarn install')));
+  tally(counter, test('fires for yarn test', () => assertReminder('yarn test')));
+
+  console.log('\nYarn non-matches (regression for bug where every yarn command matched):');
+  tally(counter, test('does not fire for yarn add react', () => assertNoReminder('yarn add react')));
+  tally(counter, test('does not fire for yarn build', () => assertNoReminder('yarn build')));
+  tally(counter, test('does not fire for yarn dev', () => assertNoReminder('yarn dev')));
+  tally(counter, test('does not fire for yarn --version', () => assertNoReminder('yarn --version')));
+  tally(counter, test('does not fire for bare yarn', () => assertNoReminder('yarn')));
+}
+
+function runSiblingPackageManagerTests(counter) {
+  console.log('\nSibling package managers still behave as before:');
+  tally(counter, test('fires for npm install', () => assertReminder('npm install')));
+  tally(counter, test('fires for pnpm test', () => assertReminder('pnpm test')));
+  tally(counter, test('fires for bun install', () => assertReminder('bun install')));
+  tally(counter, test('does not fire for npm run dev', () => assertNoReminder('npm run dev')));
+}
+
+function runOtherToolTests(counter) {
+  console.log('\nOther matched tools still trigger:');
+  tally(counter, test('fires for pytest tests/', () => assertReminder('pytest tests/')));
+  tally(counter, test('fires for cargo build', () => assertReminder('cargo build')));
+}
+
+function runTmuxBypassTests(counter) {
+  console.log('\nSkips when already inside tmux:');
+  tally(counter, test('does not fire when TMUX is set even for yarn install', () => {
+    const result = invokeHook('yarn install', { TMUX: '/tmp/tmux-1000/default,1,0' });
+    assert.strictEqual(result.code, 0);
+    assert.ok(!result.stdout.includes('Consider running in tmux'));
+  }));
+}
+
+function runEdgeCaseTests(counter) {
+  console.log('\nEdge cases:');
+  tally(counter, test('handles invalid JSON gracefully', () => {
+    const result = runRaw('not json');
+    assert.strictEqual(result.code, 0);
+    assert.strictEqual(result.stdout, 'not json');
+  }));
+  tally(counter, test('handles missing command field', () => {
+    const result = runRaw(JSON.stringify({ tool_input: {} }));
+    assert.strictEqual(result.code, 0);
+    assert.ok(!result.stdout.includes('Consider running in tmux'));
+  }));
+}
+
 function runTests() {
   console.log('\n=== Testing pre-bash-tmux-reminder.js ===\n');
-
-  let passed = 0;
-  let failed = 0;
 
   if (process.platform === 'win32') {
     console.log('  (skipping: hook is a no-op on win32)\n');
     return true;
   }
 
-  console.log('Yarn matches (regression: subcommand must be required):');
+  const counter = { passed: 0, failed: 0 };
+  runYarnTests(counter);
+  runSiblingPackageManagerTests(counter);
+  runOtherToolTests(counter);
+  runTmuxBypassTests(counter);
+  runEdgeCaseTests(counter);
 
-  if (test('fires for yarn install', () => assertReminder('yarn install'))) passed++; else failed++;
-  if (test('fires for yarn test', () => assertReminder('yarn test'))) passed++; else failed++;
-
-  console.log('\nYarn non-matches (regression for bug where every yarn command matched):');
-
-  if (test('does not fire for yarn add react', () => assertNoReminder('yarn add react'))) passed++; else failed++;
-  if (test('does not fire for yarn build', () => assertNoReminder('yarn build'))) passed++; else failed++;
-  if (test('does not fire for yarn dev', () => assertNoReminder('yarn dev'))) passed++; else failed++;
-  if (test('does not fire for yarn --version', () => assertNoReminder('yarn --version'))) passed++; else failed++;
-  if (test('does not fire for bare yarn', () => assertNoReminder('yarn'))) passed++; else failed++;
-
-  console.log('\nSibling package managers still behave as before:');
-
-  if (test('fires for npm install', () => assertReminder('npm install'))) passed++; else failed++;
-  if (test('fires for pnpm test', () => assertReminder('pnpm test'))) passed++; else failed++;
-  if (test('fires for bun install', () => assertReminder('bun install'))) passed++; else failed++;
-  if (test('does not fire for npm run dev', () => assertNoReminder('npm run dev'))) passed++; else failed++;
-
-  console.log('\nOther matched tools still trigger:');
-
-  if (test('fires for pytest tests/', () => assertReminder('pytest tests/'))) passed++; else failed++;
-  if (test('fires for cargo build', () => assertReminder('cargo build'))) passed++; else failed++;
-
-  console.log('\nSkips when already inside tmux:');
-
-  if (test('does not fire when TMUX is set even for yarn install', () => {
-    const result = spawnSync('node', [script], {
-      encoding: 'utf8',
-      input: JSON.stringify({ tool_input: { command: 'yarn install' } }),
-      timeout: 10000,
-      env: { ...process.env, TMUX: '/tmp/tmux-1000/default,1,0' },
-    });
-    assert.strictEqual(result.status || 0, 0);
-    assert.ok(!(result.stdout || '').includes('Consider running in tmux'));
-  })) passed++; else failed++;
-
-  console.log('\nEdge cases:');
-
-  if (test('handles invalid JSON gracefully', () => {
-    const result = runScript('not json');
-    assert.strictEqual(result.code, 0);
-    assert.strictEqual(result.stdout, 'not json');
-  })) passed++; else failed++;
-
-  if (test('handles missing command field', () => {
-    const result = runScript({ tool_input: {} });
-    assert.strictEqual(result.code, 0);
-    assert.ok(!result.stdout.includes('Consider running in tmux'));
-  })) passed++; else failed++;
-
-  console.log(`\nResults: ${passed} passed, ${failed} failed\n`);
-  return failed === 0;
+  console.log(`\nResults: ${counter.passed} passed, ${counter.failed} failed\n`);
+  return counter.failed === 0;
 }
 
 if (require.main === module) {
