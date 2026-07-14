@@ -19,6 +19,7 @@ function test(desc, fn) {
     passed++;
   } catch (e) {
     console.log(`  ✗ ${desc}: ${e.message}`);
+    if (e.stack) console.log(e.stack);
     failed++;
   }
 }
@@ -68,6 +69,17 @@ test('single quotes inside a $() body are preserved', () => {
   assert.deepStrictEqual(extractCommandSubstitutions("x=$(echo 'a b')"), ["echo 'a b'"]);
 });
 
+console.log('\nextractCommandSubstitutions - escaped substitutions:');
+test('escaped \\$() is NOT extracted (literal dollar)', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions('echo \\$(whoami)'), []);
+});
+test('escaped backtick is NOT extracted', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions('echo \\`whoami\\`'), []);
+});
+test('escaped \\$() with mixed real $() only extracts the real one', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions('\\$(fake) $(real)'), ['real']);
+});
+
 console.log('\nextractCommandSubstitutions - nesting:');
 test('nested $() returns outer body then inner body', () => {
   assert.deepStrictEqual(extractCommandSubstitutions('echo $(echo $(id))'), ['echo $(id)', 'id']);
@@ -104,6 +116,12 @@ test('returns [] when there is no subshell', () => {
 });
 test('empty string returns []', () => {
   assert.deepStrictEqual(extractSubshellGroups(''), []);
+});
+test('null returns []', () => {
+  assert.deepStrictEqual(extractSubshellGroups(null), []);
+});
+test('undefined returns []', () => {
+  assert.deepStrictEqual(extractSubshellGroups(undefined), []);
 });
 
 console.log('\nextractSubshellGroups - skips substitutions and quotes:');
@@ -144,6 +162,12 @@ test('returns [] when there is no brace group', () => {
 });
 test('empty string returns []', () => {
   assert.deepStrictEqual(extractBraceGroups(''), []);
+});
+test('null returns []', () => {
+  assert.deepStrictEqual(extractBraceGroups(null), []);
+});
+test('undefined returns []', () => {
+  assert.deepStrictEqual(extractBraceGroups(undefined), []);
 });
 
 console.log('\nextractBraceGroups - reserved-word semantics:');
