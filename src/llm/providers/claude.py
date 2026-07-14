@@ -67,7 +67,6 @@ class ClaudeProvider(LLMProvider):
                 "model": model,
                 "messages": api_messages,
                 "max_tokens": input.max_tokens if input.max_tokens else 16000,
-                "cache_control": {"type": "ephemeral"},
             }
             if system_parts:
                 params["system"] = "\n\n".join(system_parts)
