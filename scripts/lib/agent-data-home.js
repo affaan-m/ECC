@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertWithinTrustedRoot } = require('./path-safety');
 
 const AGENT_DATA_HOME_ENV = 'ECC_AGENT_DATA_HOME';
 const DEFAULT_CLAUDE_DIR_NAME = '.claude';
@@ -104,7 +105,7 @@ function readProjectConfigAt(configPath) {
     const candidate = parsed.agentDataHome || parsed.ECC_AGENT_DATA_HOME;
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
     const projectRoot = resolveProjectRootFromConfigPath(configPath);
-    return expandHomePath(candidate, projectRoot);
+    const resolved = expandHomePath(candidate, projectRoot); assertWithinTrustedRoot(resolved, getHomeDirFromEnv(), 'agent-data-home write'); return resolved;
   } catch (error) {
     console.error(
       `[ECC] Failed to read or parse agent data config at ${configPath}: ${error.message}`
