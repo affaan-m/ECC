@@ -424,6 +424,21 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('getPythonDeps strips @ direct-reference URLs and git+ VCS forms', () => {
+    const dir = createTempDir();
+    try {
+      writeTestFile(dir, 'requirements.txt', 'pkg @ git+https://github.com/user/repo.git\nother @ https://example.com/pkg.tar.gz\ngit-dep @ git+https://github.com/user/dep.git@v2.0\ngit+https://github.com/user/repo.git#egg=pkg');
+      const deps = getPythonDeps(dir);
+      assert.ok(deps.includes('pkg'), `pkg missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('other'), `other missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(deps.includes('git-dep'), `git-dep missing from deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.includes('git+https'), `VCS URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('@')), `@ delimiter leaked into deps: ${JSON.stringify(deps)}`);
+    } finally {
+      cleanupDir(dir);
+    }
+  })) passed++; else failed++;
+
   if (test('getGoDeps reads go.mod require block', () => {
     const dir = createTempDir();
     try {
