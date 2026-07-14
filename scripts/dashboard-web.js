@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { buildAllowedHostnames, isAllowedHostHeader, isAllowedOrigin } = require('./lib/loopback-guard');
 
 function parsePort(v) {
   const n = parseInt(String(v), 10);
@@ -20,6 +21,8 @@ function parsePort(v) {
 }
 const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456');
 const ROOT = path.resolve(__dirname, '..');
+const HOST = process.env.ECC_DASHBOARD_HOST || '127.0.0.1';
+const ALLOWED = buildAllowedHostnames(HOST);
 
 function readFrontmatter(p) {
   try {
@@ -756,17 +759,18 @@ handleRoute();
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  if (!isAllowedHostHeader(req.headers['host'], ALLOWED)) { res.writeHead(421, { 'Content-Type': 'text/plain' }); return res.end('421 Misdirected Request'); }   if (req.headers['origin'] && !isAllowedOrigin(req.headers['origin'], ALLOWED)) { res.writeHead(403, { 'Content-Type': 'text/plain' }); return res.end('403 Forbidden'); }   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/data') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
+    
   }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(renderHTML({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
 });
 
 if (require.main === module) {
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`\n    ECC Capabilities  →  http://localhost:${PORT}\n`);
     try { const { spawn } = require('child_process'); const p = process.platform; const c = p === 'darwin' ? 'open' : p === 'win32' ? 'start' : 'xdg-open'; if (c === 'start') spawn('cmd', ['/c', 'start', `http://localhost:${PORT}`], { stdio: 'ignore' }); else spawn(c, [`http://localhost:${PORT}`], { stdio: 'ignore' }); } catch { /* best-effort auto-open */ }
   });
