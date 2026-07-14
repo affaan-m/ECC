@@ -185,10 +185,13 @@ test('detects a 1M window for a known 1M-native model id without the [1m] marker
   assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
-test('matches a known 1M-native model id carrying a vendor/date prefix or suffix', () => {
+test('matches a known 1M-native model id carrying a vendor prefix', () => {
   assert.strictEqual(resolveContextWindowTokens(50000, 'anthropic/claude-fable-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
-
+test('does NOT match a model variant whose name merely contains a known id', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5-sonnet'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5-opus'), STANDARD_CONTEXT_WINDOW_TOKENS);
+});
 test('treats an empty model id as standard window', () => {
   assert.strictEqual(resolveContextWindowTokens(100000, ''), STANDARD_CONTEXT_WINDOW_TOKENS);
 });

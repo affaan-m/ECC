@@ -32,8 +32,10 @@ const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 // the `[1m]` marker (that marker denotes a 1M beta enabled on a 200k-base
 // model). These newer models ship 1M as the standard window, so an unmarked id
 // that also stays under the 200k observed-token heuristic would otherwise be
-// mis-sized as the 200k default and overstate context usage (#2461). Matched as
-// a substring so vendor/date prefixes or suffixes still resolve.
+// mis-sized as the 200k default and overstate context usage (#2461). Matched by
+// exact last-segment comparison against `/`-delimited model ids so vendor
+// prefixes (e.g. `anthropic/claude-fable-5`) still resolve without falsely
+// matching unrelated model variants such as `claude-fable-5-sonnet`.
 const KNOWN_LARGE_WINDOW_MODELS = ['claude-fable-5', 'claude-mythos-5'];
 
 /**
@@ -159,7 +161,7 @@ function resolveContextWindowTokens(tokens, model) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
   }
 
-  if (typeof model === 'string' && KNOWN_LARGE_WINDOW_MODELS.some((id) => model.includes(id))) {
+  if (typeof model === 'string' && KNOWN_LARGE_WINDOW_MODELS.some((id) => model.split('/').pop() === id)) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
   }
 
