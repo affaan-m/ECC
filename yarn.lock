@@ -218,17 +218,17 @@ __metadata:
   linkType: hard
 
 "@opencode-ai/plugin@npm:^1.0.0":
-  version: 1.17.13
-  resolution: "@opencode-ai/plugin@npm:1.17.13"
+  version: 1.17.20
+  resolution: "@opencode-ai/plugin@npm:1.17.20"
   dependencies:
     "@ai-sdk/provider": "npm:3.0.8"
-    "@opencode-ai/sdk": "npm:1.17.13"
+    "@opencode-ai/sdk": "npm:1.17.20"
     effect: "npm:4.0.0-beta.83"
     zod: "npm:4.1.8"
   peerDependencies:
-    "@opentui/core": ">=0.3.4"
-    "@opentui/keymap": ">=0.3.4"
-    "@opentui/solid": ">=0.3.4"
+    "@opentui/core": ">=0.4.3"
+    "@opentui/keymap": ">=0.4.3"
+    "@opentui/solid": ">=0.4.3"
   peerDependenciesMeta:
     "@opentui/core":
       optional: true
@@ -236,16 +236,16 @@ __metadata:
       optional: true
     "@opentui/solid":
       optional: true
-  checksum: 10c0/c89ed46663551d6ba619f1d237eabc43b7b0857d767e9dd2d753646b00f13b053206ad76c0245af6e5703c0fc6bc81a8d8b738f88cda56a5228fc6da6bd6dfe4
+  checksum: 10c0/a7fa06b2df8fa6a2b1f3db8a6ebf515350963211e080d67066238b251053719ba6d5411de1ff661ab4e8d63fc4bb5aadf4e2d827b12a1c6df018467269f922e2
   languageName: node
   linkType: hard
 
-"@opencode-ai/sdk@npm:1.17.13":
-  version: 1.17.13
-  resolution: "@opencode-ai/sdk@npm:1.17.13"
+"@opencode-ai/sdk@npm:1.17.20":
+  version: 1.17.20
+  resolution: "@opencode-ai/sdk@npm:1.17.20"
   dependencies:
     cross-spawn: "npm:7.0.6"
-  checksum: 10c0/12060cacc117497699faa298853416ad0845e14fd139bb5262eaa199a24f1a9f763b987aaf3036596821dddca0c2cb1921b7b3eb3b8275978d95e5586f934738
+  checksum: 10c0/b2ea6a55b29e3d520e43ab454af6642a800c94443cd8d651dffa5b3040aeedcd3e083d2f66b79e2a5f04e33bc73a878711bc02b4b0d9da21c4eac308de393301
   languageName: node
   linkType: hard
 
@@ -315,11 +315,11 @@ __metadata:
   linkType: hard
 
 "@types/node@npm:^26.1.0":
-  version: 26.1.0
-  resolution: "@types/node@npm:26.1.0"
+  version: 26.1.1
+  resolution: "@types/node@npm:26.1.1"
   dependencies:
     undici-types: "npm:~8.3.0"
-  checksum: 10c0/61c22ad1ef215e24138cb8b7368fb68bab9de4c123b3f23d411749b015ba1b7d22f878ad54add26a0b69068d7e07c04af665069d8571b6c6c3b9b2fb73b7bd91
+  checksum: 10c0/25ac5093195736dd074d5027adbba85617bc951d5a41506ebd3b9073048acb7233613f3822d5f9b9447f9c0841c91f6387c46283916767e3ef79f23917452c46
   languageName: node
   linkType: hard
 
@@ -697,8 +697,8 @@ __metadata:
   linkType: hard
 
 "eslint@npm:^10.6.0":
-  version: 10.6.0
-  resolution: "eslint@npm:10.6.0"
+  version: 10.7.0
+  resolution: "eslint@npm:10.7.0"
   dependencies:
     "@eslint-community/eslint-utils": "npm:^4.8.0"
     "@eslint-community/regexpp": "npm:^4.12.2"
@@ -737,7 +737,7 @@ __metadata:
       optional: true
   bin:
     eslint: bin/eslint.js
-  checksum: 10c0/ebe0261fc750afb7f1a0c5a14f5288e57b971e0bee9754b1620132d22ad0c23690183977b0c9514ffa7ad460768d689d3fb9792ad9267b6c6205e2e0c17d8563
+  checksum: 10c0/d9415f506730c098ab8897da39f5719cdf9d1026c9511c322d4a272677f904b7d43ff423d63ee941c9a03d74d1a75563ce2668886734b1f293b22e57911a6dd6
   languageName: node
   linkType: hard
 
