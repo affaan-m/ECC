@@ -27,8 +27,8 @@ async function runEcc(args = []) {
   });
 }
 
-const session = await joinSession({
-  tools: [
+// Build manual tools list
+const manualTools = [
     {
       name: "ecc-help",
       description: "Mostra ajuda mínima do ecc",
@@ -130,6 +130,62 @@ const session = await joinSession({
         const a = args && args.args ? args.args : [];
         const res = await runEcc(a);
         return { code: res.code, stdout: res.stdout, stderr: res.stderr };
+      },
+    },
+    {
+      name: "ecc-sessions",
+      description: "Lista ou inspeciona sessões (mapeia para 'ecc sessions')",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        const res = await runEcc(["sessions", ...a]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-status",
+      description: "Consulta o status do ECC (mapeia para 'ecc status')",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        const res = await runEcc(["status", ...a]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-repo-scan",
+      description: "Executa varredura de repositório / repo-scan (fallback para scripts quando necessário)",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        // tenta comando principal
+        let res = await runEcc(["repo-scan", ...a]);
+        if ((res.stderr || '').includes('Unknown command') || res.code !== 0) {
+          // procurar script repo-scan.js
+          const scriptPath = resolve(repoRoot, 'scripts', 'repo-scan.js');
+          try {
+            const node = process.execPath;
+            const child = spawn(node, [scriptPath, ...a], { cwd: repoRoot, windowsHide: true });
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (d) => (stdout += d.toString()));
+            child.stderr.on('data', (d) => (stderr += d.toString()));
+            await new Promise((r) => child.on('close', r));
+            return stdout || stderr || `repo-scan finalizado`;
+          } catch (e) {
+            return res.stdout || res.stderr || (e && e.message) || 'Erro ao executar repo-scan';
+          }
+        }
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-skill-health",
+      description: "Verifica a saúde dos skills ('skill-health' command)",
+      parameters: { type: "object", properties: {} },
+      handler: async () => {
+        const res = await runEcc(["skill-health"]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
       },
     },
     {
