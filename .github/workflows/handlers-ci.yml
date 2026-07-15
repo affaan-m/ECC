@@ -1,0 +1,29 @@
+name: Handlers dry-run CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/extensions/**'
+      - 'agent.yaml'
+      - 'docs/**'
+  push:
+    branches: [ 'main' ]
+
+jobs:
+  handlers-dryrun:
+    runs-on: ubuntu-latest
+    name: Run handlers dry-run
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install deps (light)
+        run: |
+          npm ci --silent || npm install --no-audit --no-fund --silent
+      - name: Run handlers CI script
+        run: node scripts/test-handlers-ci.js
+        env:
+          CI: true

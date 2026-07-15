@@ -47,7 +47,20 @@ function runScript(scriptPath, extraArgs=[]) {
   return spawnSync(node, [scriptPath, ...extraArgs], { cwd: root, encoding: 'utf8' });
 }
 
-const toTest = ['plan', 'sessions', 'loop-status', 'skill-health', 'repo-scan'];
+const toTest = [
+  'plan',
+  'sessions',
+  'loop-status',
+  'skill-health',
+  'repo-scan',
+  'plan-canvas',
+  'install-plan --list-profiles',
+  'status',
+  'update-docs',
+  'security-scan',
+  'skill-health',
+  'sessions'
+];
 let failed = [];
 
 for (const c of toTest) {
