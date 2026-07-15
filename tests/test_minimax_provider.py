@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from typing import cast
 
@@ -7,7 +8,14 @@ from anthropic import Anthropic as AnthropicSDK
 from openai import OpenAI as OpenAISDK
 
 import llm.providers.minimax as minimax_module
-from llm.core.types import LLMInput, Message, ProviderType, Role, ToolDefinition
+from llm.core.types import (
+    LLMInput,
+    Message,
+    ProviderType,
+    Role,
+    ToolCall,
+    ToolDefinition,
+)
 from llm.providers.minimax import (
     DEFAULT_MINIMAX_MODEL,
     MINIMAX_ANTHROPIC_BASE_URL,
@@ -20,16 +28,31 @@ pytestmark = pytest.mark.unit
 
 
 class _OpenAICompletions:
-    def __init__(self) -> None:
+    def __init__(self, response: SimpleNamespace | None = None) -> None:
         self.params = None
+        self.response = response
 
     def create(self, **params: object) -> SimpleNamespace:
         self.params = params
-        return SimpleNamespace(
+        return self.response or SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(content="ok", tool_calls=None),
-                    finish_reason="stop",
+                    message=SimpleNamespace(
+                        content="ok",
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call_1",
+                                function=SimpleNamespace(
+                                    name="search",
+                                    arguments='{"query":"docs"}',
+                                ),
+                            )
+                        ],
+                        reasoning_details=[
+                            SimpleNamespace(type="reasoning.text", text="plan")
+                        ],
+                    ),
+                    finish_reason="tool_calls",
                 )
             ],
             model=params["model"],
@@ -38,8 +61,8 @@ class _OpenAICompletions:
 
 
 class _OpenAIClient:
-    def __init__(self) -> None:
-        self.completions = _OpenAICompletions()
+    def __init__(self, response: SimpleNamespace | None = None) -> None:
+        self.completions = _OpenAICompletions(response)
         self.chat = SimpleNamespace(completions=self.completions)
 
 
@@ -85,6 +108,7 @@ def test_minimax_provider_exposes_both_target_models(
     assert provider.base_url == MINIMAX_BASE_URL
     assert provider.get_default_model() == DEFAULT_MINIMAX_MODEL
     assert provider.validate_config() is False
+    assert provider.supports_vision() is True
     assert models[DEFAULT_MINIMAX_MODEL].context_window == 1_000_000
     assert models[DEFAULT_MINIMAX_MODEL].max_tokens == 524_288
     assert models[DEFAULT_MINIMAX_MODEL].supports_vision is True
@@ -101,6 +125,7 @@ def test_minimax_provider_lists_custom_default_model() -> None:
         MINIMAX_M2_7_MODEL,
         "custom-model",
     }
+    assert provider.supports_vision() is False
 
 
 def test_minimax_provider_uses_openai_chat_completions() -> None:
@@ -122,13 +147,35 @@ def test_minimax_provider_uses_openai_chat_completions() -> None:
         "completion_tokens": 2,
         "total_tokens": 3,
     }
+    assert output.tool_calls == [
+        ToolCall(id="call_1", name="search", arguments={"query": "docs"})
+    ]
+    assert output.metadata == {
+        "openai_reasoning_details": [{"type": "reasoning.text", "text": "plan"}]
+    }
     assert client.completions.params["extra_body"] == {"thinking": {"type": "disabled"}}
     assert client.completions.params["tools"][0]["type"] == "function"
 
 
 def test_minimax_provider_uses_anthropic_messages() -> None:
     provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
-    client = _AnthropicClient()
+    client = _AnthropicClient(
+        SimpleNamespace(
+            content=[
+                SimpleNamespace(type="thinking", thinking="plan", signature="sig"),
+                SimpleNamespace(type="text", text="ok"),
+                SimpleNamespace(
+                    type="tool_use",
+                    id="tool_1",
+                    name="search",
+                    input={"query": "docs"},
+                ),
+            ],
+            model=DEFAULT_MINIMAX_MODEL,
+            usage=SimpleNamespace(input_tokens=1, output_tokens=2),
+            stop_reason="tool_use",
+        )
+    )
     provider.client = client
 
     output = provider.generate(
@@ -145,6 +192,21 @@ def test_minimax_provider_uses_anthropic_messages() -> None:
 
     assert provider.base_url == MINIMAX_ANTHROPIC_BASE_URL
     assert output.content == "ok"
+    assert output.tool_calls == [
+        ToolCall(id="tool_1", name="search", arguments={"query": "docs"})
+    ]
+    assert output.metadata == {
+        "anthropic_content": [
+            {"type": "thinking", "thinking": "plan", "signature": "sig"},
+            {"type": "text", "text": "ok"},
+            {
+                "type": "tool_use",
+                "id": "tool_1",
+                "name": "search",
+                "input": {"query": "docs"},
+            },
+        ]
+    }
     assert output.usage == {
         "input_tokens": 1,
         "output_tokens": 2,
@@ -156,6 +218,160 @@ def test_minimax_provider_uses_anthropic_messages() -> None:
     assert client.messages.params["max_tokens"] == 128
     assert client.messages.params["thinking"] == {"type": "adaptive"}
     assert client.messages.params["tools"][0]["input_schema"]["type"] == "object"
+
+
+def test_minimax_openai_provider_serializes_tool_and_reasoning_history() -> None:
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_BASE_URL)
+    client = _OpenAIClient()
+    provider.client = client
+
+    provider.generate(
+        LLMInput(
+            messages=[
+                Message(role=Role.USER, content="Find the docs."),
+                Message(
+                    role=Role.ASSISTANT,
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_1",
+                            name="search",
+                            arguments={"query": "docs"},
+                        )
+                    ],
+                    metadata={
+                        "openai_reasoning_details": [
+                            {"type": "reasoning.text", "text": "plan"}
+                        ]
+                    },
+                ),
+                Message(
+                    role=Role.TOOL,
+                    content="Found.",
+                    tool_call_id="call_1",
+                ),
+            ]
+        )
+    )
+
+    messages = client.completions.params["messages"]
+    assert messages[1]["reasoning_details"] == [
+        {"type": "reasoning.text", "text": "plan"}
+    ]
+    assert messages[1]["tool_calls"][0]["type"] == "function"
+    assert json.loads(messages[1]["tool_calls"][0]["function"]["arguments"]) == {
+        "query": "docs"
+    }
+    assert messages[2] == {
+        "role": "tool",
+        "content": "Found.",
+        "tool_call_id": "call_1",
+    }
+
+
+def test_minimax_anthropic_provider_preserves_tool_history_blocks() -> None:
+    provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL)
+    client = _AnthropicClient()
+    provider.client = client
+    preserved_content = [
+        {"type": "thinking", "thinking": "plan", "signature": "sig"},
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "search",
+            "input": {"query": "docs"},
+        },
+        {
+            "type": "tool_use",
+            "id": "tool_2",
+            "name": "search",
+            "input": {"query": "examples"},
+        },
+    ]
+
+    provider.generate(
+        LLMInput(
+            messages=[
+                Message(role=Role.USER, content="Find references."),
+                Message(
+                    role=Role.ASSISTANT,
+                    content="",
+                    tool_calls=[
+                        ToolCall(id="tool_1", name="search", arguments={}),
+                        ToolCall(id="tool_2", name="search", arguments={}),
+                    ],
+                    metadata={"anthropic_content": preserved_content},
+                ),
+                Message(
+                    role=Role.TOOL,
+                    content="Found docs.",
+                    tool_call_id="tool_1",
+                ),
+                Message(
+                    role=Role.TOOL,
+                    content="Found examples.",
+                    tool_call_id="tool_2",
+                ),
+            ]
+        )
+    )
+
+    assert client.messages.params["messages"] == [
+        {"role": "user", "content": "Find references."},
+        {"role": "assistant", "content": preserved_content},
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": "Found docs.",
+                },
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_2",
+                    "content": "Found examples.",
+                },
+            ],
+        },
+    ]
+
+
+def test_minimax_provider_preserves_structured_multimodal_content() -> None:
+    openai_provider = MiniMaxProvider(api_key="test", base_url=MINIMAX_BASE_URL)
+    openai_client = _OpenAIClient()
+    openai_provider.client = openai_client
+    openai_content = [
+        {"type": "text", "text": "Describe this clip."},
+        {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}},
+    ]
+    openai_provider.generate(
+        LLMInput(messages=[Message(role=Role.USER, content=openai_content)])
+    )
+
+    anthropic_provider = MiniMaxProvider(
+        api_key="test", base_url=MINIMAX_ANTHROPIC_BASE_URL
+    )
+    anthropic_client = _AnthropicClient()
+    anthropic_provider.client = anthropic_client
+    anthropic_content = [
+        {"type": "text", "text": "Describe this image."},
+        {
+            "type": "image",
+            "source": {
+                "type": "url",
+                "url": "https://example.com/image.png",
+            },
+        },
+    ]
+    anthropic_provider.generate(
+        LLMInput(messages=[Message(role=Role.USER, content=anthropic_content)])
+    )
+
+    assert openai_client.completions.params["messages"][0]["content"] == openai_content
+    assert anthropic_client.messages.params["messages"][0]["content"] == (
+        anthropic_content
+    )
 
 
 def test_minimax_anthropic_provider_rejects_empty_responses() -> None:

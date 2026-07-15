@@ -27,10 +27,11 @@ class ProviderType(str, Enum):
 @dataclass(frozen=True)
 class Message:
     role: Role
-    content: str
+    content: str | list[dict[str, Any]]
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[ToolCall] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"role": self.role.value, "content": self.content}

@@ -1,4 +1,3 @@
-import pytest
 from llm.core.types import (
     LLMInput,
     LLMOutput,
@@ -27,6 +26,7 @@ class TestProviderType:
         assert ProviderType.OLLAMA.value == "ollama"
         assert ProviderType.ASTRAFLOW.value == "astraflow"
         assert ProviderType.ASTRAFLOW_CN.value == "astraflow_cn"
+        assert ProviderType.MINIMAX.value == "minimax"
 
 
 class TestMessage:
@@ -36,6 +36,7 @@ class TestMessage:
         assert msg.content == "Hello"
         assert msg.name is None
         assert msg.tool_call_id is None
+        assert msg.metadata == {}
 
     def test_message_to_dict(self):
         msg = Message(role=Role.USER, content="Hello", name="test")
