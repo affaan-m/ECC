@@ -74,9 +74,19 @@ function findScriptForBase(base) {
       const found = entries.find(f => f.toLowerCase() === p.toLowerCase());
       if (found) return resolve(scriptsDir, found);
     }
-    // fallback: any file containing base and ending with .js or .mjs
-    const anyMatch = entries.find(f => f.toLowerCase().includes(base.toLowerCase()) && (f.toLowerCase().endsWith('.js') || f.toLowerCase().endsWith('.mjs')));
-    if (anyMatch) return resolve(scriptsDir, anyMatch);
+    // improved fuzzy match: normalize names (remove non-alnum) and compare
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const baseNorm = normalize(base);
+    for (const f of entries) {
+      const fn = f.toLowerCase();
+      if (!(fn.endsWith('.js') || fn.endsWith('.mjs'))) continue;
+      const fNorm = normalize(f);
+      if (fNorm === baseNorm) return resolve(scriptsDir, f);
+      // allow small variations: plural s, underscores, extra tokens
+      if (fNorm.includes(baseNorm) || fNorm.replace(/s/g, '').includes(baseNorm.replace(/s/g, ''))) {
+        return resolve(scriptsDir, f);
+      }
+    }
   } catch (e) {
     return null;
   }
