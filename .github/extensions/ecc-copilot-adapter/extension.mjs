@@ -132,5 +132,48 @@ const session = await joinSession({
         return { code: res.code, stdout: res.stdout, stderr: res.stderr };
       },
     },
+    {
+      name: "ecc-plan-canvas",
+      description: "Executa o script de plan-canvas (ajuda disponível via --help)",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        // chamar script diretamente para garantir comportamento
+        const node = process.execPath;
+        const script = resolve(repoRoot, 'scripts', 'plan-canvas.js');
+        const child = spawn(node, [script, ...a], { cwd: repoRoot, windowsHide: true });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => (stdout += d.toString()));
+        child.stderr.on('data', (d) => (stderr += d.toString()));
+        await new Promise((r) => child.on('close', r));
+        return stdout || stderr || `plan-canvas finalizado`;
+      },
+    },
+    {
+      name: "ecc-code-review-pr",
+      description: "Executa code-review para um pull request específico. Parâmetros: { pr_number: number, repo: string (opcional) }",
+      parameters: { type: "object", properties: { pr_number: { type: "number" }, repo: { type: "string" } } },
+      handler: async (args) => {
+        const pr = args && args.pr_number ? args.pr_number : null;
+        const repo = args && args.repo ? args.repo : null;
+        const cmd = [];
+        if (repo) cmd.push('--repo', repo);
+        if (pr) cmd.push('--pr', pr.toString());
+        // use code-review subcommand
+        const res = await runEcc(['code-review', ...cmd]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-update-docs",
+      description: "Executa o comando 'update-docs' do ecc para atualizar documentação gerada",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        const res = await runEcc(['update-docs', ...a]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
   ],
 });
