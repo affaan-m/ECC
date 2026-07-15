@@ -62,6 +62,27 @@ function parseCommandsFromAgentYaml(path) {
 const agentYamlPath = resolve(repoRoot, 'agent.yaml');
 const dynamicCommands = parseCommandsFromAgentYaml(agentYamlPath);
 
+function findScriptForBase(base) {
+  const scriptsDir = resolve(repoRoot, 'scripts');
+  try {
+    const entries = fs.readdirSync(scriptsDir);
+    // prefer exact matches
+    const exact = entries.find(f => f.toLowerCase() === `${base}.js`.toLowerCase());
+    if (exact) return resolve(scriptsDir, exact);
+    const prefer = [`${base}-output.js`, `${base}_output.js`, `${base}.mjs`, `${base}-output.mjs`];
+    for (const p of prefer) {
+      const found = entries.find(f => f.toLowerCase() === p.toLowerCase());
+      if (found) return resolve(scriptsDir, found);
+    }
+    // fallback: any file containing base and ending with .js or .mjs
+    const anyMatch = entries.find(f => f.toLowerCase().includes(base.toLowerCase()) && (f.toLowerCase().endsWith('.js') || f.toLowerCase().endsWith('.mjs')));
+    if (anyMatch) return resolve(scriptsDir, anyMatch);
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
+
 function makeToolForCommand(cmd) {
   const toolName = `ecc-${cmd.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
   return {
@@ -76,21 +97,26 @@ function makeToolForCommand(cmd) {
       const extraStatic = cmdParts.slice(1);
       const finalArgs = runFlag ? [base, ...extraStatic, ...a] : ['--dry-run', base, ...extraStatic, ...a];
       const res = await runEcc(finalArgs);
-      // fallback to script if unknown command
+      // fallback to script if unknown command or non-zero exit and a candidate script exists
       const textOut = (res.stdout || res.stderr || '').toString();
-      if ((textOut.includes('Unknown command') || res.code !== 0) && fs.existsSync(resolve(repoRoot, 'scripts', `${base}.js`))) {
-        try {
-          const node = process.execPath;
-          const script = resolve(repoRoot, 'scripts', `${base}.js`);
-          const child = spawn(node, [script, ...a], { cwd: repoRoot, windowsHide: true });
-          let stdout = '';
-          let stderr = '';
-          child.stdout.on('data', (d) => (stdout += d.toString()));
-          child.stderr.on('data', (d) => (stderr += d.toString()));
-          await new Promise((r) => child.on('close', r));
-          return stdout || stderr || `Executado fallback script ${base}.js`;
-        } catch (e) {
-          return res.stdout || res.stderr || (e && e.message) || `Erro ao executar ${cmd}`;
+      const shouldFallback = textOut.includes('Unknown command') || (res.code && res.code !== 0);
+      if (shouldFallback) {
+        const scriptPath = findScriptForBase(base);
+        if (scriptPath) {
+          try {
+            const node = process.execPath;
+            const child = spawn(node, [scriptPath, ...a], { cwd: repoRoot, windowsHide: true });
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (d) => (stdout += d.toString()));
+            child.stderr.on('data', (d) => (stderr += d.toString()));
+            const code = await new Promise((r) => child.on('close', r));
+            // prefer stdout/stderr from fallback, otherwise return original res
+            if (stdout || stderr) return stdout || stderr;
+            return `Executado fallback script ${scriptPath} (exit ${code})`;
+          } catch (e) {
+            return res.stdout || res.stderr || (e && e.message) || `Erro ao executar ${cmd}`;
+          }
         }
       }
       return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
@@ -129,16 +155,18 @@ const manualTools = [
       const name = args && args.name ? args.name : 'new-skill';
       const res = await runEcc(['skill-create', name]);
       const out = (res.stdout || res.stderr || '').toString();
-      if (out.includes('Unknown command') || res.code !== 0) {
-        const node = process.execPath;
-        const script = resolve(repoRoot, 'scripts', 'skill-create-output.js');
-        const child = spawn(node, [script, name], { cwd: repoRoot, windowsHide: true });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (d) => (stdout += d.toString()));
-        child.stderr.on('data', (d) => (stderr += d.toString()));
-        await new Promise((r) => child.on('close', r));
-        return stdout || stderr || `Skill scaffold gerado (via fallback) para ${name}`;
+      if (out.includes('Unknown command') || (res.code && res.code !== 0)) {
+        const scriptPath = findScriptForBase('skill-create') || findScriptForBase('skill_create');
+        if (scriptPath) {
+          const node = process.execPath;
+          const child = spawn(node, [scriptPath, name], { cwd: repoRoot, windowsHide: true });
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (d) => (stdout += d.toString()));
+          child.stderr.on('data', (d) => (stderr += d.toString()));
+          await new Promise((r) => child.on('close', r));
+          return stdout || stderr || `Skill scaffold gerado (via fallback) para ${name}`;
+        }
       }
       return res.stdout || res.stderr || `Skill criado com código ${res.code}`;
     },
