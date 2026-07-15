@@ -27,209 +27,124 @@ async function runEcc(args = []) {
   });
 }
 
-// Build manual tools list
-const manualTools = [
-    {
-      name: "ecc-help",
-      description: "Mostra ajuda mínima do ecc",
-      parameters: { type: "object", properties: {} },
-      handler: async () => {
-        const res = await runEcc(["--help"]);
-        return res.stdout || res.stderr || "Comando executado";
-      },
-    },
-    {
-      name: "ecc-plan",
-      description: "Executa o comando 'plan' do ecc (mapeia para 'ecc plan')",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(["plan", ...a]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-code-review",
-      description: "Executa 'ecc code-review' com argumentos opcionais",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(["code-review", ...a]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-planner",
-      description: "Executa tarefas de planejamento via 'ecc plan' (usa --dry-run por padrão).\nParâmetros: { args: string[], run: boolean } (run=true executa de fato)",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } }, run: { type: "boolean" } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const runFlag = args && args.run ? true : false;
-        const cmd = runFlag ? ["plan", ...a] : ["--dry-run", "plan", ...a];
-        const res = await runEcc(cmd);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-security-reviewer",
-      description: "Executa varredura de segurança via 'ecc security-scan' (usa --dry-run por padrão). Parâmetros: { args: string[], run: boolean }",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } }, run: { type: "boolean" } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const runFlag = args && args.run ? true : false;
-        const cmd = runFlag ? ["security-ioc-scan", ...a] : ["--dry-run", "security-ioc-scan", ...a];
-        const res = await runEcc(cmd);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-tdd-guide",
-      description: "Simplifica execução de fluxo TDD. Usa 'npm test' via ecc (dry-run por padrão). Parâmetros: { run: boolean }",
-      parameters: { type: "object", properties: { run: { type: "boolean" } } },
-      handler: async (args) => {
-        const runFlag = args && args.run ? true : false;
-        if (!runFlag) {
-          // dry-run: exibir instrução e ajuda
-          const res = await runEcc(["--dry-run", "test"]);
-          return res.stdout || res.stderr || 'dry-run concluído';
+// Build dynamic tools list from agent.yaml commands section
+import fs from 'fs';
+
+function parseCommandsFromAgentYaml(path) {
+  try {
+    const text = fs.readFileSync(path, 'utf8');
+    const lines = text.split(/\r?\n/);
+    const cmds = [];
+    let inCommands = false;
+    for (const line of lines) {
+      if (!inCommands && line.trim().startsWith('commands:')) {
+        inCommands = true;
+        continue;
+      }
+      if (inCommands) {
+        const m = line.match(/^\s*-\s+(.+)$/);
+        if (m) {
+          const cmd = m[1].trim();
+          // ignore empty
+          if (cmd) cmds.push(cmd);
+          continue;
         }
-        // risco: executar test pode ser pesado; expos como opcional
-        const res = await runEcc(["test"]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-skill-create",
-      description: "Executa 'ecc skill-create' para gerar um skill scaffold (com fallback para script direto)",
-      parameters: { type: "object", properties: { name: { type: "string" } } },
-      handler: async (args) => {
-        const name = args && args.name ? args.name : "new-skill";
-        // Primeiro, tente rodar via CLI 'ecc'
-        const res = await runEcc(["skill-create", name]);
-        const out = (res.stdout || res.stderr || '').toString();
-        if (out.includes('Unknown command') || res.code !== 0) {
-          // Fallback: executar script direto scripts/skill-create-output.js
+        // stop when reach non-indented or next top-level key
+        if (/^\S/.test(line)) break;
+      }
+    }
+    return cmds;
+  } catch (e) {
+    return [];
+  }
+}
+
+const agentYamlPath = resolve(repoRoot, 'agent.yaml');
+const dynamicCommands = parseCommandsFromAgentYaml(agentYamlPath);
+
+function makeToolForCommand(cmd) {
+  const toolName = `ecc-${cmd.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
+  return {
+    name: toolName,
+    description: `Wrapper para o comando: ${cmd} (dry-run por padrão)` ,
+    parameters: { type: 'object', properties: { args: { type: 'array', items: { type: 'string' } }, run: { type: 'boolean' } } },
+    handler: async (args) => {
+      const a = args && args.args ? args.args : [];
+      const runFlag = args && args.run ? true : false;
+      const cmdParts = cmd.split(/\s+/);
+      const base = cmdParts[0];
+      const extraStatic = cmdParts.slice(1);
+      const finalArgs = runFlag ? [base, ...extraStatic, ...a] : ['--dry-run', base, ...extraStatic, ...a];
+      const res = await runEcc(finalArgs);
+      // fallback to script if unknown command
+      const textOut = (res.stdout || res.stderr || '').toString();
+      if ((textOut.includes('Unknown command') || res.code !== 0) && fs.existsSync(resolve(repoRoot, 'scripts', `${base}.js`))) {
+        try {
           const node = process.execPath;
-          const script = resolve(repoRoot, 'scripts', 'skill-create-output.js');
-          const child = spawn(node, [script, name], { cwd: repoRoot, windowsHide: true });
+          const script = resolve(repoRoot, 'scripts', `${base}.js`);
+          const child = spawn(node, [script, ...a], { cwd: repoRoot, windowsHide: true });
           let stdout = '';
           let stderr = '';
           child.stdout.on('data', (d) => (stdout += d.toString()));
           child.stderr.on('data', (d) => (stderr += d.toString()));
           await new Promise((r) => child.on('close', r));
-          return stdout || stderr || `Skill scaffold gerado (via fallback) para ${name}`;
+          return stdout || stderr || `Executado fallback script ${base}.js`;
+        } catch (e) {
+          return res.stdout || res.stderr || (e && e.message) || `Erro ao executar ${cmd}`;
         }
-        return res.stdout || res.stderr || `Skill criado com código ${res.code}`;
-      },
+      }
+      return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
     },
-    {
-      name: "ecc-run",
-      description: "Executa qualquer comando do ecc (passar args array)",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(a);
-        return { code: res.code, stdout: res.stdout, stderr: res.stderr };
-      },
+  };
+}
+
+const dynamicTools = dynamicCommands.map(makeToolForCommand);
+
+// Basic manual tools to keep important handlers
+const manualTools = [
+  {
+    name: 'ecc-help',
+    description: 'Mostra ajuda mínima do ecc',
+    parameters: { type: 'object', properties: {} },
+    handler: async () => {
+      const res = await runEcc(['--help']);
+      return res.stdout || res.stderr || 'Comando executado';
     },
-    {
-      name: "ecc-sessions",
-      description: "Lista ou inspeciona sessões (mapeia para 'ecc sessions')",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(["sessions", ...a]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
+  },
+  {
+    name: 'ecc-run',
+    description: 'Executa qualquer comando do ecc (passar args array)',
+    parameters: { type: 'object', properties: { args: { type: 'array', items: { type: 'string' } } } },
+    handler: async (args) => {
+      const a = args && args.args ? args.args : [];
+      const res = await runEcc(a);
+      return { code: res.code, stdout: res.stdout, stderr: res.stderr };
     },
-    {
-      name: "ecc-status",
-      description: "Consulta o status do ECC (mapeia para 'ecc status')",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(["status", ...a]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-repo-scan",
-      description: "Executa varredura de repositório / repo-scan (fallback para scripts quando necessário)",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        // tenta comando principal
-        let res = await runEcc(["repo-scan", ...a]);
-        if ((res.stderr || '').includes('Unknown command') || res.code !== 0) {
-          // procurar script repo-scan.js
-          const scriptPath = resolve(repoRoot, 'scripts', 'repo-scan.js');
-          try {
-            const node = process.execPath;
-            const child = spawn(node, [scriptPath, ...a], { cwd: repoRoot, windowsHide: true });
-            let stdout = '';
-            let stderr = '';
-            child.stdout.on('data', (d) => (stdout += d.toString()));
-            child.stderr.on('data', (d) => (stderr += d.toString()));
-            await new Promise((r) => child.on('close', r));
-            return stdout || stderr || `repo-scan finalizado`;
-          } catch (e) {
-            return res.stdout || res.stderr || (e && e.message) || 'Erro ao executar repo-scan';
-          }
-        }
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-skill-health",
-      description: "Verifica a saúde dos skills ('skill-health' command)",
-      parameters: { type: "object", properties: {} },
-      handler: async () => {
-        const res = await runEcc(["skill-health"]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-plan-canvas",
-      description: "Executa o script de plan-canvas (ajuda disponível via --help)",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        // chamar script diretamente para garantir comportamento
+  },
+  {
+    name: 'ecc-skill-create',
+    description: "Executa 'ecc skill-create' para gerar um skill scaffold (com fallback)",
+    parameters: { type: 'object', properties: { name: { type: 'string' } } },
+    handler: async (args) => {
+      const name = args && args.name ? args.name : 'new-skill';
+      const res = await runEcc(['skill-create', name]);
+      const out = (res.stdout || res.stderr || '').toString();
+      if (out.includes('Unknown command') || res.code !== 0) {
         const node = process.execPath;
-        const script = resolve(repoRoot, 'scripts', 'plan-canvas.js');
-        const child = spawn(node, [script, ...a], { cwd: repoRoot, windowsHide: true });
+        const script = resolve(repoRoot, 'scripts', 'skill-create-output.js');
+        const child = spawn(node, [script, name], { cwd: repoRoot, windowsHide: true });
         let stdout = '';
         let stderr = '';
         child.stdout.on('data', (d) => (stdout += d.toString()));
         child.stderr.on('data', (d) => (stderr += d.toString()));
         await new Promise((r) => child.on('close', r));
-        return stdout || stderr || `plan-canvas finalizado`;
-      },
+        return stdout || stderr || `Skill scaffold gerado (via fallback) para ${name}`;
+      }
+      return res.stdout || res.stderr || `Skill criado com código ${res.code}`;
     },
-    {
-      name: "ecc-code-review-pr",
-      description: "Executa code-review para um pull request específico. Parâmetros: { pr_number: number, repo: string (opcional) }",
-      parameters: { type: "object", properties: { pr_number: { type: "number" }, repo: { type: "string" } } },
-      handler: async (args) => {
-        const pr = args && args.pr_number ? args.pr_number : null;
-        const repo = args && args.repo ? args.repo : null;
-        const cmd = [];
-        if (repo) cmd.push('--repo', repo);
-        if (pr) cmd.push('--pr', pr.toString());
-        // use code-review subcommand
-        const res = await runEcc(['code-review', ...cmd]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-    {
-      name: "ecc-update-docs",
-      description: "Executa o comando 'update-docs' do ecc para atualizar documentação gerada",
-      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } } } },
-      handler: async (args) => {
-        const a = args && args.args ? args.args : [];
-        const res = await runEcc(['update-docs', ...a]);
-        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
-      },
-    },
-  ],
+  }
+];
+
+const session = await joinSession({
+  tools: [...manualTools, ...dynamicTools]
 });
