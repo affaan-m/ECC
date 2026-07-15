@@ -59,6 +59,46 @@ const session = await joinSession({
       },
     },
     {
+      name: "ecc-planner",
+      description: "Executa tarefas de planejamento via 'ecc plan' (usa --dry-run por padrão).\nParâmetros: { args: string[], run: boolean } (run=true executa de fato)",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } }, run: { type: "boolean" } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        const runFlag = args && args.run ? true : false;
+        const cmd = runFlag ? ["plan", ...a] : ["--dry-run", "plan", ...a];
+        const res = await runEcc(cmd);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-security-reviewer",
+      description: "Executa varredura de segurança via 'ecc security-scan' (usa --dry-run por padrão). Parâmetros: { args: string[], run: boolean }",
+      parameters: { type: "object", properties: { args: { type: "array", items: { type: "string" } }, run: { type: "boolean" } } },
+      handler: async (args) => {
+        const a = args && args.args ? args.args : [];
+        const runFlag = args && args.run ? true : false;
+        const cmd = runFlag ? ["security-ioc-scan", ...a] : ["--dry-run", "security-ioc-scan", ...a];
+        const res = await runEcc(cmd);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
+      name: "ecc-tdd-guide",
+      description: "Simplifica execução de fluxo TDD. Usa 'npm test' via ecc (dry-run por padrão). Parâmetros: { run: boolean }",
+      parameters: { type: "object", properties: { run: { type: "boolean" } } },
+      handler: async (args) => {
+        const runFlag = args && args.run ? true : false;
+        if (!runFlag) {
+          // dry-run: exibir instrução e ajuda
+          const res = await runEcc(["--dry-run", "test"]);
+          return res.stdout || res.stderr || 'dry-run concluído';
+        }
+        // risco: executar test pode ser pesado; expos como opcional
+        const res = await runEcc(["test"]);
+        return res.stdout || res.stderr || `Finalizado com código ${res.code}`;
+      },
+    },
+    {
       name: "ecc-skill-create",
       description: "Executa 'ecc skill-create' para gerar um skill scaffold (com fallback para script direto)",
       parameters: { type: "object", properties: { name: { type: "string" } } },
