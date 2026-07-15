@@ -60,11 +60,25 @@ const session = await joinSession({
     },
     {
       name: "ecc-skill-create",
-      description: "Executa 'ecc skill-create' para gerar um skill scaffold",
+      description: "Executa 'ecc skill-create' para gerar um skill scaffold (com fallback para script direto)",
       parameters: { type: "object", properties: { name: { type: "string" } } },
       handler: async (args) => {
         const name = args && args.name ? args.name : "new-skill";
+        // Primeiro, tente rodar via CLI 'ecc'
         const res = await runEcc(["skill-create", name]);
+        const out = (res.stdout || res.stderr || '').toString();
+        if (out.includes('Unknown command') || res.code !== 0) {
+          // Fallback: executar script direto scripts/skill-create-output.js
+          const node = process.execPath;
+          const script = resolve(repoRoot, 'scripts', 'skill-create-output.js');
+          const child = spawn(node, [script, name], { cwd: repoRoot, windowsHide: true });
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (d) => (stdout += d.toString()));
+          child.stderr.on('data', (d) => (stderr += d.toString()));
+          await new Promise((r) => child.on('close', r));
+          return stdout || stderr || `Skill scaffold gerado (via fallback) para ${name}`;
+        }
         return res.stdout || res.stderr || `Skill criado com código ${res.code}`;
       },
     },
