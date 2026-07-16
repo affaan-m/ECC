@@ -155,6 +155,7 @@
     "skills/cost-aware-llm-pipeline/",
     "skills/cost-tracking/",
     "skills/council/",
+    "skills/council-multi-model/",
     "skills/cpp-coding-standards/",
     "skills/cpp-testing/",
     "skills/crosspost/",
