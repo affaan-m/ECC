@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuous Learning v2 - Observer Agent Launcher
 #
 # Starts the background observer agent that analyzes observations
@@ -215,8 +215,12 @@ case "$ACTION" in
       CLV2_OBSERVER_PROMPT_PATTERN="$CLV2_OBSERVER_PROMPT_PATTERN" \
       "$OBSERVER_LOOP_SCRIPT" >> "$LOG_FILE" 2>&1 &
 
-    # Wait for PID file
-    sleep 2
+    # Wait for PID file (poll up to 10s, exits early when it appears).
+    # Trade-off vs the old `sleep 2`: healthy startups return in iteration 1
+    # (no fixed latency), but a loop that crashes before writing the PID file
+    # is now detected in ~10s instead of ~2s. The longer ceiling is needed to
+    # tolerate slow filesystems where 2s under-waited and false-negatived.
+    for _i in $(seq 1 50); do [ -f "$PID_FILE" ] && break; sleep 0.2; done
 
     # Check for confirmation-seeking output in the observer log
     if tail -n +"$((start_line + 1))" "$LOG_FILE" 2>/dev/null | grep -E -i -q "$CLV2_OBSERVER_PROMPT_PATTERN"; then

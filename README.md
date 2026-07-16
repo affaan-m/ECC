@@ -439,7 +439,7 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 67 agents, 277 skills, and 92 legacy command shims.
+**That's it!** You now have access to 67 agents, 278 skills, and 94 legacy command shims.
 
 ### Dashboard GUI
 
@@ -527,6 +527,12 @@ export ECC_SESSION_START_CONTEXT=off
 # Session-tmp retention window in days (default: 30).
 # Set to 0, off, false, disabled, never, or none to keep all sessions (disable pruning).
 export ECC_SESSION_RETENTION_DAYS=14
+
+# Cap how many learned instincts SessionStart injects into context (default: 6)
+export ECC_MAX_INJECTED_INSTINCTS=6
+
+# Minimum confidence an instinct needs to be injected, 0-1 (default: 0.7)
+export ECC_INSTINCT_CONFIDENCE_THRESHOLD=0.7
 
 # Keep context/scope/loop warnings but suppress API-rate cost estimates
 export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
@@ -1527,8 +1533,8 @@ The configuration is automatically detected from `.opencode/opencode.json`.
 | Feature | Claude Code         | OpenCode | Status |
 |---------|---------------------|----------|--------|
 | Agents | PASS: 67 agents     | PASS: 12 agents | **Claude Code leads** |
-| Commands | PASS: 92 commands   | PASS: 35 commands | **Claude Code leads** |
-| Skills | PASS: 277 skills    | PASS: 37 skills | **Claude Code leads** |
+| Commands | PASS: 94 commands   | PASS: 35 commands | **Claude Code leads** |
+| Skills | PASS: 278 skills    | PASS: 37 skills | **Claude Code leads** |
 | Hooks | PASS: 8 event types | PASS: 11 events | **OpenCode has more!** |
 | Rules | PASS: 29 rules      | PASS: 13 instructions | **Claude Code leads** |
 | MCP Servers | PASS: 14 servers    | PASS: Full | **Full parity** |
@@ -1688,8 +1694,8 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | Feature | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |---------|-----------------------|------------|-----------|----------|----------------|
 | **Agents** | 67                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
-| **Commands** | 92                    | Shared | Instruction-based | 35 | 5 prompts |
-| **Skills** | 277                   | Shared | 10 (native format) | 37 | Via instructions |
+| **Commands** | 94                    | Shared | Instruction-based | 35 | 5 prompts |
+| **Skills** | 278                   | Shared | 10 (native format) | 37 | Via instructions |
 | **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
 | **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
 | **Rules** | 34 (common + lang)    | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |

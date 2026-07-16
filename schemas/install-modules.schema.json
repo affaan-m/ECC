@@ -58,7 +58,10 @@
                 "codebuddy",
                 "joycode",
                 "qwen",
-                "zed"
+                "zed",
+                "hermes",
+                "openclaw",
+                "kimi"
               ]
             }
           },

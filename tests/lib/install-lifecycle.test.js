@@ -14,6 +14,7 @@ const {
   repairInstalledStates,
   uninstallInstalledStates,
 } = require('../../scripts/lib/install-lifecycle');
+const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
   writeInstallState,
@@ -93,6 +94,74 @@ function writeCursorState(projectRoot, overrides = {}) {
     installStatePath: options.installStatePath,
     state: options,
   };
+}
+
+function createOpencodeStateOptions(homeDir, overrides = {}) {
+  const targetRoot = overrides.targetRoot || path.join(homeDir, '.opencode');
+  const installStatePath = overrides.installStatePath || path.join(targetRoot, 'ecc-install-state.json');
+
+  return {
+    adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+    targetRoot,
+    installStatePath,
+    request: {
+      profile: null,
+      modules: ['commands-core'],
+      includeComponents: [],
+      excludeComponents: [],
+      legacyLanguages: [],
+      legacyMode: false,
+      ...(overrides.request || {}),
+    },
+    resolution: {
+      selectedModules: ['commands-core'],
+      skippedModules: [],
+      ...(overrides.resolution || {}),
+    },
+    operations: overrides.operations || [],
+    source: {
+      repoVersion: CURRENT_PACKAGE_VERSION,
+      repoCommit: 'abc123',
+      manifestVersion: CURRENT_MANIFEST_VERSION,
+      ...(overrides.source || {}),
+    },
+  };
+}
+
+function writeOpencodeState(homeDir, overrides = {}) {
+  const options = createOpencodeStateOptions(homeDir, overrides);
+  writeState(options.installStatePath, options);
+  return {
+    targetRoot: options.targetRoot,
+    installStatePath: options.installStatePath,
+    state: options,
+  };
+}
+
+function withTemporarilyMovedPath(filePath, callback) {
+  if (!fs.existsSync(filePath)) {
+    try {
+      return callback(null);
+    } finally {
+      if (fs.existsSync(filePath)) {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      }
+    }
+  }
+
+  const backupPath = `${filePath}.backup-${process.pid}-${Date.now()}`;
+  fs.renameSync(filePath, backupPath);
+
+  try {
+    return callback(backupPath);
+  } finally {
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath, { recursive: true, force: true });
+    }
+    if (fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, filePath);
+    }
+  }
 }
 
 function managedOperation(kind, destinationPath, overrides = {}) {
@@ -690,6 +759,228 @@ function runTests() {
       assert.strictEqual(result.results[0].status, 'ok');
       assert.strictEqual(result.results[0].stateRefreshed, true);
       assert.deepStrictEqual(result.results[0].plannedRepairs, []);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair builds the OpenCode payload and clears the missing-payload warning', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        writeOpencodeState(homeDir, {
+          request: {
+            profile: null,
+            modules: ['commands-core'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: {
+            selectedModules: ['commands-core'],
+            skippedModules: [],
+          },
+          operations: [],
+        });
+
+        const beforeValidate = getInstallTargetAdapter('opencode').validate({
+          homeDir,
+          repoRoot: REPO_ROOT,
+        });
+        assert.ok(beforeValidate.some(issue => issue.code === 'opencode-plugin-not-built'));
+
+        const beforeDoctor = buildDoctorReport({
+          repoRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          targets: ['opencode'],
+        });
+        assert.strictEqual(beforeDoctor.results[0].status, 'error');
+        assert.ok(beforeDoctor.results[0].issues.some(issue => issue.code === 'resolution-unavailable'));
+
+        let buildCalls = 0;
+        const result = repairInstalledStates({
+          repoRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          targets: ['opencode'],
+          buildOpencodePayload: repoRoot => {
+            buildCalls += 1;
+            const distDir = path.join(repoRoot, '.opencode', 'dist');
+            fs.mkdirSync(path.join(distDir, 'plugins'), { recursive: true });
+            fs.mkdirSync(path.join(distDir, 'tools'), { recursive: true });
+            fs.writeFileSync(path.join(distDir, 'index.js'), 'module.exports = {};\\n');
+          },
+        });
+
+        assert.strictEqual(buildCalls, 1);
+        assert.strictEqual(result.results[0].status, 'repaired');
+        assert.ok(fs.existsSync(path.join(REPO_ROOT, '.opencode', 'dist', 'index.js')));
+
+        const afterValidate = getInstallTargetAdapter('opencode').validate({
+          homeDir,
+          repoRoot: REPO_ROOT,
+        });
+        assert.deepStrictEqual(afterValidate, []);
+
+        const afterDoctor = buildDoctorReport({
+          repoRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          targets: ['opencode'],
+        });
+        assert.strictEqual(afterDoctor.results[0].status, 'ok');
+        assert.strictEqual(afterDoctor.results[0].issues.length, 0);
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair dry-run plans the OpenCode payload build without creating it', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        writeOpencodeState(homeDir, {
+          request: {
+            profile: null,
+            modules: ['commands-core'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: {
+            selectedModules: ['commands-core'],
+            skippedModules: [],
+          },
+          operations: [],
+        });
+
+        const result = repairInstalledStates({
+          repoRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          targets: ['opencode'],
+          dryRun: true,
+          buildOpencodePayload: () => {
+            throw new Error('build should not run during dry-run');
+          },
+        });
+
+        assert.strictEqual(result.results[0].status, 'planned');
+        assert.ok(result.results[0].plannedRepairs.includes(path.join(REPO_ROOT, '.opencode', 'dist')));
+        assert.ok(!fs.existsSync(path.join(REPO_ROOT, '.opencode', 'dist', 'index.js')));
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('withTemporarilyMovedPath cleans up newly created paths when nothing was pre-existing', () => {
+    const filePath = path.join(REPO_ROOT, '.opencode', 'dist');
+    const backupPath = `${filePath}.backup-${process.pid}-test`;
+
+    try {
+      fs.rmSync(filePath, { recursive: true, force: true });
+      fs.rmSync(backupPath, { recursive: true, force: true });
+
+      const result = withTemporarilyMovedPath(filePath, receivedBackupPath => {
+        assert.strictEqual(receivedBackupPath, null);
+        fs.mkdirSync(path.join(filePath, 'plugins'), { recursive: true });
+        fs.mkdirSync(path.join(filePath, 'tools'), { recursive: true });
+        fs.writeFileSync(path.join(filePath, 'index.js'), '// temp build\n');
+        return 'callback-result';
+      });
+
+      assert.strictEqual(result, 'callback-result');
+      assert.ok(!fs.existsSync(filePath), 'Temporary path should be removed after the callback');
+    } finally {
+      fs.rmSync(filePath, { recursive: true, force: true });
+      fs.rmSync(backupPath, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('repair surfaces OpenCode build failures without blocking other targets', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      withTemporarilyMovedPath(path.join(REPO_ROOT, '.opencode', 'dist'), () => {
+        const cursorTargetRoot = path.join(projectRoot, '.cursor');
+        const cursorStatePath = path.join(cursorTargetRoot, 'ecc-install-state.json');
+        const cursorDestinationPath = path.join(cursorTargetRoot, 'rules', 'coding-style.md');
+        fs.mkdirSync(path.dirname(cursorDestinationPath), { recursive: true });
+
+        writeOpencodeState(homeDir, {
+          request: {
+            profile: null,
+            modules: ['commands-core'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: {
+            selectedModules: ['commands-core'],
+            skippedModules: [],
+          },
+          operations: [],
+        });
+
+        writeState(cursorStatePath, {
+          adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+          targetRoot: cursorTargetRoot,
+          installStatePath: cursorStatePath,
+          request: {
+            profile: null,
+            modules: [],
+            legacyLanguages: ['typescript'],
+            legacyMode: true,
+          },
+          resolution: {
+            selectedModules: ['legacy-cursor-install'],
+            skippedModules: [],
+          },
+          operations: [
+            managedOperation('copy-file', cursorDestinationPath, {
+              sourceRelativePath: 'rules/common/coding-style.md',
+              strategy: 'copy-file',
+            }),
+          ],
+          source: {
+            repoVersion: CURRENT_PACKAGE_VERSION,
+            repoCommit: 'abc123',
+            manifestVersion: CURRENT_MANIFEST_VERSION,
+          },
+        });
+
+        const result = repairInstalledStates({
+          repoRoot: REPO_ROOT,
+          homeDir,
+          projectRoot,
+          targets: ['opencode', 'cursor'],
+          buildOpencodePayload: () => {
+            throw new Error('typescript dependency missing');
+          },
+        });
+
+        const opencodeResult = result.results.find(entry => entry.adapter.id === 'opencode-home');
+        const cursorResult = result.results.find(entry => entry.adapter.id === 'cursor-project');
+
+        assert.strictEqual(opencodeResult.status, 'error');
+        assert.ok(opencodeResult.error.includes('typescript dependency missing'));
+        assert.strictEqual(cursorResult.status, 'repaired');
+        assert.ok(fs.existsSync(cursorDestinationPath));
+      });
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

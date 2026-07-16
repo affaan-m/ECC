@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuous Learning v2 - Observation Hook
 #
 # Captures tool use events for pattern analysis.
@@ -135,7 +135,7 @@ fi
 
 # shellcheck disable=SC1091
 . "$(dirname "$0")/../scripts/lib/homunculus-dir.sh"
-CONFIG_DIR="$(_ecc_resolve_homunculus_dir)"
+CONFIG_DIR="$(_clv2_resolve_homunculus_dir)"
 
 # Skip if disabled (check both default and CLV2_CONFIG-derived locations)
 if [ -f "$CONFIG_DIR/disabled" ]; then
@@ -279,11 +279,11 @@ _SECRET_RE = re.compile(
 )
 
 import signal
-def _ecc_bail(*_):
+def _clv2_bail(*_):
     print("[observe] SIGALRM timeout: parse-error fallback observation dropped before write (#2300)", file=sys.stderr)
     sys.exit(0)
 try:
-    signal.signal(signal.SIGALRM, _ecc_bail)
+    signal.signal(signal.SIGALRM, _clv2_bail)
     signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
 except Exception:
     pass
@@ -317,11 +317,11 @@ echo "$PARSED" | "$PYTHON_CMD" -c '
 import json, sys, os, re
 import signal
 
-def _ecc_bail(*_):
+def _clv2_bail(*_):
     print("[observe] SIGALRM timeout: in-flight observation dropped before write (#2300)", file=sys.stderr)
     sys.exit(0)
 try:
-    signal.signal(signal.SIGALRM, _ecc_bail)
+    signal.signal(signal.SIGALRM, _clv2_bail)
     signal.alarm(8)  # self-terminate before the async hook 10s timeout can orphan us (#2278)
 except Exception:
     pass
@@ -493,7 +493,7 @@ touch "$ACTIVITY_FILE" 2>/dev/null || true
 # the lazy-start path above. Both wrap the same read-modify-write below.
 should_signal=0
 
-_ecc_bump_signal_counter() {
+_clv2_bump_signal_counter() {
   if [ -f "$SIGNAL_COUNTER_FILE" ]; then
     counter=$(cat "$SIGNAL_COUNTER_FILE" 2>/dev/null || echo 0)
     # Guard against a corrupt counter file: a non-integer value would abort the
@@ -518,7 +518,7 @@ if command -v flock >/dev/null 2>&1 && exec 8>"$SIGNAL_COUNTER_LOCK" 2>/dev/null
   # blocks indefinitely, and only bump the counter while the lock is held -- on
   # a timeout we skip the tick rather than doing an unlocked read-modify-write.
   if flock -w 2 8 2>/dev/null; then
-    _ecc_bump_signal_counter
+    _clv2_bump_signal_counter
     flock -u 8 2>/dev/null || true
   fi
   exec 8>&- 2>/dev/null || true
@@ -547,7 +547,7 @@ else
   done
   if [ "$_signal_lock_held" -eq 1 ]; then
     # Bump only under the held lock -- never an unlocked read-modify-write.
-    _ecc_bump_signal_counter
+    _clv2_bump_signal_counter
     rmdir "$SIGNAL_COUNTER_LOCK" 2>/dev/null || true
     trap - EXIT INT TERM
   fi

@@ -5,6 +5,7 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | Command | Primary agent(s) | Notes |
 |---------|------------------|--------|
 | `/plan` | planner | Implementation planning before code |
+| `/plan-canvas` | — (skill: plan-canvas) | Browser review canvas for plan artifacts: annotate, chat, approve/request changes |
 | `/tdd` | tdd-guide | Test-driven development |
 | `/code-review` | code-reviewer | Quality and security review |
 | `/build-fix` | build-error-resolver | Fix build/type errors |

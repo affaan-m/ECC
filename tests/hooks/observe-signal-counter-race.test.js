@@ -104,7 +104,7 @@ function buildSandbox() {
     path.join(scriptsLibDir, 'homunculus-dir.sh'),
     [
       '#!/bin/bash',
-      '_ecc_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
+      '_clv2_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
       ''
     ].join('\n')
   );
