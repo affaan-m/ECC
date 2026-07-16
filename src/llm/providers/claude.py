@@ -63,7 +63,7 @@ class ClaudeProvider(LLMProvider):
                 if message.role != Role.SYSTEM:
                     continue
                 if not isinstance(message.content, str):
-                    raise TypeError("Claude system messages must contain text")
+                    raise TypeError("System messages must contain text")
                 system_parts.append(message.content)
             api_messages = [
                 msg.to_dict() for msg in input.messages if msg.role not in (Role.SYSTEM,)
