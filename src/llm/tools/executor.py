@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from llm.core.types import (
     LLMInput,
@@ -13,7 +14,6 @@ from llm.core.types import (
     ToolDefinition,
     ToolResult,
 )
-
 
 ToolFunc = Callable[..., Any]
 

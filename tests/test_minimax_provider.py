@@ -259,6 +259,8 @@ def test_minimax_openai_provider_serializes_tool_and_reasoning_history() -> None
         {"type": "reasoning.text", "text": "plan"}
     ]
     assert messages[1]["tool_calls"][0]["type"] == "function"
+    assert messages[1]["tool_calls"][0]["id"] == "call_1"
+    assert messages[1]["tool_calls"][0]["function"]["name"] == "search"
     assert json.loads(messages[1]["tool_calls"][0]["function"]["arguments"]) == {
         "query": "docs"
     }
