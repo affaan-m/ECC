@@ -155,6 +155,17 @@ function buildList(items, start, indent) {
   return { html: '<' + tag + '>\n' + parts.join('\n') + '\n</' + tag + '>', end: i };
 }
 
+function buildListBlock(items) {
+  const lists = [];
+  let i = 0;
+  while (i < items.length) {
+    const list = buildList(items, i, items[i].indent);
+    lists.push(list.html);
+    i = list.end;
+  }
+  return lists.join('\n');
+}
+
 function startsBlock(line, nextLine) {
   return /^```/.test(line) ||
     /^#{1,6}\s/.test(line) ||
@@ -257,13 +268,10 @@ function renderMarkdown(text) {
         items.push({ indent: m[1].length, marker: m[2], text: m[3] });
         i += 1;
       }
-      // Anchor the list on its shallowest item, not items[0]. Using
-      // items[0].indent as the base drops any later item that is less
-      // indented than the first: buildList's `indent >= base` guard skips
-      // it, silently losing list content when a block's first item is
-      // over-indented.
-      const baseIndent = Math.min(...items.map((it) => it.indent));
-      out.push(buildList(items, 0, baseIndent).html);
+      // An outdent below the first item's indentation ends that list. Render
+      // the remaining run as a sibling list so malformed indentation cannot
+      // silently drop content or create an empty parent item.
+      out.push(buildListBlock(items));
       continue;
     }
 
