@@ -166,6 +166,20 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('marker type change at the same indent starts a new list', () => {
+    assert.strictEqual(
+      renderMarkdown('- prep\n1. phase one\n2. phase two'),
+      '<ul>\n<li>prep</li>\n</ul>\n<ol>\n<li>phase one</li>\n<li>phase two</li>\n</ol>'
+    );
+  })) passed++; else failed++;
+
+  if (test('switching back to bullets after a numbered run starts a third list', () => {
+    assert.strictEqual(
+      renderMarkdown('1. one\n- bullet\n2. two'),
+      '<ol>\n<li>one</li>\n</ol>\n<ul>\n<li>bullet</li>\n</ul>\n<ol>\n<li>two</li>\n</ol>'
+    );
+  })) passed++; else failed++;
+
   if (test('renders repeated outdents without empty parent items', () => {
     const out = renderMarkdown('    - deep one\n    - deep two\n  - middle\n- shallow');
     assert.strictEqual(

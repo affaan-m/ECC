@@ -132,8 +132,12 @@ function renderListItem(text) {
   return '<li>' + renderInline(text) + '</li>';
 }
 
+function listTag(marker) {
+  return /^\d/.test(marker) ? 'ol' : 'ul';
+}
+
 function buildList(items, start, indent) {
-  const tag = /^\d/.test(items[start].marker) ? 'ol' : 'ul';
+  const tag = listTag(items[start].marker);
   const parts = [];
   let i = start;
   while (i < items.length && items[i].indent >= indent) {
@@ -148,6 +152,10 @@ function buildList(items, start, indent) {
       }
       i = nested.end;
     } else {
+      // A marker-type change at the same indent starts a new list
+      // (CommonMark); stop here so the caller renders the next run with
+      // its own tag instead of absorbing it into this one.
+      if (listTag(items[i].marker) !== tag) break;
       parts.push(renderListItem(items[i].text));
       i += 1;
     }
@@ -156,11 +164,11 @@ function buildList(items, start, indent) {
 }
 
 function buildListBlock(items) {
-  const lists = [];
+  let lists = [];
   let i = 0;
   while (i < items.length) {
     const list = buildList(items, i, items[i].indent);
-    lists.push(list.html);
+    lists = [...lists, list.html];
     i = list.end;
   }
   return lists.join('\n');
