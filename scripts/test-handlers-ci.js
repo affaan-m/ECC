@@ -58,8 +58,8 @@ const toTest = [
   'status',
   'update-docs',
   'security-scan',
-  'skill-health',
-  'sessions'
+  'auto-update',
+  'skill-create',
 ];
 let failed = [];
 
