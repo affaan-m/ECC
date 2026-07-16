@@ -161,7 +161,7 @@ function resolveContextWindowTokens(tokens, model) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
   }
 
-  if (typeof model === 'string' && KNOWN_LARGE_WINDOW_MODELS.some((id) => model.split('/').pop() === id)) {
+  if (typeof model === 'string' && KNOWN_LARGE_WINDOW_MODELS.includes(model.split('/').pop())) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
   }
 
