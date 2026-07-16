@@ -432,7 +432,8 @@ function runTests() {
       assert.ok(deps.includes('pkg'), `pkg missing from deps: ${JSON.stringify(deps)}`);
       assert.ok(deps.includes('other'), `other missing from deps: ${JSON.stringify(deps)}`);
       assert.ok(deps.includes('git-dep'), `git-dep missing from deps: ${JSON.stringify(deps)}`);
-      assert.ok(!deps.includes('git+https'), `VCS URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('git+')), `VCS URL leaked into deps: ${JSON.stringify(deps)}`);
+      assert.ok(!deps.some(d => d.includes('://')), `URL leaked into deps: ${JSON.stringify(deps)}`);
       assert.ok(!deps.some(d => d.includes('@')), `@ delimiter leaked into deps: ${JSON.stringify(deps)}`);
     } finally {
       cleanupDir(dir);

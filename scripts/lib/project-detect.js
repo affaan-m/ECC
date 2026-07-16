@@ -201,7 +201,10 @@ function getPythonDeps(projectDir) {
             .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
-          if (name) deps.push(name);
+          // Bare VCS/URL requirement lines (e.g. `git+https://...#egg=pkg`)
+          // carry no leading package name; skip them instead of recording
+          // the URL fragment as a dependency name.
+          if (name && !name.startsWith('git+') && !name.includes('://')) deps.push(name);
         }
       });
     }
