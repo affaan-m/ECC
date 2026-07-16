@@ -202,7 +202,6 @@ class MiniMaxProvider(LLMProvider):
                 provider=self.provider_type,
                 supports_tools=True,
                 supports_vision=True,
-                max_tokens=524_288,
                 context_window=1_000_000,
             ),
             ModelInfo(
@@ -210,7 +209,6 @@ class MiniMaxProvider(LLMProvider):
                 provider=self.provider_type,
                 supports_tools=True,
                 supports_vision=False,
-                max_tokens=204_800,
                 context_window=204_800,
             ),
         ]

@@ -109,3 +109,20 @@ def test_generate_text_only_has_no_tool_calls() -> None:
 
     assert output.content == "Hello."
     assert output.tool_calls is None
+
+
+@pytest.mark.unit
+def test_generate_rejects_structured_system_content() -> None:
+    provider = make_provider(make_response([]))
+
+    with pytest.raises(TypeError, match="system messages must contain text"):
+        provider.generate(
+            LLMInput(
+                messages=[
+                    Message(
+                        role=Role.SYSTEM,
+                        content=[{"type": "text", "text": "Rules"}],
+                    )
+                ]
+            )
+        )

@@ -58,7 +58,13 @@ class ClaudeProvider(LLMProvider):
     def generate(self, input: LLMInput) -> LLMOutput:
         try:
             model = input.model or _DEFAULT_MODEL
-            system_parts = [msg.content for msg in input.messages if msg.role == Role.SYSTEM]
+            system_parts: list[str] = []
+            for message in input.messages:
+                if message.role != Role.SYSTEM:
+                    continue
+                if not isinstance(message.content, str):
+                    raise TypeError("Claude system messages must contain text")
+                system_parts.append(message.content)
             api_messages = [
                 msg.to_dict() for msg in input.messages if msg.role not in (Role.SYSTEM,)
             ]

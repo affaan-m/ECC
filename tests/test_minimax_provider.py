@@ -110,10 +110,10 @@ def test_minimax_provider_exposes_both_target_models(
     assert provider.validate_config() is False
     assert provider.supports_vision() is True
     assert models[DEFAULT_MINIMAX_MODEL].context_window == 1_000_000
-    assert models[DEFAULT_MINIMAX_MODEL].max_tokens == 524_288
+    assert models[DEFAULT_MINIMAX_MODEL].max_tokens is None
     assert models[DEFAULT_MINIMAX_MODEL].supports_vision is True
     assert models[MINIMAX_M2_7_MODEL].context_window == 204_800
-    assert models[MINIMAX_M2_7_MODEL].max_tokens == 204_800
+    assert models[MINIMAX_M2_7_MODEL].max_tokens is None
     assert models[MINIMAX_M2_7_MODEL].supports_vision is False
 
 
