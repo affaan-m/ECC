@@ -455,6 +455,14 @@
       ]
     },
     {
+      "id": "skill:plan-canvas",
+      "family": "skill",
+      "description": "Browser review canvas for plan artifacts: annotate, chat, approve or request changes.",
+      "modules": [
+        "workflow-quality"
+      ]
+    },
+    {
       "id": "skill:tdd-workflow",
       "family": "skill",
       "description": "Test-driven development workflow skill.",

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 
@@ -7,6 +8,9 @@ const { readInstallState, writeInstallState } = require('./install-state');
 const { assertWithinTrustedRoot } = require('./path-safety');
 const { createManifestInstallPlan } = require('./install-executor');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
+const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
+const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
+const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
 
@@ -44,6 +48,31 @@ function compareStringArrays(left, right) {
   }
 
   return leftValues.every((value, index) => value === rightValues[index]);
+}
+
+function hasOpencodeBuildError(issues) {
+  return Array.isArray(issues) && issues.some(issue => issue.code === OPENCODE_PLUGIN_NOT_BUILT_CODE);
+}
+
+function getOpencodeBuildValidationIssues(context) {
+  return getInstallTargetAdapter('opencode').validate({
+    homeDir: context.homeDir,
+    repoRoot: context.repoRoot,
+  });
+}
+
+function buildOpencodePayload(repoRoot, buildRunner = execFileSync) {
+  buildRunner(process.execPath, [path.join(repoRoot, OPENCODE_BUILD_SCRIPT)], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function formatBuildErrorMessage(error) {
+  const stderr = typeof error.stderr === 'string' ? error.stderr.trim() : '';
+  const stdout = typeof error.stdout === 'string' ? error.stdout.trim() : '';
+  return stderr || stdout || error.message || 'Failed to build OpenCode payload';
 }
 
 function getManagedOperations(state) {
@@ -876,7 +905,7 @@ function buildDoctorReport(options = {}) {
   };
 }
 
-function createRepairPlanFromRecord(record, context) {
+function createRepairPlanFromRecord(record, context, options = {}) {
   const state = record.state;
   if (!state) {
     throw new Error('No install-state available for repair');
@@ -908,7 +937,8 @@ function createRepairPlanFromRecord(record, context) {
     includeComponentIds: state.request.includeComponents || [],
     excludeComponentIds: state.request.excludeComponents || [],
     projectRoot: context.projectRoot,
-    homeDir: context.homeDir
+    homeDir: context.homeDir,
+    exemptValidationCodes: options.exemptValidationCodes || [],
   });
 
   return {
@@ -931,6 +961,9 @@ function repairInstalledStates(options = {}) {
     manifestVersion: manifests.modulesVersion,
     packageVersion: readPackageVersion(repoRoot)
   };
+  const buildOpencodeRunner = typeof options.buildOpencodePayload === 'function'
+    ? options.buildOpencodePayload
+    : buildOpencodePayload;
   const records = discoverInstalledStates({
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
@@ -950,6 +983,44 @@ function repairInstalledStates(options = {}) {
     }
 
     try {
+      const needsOpencodeBuild = record.adapter.target === 'opencode'
+        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
+      const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
+
+      if (needsOpencodeBuild && options.dryRun) {
+        const desiredPlan = createRepairPlanFromRecord(record, context, {
+          exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
+        });
+        const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
+        const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
+        const plannedRepairs = [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)];
+
+        return {
+          adapter: record.adapter,
+          status: 'planned',
+          installStatePath: record.installStatePath,
+          repairedPaths: [],
+          plannedRepairs,
+          stateRefreshed: false,
+          error: null
+        };
+      }
+
+      if (needsOpencodeBuild) {
+        try {
+          buildOpencodeRunner(context.repoRoot);
+        } catch (error) {
+          return {
+            adapter: record.adapter,
+            status: 'error',
+            installStatePath: record.installStatePath,
+            repairedPaths: [],
+            plannedRepairs: [],
+            error: formatBuildErrorMessage(error)
+          };
+        }
+      }
+
       const desiredPlan = createRepairPlanFromRecord(record, context);
       const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
 
@@ -965,7 +1036,9 @@ function repairInstalledStates(options = {}) {
       }
 
       const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
-      const plannedRepairs = repairOperations.map(operation => operation.destinationPath);
+      const plannedRepairs = needsOpencodeBuild
+        ? [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)]
+        : repairOperations.map(operation => operation.destinationPath);
 
       if (options.dryRun) {
         return {
@@ -990,7 +1063,7 @@ function repairInstalledStates(options = {}) {
 
       return {
         adapter: record.adapter,
-        status: repairOperations.length > 0 ? 'repaired' : 'ok',
+        status: (repairOperations.length > 0 || needsOpencodeBuild) ? 'repaired' : 'ok',
         installStatePath: record.installStatePath,
         repairedPaths: plannedRepairs,
         plannedRepairs: [],

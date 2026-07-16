@@ -9,6 +9,7 @@
 | Command | What it does |
 |---------|-------------|
 | `/plan` | Restate requirements, assess risks, write step-by-step implementation plan — **waits for your confirm before touching code** |
+| `/plan-canvas` | Open a plan or HTML artifact in the browser Plan Canvas — annotate elements, chat with the agent, approve or request changes in place |
 | `/tdd` | Enforce test-driven development: scaffold interface → write failing test → implement → verify 80%+ coverage |
 | `/code-review` | Full code quality, security, and maintainability review of changed files |
 | `/build-fix` | Detect and fix build errors — delegates to the right build-resolver agent automatically |

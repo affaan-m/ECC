@@ -1,7 +1,7 @@
 ---
 name: conversation-analyzer
 description: Use this agent when analyzing conversation transcripts to find behaviors worth preventing with hooks. Triggered by /hookify without arguments.
-model: sonnet
+model: haiku
 tools: [Read, Grep]
 ---
 

@@ -63,6 +63,7 @@ That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Cl
 | Hook | Event | What It Does |
 |------|-------|-------------|
 | **Session start** | `SessionStart` | Loads previous context and detects package manager |
+| **Plan Canvas sessions** | `SessionStart` | Surfaces open Plan Canvas browser reviews so a fresh session can resume the loop |
 | **Pre-compact** | `PreCompact` | Saves state before context compaction |
 | **Console.log audit** | `Stop` | Checks all modified files for `console.log` after each response |
 | **Session summary** | `Stop` | Persists session state when transcript path is available |

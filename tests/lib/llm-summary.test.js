@@ -29,9 +29,10 @@ function test(desc, fn) {
 }
 
 let seq = 0;
+const transcriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-summary-test-'));
 function writeTranscript(lines) {
   seq++;
-  const p = path.join(os.tmpdir(), `llm-summary-test-${process.pid}-${seq}.jsonl`);
+  const p = path.join(transcriptDir, `transcript-${seq}.jsonl`);
   fs.writeFileSync(p, lines.join('\n') + '\n');
   return p;
 }

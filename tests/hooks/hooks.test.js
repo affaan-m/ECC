@@ -370,7 +370,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 even with isolated empty HOME', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-iso-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-iso-start-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
       try {
@@ -398,7 +398,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips template session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-tpl-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-tpl-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -425,7 +425,7 @@ async function runTests() {
 
   if (
     await asyncTest('injects real session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-real-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-real-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -456,7 +456,7 @@ async function runTests() {
 
   if (
     await asyncTest('caps very large session-start context by default', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-large-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-large-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -485,7 +485,7 @@ async function runTests() {
 
   if (
     await asyncTest('honors ECC_SESSION_START_MAX_CHARS for injected context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-max-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-max-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -512,8 +512,97 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('honors ECC_MAX_INJECTED_INSTINCTS for injected instincts', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-max-instincts-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      for (let i = 1; i <= 8; i++) {
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: max-instinct-${i}\nconfidence: 0.9\n---\n## Action\nDo configurable thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 6 instinct(s)'), `default cap should inject 6, stderr: ${def.stderr}`);
+
+        const capped = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3' });
+        assert.strictEqual(capped.code, 0);
+        assert.ok(capped.stderr.includes('Injecting 3 instinct(s)'), `override should inject 3, stderr: ${capped.stderr}`);
+
+        const garbage = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: 'not-a-number' });
+        assert.strictEqual(garbage.code, 0);
+        assert.ok(garbage.stderr.includes('Injecting 6 instinct(s)'), `garbage override should fall back to default 6, stderr: ${garbage.stderr}`);
+
+        // A partial/non-integer value must be rejected whole, not truncated.
+        const partial = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '3.9' });
+        assert.strictEqual(partial.code, 0);
+        assert.ok(partial.stderr.includes('Injecting 6 instinct(s)'), `non-integer override (3.9) should fall back to default 6, not truncate to 3, stderr: ${partial.stderr}`);
+
+        // Non-decimal numeric syntax (exponent, hex) must be rejected too.
+        // If "1e2" were accepted as 100, all 8 fixtures would inject; the
+        // default cap of 6 proves it fell back.
+        const exponent = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_MAX_INJECTED_INSTINCTS: '1e2' });
+        assert.strictEqual(exponent.code, 0);
+        assert.ok(exponent.stderr.includes('Injecting 6 instinct(s)'), `exponent override (1e2) should fall back to default 6, stderr: ${exponent.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await asyncTest('honors ECC_INSTINCT_CONFIDENCE_THRESHOLD for injected instincts', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-threshold-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // 4 high-confidence (0.9) + 4 low-confidence (0.6) instincts.
+      for (let i = 1; i <= 8; i++) {
+        const confidence = i <= 4 ? '0.9' : '0.6';
+        fs.writeFileSync(
+          path.join(instinctsDir, `instinct-${i}.md`),
+          `---\nid: thr-instinct-${i}\nconfidence: ${confidence}\n---\n## Action\nDo threshold thing number ${i}.\n`
+        );
+      }
+      const baseEnv = { HOME: isoHome, USERPROFILE: isoHome, CLV2_HOMUNCULUS_DIR: homunculusDir };
+
+      try {
+        const def = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(def.code, 0);
+        assert.ok(def.stderr.includes('Injecting 4 instinct(s)'), `default 0.7 threshold should inject only the four 0.9 instincts, stderr: ${def.stderr}`);
+
+        const raised = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.95' });
+        assert.strictEqual(raised.code, 0);
+        assert.ok(!raised.stderr.includes('instinct(s) into session context'), `0.95 threshold should filter out all instincts, stderr: ${raised.stderr}`);
+
+        const lowered = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.5' });
+        assert.strictEqual(lowered.code, 0);
+        assert.ok(lowered.stderr.includes('Injecting 6 instinct(s)'), `0.5 threshold should pass all eight but cap at the default 6, stderr: ${lowered.stderr}`);
+
+        // Non-decimal syntax must fall back to the default 0.7, not be read
+        // as hex. If "0x1" were accepted as 1.0, zero instincts would inject
+        // (none are at full confidence); the default 0.7 injects the four 0.9s.
+        const hex = await runScript(path.join(scriptsDir, 'session-start.js'), '', { ...baseEnv, ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0x1' });
+        assert.strictEqual(hex.code, 0);
+        assert.ok(hex.stderr.includes('Injecting 4 instinct(s)'), `hex threshold (0x1) should fall back to the 0.7 default and inject the four 0.9 instincts, stderr: ${hex.stderr}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('disables session-start additional context when requested', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-disabled-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-disabled-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -541,7 +630,7 @@ async function runTests() {
 
   if (
     await asyncTest('prefers canonical session-data content over legacy duplicates', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-canonical-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-canonical-start-'));
       const canonicalDir = getCanonicalSessionsDir(isoHome);
       const legacyDir = getLegacySessionsDir(isoHome);
       const now = new Date();
@@ -579,7 +668,7 @@ async function runTests() {
 
   if (
     await asyncTest('strips ANSI escape codes from injected session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-ansi-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ansi-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -607,7 +696,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on Desktop SessionStart resume', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-resume-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-resume-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -632,7 +721,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on CLI SessionStart resume', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cli-resume-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cli-resume-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -656,7 +745,7 @@ async function runTests() {
 
   if (
     await asyncTest('skips prior session summary on clear SessionStart payloads', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-clear-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-clear-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -685,7 +774,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not log malformed SessionStart stdin content while skipping prior summary', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-invalid-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-invalid-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -715,7 +804,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not fall back to unrelated recent session content', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cross-project-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cross-project-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -748,7 +837,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject same-project sessions from a different explicit worktree', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-cross-worktree-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cross-worktree-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -779,7 +868,7 @@ async function runTests() {
 
   if (
     await asyncTest('allows project fallback only for legacy sessions without worktree metadata', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-project-only-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-project-only-start-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -806,7 +895,7 @@ async function runTests() {
 
   if (
     await asyncTest('reports learned skills count', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-skills-start-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skills-start-'));
       const learnedDir = path.join(isoHome, '.claude', 'skills', 'learned');
       fs.mkdirSync(learnedDir, { recursive: true });
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
@@ -832,7 +921,7 @@ async function runTests() {
 
   if (
     await asyncTest('injects learned skills into session-start additional context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-skills-context-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skills-context-'));
       const learnedDir = path.join(isoHome, '.claude', 'skills', 'learned');
       fs.mkdirSync(learnedDir, { recursive: true });
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
@@ -920,7 +1009,7 @@ async function runTests() {
 
   if (
     await asyncTest('creates or updates session file', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-create-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-create-'));
 
       try {
         await runScript(path.join(scriptsDir, 'session-end.js'), '', {
@@ -951,7 +1040,7 @@ async function runTests() {
 
   if (
     await asyncTest('includes session ID in filename', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-id-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-id-'));
       const testSessionId = 'test-session-abc12345';
       const expectedShortId = 'abc12345'; // Last 8 chars
 
@@ -983,7 +1072,7 @@ async function runTests() {
   // backward compatibility (same `.slice(-8)` convention).
   if (
     await asyncTest('derives shortId from transcript_path UUID when available', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-'));
       const transcriptUuid = 'abcdef12-3456-4789-a012-bcdef3456789';
       const expectedShortId = 'f3456789'; // Last 8 chars of UUID (matches getSessionIdShort convention)
       const transcriptPath = path.join(isoHome, 'transcripts', `${transcriptUuid}.jsonl`);
@@ -1021,7 +1110,7 @@ async function runTests() {
   // lowercase so the filename is consistent with getSessionIdShort()'s output.
   if (
     await asyncTest('normalizes transcript UUID shortId to lowercase', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-upper-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-upper-'));
       const transcriptUuid = 'ABCDEF12-3456-4789-A012-BCDEF3456789';
       const expectedShortId = 'f3456789'; // last 8 lowercased
       const transcriptPath = path.join(isoHome, 'transcripts', `${transcriptUuid}.jsonl`);
@@ -1056,7 +1145,7 @@ async function runTests() {
   // existing .tmp files are not orphaned on upgrade.
   if (
     await asyncTest('matches getSessionIdShort when transcript UUID equals CLAUDE_SESSION_ID', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-transcript-match-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-transcript-match-'));
       const sessionUuid = '11223344-5566-4778-8899-aabbccddeeff';
       const expectedShortId = 'ccddeeff'; // last 8 chars of both transcript UUID and CLAUDE_SESSION_ID
       const transcriptPath = path.join(isoHome, 'transcripts', `${sessionUuid}.jsonl`);
@@ -1088,7 +1177,7 @@ async function runTests() {
 
   if (
     await asyncTest('writes project, branch, and worktree metadata into new session files', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-session-metadata-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-metadata-'));
       const testSessionId = 'test-session-meta1234';
       const expectedShortId = testSessionId.slice(-8);
       const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
@@ -1152,7 +1241,7 @@ async function runTests() {
 
   if (
     await asyncTest('annotates active session file with compaction marker', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-annotate-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-annotate-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -1178,7 +1267,7 @@ async function runTests() {
 
   if (
     await asyncTest('compaction log contains timestamp', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-ts-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-ts-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -2511,7 +2600,8 @@ async function runTests() {
       assert.ok(bootstrapSrc.includes('session:start'), 'Bootstrap should invoke the session:start profile');
       assert.ok(bootstrapSrc.includes('run-with-flags.js'), 'Bootstrap should resolve the runner script');
       assert.ok(bootstrapSrc.includes('CLAUDE_PLUGIN_ROOT'), 'Bootstrap should consult CLAUDE_PLUGIN_ROOT');
-      assert.ok(bootstrapSrc.includes('plugins'), 'Bootstrap should probe known plugin roots');
+      assert.ok(bootstrapSrc.includes('resolve-ecc-root'), 'Bootstrap should delegate to the committed resolver module');
+      assert.ok(bootstrapSrc.includes('resolveEccRoot({ probe: rel })'), 'Bootstrap should call resolveEccRoot with the hook probe');
     })
   )
     passed++;
@@ -2532,7 +2622,7 @@ async function runTests() {
         assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
         assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
-        assert.ok(commandText.includes('plugins'), 'Lifecycle hook should probe known plugin roots');
+        assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
         assert.ok(!commandText.includes('head -n 1'), 'Lifecycle hook should not pick the first matching plugin path');
       }
@@ -3060,6 +3150,19 @@ async function runTests() {
       assert.ok(observerLoopSource.includes('prompt_content="$(cat "$prompt_file" 2>/dev/null || true)"'), 'observer-loop should read prompt_file into memory before claude is spawned');
       assert.ok(observerLoopSource.includes('-p "$prompt_content"'), 'observer-loop should pass in-memory prompt content to claude');
       assert.ok(!observerLoopSource.includes('-p "$(cat "$prompt_file")"'), 'observer-loop should not re-read prompt_file at invocation time');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('start-observer waits for PID file via poll instead of fixed sleep (#2295)', () => {
+      const startObserverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'start-observer.sh'), 'utf8');
+
+      assert.ok(!/^\s*sleep 2\s*$/m.test(startObserverSource), 'start-observer.sh should not use the fixed `sleep 2` wait after spawning the observer loop');
+      assert.ok(/\bseq 1 \d+\b/.test(startObserverSource), 'start-observer.sh should bound PID-file polling to a finite iteration count');
+      assert.ok(/\[ -f "\$PID_FILE" \] && break/.test(startObserverSource), 'start-observer.sh should exit polling as soon as $PID_FILE appears');
+      assert.ok(/sleep 0\.\d+/.test(startObserverSource), 'start-observer.sh should poll at sub-second intervals so healthy startups do not pay multi-second latency');
     })
   )
     passed++;
@@ -3610,7 +3713,7 @@ async function runTests() {
 
   if (
     await asyncTest('only annotates *-session.tmp files, not other .tmp files', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-glob-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-glob-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -3641,7 +3744,7 @@ async function runTests() {
 
   if (
     await asyncTest('handles no active session files gracefully', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-nosession-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-nosession-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -3896,7 +3999,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 with empty sessions directory (no recent sessions)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-empty-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-empty-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
       try {
@@ -3918,7 +4021,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject blank template session into context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-blank-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-blank-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4531,7 +4634,7 @@ async function runTests() {
 
   if (
     await asyncTest('annotates only the newest session file when multiple exist', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-multi-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -4609,7 +4712,7 @@ async function runTests() {
 
   if (
     await asyncTest('does not inject empty session file content into context', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-empty-file-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-empty-file-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4670,7 +4773,7 @@ async function runTests() {
 
   if (
     await asyncTest('summary omits Files Modified and Tools Used when none found', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-notools-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-notools-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -4708,7 +4811,7 @@ async function runTests() {
 
   if (
     await asyncTest('reports available session aliases on startup', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-alias-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-alias-'));
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
 
@@ -4745,7 +4848,7 @@ async function runTests() {
 
   if (
     await asyncTest('parallel compaction runs all append to log without loss', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-par-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-par-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -4778,7 +4881,7 @@ async function runTests() {
 
   if (
     await asyncTest('exits 0 when sessions path is a file (not a directory)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-blocked-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-blocked-'));
       fs.mkdirSync(path.join(isoHome, '.claude'), { recursive: true });
       // Block sessions dir creation by placing a file at that path
       fs.writeFileSync(getCanonicalSessionsDir(isoHome), 'blocked');
@@ -4843,7 +4946,7 @@ async function runTests() {
 
   if (
     await asyncTest('excludes session files older than 7 days', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-7day-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-7day-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4880,7 +4983,7 @@ async function runTests() {
 
   if (
     await asyncTest('prunes session files older than the retention window', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4916,7 +5019,7 @@ async function runTests() {
 
   if (
     await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=0', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-off-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-off-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4947,7 +5050,7 @@ async function runTests() {
 
   if (
     await asyncTest('disables pruning when ECC_SESSION_RETENTION_DAYS=off', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-offstr-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-offstr-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -4977,7 +5080,7 @@ async function runTests() {
 
   if (
     await asyncTest('falls back to default retention when ECC_SESSION_RETENTION_DAYS is garbage', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-prune-garbage-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-prune-garbage-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5010,7 +5113,7 @@ async function runTests() {
 
   if (
     await asyncTest('injects newest session when multiple recent sessions exist', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-start-multi-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5142,7 +5245,7 @@ async function runTests() {
         console.log('    (skipped — not supported on this platform)');
         return;
       }
-      const isoHome = path.join(os.tmpdir(), `ecc-start-unreadable-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-start-unreadable-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5202,7 +5305,7 @@ async function runTests() {
         console.log('    (skipped — not supported on this platform)');
         return;
       }
-      const isoHome = path.join(os.tmpdir(), `ecc-compact-ro-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-ro-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5243,7 +5346,7 @@ async function runTests() {
 
   if (
     await asyncTest('logs warning when existing session file lacks Last Updated field', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-end-nots-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-end-nots-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5334,7 +5437,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts user messages from role-only format (no type field)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-role-only-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-role-only-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5370,7 +5473,7 @@ async function runTests() {
 
   if (
     await asyncTest('logs "Transcript not found" for nonexistent transcript_path', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-notfound-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-notfound-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5399,7 +5502,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts tool name and file path from entry.name/entry.input (not tool_name/tool_input)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r70-entryname-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r70-entryname-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       const transcriptPath = path.join(isoHome, 'transcript.jsonl');
@@ -5446,7 +5549,7 @@ async function runTests() {
 
   if (
     await asyncTest('shows selection prompt when no package manager preference found (default source)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r71-ss-default-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r71-ss-default-'));
       const isoProject = path.join(isoHome, 'project');
       fs.mkdirSync(getCanonicalSessionsDir(isoHome), { recursive: true });
       fs.mkdirSync(path.join(isoHome, '.claude', 'skills', 'learned'), { recursive: true });
@@ -5594,7 +5697,7 @@ async function runTests() {
 
   if (
     await asyncTest('extracts user messages from entries where only message.role is user (not type or role)', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-msgrole-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-msgrole-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5661,7 +5764,7 @@ async function runTests() {
     await asyncTest('skips user messages with numeric content (non-string non-array branch)', async () => {
       // session-end.js line 50-55: rawContent is checked for string, then array, else ''
       // When content is a number (42), neither branch matches, text = '', message is skipped.
-      const isoHome = path.join(os.tmpdir(), `ecc-r81-numcontent-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r81-numcontent-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
       const transcriptPath = path.join(isoHome, 'transcript.jsonl');
@@ -5710,7 +5813,7 @@ async function runTests() {
 
   if (
     await asyncTest('collects tool name from entry with tool_name but non-tool_use type', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r82-toolname-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r82-toolname-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 
@@ -5748,7 +5851,7 @@ async function runTests() {
 
   if (
     await asyncTest('preserves file when marker present but regex does not match corrupted template', async () => {
-      const isoHome = path.join(os.tmpdir(), `ecc-r82-tmpl-${Date.now()}`);
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-r82-tmpl-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
 

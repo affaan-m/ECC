@@ -51,10 +51,10 @@ Let `<claude-home>` denote the Claude Code home directory: `~/.claude` on macOS/
 
 | Form | Detection | `{ORCH_CMD}` | Agent name format |
 |---|---|---|---|
-| Plugin install (1.9.0+) | `<claude-home>/plugins/marketplaces/everything-claude-code/` exists | `/everything-claude-code:orchestrate` | `everything-claude-code:<name>` |
+| Plugin install (2.0.0+) | `<claude-home>/plugins/marketplaces/ecc/` exists | `/ecc:orchestrate` | `ecc:<name>` |
 | Legacy bare install | Above absent; agent files under `<claude-home>/agents/` | `/orchestrate` | `<name>` |
 
-Why this matters: under the plugin install, agents register as `everything-claude-code:tdd-guide`. Bare names force fuzzy matching, which fails intermittently under parallel calls. Under legacy, the prefixed forms are not registered and fail outright.
+Why this matters: under the plugin install, agents register as `ecc:tdd-guide`. Bare names force fuzzy matching, which fails intermittently under parallel calls. Under legacy, the prefixed forms are not registered and fail outright.
 
 ## Available agent catalogue (must pick from these)
 
@@ -87,7 +87,7 @@ A misspelled agent name fails `/orchestrate`. Cross-check against this list befo
 
 1. Read `<plan-doc-path>`. If missing or empty, report and stop.
 2. Detect ECC install form once and freeze it into `ECC_MODE`. Algorithm (run in order, stop at the first match):
-   1. If `<claude-home>/plugins/marketplaces/everything-claude-code/` exists → `ECC_MODE=plugin`.
+   1. If `<claude-home>/plugins/marketplaces/ecc/` exists → `ECC_MODE=plugin`.
    2. Else if `<claude-home>/agents/` exists and contains at least one ECC agent file (e.g. `tdd-guide.md`, `code-reviewer.md`) → `ECC_MODE=legacy`.
    3. Else → default to `ECC_MODE=legacy` and emit a one-line warning at the top of the output: `> Warning: could not detect ECC install; defaulting to legacy form. If you use the plugin install, edit the prefixes manually.`
    4. If both markers exist (mixed install), `plugin` wins — the plugin namespace is the only one that resolves agent names without fuzzy matching.
@@ -99,7 +99,7 @@ A misspelled agent name fails `/orchestrate`. Cross-check against this list befo
    - No marker matched → set `lang=unknown`.
    - `lang=unknown` is a sentinel — it is **not** an agent name. Phase 2 rules 4 and 5 turn it into `code-reviewer` / `build-error-resolver` at chain composition time.
 4. Detect a **PyTorch sub-profile**: when `lang=python` and any of `pyproject.toml` / `requirements.txt` / `uv.lock` declares a dependency on `torch`, set `pytorch=true`. This only affects `build` chain selection (Phase 2 rule below); the reviewer remains `python-reviewer`.
-5. **Normalize any agent names declared in the plan**: if the plan text references agents by their plugin-prefixed form (e.g. `everything-claude-code:tdd-guide`), strip the prefix to get the bare catalogue name before validating or composing chains. Re-prefixing happens only at output time per `ECC_MODE` (Phase 4). Never let a pre-prefixed name flow into chain composition — it would double-prefix in plugin mode.
+5. **Normalize any agent names declared in the plan**: if the plan text references agents by their plugin-prefixed form (e.g. `ecc:tdd-guide`), strip the prefix to get the bare catalogue name before validating or composing chains. Re-prefixing happens only at output time per `ECC_MODE` (Phase 4). Never let a pre-prefixed name flow into chain composition — it would double-prefix in plugin mode.
 
 ### Phase 1 — Decompose steps
 
@@ -161,8 +161,8 @@ Emit Markdown using **the form determined by `ECC_MODE`**. The output uses one f
 
 Concrete rendering rules:
 
-- `{ORCH_CMD}` = `/everything-claude-code:orchestrate` under `plugin`, `/orchestrate` under `legacy`.
-- `{AGENT(name)}` = `everything-claude-code:<name>` under `plugin`, `<name>` under `legacy`.
+- `{ORCH_CMD}` = `/ecc:orchestrate` under `plugin`, `/orchestrate` under `legacy`.
+- `{AGENT(name)}` = `ecc:<name>` under `plugin`, `<name>` under `legacy`.
 - The overview-table "Chain" column uses the same `{AGENT(name)}` rendering.
 - Per-step bash blocks contain only the runnable command. **No `# plugin form` or `# legacy form` comments** — the form is implicit and uniform across the whole output.
 
@@ -203,7 +203,7 @@ Append a final "Batch execution" block aggregating every step's command in order
 
 ### Phase 5 — Self-check (run before emitting)
 
-- [ ] Every agent in every chain comes from the catalogue (after stripping any `everything-claude-code:` prefix that appeared in the plan; see Phase 0 step 5).
+- [ ] Every agent in every chain comes from the catalogue (after stripping any `ecc:` prefix that appeared in the plan; see Phase 0 step 5).
 - [ ] Resolved `{ORCH_CMD}` and every resolved `{AGENT(...)}` use the **same** form (`plugin` or `legacy`) — never mixed in one output.
 - [ ] No `# plugin form` / `# legacy form` annotations and no "strip the prefix" instructions remain in the rendered output.
 - [ ] No invented `--mode` / `--gate` / `--agents=...` fields.
@@ -221,7 +221,7 @@ Append a final "Batch execution" block aggregating every step's command in order
 - **No clear steps**: prefer H2/H3 splitting; if still ambiguous, report "no structured steps detected" with the document outline and ask the user to confirm running by outline.
 - **Large plan (>1500 lines)**: enter **overview-only mode** — emit only the overview table and ask the user to narrow with `--scope` before re-running for details. In this mode, skip per-step detail blocks and skip the Batch execution block.
 - **Step too broad** (e.g. "complete all backend work"): do not force a single chain. Suggest splitting into N.a and N.b and propose a split.
-- **Plan declares agents** (rare): first **strip any `everything-claude-code:` prefix** to get the bare catalogue name (Phase 0 step 5), then validate against the catalogue. Replace invalid agents and explain under "Chain rationale". The bare name is re-prefixed at output time per `ECC_MODE`.
+- **Plan declares agents** (rare): first **strip any `ecc:` prefix** to get the bare catalogue name (Phase 0 step 5), then validate against the catalogue. Replace invalid agents and explain under "Chain rationale". The bare name is re-prefixed at output time per `ECC_MODE`.
 - **Polyglot project where `--lang=auto` cannot pick a winner**: set `lang=unknown`; reviewer resolves to `code-reviewer` and build resolver to `build-error-resolver`. Mention the fallback under "Chain rationale".
 
 ## Examples
@@ -242,7 +242,7 @@ Excerpt of expected output:
 **Chain rationale**: Security-sensitive write path, so `security-reviewer` closes the chain; `database-reviewer` validates the alembic migration; `python-reviewer` covers typing and PEP 8.
 
 ```bash
-/everything-claude-code:orchestrate custom "everything-claude-code:tdd-guide,everything-claude-code:database-reviewer,everything-claude-code:python-reviewer,everything-claude-code:security-reviewer" "[Plan: docs/plan/example-feature.md#step-2] Implement EncryptedString SQLAlchemy type and migrate UserProfile.birth_datetime/location columns; key from ENV APP_DB_KEY; Acceptance: encrypt/decrypt roundtrip tests pass; alembic upgrade/downgrade clean on empty DB; no plaintext in DB after migrate; Out of scope: cross-tenant profile sharing logic"
+/ecc:orchestrate custom "ecc:tdd-guide,ecc:database-reviewer,ecc:python-reviewer,ecc:security-reviewer" "[Plan: docs/plan/example-feature.md#step-2] Implement EncryptedString SQLAlchemy type and migrate UserProfile.birth_datetime/location columns; key from ENV APP_DB_KEY; Acceptance: encrypt/decrypt roundtrip tests pass; alembic upgrade/downgrade clean on empty DB; no plaintext in DB after migrate; Out of scope: cross-tenant profile sharing logic"
 ```
 ````
 

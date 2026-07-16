@@ -31,11 +31,12 @@ dev = [
     "pytest-mock>=3.12",
     "ruff>=0.4",
     "mypy>=2.1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/affaan-m/everything-claude-code"
-Repository = "https://github.com/affaan-m/everything-claude-code"
+Homepage = "https://github.com/affaan-m/ECC"
+Repository = "https://github.com/affaan-m/ECC"
 
 [project.scripts]
 llm-select = "llm.cli.selector:main"

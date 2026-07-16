@@ -61,7 +61,10 @@ function findShellBinary() {
       stdio: 'ignore',
       windowsHide: true
     });
-    if (!probe.error) {
+    // Require the probe to actually succeed, not just spawn: Windows'
+    // System32\bash.exe (WSL launcher) spawns even with no distro installed but
+    // exits non-zero, so `!probe.error` alone would treat it as a usable shell.
+    if (!probe.error && probe.status === 0) {
       return candidate;
     }
   }

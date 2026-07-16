@@ -9,7 +9,7 @@
 
 타입: feat, fix, refactor, docs, test, chore, perf, ci
 
-참고: 어트리뷰션 비활성화 여부는 각자의 `~/.claude/settings.json` 로컬 설정에 따라 달라질 수 있습니다.
+참고: 공동 작성자 표기를 비활성화하려면 `~/.claude/settings.json`에 `"includeCoAuthoredBy": false`를 설정하세요. Claude Code는 기본적으로 `Co-Authored-By`를 추가하며 ECC는 이 설정을 포함하지 않습니다.
 
 ## Pull Request 워크플로우
 

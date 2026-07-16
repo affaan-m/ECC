@@ -58,6 +58,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/list-installed.js",
     "scripts/loop-status.js",
     "scripts/observability-readiness.js",
+    "scripts/plan-canvas.js",
     "scripts/operator-readiness-dashboard.js",
     "scripts/platform-audit.js",
     "scripts/preview-pack-smoke.js",

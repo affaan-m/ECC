@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuous Learning v2 - Project Detection Helper
 #
 # Shared logic for detecting current project context.
@@ -21,7 +21,7 @@
 
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib/homunculus-dir.sh"
-_CLV2_HOMUNCULUS_DIR="$(_ecc_resolve_homunculus_dir)"
+_CLV2_HOMUNCULUS_DIR="$(_clv2_resolve_homunculus_dir)"
 _CLV2_PROJECTS_DIR="${_CLV2_HOMUNCULUS_DIR}/projects"
 _CLV2_REGISTRY_FILE="${_CLV2_HOMUNCULUS_DIR}/projects.json"
 
