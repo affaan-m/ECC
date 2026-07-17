@@ -339,6 +339,54 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('renders a minimal-context fresh cohesion subagent handoff', () => {
+    const cohesionReview = reporter.buildCohesionReview({
+      number: 77,
+      title: 'Add focused repo workflow',
+      changedFiles: 3,
+      additions: 42,
+      deletions: 4,
+      classification: {
+        level: 'low-risk review',
+        action: 'Maintainer can review normally.',
+      },
+      findings: [],
+    }, 'affaan-m/ECC');
+
+    assert.match(cohesionReview.prompt, /fresh subagent/i);
+    assert.match(cohesionReview.prompt, /ensure this PR adds something to ECC/i);
+    assert.match(cohesionReview.prompt, /logical addition/i);
+    assert.match(cohesionReview.prompt, /works cohesively with the existing systems/i);
+    assert.doesNotMatch(cohesionReview.prompt, /PR body/i);
+
+    const markdown = reporter.renderMarkdown({
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      repo: 'affaan-m/ECC',
+      since: '2026-07-16T00:00:00.000Z',
+      hasNewPrs: true,
+      totals: { newPrs: 1, lowRisk: 1, securityReview: 0, cleanupRequired: 0, draft: 0 },
+      prs: [{
+        number: 77,
+        title: 'Add focused repo workflow',
+        url: 'https://github.com/affaan-m/ECC/pull/77',
+        author: 'tester',
+        additions: 42,
+        deletions: 4,
+        changedFiles: 3,
+        classification: {
+          level: 'low-risk review',
+          action: 'Maintainer can review normally.',
+        },
+        findings: [],
+        cohesionReview,
+      }],
+    });
+
+    assert.match(markdown, /Fresh Cohesion Review/);
+    assert.match(markdown, /PR #77 in `affaan-m\/ECC`/);
+    assert.match(markdown, /ensure this PR adds something to ECC/);
+  })) passed++; else failed++;
+
   if (test('scheduled workflow is Monday/Thursday and artifact-first', () => {
     const workflow = fs.readFileSync(WORKFLOW, 'utf8');
     assert.match(workflow, /cron: '17 14 \* \* 1,4'/);
