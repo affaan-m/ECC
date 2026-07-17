@@ -512,12 +512,13 @@
         "skills/google-workspace-ops",
         "skills/jira-integration",
         "skills/knowledge-ops",
+        "skills/mailtrap-email-integration",
         "skills/messages-ops",
+        "skills/pr-queue-triage",
         "skills/project-flow-ops",
         "skills/terminal-ops",
         "skills/unified-notifications-ops",
-        "skills/workspace-surface-audit",
-        "skills/mailtrap-email-integration"
+        "skills/workspace-surface-audit"
       ],
       "targets": [
         "claude",

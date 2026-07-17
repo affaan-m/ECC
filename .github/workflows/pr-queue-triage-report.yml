@@ -1,0 +1,68 @@
+name: PR Queue Triage Report
+
+on:
+  schedule:
+    - cron: '17 14 * * 1,4' # Monday and Thursday at 14:17 UTC.
+  workflow_dispatch:
+    inputs:
+      send_email:
+        description: 'Send the report by SMTP when PRs are found'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  report:
+    name: Generate PR queue report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Generate report
+        id: report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TRIAGE_EMAIL_TO: ${{ secrets.PR_TRIAGE_EMAIL_TO }}
+          PR_TRIAGE_SMTP_HOST: ${{ secrets.PR_TRIAGE_SMTP_HOST }}
+          PR_TRIAGE_SMTP_PORT: ${{ secrets.PR_TRIAGE_SMTP_PORT }}
+          PR_TRIAGE_SMTP_USER: ${{ secrets.PR_TRIAGE_SMTP_USER }}
+          PR_TRIAGE_SMTP_PASS: ${{ secrets.PR_TRIAGE_SMTP_PASS }}
+          PR_TRIAGE_SMTP_FROM: ${{ secrets.PR_TRIAGE_SMTP_FROM }}
+          PR_TRIAGE_SMTP_SECURE: ${{ secrets.PR_TRIAGE_SMTP_SECURE }}
+        run: |
+          EMAIL_ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_email }}" = "true" ]; then
+            EMAIL_ARGS="--send-email"
+          fi
+          node scripts/pr-queue-email-report.js \
+            --repo "$GITHUB_REPOSITORY" \
+            --since-days 4 \
+            --since-last-success \
+            --workflow-file pr-queue-triage-report.yml \
+            --write artifacts/pr-queue-triage-report.md \
+            --json artifacts/pr-queue-triage-report.json \
+            $EMAIL_ARGS
+
+      - name: Upload report artifact
+        if: always() && steps.report.outputs.has_report == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-queue-triage-report
+          path: |
+            artifacts/pr-queue-triage-report.md
+            artifacts/pr-queue-triage-report.json
+          if-no-files-found: error
+          retention-days: 14

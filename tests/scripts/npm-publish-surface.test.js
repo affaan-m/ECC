@@ -62,6 +62,8 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/operator-readiness-dashboard.js",
     "scripts/platform-audit.js",
     "scripts/preview-pack-smoke.js",
+    "scripts/pr-queue-email-report.js",
+    "scripts/pr-review-packet.js",
     "scripts/release-approval-gate.js",
     "scripts/release-video-suite.js",
     "scripts/skill-create-output.js",
