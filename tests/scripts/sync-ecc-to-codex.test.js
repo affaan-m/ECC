@@ -69,9 +69,17 @@ function runTests() {
 
   if (test('filesystem-changing calls use argv-form run_or_echo invocations', () => {
     assert.ok(source.includes('run_or_echo mkdir -p "$BACKUP_DIR"'), 'mkdir should use argv form');
+    assert.ok(source.includes('run_or_echo mkdir -p "$(dirname "$CODEX_NAV_GUIDE_DEST")"'), 'Codex guide destination directory should use argv form');
+    assert.ok(source.includes('run_or_echo cp "$CODEX_NAV_GUIDE_SRC" "$CODEX_NAV_GUIDE_DEST"'), 'Codex guide copy should use argv form');
     // Skills sync rm/cp calls were removed — Codex reads from ~/.agents/skills/ natively
     assert.ok(!source.includes('run_or_echo rm -rf "$dest"'), 'skill sync rm should be removed');
     assert.ok(!source.includes('run_or_echo cp -R "$skill_dir" "$dest"'), 'skill sync cp should be removed');
+  })) passed++; else failed++;
+
+  if (test('sync script carries the Codex navigation guide referenced by AGENTS', () => {
+    assert.ok(source.includes('CODEX_NAV_GUIDE_SRC="$REPO_ROOT/docs/CODEX-NAVIGATION-GUIDE.md"'), 'Expected source path for Codex navigation guide');
+    assert.ok(source.includes('CODEX_NAV_GUIDE_DEST="$CODEX_HOME/docs/CODEX-NAVIGATION-GUIDE.md"'), 'Expected destination path for Codex navigation guide');
+    assert.ok(source.includes('require_path "$CODEX_NAV_GUIDE_SRC" "ECC Codex navigation guide"'), 'Expected sync preflight for Codex navigation guide');
   })) passed++; else failed++;
 
   if (test('sync script avoids GNU-only grep -P parsing', () => {

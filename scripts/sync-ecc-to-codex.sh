@@ -29,6 +29,8 @@ AGENTS_ROOT_SRC="$REPO_ROOT/AGENTS.md"
 AGENTS_CODEX_SUPP_SRC="$REPO_ROOT/.codex/AGENTS.md"
 CODEX_AGENTS_SRC="$REPO_ROOT/.codex/agents"
 CODEX_AGENTS_DEST="$CODEX_HOME/agents"
+CODEX_NAV_GUIDE_SRC="$REPO_ROOT/docs/CODEX-NAVIGATION-GUIDE.md"
+CODEX_NAV_GUIDE_DEST="$CODEX_HOME/docs/CODEX-NAVIGATION-GUIDE.md"
 PROMPTS_SRC="$REPO_ROOT/commands"
 PROMPTS_DEST="$CODEX_HOME/prompts"
 BASELINE_MERGE_SCRIPT="$REPO_ROOT/scripts/codex/merge-codex-config.js"
@@ -150,6 +152,7 @@ MCP_MERGE_SCRIPT="$REPO_ROOT/scripts/codex/merge-mcp-config.js"
 require_path "$REPO_ROOT/AGENTS.md" "ECC AGENTS.md"
 require_path "$AGENTS_CODEX_SUPP_SRC" "ECC Codex AGENTS supplement"
 require_path "$CODEX_AGENTS_SRC" "ECC Codex agent roles"
+require_path "$CODEX_NAV_GUIDE_SRC" "ECC Codex navigation guide"
 require_path "$PROMPTS_SRC" "ECC commands directory"
 require_path "$BASELINE_MERGE_SCRIPT" "ECC Codex baseline merge script"
 require_path "$HOOKS_INSTALLER" "ECC global git hooks installer"
@@ -258,6 +261,10 @@ if [[ "$MODE" == "dry-run" ]]; then
 else
   node "$BASELINE_MERGE_SCRIPT" "$CONFIG_FILE"
 fi
+
+log "Syncing Codex navigation guide"
+run_or_echo mkdir -p "$(dirname "$CODEX_NAV_GUIDE_DEST")"
+run_or_echo cp "$CODEX_NAV_GUIDE_SRC" "$CODEX_NAV_GUIDE_DEST"
 
 log "Syncing sample Codex agent role files"
 run_or_echo mkdir -p "$CODEX_AGENTS_DEST"

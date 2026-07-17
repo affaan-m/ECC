@@ -83,6 +83,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "VERSION",
     "assets/ecc-icon.svg",
     "assets/hero.png",
+    "docs/CODEX-NAVIGATION-GUIDE.md",
   ]
   const exclusionPaths = [
     "!**/__pycache__/**",
@@ -151,6 +152,7 @@ function main() {
         "plugins/ecc/.codex-plugin/plugin.json",
         "assets/ecc-icon.svg",
         "assets/hero.png",
+        "docs/CODEX-NAVIGATION-GUIDE.md",
         "schemas/install-state.schema.json",
         "skills/backend-patterns/SKILL.md",
       ]) {

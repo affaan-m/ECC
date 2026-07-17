@@ -1375,7 +1375,7 @@ alwaysApply: false
 
 ## Codex macOS App + CLI Support
 
-ECC provides **first-class Codex support** for both the macOS app and CLI, with a reference configuration, Codex-specific AGENTS.md supplement, and shared skills.
+ECC provides **first-class Codex support** for both the macOS app and CLI, with a reference configuration, Codex-specific AGENTS.md supplement, and shared skills. For repo navigation, surface ownership, and PR diff packet guidance, start with [`docs/CODEX-NAVIGATION-GUIDE.md`](docs/CODEX-NAVIGATION-GUIDE.md).
 
 ### Quick Start (Codex App + CLI)
 
