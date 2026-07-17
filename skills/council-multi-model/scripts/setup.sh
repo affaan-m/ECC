@@ -9,7 +9,8 @@ PY="${PYTHON:-python3}"
 if [ ! -x "$VENV/bin/python" ]; then
   "$PY" -m venv "$VENV"
 fi
-"$VENV/bin/python" -m pip install --quiet --upgrade pip
-"$VENV/bin/python" -m pip install --quiet openai-codex
+echo "Installing openai-codex==0.1.0b3 from PyPI (network access required)"
+"$VENV/bin/python" -m pip install --disable-pip-version-check --quiet \
+  "openai-codex==0.1.0b3"
 echo "council-multi-model: venv ready at $VENV"
 echo "Next: \"$VENV/bin/python\" \"$HERE/scripts/check_codex.py\" --probe"

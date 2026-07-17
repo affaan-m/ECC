@@ -10,9 +10,34 @@ Usage:
 """
 import argparse
 import sys
+import tempfile
+from pathlib import Path
+
+
+def _read_prompt(prompt_file: str) -> str:
+    """Read a regular prompt file only from the system temporary directory."""
+    candidate = Path(prompt_file).expanduser()
+    try:
+        resolved = candidate.resolve(strict=True)
+        temp_root = Path(tempfile.gettempdir()).resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"failed to resolve prompt file: {exc}") from exc
+
+    if not resolved.is_file():
+        raise ValueError("prompt path is not a regular file")
+    if not resolved.is_relative_to(temp_root):
+        raise ValueError(
+            f"prompt file must be inside the system temporary directory ({temp_root})"
+        )
+
+    try:
+        return resolved.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ValueError(f"failed to read prompt file: {exc}") from exc
 
 
 def main() -> int:
+    """Run one read-only Codex review and print only its final response."""
     parser = argparse.ArgumentParser(description="Ask Codex for a heterogeneous review")
     parser.add_argument("--prompt-file", required=True,
                         help="path to the prompt file (avoids shell escaping)")
@@ -22,10 +47,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        with open(args.prompt_file, "r", encoding="utf-8") as fh:
-            prompt = fh.read().strip()
-    except OSError as exc:
-        print(f"[ask_codex] failed to read prompt file: {exc}", file=sys.stderr)
+        prompt = _read_prompt(args.prompt_file)
+    except ValueError as exc:
+        print(f"[ask_codex] {exc}", file=sys.stderr)
         return 2
 
     if not prompt:
@@ -38,25 +62,21 @@ def main() -> int:
         print(f"[ask_codex] openai-codex not installed: {exc}", file=sys.stderr)
         return 3
 
-    codex = Codex()
     try:
-        thread = codex.thread_start(
-            model=args.model,
-            sandbox=Sandbox.read_only,  # read-only: it only opines, never edits
-        )
-        result = thread.run(prompt)
+        with Codex() as codex:
+            thread = codex.thread_start(
+                model=args.model,
+                sandbox=Sandbox.read_only,  # read-only: it only opines, never edits
+            )
+            result = thread.run(prompt)
     except Exception as exc:  # network / auth / rate limit
         print(f"[ask_codex] Codex call failed: {exc}", file=sys.stderr)
         return 4
-    finally:
-        try:
-            codex.close()
-        except Exception:
-            pass
 
-    text = (result.final_response or "").strip()
+    text = (getattr(result, "final_response", "") or "").strip()
     if not text:
-        print(f"[ask_codex] Codex returned no text (status={result.status})", file=sys.stderr)
+        status = getattr(result, "status", None)
+        print(f"[ask_codex] Codex returned no text (status={status})", file=sys.stderr)
         return 5
 
     sys.stdout.write(text)

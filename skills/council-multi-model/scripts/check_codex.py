@@ -17,14 +17,20 @@ import sys
 from pathlib import Path
 
 
-def _auth_present() -> bool:
-    """ChatGPT auth file, honoring CODEX_HOME the same way the SDK does."""
+def _auth_path() -> Path:
+    """Return the ChatGPT auth path, honoring CODEX_HOME like the SDK does."""
     home = os.environ.get("CODEX_HOME")
     base = Path(home) if home else Path.home() / ".codex"
-    return (base / "auth.json").is_file()
+    return base / "auth.json"
+
+
+def _auth_present() -> bool:
+    """Return whether the configured ChatGPT auth file exists."""
+    return _auth_path().is_file()
 
 
 def main() -> int:
+    """Report whether the local Codex SDK fallback is ready to use."""
     parser = argparse.ArgumentParser(description="Check Codex SDK availability")
     parser.add_argument(
         "--probe",
@@ -40,7 +46,7 @@ def main() -> int:
         return 3
 
     if not _auth_present():
-        print("UNAVAILABLE: no ChatGPT auth at ~/.codex/auth.json (log in to Codex first)")
+        print(f"UNAVAILABLE: no ChatGPT auth at {_auth_path()} (log in to Codex first)")
         return 4
 
     if not args.probe:
@@ -48,15 +54,9 @@ def main() -> int:
         return 0
 
     try:
-        codex = Codex()
-        try:
+        with Codex() as codex:
             thread = codex.thread_start(sandbox=Sandbox.read_only)
             result = thread.run("Reply with the single word: ok")
-        finally:
-            try:
-                codex.close()
-            except Exception:
-                pass
     except Exception as exc:  # network / auth / rate limit
         print(f"UNAVAILABLE: live probe failed ({exc})")
         return 5
