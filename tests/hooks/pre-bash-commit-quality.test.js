@@ -212,6 +212,7 @@ if (test('blocks commits with staged secret patterns across checkable files', ()
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', [
       "const openai = 'sk-abcdefghijklmnopqrstuvwxyz';",
+      "const anthropic = 'sk-ant-api03-AbCdEf-GhIjKlMnOpQrStUvWx_Yz012345';",
       "const token = 'ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ';",
       ''
     ].join('\n'));
@@ -227,6 +228,7 @@ if (test('blocks commits with staged secret patterns across checkable files', ()
     assert.strictEqual(result.output, input);
     assert.strictEqual(result.exitCode, 2);
     assert.ok(stderr.includes('Potential OpenAI API key'), `expected OpenAI secret warning, got: ${stderr}`);
+    assert.ok(stderr.includes('Potential Anthropic API key'), `expected Anthropic key warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential GitHub PAT'), `expected GitHub PAT warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential AWS Access Key'), `expected AWS key warning, got: ${stderr}`);
     assert.ok(stderr.includes('Potential API key'), `expected generic API key warning, got: ${stderr}`);
