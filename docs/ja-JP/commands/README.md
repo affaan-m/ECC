@@ -15,10 +15,11 @@
 - `/go-review` - Go コードをレビュー
 
 ### テスト & 検証
-- `/tdd` - テスト駆動開発ワークフロー
-- `/e2e` - E2E テストを実行
+- `/go-test`, `/kotlin-test`, `/rust-test`, `/cpp-test`, `/flutter-test`, `/react-test` - 言語別 TDD ワークフロー
 - `/test-coverage` - テストカバレッジを確認
-- `/verify` - 実装を検証
+- （`/tdd` は廃止 → `tdd-workflow` スキルを使用）
+- （`/e2e` は廃止 → `e2e-testing` スキルを使用）
+- （`/verify` は廃止 → `verification-loop` スキルを使用）
 
 ### 計画 & 実装
 - `/plan` - 機能実装計画を作成
@@ -33,7 +34,7 @@
 - `/checkpoint` - 実装チェックポイント
 - `/evolve` - 機能を進化
 - `/learn` - プロジェクトについて学ぶ
-- `/orchestrate` - ワークフロー調整
+- （`/orchestrate` は廃止 → `dmux-workflows` / `autonomous-agent-harness` スキルを使用）
 - `/pm2` - PM2 デプロイメント管理
 - `/setup-pm` - PM2 を設定
 - `/sessions` - セッション管理
@@ -49,7 +50,7 @@ Claude Code でコマンドを実行：
 
 ```bash
 /plan
-/tdd
+/test-coverage
 /code-review
 /build-fix
 ```
@@ -65,14 +66,14 @@ Claude：実行 → `/plan` コマンド
 
 ### 開発ワークフロー
 1. `/plan` - 実装計画を作成
-2. `/tdd` - テストを書いて機能を実装
+2. `tdd-workflow` スキル - テストを書いて機能を実装
 3. `/code-review` - コード品質をレビュー
 4. `/build-fix` - ビルドエラーを修正
-5. `/e2e` - E2E テストを実行
+5. `e2e-testing` スキル - E2E テストを実行
 6. `/update-docs` - ドキュメントを更新
 
 ### デバッグワークフロー
-1. `/verify` - 実装を検証
+1. `verification-loop` スキル - 実装を検証
 2. `/code-review` - 品質をチェック
 3. `/build-fix` - エラーを修正
 4. `/test-coverage` - カバレッジを確認
