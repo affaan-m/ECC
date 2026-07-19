@@ -8,6 +8,11 @@
 # Official docs:
 # - https://developers.openai.com/codex/config-reference
 # - https://developers.openai.com/codex/multi-agent
+#
+# Caution: mutating Codex CLI subcommands (e.g. `codex mcp add`) rewrite this
+# file in place and strip comments/formatting when they persist a change. Add
+# personal MCP servers or local overrides to your own ~/.codex/config.toml
+# instead of editing this project-local template with those commands.
 
 # Model selection
 # Leave `model` and `model_provider` unset so Codex CLI uses its current
@@ -86,6 +91,10 @@ startup_timeout_sec = 30
 # [mcp_servers.cloudflare]
 # command = "npx"
 # args = ["-y", "@cloudflare/mcp-server-cloudflare"]
+#
+# [mcp_servers.chrome-devtools]
+# command = "npx"
+# args = ["-y", "chrome-devtools-mcp@latest"]
 
 [features]
 # Codex multi-agent collaboration is stable and on by default in current builds.
