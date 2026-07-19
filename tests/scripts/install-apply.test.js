@@ -11,6 +11,9 @@ const { applyInstallPlan } = require('../../scripts/lib/install/apply');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
 const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
+// Full-profile --json dry-runs list every managed file; Node's execFileSync
+// default (1MB) has no headroom as the repo grows, so raise it explicitly.
+const INSTALL_APPLY_MAX_BUFFER = 16 * 1024 * 1024;
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -40,6 +43,7 @@ function run(args = [], options = {}) {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: options.timeout || DEFAULT_INSTALL_APPLY_TIMEOUT_MS,
+      maxBuffer: INSTALL_APPLY_MAX_BUFFER,
     });
 
     return { code: 0, stdout, stderr: '' };

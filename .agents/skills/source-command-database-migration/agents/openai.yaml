@@ -1,0 +1,7 @@
+interface:
+  display_name: "Database Migration (Legacy Command)"
+  short_description: "Legacy /database-migration workflow scaffold"
+  brand_color: "#2563EB"
+  default_prompt: "Use $source-command-database-migration to plan a database schema migration."
+policy:
+  allow_implicit_invocation: true

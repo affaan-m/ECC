@@ -1,0 +1,7 @@
+interface:
+  display_name: "Feature Development (Legacy Command)"
+  short_description: "Legacy /feature-development workflow scaffold"
+  brand_color: "#2563EB"
+  default_prompt: "Use $source-command-feature-development to implement a standard feature end to end."
+policy:
+  allow_implicit_invocation: true

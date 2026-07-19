@@ -1,0 +1,7 @@
+interface:
+  display_name: "Add Language Rules (Legacy Command)"
+  short_description: "Legacy /add-language-rules workflow scaffold"
+  brand_color: "#2563EB"
+  default_prompt: "Use $source-command-add-language-rules to add a new language's rules pack."
+policy:
+  allow_implicit_invocation: true
