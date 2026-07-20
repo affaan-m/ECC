@@ -307,7 +307,8 @@ rm package-lock.json  # If using pnpm/yarn/bun
 
 ### OpenCode Fails to Start on Termux/Android
 
-**Symptom:** `opencode` crashes or refuses to launch on Termux with a Bun
+**Symptom:** The `changed-files` tool fails when invoked with an installation
+error, or (on older versions) `opencode` crashes on startup with a Bun
 `ResolveMessage`, e.g.:
 
 ```
