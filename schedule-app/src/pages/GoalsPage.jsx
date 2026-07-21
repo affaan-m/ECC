@@ -1,109 +1,173 @@
 import { useMemo, useState } from 'react';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
-import { weekKey, startOfWeek, addDays, formatWeekRange } from '../data/helpers.js';
+import { Brand } from '../components/Logo.jsx';
+import {
+  goalKey,
+  weekKey,
+  startOfWeek,
+  addDays,
+  toISODate,
+  todayISO,
+  fromISODate,
+  formatWeekRange,
+  formatDayLabel,
+  isToday,
+} from '../data/helpers.js';
+import {
+  requestNotificationPermission,
+  notificationsSupported,
+} from '../data/notifications.js';
 
-const EMPTY_GOAL = { title: '', category: '', target: 1, unit: '' };
+const emptyGoal = (period) => ({
+  title: '',
+  category: '',
+  period,
+  target: 1,
+  unit: '',
+  reminderOn: false,
+  reminderTime: '09:00',
+});
 
 export default function GoalsPage() {
   const { state } = useStore();
   const actions = useActions();
+  const [period, setPeriod] = useState('daily');
+  const [day, setDay] = useState(() => todayISO());
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [editing, setEditing] = useState(null); // goal object or EMPTY_GOAL
+  const [editing, setEditing] = useState(null);
 
-  const week = weekKey(weekStart);
-  const isThisWeek = week === weekKey(new Date());
+  const isDaily = period === 'daily';
+  const ctx = isDaily ? fromISODate(day) : weekStart;
+  const key = goalKey(period, ctx);
+  const atCurrent = isDaily ? isToday(day) : weekKey(weekStart) === weekKey(new Date());
 
-  const progressOf = (g) => g.weeklyProgress?.[week] || 0;
+  const goals = useMemo(() => state.goals.filter((g) => (g.period || 'weekly') === period), [state.goals, period]);
+  const progressOf = (g) => g.progress?.[key] || 0;
 
   const totals = useMemo(() => {
-    const target = state.goals.reduce((s, g) => s + (g.target || 0), 0);
-    const done = state.goals.reduce((s, g) => s + Math.min(progressOf(g), g.target || 0), 0);
-    const met = state.goals.filter((g) => progressOf(g) >= (g.target || 0) && g.target > 0).length;
+    const target = goals.reduce((s, g) => s + (g.target || 0), 0);
+    const done = goals.reduce((s, g) => s + Math.min(progressOf(g), g.target || 0), 0);
+    const met = goals.filter((g) => progressOf(g) >= (g.target || 0) && g.target > 0).length;
     return { target, done, met, pct: target ? Math.round((done / target) * 100) : 0 };
-  }, [state.goals, week]);
+  }, [goals, key]);
 
-  // Group goals by category, preserving first-seen order.
   const groups = useMemo(() => {
     const map = new Map();
-    for (const g of state.goals) {
-      const key = g.category?.trim() || 'General';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(g);
+    for (const g of goals) {
+      const cat = g.category?.trim() || 'General';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat).push(g);
     }
     return [...map.entries()];
-  }, [state.goals]);
+  }, [goals]);
 
-  const saveGoal = () => {
+  const openEdit = (g) =>
+    setEditing({
+      ...g,
+      reminderOn: !!g.reminder,
+      reminderTime: g.reminder?.time || '09:00',
+    });
+
+  const saveGoal = async () => {
     const title = editing.title.trim();
     if (!title) return;
+    if (editing.reminderOn) {
+      await requestNotificationPermission();
+      actions.setSettings({ notifications: true });
+    }
     const payload = {
       title,
       category: editing.category.trim(),
+      period: editing.period,
       target: Math.max(1, Number(editing.target) || 1),
       unit: editing.unit.trim(),
+      reminder: editing.reminderOn ? { time: editing.reminderTime } : null,
     };
     if (editing.id) actions.updateGoal({ ...editing, ...payload });
     else actions.addGoal(payload);
     setEditing(null);
   };
 
+  const stepDay = (n) => setDay(toISODate(addDays(day, n)));
+
   return (
     <div className="page">
       <header className="page-head">
         <div className="page-head-row">
-          <h1>Goals</h1>
-          <button className="btn btn-primary btn-sm" onClick={() => setEditing({ ...EMPTY_GOAL })}>
-            + New
+          <Brand>Goals</Brand>
+        </div>
+        <div className="seg seg--full">
+          <button className={`seg-btn${isDaily ? ' seg-btn--on' : ''}`} onClick={() => setPeriod('daily')}>
+            Today
+          </button>
+          <button className={`seg-btn${!isDaily ? ' seg-btn--on' : ''}`} onClick={() => setPeriod('weekly')}>
+            This week
           </button>
         </div>
         <div className="week-nav">
-          <button className="icon-btn" onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Previous week">
+          <button
+            className="icon-btn"
+            onClick={() => (isDaily ? stepDay(-1) : setWeekStart(addDays(weekStart, -7)))}
+            aria-label="Previous"
+          >
             <Chevron dir="left" />
           </button>
           <button
             className="week-label"
-            onClick={() => setWeekStart(startOfWeek(new Date()))}
-            title="Jump to this week"
+            onClick={() => (isDaily ? setDay(todayISO()) : setWeekStart(startOfWeek(new Date())))}
           >
-            {isThisWeek ? 'This week' : formatWeekRange(weekStart)}
-            <span className="week-sub">{formatWeekRange(weekStart)}</span>
+            {isDaily
+              ? atCurrent
+                ? 'Today'
+                : formatDayLabel(day)
+              : atCurrent
+              ? 'This week'
+              : formatWeekRange(weekStart)}
+            <span className="week-sub">{isDaily ? formatDayLabel(day) : formatWeekRange(weekStart)}</span>
           </button>
-          <button className="icon-btn" onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Next week">
+          <button
+            className="icon-btn"
+            onClick={() => (isDaily ? stepDay(1) : setWeekStart(addDays(weekStart, 7)))}
+            aria-label="Next"
+          >
             <Chevron dir="right" />
           </button>
         </div>
       </header>
 
-      {state.goals.length > 0 && (
+      {goals.length > 0 && (
         <section className="summary-card">
           <div className="summary-ring" style={ringStyle(totals.pct)}>
             <span>{totals.pct}%</span>
           </div>
           <div className="summary-meta">
-            <strong>{totals.met} of {state.goals.length} goals met</strong>
+            <strong>
+              {totals.met} of {goals.length} {isDaily ? 'daily' : 'weekly'} goals met
+            </strong>
             <span className="muted">
-              {totals.done} of {totals.target} total this week
+              {totals.done} of {totals.target} {isDaily ? 'today' : 'this week'}
             </span>
           </div>
         </section>
       )}
 
-      {state.goals.length === 0 ? (
-        <EmptyState onAdd={() => setEditing({ ...EMPTY_GOAL })} />
+      {goals.length === 0 ? (
+        <EmptyState isDaily={isDaily} onAdd={() => setEditing(emptyGoal(period))} />
       ) : (
-        groups.map(([category, goals]) => (
+        groups.map(([category, list]) => (
           <section key={category} className="goal-group">
             <h3 className="group-title">{category}</h3>
-            {goals.map((g) => {
+            {list.map((g) => {
               const value = progressOf(g);
               const pct = g.target ? Math.min(100, Math.round((value / g.target) * 100)) : 0;
               const done = value >= g.target;
               return (
                 <div key={g.id} className={`goal-card${done ? ' goal-card--done' : ''}`}>
-                  <button className="goal-info" onClick={() => setEditing(g)}>
+                  <button className="goal-info" onClick={() => openEdit(g)}>
                     <div className="goal-title-row">
                       <span className="goal-title">{g.title}</span>
+                      {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}
                       {done && <span className="check-badge" aria-label="Goal met">✓</span>}
                     </div>
                     <div className="progress-track">
@@ -116,7 +180,7 @@ export default function GoalsPage() {
                   <div className="stepper">
                     <button
                       className="step-btn"
-                      onClick={() => actions.setGoalProgress(g.id, week, value - 1)}
+                      onClick={() => actions.setGoalProgress(g.id, key, value - 1)}
                       disabled={value <= 0}
                       aria-label={`Decrease ${g.title}`}
                     >
@@ -124,7 +188,7 @@ export default function GoalsPage() {
                     </button>
                     <button
                       className="step-btn step-btn--plus"
-                      onClick={() => actions.setGoalProgress(g.id, week, value + 1)}
+                      onClick={() => actions.setGoalProgress(g.id, key, value + 1)}
                       aria-label={`Increase ${g.title}`}
                     >
                       +
@@ -136,6 +200,10 @@ export default function GoalsPage() {
           </section>
         ))
       )}
+
+      <button className="fab" onClick={() => setEditing(emptyGoal(period))} aria-label="New goal">
+        +
+      </button>
 
       <Modal
         open={!!editing}
@@ -168,9 +236,26 @@ export default function GoalsPage() {
                 autoFocus
                 value={editing.title}
                 onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-                placeholder="e.g. Workouts"
+                placeholder="e.g. Drink water"
               />
             </label>
+            <div className="field">
+              <span>Repeats</span>
+              <div className="seg seg--full">
+                <button
+                  className={`seg-btn${editing.period === 'daily' ? ' seg-btn--on' : ''}`}
+                  onClick={() => setEditing({ ...editing, period: 'daily' })}
+                >
+                  Daily
+                </button>
+                <button
+                  className={`seg-btn${editing.period === 'weekly' ? ' seg-btn--on' : ''}`}
+                  onClick={() => setEditing({ ...editing, period: 'weekly' })}
+                >
+                  Weekly
+                </button>
+              </div>
+            </div>
             <label className="field">
               <span>Category</span>
               <input
@@ -187,7 +272,7 @@ export default function GoalsPage() {
             </label>
             <div className="field-row">
               <label className="field">
-                <span>Weekly target</span>
+                <span>{editing.period === 'daily' ? 'Daily' : 'Weekly'} target</span>
                 <input
                   type="number"
                   min="1"
@@ -200,9 +285,32 @@ export default function GoalsPage() {
                 <input
                   value={editing.unit}
                   onChange={(e) => setEditing({ ...editing, unit: e.target.value })}
-                  placeholder="e.g. sessions"
+                  placeholder="e.g. glasses"
                 />
               </label>
+            </div>
+
+            <div className="field">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={editing.reminderOn}
+                  onChange={(e) => setEditing({ ...editing, reminderOn: e.target.checked })}
+                />
+                <span>Remind me</span>
+              </label>
+              {editing.reminderOn && (
+                <>
+                  <input
+                    type="time"
+                    value={editing.reminderTime}
+                    onChange={(e) => setEditing({ ...editing, reminderTime: e.target.value })}
+                  />
+                  {!notificationsSupported() && (
+                    <span className="muted small">This browser can't show notifications.</span>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -211,14 +319,15 @@ export default function GoalsPage() {
   );
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ isDaily, onAdd }) {
   return (
     <div className="empty">
       <div className="empty-icon">🎯</div>
-      <h2>Set your first goal</h2>
+      <h2>{isDaily ? 'Set a daily goal' : 'Set a weekly goal'}</h2>
       <p className="muted">
-        Track weekly targets — workouts, people to reach out to, hours reading —
-        and watch your progress fill up each week.
+        {isDaily
+          ? 'Small daily habits — water, reading, steps — with progress that resets each day.'
+          : 'Weekly targets like workouts or people to reach out to, tracked across the week.'}
       </p>
       <button className="btn btn-primary" onClick={onAdd}>
         + New goal
@@ -228,9 +337,7 @@ function EmptyState({ onAdd }) {
 }
 
 function ringStyle(pct) {
-  return {
-    background: `conic-gradient(var(--accent) ${pct * 3.6}deg, var(--track) 0deg)`,
-  };
+  return { background: `conic-gradient(var(--accent) ${pct * 3.6}deg, var(--track) 0deg)` };
 }
 
 function Chevron({ dir }) {

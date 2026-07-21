@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import TabBar from './components/TabBar.jsx';
+import { runReminderScan } from './data/notifications.js';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
@@ -12,6 +13,23 @@ import { useStore } from './data/store.jsx';
 export default function App() {
   const { state } = useStore();
   const theme = state.settings?.theme || 'system';
+  const location = useLocation();
+
+  // Best-effort reminder scanner: check due goal/event reminders every 30s
+  // while the app is open, plus whenever it returns to the foreground.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  useEffect(() => {
+    const scan = () => runReminderScan(stateRef.current);
+    scan();
+    const id = setInterval(scan, 30000);
+    const onVisible = () => document.visibilityState === 'visible' && scan();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   // Apply the selected theme to the document root.
   useEffect(() => {
@@ -33,7 +51,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <main className="app-main">
+      <main className="app-main" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Navigate to="/goals" replace />} />
           <Route path="/goals" element={<GoalsPage />} />

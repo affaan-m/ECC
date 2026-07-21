@@ -11,11 +11,25 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return makeSeed();
     const parsed = JSON.parse(raw);
-    // Merge with a fresh seed shape so missing keys never crash the UI.
+    const seed = makeSeed();
+    // Merge with a fresh seed shape so missing keys never crash the UI, and
+    // migrate older records forward (weeklyProgress → progress, period, etc.).
     return {
-      ...makeSeed(),
+      ...seed,
       ...parsed,
-      settings: { theme: 'system', reconnectDays: 30, ...(parsed.settings || {}) },
+      goals: (parsed.goals || []).map((g) => ({
+        period: 'weekly',
+        ...g,
+        progress: g.progress || g.weeklyProgress || {},
+        reminder: g.reminder || null,
+      })),
+      eventTypes: parsed.eventTypes || seed.eventTypes,
+      settings: {
+        theme: 'system',
+        reconnectDays: 30,
+        notifications: false,
+        ...(parsed.settings || {}),
+      },
     };
   } catch {
     return makeSeed();
@@ -45,7 +59,7 @@ function reducer(state, action) {
       const goals = state.goals.map((g) => {
         if (g.id !== action.id) return g;
         const value = Math.max(0, action.value);
-        return { ...g, weeklyProgress: { ...g.weeklyProgress, [action.week]: value } };
+        return { ...g, progress: { ...(g.progress || {}), [action.key]: value } };
       });
       return { ...state, goals };
     }
@@ -84,6 +98,18 @@ function reducer(state, action) {
     case 'DELETE_PIN':
       return { ...state, pins: (state.pins || []).filter((p) => p.id !== action.id) };
 
+    // Event types (user-defined, with a color)
+    case 'ADD_EVENT_TYPE':
+      return { ...state, eventTypes: [...(state.eventTypes || []), action.eventType] };
+    case 'UPDATE_EVENT_TYPE':
+      return { ...state, eventTypes: upsert(state.eventTypes || [], action.eventType) };
+    case 'DELETE_EVENT_TYPE':
+      return {
+        ...state,
+        eventTypes: (state.eventTypes || []).filter((t) => t.id !== action.id),
+        events: state.events.map((e) => (e.typeId === action.id ? { ...e, typeId: '' } : e)),
+      };
+
     // Statuses (user-defined labels)
     case 'ADD_STATUS':
       return { ...state, statuses: [...state.statuses, action.status] };
@@ -113,6 +139,7 @@ function reducer(state, action) {
         contacts: [],
         pins: [],
         statuses: state.statuses,
+        eventTypes: state.eventTypes,
         settings: state.settings,
       };
 
@@ -153,15 +180,23 @@ export function useStore() {
 export function useActions() {
   const { dispatch } = useStore();
   return {
-    addGoal: (data) => dispatch({ type: 'ADD_GOAL', goal: { id: uid('g'), weeklyProgress: {}, ...data } }),
+    addGoal: (data) =>
+      dispatch({
+        type: 'ADD_GOAL',
+        goal: { id: uid('g'), period: 'weekly', progress: {}, reminder: null, ...data },
+      }),
     updateGoal: (goal) => dispatch({ type: 'UPDATE_GOAL', goal }),
     deleteGoal: (id) => dispatch({ type: 'DELETE_GOAL', id }),
-    setGoalProgress: (id, week, value) =>
-      dispatch({ type: 'SET_GOAL_PROGRESS', id, week, value }),
+    setGoalProgress: (id, key, value) =>
+      dispatch({ type: 'SET_GOAL_PROGRESS', id, key, value }),
 
     addEvent: (data) => dispatch({ type: 'ADD_EVENT', event: { id: uid('e'), done: false, ...data } }),
     updateEvent: (event) => dispatch({ type: 'UPDATE_EVENT', event }),
     deleteEvent: (id) => dispatch({ type: 'DELETE_EVENT', id }),
+
+    addEventType: (data) => dispatch({ type: 'ADD_EVENT_TYPE', eventType: { id: uid('et'), ...data } }),
+    updateEventType: (eventType) => dispatch({ type: 'UPDATE_EVENT_TYPE', eventType }),
+    deleteEventType: (id) => dispatch({ type: 'DELETE_EVENT_TYPE', id }),
 
     addContact: (data) =>
       dispatch({ type: 'ADD_CONTACT', contact: { id: uid('c'), tags: [], ...data } }),

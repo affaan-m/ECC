@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import { Brand } from '../components/Logo.jsx';
 import { daysAgoLabel, daysSince, todayISO } from '../data/helpers.js';
 
 // A contact is "overdue" when the time since last contact (or since they were
@@ -99,7 +100,7 @@ export default function ContactsPage() {
     <div className="page">
       <header className="page-head">
         <div className="page-head-row">
-          <h1>People</h1>
+          <Brand>People</Brand>
           <button className="btn btn-primary btn-sm" onClick={startAdd}>
             + Add
           </button>

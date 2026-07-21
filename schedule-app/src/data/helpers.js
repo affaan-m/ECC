@@ -151,6 +151,14 @@ export function formatTime(hhmm) {
   return m === 0 ? `${h} ${ampm}` : `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// --- Goals -----------------------------------------------------------------
+
+// The progress key for a goal in a given date context: daily goals track by
+// day, weekly goals by the week's Monday.
+export function goalKey(period, date) {
+  return period === 'daily' ? toISODate(date) : weekKey(date);
+}
+
 // --- Recurring events ------------------------------------------------------
 
 export const REPEAT_OPTIONS = [

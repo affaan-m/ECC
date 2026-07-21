@@ -67,43 +67,78 @@ export function makeSeed() {
   const goals = [
     {
       id: uid('g'),
+      title: 'Drink water',
+      category: 'Health',
+      period: 'daily',
+      target: 8,
+      unit: 'glasses',
+      progress: { [today]: 3 },
+      reminder: { time: '09:00' },
+      createdAt: today,
+    },
+    {
+      id: uid('g'),
+      title: 'Read',
+      category: 'Growth',
+      period: 'daily',
+      target: 30,
+      unit: 'minutes',
+      progress: { [today]: 10 },
+      reminder: null,
+      createdAt: today,
+    },
+    {
+      id: uid('g'),
       title: 'Workouts',
       category: 'Health',
+      period: 'weekly',
       target: 4,
       unit: 'sessions',
-      weeklyProgress: { [thisWeek]: 2 },
+      progress: { [thisWeek]: 2 },
+      reminder: null,
       createdAt: today,
     },
     {
       id: uid('g'),
       title: 'Reach out to people',
       category: 'Relationships',
+      period: 'weekly',
       target: 5,
       unit: 'people',
-      weeklyProgress: { [thisWeek]: 3 },
-      createdAt: today,
-    },
-    {
-      id: uid('g'),
-      title: 'Reading',
-      category: 'Growth',
-      target: 3,
-      unit: 'hours',
-      weeklyProgress: { [thisWeek]: 1 },
+      progress: { [thisWeek]: 3 },
+      reminder: null,
       createdAt: today,
     },
     {
       id: uid('g'),
       title: 'Deep work blocks',
       category: 'Work',
+      period: 'weekly',
       target: 10,
       unit: 'blocks',
-      weeklyProgress: { [thisWeek]: 6 },
+      progress: { [thisWeek]: 6 },
+      reminder: null,
       createdAt: today,
     },
   ];
 
-  const baseEvent = { repeat: 'none', repeatUntil: '', done: false, doneDates: [], skipDates: [] };
+  const eventTypes = [
+    { id: 'et_personal', label: 'Personal', color: '#1f5f8b' },
+    { id: 'et_work', label: 'Work', color: '#8a5cd1' },
+    { id: 'et_health', label: 'Health', color: '#2e9e6b' },
+    { id: 'et_social', label: 'Social', color: '#e08a1e' },
+  ];
+
+  const baseEvent = {
+    repeat: 'none',
+    repeatUntil: '',
+    done: false,
+    doneDates: [],
+    skipDates: [],
+    typeId: '',
+    color: '',
+    reminder: 0,
+  };
   const events = [
     {
       ...baseEvent,
@@ -116,6 +151,8 @@ export function makeSeed() {
       location: 'Riverside trail',
       notes: '',
       repeat: 'daily',
+      typeId: 'et_health',
+      reminder: 15,
     },
     {
       ...baseEvent,
@@ -127,6 +164,8 @@ export function makeSeed() {
       contactId: contacts[0].id,
       location: 'Bluebird Cafe',
       notes: 'Plan the hiking trip.',
+      typeId: 'et_social',
+      reminder: 30,
     },
     {
       ...baseEvent,
@@ -138,6 +177,7 @@ export function makeSeed() {
       contactId: '',
       location: '',
       notes: 'Project proposal draft.',
+      typeId: 'et_work',
     },
     {
       ...baseEvent,
@@ -150,6 +190,7 @@ export function makeSeed() {
       location: '',
       notes: '',
       repeat: 'weekly',
+      typeId: 'et_personal',
     },
   ];
 
@@ -195,6 +236,7 @@ export function makeSeed() {
     contacts,
     pins,
     statuses,
-    settings: { theme: 'system', reconnectDays: 30 },
+    eventTypes,
+    settings: { theme: 'system', reconnectDays: 30, notifications: false },
   };
 }

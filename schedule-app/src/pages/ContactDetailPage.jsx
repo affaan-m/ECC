@@ -227,6 +227,14 @@ export default function ContactDetailPage() {
         Delete person
       </button>
 
+      <button
+        className="fab"
+        onClick={() => navigate('/planner', { state: { newEventContact: contact.id } })}
+        aria-label={`Add an event with ${contact.name}`}
+      >
+        +
+      </button>
+
       {/* Edit modal */}
       <Modal
         open={!!editing}

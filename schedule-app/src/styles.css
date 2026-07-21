@@ -117,6 +117,39 @@ textarea {
   margin: 0;
 }
 
+/* Brand (logo + title) */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo {
+  display: inline-flex;
+  flex: none;
+  border-radius: 22%;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(20, 30, 45, 0.18);
+}
+.logo svg {
+  display: block;
+}
+.map-logo {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 12px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px 12px 6px 8px;
+  font-weight: 750;
+  box-shadow: var(--shadow);
+}
+
 .back-btn {
   background: none;
   border: none;
@@ -351,6 +384,10 @@ textarea {
 .check-badge {
   color: var(--good);
   font-weight: 800;
+}
+.bell-badge {
+  font-size: 12px;
+  line-height: 1;
 }
 .progress-track {
   height: 8px;
@@ -587,6 +624,39 @@ textarea {
   font-size: 22px;
 }
 
+/* Toggle switch */
+.toggle {
+  width: 48px;
+  height: 28px;
+  border-radius: 99px;
+  border: none;
+  background: var(--track);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s ease;
+  flex: none;
+}
+.toggle--on {
+  background: var(--accent);
+}
+.toggle:disabled {
+  opacity: 0.5;
+}
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.toggle--on .toggle-knob {
+  transform: translateX(20px);
+}
+
 /* --- Empty states ------------------------------------------------------- */
 .empty {
   text-align: center;
@@ -623,8 +693,28 @@ textarea {
   max-height: 92vh;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: slideUp 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  will-change: transform;
+}
+.modal-sheet--tall {
+  height: 78vh;
+}
+.modal-grip {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 2px;
+  cursor: grab;
+  touch-action: none;
+}
+.modal-grip:active {
+  cursor: grabbing;
+}
+.modal-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--border);
 }
 @keyframes slideUp {
   from {
@@ -638,7 +728,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 8px;
+  padding: 4px 16px 8px;
 }
 .modal-head h2 {
   margin: 0;
@@ -790,19 +880,28 @@ textarea {
 }
 .event-block {
   position: absolute;
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-left: 3px solid var(--accent);
+  --ev: var(--accent);
+  background: color-mix(in srgb, var(--ev) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ev) 40%, transparent);
+  border-left: 3px solid var(--ev);
   border-radius: 9px;
   padding: 4px 8px;
   text-align: left;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
   line-height: 1.2;
+  touch-action: none;
+  transition: box-shadow 0.15s ease;
+}
+.event-block--dragging {
+  z-index: 30;
+  cursor: grabbing;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0.96;
 }
 .event-block--short {
   justify-content: center;
@@ -811,7 +910,7 @@ textarea {
 .event-time-inline {
   font-size: 11px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ev, var(--accent));
 }
 .event-block--short .event-title {
   white-space: nowrap;
@@ -824,7 +923,7 @@ textarea {
 .event-time {
   font-size: 10px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ev, var(--accent));
 }
 .event-title {
   font-size: 13px;
@@ -919,7 +1018,7 @@ textarea {
   gap: 8px;
   background: var(--surface-2);
   border: none;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--ev, var(--accent));
   border-radius: 8px;
   padding: 8px 10px;
   cursor: pointer;
@@ -929,7 +1028,7 @@ textarea {
 .chip-time {
   font-size: 12px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ev, var(--accent));
   flex: none;
   width: 62px;
 }
@@ -1462,4 +1561,52 @@ textarea {
 }
 .color-dot--on {
   border-color: var(--text);
+}
+.color-dot--clear {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+}
+
+/* --- Motion & transitions ---------------------------------------------- */
+.contact-list li,
+.goal-card,
+.agenda-day,
+.detail-section {
+  animation: rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tab svg {
+  transition: transform 0.15s ease;
+}
+.tab--active svg {
+  transform: translateY(-2px) scale(1.06);
+}
+.chip,
+.seg-btn,
+.qa,
+.contact-row,
+.status-item {
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

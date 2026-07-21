@@ -1,6 +1,12 @@
 import { useRef, useState } from 'react';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import { Brand } from '../components/Logo.jsx';
+import {
+  notificationsSupported,
+  notificationPermission,
+  requestNotificationPermission,
+} from '../data/notifications.js';
 
 const PRESET_COLORS = [
   '#2e9e6b',
@@ -17,10 +23,47 @@ export default function MorePage() {
   const { state } = useStore();
   const actions = useActions();
   const [editingStatus, setEditingStatus] = useState(null);
+  const [editingType, setEditingType] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | null
+  const [feedback, setFeedback] = useState(null); // string | null
+  const [, setPermTick] = useState(0); // re-render after permission change
   const fileRef = useRef(null);
 
   const theme = state.settings?.theme || 'system';
+  const notifOn = !!state.settings?.notifications && notificationPermission() === 'granted';
+
+  const toggleNotifications = async () => {
+    if (notifOn) {
+      actions.setSettings({ notifications: false });
+      return;
+    }
+    const perm = await requestNotificationPermission();
+    setPermTick((t) => t + 1);
+    actions.setSettings({ notifications: perm === 'granted' });
+  };
+
+  const saveType = () => {
+    const label = editingType.label.trim();
+    if (!label) return;
+    if (editingType.id) actions.updateEventType({ id: editingType.id, label, color: editingType.color });
+    else actions.addEventType({ label, color: editingType.color });
+    setEditingType(null);
+  };
+
+  const submitFeedback = (mode) => {
+    const text = (feedback || '').trim();
+    if (!text) return;
+    if (mode === 'copy') {
+      navigator.clipboard?.writeText(text).then(
+        () => alert('Feedback copied to your clipboard.'),
+        () => {}
+      );
+    } else {
+      const url = `mailto:?subject=${encodeURIComponent('Compass feedback')}&body=${encodeURIComponent(text)}`;
+      window.location.href = url;
+    }
+    setFeedback(null);
+  };
 
   const exportData = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -66,7 +109,7 @@ export default function MorePage() {
     <div className="page">
       <header className="page-head">
         <div className="page-head-row">
-          <h1>More</h1>
+          <Brand>More</Brand>
         </div>
       </header>
 
@@ -83,6 +126,26 @@ export default function MorePage() {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Notifications</span>
+          <button
+            className={`toggle${notifOn ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={notifOn}
+            onClick={toggleNotifications}
+            disabled={!notificationsSupported()}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">
+          {notificationsSupported()
+            ? 'Get reminders for goals and events while Compass is open. (A web app can’t alert you once it’s fully closed.)'
+            : 'This browser doesn’t support notifications.'}
+        </p>
       </section>
 
       <section className="detail-section">
@@ -141,6 +204,41 @@ export default function MorePage() {
           ))}
           {state.statuses.length === 0 && <li className="muted small">No statuses yet.</li>}
         </ul>
+      </section>
+
+      <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Event types</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setEditingType({ label: '', color: PRESET_COLORS[1] })}
+          >
+            + Add
+          </button>
+        </div>
+        <p className="muted small">Color-coded categories for your calendar events.</p>
+        <ul className="status-list">
+          {(state.eventTypes || []).map((t) => (
+            <li key={t.id}>
+              <button className="status-item" onClick={() => setEditingType({ ...t })}>
+                <span className="swatch" style={{ background: t.color }} />
+                <span>{t.label}</span>
+                <span className="muted count-tag">
+                  {state.events.filter((e) => e.typeId === t.id).length}
+                </span>
+              </button>
+            </li>
+          ))}
+          {(state.eventTypes || []).length === 0 && <li className="muted small">No types yet.</li>}
+        </ul>
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Feedback</span>
+        <p className="muted small">Have an idea or found a bug? I'd love to hear it.</p>
+        <button className="btn btn-ghost full" onClick={() => setFeedback('')}>
+          💡 Send feedback / suggest a feature
+        </button>
       </section>
 
       <section className="detail-section">
@@ -219,6 +317,92 @@ export default function MorePage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Event type editor */}
+      <Modal
+        open={!!editingType}
+        title={editingType?.id ? 'Edit event type' : 'New event type'}
+        onClose={() => setEditingType(null)}
+        footer={
+          <div className="modal-actions">
+            {editingType?.id && (
+              <button
+                className="btn btn-danger-ghost"
+                onClick={() => {
+                  actions.deleteEventType(editingType.id);
+                  setEditingType(null);
+                }}
+              >
+                Delete
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={saveType}>
+              Save
+            </button>
+          </div>
+        }
+      >
+        {editingType && (
+          <div className="form">
+            <label className="field">
+              <span>Label</span>
+              <input
+                autoFocus
+                value={editingType.label}
+                onChange={(e) => setEditingType({ ...editingType, label: e.target.value })}
+                placeholder="e.g. Work, Health"
+              />
+            </label>
+            <div className="field">
+              <span>Color</span>
+              <div className="color-grid">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`color-dot${editingType.color === c ? ' color-dot--on' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => setEditingType({ ...editingType, color: c })}
+                    aria-label={`Choose ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Feedback */}
+      <Modal
+        open={feedback !== null}
+        title="Send feedback"
+        onClose={() => setFeedback(null)}
+        footer={
+          <div className="modal-actions">
+            <button className="btn btn-ghost" onClick={() => submitFeedback('copy')}>
+              Copy
+            </button>
+            <button className="btn btn-primary" onClick={() => submitFeedback('email')}>
+              Email it
+            </button>
+          </div>
+        }
+      >
+        <div className="form">
+          <label className="field">
+            <span>What's on your mind?</span>
+            <textarea
+              autoFocus
+              rows="5"
+              value={feedback || ''}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="A feature idea, something confusing, a bug you hit…"
+            />
+          </label>
+          <p className="muted small">
+            "Email it" opens your mail app with the note ready to send. "Copy" puts it on your clipboard.
+          </p>
+        </div>
       </Modal>
 
       {/* Confirm reset / clear */}

@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import Logo from '../components/Logo.jsx';
 import { todayISO } from '../data/helpers.js';
 
 const QUICK_EMOJI = ['📍', '🏠', '💼', '☕', '🍽️', '🏋️', '🛒', '🏥', '🎓', '⛪', '🌳', '❤️', '⭐', '🎉'];
@@ -155,6 +156,11 @@ export default function MapPage() {
   return (
     <div className="map-page">
       <div ref={containerRef} className="map-canvas" />
+
+      <div className="map-logo">
+        <Logo size={24} />
+        <span>Map</span>
+      </div>
 
       {/* Corner controls (top-right) */}
       <div className="map-corner">
