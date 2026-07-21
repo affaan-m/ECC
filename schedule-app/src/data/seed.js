@@ -150,11 +150,47 @@ export function makeSeed() {
     },
   ];
 
+  // Sample pins around downtown San Francisco so the map opens with something
+  // to see. Edit or delete them and drop your own.
+  const pins = [
+    {
+      id: uid('p'),
+      emoji: '🏠',
+      label: 'Home',
+      notes: 'Front door code is on the fridge.',
+      lat: 37.7749,
+      lng: -122.4194,
+      contactId: '',
+      createdAt: today,
+    },
+    {
+      id: uid('p'),
+      emoji: '☕',
+      label: 'Bluebird Cafe',
+      notes: 'Where I meet Maria.',
+      lat: 37.7799,
+      lng: -122.4144,
+      contactId: contacts[0].id,
+      createdAt: today,
+    },
+    {
+      id: uid('p'),
+      emoji: '🏋️',
+      label: 'Gym',
+      notes: '',
+      lat: 37.7699,
+      lng: -122.4269,
+      contactId: contacts[1].id,
+      createdAt: today,
+    },
+  ];
+
   return {
     version: 1,
     goals,
     events,
     contacts,
+    pins,
     statuses,
     settings: { theme: 'system' },
   };

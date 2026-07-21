@@ -5,6 +5,7 @@ import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import ContactDetailPage from './pages/ContactDetailPage.jsx';
+import MapPage from './pages/MapPage.jsx';
 import MorePage from './pages/MorePage.jsx';
 import { useStore } from './data/store.jsx';
 
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
+          <Route path="/map" element={<MapPage />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="*" element={<Navigate to="/goals" replace />} />
         </Routes>

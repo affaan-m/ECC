@@ -424,7 +424,7 @@ textarea {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  z-index: 100;
+  z-index: 1000;
   animation: fade 0.15s ease;
 }
 .modal-sheet {
@@ -1003,6 +1003,217 @@ textarea {
 }
 .mini-title {
   font-weight: 600;
+}
+
+/* --- Map ---------------------------------------------------------------- */
+.map-page {
+  position: relative;
+  height: calc(100dvh - var(--tabbar-h) - env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+}
+.map-canvas {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-2);
+  z-index: 0;
+}
+/* Leaflet controls tuned to the app's look */
+.leaflet-control-zoom a {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-bar {
+  box-shadow: var(--shadow) !important;
+  border: none !important;
+}
+
+.map-corner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: 12px;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.map-round {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.map-round:active {
+  transform: scale(0.94);
+}
+.map-round--go {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.map-banner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 12px;
+  right: 70px;
+  z-index: 500;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 650;
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.banner-x {
+  background: rgba(255, 255, 255, 0.25);
+  border: none;
+  color: inherit;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+}
+.map-fab {
+  z-index: 500;
+}
+
+.pin-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 16px;
+  z-index: 500;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  animation: slideUp 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pin-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pin-card-emoji {
+  font-size: 26px;
+  flex: none;
+}
+.pin-card-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.pin-card-title strong {
+  font-size: 17px;
+}
+.pin-card-contact {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.pin-card-notes {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.pin-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Pin markers (Leaflet divIcon) */
+.pin-icon {
+  background: transparent;
+  border: none;
+}
+.pin-bubble {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  line-height: 1;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+.pin-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid var(--accent);
+}
+.pin-icon--sel .pin-bubble {
+  transform: scale(1.15);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 30%, transparent), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.pin-icon--sel .pin-bubble::after {
+  border-top-color: var(--danger);
+}
+.pin-caption {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+/* Emoji picker in the pin editor */
+.emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.emoji-pick {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 20px;
+  cursor: pointer;
+}
+.emoji-pick--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.emoji-input {
+  max-width: 180px;
 }
 
 /* --- More / settings ---------------------------------------------------- */

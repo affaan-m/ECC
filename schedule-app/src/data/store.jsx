@@ -67,11 +67,22 @@ function reducer(state, action) {
       return {
         ...state,
         contacts: state.contacts.filter((c) => c.id !== action.id),
-        // Unlink the deleted contact from any events.
+        // Unlink the deleted contact from any events and pins.
         events: state.events.map((e) =>
           e.contactId === action.id ? { ...e, contactId: '' } : e
         ),
+        pins: (state.pins || []).map((p) =>
+          p.contactId === action.id ? { ...p, contactId: '' } : p
+        ),
       };
+
+    // Map pins
+    case 'ADD_PIN':
+      return { ...state, pins: [...(state.pins || []), action.pin] };
+    case 'UPDATE_PIN':
+      return { ...state, pins: upsert(state.pins || [], action.pin) };
+    case 'DELETE_PIN':
+      return { ...state, pins: (state.pins || []).filter((p) => p.id !== action.id) };
 
     // Statuses (user-defined labels)
     case 'ADD_STATUS':
@@ -100,6 +111,7 @@ function reducer(state, action) {
         goals: [],
         events: [],
         contacts: [],
+        pins: [],
         statuses: state.statuses,
         settings: state.settings,
       };
@@ -155,6 +167,10 @@ export function useActions() {
       dispatch({ type: 'ADD_CONTACT', contact: { id: uid('c'), tags: [], ...data } }),
     updateContact: (contact) => dispatch({ type: 'UPDATE_CONTACT', contact }),
     deleteContact: (id) => dispatch({ type: 'DELETE_CONTACT', id }),
+
+    addPin: (data) => dispatch({ type: 'ADD_PIN', pin: { id: uid('p'), ...data } }),
+    updatePin: (pin) => dispatch({ type: 'UPDATE_PIN', pin }),
+    deletePin: (id) => dispatch({ type: 'DELETE_PIN', id }),
 
     addStatus: (data) => dispatch({ type: 'ADD_STATUS', status: { id: uid('st'), ...data } }),
     updateStatus: (status) => dispatch({ type: 'UPDATE_STATUS', status }),
