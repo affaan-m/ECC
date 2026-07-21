@@ -10,7 +10,7 @@ import {
   daysAgoLabel,
   formatShortDate,
   formatTime,
-  occursOn,
+  expandEventOnDay,
 } from '../data/helpers.js';
 
 export default function ContactDetailPage() {
@@ -31,17 +31,19 @@ export default function ContactDetailPage() {
     [state.pins, id]
   );
 
-  // Expand the next occurrences (including recurring events) over ~60 days.
+  // Expand the next occurrences (including recurring events, honoring any
+  // per-occurrence edits) over ~60 days. An event counts if its master OR the
+  // specific occurrence is linked to this contact.
   const upcoming = useMemo(() => {
     if (!contact) return [];
-    const linked = state.events.filter((e) => e.contactId === contact.id);
-    if (linked.length === 0) return [];
     const out = [];
     const today = todayISO();
     for (let i = 0; i < 60 && out.length < 5; i++) {
       const iso = toISODate(addDays(today, i));
-      for (const e of linked) {
-        if (occursOn(e, iso)) out.push({ ...e, occDate: iso });
+      for (const e of state.events) {
+        for (const occ of expandEventOnDay(e, iso)) {
+          if (occ.contactId === contact.id) out.push(occ);
+        }
       }
     }
     return out.slice(0, 5);
@@ -204,14 +206,16 @@ export default function ContactDetailPage() {
         ) : (
           <ul className="mini-events">
             {upcoming.map((e) => (
-              <li key={`${e.id}:${e.occDate}`}>
+              <li key={`${e.id}:${e.recDate}`}>
                 <span className="mini-date">
                   {formatShortDate(e.occDate)}
                   <small>{formatTime(e.start)}</small>
                 </span>
                 <span className="mini-title">
                   {e.title}
-                  {e.repeat && e.repeat !== 'none' && <span className="repeat-glyph"> ↻</span>}
+                  {e.repeat && e.repeat !== 'none' && (
+                    <span className="repeat-glyph"> {e.isException ? '✎' : '↻'}</span>
+                  )}
                 </span>
               </li>
             ))}

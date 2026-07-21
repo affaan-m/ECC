@@ -408,6 +408,9 @@ textarea {
   opacity: 0.7;
   font-weight: 700;
 }
+.scope-note {
+  margin: -4px 0 0;
+}
 .agenda-chip .repeat-glyph {
   margin-left: auto;
   color: var(--accent);

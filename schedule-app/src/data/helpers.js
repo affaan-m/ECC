@@ -196,3 +196,82 @@ export function isOccurrenceDone(event, iso) {
   if ((event.repeat || 'none') === 'none') return !!event.done;
   return (event.doneDates || []).includes(iso);
 }
+
+// Pure recurrence-rule test (anchor / end date / frequency), ignoring skips
+// and per-occurrence overrides.
+export function matchesRule(event, iso) {
+  const repeat = event.repeat || 'none';
+  if (repeat === 'none') return event.date === iso;
+  if (iso < event.date) return false;
+  if (event.repeatUntil && iso > event.repeatUntil) return false;
+  const start = fromISODate(event.date);
+  const day = fromISODate(iso);
+  const diff = Math.round((day - start) / 86400000);
+  switch (repeat) {
+    case 'daily':
+      return true;
+    case 'weekly':
+      return diff % 7 === 0;
+    case 'biweekly':
+      return diff % 14 === 0;
+    case 'monthly':
+      return start.getDate() === day.getDate();
+    default:
+      return false;
+  }
+}
+
+// Build a display occurrence, merging any per-occurrence override on top of
+// the master event. `recDate` is the recurrence id (original rule date);
+// `occDate` is where it actually shows (an override may relocate it).
+function makeOccurrence(event, recDate, occDate, ov) {
+  const repeat = event.repeat || 'none';
+  return {
+    ...event,
+    recDate,
+    occDate,
+    // Pristine master fields, kept so an "edit all" can reset to the series base.
+    base: {
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      contactId: event.contactId || '',
+      location: event.location || '',
+      notes: event.notes || '',
+      date: event.date,
+    },
+    title: ov?.title ?? event.title,
+    start: ov?.start ?? event.start,
+    end: ov?.end ?? event.end,
+    contactId: ov?.contactId ?? event.contactId ?? '',
+    location: ov?.location ?? event.location ?? '',
+    notes: ov?.notes ?? event.notes ?? '',
+    done: repeat === 'none' ? !!event.done : (event.doneDates || []).includes(recDate),
+    isException: !!ov,
+  };
+}
+
+// All occurrences of an event that DISPLAY on the given day. Usually 0 or 1,
+// but an override can relocate an occurrence from another day onto this one.
+export function expandEventOnDay(event, iso) {
+  const repeat = event.repeat || 'none';
+  if (repeat === 'none') {
+    return event.date === iso ? [makeOccurrence(event, iso, iso, null)] : [];
+  }
+  const overrides = event.overrides || {};
+  const skip = event.skipDates || [];
+  const out = [];
+  // In-place occurrence on its own rule date (unless moved elsewhere).
+  if (matchesRule(event, iso) && !skip.includes(iso)) {
+    const ov = overrides[iso];
+    if (!ov || !ov.date || ov.date === iso) out.push(makeOccurrence(event, iso, iso, ov || null));
+  }
+  // Occurrences relocated onto this day from a different rule date.
+  for (const rec of Object.keys(overrides)) {
+    const ov = overrides[rec];
+    if (ov && ov.date === iso && rec !== iso && matchesRule(event, rec) && !skip.includes(rec)) {
+      out.push(makeOccurrence(event, rec, iso, ov));
+    }
+  }
+  return out;
+}

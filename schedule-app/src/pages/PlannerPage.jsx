@@ -15,8 +15,7 @@ import {
   timeToMinutes,
   minutesToTime,
   isToday,
-  occursOn,
-  isOccurrenceDone,
+  expandEventOnDay,
   repeatLabel,
   REPEAT_OPTIONS,
 } from '../data/helpers.js';
@@ -26,17 +25,18 @@ const DAY_END = 23; // 11 PM
 const PX_PER_HOUR = 56;
 const PX_PER_MIN = PX_PER_HOUR / 60;
 
-// Build display occurrences of all events that land on a given day.
+// All display occurrences of every event on a given day (recurring expanded).
 function occurrencesFor(events, iso) {
   return events
-    .filter((e) => occursOn(e, iso))
-    .map((e) => ({
-      ...e,
-      occDate: iso,
-      done: isOccurrenceDone(e, iso),
-      s: timeToMinutes(e.start),
-      e2: timeToMinutes(e.end),
-    }));
+    .flatMap((e) => expandEventOnDay(e, iso))
+    .map((o) => ({ ...o, s: timeToMinutes(o.start), e2: timeToMinutes(o.end) }));
+}
+
+function setMembership(arr, value, present) {
+  const set = new Set(arr || []);
+  if (present) set.add(value);
+  else set.delete(value);
+  return [...set];
 }
 
 export default function PlannerPage() {
@@ -50,7 +50,6 @@ export default function PlannerPage() {
     setEditing({
       title: '',
       date,
-      occDate: date,
       start,
       end: minutesToTime(Math.min(DAY_END * 60, timeToMinutes(start) + 60)),
       contactId: '',
@@ -59,9 +58,78 @@ export default function PlannerPage() {
       done: false,
       repeat: 'none',
       repeatUntil: '',
-      doneDates: [],
-      skipDates: [],
     });
+
+  // Apply an editor payload, resolving series vs single-occurrence scope.
+  const saveEvent = (pl) => {
+    if (pl.isNew || !pl.id) {
+      const recurring = pl.repeat && pl.repeat !== 'none';
+      actions.addEvent({
+        ...pl.fields,
+        date: pl.date,
+        repeat: pl.repeat || 'none',
+        repeatUntil: recurring ? pl.repeatUntil || '' : '',
+        done: recurring ? false : !!pl.done,
+        doneDates: recurring && pl.done ? [pl.date] : [],
+        skipDates: [],
+        overrides: {},
+      });
+      setEditing(null);
+      return;
+    }
+    const master = state.events.find((e) => e.id === pl.id);
+    if (!master) return setEditing(null);
+    const repeat = master.repeat || 'none';
+
+    if (repeat === 'none') {
+      actions.updateEvent({ ...master, ...pl.fields, date: pl.date, done: !!pl.done });
+    } else if (pl.scope === 'all') {
+      const recurring = pl.repeat && pl.repeat !== 'none';
+      const next = {
+        ...master,
+        ...pl.fields,
+        date: pl.date,
+        repeat: pl.repeat,
+        repeatUntil: recurring ? pl.repeatUntil || '' : '',
+      };
+      if (!recurring) {
+        next.overrides = {};
+        next.doneDates = [];
+        next.skipDates = [];
+        next.done = !!pl.done;
+      } else {
+        next.done = false;
+        next.doneDates = setMembership(master.doneDates, pl.recDate, pl.done);
+      }
+      actions.updateEvent(next);
+    } else {
+      // This occurrence only → write/refresh an override keyed by recDate.
+      const overrides = { ...(master.overrides || {}) };
+      const ov = { ...pl.fields };
+      if (pl.date && pl.date !== pl.recDate) ov.date = pl.date;
+      overrides[pl.recDate] = ov;
+      actions.updateEvent({
+        ...master,
+        overrides,
+        doneDates: setMembership(master.doneDates, pl.recDate, pl.done),
+      });
+    }
+    setEditing(null);
+  };
+
+  const skipOccurrence = (id, recDate) => {
+    const ev = state.events.find((e) => e.id === id);
+    if (ev) {
+      const overrides = { ...(ev.overrides || {}) };
+      delete overrides[recDate];
+      actions.updateEvent({
+        ...ev,
+        skipDates: [...(ev.skipDates || []), recDate],
+        overrides,
+      });
+    }
+    setEditing(null);
+  };
 
   const step = (n) => setCursor(toISODate(addDays(cursor, mode === 'day' ? n : n * 7)));
   const weekStart = startOfWeek(fromISODate(cursor));
@@ -123,20 +191,12 @@ export default function PlannerPage() {
         editing={editing}
         contacts={state.contacts}
         onClose={() => setEditing(null)}
-        onSave={(ev) => {
-          if (ev.id) actions.updateEvent(ev);
-          else actions.addEvent(ev);
-          setEditing(null);
-        }}
+        onSave={saveEvent}
         onDelete={(id) => {
           actions.deleteEvent(id);
           setEditing(null);
         }}
-        onSkipOccurrence={(id, occ) => {
-          const ev = state.events.find((e) => e.id === id);
-          if (ev) actions.updateEvent({ ...ev, skipDates: [...(ev.skipDates || []), occ] });
-          setEditing(null);
-        }}
+        onSkipOccurrence={skipOccurrence}
       />
     </div>
   );
@@ -188,7 +248,7 @@ function DayView({ date, events, contacts, onAddAt, onOpen }) {
             const recurring = ev.repeat && ev.repeat !== 'none';
             return (
               <button
-                key={`${ev.id}:${ev.occDate}`}
+                key={`${ev.id}:${ev.recDate}`}
                 className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}`}
                 style={{
                   top,
@@ -204,13 +264,13 @@ function DayView({ date, events, contacts, onAddAt, onOpen }) {
                 {short ? (
                   <span className="event-title">
                     <span className="event-time-inline">{formatTime(ev.start)}</span> {ev.title || 'Untitled'}
-                    {recurring && <span className="repeat-glyph"> ↻</span>}
+                    {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
                   </span>
                 ) : (
                   <>
                     <span className="event-time">
                       {formatTime(ev.start)}
-                      {recurring && <span className="repeat-glyph"> ↻</span>}
+                      {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
                     </span>
                     <span className="event-title">{ev.title || 'Untitled'}</span>
                     {who && <span className="event-who">{who}</span>}
@@ -255,13 +315,13 @@ function WeekView({ weekStart, events, onOpenDay, onOpen, onAdd }) {
                   const recurring = ev.repeat && ev.repeat !== 'none';
                   return (
                     <button
-                      key={`${ev.id}:${ev.occDate}`}
+                      key={`${ev.id}:${ev.recDate}`}
                       className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
                       onClick={() => onOpen(ev)}
                     >
                       <span className="chip-time">{formatTime(ev.start)}</span>
                       <span className="chip-title">{ev.title || 'Untitled'}</span>
-                      {recurring && <span className="repeat-glyph">↻</span>}
+                      {recurring && <span className="repeat-glyph">{ev.isException ? '✎' : '↻'}</span>}
                     </button>
                   );
                 })
@@ -279,17 +339,67 @@ function WeekView({ weekStart, events, onOpenDay, onOpen, onAdd }) {
 function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurrence }) {
   const [draft, setDraft] = useState(null);
 
-  // Sync internal draft when a different occurrence is opened. The key must be
-  // computed identically here and on the stored draft, or the comparison never
-  // settles and re-renders loop forever.
-  const key = editing ? `${editing.id || 'new'}|${editing.occDate || editing.date}|${editing.start}` : null;
+  const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
+
+  // Sync internal draft when a different occurrence is opened.
+  const key = editing ? `${editing.id || 'new'}|${editing.recDate || editing.date}|${editing.start}` : null;
   if (editing && (!draft || draft._key !== key)) {
-    setDraft({ ...editing, _key: key });
+    setDraft({
+      _key: key,
+      id: editing.id,
+      scope: recurringMaster ? 'this' : 'all',
+      title: editing.title,
+      start: editing.start,
+      end: editing.end,
+      contactId: editing.contactId || '',
+      location: editing.location || '',
+      notes: editing.notes || '',
+      date: recurringMaster ? editing.occDate || editing.date : editing.date,
+      done: !!editing.done,
+      repeat: editing.repeat || 'none',
+      repeatUntil: editing.repeatUntil || '',
+      recDate: editing.recDate || editing.date,
+      occDate: editing.occDate || editing.date,
+      masterDate: editing.date,
+      base: editing.base || null,
+    });
   }
   if (!editing && draft) setDraft(null);
 
-  const repeat = (draft?.repeat) || (editing?.repeat) || 'none';
-  const recurring = repeat !== 'none';
+  const applyScope = (s) => {
+    if (!draft || s === draft.scope) return;
+    if (s === 'all') {
+      const b = draft.base || {};
+      setDraft({
+        ...draft,
+        scope: 'all',
+        title: b.title ?? draft.title,
+        start: b.start ?? draft.start,
+        end: b.end ?? draft.end,
+        contactId: b.contactId ?? draft.contactId,
+        location: b.location ?? draft.location,
+        notes: b.notes ?? draft.notes,
+        date: draft.masterDate,
+        repeat: editing.repeat || 'none',
+        repeatUntil: editing.repeatUntil || '',
+      });
+    } else {
+      setDraft({
+        ...draft,
+        scope: 'this',
+        title: editing.title,
+        start: editing.start,
+        end: editing.end,
+        contactId: editing.contactId || '',
+        location: editing.location || '',
+        notes: editing.notes || '',
+        date: draft.occDate,
+      });
+    }
+  };
+
+  const thisScope = draft?.scope === 'this';
+  const recurring = (draft?.repeat || 'none') !== 'none';
 
   const save = () => {
     if (!draft) return;
@@ -297,33 +407,24 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
     if (timeToMinutes(end) <= timeToMinutes(draft.start)) {
       end = minutesToTime(timeToMinutes(draft.start) + 30);
     }
-    // Rebuild a clean master record so display-only fields never persist.
-    const master = {
-      title: draft.title.trim() || 'Untitled',
+    onSave({
+      id: draft.id,
+      isNew: !draft.id,
+      scope: draft.scope,
+      recDate: draft.recDate,
       date: draft.date,
-      start: draft.start,
-      end,
-      contactId: draft.contactId || '',
-      location: draft.location,
-      notes: draft.notes,
-      repeat,
-      repeatUntil: recurring ? draft.repeatUntil || '' : '',
-    };
-    if (recurring) {
-      const occ = draft.occDate || draft.date;
-      const dd = new Set(draft.doneDates || []);
-      if (draft.done) dd.add(occ);
-      else dd.delete(occ);
-      master.doneDates = [...dd];
-      master.skipDates = draft.skipDates || [];
-      master.done = false;
-    } else {
-      master.done = !!draft.done;
-      master.doneDates = [];
-      master.skipDates = [];
-    }
-    if (draft.id) master.id = draft.id;
-    onSave(master);
+      repeat: draft.repeat,
+      repeatUntil: draft.repeatUntil,
+      done: draft.done,
+      fields: {
+        title: draft.title.trim() || 'Untitled',
+        start: draft.start,
+        end,
+        contactId: draft.contactId || '',
+        location: draft.location,
+        notes: draft.notes,
+      },
+    });
   };
 
   return (
@@ -335,11 +436,11 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
         <div className="modal-actions">
           {editing?.id && (
             <div className="del-group">
-              {recurring ? (
+              {recurringMaster ? (
                 <>
                   <button
                     className="btn btn-danger-ghost btn-sm"
-                    onClick={() => onSkipOccurrence(editing.id, draft.occDate || draft.date)}
+                    onClick={() => onSkipOccurrence(editing.id, draft.recDate)}
                   >
                     Delete this day
                   </button>
@@ -362,6 +463,23 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
     >
       {draft && (
         <div className="form">
+          {recurringMaster && (
+            <div className="seg seg--full">
+              <button
+                className={`seg-btn${thisScope ? ' seg-btn--on' : ''}`}
+                onClick={() => applyScope('this')}
+              >
+                This event
+              </button>
+              <button
+                className={`seg-btn${!thisScope ? ' seg-btn--on' : ''}`}
+                onClick={() => applyScope('all')}
+              >
+                All events
+              </button>
+            </div>
+          )}
+
           <label className="field">
             <span>Title</span>
             <input
@@ -372,7 +490,7 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
             />
           </label>
           <label className="field">
-            <span>{recurring ? 'Starts' : 'Date'}</span>
+            <span>{recurring && !thisScope ? 'Starts' : 'Date'}</span>
             <input
               type="date"
               value={draft.date}
@@ -397,20 +515,20 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
               />
             </label>
           </div>
-          <label className="field">
-            <span>Repeat</span>
-            <select
-              value={repeat}
-              onChange={(e) => setDraft({ ...draft, repeat: e.target.value })}
-            >
-              {REPEAT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {recurring && (
+
+          {!thisScope && (
+            <label className="field">
+              <span>Repeat</span>
+              <select value={draft.repeat} onChange={(e) => setDraft({ ...draft, repeat: e.target.value })}>
+                {REPEAT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {!thisScope && recurring && (
             <label className="field">
               <span>Ends (optional)</span>
               <input
@@ -419,9 +537,18 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
                 min={draft.date}
                 onChange={(e) => setDraft({ ...draft, repeatUntil: e.target.value })}
               />
-              <span className="muted small">{repeatLabel(repeat)}{draft.repeatUntil ? '' : ' · no end date'}</span>
+              <span className="muted small">
+                {repeatLabel(draft.repeat)}
+                {draft.repeatUntil ? '' : ' · no end date'}
+              </span>
             </label>
           )}
+          {thisScope && (
+            <p className="muted small scope-note">
+              Editing only this occurrence{draft.date !== draft.recDate ? ' (moved from its usual day)' : ''}.
+            </p>
+          )}
+
           <label className="field">
             <span>With</span>
             <select
@@ -459,7 +586,7 @@ function EventModal({ editing, contacts, onClose, onSave, onDelete, onSkipOccurr
               checked={!!draft.done}
               onChange={(e) => setDraft({ ...draft, done: e.target.checked })}
             />
-            <span>{recurring ? 'Mark this day done' : 'Mark as done'}</span>
+            <span>{recurringMaster ? 'Mark this day done' : 'Mark as done'}</span>
           </label>
         </div>
       )}
