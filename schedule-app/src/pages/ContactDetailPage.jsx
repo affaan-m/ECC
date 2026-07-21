@@ -6,6 +6,7 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
+import { syncContactAddressPin } from '../data/geocode.js';
 import {
   todayISO,
   toISODate,
@@ -82,12 +83,13 @@ export default function ContactDetailPage() {
   const saveEdit = () => {
     const name = editing.name.trim();
     if (!name) return;
-    actions.updateContact({
+    const address = editing.address.trim();
+    const updated = {
       ...contact,
       name,
       phone: editing.phone.trim(),
       email: editing.email.trim(),
-      address: editing.address.trim(),
+      address,
       photo: editing.photo || '',
       statusId: editing.statusId,
       notes: editing.notes.trim(),
@@ -96,7 +98,9 @@ export default function ContactDetailPage() {
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean),
-    });
+    };
+    actions.updateContact(updated);
+    if (address !== (contact.address || '')) syncContactAddressPin(updated, state, actions);
     setEditing(null);
   };
 

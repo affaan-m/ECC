@@ -5,7 +5,8 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
-import { daysAgoLabel, daysSince, todayISO } from '../data/helpers.js';
+import { daysAgoLabel, daysSince, todayISO, uid } from '../data/helpers.js';
+import { syncContactAddressPin } from '../data/geocode.js';
 
 // A contact is "overdue" when the time since last contact (or since they were
 // added, if never contacted) meets or exceeds their reconnect cadence.
@@ -97,11 +98,13 @@ export default function ContactsPage() {
   const saveNew = () => {
     const name = adding.name.trim();
     if (!name) return;
-    actions.addContact({
+    const address = adding.address.trim();
+    const contact = {
+      id: uid('c'),
       name,
       phone: adding.phone.trim(),
       email: adding.email.trim(),
-      address: adding.address.trim(),
+      address,
       photo: adding.photo || '',
       statusId: adding.statusId,
       tags: adding.tagsText
@@ -111,7 +114,9 @@ export default function ContactsPage() {
       notes: adding.notes.trim(),
       lastContacted: '',
       createdAt: new Date().toISOString().slice(0, 10),
-    });
+    };
+    actions.addContact(contact);
+    if (address) syncContactAddressPin(contact, state, actions);
     setAdding(null);
   };
 
@@ -296,6 +301,14 @@ export default function ContactsPage() {
                 />
               </label>
             </div>
+            <label className="field">
+              <span>Address</span>
+              <input
+                value={adding.address}
+                onChange={(e) => setAdding({ ...adding, address: e.target.value })}
+                placeholder="Optional — drops a map pin automatically"
+              />
+            </label>
             <label className="field">
               <span>Tags</span>
               <input

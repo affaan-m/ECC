@@ -103,20 +103,25 @@ function reducer(state, action) {
       return {
         ...state,
         contacts: state.contacts.filter((c) => c.id !== action.id),
-        // Unlink the deleted contact from any events and pins.
+        // Unlink the deleted contact from any events. Pins the user placed
+        // by hand are unlinked too (they still stand on their own); a pin
+        // auto-created from the contact's address has no meaning without
+        // them, so it's removed outright.
         events: state.events.map((e) =>
           e.contactId === action.id ? { ...e, contactId: '' } : e
         ),
-        pins: (state.pins || []).map((p) =>
-          p.contactId === action.id ? { ...p, contactId: '' } : p
-        ),
+        pins: (state.pins || [])
+          .filter((p) => !(p.contactId === action.id && p.source === 'contact-address'))
+          .map((p) => (p.contactId === action.id ? { ...p, contactId: '' } : p)),
       };
     case 'CLEAR_CONTACTS':
       return {
         ...state,
         contacts: [],
         events: state.events.map((e) => (e.contactId ? { ...e, contactId: '' } : e)),
-        pins: (state.pins || []).map((p) => (p.contactId ? { ...p, contactId: '' } : p)),
+        pins: (state.pins || [])
+          .filter((p) => !(p.contactId && p.source === 'contact-address'))
+          .map((p) => (p.contactId ? { ...p, contactId: '' } : p)),
       };
 
     // Map pins
@@ -246,7 +251,7 @@ export function useActions() {
     deleteEventType: (id) => dispatch({ type: 'DELETE_EVENT_TYPE', id }),
 
     addContact: (data) =>
-      dispatch({ type: 'ADD_CONTACT', contact: { id: uid('c'), tags: [], ...data } }),
+      dispatch({ type: 'ADD_CONTACT', contact: { id: data.id || uid('c'), tags: [], ...data } }),
     updateContact: (contact) => dispatch({ type: 'UPDATE_CONTACT', contact }),
     deleteContact: (id) => dispatch({ type: 'DELETE_CONTACT', id }),
     clearContacts: () => dispatch({ type: 'CLEAR_CONTACTS' }),
