@@ -1,0 +1,70 @@
+name: Deploy schedule app
+
+# Builds schedule-app/ and publishes it to GitHub Pages. Once Pages is enabled
+# (Settings → Pages → Source: "GitHub Actions"), every push that touches the app
+# redeploys it to https://<owner>.github.io/<repo>/.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/missionary-calendar-app-ti6dr6
+    paths:
+      - 'schedule-app/**'
+      - '.github/workflows/deploy-schedule-app.yml'
+  workflow_dispatch:
+
+# Least-privilege token, plus the scopes the Pages deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one Pages deploy at a time; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: schedule-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: schedule-app
+        run: npm ci
+
+      - name: Build
+        working-directory: schedule-app
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: schedule-app/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
