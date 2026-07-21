@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBackDismiss } from '../data/useBackDismiss.js';
 
 // A bottom-sheet modal used for all add/edit forms. Supports swipe-down to
 // dismiss (drag the handle or header) and an optional taller default height.
@@ -6,6 +7,8 @@ export default function Modal({ open, title, onClose, children, footer, tall = f
   const [dragY, setDragY] = useState(0);
   const startY = useRef(null);
   const dragging = useRef(false);
+
+  useBackDismiss(open, onClose);
 
   useEffect(() => {
     if (!open) return;

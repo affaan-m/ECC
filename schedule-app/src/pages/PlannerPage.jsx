@@ -6,6 +6,7 @@ import Select from '../components/Select.jsx';
 import MiniMapPicker from '../components/MiniMapPicker.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick, selectTick } from '../data/haptics.js';
+import { useBackDismiss } from '../data/useBackDismiss.js';
 import {
   requestNotificationPermission,
   notificationsSupported,
@@ -749,6 +750,7 @@ function MonthView({ monthStart, events, onOpenDay, cursor }) {
 
 function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, onToggleDone }) {
   const navigate = useNavigate();
+  useBackDismiss(true, onClose);
   const type = eventTypes.find((t) => t.id === occ.typeId);
   const contact = contacts.find((c) => c.id === occ.contactId);
   const recurring = occ.repeat && occ.repeat !== 'none';

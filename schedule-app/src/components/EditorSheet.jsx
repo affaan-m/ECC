@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { confirmTick, warnTick } from '../data/haptics.js';
+import { useBackDismissAdvanced } from '../data/useBackDismiss.js';
 
 const DISMISS_THRESHOLD = 110;
 
@@ -25,6 +26,12 @@ export default function EditorSheet({
   const [justSaved, setJustSaved] = useState(false);
   const startY = useRef(null);
   const dragging = useRef(false);
+  const confirmCloseRef = useRef(confirmClose);
+  confirmCloseRef.current = confirmClose;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const onDiscardRef = useRef(onDiscard);
+  onDiscardRef.current = onDiscard;
 
   useEffect(() => {
     if (!open) return;
@@ -36,6 +43,24 @@ export default function EditorSheet({
       document.body.style.overflow = '';
     };
   }, [open]);
+
+  // Let the browser/OS back gesture close this sheet (respecting unsaved
+  // changes) instead of navigating the whole app away from the page behind
+  // it: each back press consumes one "layer" (the confirm dialog, then the
+  // sheet itself) rather than fully discarding on the first press.
+  useBackDismissAdvanced(open, () => {
+    if (confirmCloseRef.current) {
+      setConfirmClose(false);
+      return true;
+    }
+    if (dirtyRef.current) {
+      warnTick();
+      setConfirmClose(true);
+      return true;
+    }
+    onDiscardRef.current();
+    return false;
+  });
 
   if (!open) return null;
 
