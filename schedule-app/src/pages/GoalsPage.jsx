@@ -13,6 +13,7 @@ import {
   formatWeekRange,
   formatDayLabel,
   isToday,
+  WEEKDAY_LETTERS,
 } from '../data/helpers.js';
 import {
   requestNotificationPermission,
@@ -25,6 +26,7 @@ const emptyGoal = (period) => ({
   period,
   target: 1,
   unit: '',
+  repeatDays: [],
   reminderOn: false,
   reminderTime: '09:00',
 });
@@ -42,7 +44,14 @@ export default function GoalsPage() {
   const key = goalKey(period, ctx);
   const atCurrent = isDaily ? isToday(day) : weekKey(weekStart) === weekKey(new Date());
 
-  const goals = useMemo(() => state.goals.filter((g) => (g.period || 'weekly') === period), [state.goals, period]);
+  const goals = useMemo(() => {
+    const dow = isDaily ? fromISODate(day).getDay() : null;
+    return state.goals.filter((g) => {
+      if ((g.period || 'weekly') !== period) return false;
+      if (isDaily && g.repeatDays?.length) return g.repeatDays.includes(dow);
+      return true;
+    });
+  }, [state.goals, period, isDaily, day]);
   const progressOf = (g) => g.progress?.[key] || 0;
 
   const totals = useMemo(() => {
@@ -66,6 +75,7 @@ export default function GoalsPage() {
   const openEdit = (g) => {
     const d = {
       ...g,
+      repeatDays: g.repeatDays || [],
       reminderOn: !!g.reminder,
       reminderTime: g.reminder?.time || '09:00',
     };
@@ -78,6 +88,13 @@ export default function GoalsPage() {
     initialJsonRef.current = JSON.stringify(d);
   };
   const dirty = editing ? JSON.stringify(editing) !== initialJsonRef.current : false;
+
+  const toggleWeekday = (i) => {
+    const set = new Set(editing.repeatDays || []);
+    if (set.has(i)) set.delete(i);
+    else set.add(i);
+    setEditing({ ...editing, repeatDays: [...set].sort() });
+  };
 
   const saveGoal = async () => {
     const title = editing.title.trim();
@@ -92,6 +109,7 @@ export default function GoalsPage() {
       period: editing.period,
       target: Math.max(1, Number(editing.target) || 1),
       unit: editing.unit.trim(),
+      repeatDays: editing.period === 'daily' ? editing.repeatDays || [] : [],
       reminder: editing.reminderOn ? { time: editing.reminderTime } : null,
     };
     if (editing.id) actions.updateGoal({ ...editing, ...payload });
@@ -261,6 +279,24 @@ export default function GoalsPage() {
                 </button>
               </div>
             </div>
+            {editing.period === 'daily' && (
+              <div className="field">
+                <span>Repeat on</span>
+                <div className="weekday-picker">
+                  {WEEKDAY_LETTERS.map((l, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`weekday-btn${(editing.repeatDays || []).includes(i) ? ' weekday-btn--on' : ''}`}
+                      onClick={() => toggleWeekday(i)}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted small">Leave all days off to repeat every day.</p>
+              </div>
+            )}
             <label className="field">
               <span>Category</span>
               <input

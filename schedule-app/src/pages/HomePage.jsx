@@ -4,7 +4,8 @@ import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
-import { todayISO, weekKey, goalKey, formatTime } from '../data/helpers.js';
+import { todayISO, weekKey, goalKey, formatTime, formatShortDate } from '../data/helpers.js';
+import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 
@@ -18,7 +19,10 @@ export default function HomePage() {
   const today = todayISO();
   const dailyKey = goalKey('daily', new Date());
   const weeklyKey = goalKey('weekly', new Date());
-  const dailyGoals = state.goals.filter((g) => (g.period || 'weekly') === 'daily');
+  const todayDow = new Date().getDay();
+  const dailyGoals = state.goals.filter(
+    (g) => (g.period || 'weekly') === 'daily' && (!g.repeatDays?.length || g.repeatDays.includes(todayDow))
+  );
   const weeklyGoals = state.goals.filter((g) => (g.period || 'weekly') === 'weekly');
 
   const ringPct = (goals, key) => {
@@ -36,7 +40,9 @@ export default function HomePage() {
     const out = [];
     for (const g of state.goals) {
       if (!g.reminder?.time) continue;
-      const key = (g.period || 'weekly') === 'daily' ? today : weekKey(new Date());
+      const isDaily = (g.period || 'weekly') === 'daily';
+      if (isDaily && g.repeatDays?.length && !g.repeatDays.includes(todayDow)) continue;
+      const key = isDaily ? today : weekKey(new Date());
       if ((g.progress?.[key] || 0) >= g.target) continue;
       out.push({ kind: 'goal', id: g.id, label: g.title, time: g.reminder.time });
     }
@@ -55,15 +61,55 @@ export default function HomePage() {
 
   // --- Tasks ---
   const [newTaskText, setNewTaskText] = useState('');
+  const [editingTask, setEditingTask] = useState(null);
+  const initialTaskJson = useRef('');
   const tasks = useMemo(
     () => [...(state.tasks || [])].sort((a, b) => Number(a.done) - Number(b.done)),
     [state.tasks]
   );
-  const addTask = () => {
-    const title = newTaskText.trim();
-    if (!title) return;
-    actions.addTask({ title, dueDate: '', createdAt: today });
+  const openNewTask = () => {
+    const d = {
+      title: newTaskText.trim(),
+      notes: '',
+      location: '',
+      dueDate: '',
+      reminderOn: false,
+      reminderTime: '09:00',
+    };
+    setEditingTask(d);
+    initialTaskJson.current = JSON.stringify(d);
     setNewTaskText('');
+  };
+  const openEditTask = (t) => {
+    const d = {
+      ...t,
+      notes: t.notes || '',
+      location: t.location || '',
+      dueDate: t.dueDate || '',
+      reminderOn: !!t.reminder,
+      reminderTime: t.reminder?.time || '09:00',
+    };
+    setEditingTask(d);
+    initialTaskJson.current = JSON.stringify(d);
+  };
+  const taskDirty = editingTask ? JSON.stringify(editingTask) !== initialTaskJson.current : false;
+  const saveTask = async () => {
+    const title = editingTask.title.trim();
+    if (!title) return setEditingTask(null);
+    if (editingTask.reminderOn) {
+      await requestNotificationPermission();
+      actions.setSettings({ notifications: true });
+    }
+    const payload = {
+      title,
+      notes: editingTask.notes.trim(),
+      location: editingTask.location.trim(),
+      dueDate: editingTask.dueDate,
+      reminder: editingTask.reminderOn ? { time: editingTask.reminderTime } : null,
+    };
+    if (editingTask.id) actions.updateTask({ ...editingTask, ...payload });
+    else actions.addTask({ ...payload, createdAt: today });
+    setEditingTask(null);
     confirmTick();
   };
 
@@ -165,7 +211,14 @@ export default function HomePage() {
               >
                 {t.done && <CheckIcon />}
               </button>
-              <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+              <button className="task-title-btn" onClick={() => openEditTask(t)}>
+                <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+                {(t.location || t.dueDate) && !t.done && (
+                  <span className="task-meta muted small">
+                    {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </button>
               {t.reminder?.time && !t.done && <span className="reminder-time">{formatTime(t.reminder.time)}</span>}
               <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
                 ✕
@@ -178,10 +231,10 @@ export default function HomePage() {
           <input
             value={newTaskText}
             onChange={(e) => setNewTaskText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addTask()}
+            onKeyDown={(e) => e.key === 'Enter' && openNewTask()}
             placeholder="Add a task…"
           />
-          <button className="btn btn-primary btn-sm" onClick={addTask}>
+          <button className="btn btn-primary btn-sm" onClick={openNewTask}>
             Add
           </button>
         </div>
@@ -366,6 +419,80 @@ export default function HomePage() {
               />
               <span>Pin to top</span>
             </label>
+          </div>
+        )}
+      </EditorSheet>
+
+      <EditorSheet
+        open={!!editingTask}
+        title={editingTask?.id ? 'Edit task' : 'New task'}
+        dirty={taskDirty}
+        onSave={saveTask}
+        onDiscard={() => setEditingTask(null)}
+        danger={
+          editingTask?.id
+            ? { label: 'Delete task', onClick: () => { actions.deleteTask(editingTask.id); setEditingTask(null); } }
+            : undefined
+        }
+      >
+        {editingTask && (
+          <div className="form">
+            <label className="field">
+              <span>Task</span>
+              <input
+                autoFocus
+                value={editingTask.title}
+                onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                placeholder="What needs doing?"
+              />
+            </label>
+            <label className="field">
+              <span>Location</span>
+              <input
+                value={editingTask.location}
+                onChange={(e) => setEditingTask({ ...editingTask, location: e.target.value })}
+                placeholder="Optional"
+              />
+            </label>
+            <label className="field">
+              <span>Due date</span>
+              <input
+                type="date"
+                value={editingTask.dueDate}
+                onChange={(e) => setEditingTask({ ...editingTask, dueDate: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Notes</span>
+              <textarea
+                rows="4"
+                value={editingTask.notes}
+                onChange={(e) => setEditingTask({ ...editingTask, notes: e.target.value })}
+                placeholder="Any details…"
+              />
+            </label>
+            <div className="field">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={editingTask.reminderOn}
+                  onChange={(e) => setEditingTask({ ...editingTask, reminderOn: e.target.checked })}
+                />
+                <span>Remind me</span>
+              </label>
+              {editingTask.reminderOn && (
+                <>
+                  <input
+                    type="time"
+                    value={editingTask.reminderTime}
+                    onChange={(e) => setEditingTask({ ...editingTask, reminderTime: e.target.value })}
+                  />
+                  {!notificationsSupported() && (
+                    <span className="muted small">This browser can't show notifications.</span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </EditorSheet>

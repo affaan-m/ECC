@@ -104,7 +104,7 @@ textarea {
 
 .page {
   padding: 0 16px 24px;
-  animation: page-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: page-in 0.42s cubic-bezier(0.16, 0.8, 0.24, 1);
 }
 
 @keyframes fade {
@@ -134,7 +134,7 @@ textarea {
 /* The map is its own full-bleed page (no .page wrapper) — give it a matching
    transition so it doesn't feel like the odd one out. */
 .map-page {
-  animation: fade 0.22s ease;
+  animation: page-in 0.42s cubic-bezier(0.16, 0.8, 0.24, 1);
 }
 
 /* --- Header ------------------------------------------------------------- */
@@ -2325,9 +2325,24 @@ textarea {
     transform: scale(1);
   }
 }
-.task-title {
+.task-title-btn {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.task-title {
   font-weight: 600;
+}
+.task-meta {
+  margin-top: 1px;
 }
 .task-title--done {
   text-decoration: line-through;
