@@ -19,10 +19,11 @@ export default function TabBar() {
           to={to}
           end={end}
           onClick={tapTick}
+          aria-label={label}
+          title={label}
           className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
         >
           <Icon />
-          <span>{label}</span>
         </NavLink>
       ))}
     </nav>

@@ -276,18 +276,17 @@ textarea {
 .tab {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 11px;
-  font-weight: 600;
-  padding-top: 6px;
 }
 .tab--active {
   color: var(--accent);
+}
+.tab svg {
+  width: 26px;
+  height: 26px;
 }
 .tab svg {
   opacity: 0.9;
@@ -2023,16 +2022,15 @@ textarea {
   border: none;
 }
 .pin-bubble {
-  --emoji-size: 100%;
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: calc(36px * var(--emoji-size, 100) / 100);
+  height: calc(36px * var(--emoji-size, 100) / 100);
   border-radius: 50%;
   background: var(--surface);
   border: 2px solid var(--accent);
   display: grid;
   place-items: center;
-  font-size: calc(19px * var(--emoji-size) / 100);
+  font-size: calc(19px * var(--emoji-size, 100) / 100);
   line-height: 1;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
@@ -2117,7 +2115,7 @@ textarea {
 }
 .pin-caption {
   position: absolute;
-  top: 44px;
+  top: calc(44px * var(--emoji-size, 100) / 100);
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;

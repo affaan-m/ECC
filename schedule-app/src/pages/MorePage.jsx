@@ -229,7 +229,7 @@ export default function MorePage() {
       )}
 
       <button className="donate-bubble" onClick={() => setConfirm('donate')}>
-        ☕ Support Stewardly
+        ❤️ Support Stewardly
       </button>
 
       <section className="detail-section">
@@ -346,6 +346,18 @@ export default function MorePage() {
             role="switch"
             aria-checked={s.taskCompleteAnim ?? true}
             onClick={() => actions.setSettings({ taskCompleteAnim: !(s.taskCompleteAnim ?? true) })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="section-head">
+          <span>Haptic feedback</span>
+          <button
+            className={`toggle${(s.hapticsEnabled ?? true) ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.hapticsEnabled ?? true}
+            onClick={() => actions.setSettings({ hapticsEnabled: !(s.hapticsEnabled ?? true) })}
           >
             <span className="toggle-knob" />
           </button>

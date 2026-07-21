@@ -4,8 +4,13 @@
 // no-ops there — it's a progressive enhancement, never required.
 const supported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 
+let enabled = true;
+export function setHapticsEnabled(v) {
+  enabled = !!v;
+}
+
 function fire(pattern) {
-  if (!supported) return;
+  if (!supported || !enabled) return;
   try {
     navigator.vibrate(pattern);
   } catch {

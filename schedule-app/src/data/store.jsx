@@ -49,6 +49,7 @@ function loadState() {
         // Appearance / people
         contactIconSize: 'md',
         taskCompleteAnim: true,
+        hapticsEnabled: true,
         ...(parsed.settings || {}),
       },
     };

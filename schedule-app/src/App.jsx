@@ -4,6 +4,7 @@ import TabBar from './components/TabBar.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
+import { setHapticsEnabled } from './data/haptics.js';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
@@ -56,6 +57,19 @@ export default function App() {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, []);
 
+  // Toggle switches (and other small controls deep in a scrollable settings
+  // list) can be left focused after a tap; some mobile browsers then try to
+  // keep the focused element in its "preferred" scroll position, which reads
+  // as the whole page jumping. Blurring right after the tap avoids that.
+  useEffect(() => {
+    const onClick = (e) => {
+      const el = e.target.closest?.('[role="switch"], .toggle, .seg-btn, .scheme-dot, .step-btn');
+      if (el) requestAnimationFrame(() => el.blur());
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+
   // Apply the selected theme to the document root.
   useEffect(() => {
     const root = document.documentElement;
@@ -85,6 +99,10 @@ export default function App() {
   // week boundaries throughout the app.
   const use24h = !!state.settings?.use24h;
   const sundayStart = !!state.settings?.weekStartsSunday;
+  const hapticsEnabled = state.settings?.hapticsEnabled ?? true;
+  useEffect(() => {
+    setHapticsEnabled(hapticsEnabled);
+  }, [hapticsEnabled]);
   useEffect(() => {
     setUse24hFormat(use24h);
   }, [use24h]);

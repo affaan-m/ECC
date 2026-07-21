@@ -185,15 +185,18 @@ export default function MapPage() {
     const layer = layerRef.current;
     if (!layer) return;
     layer.clearLayers();
+    const grow = emojiSizePct / 100;
     for (const p of pins) {
       const sel = p.id === selectedId;
       const icon = L.divIcon({
         className: `pin-icon${sel ? ' pin-icon--sel' : ''}`,
         html:
-          `<div class="pin-bubble" style="--emoji-size:${emojiSizePct}%"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
-          (p.label ? `<div class="pin-caption">${escapeHtml(p.label)}</div>` : ''),
-        iconSize: [40, 46],
-        iconAnchor: [20, 46],
+          `<div style="--emoji-size:${emojiSizePct}">` +
+          `<div class="pin-bubble"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
+          (p.label ? `<div class="pin-caption">${escapeHtml(p.label)}</div>` : '') +
+          `</div>`,
+        iconSize: [40 * grow, 46 * grow],
+        iconAnchor: [20 * grow, 46 * grow],
       });
       L.marker([p.lat, p.lng], { icon, keyboard: false })
         .addTo(layer)
