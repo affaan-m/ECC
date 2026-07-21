@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
@@ -13,6 +14,7 @@ import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
+const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: formatHour(h) }));
 
 const DESTRUCTIVE_ACTIONS = {
   reset: {
@@ -430,24 +432,31 @@ export default function MorePage() {
         </div>
 
         <p className="muted small">Timeline hours</p>
-        <div className="cadence-setting">
-          <button
-            className="step-btn"
-            onClick={() => step('timelineStartHour', -1, 0, (s.timelineEndHour ?? 23) - 1)}
-            aria-label="Start earlier"
-          >
-            −
-          </button>
-          <span className="cadence-value">
-            <strong>{formatHour(s.timelineStartHour ?? 6)}</strong> – <strong>{formatHour(s.timelineEndHour ?? 23)}</strong>
-          </span>
-          <button
-            className="step-btn step-btn--plus"
-            onClick={() => step('timelineEndHour', 1, (s.timelineStartHour ?? 6) + 1, 23)}
-            aria-label="End later"
-          >
-            +
-          </button>
+        <div className="field-row">
+          <label className="field">
+            <span>Starts</span>
+            <Select
+              value={s.timelineStartHour ?? 6}
+              onChange={(v) =>
+                actions.setSettings({
+                  timelineStartHour: Math.min(Number(v), (s.timelineEndHour ?? 23) - 1),
+                })
+              }
+              options={HOURS.filter((h) => h.value < (s.timelineEndHour ?? 23))}
+            />
+          </label>
+          <label className="field">
+            <span>Ends</span>
+            <Select
+              value={s.timelineEndHour ?? 23}
+              onChange={(v) =>
+                actions.setSettings({
+                  timelineEndHour: Math.max(Number(v), (s.timelineStartHour ?? 6) + 1),
+                })
+              }
+              options={HOURS.filter((h) => h.value > (s.timelineStartHour ?? 6))}
+            />
+          </label>
         </div>
 
         <div onClick={() => !isPro && navigate('/pricing')}>

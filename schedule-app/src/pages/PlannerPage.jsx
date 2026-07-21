@@ -434,7 +434,6 @@ function occToDraft(occ) {
 
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
-const ZOOM_STEP = 0.2;
 
 function DayView({
   date,
@@ -457,6 +456,7 @@ function DayView({
 }) {
   const bodyRef = useRef(null);
   const gestureRef = useRef(null); // { key, occ, phase, startY, startX, startClientY }
+  const pinchRef = useRef(null); // { pointers: Map<id,{x,y}>, startDist, startZoom }
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
 
@@ -485,8 +485,37 @@ function DayView({
     onAddAt(minutesToTime(Math.max(dayStart * 60, Math.min(dayEnd * 60 - 30, mins))));
   };
 
-  const zoomOut = () => onZoom?.(Math.max(ZOOM_MIN, Math.round((zoom - ZOOM_STEP) * 10) / 10));
-  const zoomIn = () => onZoom?.(Math.min(ZOOM_MAX, Math.round((zoom + ZOOM_STEP) * 10) / 10));
+  // Pinch-to-zoom: two touch pointers on the timeline scale pxPerHour by how
+  // much their distance apart has changed since the pinch started.
+  const onBodyPointerDown = (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (!pinchRef.current) pinchRef.current = { pointers: new Map(), startDist: 0, startZoom: zoom };
+    pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchRef.current.pointers.size === 2) {
+      const [a, b] = [...pinchRef.current.pointers.values()];
+      pinchRef.current.startDist = Math.hypot(a.x - b.x, a.y - b.y);
+      pinchRef.current.startZoom = zoom;
+      clearGesture(); // a second finger landing cancels any armed drag
+    }
+  };
+  const onBodyPointerMove = (e) => {
+    const p = pinchRef.current;
+    if (!p || !p.pointers.has(e.pointerId)) return;
+    p.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (p.pointers.size === 2 && p.startDist > 20) {
+      const [a, b] = [...p.pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(((p.startZoom * dist) / p.startDist) * 20) / 20));
+      onZoom?.(next);
+    }
+  };
+  const onBodyPointerUp = (e) => {
+    const p = pinchRef.current;
+    if (!p) return;
+    p.pointers.delete(e.pointerId);
+    if (p.pointers.size < 2) p.startDist = 0;
+    if (p.pointers.size === 0) pinchRef.current = null;
+  };
 
   const clearGesture = () => {
     if (gestureRef.current?.timer) clearTimeout(gestureRef.current.timer);
@@ -550,14 +579,6 @@ function DayView({
 
   return (
     <div className="timeline">
-      <div className="timeline-zoom">
-        <button className="timeline-zoom-btn" onClick={zoomOut} disabled={zoom <= ZOOM_MIN} aria-label="Contract timeline">
-          −
-        </button>
-        <button className="timeline-zoom-btn" onClick={zoomIn} disabled={zoom >= ZOOM_MAX} aria-label="Expand timeline">
-          +
-        </button>
-      </div>
       {pendingTasks && pendingTasks.length > 0 && (
         <div className="timeline-tasks">
           {pendingTasks.map((t) => (
@@ -573,6 +594,10 @@ function DayView({
         ref={bodyRef}
         style={{ height: (dayEnd - dayStart + 1) * pxPerHour }}
         onClick={handleBgClick}
+        onPointerDown={onBodyPointerDown}
+        onPointerMove={onBodyPointerMove}
+        onPointerUp={onBodyPointerUp}
+        onPointerCancel={onBodyPointerUp}
       >
         {hours.map((h) => (
           <div className="hour-row" key={h} style={{ height: pxPerHour }}>

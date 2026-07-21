@@ -1255,36 +1255,6 @@ textarea {
 .timeline {
   margin-top: 12px;
 }
-.timeline-zoom {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-.timeline-zoom-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--accent);
-  font-size: 16px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-}
-.timeline-zoom-btn:active {
-  transform: scale(0.92);
-}
-.timeline-zoom-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .timeline-tasks {
   display: flex;
   flex-wrap: wrap;
@@ -1313,6 +1283,9 @@ textarea {
 .timeline-body {
   position: relative;
   cursor: pointer;
+  /* Allow normal single-finger vertical scrolling but hand two-finger pinch
+     gestures to our own JS zoom instead of the browser's page-zoom. */
+  touch-action: pan-y;
 }
 .hour-row {
   position: relative;
