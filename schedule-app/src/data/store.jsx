@@ -1,0 +1,168 @@
+import { createContext, useContext, useEffect, useReducer } from 'react';
+import { makeSeed } from './seed.js';
+import { uid } from './helpers.js';
+
+const STORAGE_KEY = 'compass.data.v1';
+
+// --- Persistence -----------------------------------------------------------
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return makeSeed();
+    const parsed = JSON.parse(raw);
+    // Merge with a fresh seed shape so missing keys never crash the UI.
+    return {
+      ...makeSeed(),
+      ...parsed,
+      settings: { theme: 'system', ...(parsed.settings || {}) },
+    };
+  } catch {
+    return makeSeed();
+  }
+}
+
+// --- Reducer ---------------------------------------------------------------
+
+function upsert(list, item) {
+  const idx = list.findIndex((x) => x.id === item.id);
+  if (idx === -1) return [...list, item];
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...item };
+  return next;
+}
+
+function reducer(state, action) {
+  switch (action.type) {
+    // Goals
+    case 'ADD_GOAL':
+      return { ...state, goals: [...state.goals, action.goal] };
+    case 'UPDATE_GOAL':
+      return { ...state, goals: upsert(state.goals, action.goal) };
+    case 'DELETE_GOAL':
+      return { ...state, goals: state.goals.filter((g) => g.id !== action.id) };
+    case 'SET_GOAL_PROGRESS': {
+      const goals = state.goals.map((g) => {
+        if (g.id !== action.id) return g;
+        const value = Math.max(0, action.value);
+        return { ...g, weeklyProgress: { ...g.weeklyProgress, [action.week]: value } };
+      });
+      return { ...state, goals };
+    }
+
+    // Events
+    case 'ADD_EVENT':
+      return { ...state, events: [...state.events, action.event] };
+    case 'UPDATE_EVENT':
+      return { ...state, events: upsert(state.events, action.event) };
+    case 'DELETE_EVENT':
+      return { ...state, events: state.events.filter((e) => e.id !== action.id) };
+
+    // Contacts
+    case 'ADD_CONTACT':
+      return { ...state, contacts: [...state.contacts, action.contact] };
+    case 'UPDATE_CONTACT':
+      return { ...state, contacts: upsert(state.contacts, action.contact) };
+    case 'DELETE_CONTACT':
+      return {
+        ...state,
+        contacts: state.contacts.filter((c) => c.id !== action.id),
+        // Unlink the deleted contact from any events.
+        events: state.events.map((e) =>
+          e.contactId === action.id ? { ...e, contactId: '' } : e
+        ),
+      };
+
+    // Statuses (user-defined labels)
+    case 'ADD_STATUS':
+      return { ...state, statuses: [...state.statuses, action.status] };
+    case 'UPDATE_STATUS':
+      return { ...state, statuses: upsert(state.statuses, action.status) };
+    case 'DELETE_STATUS':
+      return {
+        ...state,
+        statuses: state.statuses.filter((s) => s.id !== action.id),
+        contacts: state.contacts.map((c) =>
+          c.statusId === action.id ? { ...c, statusId: '' } : c
+        ),
+      };
+
+    // Settings & data management
+    case 'SET_SETTINGS':
+      return { ...state, settings: { ...state.settings, ...action.settings } };
+    case 'IMPORT_DATA':
+      return { ...makeSeed(), ...action.data };
+    case 'RESET_DATA':
+      return makeSeed();
+    case 'CLEAR_DATA':
+      return {
+        version: 1,
+        goals: [],
+        events: [],
+        contacts: [],
+        statuses: state.statuses,
+        settings: state.settings,
+      };
+
+    default:
+      return state;
+  }
+}
+
+// --- Context ---------------------------------------------------------------
+
+const StoreContext = createContext(null);
+
+export function StoreProvider({ children }) {
+  const [state, dispatch] = useReducer(reducer, undefined, loadState);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* storage full or unavailable — app still works for the session */
+    }
+  }, [state]);
+
+  return (
+    <StoreContext.Provider value={{ state, dispatch }}>
+      {children}
+    </StoreContext.Provider>
+  );
+}
+
+export function useStore() {
+  const ctx = useContext(StoreContext);
+  if (!ctx) throw new Error('useStore must be used within StoreProvider');
+  return ctx;
+}
+
+// Convenience action creators bundled as a hook.
+export function useActions() {
+  const { dispatch } = useStore();
+  return {
+    addGoal: (data) => dispatch({ type: 'ADD_GOAL', goal: { id: uid('g'), weeklyProgress: {}, ...data } }),
+    updateGoal: (goal) => dispatch({ type: 'UPDATE_GOAL', goal }),
+    deleteGoal: (id) => dispatch({ type: 'DELETE_GOAL', id }),
+    setGoalProgress: (id, week, value) =>
+      dispatch({ type: 'SET_GOAL_PROGRESS', id, week, value }),
+
+    addEvent: (data) => dispatch({ type: 'ADD_EVENT', event: { id: uid('e'), done: false, ...data } }),
+    updateEvent: (event) => dispatch({ type: 'UPDATE_EVENT', event }),
+    deleteEvent: (id) => dispatch({ type: 'DELETE_EVENT', id }),
+
+    addContact: (data) =>
+      dispatch({ type: 'ADD_CONTACT', contact: { id: uid('c'), tags: [], ...data } }),
+    updateContact: (contact) => dispatch({ type: 'UPDATE_CONTACT', contact }),
+    deleteContact: (id) => dispatch({ type: 'DELETE_CONTACT', id }),
+
+    addStatus: (data) => dispatch({ type: 'ADD_STATUS', status: { id: uid('st'), ...data } }),
+    updateStatus: (status) => dispatch({ type: 'UPDATE_STATUS', status }),
+    deleteStatus: (id) => dispatch({ type: 'DELETE_STATUS', id }),
+
+    setSettings: (settings) => dispatch({ type: 'SET_SETTINGS', settings }),
+    importData: (data) => dispatch({ type: 'IMPORT_DATA', data }),
+    resetData: () => dispatch({ type: 'RESET_DATA' }),
+    clearData: () => dispatch({ type: 'CLEAR_DATA' }),
+  };
+}

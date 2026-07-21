@@ -1,0 +1,19 @@
+{
+  "name": "Compass — Plan, Goals & People",
+  "short_name": "Compass",
+  "description": "A personal planner for your schedule, goals, and the people in your life.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6f8",
+  "theme_color": "#1f5f8b",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
