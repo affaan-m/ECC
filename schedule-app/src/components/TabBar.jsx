@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { tapTick } from '../data/haptics.js';
 
 const TABS = [
+  { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/goals', label: 'Goals', icon: TargetIcon },
   { to: '/planner', label: 'Planner', icon: CalendarIcon },
   { to: '/contacts', label: 'People', icon: PeopleIcon },
@@ -12,10 +13,11 @@ const TABS = [
 export default function TabBar() {
   return (
     <nav className="tabbar" aria-label="Primary">
-      {TABS.map(({ to, label, icon: Icon }) => (
+      {TABS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
           to={to}
+          end={end}
           onClick={tapTick}
           className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
         >
@@ -28,6 +30,13 @@ export default function TabBar() {
 }
 
 /* Inline SVG icons keep the app fully self-contained (no icon dependency). */
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+      <path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function TargetIcon() {
   return (
     <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">

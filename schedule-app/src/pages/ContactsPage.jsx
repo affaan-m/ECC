@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
@@ -23,6 +23,7 @@ export default function ContactsPage() {
   const { state } = useStore();
   const actions = useActions();
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState(''); // statusId, '__overdue', or ''
   const [adding, setAdding] = useState(null);
@@ -83,6 +84,14 @@ export default function ContactsPage() {
     initialAddJsonRef.current = JSON.stringify(d);
   };
   const addDirty = adding ? JSON.stringify(adding) !== initialAddJsonRef.current : false;
+
+  // Opened from the Home page's quick-add menu.
+  useEffect(() => {
+    if (location.state?.quickNewContact) {
+      startAdd();
+      window.history.replaceState({}, '');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveNew = () => {
     const name = adding.name.trim();

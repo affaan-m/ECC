@@ -1991,6 +1991,312 @@ textarea {
   max-width: 180px;
 }
 
+/* --- Home page ------------------------------------------------------------ */
+.pro-bubble {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #f4c95d, #e0a020);
+  color: #4a3300;
+  border: none;
+  border-radius: 99px;
+  padding: 7px 13px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(180, 130, 0, 0.35);
+}
+.home-bubbles {
+  margin-top: 12px;
+}
+.home-bubble {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.home-bubble-rings {
+  display: flex;
+  gap: 14px;
+}
+.home-bubble-label {
+  font-weight: 700;
+  color: var(--text);
+  margin-left: auto;
+}
+.mini-ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.mini-ring {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+.mini-ring::after {
+  content: '';
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.mini-ring span {
+  position: relative;
+  z-index: 1;
+}
+.mini-ring-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.reminder-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reminder-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.reminder-kind {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 6px;
+  flex: none;
+  color: #fff;
+}
+.reminder-kind--goal {
+  background: var(--accent);
+}
+.reminder-kind--task {
+  background: var(--warn);
+}
+.reminder-kind--event {
+  background: #8a5cd1;
+}
+.reminder-label {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reminder-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  flex: none;
+}
+
+/* Tasks */
+.task-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.task-check {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  flex: none;
+  cursor: pointer;
+  color: #fff;
+}
+.task-check--on {
+  background: var(--good);
+  border-color: var(--good);
+}
+.task-title {
+  flex: 1;
+  font-weight: 600;
+}
+.task-title--done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.task-del {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+.task-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.task-add-row input {
+  flex: 1;
+}
+
+/* Notes (Keep-style grid) */
+.notes-grid {
+  margin-top: 10px;
+  columns: 2;
+  column-gap: 10px;
+}
+.note-card {
+  display: block;
+  width: 100%;
+  break-inside: avoid;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+}
+.note-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+}
+.note-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.note-body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow: hidden;
+  max-height: 120px;
+}
+.note-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.note-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.note-check-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--muted);
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  flex: none;
+}
+.note-check--done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.checklist-row input {
+  flex: 1;
+}
+
+/* --- Pricing page --------------------------------------------------------- */
+.pricing-hero {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+.pricing-crown {
+  font-size: 40px;
+}
+.pricing-hero h1 {
+  margin: 6px 0 2px;
+}
+.pricing-save {
+  text-align: center;
+  margin: 6px 0 0;
+}
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 14px;
+}
+.pricing-table th,
+.pricing-table td {
+  padding: 8px 4px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.pricing-table th:first-child,
+.pricing-table td:first-child {
+  text-align: left;
+}
+.pricing-pro-col {
+  color: var(--accent);
+  font-weight: 800;
+}
+.pricing-active {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--good);
+}
+.pricing-cta {
+  margin-top: 14px;
+}
+.pricing-disclaimer {
+  max-width: 340px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.5;
+}
+
 /* --- More / settings ---------------------------------------------------- */
 .status-list {
   list-style: none;

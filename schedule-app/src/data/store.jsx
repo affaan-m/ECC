@@ -24,10 +24,14 @@ function loadState() {
         reminder: g.reminder || null,
       })),
       eventTypes: parsed.eventTypes || seed.eventTypes,
+      tasks: parsed.tasks || [],
+      notes: parsed.notes || [],
       settings: {
         theme: 'system',
         reconnectDays: 30,
         notifications: false,
+        isPro: false,
+        colorScheme: 'default',
         ...(parsed.settings || {}),
       },
     };
@@ -110,6 +114,22 @@ function reducer(state, action) {
         events: state.events.map((e) => (e.typeId === action.id ? { ...e, typeId: '' } : e)),
       };
 
+    // Tasks (checkable, with an optional reminder)
+    case 'ADD_TASK':
+      return { ...state, tasks: [...(state.tasks || []), action.task] };
+    case 'UPDATE_TASK':
+      return { ...state, tasks: upsert(state.tasks || [], action.task) };
+    case 'DELETE_TASK':
+      return { ...state, tasks: (state.tasks || []).filter((t) => t.id !== action.id) };
+
+    // Notes (Keep-style: free text or a checklist)
+    case 'ADD_NOTE':
+      return { ...state, notes: [action.note, ...(state.notes || [])] };
+    case 'UPDATE_NOTE':
+      return { ...state, notes: upsert(state.notes || [], action.note) };
+    case 'DELETE_NOTE':
+      return { ...state, notes: (state.notes || []).filter((n) => n.id !== action.id) };
+
     // Statuses (user-defined labels)
     case 'ADD_STATUS':
       return { ...state, statuses: [...state.statuses, action.status] };
@@ -138,6 +158,8 @@ function reducer(state, action) {
         events: [],
         contacts: [],
         pins: [],
+        tasks: [],
+        notes: [],
         statuses: state.statuses,
         eventTypes: state.eventTypes,
         settings: state.settings,
@@ -206,6 +228,19 @@ export function useActions() {
     addPin: (data) => dispatch({ type: 'ADD_PIN', pin: { id: uid('p'), ...data } }),
     updatePin: (pin) => dispatch({ type: 'UPDATE_PIN', pin }),
     deletePin: (id) => dispatch({ type: 'DELETE_PIN', id }),
+
+    addTask: (data) =>
+      dispatch({ type: 'ADD_TASK', task: { id: uid('t'), done: false, reminder: null, ...data } }),
+    updateTask: (task) => dispatch({ type: 'UPDATE_TASK', task }),
+    deleteTask: (id) => dispatch({ type: 'DELETE_TASK', id }),
+
+    addNote: (data) =>
+      dispatch({
+        type: 'ADD_NOTE',
+        note: { id: uid('n'), title: '', body: '', checklist: null, color: '', pinned: false, reminder: null, ...data },
+      }),
+    updateNote: (note) => dispatch({ type: 'UPDATE_NOTE', note }),
+    deleteNote: (id) => dispatch({ type: 'DELETE_NOTE', id }),
 
     addStatus: (data) => dispatch({ type: 'ADD_STATUS', status: { id: uid('st'), ...data } }),
     updateStatus: (status) => dispatch({ type: 'UPDATE_STATUS', status }),

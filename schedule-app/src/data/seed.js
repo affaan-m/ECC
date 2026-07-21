@@ -229,12 +229,49 @@ export function makeSeed() {
     },
   ];
 
+  const tasks = [
+    { id: uid('t'), title: 'Renew car registration', done: false, dueDate: toISODate(addDays(today, 3)), reminder: null, createdAt: today },
+    { id: uid('t'), title: 'Pick up dry cleaning', done: false, dueDate: today, reminder: { time: '17:00' }, createdAt: today },
+    { id: uid('t'), title: 'Email the landlord', done: true, dueDate: '', reminder: null, createdAt: today },
+  ];
+
+  const notes = [
+    {
+      id: uid('n'),
+      title: 'Grocery list',
+      body: '',
+      checklist: [
+        { text: 'Eggs', done: false },
+        { text: 'Coffee', done: false },
+        { text: 'Spinach', done: true },
+      ],
+      color: '#e1f3ee',
+      pinned: true,
+      reminder: null,
+      createdAt: today,
+      updatedAt: today,
+    },
+    {
+      id: uid('n'),
+      title: 'Trip ideas',
+      body: 'Look into the coastal trail Maria mentioned. Ask James about the gear he used last time.',
+      checklist: null,
+      color: '',
+      pinned: false,
+      reminder: null,
+      createdAt: today,
+      updatedAt: today,
+    },
+  ];
+
   return {
     version: 1,
     goals,
     events,
     contacts,
     pins,
+    tasks,
+    notes,
     statuses,
     eventTypes,
     settings: { theme: 'system', reconnectDays: 30, notifications: false },

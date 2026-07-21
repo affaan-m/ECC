@@ -103,11 +103,15 @@ export default function PlannerPage() {
     setViewing(null);
   };
 
-  // Opened from a person's page ("+ add event for this contact").
+  // Opened from a person's page ("+ add event for this contact"), or from
+  // the Home page's quick-add menu.
   useEffect(() => {
     const cid = location.state?.newEventContact;
     if (cid) {
       openNew(todayISO(), '09:00', { contactId: cid });
+      window.history.replaceState({}, '');
+    } else if (location.state?.quickNewEvent) {
+      openNew(todayISO(), '09:00');
       window.history.replaceState({}, '');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

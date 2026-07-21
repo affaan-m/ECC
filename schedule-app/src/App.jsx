@@ -3,12 +3,14 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import TabBar from './components/TabBar.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
+import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import ContactDetailPage from './pages/ContactDetailPage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import MorePage from './pages/MorePage.jsx';
+import PricingPage from './pages/PricingPage.jsx';
 import { useStore } from './data/store.jsx';
 
 export default function App() {
@@ -71,14 +73,15 @@ export default function App() {
     <div className="app">
       <main className="app-main" key={location.pathname}>
         <Routes>
-          <Route path="/" element={<Navigate to="/goals" replace />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/more" element={<MorePage />} />
-          <Route path="*" element={<Navigate to="/goals" replace />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <TabBar />
