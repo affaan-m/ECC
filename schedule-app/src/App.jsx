@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import TabBar from './components/TabBar.jsx';
+import SplashScreen from './components/SplashScreen.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
@@ -70,6 +71,18 @@ export default function App() {
     return () => document.removeEventListener('click', onClick);
   }, []);
 
+  // Launch splash: hold the mark on screen briefly, then fade it away.
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashOut, setSplashOut] = useState(false);
+  useEffect(() => {
+    const outTimer = setTimeout(() => setSplashOut(true), 500);
+    const removeTimer = setTimeout(() => setShowSplash(false), 900);
+    return () => {
+      clearTimeout(outTimer);
+      clearTimeout(removeTimer);
+    };
+  }, []);
+
   // Apply the selected theme to the document root.
   useEffect(() => {
     const root = document.documentElement;
@@ -126,6 +139,7 @@ export default function App() {
         </Routes>
       </main>
       <TabBar />
+      {showSplash && <SplashScreen fadingOut={splashOut} />}
     </div>
   );
 }

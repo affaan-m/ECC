@@ -98,6 +98,27 @@ textarea {
   position: relative;
 }
 
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.splash--out {
+  opacity: 0;
+}
+.splash-mark {
+  color: #111;
+}
+:root[data-theme='dark'] .splash-mark {
+  color: #fff;
+}
+
 .app-main {
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 8px);
 }
