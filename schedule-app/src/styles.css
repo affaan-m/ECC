@@ -1276,6 +1276,28 @@ textarea {
 .event-block--armed {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ev, var(--accent)) 35%, transparent), 0 8px 20px rgba(0, 0, 0, 0.25);
   cursor: grabbing;
+  z-index: 20;
+}
+.event-block--leaving {
+  opacity: 0.45;
+}
+.group-drag-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
 }
 
 /* --- Planner: day timeline --------------------------------------------- */

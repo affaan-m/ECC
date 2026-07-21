@@ -279,19 +279,46 @@ export default function PlannerPage() {
     }
   };
 
-  // Multi-select: shift every selected occurrence by a fixed offset (days).
-  const moveSelected = (dayOffset) => {
+  // Resolve the currently-selected "id|recDate" keys into full occurrence
+  // objects (with resolved start/end and display date) by re-expanding each
+  // distinct date they fall on — selection can span multiple days in Week view.
+  const resolveSelectedOccurrences = () => {
+    const byDate = new Map();
+    const out = [];
     for (const key of selected) {
       const [id, recDate] = key.split('|');
-      const master = state.events.find((e) => e.id === id);
+      if (!byDate.has(recDate)) byDate.set(recDate, occurrencesFor(state.events, recDate));
+      const occ = byDate.get(recDate).find((o) => o.id === id && o.recDate === recDate);
+      if (occ) out.push(occ);
+    }
+    return out;
+  };
+
+  // Multi-select: shift every selected occurrence by a fixed day and/or
+  // minute offset (used by both the quick-move bar and the timeline drag).
+  const moveSelected = ({ dayOffset = 0, minOffset = 0 } = {}) => {
+    for (const occ of resolveSelectedOccurrences()) {
+      const master = state.events.find((e) => e.id === occ.id);
       if (!master) continue;
-      const newDate = toISODate(addDays(recDate, dayOffset));
+      const dur = occ.e2 - occ.s;
+      let ns = occ.s + minOffset;
+      ns = Math.max(dayStartHour * 60, Math.min(dayEndHour * 60 - dur, ns));
+      const start = minutesToTime(ns);
+      const end = minutesToTime(ns + dur);
+      const newDate = dayOffset ? toISODate(addDays(occ.occDate, dayOffset)) : occ.occDate;
       if ((master.repeat || 'none') === 'none') {
-        actions.updateEvent({ ...master, date: newDate });
+        actions.updateEvent({ ...master, date: newDate, start, end });
       } else {
         const overrides = { ...(master.overrides || {}) };
-        const existing = overrides[recDate] || {};
-        overrides[recDate] = { ...existing, date: newDate };
+        overrides[occ.recDate] = {
+          title: occ.title,
+          start,
+          end,
+          contactId: occ.contactId,
+          location: occ.location,
+          notes: occ.notes,
+          ...(newDate !== occ.recDate ? { date: newDate } : {}),
+        };
         actions.updateEvent({ ...master, overrides });
       }
     }
@@ -385,6 +412,7 @@ export default function PlannerPage() {
           onAddAt={(start) => openNew(cursor, start)}
           onOpen={openView}
           onMove={moveOccurrence}
+          onMoveSelected={moveSelected}
           selectMode={selectMode}
           selected={selected}
           onToggleSelect={toggleSelected}
@@ -424,13 +452,13 @@ export default function PlannerPage() {
         <div className="select-bar">
           <span>{selected.size} selected</span>
           <div className="select-bar-actions">
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected(1)}>
+            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: 1 })}>
               +1 day
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected(7)}>
+            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: 7 })}>
               +1 week
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected(-1)}>
+            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: -1 })}>
               −1 day
             </button>
           </div>
@@ -477,6 +505,8 @@ function occToDraft(occ) {
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
 
+const DAY_DRAG_PX = 70; // horizontal drag distance per day of offset
+
 function DayView({
   date,
   events,
@@ -485,6 +515,7 @@ function DayView({
   onAddAt,
   onOpen,
   onMove,
+  onMoveSelected,
   selectMode,
   selected,
   onToggleSelect,
@@ -498,9 +529,13 @@ function DayView({
 }) {
   const bodyRef = useRef(null);
   const gestureRef = useRef(null); // { key, occ, phase, startY, startX, startClientY }
+  const groupGestureRef = useRef(null); // { phase, startClientX, startClientY, timer, lastMinSnap, lastDayOffset }
+  const groupClickSuppressRef = useRef(false); // swallow the native click that follows a group-gesture pointerup
   const pinchRef = useRef(null); // { pointers: Map<id,{x,y}>, startDist, startZoom }
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
+  const [groupDragging, setGroupDragging] = useState(false);
+  const [groupDrag, setGroupDrag] = useState({ dy: 0, dx: 0, dayOffset: 0 });
 
   const pxPerHour = PX_PER_HOUR * zoom;
   const pxPerMin = pxPerHour / 60;
@@ -619,6 +654,88 @@ function DayView({
     clearGesture();
   };
 
+  // Multi-select group drag: press-and-hold a selected block to move every
+  // selected occurrence together — vertically for time, horizontally for
+  // day (each DAY_DRAG_PX of horizontal movement = one day), committed only
+  // on release so a change of mind mid-drag costs nothing.
+  const clearGroupGesture = () => {
+    if (groupGestureRef.current?.timer) clearTimeout(groupGestureRef.current.timer);
+    groupGestureRef.current = null;
+    setGroupDragging(false);
+    setGroupDrag({ dy: 0, dx: 0, dayOffset: 0 });
+  };
+
+  const onGroupDown = (e, occ) => {
+    e.stopPropagation();
+    // The pointerup this gesture handles is always followed by a native
+    // "click" on the same element — React re-renders (updating `isSel`)
+    // between the two, so a click handler reading `isSel` fresh would see
+    // POST-toggle state and immediately undo what pointerup just did. Flag
+    // it here and swallow that one click instead of trusting its closure.
+    groupClickSuppressRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const g = {
+      occ,
+      phase: 'pending',
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      timer: null,
+      lastMinSnap: 0,
+      lastDayOffset: 0,
+    };
+    g.timer = setTimeout(() => {
+      if (groupGestureRef.current === g && g.phase === 'pending') {
+        g.phase = 'armed';
+        setGroupDragging(true);
+        confirmTick();
+      }
+    }, LONG_PRESS_MS);
+    groupGestureRef.current = g;
+  };
+  const onGroupMove = (e) => {
+    const g = groupGestureRef.current;
+    if (!g) return;
+    const dx = e.clientX - g.startClientX;
+    const dy = e.clientY - g.startClientY;
+    if (g.phase === 'pending') {
+      if (Math.hypot(dx, dy) > MOVE_TOLERANCE_PX) {
+        g.phase = 'cancelled';
+        clearTimeout(g.timer);
+      }
+      return;
+    }
+    if (g.phase === 'armed') {
+      const dayOffset = Math.round(dx / DAY_DRAG_PX);
+      setGroupDrag({ dy, dx, dayOffset });
+      const minSnap = Math.round(dy / pxPerMin / 15) * 15;
+      if (minSnap !== g.lastMinSnap) {
+        g.lastMinSnap = minSnap;
+        selectTick();
+      }
+      if (dayOffset !== g.lastDayOffset) {
+        g.lastDayOffset = dayOffset;
+        confirmTick(); // a stronger tick specifically for crossing a day boundary
+      }
+    }
+  };
+  const onGroupUp = (e, occ) => {
+    const g = groupGestureRef.current;
+    if (!g) return;
+    clearTimeout(g.timer);
+    if (g.phase === 'pending') {
+      // Released before the long-press threshold, without moving: a tap
+      // deselects (it was already selected to be draggable at all).
+      onToggleSelect(occ);
+    } else if (g.phase === 'armed') {
+      const minOffset = Math.round(groupDrag.dy / pxPerMin / 15) * 15;
+      const dayOffset = groupDrag.dayOffset;
+      if (minOffset !== 0 || dayOffset !== 0) {
+        onMoveSelected({ dayOffset, minOffset });
+      }
+    }
+    clearGroupGesture();
+  };
+
   return (
     <div className="timeline">
       {pendingTasks && pendingTasks.length > 0 && (
@@ -660,10 +777,19 @@ function DayView({
             const color = ev.color || typeColor(ev.typeId);
             const selKey = `${ev.id}|${ev.recDate}`;
             const isSel = selected?.has(selKey);
+            const isGroupDragging = groupDragging && isSel;
+            const groupDy = isGroupDragging ? groupDrag.dy : 0;
+            const groupDayOffset = isGroupDragging ? groupDrag.dayOffset : 0;
+            const rubberX = isGroupDragging ? Math.max(-18, Math.min(18, groupDrag.dx * 0.2)) : 0;
+            const displayStartMin = isArmed
+              ? clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd)
+              : isGroupDragging
+              ? clampStart(ev, groupDy, pxPerMin, dayStart, dayEnd)
+              : ev.s;
             return (
               <button
                 key={key}
-                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isArmed ? ' event-block--armed' : ''}`}
+                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isArmed ? ' event-block--armed' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
                 style={{
                   top,
                   height,
@@ -671,31 +797,62 @@ function DayView({
                   width: `calc(${100 / ev.cols}% - 4px)`,
                   '--ev': color || 'var(--accent)',
                   '--ev-opacity': opacity / 100,
-                  transform: isArmed && dragDy ? `translateY(${dragDy}px)` : undefined,
+                  transform:
+                    isArmed && dragDy
+                      ? `translateY(${dragDy}px)`
+                      : isGroupDragging
+                      ? `translateY(${groupDy}px) translateX(${rubberX}px)`
+                      : undefined,
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (selectMode) onToggleSelect(ev);
+                  if (groupClickSuppressRef.current) {
+                    groupClickSuppressRef.current = false;
+                    return;
+                  }
+                  if (!selectMode) return;
+                  onToggleSelect(ev);
                 }}
-                onPointerDown={(e) => (selectMode ? e.stopPropagation() : onDown(e, ev))}
-                onPointerMove={onMoveP}
-                onPointerUp={(e) => (selectMode ? null : onUp(e, ev))}
-                onPointerCancel={clearGesture}
+                onPointerDown={(e) => {
+                  if (selectMode) {
+                    if (isSel) onGroupDown(e, ev);
+                    else e.stopPropagation();
+                  } else {
+                    onDown(e, ev);
+                  }
+                }}
+                onPointerMove={(e) => {
+                  if (selectMode) {
+                    if (isSel) onGroupMove(e);
+                  } else {
+                    onMoveP(e);
+                  }
+                }}
+                onPointerUp={(e) => {
+                  if (selectMode) {
+                    if (isSel) onGroupUp(e, ev);
+                  } else {
+                    onUp(e, ev);
+                  }
+                }}
+                onPointerCancel={() => {
+                  clearGesture();
+                  clearGroupGesture();
+                  groupClickSuppressRef.current = false;
+                }}
               >
-                {isArmed && <span className="drag-grip">⠿⠿</span>}
+                {(isArmed || isGroupDragging) && <span className="drag-grip">⠿⠿</span>}
                 {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                 {short ? (
                   <span className="event-title">
-                    <span className="event-time-inline">
-                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd))) : formatTime(ev.start)}
-                    </span>{' '}
+                    <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
                     {ev.title || 'Untitled'}
                     {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
                   </span>
                 ) : (
                   <>
                     <span className="event-time">
-                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd))) : formatTime(ev.start)}
+                      {formatTime(minutesToTime(displayStartMin))}
                       {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
                       {ev.reminder > 0 && <span className="repeat-glyph"> 🔔</span>}
                     </span>
@@ -708,11 +865,26 @@ function DayView({
           })}
         </div>
       </div>
+      {groupDragging && (
+        <div className="group-drag-indicator">
+          {groupDrag.dayOffset !== 0 && <strong>{formatDayLabel(addDays(date, groupDrag.dayOffset))}</strong>}
+          <span>{formatOffsetMinutes(Math.round(groupDrag.dy / pxPerMin / 15) * 15)}</span>
+        </div>
+      )}
       {dayEvents.length === 0 && (
         <p className="timeline-hint muted">Tap to add. Press and hold a block to move it.</p>
       )}
     </div>
   );
+}
+
+function formatOffsetMinutes(mins) {
+  if (!mins) return 'Same time';
+  const sign = mins < 0 ? '−' : '+';
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `${sign}${h ? `${h}h` : ''}${m ? `${m}m` : h ? '' : '0m'}`;
 }
 
 function clampStart(ev, dy, pxPerMin, dayStart, dayEnd) {
