@@ -352,7 +352,7 @@ export default function PlannerPage() {
           onZoom={(z) => actions.setSettings({ timelineZoom: z })}
           dayStart={dayStartHour}
           dayEnd={dayEndHour}
-          opacity={state.settings?.eventBlockOpacity ?? 100}
+          opacity={state.settings?.isPro ? state.settings?.eventBlockOpacity ?? 100 : 100}
           tasks={state.settings?.showTasksOnTimeline ? state.tasks : null}
           onToggleTask={(t) => actions.updateTask({ ...t, done: !t.done })}
         />

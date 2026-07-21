@@ -849,6 +849,9 @@ textarea {
   accent-color: var(--accent);
   margin: 4px 0 10px;
 }
+.range-slider:disabled {
+  opacity: 0.4;
+}
 
 /* --- Full-page editor sheet ---------------------------------------------- */
 .editor-sheet {
@@ -1343,8 +1346,9 @@ textarea {
   position: absolute;
   --ev: var(--accent);
   --ev-opacity: 1;
-  background: color-mix(in srgb, var(--ev) calc(16% * var(--ev-opacity)), var(--surface));
-  border: 1px solid color-mix(in srgb, var(--ev) calc(40% * var(--ev-opacity)), transparent);
+  opacity: var(--ev-opacity);
+  background: color-mix(in srgb, var(--ev) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ev) 40%, transparent);
   border-left: 3px solid var(--ev);
   border-radius: 9px;
   padding: 4px 8px;
@@ -1357,7 +1361,7 @@ textarea {
   min-width: 0;
   line-height: 1.2;
   touch-action: none;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
 }
 .event-block--dragging {
   z-index: 30;
@@ -1790,6 +1794,10 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 30px;
+}
+.section-head + .section-head {
+  margin-top: 10px;
 }
 .detail-label {
   font-size: 12px;
@@ -2163,7 +2171,7 @@ textarea {
   box-shadow: 0 2px 6px rgba(180, 130, 0, 0.35);
 }
 .home-bubbles {
-  margin-top: 12px;
+  margin-bottom: 14px;
 }
 .home-bubble {
   width: 100%;
@@ -2500,7 +2508,7 @@ textarea {
   border: none;
   border-radius: var(--radius);
   padding: 16px;
-  margin-top: 14px;
+  margin-bottom: 14px;
   cursor: pointer;
   text-align: left;
   color: #4a3300;
@@ -2534,7 +2542,7 @@ textarea {
 .donate-bubble {
   width: 100%;
   display: block;
-  margin-top: 10px;
+  margin-bottom: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;

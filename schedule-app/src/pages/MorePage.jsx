@@ -438,16 +438,19 @@ export default function MorePage() {
           </button>
         </div>
 
-        <p className="muted small">Event block color intensity</p>
-        <input
-          type="range"
-          min="30"
-          max="100"
-          step="10"
-          value={s.eventBlockOpacity ?? 100}
-          onChange={(e) => actions.setSettings({ eventBlockOpacity: Number(e.target.value) })}
-          className="range-slider"
-        />
+        <div onClick={() => !isPro && navigate('/pricing')}>
+          <p className="muted small">Event block opacity {!isPro && '· Pro'}</p>
+          <input
+            type="range"
+            min="30"
+            max="100"
+            step="10"
+            value={s.eventBlockOpacity ?? 100}
+            onChange={(e) => requirePro(() => actions.setSettings({ eventBlockOpacity: Number(e.target.value) }))}
+            className="range-slider"
+            disabled={!isPro}
+          />
+        </div>
       </section>
 
       <section className="detail-section">
