@@ -103,8 +103,10 @@ export function makeSeed() {
     },
   ];
 
+  const baseEvent = { repeat: 'none', repeatUntil: '', done: false, doneDates: [], skipDates: [] };
   const events = [
     {
+      ...baseEvent,
       id: uid('e'),
       title: 'Morning run',
       date: today,
@@ -113,9 +115,10 @@ export function makeSeed() {
       contactId: contacts[1].id,
       location: 'Riverside trail',
       notes: '',
-      done: false,
+      repeat: 'daily',
     },
     {
+      ...baseEvent,
       id: uid('e'),
       title: 'Coffee with Maria',
       date: today,
@@ -124,9 +127,9 @@ export function makeSeed() {
       contactId: contacts[0].id,
       location: 'Bluebird Cafe',
       notes: 'Plan the hiking trip.',
-      done: false,
     },
     {
+      ...baseEvent,
       id: uid('e'),
       title: 'Deep work',
       date: today,
@@ -135,9 +138,9 @@ export function makeSeed() {
       contactId: '',
       location: '',
       notes: 'Project proposal draft.',
-      done: false,
     },
     {
+      ...baseEvent,
       id: uid('e'),
       title: 'Call Grandma',
       date: toISODate(addDays(today, 1)),
@@ -146,7 +149,7 @@ export function makeSeed() {
       contactId: contacts[2].id,
       location: '',
       notes: '',
-      done: false,
+      repeat: 'weekly',
     },
   ];
 
@@ -192,6 +195,6 @@ export function makeSeed() {
     contacts,
     pins,
     statuses,
-    settings: { theme: 'system' },
+    settings: { theme: 'system', reconnectDays: 30 },
   };
 }

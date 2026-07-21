@@ -105,6 +105,12 @@ export function isToday(iso) {
   return iso === todayISO();
 }
 
+// Whole days between an ISO date and today (Infinity when no date).
+export function daysSince(iso) {
+  if (!iso) return Infinity;
+  return Math.floor((fromISODate(todayISO()) - fromISODate(iso)) / 86400000);
+}
+
 // Human "time ago" for a YYYY-MM-DD contact date.
 export function daysAgoLabel(iso) {
   if (!iso) return 'Never';
@@ -143,4 +149,50 @@ export function formatTime(hhmm) {
   h = h % 12;
   if (h === 0) h = 12;
   return m === 0 ? `${h} ${ampm}` : `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// --- Recurring events ------------------------------------------------------
+
+export const REPEAT_OPTIONS = [
+  { value: 'none', label: 'Does not repeat' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Every month' },
+];
+
+export function repeatLabel(value) {
+  return REPEAT_OPTIONS.find((o) => o.value === value)?.label || 'Does not repeat';
+}
+
+// Does an event occur on the given ISO date, honoring its repeat rule,
+// end date, and per-occurrence skips?
+export function occursOn(event, iso) {
+  const repeat = event.repeat || 'none';
+  if (repeat === 'none') return event.date === iso;
+  if (iso < event.date) return false;
+  if (event.repeatUntil && iso > event.repeatUntil) return false;
+  if ((event.skipDates || []).includes(iso)) return false;
+  const start = fromISODate(event.date);
+  const day = fromISODate(iso);
+  const diff = Math.round((day - start) / 86400000);
+  switch (repeat) {
+    case 'daily':
+      return true;
+    case 'weekly':
+      return diff % 7 === 0;
+    case 'biweekly':
+      return diff % 14 === 0;
+    case 'monthly':
+      return start.getDate() === day.getDate();
+    default:
+      return false;
+  }
+}
+
+// Is a specific occurrence marked done? Single events use the `done` flag;
+// recurring events track completed dates in `doneDates`.
+export function isOccurrenceDone(event, iso) {
+  if ((event.repeat || 'none') === 'none') return !!event.done;
+  return (event.doneDates || []).includes(iso);
 }

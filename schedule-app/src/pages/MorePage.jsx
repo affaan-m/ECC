@@ -86,6 +86,37 @@ export default function MorePage() {
       </section>
 
       <section className="detail-section">
+        <span className="detail-label">Reconnect reminders</span>
+        <p className="muted small">
+          Flag people on the People tab when you haven't been in touch for this long.
+          You can override it per person.
+        </p>
+        <div className="cadence-setting">
+          <button
+            className="step-btn"
+            onClick={() =>
+              actions.setSettings({ reconnectDays: Math.max(1, (state.settings?.reconnectDays ?? 30) - 5) })
+            }
+            aria-label="Fewer days"
+          >
+            −
+          </button>
+          <span className="cadence-value">
+            <strong>{state.settings?.reconnectDays ?? 30}</strong> days
+          </span>
+          <button
+            className="step-btn step-btn--plus"
+            onClick={() =>
+              actions.setSettings({ reconnectDays: Math.min(365, (state.settings?.reconnectDays ?? 30) + 5) })
+            }
+            aria-label="More days"
+          >
+            +
+          </button>
+        </div>
+      </section>
+
+      <section className="detail-section">
         <div className="section-head">
           <span className="detail-label">People statuses</span>
           <button

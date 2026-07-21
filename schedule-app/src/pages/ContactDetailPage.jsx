@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
-import { initials } from './ContactsPage.jsx';
+import { initials, isOverdue } from './ContactsPage.jsx';
 import {
   todayISO,
+  toISODate,
+  addDays,
   daysAgoLabel,
   formatShortDate,
   formatTime,
-  timeToMinutes,
+  occursOn,
 } from '../data/helpers.js';
 
 export default function ContactDetailPage() {
@@ -21,17 +23,28 @@ export default function ContactDetailPage() {
 
   const contact = state.contacts.find((c) => c.id === id);
   const status = state.statuses.find((s) => s.id === contact?.statusId);
+  const reconnectDays = state.settings?.reconnectDays ?? 30;
+  const over = contact ? isOverdue(contact, reconnectDays) : false;
 
+  const linkedPins = useMemo(
+    () => (state.pins || []).filter((p) => p.contactId === id),
+    [state.pins, id]
+  );
+
+  // Expand the next occurrences (including recurring events) over ~60 days.
   const upcoming = useMemo(() => {
     if (!contact) return [];
+    const linked = state.events.filter((e) => e.contactId === contact.id);
+    if (linked.length === 0) return [];
+    const out = [];
     const today = todayISO();
-    return state.events
-      .filter((e) => e.contactId === contact.id && e.date >= today)
-      .sort(
-        (a, b) =>
-          a.date.localeCompare(b.date) || timeToMinutes(a.start) - timeToMinutes(b.start)
-      )
-      .slice(0, 5);
+    for (let i = 0; i < 60 && out.length < 5; i++) {
+      const iso = toISODate(addDays(today, i));
+      for (const e of linked) {
+        if (occursOn(e, iso)) out.push({ ...e, occDate: iso });
+      }
+    }
+    return out.slice(0, 5);
   }, [state.events, contact]);
 
   if (!contact) {
@@ -51,6 +64,7 @@ export default function ContactDetailPage() {
     setEditing({
       ...contact,
       tagsText: (contact.tags || []).join(', '),
+      cadenceText: contact.cadenceDays ? String(contact.cadenceDays) : '',
     });
 
   const saveEdit = () => {
@@ -64,6 +78,7 @@ export default function ContactDetailPage() {
       address: editing.address.trim(),
       statusId: editing.statusId,
       notes: editing.notes.trim(),
+      cadenceDays: Number(editing.cadenceText) || 0,
       tags: editing.tagsText
         .split(',')
         .map((t) => t.trim())
@@ -99,6 +114,7 @@ export default function ContactDetailPage() {
           </span>
         )}
         <p className="muted last-line">Last connected: {daysAgoLabel(contact.lastContacted)}</p>
+        {over && <span className="reconnect-chip">🔔 Time to reconnect</span>}
       </div>
 
       <div className="quick-actions">
@@ -152,18 +168,51 @@ export default function ContactDetailPage() {
       )}
 
       <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Places</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => navigate('/map', { state: { placeForContact: contact.id } })}
+          >
+            + Add a place
+          </button>
+        </div>
+        {linkedPins.length === 0 ? (
+          <p className="muted">No places pinned yet. Add {contact.name.split(' ')[0]}'s home or a spot you meet.</p>
+        ) : (
+          <ul className="place-list">
+            {linkedPins.map((p) => (
+              <li key={p.id}>
+                <button
+                  className="place-row"
+                  onClick={() => navigate('/map', { state: { selectPin: p.id } })}
+                >
+                  <span className="place-emoji">{p.emoji || '📍'}</span>
+                  <span className="place-label">{p.label || 'Dropped pin'}</span>
+                  <span className="place-go muted">View ›</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="detail-section">
         <span className="detail-label">Upcoming together</span>
         {upcoming.length === 0 ? (
           <p className="muted">Nothing scheduled. Add an event in the Planner and link {contact.name.split(' ')[0]}.</p>
         ) : (
           <ul className="mini-events">
             {upcoming.map((e) => (
-              <li key={e.id}>
+              <li key={`${e.id}:${e.occDate}`}>
                 <span className="mini-date">
-                  {formatShortDate(e.date)}
+                  {formatShortDate(e.occDate)}
                   <small>{formatTime(e.start)}</small>
                 </span>
-                <span className="mini-title">{e.title}</span>
+                <span className="mini-title">
+                  {e.title}
+                  {e.repeat && e.repeat !== 'none' && <span className="repeat-glyph"> ↻</span>}
+                </span>
               </li>
             ))}
           </ul>
@@ -227,6 +276,19 @@ export default function ContactDetailPage() {
                 onChange={(e) => setEditing({ ...editing, tagsText: e.target.value })}
                 placeholder="comma separated"
               />
+            </label>
+            <label className="field">
+              <span>Remind me to reconnect every</span>
+              <div className="cadence-row">
+                <input
+                  type="number"
+                  min="0"
+                  value={editing.cadenceText}
+                  onChange={(e) => setEditing({ ...editing, cadenceText: e.target.value })}
+                  placeholder={String(reconnectDays)}
+                />
+                <span className="muted">days {editing.cadenceText ? '' : `(default ${reconnectDays})`}</span>
+              </div>
             </label>
             <label className="field">
               <span>Notes</span>

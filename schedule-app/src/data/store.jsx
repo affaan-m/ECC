@@ -15,7 +15,7 @@ function loadState() {
     return {
       ...makeSeed(),
       ...parsed,
-      settings: { theme: 'system', ...(parsed.settings || {}) },
+      settings: { theme: 'system', reconnectDays: 30, ...(parsed.settings || {}) },
     };
   } catch {
     return makeSeed();

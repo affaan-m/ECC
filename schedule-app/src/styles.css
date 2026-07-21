@@ -11,6 +11,8 @@
   --track: #e4e9ee;
   --danger: #d1495b;
   --good: #2e9e6b;
+  --warn: #e08a1e;
+  --warn-ink: #9a5b00;
   --shadow: 0 1px 3px rgba(20, 30, 45, 0.08), 0 4px 16px rgba(20, 30, 45, 0.06);
   --radius: 16px;
   --tabbar-h: 62px;
@@ -30,6 +32,8 @@
   --track: #2b3540;
   --danger: #e06b7b;
   --good: #43b485;
+  --warn: #e0a13e;
+  --warn-ink: #f0c078;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
@@ -399,6 +403,187 @@ textarea {
   border-color: var(--accent);
 }
 
+/* --- Recurring event glyph ---------------------------------------------- */
+.repeat-glyph {
+  opacity: 0.7;
+  font-weight: 700;
+}
+.agenda-chip .repeat-glyph {
+  margin-left: auto;
+  color: var(--accent);
+  flex: none;
+}
+
+/* --- Reconnect (People) ------------------------------------------------- */
+.reconnect {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--warn) 16%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  border-radius: var(--radius);
+  padding: 12px 12px 14px;
+  margin-top: 12px;
+  box-shadow: var(--shadow);
+}
+.reconnect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 750;
+  font-size: 15px;
+  margin: 0 2px 10px;
+}
+.reconnect-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.reconnect-scroll::-webkit-scrollbar {
+  display: none;
+}
+.reconnect-card {
+  flex: none;
+  width: 118px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.reconnect-open {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  color: var(--text);
+}
+.avatar--sm {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+.reconnect-name {
+  font-weight: 650;
+  font-size: 14px;
+}
+.reconnect-ago {
+  font-size: 12px;
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+.reconnect-log {
+  width: 100%;
+  padding: 6px 0;
+}
+.chip--alert {
+  border-color: var(--warn) !important;
+  color: var(--warn-ink) !important;
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+}
+.chip--alert.chip--on {
+  background: var(--warn) !important;
+  color: #fff !important;
+}
+.overdue-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 2px solid var(--surface);
+}
+.avatar {
+  position: relative;
+}
+.overdue-tag {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warn-ink);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  padding: 1px 7px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.reconnect-chip {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--warn-ink);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  padding: 4px 12px;
+  border-radius: 99px;
+}
+
+/* --- Places (contact detail) -------------------------------------------- */
+.place-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.place-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.place-emoji {
+  font-size: 20px;
+  flex: none;
+}
+.place-label {
+  font-weight: 600;
+  flex: 1;
+}
+.place-go {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Cadence controls --------------------------------------------------- */
+.cadence-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cadence-row input {
+  max-width: 90px;
+}
+.cadence-setting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 12px;
+}
+.cadence-value {
+  font-size: 16px;
+  min-width: 96px;
+  text-align: center;
+}
+.cadence-value strong {
+  font-size: 22px;
+}
+
 /* --- Empty states ------------------------------------------------------- */
 .empty {
   text-align: center;
@@ -470,8 +655,14 @@ textarea {
   justify-content: flex-end;
   align-items: center;
 }
-.modal-actions .btn-danger-ghost {
+.modal-actions > .btn-danger-ghost {
   margin-right: auto;
+}
+.modal-actions .del-group {
+  margin-right: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* --- Forms -------------------------------------------------------------- */

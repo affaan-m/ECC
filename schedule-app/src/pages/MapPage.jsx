@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
@@ -23,8 +23,10 @@ export default function MapPage() {
   const pinsRef = useRef(pins);
   const handlersRef = useRef({});
 
+  const location = useLocation();
   const [selectedId, setSelectedId] = useState(null);
   const [placing, setPlacing] = useState(false);
+  const [pendingContact, setPendingContact] = useState('');
   const [editing, setEditing] = useState(null);
 
   const selected = pins.find((p) => p.id === selectedId) || null;
@@ -34,11 +36,31 @@ export default function MapPage() {
   handlersRef.current.onMapClick = (e) => {
     if (placing) {
       setPlacing(false);
-      setEditing({ emoji: '📍', label: '', notes: '', lat: e.latlng.lat, lng: e.latlng.lng, contactId: '' });
+      setEditing({
+        emoji: '📍',
+        label: '',
+        notes: '',
+        lat: e.latlng.lat,
+        lng: e.latlng.lng,
+        contactId: pendingContact || '',
+      });
+      setPendingContact('');
     } else {
       setSelectedId(null);
     }
   };
+
+  // Honor navigation intent from a contact's page (add-a-place / view-a-pin).
+  useEffect(() => {
+    const st = location.state;
+    if (!st) return;
+    if (st.placeForContact) {
+      setPendingContact(st.placeForContact);
+      setPlacing(true);
+    }
+    if (st.selectPin) setSelectedId(st.selectPin);
+    window.history.replaceState({}, ''); // consume so it doesn't retrigger
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialise the Leaflet map once.
   useEffect(() => {
@@ -154,8 +176,17 @@ export default function MapPage() {
       {/* Placement banner */}
       {placing && (
         <div className="map-banner">
-          Tap the map to drop your pin
-          <button className="banner-x" onClick={() => setPlacing(false)} aria-label="Cancel">
+          {pendingContact && contactName(pendingContact)
+            ? `Tap the map to place ${contactName(pendingContact).split(' ')[0]}'s spot`
+            : 'Tap the map to drop your pin'}
+          <button
+            className="banner-x"
+            onClick={() => {
+              setPlacing(false);
+              setPendingContact('');
+            }}
+            aria-label="Cancel"
+          >
             ✕
           </button>
         </div>
