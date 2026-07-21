@@ -42,10 +42,10 @@ export default function PricingPage() {
           Monthly — $4/mo
         </button>
         <button className={`seg-btn${plan === 'annual' ? ' seg-btn--on' : ''}`} onClick={() => setPlan('annual')}>
-          Annual — $40/yr
+          Annual — $35/yr
         </button>
       </div>
-      {plan === 'annual' && <p className="pricing-save muted small">Save $8/year vs. monthly.</p>}
+      {plan === 'annual' && <p className="pricing-save muted small">Save $13/year vs. monthly.</p>}
 
       <section className="detail-section">
         <span className="detail-label">What's included</span>
@@ -78,7 +78,7 @@ export default function PricingPage() {
         </div>
       ) : (
         <button className="btn btn-primary full pricing-cta" onClick={() => actions.setSettings({ isPro: true })}>
-          Try Pro (demo) — {plan === 'monthly' ? '$4/mo' : '$40/yr'}
+          Try Pro (demo) — {plan === 'monthly' ? '$4/mo' : '$35/yr'}
         </button>
       )}
 

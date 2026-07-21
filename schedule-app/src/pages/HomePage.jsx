@@ -13,6 +13,7 @@ export default function HomePage() {
   const actions = useActions();
   const navigate = useNavigate();
   const isPro = !!state.settings?.isPro;
+  const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
 
   const today = todayISO();
   const dailyKey = goalKey('daily', new Date());
@@ -155,7 +156,7 @@ export default function HomePage() {
           {tasks.map((t) => (
             <li key={t.id} className="task-row">
               <button
-                className={`task-check${t.done ? ' task-check--on' : ''}`}
+                className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
                 onClick={() => {
                   actions.updateTask({ ...t, done: !t.done });
                   if (!t.done) confirmTick();
@@ -200,7 +201,7 @@ export default function HomePage() {
             {notes.map((n) => (
               <button
                 key={n.id}
-                className="note-card"
+                className={`note-card${n.color ? ' note-card--tinted' : ''}`}
                 style={n.color ? { background: n.color } : undefined}
                 onClick={() => openEditNote(n)}
               >
@@ -210,7 +211,9 @@ export default function HomePage() {
                   <ul className="note-checklist">
                     {n.checklist.slice(0, 5).map((item, i) => (
                       <li key={i} className={item.done ? 'note-check--done' : ''}>
-                        <span className="note-check-box">{item.done ? '✓' : ''}</span>
+                        <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
+                          {item.done ? '✓' : ''}
+                        </span>
                         {item.text || 'Item'}
                       </li>
                     ))}

@@ -38,7 +38,6 @@ import {
 const DAY_START = 6;
 const DAY_END = 23;
 const PX_PER_HOUR = 56;
-const PX_PER_MIN = PX_PER_HOUR / 60;
 const LONG_PRESS_MS = 500;
 const MOVE_TOLERANCE_PX = 9;
 const REMINDER_OPTIONS = [
@@ -64,25 +63,30 @@ function setMembership(arr, value, present) {
   return [...set];
 }
 
-const emptyDraft = (date, start, extra) => ({
-  title: '',
-  date,
-  start,
-  end: minutesToTime(Math.min(DAY_END * 60, timeToMinutes(start) + 60)),
-  contactId: '',
-  location: '',
-  locLat: null,
-  locLng: null,
-  notes: '',
-  done: false,
-  repeat: 'none',
-  repeatUntil: '',
-  repeatDays: [],
-  typeId: '',
-  color: '',
-  reminder: 0,
-  ...extra,
-});
+const emptyDraft = (date, start, extra, opts = {}) => {
+  const dayEndHour = opts.dayEndHour ?? DAY_END;
+  const duration = opts.duration ?? 60;
+  const reminder = opts.reminder ?? 0;
+  return {
+    title: '',
+    date,
+    start,
+    end: minutesToTime(Math.min(dayEndHour * 60, timeToMinutes(start) + duration)),
+    contactId: '',
+    location: '',
+    locLat: null,
+    locLng: null,
+    notes: '',
+    done: false,
+    repeat: 'none',
+    repeatUntil: '',
+    repeatDays: [],
+    typeId: '',
+    color: '',
+    reminder,
+    ...extra,
+  };
+};
 
 export default function PlannerPage() {
   const { state } = useStore();
@@ -95,7 +99,15 @@ export default function PlannerPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(() => new Set()); // "id:recDate"
 
-  const openNew = (date, start = '09:00', extra = {}) => setEditing(emptyDraft(date, start, extra));
+  const dayStartHour = state.settings?.timelineStartHour ?? DAY_START;
+  const dayEndHour = state.settings?.timelineEndHour ?? DAY_END;
+  const defaultDuration = state.settings?.defaultEventDuration ?? 60;
+  const defaultReminder = state.settings?.defaultReminderLead ?? 0;
+
+  const openNew = (date, start = '09:00', extra = {}) =>
+    setEditing(
+      emptyDraft(date, start, extra, { dayEndHour, duration: defaultDuration, reminder: defaultReminder })
+    );
 
   const openView = (occ) => setViewing(occ);
   const openEditFromView = () => {
@@ -207,7 +219,7 @@ export default function PlannerPage() {
     if (!master) return;
     const dur = timeToMinutes(occ.end) - timeToMinutes(occ.start);
     let ns = timeToMinutes(occ.start) + deltaMin;
-    ns = Math.max(DAY_START * 60, Math.min(DAY_END * 60 - dur, ns));
+    ns = Math.max(dayStartHour * 60, Math.min(dayEndHour * 60 - dur, ns));
     const start = minutesToTime(ns);
     const end = minutesToTime(ns + dur);
     if ((master.repeat || 'none') === 'none') {
@@ -336,6 +348,13 @@ export default function PlannerPage() {
           selectMode={selectMode}
           selected={selected}
           onToggleSelect={toggleSelected}
+          zoom={state.settings?.timelineZoom ?? 1}
+          onZoom={(z) => actions.setSettings({ timelineZoom: z })}
+          dayStart={dayStartHour}
+          dayEnd={dayEndHour}
+          opacity={state.settings?.eventBlockOpacity ?? 100}
+          tasks={state.settings?.showTasksOnTimeline ? state.tasks : null}
+          onToggleTask={(t) => actions.updateTask({ ...t, done: !t.done })}
         />
       )}
       {mode === 'week' && (
@@ -412,11 +431,36 @@ function occToDraft(occ) {
 
 // --- Day timeline (long-press-to-arm drag) ----------------------------------
 
-function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, selectMode, selected, onToggleSelect }) {
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2.2;
+const ZOOM_STEP = 0.2;
+
+function DayView({
+  date,
+  events,
+  contacts,
+  eventTypes,
+  onAddAt,
+  onOpen,
+  onMove,
+  selectMode,
+  selected,
+  onToggleSelect,
+  zoom = 1,
+  onZoom,
+  dayStart = DAY_START,
+  dayEnd = DAY_END,
+  opacity = 100,
+  tasks,
+  onToggleTask,
+}) {
   const bodyRef = useRef(null);
   const gestureRef = useRef(null); // { key, occ, phase, startY, startX, startClientY }
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
+
+  const pxPerHour = PX_PER_HOUR * zoom;
+  const pxPerMin = pxPerHour / 60;
 
   const dayEvents = useMemo(() => occurrencesFor(events, date).filter((e) => e.e2 > e.s), [events, date]);
   const laid = useMemo(() => layout(dayEvents), [dayEvents]);
@@ -424,16 +468,24 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
   const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
 
   const hours = [];
-  for (let h = DAY_START; h <= DAY_END; h++) hours.push(h);
+  for (let h = dayStart; h <= dayEnd; h++) hours.push(h);
+
+  const pendingTasks = useMemo(
+    () => (tasks ? tasks.filter((t) => !t.done) : null),
+    [tasks]
+  );
 
   const handleBgClick = (e) => {
     if (e.target !== bodyRef.current && !e.target.classList.contains('hour-line')) return;
     const rect = bodyRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    let mins = DAY_START * 60 + y / PX_PER_MIN;
+    let mins = dayStart * 60 + y / pxPerMin;
     mins = Math.round(mins / 30) * 30;
-    onAddAt(minutesToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 30, mins))));
+    onAddAt(minutesToTime(Math.max(dayStart * 60, Math.min(dayEnd * 60 - 30, mins))));
   };
+
+  const zoomOut = () => onZoom?.(Math.max(ZOOM_MIN, Math.round((zoom - ZOOM_STEP) * 10) / 10));
+  const zoomIn = () => onZoom?.(Math.min(ZOOM_MAX, Math.round((zoom + ZOOM_STEP) * 10) / 10));
 
   const clearGesture = () => {
     if (gestureRef.current?.timer) clearTimeout(gestureRef.current.timer);
@@ -447,7 +499,7 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
     if (selectMode) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const key = `${occ.id}:${occ.recDate}`;
-    const g = { key, occ, phase: 'pending', startClientY: e.clientY, startClientX: e.clientX, timer: null };
+    const g = { key, occ, phase: 'pending', startClientY: e.clientY, startClientX: e.clientX, timer: null, lastSnap: 0 };
     g.timer = setTimeout(() => {
       if (gestureRef.current === g && g.phase === 'pending') {
         g.phase = 'armed';
@@ -469,7 +521,14 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
       }
       return;
     }
-    if (g.phase === 'armed') setDragDy(dy);
+    if (g.phase === 'armed') {
+      setDragDy(dy);
+      const snap = Math.round(dy / pxPerMin / 15) * 15;
+      if (snap !== g.lastSnap) {
+        g.lastSnap = snap;
+        selectTick();
+      }
+    }
   };
   const onUp = (e, occ) => {
     const g = gestureRef.current;
@@ -479,22 +538,43 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
       // Released before the long-press threshold, without moving: a tap.
       onOpen(occ);
     } else if (g.phase === 'armed') {
-      const deltaMin = Math.round(dragDy / PX_PER_MIN / 15) * 15;
-      if (deltaMin !== 0) onMove(occ, deltaMin);
+      const deltaMin = Math.round(dragDy / pxPerMin / 15) * 15;
+      if (deltaMin !== 0) {
+        onMove(occ, deltaMin);
+        confirmTick();
+      }
     }
     clearGesture();
   };
 
   return (
     <div className="timeline">
+      <div className="timeline-zoom">
+        <button className="timeline-zoom-btn" onClick={zoomOut} disabled={zoom <= ZOOM_MIN} aria-label="Contract timeline">
+          −
+        </button>
+        <button className="timeline-zoom-btn" onClick={zoomIn} disabled={zoom >= ZOOM_MAX} aria-label="Expand timeline">
+          +
+        </button>
+      </div>
+      {pendingTasks && pendingTasks.length > 0 && (
+        <div className="timeline-tasks">
+          {pendingTasks.map((t) => (
+            <button key={t.id} className="timeline-task-chip" onClick={() => onToggleTask?.(t)}>
+              <span className="timeline-task-dot" />
+              {t.title}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         className="timeline-body"
         ref={bodyRef}
-        style={{ height: (DAY_END - DAY_START + 1) * PX_PER_HOUR }}
+        style={{ height: (dayEnd - dayStart + 1) * pxPerHour }}
         onClick={handleBgClick}
       >
         {hours.map((h) => (
-          <div className="hour-row" key={h} style={{ height: PX_PER_HOUR }}>
+          <div className="hour-row" key={h} style={{ height: pxPerHour }}>
             <span className="hour-label">{formatTime(`${String(h).padStart(2, '0')}:00`)}</span>
             <div className="hour-line" />
           </div>
@@ -504,8 +584,8 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
           {laid.map((ev) => {
             const key = `${ev.id}:${ev.recDate}`;
             const isArmed = armedKey === key;
-            const top = (ev.s - DAY_START * 60) * PX_PER_MIN;
-            const height = Math.max(24, (ev.e2 - ev.s) * PX_PER_MIN - 3);
+            const top = (ev.s - dayStart * 60) * pxPerMin;
+            const height = Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3);
             const short = ev.e2 - ev.s < 55;
             const who = contactName(ev.contactId);
             const recurring = ev.repeat && ev.repeat !== 'none';
@@ -522,6 +602,7 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
                   left: `${(ev.col / ev.cols) * 100}%`,
                   width: `calc(${100 / ev.cols}% - 4px)`,
                   '--ev': color || 'var(--accent)',
+                  '--ev-opacity': opacity / 100,
                   transform: isArmed && dragDy ? `translateY(${dragDy}px)` : undefined,
                 }}
                 onClick={(e) => {
@@ -538,7 +619,7 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
                 {short ? (
                   <span className="event-title">
                     <span className="event-time-inline">
-                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy))) : formatTime(ev.start)}
+                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd))) : formatTime(ev.start)}
                     </span>{' '}
                     {ev.title || 'Untitled'}
                     {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
@@ -546,7 +627,7 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
                 ) : (
                   <>
                     <span className="event-time">
-                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy))) : formatTime(ev.start)}
+                      {isArmed ? formatTime(minutesToTime(clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd))) : formatTime(ev.start)}
                       {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
                       {ev.reminder > 0 && <span className="repeat-glyph"> 🔔</span>}
                     </span>
@@ -566,10 +647,10 @@ function DayView({ date, events, contacts, eventTypes, onAddAt, onOpen, onMove, 
   );
 }
 
-function clampStart(ev, dy) {
-  const delta = Math.round(dy / PX_PER_MIN / 15) * 15;
+function clampStart(ev, dy, pxPerMin, dayStart, dayEnd) {
+  const delta = Math.round(dy / pxPerMin / 15) * 15;
   const dur = ev.e2 - ev.s;
-  return Math.max(DAY_START * 60, Math.min(DAY_END * 60 - dur, ev.s + delta));
+  return Math.max(dayStart * 60, Math.min(dayEnd * 60 - dur, ev.s + delta));
 }
 
 // --- Week agenda -----------------------------------------------------------

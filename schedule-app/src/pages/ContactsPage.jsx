@@ -29,6 +29,7 @@ export default function ContactsPage() {
   const [adding, setAdding] = useState(null);
 
   const reconnectDays = state.settings?.reconnectDays ?? 30;
+  const iconSize = state.settings?.contactIconSize || 'md';
 
   const statusById = useMemo(
     () => Object.fromEntries(state.statuses.map((s) => [s.id, s])),
@@ -230,7 +231,7 @@ export default function ContactsPage() {
               <li key={c.id}>
                 <button className="contact-row" onClick={() => navigate(`/contacts/${c.id}`)}>
                   <span className="avatar-slot">
-                    <Avatar name={c.name} photo={c.photo} color={st?.color} />
+                    <Avatar name={c.name} photo={c.photo} color={st?.color} size={iconSize} />
                     {over && <span className="overdue-dot" aria-hidden="true" />}
                   </span>
                   <span className="contact-main">

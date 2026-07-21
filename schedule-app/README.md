@@ -14,7 +14,7 @@ everyday personal use.
 | **People** *(Pro)* | Searchable contact list filtered by custom statuses, with **photos** (camera or library). Each person has a detail page with call/text/email/"log today" actions, tags, notes, linked map places, and upcoming events. **Reconnect nudges** flag anyone you haven't been in touch with for a while. A floating **+** starts a calendar event linked to them. |
 | **Map** | Drop pins with an emoji + label. **Tap** to place one via the "+" button; **press and hold** anywhere drops a temporary pin with a one-tap choice to save it permanently or just get directions. Pins link to a person and support a "my location" button. |
 | **More** | Profile (local name/photo), appearance (light/dark/system + **8 color themes**, Pro), notifications, reconnect-reminder threshold, custom people-statuses and event types, account & sync stubs (cloud sync, Google sign-in — Pro, not yet connected to a backend), **.ics calendar import/export** (Pro), feedback, a donation button, and full data export/import/reset. |
-| **Pricing** | Monthly ($4) / annual ($40) plans with a feature comparison and a **demo** "Try Pro" toggle — see the Pro section below. |
+| **Pricing** | Monthly ($4) / annual ($35) plans with a feature comparison and a **demo** "Try Pro" toggle — see the Pro section below. |
 
 ## "Pro" — what's real and what's a demo
 

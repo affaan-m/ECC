@@ -844,6 +844,11 @@ textarea {
   height: 22px;
   accent-color: var(--accent);
 }
+.range-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  margin: 4px 0 10px;
+}
 
 /* --- Full-page editor sheet ---------------------------------------------- */
 .editor-sheet {
@@ -1248,6 +1253,61 @@ textarea {
 .timeline {
   margin-top: 12px;
 }
+.timeline-zoom {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.timeline-zoom-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.timeline-zoom-btn:active {
+  transform: scale(0.92);
+}
+.timeline-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.timeline-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.timeline-task-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px 5px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.timeline-task-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  flex: none;
+}
 .timeline-body {
   position: relative;
   cursor: pointer;
@@ -1282,8 +1342,9 @@ textarea {
 .event-block {
   position: absolute;
   --ev: var(--accent);
-  background: color-mix(in srgb, var(--ev) 16%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--ev) 40%, transparent);
+  --ev-opacity: 1;
+  background: color-mix(in srgb, var(--ev) calc(16% * var(--ev-opacity)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ev) calc(40% * var(--ev-opacity)), transparent);
   border-left: 3px solid var(--ev);
   border-radius: 9px;
   padding: 4px 8px;
@@ -1819,6 +1880,11 @@ textarea {
   inset: 0;
   background: var(--surface-2);
   z-index: 0;
+  /* Suppress the OS's own long-press callout (image save / text select) so
+     it doesn't fight with our custom long-press-to-drop-a-pin gesture. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 /* Leaflet controls tuned to the app's look */
 .leaflet-control-zoom a {
@@ -1949,6 +2015,7 @@ textarea {
   border: none;
 }
 .pin-bubble {
+  --emoji-size: 100%;
   position: relative;
   width: 36px;
   height: 36px;
@@ -1957,7 +2024,7 @@ textarea {
   border: 2px solid var(--accent);
   display: grid;
   place-items: center;
-  font-size: 19px;
+  font-size: calc(19px * var(--emoji-size) / 100);
   line-height: 1;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
@@ -1995,8 +2062,50 @@ textarea {
     box-shadow: 0 0 0 8px color-mix(in srgb, var(--warn) 0%, transparent), 0 2px 5px rgba(0, 0, 0, 0.3);
   }
 }
-.temp-pin-card {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+.temp-pin-bubble {
+  position: fixed;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: temp-pin-pop 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes temp-pin-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+.temp-pin-action {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  cursor: pointer;
+  flex: none;
+}
+.temp-pin-action:active {
+  transform: scale(0.92);
+}
+.temp-pin-action--x {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 15px;
 }
 .pin-caption {
   position: absolute;
@@ -2180,6 +2289,7 @@ textarea {
 .task-check {
   width: 24px;
   height: 24px;
+  padding: 0;
   border-radius: 50%;
   border: 2px solid var(--border);
   background: var(--surface);
@@ -2192,6 +2302,20 @@ textarea {
 .task-check--on {
   background: var(--good);
   border-color: var(--good);
+}
+.task-check--pop {
+  animation: task-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes task-pop {
+  0% {
+    transform: scale(0.7);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 .task-title {
   flex: 1;
@@ -2234,6 +2358,21 @@ textarea {
   cursor: pointer;
   position: relative;
 }
+.note-card--tinted {
+  /* The pastel swatches are fixed light colors regardless of app theme, so
+     force dark, readable text on them — otherwise dark-mode's light
+     --text/--muted make a colored note's contents nearly invisible. */
+  color: #1a2430;
+}
+.note-card--tinted .note-body {
+  color: #4a5560;
+}
+.note-card--tinted .note-check-box {
+  border-color: #8a95a0;
+}
+.note-card--tinted .note-check--done {
+  color: #4a5560;
+}
 .note-pin {
   position: absolute;
   top: 8px;
@@ -2270,12 +2409,19 @@ textarea {
 .note-check-box {
   width: 14px;
   height: 14px;
+  padding: 0;
   border-radius: 4px;
   border: 1.5px solid var(--muted);
   display: inline-grid;
   place-items: center;
   font-size: 10px;
+  line-height: 1;
+  color: #fff;
   flex: none;
+}
+.note-check-box--on {
+  background: var(--good);
+  border-color: var(--good);
 }
 .note-check--done {
   color: var(--muted);

@@ -9,7 +9,7 @@ import { todayISO } from '../data/helpers.js';
 import { confirmTick } from '../data/haptics.js';
 
 const LONG_PRESS_MS = 500;
-const LONG_PRESS_TOLERANCE_PX = 10;
+const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
 
 const QUICK_EMOJI = ['📍', '🏠', '💼', '☕', '🍽️', '🏋️', '🛒', '🏥', '🎓', '⛪', '🌳', '❤️', '⭐', '🎉'];
 const DEFAULT_VIEW = [37.7749, -122.4194];
@@ -20,7 +20,12 @@ const escapeHtml = (s = '') =>
 export default function MapPage() {
   const { state } = useStore();
   const actions = useActions();
-  const pins = state.pins || [];
+  const showContactPins = state.settings?.mapShowContactPins ?? true;
+  const showCustomPins = state.settings?.mapShowCustomPins ?? true;
+  const emojiSizePct = state.settings?.mapEmojiSize ?? 100;
+  const pins = (state.pins || []).filter((p) =>
+    p.contactId ? showContactPins : showCustomPins
+  );
 
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -36,7 +41,7 @@ export default function MapPage() {
   const [placing, setPlacing] = useState(false);
   const [pendingContact, setPendingContact] = useState('');
   const [editing, setEditing] = useState(null);
-  const [tempPin, setTempPin] = useState(null); // { lat, lng } from a long-press
+  const [tempPin, setTempPin] = useState(null); // { lat, lng, x, y } from a long-press
 
   const selected = pins.find((p) => p.id === selectedId) || null;
   pinsRef.current = pins;
@@ -70,16 +75,25 @@ export default function MapPage() {
   // Long-press anywhere on the map drops a temporary pin with a quick choice
   // of saving it permanently or just getting directions — a faster path than
   // the explicit "+" placement flow below.
+  //
+  // This listens on the raw DOM element with native Pointer Events instead of
+  // going through Leaflet's map.on('mousedown'/...) — Leaflet's synthetic
+  // mouse events aren't reliably dispatched for real touch input on every
+  // browser/version, which was silently breaking this on phones even though
+  // it worked fine under simulated mouse events. Pointer Events unify mouse,
+  // touch, and pen and are what Leaflet itself prefers internally when
+  // available, so listening directly avoids that translation layer entirely.
   const clearPressTimer = () => {
     if (pressRef.current?.timer) clearTimeout(pressRef.current.timer);
     pressRef.current = null;
   };
   handlersRef.current.onPressStart = (e) => {
-    if (placing) return;
+    if (placing || !mapRef.current) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return; // ignore right/middle click
     clearPressTimer();
     suppressClickRef.current = false;
-    const startPoint = e.containerPoint;
-    const { lat, lng } = e.latlng;
+    const startPoint = { x: e.clientX, y: e.clientY };
+    const latlng = mapRef.current.mouseEventToLatLng(e);
     pressRef.current = {
       startPoint,
       fired: false,
@@ -88,7 +102,7 @@ export default function MapPage() {
         pressRef.current.fired = true;
         suppressClickRef.current = true;
         setSelectedId(null);
-        setTempPin({ lat, lng });
+        setTempPin({ lat: latlng.lat, lng: latlng.lng, x: startPoint.x, y: startPoint.y });
         confirmTick();
       }, LONG_PRESS_MS),
     };
@@ -96,8 +110,8 @@ export default function MapPage() {
   handlersRef.current.onPressMove = (e) => {
     const p = pressRef.current;
     if (!p || p.fired) return;
-    const dx = e.containerPoint.x - p.startPoint.x;
-    const dy = e.containerPoint.y - p.startPoint.y;
+    const dx = e.clientX - p.startPoint.x;
+    const dy = e.clientY - p.startPoint.y;
     if (Math.hypot(dx, dy) > LONG_PRESS_TOLERANCE_PX) clearPressTimer();
   };
   handlersRef.current.onPressEnd = () => {
@@ -137,15 +151,30 @@ export default function MapPage() {
     layerRef.current = L.layerGroup().addTo(map);
     tempLayerRef.current = L.layerGroup().addTo(map);
     map.on('click', (e) => handlersRef.current.onMapClick?.(e));
-    map.on('mousedown', (e) => handlersRef.current.onPressStart?.(e));
-    map.on('mousemove', (e) => handlersRef.current.onPressMove?.(e));
-    map.on('mouseup', () => handlersRef.current.onPressEnd?.());
-    map.on('dragstart', () => handlersRef.current.onPressEnd?.());
+    // Leaflet's own drag/zoom gestures starting is a reliable extra signal
+    // that this was a pan, not a hold — cancel our timer either way.
+    map.on('dragstart zoomstart', () => handlersRef.current.onPressEnd?.());
     mapRef.current = map;
+
+    // Native Pointer Events directly on the DOM element (see note above the
+    // handler definitions) — passive since we never call preventDefault.
+    const el = containerRef.current;
+    const onDown = (e) => handlersRef.current.onPressStart?.(e);
+    const onMove = (e) => handlersRef.current.onPressMove?.(e);
+    const onUp = () => handlersRef.current.onPressEnd?.();
+    el.addEventListener('pointerdown', onDown, { passive: true });
+    el.addEventListener('pointermove', onMove, { passive: true });
+    el.addEventListener('pointerup', onUp, { passive: true });
+    el.addEventListener('pointercancel', onUp, { passive: true });
+
     // Leaflet needs a nudge once the tab's layout settles.
     setTimeout(() => map.invalidateSize(), 120);
 
     return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
       map.remove();
       mapRef.current = null;
     };
@@ -161,7 +190,7 @@ export default function MapPage() {
       const icon = L.divIcon({
         className: `pin-icon${sel ? ' pin-icon--sel' : ''}`,
         html:
-          `<div class="pin-bubble"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
+          `<div class="pin-bubble" style="--emoji-size:${emojiSizePct}%"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
           (p.label ? `<div class="pin-caption">${escapeHtml(p.label)}</div>` : ''),
         iconSize: [40, 46],
         iconAnchor: [20, 46],
@@ -170,7 +199,7 @@ export default function MapPage() {
         .addTo(layer)
         .on('click', () => setSelectedId(p.id));
     }
-  }, [pins, selectedId]);
+  }, [pins, selectedId, emojiSizePct]);
 
   // Render the temporary long-press marker (a dashed, pulsing pin distinct
   // from saved pins) whenever it changes.
@@ -268,37 +297,37 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Temporary long-press pin */}
+      {/* Temporary long-press pin: a small floating bubble near the tap point */}
       {tempPin && !selected && (
-        <div className="pin-card temp-pin-card">
-          <div className="pin-card-head">
-            <span className="pin-card-emoji">📍</span>
-            <div className="pin-card-title">
-              <strong>Dropped location</strong>
-              <span className="muted small">
-                {tempPin.lat.toFixed(5)}, {tempPin.lng.toFixed(5)}
-              </span>
-            </div>
-            <button className="icon-btn" onClick={() => setTempPin(null)} aria-label="Dismiss">
-              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <div className="pin-card-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => directionsTo(tempPin)}>
-              ➤ Directions
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => {
-                setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '' });
-                setTempPin(null);
-              }}
-            >
-              📌 Save as pin
-            </button>
-          </div>
+        <div
+          className="temp-pin-bubble"
+          style={{
+            left: Math.min(Math.max(tempPin.x, 90), window.innerWidth - 90),
+            top: Math.max(tempPin.y - 74, 64),
+          }}
+        >
+          <button
+            className="temp-pin-action"
+            onClick={() => directionsTo(tempPin)}
+            aria-label="Get directions"
+            title="Directions"
+          >
+            <NavIcon />
+          </button>
+          <button
+            className="temp-pin-action"
+            onClick={() => {
+              setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '' });
+              setTempPin(null);
+            }}
+            aria-label="Save as pin"
+            title="Save as pin"
+          >
+            📌
+          </button>
+          <button className="temp-pin-action temp-pin-action--x" onClick={() => setTempPin(null)} aria-label="Dismiss">
+            ✕
+          </button>
         </div>
       )}
 

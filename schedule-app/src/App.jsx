@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import TabBar from './components/TabBar.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
+import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
@@ -43,6 +44,10 @@ export default function App() {
         'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
       );
       if (!el || el.disabled) return;
+      // The day timeline's event blocks run their own long-press-to-arm gesture
+      // with its own haptics (see PlannerPage) — a delegated tap here on every
+      // pointerdown would double up with (and pre-empt) that feedback.
+      if (el.classList.contains('event-block')) return;
       if (el.classList.contains('btn-danger') || el.classList.contains('btn-danger-ghost')) warnTick();
       else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
       else tapTick();
@@ -74,6 +79,18 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.scheme = colorScheme;
   }, [colorScheme]);
+
+  // Keep the time/week-start display prefs (More → Calendar settings) in
+  // sync with the small set of pure helpers that format times and compute
+  // week boundaries throughout the app.
+  const use24h = !!state.settings?.use24h;
+  const sundayStart = !!state.settings?.weekStartsSunday;
+  useEffect(() => {
+    setUse24hFormat(use24h);
+  }, [use24h]);
+  useEffect(() => {
+    setSundayWeekStart(sundayStart);
+  }, [sundayStart]);
 
   return (
     <div className="app">

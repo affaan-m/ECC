@@ -10,6 +10,32 @@ import {
   requestNotificationPermission,
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
+import { formatTime } from '../data/helpers.js';
+
+const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
+
+const DESTRUCTIVE_ACTIONS = {
+  reset: {
+    title: 'Reset to sample data?',
+    body: 'This replaces your current data with the built-in sample set.',
+    cta: 'Reset',
+  },
+  clear: {
+    title: 'Clear everything?',
+    body: 'This permanently removes all goals, events, and people. Your custom statuses are kept.',
+    cta: 'Clear',
+  },
+  clearCache: {
+    title: 'Clear cache?',
+    body: 'This clears the offline app-shell cache and reloads Stewardly. Your data (goals, events, people, notes) is untouched — it lives in local storage, not the cache.',
+    cta: 'Clear cache',
+  },
+  clearContacts: {
+    title: 'Remove all contacts?',
+    body: 'This permanently removes everyone from People. Events and map pins are kept, just unlinked from the people they referenced.',
+    cta: 'Remove all',
+  },
+};
 
 const COLOR_SCHEMES = [
   { value: 'default', label: 'Emerald', swatch: '#0f8f72' },
@@ -39,7 +65,7 @@ export default function MorePage() {
   const navigate = useNavigate();
   const [editingStatus, setEditingStatus] = useState(null);
   const [editingType, setEditingType] = useState(null);
-  const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | null
+  const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | 'donate' | null
   const [feedback, setFeedback] = useState(null); // string | null
   const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
@@ -158,6 +184,22 @@ export default function MorePage() {
     events: state.events.length,
     contacts: state.contacts.length,
   };
+
+  const clearCache = async () => {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    window.location.reload();
+  };
+
+  const s = state.settings || {};
+  const step = (key, delta, min, max) =>
+    actions.setSettings({ [key]: Math.max(min, Math.min(max, (s[key] ?? 0) + delta)) });
 
   return (
     <div className="page">
@@ -279,6 +321,169 @@ export default function MorePage() {
             );
           })}
         </div>
+
+        <p className="muted small">Contact icon size</p>
+        <div className="seg seg--full">
+          {[
+            { value: 'sm', label: 'Small' },
+            { value: 'md', label: 'Medium' },
+            { value: 'lg', label: 'Large' },
+          ].map((o) => (
+            <button
+              key={o.value}
+              className={`seg-btn${(s.contactIconSize || 'md') === o.value ? ' seg-btn--on' : ''}`}
+              onClick={() => actions.setSettings({ contactIconSize: o.value })}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="section-head">
+          <span>Task completion animation</span>
+          <button
+            className={`toggle${(s.taskCompleteAnim ?? true) ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.taskCompleteAnim ?? true}
+            onClick={() => actions.setSettings({ taskCompleteAnim: !(s.taskCompleteAnim ?? true) })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Calendar settings</span>
+
+        <div className="section-head">
+          <span>24-hour time</span>
+          <button
+            className={`toggle${s.use24h ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={!!s.use24h}
+            onClick={() => actions.setSettings({ use24h: !s.use24h })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="section-head">
+          <span>Week starts on Sunday</span>
+          <button
+            className={`toggle${s.weekStartsSunday ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={!!s.weekStartsSunday}
+            onClick={() => actions.setSettings({ weekStartsSunday: !s.weekStartsSunday })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="section-head">
+          <span>Show tasks on day timeline</span>
+          <button
+            className={`toggle${s.showTasksOnTimeline ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={!!s.showTasksOnTimeline}
+            onClick={() => actions.setSettings({ showTasksOnTimeline: !s.showTasksOnTimeline })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <p className="muted small">Default event length</p>
+        <div className="cadence-setting">
+          <button className="step-btn" onClick={() => step('defaultEventDuration', -15, 15, 240)} aria-label="Shorter">
+            −
+          </button>
+          <span className="cadence-value">
+            <strong>{s.defaultEventDuration ?? 60}</strong> min
+          </span>
+          <button className="step-btn step-btn--plus" onClick={() => step('defaultEventDuration', 15, 15, 240)} aria-label="Longer">
+            +
+          </button>
+        </div>
+
+        <p className="muted small">Default reminder lead time</p>
+        <div className="cadence-setting">
+          <button className="step-btn" onClick={() => step('defaultReminderLead', -5, 0, 120)} aria-label="Less lead time">
+            −
+          </button>
+          <span className="cadence-value">
+            <strong>{s.defaultReminderLead ?? 0}</strong> min before
+          </span>
+          <button className="step-btn step-btn--plus" onClick={() => step('defaultReminderLead', 5, 0, 120)} aria-label="More lead time">
+            +
+          </button>
+        </div>
+
+        <p className="muted small">Timeline hours</p>
+        <div className="cadence-setting">
+          <button
+            className="step-btn"
+            onClick={() => step('timelineStartHour', -1, 0, (s.timelineEndHour ?? 23) - 1)}
+            aria-label="Start earlier"
+          >
+            −
+          </button>
+          <span className="cadence-value">
+            <strong>{formatHour(s.timelineStartHour ?? 6)}</strong> – <strong>{formatHour(s.timelineEndHour ?? 23)}</strong>
+          </span>
+          <button
+            className="step-btn step-btn--plus"
+            onClick={() => step('timelineEndHour', 1, (s.timelineStartHour ?? 6) + 1, 23)}
+            aria-label="End later"
+          >
+            +
+          </button>
+        </div>
+
+        <p className="muted small">Event block color intensity</p>
+        <input
+          type="range"
+          min="30"
+          max="100"
+          step="10"
+          value={s.eventBlockOpacity ?? 100}
+          onChange={(e) => actions.setSettings({ eventBlockOpacity: Number(e.target.value) })}
+          className="range-slider"
+        />
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Map settings</span>
+        <div className="section-head">
+          <span>Show contact places</span>
+          <button
+            className={`toggle${s.mapShowContactPins ?? true ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.mapShowContactPins ?? true}
+            onClick={() => actions.setSettings({ mapShowContactPins: !(s.mapShowContactPins ?? true) })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <div className="section-head">
+          <span>Show custom places</span>
+          <button
+            className={`toggle${s.mapShowCustomPins ?? true ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.mapShowCustomPins ?? true}
+            onClick={() => actions.setSettings({ mapShowCustomPins: !(s.mapShowCustomPins ?? true) })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">Pin emoji size</p>
+        <input
+          type="range"
+          min="70"
+          max="160"
+          step="10"
+          value={s.mapEmojiSize ?? 100}
+          onChange={(e) => actions.setSettings({ mapEmojiSize: Number(e.target.value) })}
+          className="range-slider"
+        />
       </section>
 
       <section className="detail-section">
@@ -410,6 +615,12 @@ export default function MorePage() {
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={importData} />
           <button className="btn btn-ghost full" onClick={() => setConfirm('reset')}>
             Reset to sample data
+          </button>
+          <button className="btn btn-danger-ghost full" onClick={() => setConfirm('clearCache')}>
+            Clear cache
+          </button>
+          <button className="btn btn-danger-ghost full" onClick={() => setConfirm('clearContacts')}>
+            Remove all contacts
           </button>
           <button className="btn btn-danger-ghost full" onClick={() => setConfirm('clear')}>
             Clear everything
@@ -558,10 +769,10 @@ export default function MorePage() {
         </div>
       </Modal>
 
-      {/* Confirm reset / clear */}
+      {/* Confirm reset / clear / clear cache / remove contacts */}
       <Modal
-        open={confirm === 'reset' || confirm === 'clear'}
-        title={confirm === 'reset' ? 'Reset to sample data?' : 'Clear everything?'}
+        open={['reset', 'clear', 'clearCache', 'clearContacts'].includes(confirm)}
+        title={DESTRUCTIVE_ACTIONS[confirm]?.title}
         onClose={() => setConfirm(null)}
         footer={
           <div className="modal-actions">
@@ -572,20 +783,18 @@ export default function MorePage() {
               className="btn btn-danger"
               onClick={() => {
                 if (confirm === 'reset') actions.resetData();
-                else actions.clearData();
+                else if (confirm === 'clear') actions.clearData();
+                else if (confirm === 'clearContacts') actions.clearContacts();
+                else if (confirm === 'clearCache') return clearCache();
                 setConfirm(null);
               }}
             >
-              {confirm === 'reset' ? 'Reset' : 'Clear'}
+              {DESTRUCTIVE_ACTIONS[confirm]?.cta}
             </button>
           </div>
         }
       >
-        <p>
-          {confirm === 'reset'
-            ? 'This replaces your current data with the built-in sample set.'
-            : 'This permanently removes all goals, events, and people. Your custom statuses are kept.'}
-        </p>
+        <p>{DESTRUCTIVE_ACTIONS[confirm]?.body}</p>
       </Modal>
 
       {/* Donate */}

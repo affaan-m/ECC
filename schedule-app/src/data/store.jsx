@@ -32,6 +32,23 @@ function loadState() {
         notifications: false,
         isPro: false,
         colorScheme: 'default',
+        timelineZoom: 1,
+        // Calendar
+        use24h: false,
+        weekStartsSunday: false,
+        defaultEventDuration: 60,
+        defaultReminderLead: 0,
+        timelineStartHour: 6,
+        timelineEndHour: 23,
+        showTasksOnTimeline: false,
+        eventBlockOpacity: 100,
+        // Map
+        mapShowContactPins: true,
+        mapShowCustomPins: true,
+        mapEmojiSize: 100,
+        // Appearance / people
+        contactIconSize: 'md',
+        taskCompleteAnim: true,
         ...(parsed.settings || {}),
       },
     };
@@ -92,6 +109,13 @@ function reducer(state, action) {
         pins: (state.pins || []).map((p) =>
           p.contactId === action.id ? { ...p, contactId: '' } : p
         ),
+      };
+    case 'CLEAR_CONTACTS':
+      return {
+        ...state,
+        contacts: [],
+        events: state.events.map((e) => (e.contactId ? { ...e, contactId: '' } : e)),
+        pins: (state.pins || []).map((p) => (p.contactId ? { ...p, contactId: '' } : p)),
       };
 
     // Map pins
@@ -224,6 +248,7 @@ export function useActions() {
       dispatch({ type: 'ADD_CONTACT', contact: { id: uid('c'), tags: [], ...data } }),
     updateContact: (contact) => dispatch({ type: 'UPDATE_CONTACT', contact }),
     deleteContact: (id) => dispatch({ type: 'DELETE_CONTACT', id }),
+    clearContacts: () => dispatch({ type: 'CLEAR_CONTACTS' }),
 
     addPin: (data) => dispatch({ type: 'ADD_PIN', pin: { id: uid('p'), ...data } }),
     updatePin: (pin) => dispatch({ type: 'UPDATE_PIN', pin }),

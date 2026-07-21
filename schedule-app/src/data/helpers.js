@@ -31,10 +31,11 @@ export function addDays(date, n) {
   return d;
 }
 
-// Monday-based start of week for the given date.
+// Start of week for the given date — Monday by default, or Sunday when
+// setSundayWeekStart(true) has been called (see More → Calendar settings).
 export function startOfWeek(date) {
   const d = date instanceof Date ? new Date(date) : fromISODate(date);
-  const day = (d.getDay() + 6) % 7; // 0 = Monday
+  const day = sundayWeekStart ? d.getDay() : (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - day);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -194,12 +195,27 @@ export function minutesToTime(mins) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+// App-wide time/week display prefs, kept in sync from settings by App.jsx.
+// Module-level rather than threaded through every formatTime/startOfWeek
+// call site (there are a couple dozen across the app).
+let use24hFormat = false;
+export function setUse24hFormat(v) {
+  use24hFormat = !!v;
+}
+let sundayWeekStart = false;
+export function setSundayWeekStart(v) {
+  sundayWeekStart = !!v;
+}
+
 export function formatTime(hhmm) {
   const mins = timeToMinutes(hhmm);
-  let h = Math.floor(mins / 60);
+  const h24 = Math.floor(mins / 60);
   const m = mins % 60;
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12;
+  if (use24hFormat) {
+    return `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const ampm = h24 >= 12 ? 'PM' : 'AM';
+  let h = h24 % 12;
   if (h === 0) h = 12;
   return m === 0 ? `${h} ${ampm}` : `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
