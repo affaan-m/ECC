@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
-import Modal from '../components/Modal.jsx';
+import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
@@ -67,8 +67,9 @@ export default function ContactsPage() {
 
   const showBanner = !query.trim() && filter === '' && overdue.length > 0;
 
-  const startAdd = () =>
-    setAdding({
+  const initialAddJsonRef = useRef('');
+  const startAdd = () => {
+    const d = {
       name: '',
       phone: '',
       email: '',
@@ -77,7 +78,11 @@ export default function ContactsPage() {
       statusId: state.statuses[0]?.id || '',
       tagsText: '',
       notes: '',
-    });
+    };
+    setAdding(d);
+    initialAddJsonRef.current = JSON.stringify(d);
+  };
+  const addDirty = adding ? JSON.stringify(adding) !== initialAddJsonRef.current : false;
 
   const saveNew = () => {
     const name = adding.name.trim();
@@ -214,18 +219,7 @@ export default function ContactsPage() {
         </ul>
       )}
 
-      <Modal
-        open={!!adding}
-        title="Add person"
-        onClose={() => setAdding(null)}
-        footer={
-          <div className="modal-actions">
-            <button className="btn btn-primary" onClick={saveNew}>
-              Save
-            </button>
-          </div>
-        }
-      >
+      <EditorSheet open={!!adding} title="Add person" dirty={addDirty} onSave={saveNew} onDiscard={() => setAdding(null)}>
         {adding && (
           <div className="form">
             <AvatarPicker
@@ -286,7 +280,7 @@ export default function ContactsPage() {
             </label>
           </div>
         )}
-      </Modal>
+      </EditorSheet>
     </div>
   );
 }

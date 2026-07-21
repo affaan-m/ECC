@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
@@ -64,12 +65,17 @@ export default function ContactDetailPage() {
     );
   }
 
-  const startEdit = () =>
-    setEditing({
+  const initialEditJsonRef = useRef('');
+  const startEdit = () => {
+    const d = {
       ...contact,
       tagsText: (contact.tags || []).join(', '),
       cadenceText: contact.cadenceDays ? String(contact.cadenceDays) : '',
-    });
+    };
+    setEditing(d);
+    initialEditJsonRef.current = JSON.stringify(d);
+  };
+  const editDirty = editing ? JSON.stringify(editing) !== initialEditJsonRef.current : false;
 
   const saveEdit = () => {
     const name = editing.name.trim();
@@ -224,10 +230,6 @@ export default function ContactDetailPage() {
         )}
       </section>
 
-      <button className="btn btn-danger-ghost full" onClick={() => setConfirmDelete(true)}>
-        Delete person
-      </button>
-
       <button
         className="fab"
         onClick={() => navigate('/planner', { state: { newEventContact: contact.id } })}
@@ -236,18 +238,20 @@ export default function ContactDetailPage() {
         +
       </button>
 
-      {/* Edit modal */}
-      <Modal
+      {/* Edit sheet */}
+      <EditorSheet
         open={!!editing}
         title="Edit person"
-        onClose={() => setEditing(null)}
-        footer={
-          <div className="modal-actions">
-            <button className="btn btn-primary" onClick={saveEdit}>
-              Save
-            </button>
-          </div>
-        }
+        dirty={editDirty}
+        onSave={saveEdit}
+        onDiscard={() => setEditing(null)}
+        danger={{
+          label: 'Delete person',
+          onClick: () => {
+            setEditing(null);
+            setConfirmDelete(true);
+          },
+        }}
       >
         {editing && (
           <div className="form">
@@ -309,7 +313,7 @@ export default function ContactDetailPage() {
             </label>
           </div>
         )}
-      </Modal>
+      </EditorSheet>
 
       {/* Delete confirm */}
       <Modal

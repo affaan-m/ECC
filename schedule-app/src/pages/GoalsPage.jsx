@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore, useActions } from '../data/store.jsx';
-import Modal from '../components/Modal.jsx';
+import EditorSheet from '../components/EditorSheet.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
   goalKey,
@@ -62,12 +62,22 @@ export default function GoalsPage() {
     return [...map.entries()];
   }, [goals]);
 
-  const openEdit = (g) =>
-    setEditing({
+  const initialJsonRef = useRef('');
+  const openEdit = (g) => {
+    const d = {
       ...g,
       reminderOn: !!g.reminder,
       reminderTime: g.reminder?.time || '09:00',
-    });
+    };
+    setEditing(d);
+    initialJsonRef.current = JSON.stringify(d);
+  };
+  const openNew = () => {
+    const d = emptyGoal(period);
+    setEditing(d);
+    initialJsonRef.current = JSON.stringify(d);
+  };
+  const dirty = editing ? JSON.stringify(editing) !== initialJsonRef.current : false;
 
   const saveGoal = async () => {
     const title = editing.title.trim();
@@ -153,7 +163,7 @@ export default function GoalsPage() {
       )}
 
       {goals.length === 0 ? (
-        <EmptyState isDaily={isDaily} onAdd={() => setEditing(emptyGoal(period))} />
+        <EmptyState isDaily={isDaily} onAdd={() => openNew()} />
       ) : (
         groups.map(([category, list]) => (
           <section key={category} className="goal-group">
@@ -201,31 +211,26 @@ export default function GoalsPage() {
         ))
       )}
 
-      <button className="fab" onClick={() => setEditing(emptyGoal(period))} aria-label="New goal">
+      <button className="fab" onClick={() => openNew()} aria-label="New goal">
         +
       </button>
 
-      <Modal
+      <EditorSheet
         open={!!editing}
         title={editing?.id ? 'Edit goal' : 'New goal'}
-        onClose={() => setEditing(null)}
-        footer={
-          <div className="modal-actions">
-            {editing?.id && (
-              <button
-                className="btn btn-danger-ghost"
-                onClick={() => {
+        dirty={dirty}
+        onSave={saveGoal}
+        onDiscard={() => setEditing(null)}
+        danger={
+          editing?.id
+            ? {
+                label: 'Delete goal',
+                onClick: () => {
                   actions.deleteGoal(editing.id);
                   setEditing(null);
-                }}
-              >
-                Delete
-              </button>
-            )}
-            <button className="btn btn-primary" onClick={saveGoal}>
-              Save
-            </button>
-          </div>
+                },
+              }
+            : undefined
         }
       >
         {editing && (
@@ -314,7 +319,7 @@ export default function GoalsPage() {
             </div>
           </div>
         )}
-      </Modal>
+      </EditorSheet>
     </div>
   );
 }

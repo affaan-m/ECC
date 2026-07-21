@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // An app-styled replacement for the native <select>, so dropdowns look and
 // feel consistent everywhere instead of the browser's default picker UI.
@@ -6,6 +6,18 @@ import { useEffect, useState } from 'react';
 export default function Select({ value, onChange, options, placeholder = 'Choose…', disabled }) {
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.value === value);
+  // When the sheet closes because an option was picked, the trigger button
+  // is left sitting right under the finger/cursor — some browsers deliver a
+  // follow-up "ghost" click to whatever is now there, instantly reopening
+  // the sheet. Swallow one click on the trigger right after closing.
+  const suppressReopenRef = useRef(false);
+  const closeFromSelection = () => {
+    setOpen(false);
+    suppressReopenRef.current = true;
+    setTimeout(() => {
+      suppressReopenRef.current = false;
+    }, 350);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -23,7 +35,10 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
       <button
         type="button"
         className="select-trigger"
-        onClick={() => !disabled && setOpen(true)}
+        onClick={() => {
+          if (suppressReopenRef.current) return;
+          if (!disabled) setOpen(true);
+        }}
         disabled={disabled}
       >
         <span className="select-trigger-label">
@@ -34,7 +49,7 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
       </button>
 
       {open && (
-        <div className="select-backdrop" onClick={() => setOpen(false)}>
+        <div className="select-backdrop" onClick={closeFromSelection}>
           <div className="select-sheet" role="listbox" onClick={(e) => e.stopPropagation()}>
             <div className="select-grip">
               <span className="modal-handle" />
@@ -49,7 +64,7 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
                   className={`select-option${o.value === value ? ' select-option--on' : ''}`}
                   onClick={() => {
                     onChange(o.value);
-                    setOpen(false);
+                    closeFromSelection();
                   }}
                 >
                   {o.color && <span className="select-swatch" style={{ background: o.color }} />}

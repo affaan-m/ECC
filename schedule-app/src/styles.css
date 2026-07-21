@@ -183,6 +183,8 @@ textarea {
 .btn.full {
   width: 100%;
   display: block;
+  text-align: center;
+  text-decoration: none;
 }
 
 .icon-btn {
@@ -799,6 +801,137 @@ textarea {
   accent-color: var(--accent);
 }
 
+/* --- Full-page editor sheet ---------------------------------------------- */
+.editor-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  animation: sheetUp 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.editor-sheet-drag {
+  flex: none;
+  touch-action: none;
+}
+.editor-sheet-grip {
+  display: flex;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top, 0px)) 0 2px;
+}
+.editor-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.editor-sheet-head h2 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1;
+  text-align: center;
+}
+.editor-sheet-close {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+}
+.editor-sheet-save {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.editor-sheet-save:active {
+  transform: scale(0.88);
+}
+.editor-sheet-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.editor-sheet-save--pop {
+  animation: savePop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes savePop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+    background: var(--good);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.editor-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+.editor-sheet-foot {
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+.editor-sheet-foot .btn {
+  width: 100%;
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 26, 0.5);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fade 0.15s ease;
+}
+.confirm-card {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 20px;
+  width: 100%;
+  max-width: 320px;
+  box-shadow: var(--shadow);
+  animation: rise 0.18s ease;
+}
+.confirm-card p {
+  margin: 0 0 16px;
+  font-weight: 650;
+  text-align: center;
+}
+.confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.confirm-actions .btn {
+  width: 100%;
+}
+
 /* --- Custom select -------------------------------------------------------- */
 .select-trigger {
   width: 100%;
@@ -897,6 +1030,86 @@ textarea {
   flex: none;
 }
 
+.location-row {
+  display: flex;
+  gap: 8px;
+}
+.location-row input {
+  flex: 1;
+}
+.location-pin-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.mini-map-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+.del-group--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.del-group--stack .btn {
+  width: 100%;
+}
+
+/* Event detail (read-only) view */
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+.detail-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+.detail-big-title {
+  font-size: 24px;
+  margin: 0;
+}
+.detail-done-row {
+  margin-top: 8px;
+}
+
+.mini-map-picker {
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 6px;
+}
+
+/* Weekday picker (custom repeat) */
+.weekday-picker {
+  display: flex;
+  gap: 6px;
+}
+.weekday-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.weekday-btn--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 /* --- Segmented control -------------------------------------------------- */
 .seg {
   display: inline-flex;
@@ -925,6 +1138,63 @@ textarea {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow);
+}
+
+/* --- Planner: select mode ------------------------------------------------ */
+.select-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.select-bar {
+  position: fixed;
+  left: max(12px, calc(50% - var(--maxw) / 2 + 12px));
+  right: max(12px, calc(50% - var(--maxw) / 2 + 12px));
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 650;
+  animation: rise 0.2s ease;
+}
+.select-bar-actions {
+  display: flex;
+  gap: 6px;
+}
+.select-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  flex: none;
+  margin-right: 2px;
+}
+.select-dot--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+.drag-grip {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  font-size: 10px;
+  letter-spacing: -2px;
+  color: var(--ev, var(--accent));
+  opacity: 0.8;
+}
+.event-block--armed {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ev, var(--accent)) 35%, transparent), 0 8px 20px rgba(0, 0, 0, 0.25);
+  cursor: grabbing;
 }
 
 /* --- Planner: day timeline --------------------------------------------- */
@@ -1034,6 +1304,75 @@ textarea {
   margin-top: -40%;
   position: relative;
   font-size: 14px;
+}
+
+/* --- Planner: month grid -------------------------------------------------- */
+.month-grid {
+  margin-top: 12px;
+}
+.month-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  padding-bottom: 6px;
+}
+.month-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.month-cell {
+  aspect-ratio: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 2px;
+  cursor: pointer;
+  gap: 3px;
+}
+.month-cell--out {
+  opacity: 0.4;
+}
+.month-cell--today .month-daynum {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.month-cell--cursor {
+  border-color: var(--accent);
+}
+.month-daynum {
+  font-size: 12px;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.month-dots {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+  min-height: 8px;
+}
+.month-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.month-more {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 /* --- Planner: week agenda ---------------------------------------------- */
@@ -1592,6 +1931,25 @@ textarea {
 }
 .pin-icon--sel .pin-bubble::after {
   border-top-color: var(--danger);
+}
+.pin-bubble--temp {
+  border: 2px dashed var(--warn);
+  animation: temp-pulse 1.1s ease-in-out infinite;
+}
+.pin-bubble--temp::after {
+  border-top-color: var(--warn);
+}
+@keyframes temp-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 45%, transparent), 0 2px 5px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--warn) 0%, transparent), 0 2px 5px rgba(0, 0, 0, 0.3);
+  }
+}
+.temp-pin-card {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
 }
 .pin-caption {
   position: absolute;

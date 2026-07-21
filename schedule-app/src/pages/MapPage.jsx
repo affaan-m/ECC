@@ -6,6 +6,10 @@ import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
 import Select from '../components/Select.jsx';
 import { todayISO } from '../data/helpers.js';
+import { confirmTick } from '../data/haptics.js';
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_TOLERANCE_PX = 10;
 
 const QUICK_EMOJI = ['📍', '🏠', '💼', '☕', '🍽️', '🏋️', '🛒', '🏥', '🎓', '⛪', '🌳', '❤️', '⭐', '🎉'];
 const DEFAULT_VIEW = [37.7749, -122.4194];
@@ -21,20 +25,31 @@ export default function MapPage() {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
+  const tempLayerRef = useRef(null);
   const pinsRef = useRef(pins);
   const handlersRef = useRef({});
+  const pressRef = useRef(null); // { timer, startPoint, latlng, fired }
+  const suppressClickRef = useRef(false); // true right after a long-press fires
 
   const location = useLocation();
   const [selectedId, setSelectedId] = useState(null);
   const [placing, setPlacing] = useState(false);
   const [pendingContact, setPendingContact] = useState('');
   const [editing, setEditing] = useState(null);
+  const [tempPin, setTempPin] = useState(null); // { lat, lng } from a long-press
 
   const selected = pins.find((p) => p.id === selectedId) || null;
   pinsRef.current = pins;
 
   // Keep the map click handler pointing at fresh state each render.
   handlersRef.current.onMapClick = (e) => {
+    // Leaflet fires a synthetic "click" right after the mouseup that ends a
+    // long-press — swallow that one click so it doesn't instantly clear the
+    // temp pin we just dropped.
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     if (placing) {
       setPlacing(false);
       setEditing({
@@ -48,7 +63,46 @@ export default function MapPage() {
       setPendingContact('');
     } else {
       setSelectedId(null);
+      setTempPin(null);
     }
+  };
+
+  // Long-press anywhere on the map drops a temporary pin with a quick choice
+  // of saving it permanently or just getting directions — a faster path than
+  // the explicit "+" placement flow below.
+  const clearPressTimer = () => {
+    if (pressRef.current?.timer) clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
+  };
+  handlersRef.current.onPressStart = (e) => {
+    if (placing) return;
+    clearPressTimer();
+    suppressClickRef.current = false;
+    const startPoint = e.containerPoint;
+    const { lat, lng } = e.latlng;
+    pressRef.current = {
+      startPoint,
+      fired: false,
+      timer: setTimeout(() => {
+        if (!pressRef.current) return;
+        pressRef.current.fired = true;
+        suppressClickRef.current = true;
+        setSelectedId(null);
+        setTempPin({ lat, lng });
+        confirmTick();
+      }, LONG_PRESS_MS),
+    };
+  };
+  handlersRef.current.onPressMove = (e) => {
+    const p = pressRef.current;
+    if (!p || p.fired) return;
+    const dx = e.containerPoint.x - p.startPoint.x;
+    const dy = e.containerPoint.y - p.startPoint.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_TOLERANCE_PX) clearPressTimer();
+  };
+  handlersRef.current.onPressEnd = () => {
+    if (!pressRef.current?.fired) clearPressTimer();
+    else pressRef.current = null;
   };
 
   // Honor navigation intent from a contact's page (add-a-place / view-a-pin).
@@ -81,7 +135,12 @@ export default function MapPage() {
     }
 
     layerRef.current = L.layerGroup().addTo(map);
+    tempLayerRef.current = L.layerGroup().addTo(map);
     map.on('click', (e) => handlersRef.current.onMapClick?.(e));
+    map.on('mousedown', (e) => handlersRef.current.onPressStart?.(e));
+    map.on('mousemove', (e) => handlersRef.current.onPressMove?.(e));
+    map.on('mouseup', () => handlersRef.current.onPressEnd?.());
+    map.on('dragstart', () => handlersRef.current.onPressEnd?.());
     mapRef.current = map;
     // Leaflet needs a nudge once the tab's layout settles.
     setTimeout(() => map.invalidateSize(), 120);
@@ -112,6 +171,22 @@ export default function MapPage() {
         .on('click', () => setSelectedId(p.id));
     }
   }, [pins, selectedId]);
+
+  // Render the temporary long-press marker (a dashed, pulsing pin distinct
+  // from saved pins) whenever it changes.
+  useEffect(() => {
+    const layer = tempLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!tempPin) return;
+    const icon = L.divIcon({
+      className: 'pin-icon pin-icon--temp',
+      html: `<div class="pin-bubble pin-bubble--temp"><span>📍</span></div>`,
+      iconSize: [40, 46],
+      iconAnchor: [20, 46],
+    });
+    L.marker([tempPin.lat, tempPin.lng], { icon, keyboard: false }).addTo(layer);
+  }, [tempPin]);
 
   // Pan to the selected pin so it isn't hidden behind the info card.
   useEffect(() => {
@@ -193,8 +268,42 @@ export default function MapPage() {
         </div>
       )}
 
+      {/* Temporary long-press pin */}
+      {tempPin && !selected && (
+        <div className="pin-card temp-pin-card">
+          <div className="pin-card-head">
+            <span className="pin-card-emoji">📍</span>
+            <div className="pin-card-title">
+              <strong>Dropped location</strong>
+              <span className="muted small">
+                {tempPin.lat.toFixed(5)}, {tempPin.lng.toFixed(5)}
+              </span>
+            </div>
+            <button className="icon-btn" onClick={() => setTempPin(null)} aria-label="Dismiss">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div className="pin-card-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => directionsTo(tempPin)}>
+              ➤ Directions
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '' });
+                setTempPin(null);
+              }}
+            >
+              📌 Save as pin
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Add-pin button */}
-      {!placing && !selected && (
+      {!placing && !selected && !tempPin && (
         <button className="fab map-fab" onClick={() => { setSelectedId(null); setPlacing(true); }} aria-label="Add pin">
           +
         </button>

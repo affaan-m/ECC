@@ -50,6 +50,39 @@ export function weekDays(weekStart) {
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
+export function addMonths(date, n) {
+  const d = date instanceof Date ? new Date(date) : fromISODate(date);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  // Clamp so e.g. Jan 31 + 1 month doesn't overflow into March.
+  const daysInTarget = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, daysInTarget));
+  return d;
+}
+
+export function startOfMonth(date) {
+  const d = date instanceof Date ? new Date(date) : fromISODate(date);
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// A 6x7 grid of Dates covering the given month, padded with the trailing
+// days of the previous month and leading days of the next so every row is a
+// full Monday-start week.
+export function monthGrid(monthStart) {
+  const start = monthStart instanceof Date ? monthStart : startOfMonth(monthStart);
+  const gridStart = startOfWeek(start);
+  const weeks = [];
+  let cursor = gridStart;
+  for (let w = 0; w < 6; w++) {
+    weeks.push(weekDays(cursor));
+    cursor = addDays(cursor, 7);
+  }
+  return weeks;
+}
+
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAY_LONG = [
   'Sunday',
@@ -99,6 +132,26 @@ export function formatWeekRange(weekStart) {
 export function weekdayShort(date) {
   const d = date instanceof Date ? date : fromISODate(date);
   return WEEKDAY[d.getDay()];
+}
+
+const MONTH_LONG = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export function formatMonthLabel(date) {
+  const d = date instanceof Date ? date : fromISODate(date);
+  return `${MONTH_LONG[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 export function isToday(iso) {
@@ -177,9 +230,20 @@ export const REPEAT_OPTIONS = [
   { value: 'weekly', label: 'Every week' },
   { value: 'biweekly', label: 'Every 2 weeks' },
   { value: 'monthly', label: 'Every month' },
+  { value: 'custom', label: 'Custom days' },
 ];
 
-export function repeatLabel(value) {
+export const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+export const WEEKDAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function repeatLabel(value, repeatDays) {
+  if (value === 'custom' && repeatDays?.length) {
+    return repeatDays
+      .slice()
+      .sort()
+      .map((d) => WEEKDAY_ABBR[d])
+      .join(', ');
+  }
   return REPEAT_OPTIONS.find((o) => o.value === value)?.label || 'Does not repeat';
 }
 
@@ -203,6 +267,8 @@ export function occursOn(event, iso) {
       return diff % 14 === 0;
     case 'monthly':
       return start.getDate() === day.getDate();
+    case 'custom':
+      return (event.repeatDays || []).includes(day.getDay());
     default:
       return false;
   }
@@ -234,6 +300,8 @@ export function matchesRule(event, iso) {
       return diff % 14 === 0;
     case 'monthly':
       return start.getDate() === day.getDate();
+    case 'custom':
+      return (event.repeatDays || []).includes(day.getDay());
     default:
       return false;
   }
