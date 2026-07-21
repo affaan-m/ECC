@@ -1109,9 +1109,15 @@ textarea {
 .location-row input {
   flex: 1;
 }
-.location-pin-btn {
-  flex: none;
-  white-space: nowrap;
+.location-pick-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.location-pick-coords {
+  margin-right: auto;
 }
 .mini-map-actions {
   display: flex;
@@ -2016,6 +2022,53 @@ textarea {
   z-index: 500;
 }
 
+.map-pick-banner {
+  right: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 8px 8px 14px;
+}
+.map-pick-search {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 0;
+}
+.map-pick-search:focus {
+  outline: none;
+}
+.map-pick-search-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: none;
+}
+.map-pick-banner .banner-x {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.map-pick-footer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 16px;
+  z-index: 500;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px 14px;
+  box-shadow: var(--shadow);
+  animation: slideUp 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.map-pick-footer p {
+  margin: 0 0 10px;
+}
+
 .pin-card {
   position: absolute;
   left: 12px;
@@ -2108,6 +2161,13 @@ textarea {
 }
 .pin-bubble--temp::after {
   border-top-color: var(--warn);
+}
+.pin-bubble--pick {
+  border-color: var(--accent);
+  cursor: grab;
+}
+.pin-bubble--pick::after {
+  border-top-color: var(--accent);
 }
 @keyframes temp-pulse {
   0%,

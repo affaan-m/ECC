@@ -89,10 +89,13 @@ const emptyDraft = (date, start, extra, opts = {}) => {
   };
 };
 
+const PENDING_DRAFT_KEY = 'stewardly.pendingEventDraft';
+
 export default function PlannerPage() {
   const { state } = useStore();
   const actions = useActions();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mode, setMode] = useState('day'); // day | week | month
   const [cursor, setCursor] = useState(() => todayISO());
   const [viewing, setViewing] = useState(null); // occurrence being viewed read-only
@@ -117,17 +120,53 @@ export default function PlannerPage() {
   };
 
   // Opened from a person's page ("+ add event for this contact"), or from
-  // the Home page's quick-add menu.
+  // the Home page's quick-add menu, or returning from the "select location"
+  // full-map picker with a draft that was stashed before navigating away.
   useEffect(() => {
     const cid = location.state?.newEventContact;
     if (cid) {
       openNew(todayISO(), '09:00', { contactId: cid });
       window.history.replaceState({}, '');
-    } else if (location.state?.quickNewEvent) {
+      return;
+    }
+    if (location.state?.quickNewEvent) {
       openNew(todayISO(), '09:00');
       window.history.replaceState({}, '');
+      return;
     }
+    const raw = sessionStorage.getItem(PENDING_DRAFT_KEY);
+    if (raw) {
+      sessionStorage.removeItem(PENDING_DRAFT_KEY);
+      try {
+        const { draft, savedAt } = JSON.parse(raw);
+        if (draft && Date.now() - savedAt < 10 * 60 * 1000) {
+          const picked = location.state?.locationPicked;
+          setEditing(picked ? { ...draft, locLat: picked.lat, locLng: picked.lng } : draft);
+        }
+      } catch {
+        // ignore malformed stash
+      }
+    }
+    window.history.replaceState({}, '');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stash the in-progress event draft and hand off to the full map page to
+  // pick a location — EventEditor unmounts during that navigation, so the
+  // draft can't just live in its own state.
+  const beginLocationPick = (draftSnapshot) => {
+    sessionStorage.setItem(
+      PENDING_DRAFT_KEY,
+      JSON.stringify({ draft: draftSnapshot, savedAt: Date.now() })
+    );
+    navigate('/map', {
+      state: {
+        picking: true,
+        returnTo: '/planner',
+        initialLat: draftSnapshot.locLat,
+        initialLng: draftSnapshot.locLng,
+      },
+    });
+  };
 
   const saveEvent = (pl) => {
     if (pl.isNew || !pl.id) {
@@ -421,6 +460,7 @@ export default function PlannerPage() {
         onDelete={deleteEvent}
         onSkipOccurrence={skipOccurrence}
         setSettings={actions.setSettings}
+        onSelectLocation={beginLocationPick}
       />
     </div>
   );
@@ -888,10 +928,9 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
 
 // --- Event editor (full-page sheet) -----------------------------------------
 
-function EventEditor({ editing, events, contacts, eventTypes, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings }) {
+function EventEditor({ editing, events, contacts, eventTypes, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings, onSelectLocation }) {
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
-  const [showMap, setShowMap] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
 
@@ -925,7 +964,6 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
     };
     setDraft(d);
     setInitialJson(JSON.stringify(d));
-    setShowMap(d.locLat != null);
     setScheduling(false);
   }
   if (!editing && keyRef.current !== null) {
@@ -1199,40 +1237,30 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
               onChange={(e) => setDraft({ ...draft, location: e.target.value })}
               placeholder="Optional"
             />
+          </div>
+          <div className="location-pick-row">
             <button
               type="button"
-              className={`btn btn-ghost btn-sm location-pin-btn${showMap ? ' btn-primary' : ''}`}
-              onClick={() => setShowMap((v) => !v)}
+              className="btn btn-ghost btn-sm"
+              onClick={() => onSelectLocation(draft)}
             >
-              📍 Pin
+              📍 {draft.locLat != null ? 'Change location' : 'Select location'}
             </button>
-          </div>
-          {showMap && (
-            <>
-              <MiniMapPicker
-                lat={draft.locLat}
-                lng={draft.locLng}
-                onPick={(lat, lng) => {
-                  setDraft({ ...draft, locLat: lat, locLng: lng });
-                  selectTick();
-                }}
-              />
-              <div className="mini-map-actions">
-                <span className="muted small">
-                  {draft.locLat != null ? 'Tap the map to move the pin.' : 'Tap the map to drop a temporary pin.'}
+            {draft.locLat != null && (
+              <>
+                <span className="muted small location-pick-coords">
+                  {draft.locLat.toFixed(4)}, {draft.locLng.toFixed(4)}
                 </span>
-                {draft.locLat != null && (
-                  <button
-                    type="button"
-                    className="btn btn-danger-ghost btn-sm"
-                    onClick={() => setDraft({ ...draft, locLat: null, locLng: null })}
-                  >
-                    Clear pin
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+                <button
+                  type="button"
+                  className="btn btn-danger-ghost btn-sm"
+                  onClick={() => setDraft({ ...draft, locLat: null, locLng: null })}
+                >
+                  Clear pin
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <label className="field">

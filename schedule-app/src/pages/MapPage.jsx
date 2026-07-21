@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
 import Select from '../components/Select.jsx';
 import { todayISO } from '../data/helpers.js';
-import { confirmTick } from '../data/haptics.js';
+import { confirmTick, selectTick } from '../data/haptics.js';
+import { geocodeAddress } from '../data/geocode.js';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -31,17 +32,26 @@ export default function MapPage() {
   const mapRef = useRef(null);
   const layerRef = useRef(null);
   const tempLayerRef = useRef(null);
+  const pickLayerRef = useRef(null);
   const pinsRef = useRef(pins);
   const handlersRef = useRef({});
   const pressRef = useRef(null); // { timer, startPoint, latlng, fired }
   const suppressClickRef = useRef(false); // true right after a long-press fires
 
   const location = useLocation();
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState(null);
   const [placing, setPlacing] = useState(false);
   const [pendingContact, setPendingContact] = useState('');
   const [editing, setEditing] = useState(null);
   const [tempPin, setTempPin] = useState(null); // { lat, lng, x, y } from a long-press
+
+  // "Select location" picking flow, entered from the event editor.
+  const [pickMode, setPickMode] = useState(false);
+  const [pickReturnTo, setPickReturnTo] = useState('/planner');
+  const [pickLatLng, setPickLatLng] = useState(null);
+  const [pickQuery, setPickQuery] = useState('');
+  const [pickSearching, setPickSearching] = useState(false);
 
   const selected = pins.find((p) => p.id === selectedId) || null;
   pinsRef.current = pins;
@@ -53,6 +63,11 @@ export default function MapPage() {
     // temp pin we just dropped.
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
+      return;
+    }
+    if (pickMode) {
+      setPickLatLng({ lat: e.latlng.lat, lng: e.latlng.lng });
+      selectTick();
       return;
     }
     if (placing) {
@@ -88,7 +103,7 @@ export default function MapPage() {
     pressRef.current = null;
   };
   handlersRef.current.onPressStart = (e) => {
-    if (placing || !mapRef.current) return;
+    if (placing || pickMode || !mapRef.current) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return; // ignore right/middle click
     clearPressTimer();
     suppressClickRef.current = false;
@@ -119,7 +134,8 @@ export default function MapPage() {
     else pressRef.current = null;
   };
 
-  // Honor navigation intent from a contact's page (add-a-place / view-a-pin).
+  // Honor navigation intent from a contact's page (add-a-place / view-a-pin)
+  // or an event editor asking to pick a location on the full map.
   useEffect(() => {
     const st = location.state;
     if (!st) return;
@@ -128,8 +144,22 @@ export default function MapPage() {
       setPlacing(true);
     }
     if (st.selectPin) setSelectedId(st.selectPin);
+    if (st.picking) {
+      setPickMode(true);
+      setPickReturnTo(st.returnTo || '/planner');
+      if (st.initialLat != null && st.initialLng != null) {
+        setPickLatLng({ lat: st.initialLat, lng: st.initialLng });
+      }
+    }
     window.history.replaceState({}, ''); // consume so it doesn't retrigger
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Center on the initial pick location once the map exists.
+  useEffect(() => {
+    if (pickMode && pickLatLng && mapRef.current) {
+      mapRef.current.setView([pickLatLng.lat, pickLatLng.lng], 15);
+    }
+  }, [pickMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialise the Leaflet map once.
   useEffect(() => {
@@ -150,6 +180,7 @@ export default function MapPage() {
 
     layerRef.current = L.layerGroup().addTo(map);
     tempLayerRef.current = L.layerGroup().addTo(map);
+    pickLayerRef.current = L.layerGroup().addTo(map);
     map.on('click', (e) => handlersRef.current.onMapClick?.(e));
     // Leaflet's own drag/zoom gestures starting is a reliable extra signal
     // that this was a pan, not a hold — cancel our timer either way.
@@ -200,9 +231,12 @@ export default function MapPage() {
       });
       L.marker([p.lat, p.lng], { icon, keyboard: false })
         .addTo(layer)
-        .on('click', () => setSelectedId(p.id));
+        .on('click', () => {
+          if (pickMode) return;
+          setSelectedId(p.id);
+        });
     }
-  }, [pins, selectedId, emojiSizePct]);
+  }, [pins, selectedId, emojiSizePct, pickMode]);
 
   // Render the temporary long-press marker (a dashed, pulsing pin distinct
   // from saved pins) whenever it changes.
@@ -219,6 +253,27 @@ export default function MapPage() {
     });
     L.marker([tempPin.lat, tempPin.lng], { icon, keyboard: false }).addTo(layer);
   }, [tempPin]);
+
+  // Render the draggable "select location" marker while picking.
+  useEffect(() => {
+    const layer = pickLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!pickMode || !pickLatLng) return;
+    const icon = L.divIcon({
+      className: 'pin-icon pin-icon--pick',
+      html: `<div class="pin-bubble pin-bubble--pick"><span>📍</span></div>`,
+      iconSize: [40, 46],
+      iconAnchor: [20, 46],
+    });
+    L.marker([pickLatLng.lat, pickLatLng.lng], { icon, keyboard: false, draggable: true })
+      .addTo(layer)
+      .on('dragend', (e) => {
+        const ll = e.target.getLatLng();
+        setPickLatLng({ lat: ll.lat, lng: ll.lng });
+        selectTick();
+      });
+  }, [pickMode, pickLatLng]);
 
   // Pan to the selected pin so it isn't hidden behind the info card.
   useEffect(() => {
@@ -260,29 +315,84 @@ export default function MapPage() {
 
   const contactName = (cid) => state.contacts.find((c) => c.id === cid)?.name;
 
+  const searchPickLocation = async () => {
+    const q = pickQuery.trim();
+    if (!q || pickSearching) return;
+    setPickSearching(true);
+    const hit = await geocodeAddress(q);
+    setPickSearching(false);
+    if (!hit) return alert("Couldn't find that address.");
+    setPickLatLng(hit);
+    mapRef.current?.setView([hit.lat, hit.lng], 16);
+    selectTick();
+  };
+  const cancelPick = () => navigate(pickReturnTo, { state: { eventDraftReturn: true } });
+  const confirmPick = () => {
+    if (!pickLatLng) return;
+    confirmTick();
+    navigate(pickReturnTo, { state: { eventDraftReturn: true, locationPicked: pickLatLng } });
+  };
+
   return (
     <div className="map-page">
       <div ref={containerRef} className="map-canvas" />
 
       {/* Corner controls (top-right) */}
-      <div className="map-corner">
-        <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
-          <LocateIcon />
-        </button>
-        {selected && (
-          <button
-            className="map-round map-round--go"
-            onClick={() => directionsTo(selected)}
-            aria-label="Get directions"
-            title="Get directions"
-          >
-            <NavIcon />
+      {!pickMode && (
+        <div className="map-corner">
+          <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
+            <LocateIcon />
           </button>
-        )}
-      </div>
+          {selected && (
+            <button
+              className="map-round map-round--go"
+              onClick={() => directionsTo(selected)}
+              aria-label="Get directions"
+              title="Get directions"
+            >
+              <NavIcon />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Location-picking flow, entered from the event editor */}
+      {pickMode && (
+        <>
+          <div className="map-banner map-pick-banner">
+            <input
+              className="map-pick-search"
+              value={pickQuery}
+              onChange={(e) => setPickQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && searchPickLocation()}
+              placeholder="Search for an address…"
+            />
+            <button
+              className="map-round map-pick-search-btn"
+              onClick={searchPickLocation}
+              disabled={pickSearching}
+              aria-label="Search"
+              title="Search"
+            >
+              <SearchIcon />
+            </button>
+            <button className="banner-x" onClick={cancelPick} aria-label="Cancel">
+              ✕
+            </button>
+          </div>
+          <div className="map-pick-footer">
+            <p className="muted small center-pad">
+              {pickLatLng ? 'Drag the pin, or tap elsewhere to move it.' : 'Tap the map to drop a pin, or search above.'}
+            </p>
+            <button className="btn btn-primary full" disabled={!pickLatLng} onClick={confirmPick}>
+              Use this location
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Placement banner */}
-      {placing && (
+      {!pickMode && placing && (
         <div className="map-banner">
           {pendingContact && contactName(pendingContact)
             ? `Tap the map to place ${contactName(pendingContact).split(' ')[0]}'s spot`
@@ -301,7 +411,7 @@ export default function MapPage() {
       )}
 
       {/* Temporary long-press pin: a small floating bubble near the tap point */}
-      {tempPin && !selected && (
+      {!pickMode && tempPin && !selected && (
         <div
           className="temp-pin-bubble"
           style={{
@@ -335,14 +445,14 @@ export default function MapPage() {
       )}
 
       {/* Add-pin button */}
-      {!placing && !selected && !tempPin && (
+      {!pickMode && !placing && !selected && !tempPin && (
         <button className="fab map-fab" onClick={() => { setSelectedId(null); setPlacing(true); }} aria-label="Add pin">
           +
         </button>
       )}
 
       {/* Selected pin card */}
-      {selected && (
+      {!pickMode && selected && (
         <div className="pin-card">
           <div className="pin-card-head">
             <span className="pin-card-emoji">{selected.emoji || '📍'}</span>
@@ -456,6 +566,14 @@ export default function MapPage() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20l-4.5-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
 function LocateIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
