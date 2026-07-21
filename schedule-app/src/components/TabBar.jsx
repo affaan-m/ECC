@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { tapTick } from '../data/haptics.js';
 
 const TABS = [
   { to: '/goals', label: 'Goals', icon: TargetIcon },
@@ -15,6 +16,7 @@ export default function TabBar() {
         <NavLink
           key={to}
           to={to}
+          onClick={tapTick}
           className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
         >
           <Icon />

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A personal schedule, goals, and contacts app inspired by the Preach My Gospel planner.",
+  "description": "Stewardly — a personal schedule, goals, and people app.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import Select from '../components/Select.jsx';
+import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { daysAgoLabel, daysSince, todayISO } from '../data/helpers.js';
 
@@ -71,6 +73,7 @@ export default function ContactsPage() {
       phone: '',
       email: '',
       address: '',
+      photo: '',
       statusId: state.statuses[0]?.id || '',
       tagsText: '',
       notes: '',
@@ -84,6 +87,7 @@ export default function ContactsPage() {
       phone: adding.phone.trim(),
       email: adding.email.trim(),
       address: adding.address.trim(),
+      photo: adding.photo || '',
       statusId: adding.statusId,
       tags: adding.tagsText
         .split(',')
@@ -148,9 +152,7 @@ export default function ContactsPage() {
               return (
                 <div key={c.id} className="reconnect-card">
                   <button className="reconnect-open" onClick={() => navigate(`/contacts/${c.id}`)}>
-                    <span className="avatar avatar--sm" style={{ background: st?.color || 'var(--muted)' }}>
-                      {initials(c.name)}
-                    </span>
+                    <Avatar name={c.name} photo={c.photo} color={st?.color} size="sm" />
                     <span className="reconnect-name">{c.name.split(' ')[0]}</span>
                     <span className="reconnect-ago">{daysAgoLabel(c.lastContacted)}</span>
                   </button>
@@ -189,8 +191,8 @@ export default function ContactsPage() {
             return (
               <li key={c.id}>
                 <button className="contact-row" onClick={() => navigate(`/contacts/${c.id}`)}>
-                  <span className="avatar" style={{ background: st?.color || 'var(--muted)' }}>
-                    {initials(c.name)}
+                  <span className="avatar-slot">
+                    <Avatar name={c.name} photo={c.photo} color={st?.color} />
                     {over && <span className="overdue-dot" aria-hidden="true" />}
                   </span>
                   <span className="contact-main">
@@ -226,6 +228,11 @@ export default function ContactsPage() {
       >
         {adding && (
           <div className="form">
+            <AvatarPicker
+              name={adding.name || '?'}
+              photo={adding.photo}
+              onChange={(photo) => setAdding({ ...adding, photo })}
+            />
             <label className="field">
               <span>Name</span>
               <input
@@ -237,16 +244,11 @@ export default function ContactsPage() {
             </label>
             <label className="field">
               <span>Status</span>
-              <select
+              <Select
                 value={adding.statusId}
-                onChange={(e) => setAdding({ ...adding, statusId: e.target.value })}
-              >
-                {state.statuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setAdding({ ...adding, statusId: v })}
+                options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
+              />
             </label>
             <div className="field-row">
               <label className="field">
@@ -287,15 +289,6 @@ export default function ContactsPage() {
       </Modal>
     </div>
   );
-}
-
-export function initials(name) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join('');
 }
 
 function Chevron() {

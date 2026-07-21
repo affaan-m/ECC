@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
-import { initials, isOverdue } from './ContactsPage.jsx';
+import Select from '../components/Select.jsx';
+import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
+import { isOverdue } from './ContactsPage.jsx';
 import {
   todayISO,
   toISODate,
@@ -78,6 +80,7 @@ export default function ContactDetailPage() {
       phone: editing.phone.trim(),
       email: editing.email.trim(),
       address: editing.address.trim(),
+      photo: editing.photo || '',
       statusId: editing.statusId,
       notes: editing.notes.trim(),
       cadenceDays: Number(editing.cadenceText) || 0,
@@ -106,9 +109,7 @@ export default function ContactDetailPage() {
       </header>
 
       <div className="detail-hero">
-        <span className="avatar avatar--lg" style={{ background: status?.color || 'var(--muted)' }}>
-          {initials(contact.name)}
-        </span>
+        <Avatar name={contact.name} photo={contact.photo} color={status?.color} size="lg" />
         <h1>{contact.name}</h1>
         {status && (
           <span className="status-pill" style={{ background: status.color }}>
@@ -250,22 +251,22 @@ export default function ContactDetailPage() {
       >
         {editing && (
           <div className="form">
+            <AvatarPicker
+              name={editing.name}
+              photo={editing.photo}
+              onChange={(photo) => setEditing({ ...editing, photo })}
+            />
             <label className="field">
               <span>Name</span>
               <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </label>
             <label className="field">
               <span>Status</span>
-              <select
+              <Select
                 value={editing.statusId}
-                onChange={(e) => setEditing({ ...editing, statusId: e.target.value })}
-              >
-                {state.statuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEditing({ ...editing, statusId: v })}
+                options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
+              />
             </label>
             <div className="field-row">
               <label className="field">

@@ -59,7 +59,7 @@ export default function MorePage() {
         () => {}
       );
     } else {
-      const url = `mailto:?subject=${encodeURIComponent('Compass feedback')}&body=${encodeURIComponent(text)}`;
+      const url = `mailto:?subject=${encodeURIComponent('Stewardly feedback')}&body=${encodeURIComponent(text)}`;
       window.location.href = url;
     }
     setFeedback(null);
@@ -70,7 +70,7 @@ export default function MorePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `compass-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `stewardly-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -84,7 +84,7 @@ export default function MorePage() {
         const data = JSON.parse(reader.result);
         actions.importData(data);
       } catch {
-        alert('That file could not be read as a Compass backup.');
+        alert('That file could not be read as a Stewardly backup.');
       }
     };
     reader.readAsText(file);
@@ -143,7 +143,7 @@ export default function MorePage() {
         </div>
         <p className="muted small">
           {notificationsSupported()
-            ? 'Get reminders for goals and events while Compass is open. (A web app can’t alert you once it’s fully closed.)'
+            ? 'Get reminders for goals and events while Stewardly is open. (A web app can’t alert you once it’s fully closed.)'
             : 'This browser doesn’t support notifications.'}
         </p>
       </section>
@@ -264,7 +264,7 @@ export default function MorePage() {
         </div>
       </section>
 
-      <p className="muted small center-pad">Compass · works offline · v0.1</p>
+      <p className="muted small center-pad">Stewardly · works offline · v0.2</p>
 
       {/* Status editor */}
       <Modal

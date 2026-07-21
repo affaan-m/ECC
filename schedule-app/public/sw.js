@@ -1,7 +1,7 @@
-/* Simple offline-first service worker for the Compass PWA.
+/* Simple offline-first service worker for the Stewardly PWA.
  * Caches the app shell so the app keeps working with no network.
  * All user data lives in localStorage, so there is nothing else to sync. */
-const CACHE = 'compass-shell-v1';
+const CACHE = 'stewardly-shell-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {

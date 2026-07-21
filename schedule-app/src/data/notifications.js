@@ -3,7 +3,7 @@
 // A PWA with no backend can only raise notifications while it is running (open
 // or briefly backgrounded) — it cannot wake a fully-closed app the way a native
 // app can, since that needs a push server. This module handles permission and a
-// lightweight in-app scheduler that fires due reminders while Compass is open.
+// lightweight in-app scheduler that fires due reminders while Stewardly is open.
 
 import { todayISO, timeToMinutes, matchesRule, formatTime } from './helpers.js';
 

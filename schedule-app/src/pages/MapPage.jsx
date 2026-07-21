@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
-import Logo from '../components/Logo.jsx';
+import Select from '../components/Select.jsx';
 import { todayISO } from '../data/helpers.js';
 
 const QUICK_EMOJI = ['📍', '🏠', '💼', '☕', '🍽️', '🏋️', '🛒', '🏥', '🎓', '⛪', '🌳', '❤️', '⭐', '🎉'];
@@ -157,11 +157,6 @@ export default function MapPage() {
     <div className="map-page">
       <div ref={containerRef} className="map-canvas" />
 
-      <div className="map-logo">
-        <Logo size={24} />
-        <span>Map</span>
-      </div>
-
       {/* Corner controls (top-right) */}
       <div className="map-corner">
         <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
@@ -303,17 +298,12 @@ export default function MapPage() {
             </label>
             <label className="field">
               <span>Linked person</span>
-              <select
+              <Select
                 value={editing.contactId || ''}
-                onChange={(e) => setEditing({ ...editing, contactId: e.target.value })}
-              >
-                <option value="">No one</option>
-                {state.contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEditing({ ...editing, contactId: v })}
+                placeholder="No one"
+                options={[{ value: '', label: 'No one' }, ...state.contacts.map((c) => ({ value: c.id, label: c.name }))]}
+              />
             </label>
             <p className="muted small">
               Location: {editing.lat.toFixed(5)}, {editing.lng.toFixed(5)}

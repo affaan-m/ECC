@@ -151,6 +151,16 @@ export function formatTime(hhmm) {
   return m === 0 ? `${h} ${ampm}` : `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// Up to two initials from a display name, for avatar chips.
+export function initials(name) {
+  return (name || '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0].toUpperCase())
+    .join('');
+}
+
 // --- Goals -----------------------------------------------------------------
 
 // The progress key for a goal in a given date context: daily goals track by

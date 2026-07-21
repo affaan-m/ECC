@@ -5,12 +5,12 @@
   --text: #1a2430;
   --muted: #64707c;
   --border: #e2e7ec;
-  --accent: #1f5f8b;
-  --accent-soft: #e7f0f6;
+  --accent: #0f8f72;
+  --accent-soft: #e1f3ee;
   --accent-ink: #ffffff;
   --track: #e4e9ee;
   --danger: #d1495b;
-  --good: #2e9e6b;
+  --good: #3f9142;
   --warn: #e08a1e;
   --warn-ink: #9a5b00;
   --shadow: 0 1px 3px rgba(20, 30, 45, 0.08), 0 4px 16px rgba(20, 30, 45, 0.06);
@@ -26,12 +26,12 @@
   --text: #e6ebf0;
   --muted: #93a0ad;
   --border: #2b3540;
-  --accent: #4a9fd4;
-  --accent-soft: #1c2b38;
+  --accent: #3ecfa8;
+  --accent-soft: #12352c;
   --accent-ink: #0f141a;
   --track: #2b3540;
   --danger: #e06b7b;
-  --good: #43b485;
+  --good: #7bc350;
   --warn: #e0a13e;
   --warn-ink: #f0c078;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
@@ -132,22 +132,6 @@ textarea {
 }
 .logo svg {
   display: block;
-}
-.map-logo {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
-  left: 12px;
-  z-index: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px 12px 6px 8px;
-  font-weight: 750;
-  box-shadow: var(--shadow);
 }
 
 .back-btn {
@@ -541,8 +525,10 @@ textarea {
   background: var(--warn);
   border: 2px solid var(--surface);
 }
-.avatar {
+.avatar-slot {
   position: relative;
+  display: inline-flex;
+  flex: none;
 }
 .overdue-tag {
   margin-left: 8px;
@@ -811,6 +797,104 @@ textarea {
   width: 22px;
   height: 22px;
   accent-color: var(--accent);
+}
+
+/* --- Custom select -------------------------------------------------------- */
+.select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px;
+  font-size: 16px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.select-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.select-trigger-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-chevron {
+  flex: none;
+  color: var(--muted);
+}
+.select-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+.select-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 26, 0.45);
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fade 0.15s ease;
+}
+.select-sheet {
+  width: 100%;
+  max-width: var(--maxw);
+  max-height: 70vh;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: slideUp 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+.select-grip {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+}
+.select-options {
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+.select-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 13px 12px;
+  border-radius: 11px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.select-option:active {
+  background: var(--surface-2);
+}
+.select-option--on {
+  color: var(--accent);
+}
+.select-option-label {
+  flex: 1;
+}
+.select-check {
+  color: var(--accent);
+  flex: none;
 }
 
 /* --- Segmented control -------------------------------------------------- */
@@ -1128,11 +1212,51 @@ textarea {
   font-weight: 700;
   font-size: 16px;
   flex: none;
+  object-fit: cover;
+  background: var(--muted);
 }
 .avatar--lg {
   width: 76px;
   height: 76px;
   font-size: 28px;
+}
+
+/* Avatar picker (add/edit person forms) */
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.avatar-picker-btn {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.avatar-picker-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--surface);
+}
+.avatar-picker-remove {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
 }
 .contact-main {
   flex: 1;

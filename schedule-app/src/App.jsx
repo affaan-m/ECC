@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import TabBar from './components/TabBar.jsx';
 import { runReminderScan } from './data/notifications.js';
+import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
@@ -29,6 +30,23 @@ export default function App() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
+  }, []);
+
+  // App-wide haptic feedback: one delegated listener instead of wiring every
+  // button individually. Danger actions get a firmer double-pulse, primary
+  // actions a slightly stronger tick, everything else a light tap.
+  useEffect(() => {
+    const onPointerDown = (e) => {
+      const el = e.target.closest?.(
+        'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
+      );
+      if (!el || el.disabled) return;
+      if (el.classList.contains('btn-danger') || el.classList.contains('btn-danger-ghost')) warnTick();
+      else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
+      else tapTick();
+    };
+    document.addEventListener('pointerdown', onPointerDown, { passive: true });
+    return () => document.removeEventListener('pointerdown', onPointerDown);
   }, []);
 
   // Apply the selected theme to the document root.
