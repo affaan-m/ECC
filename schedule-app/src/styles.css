@@ -1411,6 +1411,62 @@ textarea {
   font-size: 14px;
 }
 
+/* --- Event editor: "Schedule from calendar" ------------------------------- */
+.schedule-calendar {
+  padding-bottom: 8px;
+}
+.schedule-nav {
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.schedule-ghost-block {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: default;
+}
+.schedule-draft-block {
+  background: color-mix(in srgb, var(--ev) 28%, var(--surface));
+  border-width: 2px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  z-index: 5;
+  /* .event-block clips to its own box, which would cut off (and eat touch
+     events on) the resize handles sitting half outside its top/bottom edge. */
+  overflow: visible;
+}
+.schedule-draft-block:active {
+  cursor: grabbing;
+}
+.schedule-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.schedule-handle--top {
+  top: -11px;
+}
+.schedule-handle--bottom {
+  bottom: -11px;
+}
+.schedule-handle::after {
+  content: '';
+  width: 34px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--ev, var(--accent));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.schedule-done-btn {
+  margin-top: 14px;
+}
+
 /* --- Planner: month grid -------------------------------------------------- */
 .month-grid {
   margin-top: 12px;

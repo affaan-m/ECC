@@ -412,8 +412,10 @@ export default function PlannerPage() {
 
       <EventEditor
         editing={editing}
+        events={state.events}
         contacts={state.contacts}
         eventTypes={state.eventTypes || []}
+        settings={state.settings}
         onClose={() => setEditing(null)}
         onSave={saveEvent}
         onDelete={deleteEvent}
@@ -886,10 +888,11 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
 
 // --- Event editor (full-page sheet) -----------------------------------------
 
-function EventEditor({ editing, contacts, eventTypes, onClose, onSave, onDelete, onSkipOccurrence, setSettings }) {
+function EventEditor({ editing, events, contacts, eventTypes, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings }) {
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
   const [showMap, setShowMap] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
 
   const key = editing ? `${editing.id || 'new'}|${editing.recDate || editing.date}|${editing.start}` : null;
@@ -923,6 +926,7 @@ function EventEditor({ editing, contacts, eventTypes, onClose, onSave, onDelete,
     setDraft(d);
     setInitialJson(JSON.stringify(d));
     setShowMap(d.locLat != null);
+    setScheduling(false);
   }
   if (!editing && keyRef.current !== null) {
     keyRef.current = null;
@@ -1015,11 +1019,21 @@ function EventEditor({ editing, contacts, eventTypes, onClose, onSave, onDelete,
   return (
     <EditorSheet
       open={!!editing}
-      title={editing.id ? 'Edit event' : 'New event'}
+      title={scheduling ? `Schedule — ${formatShortDate(draft.date)}` : editing.id ? 'Edit event' : 'New event'}
       dirty={dirty}
       onSave={doSave}
       onDiscard={onClose}
     >
+      {scheduling ? (
+        <ScheduleCalendarView
+          draft={draft}
+          setDraft={setDraft}
+          events={events}
+          eventTypes={eventTypes}
+          settings={settings}
+          onDone={() => setScheduling(false)}
+        />
+      ) : (
       <div className="form">
         {recurringMaster && (
           <div className="seg seg--full">
@@ -1103,6 +1117,9 @@ function EventEditor({ editing, contacts, eventTypes, onClose, onSave, onDelete,
             <input type="time" value={draft.end} onChange={(e) => setDraft({ ...draft, end: e.target.value })} />
           </label>
         </div>
+        <button type="button" className="btn btn-ghost full" onClick={() => setScheduling(true)}>
+          📅 Schedule from calendar
+        </button>
 
         {!thisScope && (
           <label className="field">
@@ -1251,7 +1268,152 @@ function EventEditor({ editing, contacts, eventTypes, onClose, onSave, onDelete,
           </div>
         )}
       </div>
+      )}
     </EditorSheet>
+  );
+}
+
+// --- Schedule-from-calendar: drag the draft event directly on the day timeline ---
+
+const SCHED_PX_PER_HOUR = 64;
+
+function ScheduleCalendarView({ draft, setDraft, events, eventTypes, settings, onDone }) {
+  const bodyRef = useRef(null);
+  const dragRef = useRef(null); // { mode, startClientY, startS, startE }
+  const dayStart = settings?.timelineStartHour ?? DAY_START;
+  const dayEnd = settings?.timelineEndHour ?? DAY_END;
+  const pxPerHour = SCHED_PX_PER_HOUR;
+  const pxPerMin = pxPerHour / 60;
+  const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
+
+  const others = useMemo(
+    () =>
+      layout(
+        occurrencesFor(events, draft.date).filter((e) => e.e2 > e.s && e.id !== draft.id)
+      ),
+    [events, draft.date, draft.id]
+  );
+
+  const s = timeToMinutes(draft.start);
+  const e2 = Math.max(s + 15, timeToMinutes(draft.end));
+  const hours = [];
+  for (let h = dayStart; h <= dayEnd; h++) hours.push(h);
+
+  const stepDay = (n) => setDraft({ ...draft, date: toISODate(addDays(draft.date, n)) });
+
+  const commit = (nextS, nextE, snapRef) => {
+    const snap = `${nextS}:${nextE}`;
+    if (snapRef.current !== snap) {
+      snapRef.current = snap;
+      selectTick();
+    }
+    setDraft((d) => ({ ...d, start: minutesToTime(nextS), end: minutesToTime(nextE) }));
+  };
+
+  const onDown = (mode) => (e) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragRef.current = { mode, startClientY: e.clientY, startS: s, startE: e2, snapRef: { current: null } };
+    confirmTick();
+  };
+  const onMove = (e) => {
+    const g = dragRef.current;
+    if (!g) return;
+    const dy = e.clientY - g.startClientY;
+    const deltaMin = Math.round(dy / pxPerMin / 15) * 15;
+    const minStart = dayStart * 60;
+    const maxEnd = dayEnd * 60;
+    if (g.mode === 'move') {
+      const dur = g.startE - g.startS;
+      let nextS = Math.max(minStart, Math.min(maxEnd - dur, g.startS + deltaMin));
+      commit(nextS, nextS + dur, g.snapRef);
+    } else if (g.mode === 'resize-top') {
+      const nextS = Math.max(minStart, Math.min(g.startE - 15, g.startS + deltaMin));
+      commit(nextS, g.startE, g.snapRef);
+    } else if (g.mode === 'resize-bottom') {
+      const nextE = Math.min(maxEnd, Math.max(g.startS + 15, g.startE + deltaMin));
+      commit(g.startS, nextE, g.snapRef);
+    }
+  };
+  const onUp = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    confirmTick();
+  };
+
+  const top = (s - dayStart * 60) * pxPerMin;
+  const height = Math.max(28, (e2 - s) * pxPerMin);
+
+  return (
+    <div className="schedule-calendar">
+      <div className="week-nav schedule-nav">
+        <button className="icon-btn" onClick={() => stepDay(-1)} aria-label="Previous day">
+          <Chevron dir="left" />
+        </button>
+        <span className="week-label">{formatDayLabel(draft.date)}</span>
+        <button className="icon-btn" onClick={() => stepDay(1)} aria-label="Next day">
+          <Chevron dir="right" />
+        </button>
+      </div>
+      <p className="muted small center-pad">Drag the block to move it, or its top/bottom handles to resize.</p>
+      <div className="timeline">
+        <div className="timeline-body" ref={bodyRef} style={{ height: (dayEnd - dayStart + 1) * pxPerHour }}>
+          {hours.map((h) => (
+            <div className="hour-row" key={h} style={{ height: pxPerHour }}>
+              <span className="hour-label">{formatTime(`${String(h).padStart(2, '0')}:00`)}</span>
+              <div className="hour-line" />
+            </div>
+          ))}
+          <div className="event-layer">
+            {others.map((ev) => (
+              <div
+                key={`${ev.id}:${ev.recDate}`}
+                className="event-block schedule-ghost-block"
+                style={{
+                  top: (ev.s - dayStart * 60) * pxPerMin,
+                  height: Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3),
+                  left: `${(ev.col / ev.cols) * 100}%`,
+                  width: `calc(${100 / ev.cols}% - 4px)`,
+                  '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)',
+                }}
+              >
+                <span className="event-title">{ev.title || 'Untitled'}</span>
+              </div>
+            ))}
+            <div
+              className="event-block schedule-draft-block"
+              style={{ top, height, left: 0, width: 'calc(100% - 4px)', '--ev': draft.color || typeColor(draft.typeId) || 'var(--accent)' }}
+              onPointerDown={onDown('move')}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+            >
+              <span className="event-time">
+                {formatTime(minutesToTime(s))} – {formatTime(minutesToTime(e2))}
+              </span>
+              <span className="event-title">{draft.title || 'Untitled'}</span>
+              <div
+                className="schedule-handle schedule-handle--top"
+                onPointerDown={onDown('resize-top')}
+                onPointerMove={onMove}
+                onPointerUp={onUp}
+                onPointerCancel={onUp}
+              />
+              <div
+                className="schedule-handle schedule-handle--bottom"
+                onPointerDown={onDown('resize-bottom')}
+                onPointerMove={onMove}
+                onPointerUp={onUp}
+                onPointerCancel={onUp}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <button className="btn btn-primary full schedule-done-btn" onClick={onDone}>
+        Done
+      </button>
+    </div>
   );
 }
 
