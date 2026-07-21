@@ -2219,6 +2219,9 @@ textarea {
   box-shadow: 0 2px 6px rgba(180, 130, 0, 0.35);
 }
 .home-bubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 14px;
 }
 .home-bubble {
@@ -2241,6 +2244,24 @@ textarea {
   font-weight: 700;
   color: var(--text);
   margin-left: auto;
+}
+.home-bubble--stat {
+  gap: 12px;
+}
+.home-bubble-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.home-bubble-stat {
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--text);
+}
+.home-bubble-textblock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
 }
 .mini-ring-wrap {
   display: flex;
@@ -2679,6 +2700,71 @@ textarea {
   height: 20px;
   border-radius: 6px;
   flex: none;
+}
+.bubble-reorder-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bubble-reorder-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 8px 12px;
+  position: relative;
+}
+.bubble-reorder-row--dragging {
+  z-index: 5;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  background: var(--surface);
+}
+.bubble-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin: -6px;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+.bubble-drag-handle:active {
+  cursor: grabbing;
+}
+.bubble-reorder-icon {
+  font-size: 18px;
+}
+.bubble-reorder-label {
+  font-weight: 600;
+  margin-right: auto;
+}
+.bubble-reorder-locked {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: 0;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.bubble-reorder-list--preview {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.bubble-reorder-lock-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
 }
 .count-tag {
   margin-left: auto;

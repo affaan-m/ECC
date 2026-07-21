@@ -6,6 +6,7 @@ import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
 import { todayISO, weekKey, goalKey, formatTime, formatShortDate } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
+import { normalizeHomeBubbles } from '../data/homeBubbles.js';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 
@@ -15,6 +16,9 @@ export default function HomePage() {
   const navigate = useNavigate();
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
+  const tasksSectionRef = useRef(null);
+  const notesSectionRef = useRef(null);
+  const scrollToSection = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const today = todayISO();
   const dailyKey = goalKey('daily', new Date());
@@ -150,6 +154,18 @@ export default function HomePage() {
   // --- Quick add ---
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
+  // --- Home bubbles (Pro: customizable set + order) ---
+  const homeBubbles = useMemo(
+    () => normalizeHomeBubbles(state.settings?.homeBubbles).filter((b) => b.enabled),
+    [state.settings?.homeBubbles]
+  );
+  const openTaskCount = tasks.filter((t) => !t.done).length;
+  const todaysEvents = useMemo(
+    () => [...state.events].filter((e) => e.date === today).sort((a, b) => (a.start || '').localeCompare(b.start || '')),
+    [state.events, today]
+  );
+  const nextEvent = todaysEvents.find((e) => !e.done) || null;
+
   return (
     <div className="page">
       <header className="page-head">
@@ -164,13 +180,62 @@ export default function HomePage() {
       </header>
 
       <div className="home-bubbles">
-        <button className="home-bubble" onClick={() => navigate('/goals')}>
-          <div className="home-bubble-rings">
-            <MiniRing pct={dailyPct} label="Today" />
-            <MiniRing pct={weeklyPct} label="Week" />
-          </div>
-          <span className="home-bubble-label">Goals</span>
-        </button>
+        {homeBubbles.map((b) => {
+          if (b.id === 'goals') {
+            return (
+              <button key="goals" className="home-bubble" onClick={() => navigate('/goals')}>
+                <div className="home-bubble-rings">
+                  <MiniRing pct={dailyPct} label="Today" />
+                  <MiniRing pct={weeklyPct} label="Week" />
+                </div>
+                <span className="home-bubble-label">Goals</span>
+              </button>
+            );
+          }
+          if (b.id === 'tasks') {
+            return (
+              <button key="tasks" className="home-bubble home-bubble--stat" onClick={() => scrollToSection(tasksSectionRef)}>
+                <span className="home-bubble-icon">✅</span>
+                <span className="home-bubble-stat">{openTaskCount}</span>
+                <span className="home-bubble-label">Tasks</span>
+              </button>
+            );
+          }
+          if (b.id === 'notes') {
+            return (
+              <button key="notes" className="home-bubble home-bubble--stat" onClick={() => scrollToSection(notesSectionRef)}>
+                <span className="home-bubble-icon">📝</span>
+                <span className="home-bubble-stat">{notes.length}</span>
+                <span className="home-bubble-label">Notes</span>
+              </button>
+            );
+          }
+          if (b.id === 'events') {
+            return (
+              <button key="events" className="home-bubble home-bubble--stat" onClick={() => navigate('/planner')}>
+                <span className="home-bubble-icon">📅</span>
+                {nextEvent ? (
+                  <span className="home-bubble-textblock">
+                    <strong>{nextEvent.title || 'Event'}</strong>
+                    <span className="muted small">{formatTime(nextEvent.start)}</span>
+                  </span>
+                ) : (
+                  <span className="home-bubble-textblock muted small">No events today</span>
+                )}
+              </button>
+            );
+          }
+          if (b.id === 'contacts') {
+            return (
+              <button key="contacts" className="home-bubble home-bubble--stat" onClick={() => navigate('/contacts')}>
+                <span className="home-bubble-icon">👤</span>
+                <span className="home-bubble-stat">{state.contacts.length}</span>
+                <span className="home-bubble-label">People</span>
+              </button>
+            );
+          }
+          return null;
+        })}
       </div>
 
       {reminders.length > 0 && (
@@ -196,7 +261,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="detail-section">
+      <section className="detail-section" ref={tasksSectionRef}>
         <span className="detail-label">Tasks</span>
         <ul className="task-list">
           {tasks.map((t) => (
@@ -240,7 +305,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="detail-section">
+      <section className="detail-section" ref={notesSectionRef}>
         <div className="section-head">
           <span className="detail-label">📝 Notes</span>
           <button className="btn btn-ghost btn-sm" onClick={openNewNote}>

@@ -12,6 +12,8 @@ import {
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
+import { confirmTick, selectTick } from '../data/haptics.js';
+import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
 const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: formatHour(h) }));
@@ -364,6 +366,34 @@ export default function MorePage() {
             <span className="toggle-knob" />
           </button>
         </div>
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Customize home screen {!isPro && '· Pro'}</span>
+        <p className="muted small">Choose which bubbles show on Home, and drag to reorder them.</p>
+        {isPro ? (
+          <HomeBubbleReorder
+            bubbles={normalizeHomeBubbles(s.homeBubbles)}
+            onChange={(next) => actions.setSettings({ homeBubbles: next })}
+          />
+        ) : (
+          <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
+            <ul className="bubble-reorder-list bubble-reorder-list--preview">
+              {normalizeHomeBubbles(s.homeBubbles).map((b) => {
+                const type = BUBBLE_TYPES.find((t) => t.id === b.id);
+                return (
+                  <li key={b.id} className="bubble-reorder-row">
+                    <span className="bubble-reorder-icon">{type?.icon}</span>
+                    <span className="bubble-reorder-label">{type?.label}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <span className="bubble-reorder-lock-hint">
+              <LockIcon /> Unlock to customize
+            </span>
+          </button>
+        )}
       </section>
 
       <section className="detail-section">
@@ -880,6 +910,108 @@ export default function MorePage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function HomeBubbleReorder({ bubbles, onChange }) {
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const dragRef = useRef(null);
+  const rowRefs = useRef([]);
+
+  const reorder = (from, to) => {
+    if (from === to) return;
+    const next = bubbles.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    onChange(next);
+  };
+
+  const onDown = (i) => (e) => {
+    const rowH = rowRefs.current[i]?.getBoundingClientRect().height || 48;
+    dragRef.current = { index: i, startY: e.clientY, rowH };
+    setDragIndex(i);
+    setDragY(0);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    confirmTick();
+  };
+  const onMove = (e) => {
+    const g = dragRef.current;
+    if (!g) return;
+    const dy = e.clientY - g.startY;
+    setDragY(dy);
+    const steps = Math.round(dy / g.rowH);
+    if (steps !== 0) {
+      const target = Math.max(0, Math.min(bubbles.length - 1, g.index + steps));
+      if (target !== g.index) {
+        reorder(g.index, target);
+        g.startY += (target - g.index) * g.rowH;
+        g.index = target;
+        setDragIndex(target);
+        setDragY(e.clientY - g.startY);
+        selectTick();
+      }
+    }
+  };
+  const onUp = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDragIndex(null);
+    setDragY(0);
+    confirmTick();
+  };
+
+  return (
+    <ul className="bubble-reorder-list">
+      {bubbles.map((b, i) => {
+        const type = BUBBLE_TYPES.find((t) => t.id === b.id);
+        const dragging = dragIndex === i;
+        return (
+          <li
+            key={b.id}
+            ref={(el) => (rowRefs.current[i] = el)}
+            className={`bubble-reorder-row${dragging ? ' bubble-reorder-row--dragging' : ''}`}
+            style={dragging ? { transform: `translateY(${dragY}px)` } : undefined}
+          >
+            <button
+              type="button"
+              className="bubble-drag-handle"
+              onPointerDown={onDown(i)}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+              aria-label={`Drag to reorder ${type?.label}`}
+            >
+              <DragHandleIcon />
+            </button>
+            <span className="bubble-reorder-icon">{type?.icon}</span>
+            <span className="bubble-reorder-label">{type?.label}</span>
+            <button
+              type="button"
+              className={`toggle${b.enabled ? ' toggle--on' : ''}`}
+              role="switch"
+              aria-checked={b.enabled}
+              onClick={() => onChange(bubbles.map((x) => (x.id === b.id ? { ...x, enabled: !x.enabled } : x)))}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function DragHandleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <circle cx="9" cy="6" r="1.6" fill="currentColor" />
+      <circle cx="15" cy="6" r="1.6" fill="currentColor" />
+      <circle cx="9" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="15" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="9" cy="18" r="1.6" fill="currentColor" />
+      <circle cx="15" cy="18" r="1.6" fill="currentColor" />
+    </svg>
   );
 }
 

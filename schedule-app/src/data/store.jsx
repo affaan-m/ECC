@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useReducer } from 'react';
 import { makeSeed } from './seed.js';
 import { uid } from './helpers.js';
+import { DEFAULT_HOME_BUBBLES } from './homeBubbles.js';
 
 const STORAGE_KEY = 'compass.data.v1';
 
@@ -50,6 +51,7 @@ function loadState() {
         contactIconSize: 'md',
         taskCompleteAnim: true,
         hapticsEnabled: true,
+        homeBubbles: DEFAULT_HOME_BUBBLES,
         ...(parsed.settings || {}),
       },
     };
