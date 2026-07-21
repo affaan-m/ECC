@@ -52,7 +52,7 @@ export default function ContactDetailPage() {
     return out.slice(0, 5);
   }, [state.events, contact]);
 
-  if (!contact) {
+  if (!state.settings?.isPro || !contact) {
     return (
       <div className="page">
         <header className="page-head">
@@ -60,7 +60,9 @@ export default function ContactDetailPage() {
             ‹ People
           </button>
         </header>
-        <p className="muted center-pad">This person no longer exists.</p>
+        <p className="muted center-pad">
+          {contact ? 'People is a Pro feature.' : 'This person no longer exists.'}
+        </p>
       </div>
     );
   }

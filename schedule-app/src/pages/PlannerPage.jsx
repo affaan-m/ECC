@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
@@ -383,6 +383,7 @@ export default function PlannerPage() {
           occ={viewing}
           contacts={state.contacts}
           eventTypes={state.eventTypes || []}
+          isPro={!!state.settings?.isPro}
           onClose={() => setViewing(null)}
           onEdit={openEditFromView}
           onToggleDone={() => toggleDoneQuick(viewing)}
@@ -665,7 +666,8 @@ function MonthView({ monthStart, events, onOpenDay, cursor }) {
 
 // --- Read-only event detail view --------------------------------------------
 
-function EventDetailView({ occ, contacts, eventTypes, onClose, onEdit, onToggleDone }) {
+function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, onToggleDone }) {
+  const navigate = useNavigate();
   const type = eventTypes.find((t) => t.id === occ.typeId);
   const contact = contacts.find((c) => c.id === occ.contactId);
   const recurring = occ.repeat && occ.repeat !== 'none';
@@ -673,6 +675,14 @@ function EventDetailView({ occ, contacts, eventTypes, onClose, onEdit, onToggleD
 
   const directionsUrl =
     occ.locLat != null ? `https://www.google.com/maps/dir/?api=1&destination=${occ.locLat},${occ.locLng}` : null;
+
+  const shareEvent = () => {
+    if (!isPro) {
+      navigate('/pricing');
+      return;
+    }
+    alert('Inviting others to collaborate on an event needs an account backend, which is not connected in this build yet.');
+  };
 
   return (
     <div className="editor-sheet">
@@ -757,6 +767,10 @@ function EventDetailView({ occ, contacts, eventTypes, onClose, onEdit, onToggleD
           <input type="checkbox" checked={!!occ.done} onChange={onToggleDone} />
           <span>Mark as done</span>
         </label>
+
+        <button className="btn btn-ghost full share-event-btn" onClick={shareEvent}>
+          👥 Share event {!isPro && '· Pro'}
+        </button>
       </div>
     </div>
   );

@@ -69,6 +69,12 @@ export default function App() {
     }
   }, [theme]);
 
+  // Apply the chosen color scheme (Pro feature; 'default' needs no override).
+  const colorScheme = state.settings?.colorScheme || 'default';
+  useEffect(() => {
+    document.documentElement.dataset.scheme = colorScheme;
+  }, [colorScheme]);
+
   return (
     <div className="app">
       <main className="app-main" key={location.pathname}>

@@ -1,12 +1,26 @@
 import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
+import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
   notificationsSupported,
   notificationPermission,
   requestNotificationPermission,
 } from '../data/notifications.js';
+import { downloadICS, parseICS } from '../data/ics.js';
+
+const COLOR_SCHEMES = [
+  { value: 'default', label: 'Emerald', swatch: '#0f8f72' },
+  { value: 'ocean', label: 'Ocean', swatch: '#1f6fb0' },
+  { value: 'sunset', label: 'Sunset', swatch: '#d9601f' },
+  { value: 'grape', label: 'Grape', swatch: '#7c4fd1' },
+  { value: 'rose', label: 'Rose', swatch: '#c23d6b' },
+  { value: 'forest', label: 'Forest', swatch: '#2f7d3a' },
+  { value: 'slate', label: 'Slate', swatch: '#46586b' },
+  { value: 'berry', label: 'Berry', swatch: '#a3306f' },
+];
 
 const PRESET_COLORS = [
   '#2e9e6b',
@@ -22,15 +36,55 @@ const PRESET_COLORS = [
 export default function MorePage() {
   const { state } = useStore();
   const actions = useActions();
+  const navigate = useNavigate();
   const [editingStatus, setEditingStatus] = useState(null);
   const [editingType, setEditingType] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | null
   const [feedback, setFeedback] = useState(null); // string | null
+  const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
   const fileRef = useRef(null);
+  const icsFileRef = useRef(null);
 
   const theme = state.settings?.theme || 'system';
   const notifOn = !!state.settings?.notifications && notificationPermission() === 'granted';
+  const isPro = !!state.settings?.isPro;
+  const profileName = state.settings?.profileName || '';
+  const profilePhoto = state.settings?.profilePhoto || '';
+  const cloudSyncOn = !!state.settings?.cloudSync;
+
+  const requirePro = (fn) => (isPro ? fn() : navigate('/pricing'));
+
+  const exportICS = () => downloadICS(state.events, state.contacts);
+  const importICS = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = parseICS(reader.result);
+        if (imported.length === 0) return alert('No events found in that file.');
+        for (const ev of imported) {
+          actions.addEvent({
+            ...ev,
+            repeatUntil: '',
+            repeatDays: [],
+            doneDates: [],
+            skipDates: [],
+            typeId: '',
+            color: '',
+            reminder: 0,
+            contactId: '',
+          });
+        }
+        alert(`Imported ${imported.length} event${imported.length === 1 ? '' : 's'}.`);
+      } catch {
+        alert('That file could not be read as an .ics calendar.');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const toggleNotifications = async () => {
     if (notifOn) {
@@ -113,6 +167,86 @@ export default function MorePage() {
         </div>
       </header>
 
+      {isPro ? (
+        <section className="pro-bubble-lg pro-bubble-lg--active">
+          <span className="pro-bubble-lg-crown">👑</span>
+          <div>
+            <strong>Stewardly Pro</strong>
+            <p className="muted small">You have Pro (demo mode) active.</p>
+          </div>
+        </section>
+      ) : (
+        <button className="pro-bubble-lg" onClick={() => navigate('/pricing')}>
+          <span className="pro-bubble-lg-crown">👑</span>
+          <div>
+            <strong>Upgrade to Stewardly Pro</strong>
+            <p className="muted small">People, sharing, sync, themes, and more.</p>
+          </div>
+          <span className="pro-bubble-lg-arrow">›</span>
+        </button>
+      )}
+
+      <button className="donate-bubble" onClick={() => setConfirm('donate')}>
+        ☕ Support Stewardly
+      </button>
+
+      <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Profile</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditingProfile({ name: profileName, photo: profilePhoto })}>
+            Edit
+          </button>
+        </div>
+        <div className="profile-row">
+          <Avatar name={profileName || 'You'} photo={profilePhoto} size="lg" />
+          <div>
+            <strong>{profileName || 'Add your name'}</strong>
+            <p className="muted small">Stored only on this device.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Account & sync</span>
+        <div className="section-head">
+          <span>Cloud sync</span>
+          <button
+            className={`toggle${cloudSyncOn ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={cloudSyncOn}
+            onClick={() => requirePro(() => actions.setSettings({ cloudSync: !cloudSyncOn }))}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">
+          {isPro
+            ? "Sync isn't connected to a server yet — flipping this on doesn't move your data anywhere. It's here so the setting is ready once a backend exists."
+            : 'Keep your data synced across devices. Requires Pro.'}
+        </p>
+        <button className="btn btn-ghost full" onClick={() => requirePro(() => alert('Google sign-in requires a backend that is not connected in this build yet.'))}>
+          <GoogleIcon /> Sign in with Google {!isPro && '· Pro'}
+        </button>
+        <p className="muted small">
+          A personal Stewardly login (no Google needed) is free and always available — this is
+          only for connecting a Google account for calendar sync.
+        </p>
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Calendar import / export</span>
+        <p className="muted small">Move events to or from other calendar apps using the .ics format.</p>
+        <div className="stack-btns">
+          <button className="btn btn-ghost full" onClick={() => requirePro(exportICS)}>
+            Export calendar (.ics) {!isPro && '· Pro'}
+          </button>
+          <button className="btn btn-ghost full" onClick={() => requirePro(() => icsFileRef.current?.click())}>
+            Import calendar (.ics) {!isPro && '· Pro'}
+          </button>
+          <input ref={icsFileRef} type="file" accept=".ics,text/calendar" hidden onChange={importICS} />
+        </div>
+      </section>
+
       <section className="detail-section">
         <span className="detail-label">Appearance</span>
         <div className="seg seg--full">
@@ -125,6 +259,25 @@ export default function MorePage() {
               {t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
+        </div>
+        <p className="muted small color-scheme-label">Color theme {!isPro && '· Pro'}</p>
+        <div className="scheme-grid">
+          {COLOR_SCHEMES.map((s) => {
+            const locked = !isPro && s.value !== 'default';
+            const on = (state.settings?.colorScheme || 'default') === s.value;
+            return (
+              <button
+                key={s.value}
+                className={`scheme-dot${on ? ' scheme-dot--on' : ''}${locked ? ' scheme-dot--locked' : ''}`}
+                style={{ background: s.swatch }}
+                onClick={() => requirePro(() => actions.setSettings({ colorScheme: s.value }))}
+                title={s.label}
+                aria-label={s.label}
+              >
+                {locked && <LockIcon />}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -407,7 +560,7 @@ export default function MorePage() {
 
       {/* Confirm reset / clear */}
       <Modal
-        open={!!confirm}
+        open={confirm === 'reset' || confirm === 'clear'}
         title={confirm === 'reset' ? 'Reset to sample data?' : 'Clear everything?'}
         onClose={() => setConfirm(null)}
         footer={
@@ -434,6 +587,93 @@ export default function MorePage() {
             : 'This permanently removes all goals, events, and people. Your custom statuses are kept.'}
         </p>
       </Modal>
+
+      {/* Donate */}
+      <Modal
+        open={confirm === 'donate'}
+        title="Support Stewardly"
+        onClose={() => setConfirm(null)}
+        footer={
+          <div className="modal-actions">
+            <button className="btn btn-primary" onClick={() => setConfirm(null)}>
+              Got it
+            </button>
+          </div>
+        }
+      >
+        <p>
+          Thank you for wanting to support the app! A real donation link (Ko-fi, Buy Me a Coffee,
+          GitHub Sponsors, etc.) isn't connected in this build yet — once you have one, it goes
+          right here.
+        </p>
+      </Modal>
+
+      {/* Profile editor */}
+      <Modal
+        open={!!editingProfile}
+        title="Edit profile"
+        onClose={() => setEditingProfile(null)}
+        footer={
+          <div className="modal-actions">
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                actions.setSettings({ profileName: editingProfile.name.trim(), profilePhoto: editingProfile.photo || '' });
+                setEditingProfile(null);
+              }}
+            >
+              Save
+            </button>
+          </div>
+        }
+      >
+        {editingProfile && (
+          <div className="form">
+            <AvatarPicker
+              name={editingProfile.name || 'You'}
+              photo={editingProfile.photo}
+              onChange={(photo) => setEditingProfile({ ...editingProfile, photo })}
+            />
+            <label className="field">
+              <span>Name</span>
+              <input
+                autoFocus
+                value={editingProfile.name}
+                onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
+                placeholder="Your name"
+              />
+            </label>
+          </div>
+        )}
+      </Modal>
     </div>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="9" rx="2" fill="currentColor" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        d="M21.6 12.23c0-.68-.06-1.36-.18-2H12v3.79h5.4a4.62 4.62 0 0 1-2 3.03v2.5h3.23c1.9-1.75 2.97-4.33 2.97-7.32z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 22c2.7 0 4.97-.89 6.63-2.42l-3.23-2.5c-.9.6-2.05.96-3.4.96-2.6 0-4.8-1.76-5.6-4.12H3.06v2.58A10 10 0 0 0 12 22z"
+        fill="#34A853"
+      />
+      <path d="M6.4 13.92a5.99 5.99 0 0 1 0-3.84V7.5H3.06a10 10 0 0 0 0 9l3.34-2.58z" fill="#FBBC05" />
+      <path
+        d="M12 6.04c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.5l3.34 2.58C7.2 7.8 9.4 6.04 12 6.04z"
+        fill="#EA4335"
+      />
+    </svg>
   );
 }

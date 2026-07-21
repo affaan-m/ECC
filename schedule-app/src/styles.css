@@ -37,6 +37,31 @@
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
+/* --- Color schemes (Pro) -------------------------------------------------
+   Each scheme overrides just the accent pair per light/dark mode; the rest
+   of the palette (surfaces, text, danger/good/warn) stays consistent so the
+   app never looks "broken", only re-tinted. */
+:root[data-theme='light'][data-scheme='ocean'] { --accent: #1f6fb0; --accent-soft: #e2eef7; }
+:root[data-theme='dark'][data-scheme='ocean']  { --accent: #4fa8e0; --accent-soft: #14293a; }
+
+:root[data-theme='light'][data-scheme='sunset'] { --accent: #d9601f; --accent-soft: #fbe8dd; }
+:root[data-theme='dark'][data-scheme='sunset']  { --accent: #f0864a; --accent-soft: #3a2415; }
+
+:root[data-theme='light'][data-scheme='grape'] { --accent: #7c4fd1; --accent-soft: #ede6fa; }
+:root[data-theme='dark'][data-scheme='grape']  { --accent: #a685e8; --accent-soft: #2a2140; }
+
+:root[data-theme='light'][data-scheme='rose'] { --accent: #c23d6b; --accent-soft: #fbe4ec; }
+:root[data-theme='dark'][data-scheme='rose']  { --accent: #e879a8; --accent-soft: #3a1d28; }
+
+:root[data-theme='light'][data-scheme='forest'] { --accent: #2f7d3a; --accent-soft: #e3f2e4; }
+:root[data-theme='dark'][data-scheme='forest']  { --accent: #5cb85c; --accent-soft: #1d321f; }
+
+:root[data-theme='light'][data-scheme='slate'] { --accent: #46586b; --accent-soft: #e7ebef; }
+:root[data-theme='dark'][data-scheme='slate']  { --accent: #8fa3b8; --accent-soft: #24303c; }
+
+:root[data-theme='light'][data-scheme='berry'] { --accent: #a3306f; --accent-soft: #f6e2ec; }
+:root[data-theme='dark'][data-scheme='berry']  { --accent: #d9679f; --accent-soft: #35202b; }
+
 * {
   box-sizing: border-box;
 }
@@ -79,7 +104,7 @@ textarea {
 
 .page {
   padding: 0 16px 24px;
-  animation: fade 0.18s ease;
+  animation: page-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @keyframes fade {
@@ -91,6 +116,25 @@ textarea {
     opacity: 1;
     transform: none;
   }
+}
+
+/* Page-to-page transition: a gentle fade + rise, distinct from the smaller
+   card entrance animation so switching tabs reads as a real transition. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The map is its own full-bleed page (no .page wrapper) — give it a matching
+   transition so it doesn't feel like the odd one out. */
+.map-page {
+  animation: fade 0.22s ease;
 }
 
 /* --- Header ------------------------------------------------------------- */
@@ -1077,6 +1121,9 @@ textarea {
 }
 .detail-done-row {
   margin-top: 8px;
+}
+.share-event-btn {
+  margin-top: 14px;
 }
 
 .mini-map-picker {
@@ -2295,6 +2342,97 @@ textarea {
   margin-left: auto;
   margin-right: auto;
   line-height: 1.5;
+}
+
+/* --- Pro bubbles (Settings) ------------------------------------------------ */
+.pro-bubble-lg {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, #f7d98a, #e0a020);
+  border: none;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 14px;
+  cursor: pointer;
+  text-align: left;
+  color: #4a3300;
+  box-shadow: 0 4px 14px rgba(180, 130, 0, 0.3);
+}
+.pro-bubble-lg strong {
+  display: block;
+  font-size: 16px;
+}
+.pro-bubble-lg p {
+  margin: 2px 0 0;
+  color: #6b4f00;
+}
+.pro-bubble-lg-crown {
+  font-size: 30px;
+  flex: none;
+}
+.pro-bubble-lg-arrow {
+  margin-left: auto;
+  font-size: 22px;
+  flex: none;
+}
+.pro-bubble-lg--active {
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, #cdeee0, #9fd9bd);
+  color: #0e4a30;
+}
+.donate-bubble {
+  width: 100%;
+  display: block;
+  margin-top: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+.profile-row strong {
+  display: block;
+}
+.color-scheme-label {
+  margin: 14px 0 8px;
+}
+.scheme-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.scheme-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.scheme-dot--on {
+  border-color: var(--text);
+}
+.scheme-dot--locked {
+  opacity: 0.55;
+}
+.upgrade-empty {
+  padding-top: 64px;
 }
 
 /* --- More / settings ---------------------------------------------------- */
