@@ -749,6 +749,25 @@ textarea {
 .modal-sheet--tall {
   height: 78vh;
 }
+.modal-sheet--full {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  padding-bottom: 0;
+}
+.modal-sheet--full .modal-grip {
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+}
+.modal-sheet--full .modal-body {
+  flex: 1;
+}
+.modal-sheet--full .modal-foot {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
 .modal-grip {
   display: flex;
   justify-content: center;
@@ -2735,6 +2754,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin: 0 0 14px;
 }
 .scheme-dot {
   width: 34px;

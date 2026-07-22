@@ -340,10 +340,17 @@ export default function PlannerPage() {
     selectTick();
   };
 
+  // Uses the functional setCursor form (not the `cursor` closed over above)
+  // so that stale closures — e.g. a drag-to-page gesture's window-level
+  // listeners, wired once at arm time — still always step from the
+  // *current* day/week/month rather than replaying from whatever cursor
+  // value existed when the closure was created.
   const step = (n) => {
-    if (mode === 'day') setCursor(toISODate(addDays(cursor, n)));
-    else if (mode === 'week') setCursor(toISODate(addDays(cursor, n * 7)));
-    else setCursor(toISODate(addMonths(cursor, n)));
+    setCursor((c) => {
+      if (mode === 'day') return toISODate(addDays(c, n));
+      if (mode === 'week') return toISODate(addDays(c, n * 7));
+      return toISODate(addMonths(c, n));
+    });
   };
   const weekStart = startOfWeek(fromISODate(cursor));
   const monthStart = startOfMonth(fromISODate(cursor));
@@ -415,6 +422,7 @@ export default function PlannerPage() {
           onOpen={openView}
           onMove={moveOccurrence}
           onMoveSelected={moveSelected}
+          onNavigateDay={step}
           selectMode={selectMode}
           selected={selected}
           onToggleSelect={toggleSelected}
@@ -441,7 +449,7 @@ export default function PlannerPage() {
         />
       )}
       {mode === 'month' && (
-        <MonthView monthStart={monthStart} events={state.events} onOpenDay={openDay} cursor={cursor} />
+        <MonthView monthStart={monthStart} events={state.events} onOpenDay={openDay} cursor={cursor} onSwipe={step} />
       )}
 
       {!selectMode && (
@@ -508,6 +516,7 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
 
 const DAY_DRAG_PX = 70; // horizontal drag distance per day of offset
+const SWIPE_THRESHOLD_PX = 60; // horizontal drag distance to swipe-navigate a day/month
 
 function DayView({
   date,
@@ -518,6 +527,7 @@ function DayView({
   onOpen,
   onMove,
   onMoveSelected,
+  onNavigateDay,
   selectMode,
   selected,
   onToggleSelect,
@@ -534,6 +544,7 @@ function DayView({
   const groupGestureRef = useRef(null); // { phase, startClientX, startClientY, timer, lastMinSnap, lastDayOffset }
   const groupClickSuppressRef = useRef(false); // swallow the native click that follows a group-gesture pointerup
   const pinchRef = useRef(null); // { pointers: Map<id,{x,y}>, startDist, startZoom }
+  const swipeRef = useRef(null); // { pointerId, startX, startY } — single-pointer swipe to change day
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
   const [dragDx, setDragDx] = useState(0);
@@ -556,7 +567,13 @@ function DayView({
     [tasks]
   );
 
+  const bgSwipeSuppressRef = useRef(false); // swallow the click that follows a background swipe-to-navigate
+
   const handleBgClick = (e) => {
+    if (bgSwipeSuppressRef.current) {
+      bgSwipeSuppressRef.current = false;
+      return;
+    }
     if (e.target !== bodyRef.current && !e.target.classList.contains('hour-line')) return;
     const rect = bodyRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top;
@@ -566,16 +583,28 @@ function DayView({
   };
 
   // Pinch-to-zoom: two touch pointers on the timeline scale pxPerHour by how
-  // much their distance apart has changed since the pinch started.
+  // much their distance apart has changed since the pinch started. A single
+  // pointer swipes the whole day forward/backward instead (swipeRef).
   const onBodyPointerDown = (e) => {
-    if (e.pointerType !== 'touch') return;
-    if (!pinchRef.current) pinchRef.current = { pointers: new Map(), startDist: 0, startZoom: zoom };
-    pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinchRef.current.pointers.size === 2) {
-      const [a, b] = [...pinchRef.current.pointers.values()];
-      pinchRef.current.startDist = Math.hypot(a.x - b.x, a.y - b.y);
-      pinchRef.current.startZoom = zoom;
-      clearGesture(); // a second finger landing cancels any armed drag
+    if (e.pointerType === 'touch') {
+      if (!pinchRef.current) pinchRef.current = { pointers: new Map(), startDist: 0, startZoom: zoom };
+      pinchRef.current.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinchRef.current.pointers.size === 2) {
+        const [a, b] = [...pinchRef.current.pointers.values()];
+        pinchRef.current.startDist = Math.hypot(a.x - b.x, a.y - b.y);
+        pinchRef.current.startZoom = zoom;
+        clearGesture(); // a second finger landing cancels any armed drag
+        swipeRef.current = null; // ...and any single-finger swipe-to-navigate
+        return;
+      }
+    }
+    if (!swipeRef.current) {
+      // A swipe that crosses to a different element never fires a native
+      // click (mousedown/mouseup targets differ), so the suppress flag set
+      // on release can otherwise outlive its gesture and eat the next
+      // unrelated tap-to-add. Clearing it here makes it self-correcting.
+      bgSwipeSuppressRef.current = false;
+      swipeRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
     }
   };
   const onBodyPointerMove = (e) => {
@@ -590,6 +619,17 @@ function DayView({
     }
   };
   const onBodyPointerUp = (e) => {
+    const s = swipeRef.current;
+    if (s && s.pointerId === e.pointerId) {
+      swipeRef.current = null;
+      const dx = e.clientX - s.startX;
+      const dy = e.clientY - s.startY;
+      if (Math.abs(dx) > SWIPE_THRESHOLD_PX && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        bgSwipeSuppressRef.current = true;
+        onNavigateDay?.(dx < 0 ? 1 : -1);
+        confirmTick();
+      }
+    }
     const p = pinchRef.current;
     if (!p) return;
     p.pointers.delete(e.pointerId);
@@ -618,7 +658,9 @@ function DayView({
       startClientX: e.clientX,
       timer: null,
       lastSnap: 0,
-      lastDayOffset: 0,
+      // Net days paged during this drag — always moves one at a time, and
+      // paging back past the origin un-pages the same way (see onMoveP).
+      pagedOffset: 0,
     };
     g.timer = setTimeout(() => {
       if (gestureRef.current === g && g.phase === 'pending') {
@@ -649,10 +691,16 @@ function DayView({
         g.lastSnap = snap;
         selectTick();
       }
-      const dayOffset = Math.round(dx / DAY_DRAG_PX);
-      if (dayOffset !== g.lastDayOffset) {
-        g.lastDayOffset = dayOffset;
-        confirmTick(); // a stronger tick specifically for crossing a day boundary
+      // Page the visible day exactly one at a time: crossing a threshold
+      // navigates the whole timeline to that day (live) so the destination
+      // schedule is visible to drop into; dragging further keeps paging,
+      // and dragging back pages back the same way.
+      const rawOffset = Math.round(dx / DAY_DRAG_PX);
+      const step = Math.sign(rawOffset - g.pagedOffset);
+      if (step !== 0) {
+        g.pagedOffset += step;
+        onNavigateDay?.(step);
+        confirmTick();
       }
     }
   };
@@ -665,7 +713,7 @@ function DayView({
       onOpen(occ);
     } else if (g.phase === 'armed') {
       const deltaMin = Math.round(dragDy / pxPerMin / 15) * 15;
-      const dayOffset = Math.round(dragDx / DAY_DRAG_PX);
+      const dayOffset = g.pagedOffset;
       if (deltaMin !== 0 || dayOffset !== 0) {
         onMove(occ, deltaMin, dayOffset);
         confirmTick();
@@ -673,6 +721,27 @@ function DayView({
     }
     clearGesture();
   };
+
+  // Once armed, track the pointer at the window level rather than relying on
+  // the originally-pressed DOM node: paging the visible day re-renders the
+  // event layer for the new day, which can drop that node from the tree
+  // (it's no longer part of that day's occurrences) and would otherwise
+  // silently end the gesture (lost pointer capture) mid-drag.
+  useEffect(() => {
+    if (!armedKey) return;
+    const move = (e) => onMoveP(e);
+    const up = (e) => onUp(e, gestureRef.current?.occ);
+    const cancel = () => clearGesture();
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armedKey]);
 
   // Multi-select group drag: press-and-hold a selected block to move every
   // selected occurrence together — vertically for time, horizontally for
@@ -788,7 +857,7 @@ function DayView({
         <div className="event-layer">
           {laid.map((ev) => {
             const key = `${ev.id}:${ev.recDate}`;
-            const isArmed = armedKey === key;
+            if (armedKey === key) return null; // rendered separately as a floating ghost below
             const top = (ev.s - dayStart * 60) * pxPerMin;
             const height = Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3);
             const short = ev.e2 - ev.s < 55;
@@ -801,17 +870,13 @@ function DayView({
             const groupDy = isGroupDragging ? groupDrag.dy : 0;
             const groupDayOffset = isGroupDragging ? groupDrag.dayOffset : 0;
             const rubberX = isGroupDragging ? Math.max(-18, Math.min(18, groupDrag.dx * 0.2)) : 0;
-            const armedDayOffset = isArmed ? Math.round(dragDx / DAY_DRAG_PX) : 0;
-            const armedRubberX = isArmed ? Math.max(-18, Math.min(18, dragDx * 0.2)) : 0;
-            const displayStartMin = isArmed
-              ? clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd)
-              : isGroupDragging
+            const displayStartMin = isGroupDragging
               ? clampStart(ev, groupDy, pxPerMin, dayStart, dayEnd)
               : ev.s;
             return (
               <button
                 key={key}
-                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isArmed ? ' event-block--armed' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isArmed && armedDayOffset !== 0 ? ' event-block--leaving' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
+                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
                 style={{
                   top,
                   height,
@@ -819,12 +884,7 @@ function DayView({
                   width: `calc(${100 / ev.cols}% - 4px)`,
                   '--ev': color || 'var(--accent)',
                   '--ev-opacity': opacity / 100,
-                  transform:
-                    isArmed && (dragDy || dragDx)
-                      ? `translateY(${dragDy}px) translateX(${armedRubberX}px)`
-                      : isGroupDragging
-                      ? `translateY(${groupDy}px) translateX(${rubberX}px)`
-                      : undefined,
+                  transform: isGroupDragging ? `translateY(${groupDy}px) translateX(${rubberX}px)` : undefined,
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -863,7 +923,7 @@ function DayView({
                   groupClickSuppressRef.current = false;
                 }}
               >
-                {(isArmed || isGroupDragging) && <span className="drag-grip">⠿⠿</span>}
+                {isGroupDragging && <span className="drag-grip">⠿⠿</span>}
                 {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                 {short ? (
                   <span className="event-title">
@@ -885,20 +945,59 @@ function DayView({
               </button>
             );
           })}
+
+          {armedKey &&
+            gestureRef.current?.occ &&
+            (() => {
+              const occ = gestureRef.current.occ;
+              const top = (occ.s - dayStart * 60) * pxPerMin;
+              const height = Math.max(24, (occ.e2 - occ.s) * pxPerMin - 3);
+              const short = occ.e2 - occ.s < 55;
+              const who = contactName(occ.contactId);
+              const recurring = occ.repeat && occ.repeat !== 'none';
+              const color = occ.color || typeColor(occ.typeId);
+              const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
+              const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
+              return (
+                <div
+                  className={`event-block event-block--armed${short ? ' event-block--short' : ''}${occ.done ? ' event-block--done' : ''}`}
+                  style={{
+                    top,
+                    height,
+                    left: 4,
+                    width: 'calc(100% - 8px)',
+                    '--ev': color || 'var(--accent)',
+                    '--ev-opacity': opacity / 100,
+                    transform: `translateY(${dragDy}px) translateX(${rubberX}px)`,
+                  }}
+                >
+                  <span className="drag-grip">⠿⠿</span>
+                  {short ? (
+                    <span className="event-title">
+                      <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
+                      {occ.title || 'Untitled'}
+                      {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="event-time">
+                        {formatTime(minutesToTime(displayStartMin))}
+                        {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                        {occ.reminder > 0 && <span className="repeat-glyph"> 🔔</span>}
+                      </span>
+                      <span className="event-title">{occ.title || 'Untitled'}</span>
+                      {who && <span className="event-who">{who}</span>}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
         </div>
       </div>
       {groupDragging && (
         <div className="group-drag-indicator">
           {groupDrag.dayOffset !== 0 && <strong>{formatDayLabel(addDays(date, groupDrag.dayOffset))}</strong>}
           <span>{formatOffsetMinutes(Math.round(groupDrag.dy / pxPerMin / 15) * 15)}</span>
-        </div>
-      )}
-      {armedKey && (dragDy !== 0 || dragDx !== 0) && (
-        <div className="group-drag-indicator">
-          {Math.round(dragDx / DAY_DRAG_PX) !== 0 && (
-            <strong>{formatDayLabel(addDays(date, Math.round(dragDx / DAY_DRAG_PX)))}</strong>
-          )}
-          <span>{formatOffsetMinutes(Math.round(dragDy / pxPerMin / 15) * 15)}</span>
         </div>
       )}
       {dayEvents.length === 0 && (
@@ -977,11 +1076,50 @@ function WeekView({ weekStart, events, eventTypes, onOpenDay, onOpen, onAdd, sel
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, onOpenDay, cursor }) {
+function MonthView({ monthStart, events, onOpenDay, cursor, onSwipe }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
+  const swipeRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  const onPointerDown = (e) => {
+    // A swipe that crosses from one cell to another never fires a native
+    // click at all (mousedown/mouseup targets differ), so the suppress flag
+    // set below can otherwise outlive its gesture and eat the next
+    // unrelated tap. Clearing it at the start of every new gesture makes it
+    // self-correcting instead of depending on a click to consume it.
+    suppressClickRef.current = false;
+    swipeRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
+  };
+  const onPointerUp = (e) => {
+    const s = swipeRef.current;
+    if (!s || s.pointerId !== e.pointerId) return;
+    swipeRef.current = null;
+    const dx = e.clientX - s.startX;
+    const dy = e.clientY - s.startY;
+    if (Math.abs(dx) > SWIPE_THRESHOLD_PX && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      suppressClickRef.current = true;
+      onSwipe?.(dx < 0 ? 1 : -1);
+      confirmTick();
+    }
+  };
+  const onClickCapture = (e) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      e.stopPropagation();
+    }
+  };
+
   return (
-    <div className="month-grid">
+    <div
+      className="month-grid"
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        swipeRef.current = null;
+      }}
+      onClickCapture={onClickCapture}
+    >
       <div className="month-dow-row">
         {WEEKDAY_LETTERS.map((l, i) => (
           <span key={i}>{l}</span>

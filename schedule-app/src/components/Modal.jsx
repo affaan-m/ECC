@@ -3,7 +3,7 @@ import { useBackDismiss } from '../data/useBackDismiss.js';
 
 // A bottom-sheet modal used for all add/edit forms. Supports swipe-down to
 // dismiss (drag the handle or header) and an optional taller default height.
-export default function Modal({ open, title, onClose, children, footer, tall = false }) {
+export default function Modal({ open, title, onClose, children, footer, tall = false, fullPage = false }) {
   const [dragY, setDragY] = useState(0);
   const startY = useRef(null);
   const dragging = useRef(false);
@@ -44,7 +44,7 @@ export default function Modal({ open, title, onClose, children, footer, tall = f
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className={`modal-sheet${tall ? ' modal-sheet--tall' : ''}`}
+        className={`modal-sheet${tall ? ' modal-sheet--tall' : ''}${fullPage ? ' modal-sheet--full' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

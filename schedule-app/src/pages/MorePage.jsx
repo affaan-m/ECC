@@ -694,6 +694,7 @@ export default function MorePage() {
         open={!!editingStatus}
         title={editingStatus?.id ? 'Edit status' : 'New status'}
         onClose={() => setEditingStatus(null)}
+        fullPage
         footer={
           <div className="modal-actions">
             {editingStatus?.id && (
@@ -747,6 +748,7 @@ export default function MorePage() {
         open={!!editingType}
         title={editingType?.id ? 'Edit event type' : 'New event type'}
         onClose={() => setEditingType(null)}
+        fullPage
         footer={
           <div className="modal-actions">
             {editingType?.id && (
@@ -800,6 +802,7 @@ export default function MorePage() {
         open={feedback !== null}
         title="Send feedback"
         onClose={() => setFeedback(null)}
+        fullPage
         footer={
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => submitFeedback('copy')}>
@@ -881,6 +884,7 @@ export default function MorePage() {
         open={!!editingProfile}
         title="Edit profile"
         onClose={() => setEditingProfile(null)}
+        fullPage
         footer={
           <div className="modal-actions">
             <button
