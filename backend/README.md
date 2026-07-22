@@ -99,6 +99,8 @@ Both work the same way for this service:
 | --- | --- | --- |
 | `GET /api/health` | none | liveness probe |
 | `GET /api/me` | Clerk session | `{ id, email, isPro, subscriptionStatus, currentPeriodEnd }` |
+| `GET /api/data` | Clerk session | `{ data, updatedAt }` — the whole synced app data blob, or `{ data: null }` if nothing's been pushed yet |
+| `PUT /api/data` | Clerk session | body `{ data: <object> }`, upserts the whole blob, returns `{ updatedAt }` |
 | `POST /api/billing/checkout` | Clerk session | body `{ plan: "monthly" \| "annual" }`, returns `{ url }` — redirect the browser there |
 | `POST /api/billing/portal` | Clerk session | returns `{ url }` for Stripe's hosted subscription-management page |
 | `POST /api/webhooks/clerk` | Clerk webhook signature | keeps `User.email` in sync |
@@ -109,9 +111,11 @@ the frontend gets this from Clerk's `useAuth().getToken()`.
 
 ## Known gaps / next steps
 
-- No calendar/contacts/goals data sync yet — that data is still local-only
-  in the browser. Needed before any server-side feature (e.g. an AI
-  assistant with access to your history) can work.
+- Data sync (`/api/data`) stores the whole app state as one JSON blob per
+  user — simple last-write-wins across a person's own devices, not a
+  conflict-resolving multi-editor sync. It's a real prerequisite for any
+  server-side feature that needs a user's history (e.g. an AI assistant),
+  but that feature itself still needs to be built.
 - `subscriptionStatus` treats `active` and `trialing` as Pro; adjust
   `PRO_STATUSES` in `src/routes/me.js` if you add a trial or grace-period
   policy.

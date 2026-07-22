@@ -8,7 +8,7 @@ import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
 import { setHapticsEnabled } from './data/haptics.js';
-import { fetchMe, backendConfigured } from './data/api.js';
+import { fetchMe, backendConfigured, fetchSyncedData, pushSyncedData } from './data/api.js';
 import { CLERK_ENABLED } from './data/clerkConfig.js';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
@@ -39,6 +39,74 @@ function SubscriptionSync() {
       cancelled = true;
     };
   }, [isSignedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+// Syncs the whole app data blob (goals, events, contacts, notes, ...) to the
+// backend when signed in and the user has Cloud sync turned on (More →
+// Account & sync). Policy: on activating, pull whatever's saved on the
+// server and replace local state with it (the cloud is treated as
+// authoritative once something's already up there); if nothing's saved yet,
+// push the current local data to seed it. After that, any local change is
+// pushed on a short debounce. This is intentionally simple last-write-wins
+// sync for one person's own devices, not a conflict-resolving multi-editor
+// sync. Only ever mounted when CLERK_ENABLED, so useAuth() always has a
+// provider.
+function DataSync() {
+  const { state } = useStore();
+  const actions = useActions();
+  const { isSignedIn, getToken } = useAuth();
+  const cloudSyncOn = !!state.settings?.cloudSync;
+  const isPro = !!state.settings?.isPro;
+  const active = isSignedIn && cloudSyncOn && isPro && backendConfigured();
+
+  const pulledRef = useRef(false);
+  const skipNextPushRef = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Initial pull, once per activation (sign-in + toggle-on + Pro all true).
+  useEffect(() => {
+    if (!active) {
+      pulledRef.current = false;
+      return;
+    }
+    if (pulledRef.current) return;
+    pulledRef.current = true;
+    let cancelled = false;
+    fetchSyncedData(getToken)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data) {
+          skipNextPushRef.current = true;
+          actions.importData(data);
+        } else {
+          return pushSyncedData(getToken, stateRef.current);
+        }
+      })
+      .catch((err) => console.warn('Cloud sync: initial sync failed:', err.message));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  // Debounced push whenever local data changes while sync is active.
+  useEffect(() => {
+    if (!active) return;
+    if (skipNextPushRef.current) {
+      skipNextPushRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      pushSyncedData(getToken, state).catch((err) =>
+        console.warn('Cloud sync: push failed:', err.message)
+      );
+    }, 2500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, active]);
+
   return null;
 }
 
@@ -156,6 +224,7 @@ export default function App() {
   return (
     <div className="app">
       {CLERK_ENABLED && <SubscriptionSync />}
+      {CLERK_ENABLED && <DataSync />}
       <main className="app-main" key={location.pathname}>
         <Routes>
           <Route path="/" element={<HomePage />} />

@@ -26,4 +26,9 @@ export const startCheckout = (getToken, plan) =>
   request('/api/billing/checkout', { getToken, method: 'POST', body: { plan } });
 export const openBillingPortal = (getToken) => request('/api/billing/portal', { getToken, method: 'POST' });
 
+// Whole-app-data sync: mirrors the same object shape kept in localStorage.
+export const fetchSyncedData = (getToken) => request('/api/data', { getToken });
+export const pushSyncedData = (getToken, data) =>
+  request('/api/data', { getToken, method: 'PUT', body: { data } });
+
 export const backendConfigured = () => !!BASE_URL;

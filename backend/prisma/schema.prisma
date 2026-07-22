@@ -21,4 +21,19 @@ model User {
 
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+
+  data                 UserData?
+}
+
+// The whole app data blob (goals, events, contacts, notes, ...) as one JSON
+// document per user — mirrors the same shape the frontend already keeps in
+// localStorage, so syncing is "upload the object" / "download the object"
+// rather than a normalized relational sync across nine entity types.
+model UserData {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

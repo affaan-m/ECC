@@ -17,6 +17,7 @@ import { formatTime } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
+import { backendConfigured } from '../data/api.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
 const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: formatHour(h) }));
@@ -272,11 +273,15 @@ export default function MorePage() {
             <span className="toggle-knob" />
           </button>
         </div>
-        <p className="muted small">
-          {isPro
-            ? "Sync isn't connected to a server yet — flipping this on doesn't move your data anywhere. It's here so the setting is ready once a backend exists."
-            : 'Keep your data synced across devices. Requires Pro.'}
-        </p>
+        {isPro && CLERK_ENABLED && backendConfigured() ? (
+          <CloudSyncStatus cloudSyncOn={cloudSyncOn} />
+        ) : (
+          <p className="muted small">
+            {isPro
+              ? "Sync isn't connected to a server yet — flipping this on doesn't move your data anywhere. It's here so the setting is ready once a backend exists."
+              : 'Keep your data synced across devices. Requires Pro.'}
+          </p>
+        )}
         <button className="btn btn-ghost full" onClick={() => requirePro(() => alert('Google sign-in requires a backend that is not connected in this build yet.'))}>
           <GoogleIcon /> Sign in with Google {!isPro && '· Pro'}
         </button>
@@ -950,7 +955,7 @@ function AccountSection() {
       ) : (
         <>
           <p className="muted small">
-            Sign in to subscribe to Pro and keep your subscription across devices.
+            Sign in to subscribe to Pro, sync your data, and keep your subscription across devices.
           </p>
           <button className="btn btn-ghost full" onClick={() => clerk.openSignIn()}>
             Sign in
@@ -959,6 +964,17 @@ function AccountSection() {
       )}
     </section>
   );
+}
+
+function CloudSyncStatus({ cloudSyncOn }) {
+  const { isSignedIn } = useAuth();
+  if (!cloudSyncOn) {
+    return <p className="muted small">Keep your data synced across devices.</p>;
+  }
+  if (!isSignedIn) {
+    return <p className="muted small">Sign in above to start syncing your data to your account.</p>;
+  }
+  return <p className="muted small">Your data syncs automatically to your account.</p>;
 }
 
 function HomeBubbleReorder({ bubbles, onChange }) {
