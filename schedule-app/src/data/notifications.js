@@ -105,5 +105,18 @@ export function runReminderScan(state) {
     }
   }
 
+  // Task reminders: each selected lead time fires once, counting back from
+  // the task's own due date+time (only meaningful when both are set).
+  for (const t of state.tasks || []) {
+    if (t.done || t.dueDate !== today || !t.dueTime) continue;
+    const due = timeToMinutes(t.dueTime);
+    for (const lead of t.reminderOffsets || []) {
+      const trigger = due - lead;
+      if (nowMin >= trigger && nowMin <= due) {
+        fire(`task:${t.id}:${lead}:${today}`, t.title || 'Task due', `Due at ${formatTime(t.dueTime)} · in ${lead} min`);
+      }
+    }
+  }
+
   if (changed) saveFired(fired);
 }

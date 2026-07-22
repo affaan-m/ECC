@@ -282,7 +282,7 @@ export function useActions() {
     deletePin: (id) => dispatch({ type: 'DELETE_PIN', id }),
 
     addTask: (data) =>
-      dispatch({ type: 'ADD_TASK', task: { id: uid('t'), done: false, reminder: null, ...data } }),
+      dispatch({ type: 'ADD_TASK', task: { id: uid('t'), done: false, dueTime: '', reminderOffsets: [], ...data } }),
     updateTask: (task) => dispatch({ type: 'UPDATE_TASK', task }),
     deleteTask: (id) => dispatch({ type: 'DELETE_TASK', id }),
 

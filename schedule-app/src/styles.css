@@ -1422,6 +1422,39 @@ textarea {
   pointer-events: none;
   z-index: 5;
 }
+.task-time-layer {
+  position: absolute;
+  top: 0;
+  left: 52px;
+  right: 4px;
+  pointer-events: none;
+}
+.task-time-block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--good);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 2;
+}
+.task-time-check {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--good);
+  flex: none;
+}
 .day-content--in-right,
 .day-content--in-left {
   animation-duration: 0.22s;

@@ -10,6 +10,11 @@ import { normalizeHomeBubbles } from '../data/homeBubbles.js';
 import { normalizeHomeSections } from '../data/homeSections.js';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
+const TASK_REMINDER_OFFSETS = [
+  { mins: 15, label: '15 min before' },
+  { mins: 30, label: '30 min before' },
+  { mins: 60, label: '1 hour before' },
+];
 
 export default function HomePage() {
   const { state } = useStore();
@@ -54,9 +59,8 @@ export default function HomePage() {
       out.push({ kind: 'goal', id: g.id, label: g.title, time: g.reminder.time });
     }
     for (const t of state.tasks || []) {
-      if (t.done) continue;
-      if (t.reminder?.time) out.push({ kind: 'task', id: t.id, label: t.title, time: t.reminder.time });
-      else if (t.dueDate === today) out.push({ kind: 'task', id: t.id, label: t.title, time: null });
+      if (t.done || t.dueDate !== today) continue;
+      out.push({ kind: 'task', id: t.id, label: t.title, time: t.dueTime || null });
     }
     for (const e of state.events) {
       for (const occ of expandEventOnDay(e, today)) {
@@ -80,8 +84,8 @@ export default function HomePage() {
       notes: '',
       location: '',
       dueDate: '',
-      reminderOn: false,
-      reminderTime: '09:00',
+      dueTime: '',
+      reminderOffsets: [],
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
@@ -93,17 +97,28 @@ export default function HomePage() {
       notes: t.notes || '',
       location: t.location || '',
       dueDate: t.dueDate || '',
-      reminderOn: !!t.reminder,
-      reminderTime: t.reminder?.time || '09:00',
+      dueTime: t.dueTime || '',
+      reminderOffsets: t.reminderOffsets || [],
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
   };
   const taskDirty = editingTask ? JSON.stringify(editingTask) !== initialTaskJson.current : false;
+  const toggleTaskReminderOffset = (mins) => {
+    setEditingTask((t) => ({
+      ...t,
+      reminderOffsets: t.reminderOffsets.includes(mins)
+        ? t.reminderOffsets.filter((m) => m !== mins)
+        : [...t.reminderOffsets, mins],
+    }));
+  };
   const saveTask = async () => {
     const title = editingTask.title.trim();
     if (!title) return setEditingTask(null);
-    if (editingTask.reminderOn) {
+    // A "before due" reminder needs a due date+time to count back from.
+    const canRemind = !!(editingTask.dueDate && editingTask.dueTime);
+    const reminderOffsets = canRemind ? editingTask.reminderOffsets : [];
+    if (reminderOffsets.length > 0) {
       await requestNotificationPermission();
       actions.setSettings({ notifications: true });
     }
@@ -112,7 +127,8 @@ export default function HomePage() {
       notes: editingTask.notes.trim(),
       location: editingTask.location.trim(),
       dueDate: editingTask.dueDate,
-      reminder: editingTask.reminderOn ? { time: editingTask.reminderTime } : null,
+      dueTime: editingTask.dueTime,
+      reminderOffsets,
     };
     if (editingTask.id) actions.updateTask({ ...editingTask, ...payload });
     else actions.addTask({ ...payload, createdAt: today });
@@ -296,7 +312,7 @@ export default function HomePage() {
                         </span>
                       )}
                     </button>
-                    {t.reminder?.time && !t.done && <span className="reminder-time">{formatTime(t.reminder.time)}</span>}
+                    {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
                     <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
                       ✕
                     </button>
@@ -538,14 +554,27 @@ export default function HomePage() {
                 placeholder="Optional"
               />
             </label>
-            <label className="field">
-              <span>Due date</span>
-              <input
-                type="date"
-                value={editingTask.dueDate}
-                onChange={(e) => setEditingTask({ ...editingTask, dueDate: e.target.value })}
-              />
-            </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Due date</span>
+                <input
+                  type="date"
+                  value={editingTask.dueDate}
+                  onChange={(e) => setEditingTask({ ...editingTask, dueDate: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Due time</span>
+                <input
+                  type="time"
+                  value={editingTask.dueTime}
+                  onChange={(e) => setEditingTask({ ...editingTask, dueTime: e.target.value })}
+                />
+              </label>
+            </div>
+            {editingTask.dueDate && editingTask.dueTime && (
+              <p className="muted small">Shows on the Planner calendar at that time.</p>
+            )}
             <label className="field">
               <span>Notes</span>
               <textarea
@@ -555,28 +584,26 @@ export default function HomePage() {
                 placeholder="Any details…"
               />
             </label>
-            <div className="field">
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={editingTask.reminderOn}
-                  onChange={(e) => setEditingTask({ ...editingTask, reminderOn: e.target.checked })}
-                />
+            {editingTask.dueDate && editingTask.dueTime && (
+              <div className="field">
                 <span>Remind me</span>
-              </label>
-              {editingTask.reminderOn && (
-                <>
-                  <input
-                    type="time"
-                    value={editingTask.reminderTime}
-                    onChange={(e) => setEditingTask({ ...editingTask, reminderTime: e.target.value })}
-                  />
-                  {!notificationsSupported() && (
-                    <span className="muted small">This browser can't show notifications.</span>
-                  )}
-                </>
-              )}
-            </div>
+                <div className="chips">
+                  {TASK_REMINDER_OFFSETS.map((o) => (
+                    <button
+                      key={o.mins}
+                      type="button"
+                      className={`chip${editingTask.reminderOffsets.includes(o.mins) ? ' chip--on' : ''}`}
+                      onClick={() => toggleTaskReminderOffset(o.mins)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                {editingTask.reminderOffsets.length > 0 && !notificationsSupported() && (
+                  <span className="muted small">This browser can't show notifications.</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </EditorSheet>

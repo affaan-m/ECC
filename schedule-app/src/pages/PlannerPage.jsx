@@ -615,9 +615,21 @@ function DayView({
   const hours = [];
   for (let h = dayStart; h <= dayEnd; h++) hours.push(h);
 
+  // Tasks with a specific due time render as positioned blocks on the day
+  // they're due (below); everything else (no due time, or done) stays in
+  // the flat undated chip row above the timeline, same on every day.
   const pendingTasks = useMemo(
-    () => (tasks ? tasks.filter((t) => !t.done) : null),
+    () => (tasks ? tasks.filter((t) => !t.done && !t.dueTime) : null),
     [tasks]
+  );
+  const timedTasksForDay = useMemo(
+    () =>
+      tasks
+        ? tasks
+            .filter((t) => !t.done && t.dueTime && t.dueDate === date)
+            .sort((a, b) => a.dueTime.localeCompare(b.dueTime))
+        : [],
+    [tasks, date]
   );
 
   const bgSwipeSuppressRef = useRef(false); // swallow the click that follows a background swipe-to-navigate
@@ -1035,6 +1047,30 @@ function DayView({
             );
           })}
           </div>
+
+          {timedTasksForDay.length > 0 && (
+            <div className="task-time-layer">
+              {timedTasksForDay.map((t) => {
+                const top = (timeToMinutes(t.dueTime) - dayStart * 60) * pxPerMin;
+                return (
+                  <button
+                    key={t.id}
+                    className="task-time-block"
+                    style={{ top }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTask?.(t);
+                    }}
+                  >
+                    <span className="task-time-check" />
+                    <span className="task-time-label">
+                      {formatTime(t.dueTime)} · {t.title}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {armedKey &&

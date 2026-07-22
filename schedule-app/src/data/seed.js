@@ -230,9 +230,9 @@ export function makeSeed() {
   ];
 
   const tasks = [
-    { id: uid('t'), title: 'Renew car registration', done: false, dueDate: toISODate(addDays(today, 3)), reminder: null, createdAt: today },
-    { id: uid('t'), title: 'Pick up dry cleaning', done: false, dueDate: today, reminder: { time: '17:00' }, createdAt: today },
-    { id: uid('t'), title: 'Email the landlord', done: true, dueDate: '', reminder: null, createdAt: today },
+    { id: uid('t'), title: 'Renew car registration', done: false, dueDate: toISODate(addDays(today, 3)), dueTime: '', reminderOffsets: [], createdAt: today },
+    { id: uid('t'), title: 'Pick up dry cleaning', done: false, dueDate: today, dueTime: '17:00', reminderOffsets: [30], createdAt: today },
+    { id: uid('t'), title: 'Email the landlord', done: true, dueDate: '', dueTime: '', reminderOffsets: [], createdAt: today },
   ];
 
   const notes = [
