@@ -5,8 +5,8 @@
   --text: #1a2430;
   --muted: #64707c;
   --border: #e2e7ec;
-  --accent: #0f8f72;
-  --accent-soft: #e1f3ee;
+  --accent: #a9822a;
+  --accent-soft: #f6ecc9;
   --accent-ink: #ffffff;
   --track: #e4e9ee;
   --danger: #d1495b;
@@ -26,8 +26,8 @@
   --text: #e6ebf0;
   --muted: #93a0ad;
   --border: #2b3540;
-  --accent: #3ecfa8;
-  --accent-soft: #12352c;
+  --accent: #e0c15a;
+  --accent-soft: #332a12;
   --accent-ink: #0f141a;
   --track: #2b3540;
   --danger: #e06b7b;
@@ -41,6 +41,9 @@
    Each scheme overrides just the accent pair per light/dark mode; the rest
    of the palette (surfaces, text, danger/good/warn) stays consistent so the
    app never looks "broken", only re-tinted. */
+:root[data-theme='light'][data-scheme='emerald'] { --accent: #0f8f72; --accent-soft: #e1f3ee; }
+:root[data-theme='dark'][data-scheme='emerald']  { --accent: #3ecfa8; --accent-soft: #12352c; }
+
 :root[data-theme='light'][data-scheme='ocean'] { --accent: #1f6fb0; --accent-soft: #e2eef7; }
 :root[data-theme='dark'][data-scheme='ocean']  { --accent: #4fa8e0; --accent-soft: #14293a; }
 

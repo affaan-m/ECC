@@ -44,7 +44,8 @@ const DESTRUCTIVE_ACTIONS = {
 };
 
 const COLOR_SCHEMES = [
-  { value: 'default', label: 'Emerald', swatch: '#0f8f72' },
+  { value: 'default', label: 'Gold', swatch: '#a9822a' },
+  { value: 'emerald', label: 'Emerald', swatch: '#0f8f72' },
   { value: 'ocean', label: 'Ocean', swatch: '#1f6fb0' },
   { value: 'sunset', label: 'Sunset', swatch: '#d9601f' },
   { value: 'grape', label: 'Grape', swatch: '#7c4fd1' },
