@@ -607,6 +607,8 @@ function DayView({
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
   const [dragDx, setDragDx] = useState(0);
+  const [swipeDx, setSwipeDx] = useState(0); // live 1:1 follow while background-swiping between days
+  const [swipeDragging, setSwipeDragging] = useState(false);
   const [groupDragging, setGroupDragging] = useState(false);
   const [groupDrag, setGroupDrag] = useState({ dy: 0, dx: 0, dayOffset: 0 });
 
@@ -666,6 +668,8 @@ function DayView({
         pinchRef.current.startZoom = zoom;
         clearGesture(); // a second finger landing cancels any armed drag
         swipeRef.current = null; // ...and any single-finger swipe-to-navigate
+        setSwipeDragging(false);
+        setSwipeDx(0);
         return;
       }
     }
@@ -676,18 +680,29 @@ function DayView({
       // unrelated tap-to-add. Clearing it here makes it self-correcting.
       bgSwipeSuppressRef.current = false;
       swipeRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
+      setSwipeDragging(true);
     }
   };
   const onBodyPointerMove = (e) => {
     const p = pinchRef.current;
-    if (!p || !p.pointers.has(e.pointerId)) return;
-    p.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (p.pointers.size === 2 && p.startDist > 20) {
-      const [a, b] = [...p.pointers.values()];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(((p.startZoom * dist) / p.startDist) * 20) / 20));
-      onZoom?.(next);
+    if (p && p.pointers.has(e.pointerId)) {
+      p.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (p.pointers.size === 2 && p.startDist > 20) {
+        const [a, b] = [...p.pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(((p.startZoom * dist) / p.startDist) * 20) / 20));
+        onZoom?.(next);
+      }
+      return;
     }
+    const s = swipeRef.current;
+    if (!s || s.pointerId !== e.pointerId) return;
+    const dx = e.clientX - s.startX;
+    const dy = e.clientY - s.startY;
+    // Live 1:1 finger-following, but only once the gesture reads as clearly
+    // horizontal — otherwise a vertical scroll would visibly tug the day
+    // sideways before settling back to 0.
+    setSwipeDx(Math.abs(dx) > Math.abs(dy) * 1.4 ? dx : 0);
   };
   const onBodyPointerUp = (e) => {
     const s = swipeRef.current;
@@ -700,6 +715,8 @@ function DayView({
         onNavigateDay?.(dx < 0 ? 1 : -1);
         confirmTick();
       }
+      setSwipeDragging(false);
+      setSwipeDx(0);
     }
     const p = pinchRef.current;
     if (!p) return;
@@ -953,6 +970,10 @@ function DayView({
         <div
           key={date}
           className={`day-content${direction > 0 ? ' day-content--in-right' : direction < 0 ? ' day-content--in-left' : ''}`}
+          style={{
+            transform: `translateX(${swipeDx}px)`,
+            transition: swipeDragging ? 'none' : 'transform 0.2s ease',
+          }}
         >
           {hours.map((h) => (
             <div className="hour-row" key={h} style={{ height: pxPerHour }}>
