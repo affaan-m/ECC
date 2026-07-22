@@ -34,6 +34,7 @@ import {
   repeatLabel,
   REPEAT_OPTIONS,
   WEEKDAY_LETTERS,
+  goalKey,
 } from '../data/helpers.js';
 
 const DAY_START = 6;
@@ -168,7 +169,26 @@ export default function PlannerPage() {
     });
   };
 
+  // A linked goal/task's "done" state should track the event's own done
+  // checkbox — bump the goal's progress for the day/week the event fell on,
+  // or flip the task's done flag. Reversible, so unchecking undoes it too.
+  const applyLinkOnDone = (linkKind, linkId, done, dateIso) => {
+    if (!linkKind || !linkId) return;
+    if (linkKind === 'goal') {
+      const goal = state.goals.find((g) => g.id === linkId);
+      if (!goal) return;
+      const key = goalKey(goal.period || 'weekly', fromISODate(dateIso));
+      const current = goal.progress?.[key] || 0;
+      actions.setGoalProgress(goal.id, key, Math.max(0, current + (done ? 1 : -1)));
+    } else if (linkKind === 'task') {
+      const task = state.tasks.find((t) => t.id === linkId);
+      if (!task) return;
+      actions.updateTask({ ...task, done });
+    }
+  };
+
   const saveEvent = (pl) => {
+    const { linkKind, linkId } = pl.fields;
     if (pl.isNew || !pl.id) {
       const recurring = pl.repeat && pl.repeat !== 'none';
       actions.addEvent({
@@ -182,12 +202,14 @@ export default function PlannerPage() {
         skipDates: [],
         overrides: {},
       });
+      if (pl.done) applyLinkOnDone(linkKind, linkId, true, pl.date);
       setEditing(null);
       return;
     }
     const master = state.events.find((e) => e.id === pl.id);
     if (!master) return setEditing(null);
     const repeat = master.repeat || 'none';
+    const prevDone = repeat === 'none' ? !!master.done : (master.doneDates || []).includes(pl.recDate);
     if (repeat === 'none') {
       actions.updateEvent({ ...master, ...pl.fields, date: pl.date, done: !!pl.done });
     } else if (pl.scope === 'all') {
@@ -221,6 +243,7 @@ export default function PlannerPage() {
         doneDates: setMembership(master.doneDates, pl.recDate, pl.done),
       });
     }
+    if (!!pl.done !== prevDone) applyLinkOnDone(linkKind, linkId, !!pl.done, pl.date || pl.recDate);
     setEditing(null);
   };
 
@@ -250,6 +273,7 @@ export default function PlannerPage() {
     } else {
       actions.updateEvent({ ...master, doneDates: setMembership(master.doneDates, occ.recDate, nextDone) });
     }
+    applyLinkOnDone(master.linkKind, master.linkId, nextDone, occ.occDate || occ.recDate);
     setViewing((v) => (v ? { ...v, done: nextDone } : v));
   };
 
@@ -495,6 +519,8 @@ export default function PlannerPage() {
           occ={viewing}
           contacts={state.contacts}
           eventTypes={state.eventTypes || []}
+          goals={state.goals || []}
+          tasks={state.tasks || []}
           isPro={!!state.settings?.isPro}
           onClose={() => setViewing(null)}
           onEdit={openEditFromView}
@@ -507,6 +533,8 @@ export default function PlannerPage() {
         events={state.events}
         contacts={state.contacts}
         eventTypes={state.eventTypes || []}
+        goals={state.goals || []}
+        tasks={state.tasks || []}
         settings={state.settings}
         onClose={() => setEditing(null)}
         onSave={saveEvent}
@@ -1216,13 +1244,17 @@ function MonthView({ monthStart, events, onOpenDay, cursor, onSwipe }) {
 
 // --- Read-only event detail view --------------------------------------------
 
-function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, onToggleDone }) {
+const DETAIL_DISMISS_THRESHOLD = 110;
+
+function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClose, onEdit, onToggleDone }) {
   const navigate = useNavigate();
   useBackDismiss(true, onClose);
   const type = eventTypes.find((t) => t.id === occ.typeId);
   const contact = contacts.find((c) => c.id === occ.contactId);
   const recurring = occ.repeat && occ.repeat !== 'none';
   const color = occ.color || type?.color;
+  const linkedGoal = occ.linkKind === 'goal' ? goals.find((g) => g.id === occ.linkId) : null;
+  const linkedTask = occ.linkKind === 'task' ? tasks.find((t) => t.id === occ.linkId) : null;
 
   const directionsUrl =
     occ.locLat != null ? `https://www.google.com/maps/dir/?api=1&destination=${occ.locLat},${occ.locLng}` : null;
@@ -1235,9 +1267,38 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
     alert('Inviting others to collaborate on an event needs an account backend, which is not connected in this build yet.');
   };
 
+  // Read-only view, so a swipe down on the grip/header just closes it — no
+  // unsaved-changes prompt needed the way the editor sheet has one.
+  const [dragY, setDragY] = useState(0);
+  const startY = useRef(null);
+  const dragging = useRef(false);
+  const onPointerDown = (e) => {
+    if (e.target.closest('button')) return;
+    startY.current = e.clientY;
+    dragging.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!dragging.current || startY.current == null) return;
+    const dy = e.clientY - startY.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const onPointerUp = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    if (dragY > DETAIL_DISMISS_THRESHOLD) onClose();
+    setDragY(0);
+  };
+
   return (
-    <div className="editor-sheet">
-      <div className="editor-sheet-drag">
+    <div className="editor-sheet" style={{ transform: dragY ? `translateY(${dragY}px)` : undefined }}>
+      <div
+        className="editor-sheet-drag"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
         <div className="editor-sheet-grip">
           <span className="modal-handle" />
         </div>
@@ -1296,6 +1357,12 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
               <span className="detail-value">{contact.name}</span>
             </div>
           )}
+          {(linkedGoal || linkedTask) && (
+            <div className="detail-field">
+              <span className="detail-label">Linked to</span>
+              <span className="detail-value">{linkedGoal ? `🎯 ${linkedGoal.title}` : `✅ ${linkedTask.title}`}</span>
+            </div>
+          )}
         </section>
 
         {occ.locLat != null && (
@@ -1318,6 +1385,11 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
           <input type="checkbox" checked={!!occ.done} onChange={onToggleDone} />
           <span>Mark as done</span>
         </label>
+        {(linkedGoal || linkedTask) && (
+          <p className="muted small">
+            Checking this updates {linkedGoal ? 'the linked goal' : 'the linked task'}.
+          </p>
+        )}
 
         <button className="btn btn-ghost full share-event-btn" onClick={shareEvent}>
           👥 Share event {!isPro && '· Pro'}
@@ -1329,7 +1401,7 @@ function EventDetailView({ occ, contacts, eventTypes, isPro, onClose, onEdit, on
 
 // --- Event editor (full-page sheet) -----------------------------------------
 
-function EventEditor({ editing, events, contacts, eventTypes, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings, onSelectLocation }) {
+function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings, onSelectLocation }) {
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
   const [scheduling, setScheduling] = useState(false);
@@ -1358,6 +1430,7 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
       typeId: editing.typeId || '',
       color: editing.color || '',
       reminder: Number(editing.reminder) || 0,
+      link: editing.linkKind && editing.linkId ? `${editing.linkKind}:${editing.linkId}` : '',
       recDate: editing.recDate || editing.date,
       occDate: editing.occDate || editing.date,
       masterDate: editing.date,
@@ -1429,6 +1502,7 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
   const doSave = () => {
     let end = draft.end;
     if (timeToMinutes(end) <= timeToMinutes(draft.start)) end = minutesToTime(timeToMinutes(draft.start) + 30);
+    const [linkKind, linkId] = draft.link ? draft.link.split(':') : ['', ''];
     onSave({
       id: draft.id,
       isNew: !draft.id,
@@ -1451,6 +1525,8 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
         typeId: draft.typeId,
         color: draft.color,
         reminder: draft.reminder,
+        linkKind,
+        linkId,
       },
     });
   };
@@ -1673,6 +1749,25 @@ function EventEditor({ editing, events, contacts, eventTypes, settings, onClose,
             placeholder="Optional"
           />
         </label>
+        <label className="field">
+          <span>Link to goal / task</span>
+          <Select
+            value={draft.link}
+            onChange={(v) => setDraft({ ...draft, link: v })}
+            placeholder="Not linked"
+            options={[
+              { value: '', label: 'None' },
+              ...goals.map((g) => ({ value: `goal:${g.id}`, label: `🎯 ${g.title}` })),
+              ...tasks.map((t) => ({ value: `task:${t.id}`, label: `✅ ${t.title}` })),
+            ]}
+          />
+          {draft.link && (
+            <span className="muted small">
+              Marking this event done will update that {draft.link.startsWith('goal:') ? 'goal' : 'task'}.
+            </span>
+          )}
+        </label>
+
         <label className="check-row">
           <input type="checkbox" checked={!!draft.done} onChange={(e) => setDraft({ ...draft, done: e.target.checked })} />
           <span>{recurringMaster ? 'Mark this day done' : 'Mark as done'}</span>
