@@ -1,0 +1,28 @@
+{
+  "name": "stewardly-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:generate": "prisma generate --config prisma.config.mjs",
+    "db:migrate": "prisma migrate dev --config prisma.config.mjs",
+    "db:deploy": "prisma migrate deploy --config prisma.config.mjs"
+  },
+  "dependencies": {
+    "@clerk/express": "^2.1.44",
+    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/client": "^7.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "stripe": "^22.3.2"
+  },
+  "devDependencies": {
+    "prisma": "^7.9.0"
+  }
+}

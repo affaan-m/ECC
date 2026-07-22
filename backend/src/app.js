@@ -1,0 +1,34 @@
+import express from 'express';
+import cors from 'cors';
+import { clerkMiddleware } from '@clerk/express';
+import meRoutes from './routes/me.js';
+import billingRoutes from './routes/billing.js';
+import stripeWebhookRouter from './routes/webhooksStripe.js';
+import clerkWebhookRouter from './routes/webhooksClerk.js';
+
+export function createApp() {
+  const app = express();
+
+  app.use(cors({ origin: process.env.FRONTEND_URL || true }));
+
+  // Webhooks need the raw request body for signature verification — mount
+  // them before express.json() touches the stream.
+  app.use('/api/webhooks/stripe', stripeWebhookRouter);
+  app.use('/api/webhooks/clerk', clerkWebhookRouter);
+
+  app.use(express.json());
+  app.use(clerkMiddleware());
+
+  app.get('/api/health', (req, res) => res.json({ ok: true }));
+  app.use('/api/me', meRoutes);
+  app.use('/api/billing', billingRoutes);
+
+  app.use((req, res) => res.status(404).json({ error: 'Not found' }));
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  });
+
+  return app;
+}
