@@ -16,6 +16,7 @@ import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
+import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { backendConfigured } from '../data/api.js';
 
@@ -400,6 +401,30 @@ export default function MorePage() {
                   </li>
                 );
               })}
+            </ul>
+            <span className="bubble-reorder-lock-hint">
+              <LockIcon /> Unlock to customize
+            </span>
+          </button>
+        )}
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Customize navigation tabs {!isPro && '· Pro'}</span>
+        <p className="muted small">Choose which tabs show in the bar, and drag to reorder them. More always stays on.</p>
+        {isPro ? (
+          <TabReorder
+            tabs={normalizeTabOrder(s.tabOrder)}
+            onChange={(next) => actions.setSettings({ tabOrder: next })}
+          />
+        ) : (
+          <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
+            <ul className="bubble-reorder-list bubble-reorder-list--preview">
+              {TAB_TYPES.map((t) => (
+                <li key={t.id} className="bubble-reorder-row">
+                  <span className="bubble-reorder-label">{t.label}</span>
+                </li>
+              ))}
             </ul>
             <span className="bubble-reorder-lock-hint">
               <LockIcon /> Unlock to customize
@@ -1059,6 +1084,102 @@ function HomeBubbleReorder({ bubbles, onChange }) {
             >
               <span className="toggle-knob" />
             </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Same drag-to-reorder + toggle pattern as HomeBubbleReorder, but for the
+// nav tab bar — kept separate since it locks the "more" row's toggle on
+// (there's no other way back to this screen if it were hidden).
+function TabReorder({ tabs, onChange }) {
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const dragRef = useRef(null);
+  const rowRefs = useRef([]);
+
+  const reorder = (from, to) => {
+    if (from === to) return;
+    const next = tabs.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    onChange(next);
+  };
+
+  const onDown = (i) => (e) => {
+    const rowH = rowRefs.current[i]?.getBoundingClientRect().height || 48;
+    dragRef.current = { index: i, startY: e.clientY, rowH };
+    setDragIndex(i);
+    setDragY(0);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    confirmTick();
+  };
+  const onMove = (e) => {
+    const g = dragRef.current;
+    if (!g) return;
+    const dy = e.clientY - g.startY;
+    setDragY(dy);
+    const steps = Math.round(dy / g.rowH);
+    if (steps !== 0) {
+      const target = Math.max(0, Math.min(tabs.length - 1, g.index + steps));
+      if (target !== g.index) {
+        reorder(g.index, target);
+        g.startY += (target - g.index) * g.rowH;
+        g.index = target;
+        setDragIndex(target);
+        setDragY(e.clientY - g.startY);
+        selectTick();
+      }
+    }
+  };
+  const onUp = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDragIndex(null);
+    setDragY(0);
+    confirmTick();
+  };
+
+  return (
+    <ul className="bubble-reorder-list">
+      {tabs.map((tb, i) => {
+        const type = TAB_TYPES.find((t) => t.id === tb.id);
+        const locked = tb.id === 'more';
+        const dragging = dragIndex === i;
+        return (
+          <li
+            key={tb.id}
+            ref={(el) => (rowRefs.current[i] = el)}
+            className={`bubble-reorder-row${dragging ? ' bubble-reorder-row--dragging' : ''}`}
+            style={dragging ? { transform: `translateY(${dragY}px)` } : undefined}
+          >
+            <button
+              type="button"
+              className="bubble-drag-handle"
+              onPointerDown={onDown(i)}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+              aria-label={`Drag to reorder ${type?.label}`}
+            >
+              <DragHandleIcon />
+            </button>
+            <span className="bubble-reorder-label">{type?.label}</span>
+            {locked ? (
+              <span className="muted small">Always shown</span>
+            ) : (
+              <button
+                type="button"
+                className={`toggle${tb.enabled ? ' toggle--on' : ''}`}
+                role="switch"
+                aria-checked={tb.enabled}
+                onClick={() => onChange(tabs.map((x) => (x.id === tb.id ? { ...x, enabled: !x.enabled } : x)))}
+              >
+                <span className="toggle-knob" />
+              </button>
+            )}
           </li>
         );
       })}

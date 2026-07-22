@@ -1,31 +1,43 @@
 import { NavLink } from 'react-router-dom';
 import { tapTick } from '../data/haptics.js';
+import { useStore } from '../data/store.jsx';
+import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 
-const TABS = [
-  { to: '/', label: 'Home', icon: HomeIcon, end: true },
-  { to: '/goals', label: 'Goals', icon: TargetIcon },
-  { to: '/planner', label: 'Planner', icon: CalendarIcon },
-  { to: '/contacts', label: 'People', icon: PeopleIcon },
-  { to: '/map', label: 'Map', icon: MapIcon },
-  { to: '/more', label: 'More', icon: MoreIcon },
-];
+const ICONS = {
+  home: HomeIcon,
+  goals: TargetIcon,
+  planner: CalendarIcon,
+  contacts: PeopleIcon,
+  map: MapIcon,
+  more: MoreIcon,
+};
 
 export default function TabBar() {
+  const { state } = useStore();
+  // Reordering/hiding tabs is Pro-gated — a lapsed subscriber just falls
+  // back to the full default set rather than being left with a broken bar.
+  const isPro = !!state.settings?.isPro;
+  const order = isPro ? normalizeTabOrder(state.settings?.tabOrder) : TAB_TYPES.map((t) => ({ id: t.id, enabled: true }));
+  const visible = order.filter((o) => o.enabled).map((o) => TAB_TYPES.find((t) => t.id === o.id)).filter(Boolean);
+
   return (
     <nav className="tabbar" aria-label="Primary">
-      {TABS.map(({ to, label, icon: Icon, end }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={end}
-          onClick={tapTick}
-          aria-label={label}
-          title={label}
-          className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
-        >
-          <Icon />
-        </NavLink>
-      ))}
+      {visible.map(({ id, to, label }) => {
+        const Icon = ICONS[id];
+        return (
+          <NavLink
+            key={to}
+            to={to}
+            end={id === 'home'}
+            onClick={tapTick}
+            aria-label={label}
+            title={label}
+            className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
+          >
+            <Icon />
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }
