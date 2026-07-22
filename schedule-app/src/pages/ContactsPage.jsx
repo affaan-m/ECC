@@ -7,6 +7,7 @@ import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { daysAgoLabel, daysSince, todayISO, uid } from '../data/helpers.js';
 import { syncContactAddressPin } from '../data/geocode.js';
+import { parseVCard } from '../data/vcard.js';
 
 // A contact is "overdue" when the time since last contact (or since they were
 // added, if never contacted) meets or exceeds their reconnect cadence.
@@ -122,14 +123,55 @@ export default function ContactsPage() {
 
   const isPro = !!state.settings?.isPro;
 
+  const vcfFileRef = useRef(null);
+  const importVCard = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = parseVCard(reader.result);
+        if (imported.length === 0) return alert('No contacts found in that file.');
+        for (const c of imported) {
+          const contact = {
+            id: uid('c'),
+            name: c.name,
+            phone: c.phone,
+            email: c.email,
+            address: c.address,
+            photo: '',
+            statusId: state.statuses[0]?.id || '',
+            tags: [],
+            notes: c.notes,
+            lastContacted: '',
+            createdAt: todayISO(),
+          };
+          actions.addContact(contact);
+          if (contact.address) syncContactAddressPin(contact, state, actions);
+        }
+        alert(`Imported ${imported.length} contact${imported.length === 1 ? '' : 's'}.`);
+      } catch {
+        alert('That file could not be read as a vCard (.vcf) file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="page">
       <header className="page-head">
         <div className="page-head-row">
           <Brand>People</Brand>
-          <button className="btn btn-primary btn-sm" onClick={startAdd}>
-            + Add
-          </button>
+          <div className="page-head-actions">
+            <button className="icon-btn" onClick={() => vcfFileRef.current?.click()} aria-label="Import contacts (.vcf)" title="Import contacts (.vcf)">
+              <ImportIcon />
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={startAdd}>
+              + Add
+            </button>
+          </div>
+          <input ref={vcfFileRef} type="file" accept=".vcf,text/vcard" hidden onChange={importVCard} />
         </div>
         <input
           className="search"
@@ -324,6 +366,21 @@ function Chevron() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" className="row-chevron">
       <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ImportIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path
+        d="M12 3v11m0 0l-4-4m4 4l4-4M5 19h14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

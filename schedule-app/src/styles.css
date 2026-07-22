@@ -171,6 +171,11 @@ textarea {
   gap: 12px;
   min-height: 40px;
 }
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .page-head h1 {
   font-size: 28px;
