@@ -21,5 +21,5 @@ const app = createApp();
 const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
-  console.log(`Stewardly backend listening on :${port}`);
+  console.log(`Keystone backend listening on :${port}`);
 });

@@ -112,12 +112,6 @@ textarea {
 .splash--out {
   opacity: 0;
 }
-.splash-mark {
-  color: #111;
-}
-:root[data-theme='dark'] .splash-mark {
-  color: #fff;
-}
 
 .app-main {
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 8px);

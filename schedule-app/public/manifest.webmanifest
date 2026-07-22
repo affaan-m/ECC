@@ -1,19 +1,37 @@
 {
-  "name": "Stewardly — Plan, Goals & People",
-  "short_name": "Stewardly",
+  "name": "Keystone - Daily Planner",
+  "short_name": "Keystone",
   "description": "A personal planner for your schedule, goals, and the people in your life.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f4f6f8",
-  "theme_color": "#0e6e57",
+  "theme_color": "#111113",
   "icons": [
     {
       "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

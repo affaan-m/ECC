@@ -33,7 +33,7 @@ const DESTRUCTIVE_ACTIONS = {
   },
   clearCache: {
     title: 'Clear cache?',
-    body: 'This clears the offline app-shell cache and reloads Stewardly. Your data (goals, events, people, notes) is untouched — it lives in local storage, not the cache.',
+    body: 'This clears the offline app-shell cache and reloads Keystone. Your data (goals, events, people, notes) is untouched — it lives in local storage, not the cache.',
     cta: 'Clear cache',
   },
   clearContacts: {
@@ -145,7 +145,7 @@ export default function MorePage() {
         () => {}
       );
     } else {
-      const url = `mailto:?subject=${encodeURIComponent('Stewardly feedback')}&body=${encodeURIComponent(text)}`;
+      const url = `mailto:?subject=${encodeURIComponent('Keystone feedback')}&body=${encodeURIComponent(text)}`;
       window.location.href = url;
     }
     setFeedback(null);
@@ -156,7 +156,7 @@ export default function MorePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stewardly-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `keystone-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -170,7 +170,7 @@ export default function MorePage() {
         const data = JSON.parse(reader.result);
         actions.importData(data);
       } catch {
-        alert('That file could not be read as a Stewardly backup.');
+        alert('That file could not be read as a Keystone backup.');
       }
     };
     reader.readAsText(file);
@@ -219,7 +219,7 @@ export default function MorePage() {
         <section className="pro-bubble-lg pro-bubble-lg--active">
           <span className="pro-bubble-lg-crown">👑</span>
           <div>
-            <strong>Stewardly Pro</strong>
+            <strong>Keystone Pro</strong>
             <p className="muted small">You have Pro (demo mode) active.</p>
           </div>
         </section>
@@ -227,7 +227,7 @@ export default function MorePage() {
         <button className="pro-bubble-lg" onClick={() => navigate('/pricing')}>
           <span className="pro-bubble-lg-crown">👑</span>
           <div>
-            <strong>Upgrade to Stewardly Pro</strong>
+            <strong>Upgrade to Keystone Pro</strong>
             <p className="muted small">People, sharing, sync, themes, and more.</p>
           </div>
           <span className="pro-bubble-lg-arrow">›</span>
@@ -235,7 +235,7 @@ export default function MorePage() {
       )}
 
       <button className="donate-bubble" onClick={() => setConfirm('donate')}>
-        ❤️ Support Stewardly
+        ❤️ Support Keystone
       </button>
 
       {CLERK_ENABLED && <AccountSection />}
@@ -278,7 +278,7 @@ export default function MorePage() {
           <GoogleIcon /> Sign in with Google {!isPro && '· Pro'}
         </button>
         <p className="muted small">
-          A personal Stewardly login (no Google needed) is free and always available — this is
+          A personal Keystone login (no Google needed) is free and always available — this is
           only for connecting a Google account for calendar sync.
         </p>
       </section>
@@ -559,7 +559,7 @@ export default function MorePage() {
         </div>
         <p className="muted small">
           {notificationsSupported()
-            ? 'Get reminders for goals and events while Stewardly is open. (A web app can’t alert you once it’s fully closed.)'
+            ? 'Get reminders for goals and events while Keystone is open. (A web app can’t alert you once it’s fully closed.)'
             : 'This browser doesn’t support notifications.'}
         </p>
       </section>
@@ -686,7 +686,7 @@ export default function MorePage() {
         </div>
       </section>
 
-      <p className="muted small center-pad">Stewardly · works offline · v0.2</p>
+      <p className="muted small center-pad">Keystone · works offline · v0.2</p>
 
       {/* Status editor */}
       <Modal
@@ -858,7 +858,7 @@ export default function MorePage() {
       {/* Donate */}
       <Modal
         open={confirm === 'donate'}
-        title="Support Stewardly"
+        title="Support Keystone"
         onClose={() => setConfirm(null)}
         footer={
           <div className="modal-actions">

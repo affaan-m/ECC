@@ -1,21 +1,33 @@
-// A brief launch splash: the mark rendered as a flat silhouette (black in
-// light mode, white in dark mode) that fades to reveal the app underneath.
+// A brief launch splash: the app icon (fixed black/gold/ivory brand colors,
+// not theme-adaptive — the mark is a badge, not a silhouette) that fades to
+// reveal the app underneath.
 export default function SplashScreen({ fadingOut }) {
   return (
     <div className={`splash${fadingOut ? ' splash--out' : ''}`} aria-hidden="true">
-      <svg className="splash-mark" viewBox="0 0 512 512" width="96" height="96">
+      <svg className="splash-mark" viewBox="0 0 512 512" width="120" height="120">
+        <defs>
+          <linearGradient id="splashGold" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#e0c15a" />
+            <stop offset="1" stopColor="#a9822a" />
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="112" fill="#111113" />
         <path
-          d="M256,96 L362,138 V252 C362,332 315,392 256,420 C197,392 150,332 150,252 V138 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="22"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          fill="#f2efe7"
+          d="M124,388 L124,258 A132,132 0 0 1 388,258 L388,388 L324,388 L324,258 A68,68 0 0 0 188,258 L188,388 Z"
         />
-        <rect x="250" y="228" width="12" height="112" rx="6" fill="currentColor" />
-        <ellipse cx="215" cy="262" rx="34" ry="18" fill="currentColor" transform="rotate(-35 215 262)" />
-        <ellipse cx="297" cy="230" rx="34" ry="18" fill="currentColor" transform="rotate(35 297 230)" />
-        <circle cx="256" cy="348" r="15" fill="none" stroke="currentColor" strokeWidth="7" />
+        <path
+          fill="url(#splashGold)"
+          d="M206.5,135.6 A132,132 0 0 1 305.5,135.6 L281.5,195.0 A68,68 0 0 0 230.5,195.0 Z"
+        />
+        <g stroke="#111113" strokeWidth="7" strokeLinecap="round">
+          <line x1="230.5" y1="195.0" x2="206.5" y2="135.6" />
+          <line x1="281.5" y1="195.0" x2="305.5" y2="135.6" />
+          <line x1="200.3" y1="219.0" x2="147.9" y2="182.3" />
+          <line x1="311.7" y1="219.0" x2="364.1" y2="182.3" />
+          <line x1="124" y1="324" x2="188" y2="324" />
+          <line x1="324" y1="324" x2="388" y2="324" />
+        </g>
       </svg>
     </div>
   );

@@ -1,6 +1,6 @@
-# Stewardly backend
+# Keystone backend
 
-Accounts + billing for Stewardly. This service does **not** yet store your
+Accounts + billing for Keystone. This service does **not** yet store your
 calendar/contacts data — that still lives in the browser's `localStorage`,
 same as before. This is just the foundation: who you are (Clerk) and
 whether you're paying (Stripe). Syncing the actual app data to the server
@@ -21,11 +21,11 @@ You need a local Postgres instance. Quickest path with Postgres already
 installed:
 
 ```bash
-sudo -u postgres psql -c "CREATE USER stewardly WITH PASSWORD 'stewardly_dev' CREATEDB;"
-sudo -u postgres psql -c "CREATE DATABASE stewardly_dev OWNER stewardly;"
+sudo -u postgres psql -c "CREATE USER keystone WITH PASSWORD 'keystone_dev' CREATEDB;"
+sudo -u postgres psql -c "CREATE DATABASE keystone_dev OWNER keystone;"
 ```
 
-Or use Docker: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=stewardly_dev -e POSTGRES_USER=stewardly -e POSTGRES_DB=stewardly_dev postgres:16`.
+Or use Docker: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=keystone_dev -e POSTGRES_USER=keystone -e POSTGRES_DB=keystone_dev postgres:16`.
 
 ### Install + configure
 
@@ -61,7 +61,7 @@ what keeps emails in sync and cleans up on account deletion.)
 
 1. Create/use a [Stripe](https://dashboard.stripe.com) account. Use
    **test mode** until you're ready to charge real cards.
-2. **Product catalog** → create a "Stewardly Pro" product with a monthly
+2. **Product catalog** → create a "Keystone Pro" product with a monthly
    price and an annual price. Copy each Price ID into `STRIPE_PRICE_ID_MONTHLY`
    / `STRIPE_PRICE_ID_ANNUAL` (or just set `STRIPE_PRICE_ID` if you only
    want one billing interval to start).

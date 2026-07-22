@@ -35,7 +35,7 @@ export default function PricingPage() {
 
       <section className="pricing-hero">
         <div className="pricing-crown">👑</div>
-        <h1>Stewardly Pro</h1>
+        <h1>Keystone Pro</h1>
         <p className="muted">Unlock People, sharing, sync, and more.</p>
       </section>
 
@@ -113,7 +113,7 @@ function RealPricingCTA({ plan, isPro }) {
     <>
       {isPro ? (
         <div className="detail-section pricing-active">
-          <span>✓ You're on Stewardly Pro</span>
+          <span>✓ You're on Keystone Pro</span>
           <button className="btn btn-ghost full" onClick={handleManage} disabled={busy}>
             Manage subscription
           </button>
@@ -136,7 +136,7 @@ function DemoPricingCTA({ plan, isPro }) {
     <>
       {isPro ? (
         <div className="detail-section pricing-active">
-          <span>✓ You're on Stewardly Pro (demo mode)</span>
+          <span>✓ You're on Keystone Pro (demo mode)</span>
           <button className="btn btn-ghost full" onClick={() => actions.setSettings({ isPro: false })}>
             Turn off demo Pro
           </button>

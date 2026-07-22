@@ -89,7 +89,7 @@ const emptyDraft = (date, start, extra, opts = {}) => {
   };
 };
 
-const PENDING_DRAFT_KEY = 'stewardly.pendingEventDraft';
+const PENDING_DRAFT_KEY = 'keystone.pendingEventDraft';
 
 export default function PlannerPage() {
   const { state } = useStore();

@@ -1,4 +1,4 @@
-// Thin client for the Stewardly backend (accounts + billing). Every call
+// Thin client for the Keystone backend (accounts + billing). Every call
 // needs a fresh Clerk session token, so callers pass their own `getToken`
 // (from Clerk's useAuth()) rather than this module holding one itself.
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || '';

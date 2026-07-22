@@ -134,7 +134,7 @@ export default function ContactsPage() {
           <h2>People is a Pro feature</h2>
           <p className="muted">
             Track the people in your life — statuses, reconnect reminders, notes, and linked
-            places — with Stewardly Pro.
+            places — with Keystone Pro.
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/pricing')}>
             See Pro plans

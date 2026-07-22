@@ -35,12 +35,12 @@ function eventToRRule(e) {
 
 export function exportEventsToICS(events, contacts) {
   const contactName = (id) => contacts.find((c) => c.id === id)?.name;
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Stewardly//App//EN', 'CALSCALE:GREGORIAN'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Keystone//App//EN', 'CALSCALE:GREGORIAN'];
   const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
   for (const e of events) {
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${e.id}@stewardly`);
+    lines.push(`UID:${e.id}@keystone`);
     lines.push(`DTSTAMP:${stamp}`);
     lines.push(`DTSTART:${toICSDateTime(e.date, e.start)}`);
     lines.push(`DTEND:${toICSDateTime(e.date, e.end)}`);
@@ -56,7 +56,7 @@ export function exportEventsToICS(events, contacts) {
   return lines.join('\r\n');
 }
 
-export function downloadICS(events, contacts, filename = 'stewardly-calendar.ics') {
+export function downloadICS(events, contacts, filename = 'keystone-calendar.ics') {
   const ics = exportEventsToICS(events, contacts);
   const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);

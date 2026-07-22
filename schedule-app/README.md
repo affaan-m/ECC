@@ -1,4 +1,4 @@
-# Stewardly
+# Keystone
 
 A personal **schedule, goals, and people** planner — a progressive web app (PWA)
 inspired by the structure of the LDS *Preach My Gospel* planner, reworked for
@@ -71,7 +71,7 @@ Screen** to install it as a standalone app.
 > (goals, planner, people, tasks, notes, and your pins) works fully offline.
 
 > **About reminders:** because this is a serverless PWA, notifications fire
-> only while Stewardly is open or recently backgrounded — a web app with no
+> only while Keystone is open or recently backgrounded — a web app with no
 > push server can't wake a fully-closed app the way a native app can. Turn
 > them on in More → Notifications (or by setting a reminder on a goal/event).
 
