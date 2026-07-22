@@ -1372,6 +1372,9 @@ textarea {
   /* Allow normal single-finger vertical scrolling but hand two-finger pinch
      gestures to our own JS zoom instead of the browser's page-zoom. */
   touch-action: pan-y;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .hour-row {
   position: relative;
@@ -1452,6 +1455,11 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Suppress the OS's own long-press callout (text select / copy menu) so
+     it doesn't fight with the long-press-to-drag gesture. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   min-width: 0;
   line-height: 1.2;
   touch-action: none;
@@ -2473,16 +2481,21 @@ textarea {
   padding: 2px 7px;
   border-radius: 6px;
   flex: none;
-  color: #fff;
 }
 .reminder-kind--goal {
   background: var(--accent);
+  /* --accent flips light/dark per theme (e.g. pale gold in dark mode), so
+     white text on it can lose almost all contrast — --accent-ink is defined
+     specifically as the readable text color for a solid --accent chip. */
+  color: var(--accent-ink);
 }
 .reminder-kind--task {
   background: var(--warn);
+  color: var(--accent-ink);
 }
 .reminder-kind--event {
   background: #8a5cd1;
+  color: #fff;
 }
 .reminder-label {
   flex: 1;
@@ -2869,6 +2882,9 @@ textarea {
   border-radius: 11px;
   padding: 8px 12px;
   position: relative;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .bubble-reorder-row--dragging {
   z-index: 5;

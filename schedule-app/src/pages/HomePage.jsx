@@ -4,7 +4,7 @@ import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
-import { todayISO, weekKey, goalKey, formatTime, formatShortDate } from '../data/helpers.js';
+import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { normalizeHomeBubbles } from '../data/homeBubbles.js';
 
@@ -39,7 +39,9 @@ export default function HomePage() {
   const weeklyPct = ringPct(weeklyGoals, weekKey(new Date()));
 
   // "Important reminders": anything with a reminder firing today that isn't
-  // done yet — goals, tasks, and today's events.
+  // done yet — goals, tasks, and today's events (including recurring ones,
+  // and regardless of whether a reminder lead time is set — any event
+  // happening today is worth surfacing here, not just ones with a reminder).
   const reminders = useMemo(() => {
     const out = [];
     for (const g of state.goals) {
@@ -56,8 +58,8 @@ export default function HomePage() {
       else if (t.dueDate === today) out.push({ kind: 'task', id: t.id, label: t.title, time: null });
     }
     for (const e of state.events) {
-      if (e.date === today && Number(e.reminder) > 0 && !e.done) {
-        out.push({ kind: 'event', id: e.id, label: e.title, time: e.start });
+      for (const occ of expandEventOnDay(e, today)) {
+        if (!occ.done) out.push({ kind: 'event', id: `${occ.id}:${occ.recDate}`, label: occ.title, time: occ.start });
       }
     }
     return out.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99')).slice(0, 6);

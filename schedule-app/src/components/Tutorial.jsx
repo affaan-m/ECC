@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import Logo from './Logo.jsx';
 
 const STEPS = [
   {
-    icon: '🏛️',
+    icon: <Logo size={56} />,
     title: 'Welcome to Keystone',
     body: "A quick tour of what's here — six pages, and the gestures that make them fast to use.",
   },
