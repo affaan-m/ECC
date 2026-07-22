@@ -7,6 +7,7 @@ import { confirmTick } from '../data/haptics.js';
 import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { normalizeHomeBubbles } from '../data/homeBubbles.js';
+import { normalizeHomeSections } from '../data/homeSections.js';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 
@@ -161,6 +162,10 @@ export default function HomePage() {
     () => normalizeHomeBubbles(state.settings?.homeBubbles).filter((b) => b.enabled),
     [state.settings?.homeBubbles]
   );
+  const homeSections = useMemo(
+    () => normalizeHomeSections(state.settings?.homeSections).filter((s) => s.enabled),
+    [state.settings?.homeSections]
+  );
   const openTaskCount = tasks.filter((t) => !t.done).length;
   const todaysEvents = useMemo(
     () => [...state.events].filter((e) => e.date === today).sort((a, b) => (a.start || '').localeCompare(b.start || '')),
@@ -240,112 +245,124 @@ export default function HomePage() {
         })}
       </div>
 
-      {reminders.length > 0 && (
-        <section className="detail-section">
-          <span className="detail-label">🔔 Important reminders</span>
-          <ul className="reminder-list">
-            {reminders.map((r) => (
-              <li key={`${r.kind}:${r.id}`}>
-                <button
-                  className="reminder-row"
-                  onClick={() => {
-                    if (r.kind === 'goal') navigate('/goals');
-                    else if (r.kind === 'event') navigate('/planner');
-                  }}
-                >
-                  <span className={`reminder-kind reminder-kind--${r.kind}`}>{r.kind}</span>
-                  <span className="reminder-label">{r.label}</span>
-                  {r.time && <span className="reminder-time">{formatTime(r.time)}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="detail-section" ref={tasksSectionRef}>
-        <span className="detail-label">Tasks</span>
-        <ul className="task-list">
-          {tasks.map((t) => (
-            <li key={t.id} className="task-row">
-              <button
-                className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                onClick={() => {
-                  actions.updateTask({ ...t, done: !t.done });
-                  if (!t.done) confirmTick();
-                }}
-                aria-label={t.done ? 'Mark not done' : 'Mark done'}
-              >
-                {t.done && <CheckIcon />}
-              </button>
-              <button className="task-title-btn" onClick={() => openEditTask(t)}>
-                <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
-                {(t.location || t.dueDate) && !t.done && (
-                  <span className="task-meta muted small">
-                    {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
-                  </span>
-                )}
-              </button>
-              {t.reminder?.time && !t.done && <span className="reminder-time">{formatTime(t.reminder.time)}</span>}
-              <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
-                ✕
-              </button>
-            </li>
-          ))}
-          {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
-        </ul>
-        <div className="task-add-row">
-          <input
-            value={newTaskText}
-            onChange={(e) => setNewTaskText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && openNewTask()}
-            placeholder="Add a task…"
-          />
-          <button className="btn btn-primary btn-sm" onClick={openNewTask}>
-            Add
-          </button>
-        </div>
-      </section>
-
-      <section className="detail-section" ref={notesSectionRef}>
-        <div className="section-head">
-          <span className="detail-label">📝 Notes</span>
-          <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
-            + Add
-          </button>
-        </div>
-        {notes.length === 0 ? (
-          <p className="muted small">No notes yet.</p>
-        ) : (
-          <div className="notes-grid">
-            {notes.map((n) => (
-              <button
-                key={n.id}
-                className={`note-card${n.color ? ' note-card--tinted' : ''}`}
-                style={n.color ? { background: n.color } : undefined}
-                onClick={() => openEditNote(n)}
-              >
-                {n.pinned && <span className="note-pin">📌</span>}
-                {n.title && <strong className="note-title">{n.title}</strong>}
-                {n.checklist ? (
-                  <ul className="note-checklist">
-                    {n.checklist.slice(0, 5).map((item, i) => (
-                      <li key={i} className={item.done ? 'note-check--done' : ''}>
-                        <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
-                          {item.done ? '✓' : ''}
+      {homeSections.map((sec) => {
+        if (sec.id === 'reminders') {
+          if (reminders.length === 0) return null;
+          return (
+            <section className="detail-section" key="reminders">
+              <span className="detail-label">🔔 Important reminders</span>
+              <ul className="reminder-list">
+                {reminders.map((r) => (
+                  <li key={`${r.kind}:${r.id}`}>
+                    <button
+                      className="reminder-row"
+                      onClick={() => {
+                        if (r.kind === 'goal') navigate('/goals');
+                        else if (r.kind === 'event') navigate('/planner');
+                      }}
+                    >
+                      <span className={`reminder-kind reminder-kind--${r.kind}`}>{r.kind}</span>
+                      <span className="reminder-label">{r.label}</span>
+                      {r.time && <span className="reminder-time">{formatTime(r.time)}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        }
+        if (sec.id === 'tasks') {
+          return (
+            <section className="detail-section" ref={tasksSectionRef} key="tasks">
+              <span className="detail-label">Tasks</span>
+              <ul className="task-list">
+                {tasks.map((t) => (
+                  <li key={t.id} className="task-row">
+                    <button
+                      className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
+                      onClick={() => {
+                        actions.updateTask({ ...t, done: !t.done });
+                        if (!t.done) confirmTick();
+                      }}
+                      aria-label={t.done ? 'Mark not done' : 'Mark done'}
+                    >
+                      {t.done && <CheckIcon />}
+                    </button>
+                    <button className="task-title-btn" onClick={() => openEditTask(t)}>
+                      <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+                      {(t.location || t.dueDate) && !t.done && (
+                        <span className="task-meta muted small">
+                          {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
                         </span>
-                        {item.text || 'Item'}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="note-body">{n.body}</p>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+                      )}
+                    </button>
+                    {t.reminder?.time && !t.done && <span className="reminder-time">{formatTime(t.reminder.time)}</span>}
+                    <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
+                      ✕
+                    </button>
+                  </li>
+                ))}
+                {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
+              </ul>
+              <div className="task-add-row">
+                <input
+                  value={newTaskText}
+                  onChange={(e) => setNewTaskText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && openNewTask()}
+                  placeholder="Add a task…"
+                />
+                <button className="btn btn-primary btn-sm" onClick={openNewTask}>
+                  Add
+                </button>
+              </div>
+            </section>
+          );
+        }
+        if (sec.id === 'notes') {
+          return (
+            <section className="detail-section" ref={notesSectionRef} key="notes">
+              <div className="section-head">
+                <span className="detail-label">📝 Notes</span>
+                <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
+                  + Add
+                </button>
+              </div>
+              {notes.length === 0 ? (
+                <p className="muted small">No notes yet.</p>
+              ) : (
+                <div className="notes-grid">
+                  {notes.map((n) => (
+                    <button
+                      key={n.id}
+                      className={`note-card${n.color ? ' note-card--tinted' : ''}`}
+                      style={n.color ? { background: n.color } : undefined}
+                      onClick={() => openEditNote(n)}
+                    >
+                      {n.pinned && <span className="note-pin">📌</span>}
+                      {n.title && <strong className="note-title">{n.title}</strong>}
+                      {n.checklist ? (
+                        <ul className="note-checklist">
+                          {n.checklist.slice(0, 5).map((item, i) => (
+                            <li key={i} className={item.done ? 'note-check--done' : ''}>
+                              <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
+                                {item.done ? '✓' : ''}
+                              </span>
+                              {item.text || 'Item'}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="note-body">{n.body}</p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        }
+        return null;
+      })}
 
       <button className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Quick add">
         +
