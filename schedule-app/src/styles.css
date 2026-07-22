@@ -756,7 +756,12 @@ textarea {
   max-width: var(--maxw);
   background: var(--surface);
   border-radius: 22px 22px 0 0;
-  max-height: 92vh;
+  /* dvh (not vh) so the sheet actually shrinks when the on-screen keyboard
+     opens — otherwise its height (and the scrollable body's clientHeight)
+     stays sized against the keyboard-inclusive viewport, and fields near
+     the bottom of the form end up trapped behind the keyboard with no way
+     to scroll to them. */
+  max-height: 92dvh;
   display: flex;
   flex-direction: column;
   animation: slideUp 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -764,14 +769,14 @@ textarea {
   will-change: transform;
 }
 .modal-sheet--tall {
-  height: 78vh;
+  height: 78dvh;
 }
 .modal-sheet--full {
   position: fixed;
   inset: 0;
   width: 100%;
   max-width: none;
-  height: 100%;
+  height: 100dvh;
   max-height: none;
   border-radius: 0;
   padding-bottom: 0;
@@ -820,7 +825,10 @@ textarea {
   font-size: 19px;
 }
 .modal-body {
-  padding: 4px 16px 8px;
+  /* Extra bottom headroom so a field near the end of the form can still be
+     scrolled clear of the on-screen keyboard instead of stopping right at
+     its edge. */
+  padding: 4px 16px calc(96px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
 }
 .modal-foot {
@@ -910,6 +918,10 @@ textarea {
 .editor-sheet {
   position: fixed;
   inset: 0;
+  /* dvh, not the implicit keyboard-inclusive height from inset:0 alone, so
+     the sheet shrinks with the on-screen keyboard — see .modal-sheet above
+     for why that matters for reaching fields near the bottom of the form. */
+  height: 100dvh;
   z-index: 1000;
   background: var(--surface);
   display: flex;
@@ -992,7 +1004,10 @@ textarea {
 .editor-sheet-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  /* Extra bottom headroom (see .modal-body) so a field near the end of a
+     long form — event/task/goal editors all use this sheet — can still be
+     scrolled clear of the on-screen keyboard. */
+  padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px));
 }
 .editor-sheet-foot {
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
