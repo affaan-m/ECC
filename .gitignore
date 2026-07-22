@@ -52,6 +52,11 @@ build/
 *.tsbuildinfo
 .cache/
 
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
 # Test coverage
 coverage/
 .nyc_output/
