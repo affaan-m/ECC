@@ -16,10 +16,13 @@ export function createApp() {
   app.use('/api/webhooks/stripe', stripeWebhookRouter);
   app.use('/api/webhooks/clerk', clerkWebhookRouter);
 
+  // Liveness probe — must not depend on Clerk/DB being configured, since
+  // hosting platforms hit this before/without any of that being ready.
+  app.get('/api/health', (req, res) => res.json({ ok: true }));
+
   app.use(express.json());
   app.use(clerkMiddleware());
 
-  app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/me', meRoutes);
   app.use('/api/billing', billingRoutes);
 

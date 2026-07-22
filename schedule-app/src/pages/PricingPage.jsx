@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth, useClerk } from '@clerk/clerk-react';
 import { useStore, useActions } from '../data/store.jsx';
 import { Brand } from '../components/Logo.jsx';
+import { CLERK_ENABLED } from '../data/clerkConfig.js';
+import { startCheckout, openBillingPortal, backendConfigured } from '../data/api.js';
 
 const FEATURES = [
   { label: 'Goals, Planner, Map', free: true, pro: true },
@@ -15,7 +18,6 @@ const FEATURES = [
 
 export default function PricingPage() {
   const { state } = useStore();
-  const actions = useActions();
   const navigate = useNavigate();
   const isPro = !!state.settings?.isPro;
   const [plan, setPlan] = useState('annual');
@@ -69,6 +71,69 @@ export default function PricingPage() {
         </table>
       </section>
 
+      {CLERK_ENABLED ? <RealPricingCTA plan={plan} isPro={isPro} /> : <DemoPricingCTA plan={plan} isPro={isPro} />}
+    </div>
+  );
+}
+
+// Real Stripe Checkout / Customer Portal flow — used once Clerk is configured.
+function RealPricingCTA({ plan, isPro }) {
+  const { isSignedIn, getToken } = useAuth();
+  const clerk = useClerk();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleUpgrade = async () => {
+    if (!isSignedIn) return clerk.openSignIn();
+    if (!backendConfigured()) return setError('Billing isn’t connected yet.');
+    setError('');
+    setBusy(true);
+    try {
+      const { url } = await startCheckout(getToken, plan);
+      window.location.href = url;
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const handleManage = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const { url } = await openBillingPortal(getToken);
+      window.location.href = url;
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {isPro ? (
+        <div className="detail-section pricing-active">
+          <span>✓ You're on Stewardly Pro</span>
+          <button className="btn btn-ghost full" onClick={handleManage} disabled={busy}>
+            Manage subscription
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-primary full pricing-cta" onClick={handleUpgrade} disabled={busy}>
+          {isSignedIn ? `Upgrade — ${plan === 'monthly' ? '$4/mo' : '$35/yr'}` : 'Sign in to upgrade'}
+        </button>
+      )}
+      {error && <p className="muted small center-pad pricing-disclaimer">{error}</p>}
+    </>
+  );
+}
+
+// Local-only demo toggle — used until Clerk/Stripe env vars are configured,
+// so Pro-gated UI stays reachable for local development and testing.
+function DemoPricingCTA({ plan, isPro }) {
+  const actions = useActions();
+  return (
+    <>
       {isPro ? (
         <div className="detail-section pricing-active">
           <span>✓ You're on Stewardly Pro (demo mode)</span>
@@ -81,12 +146,10 @@ export default function PricingPage() {
           Try Pro (demo) — {plan === 'monthly' ? '$4/mo' : '$35/yr'}
         </button>
       )}
-
       <p className="muted small center-pad pricing-disclaimer">
         This build has no payment processor connected yet, so "Try Pro" just flips a local demo
-        flag to preview Pro features — it doesn't charge you anything. Real subscriptions need a
-        backend (e.g. Stripe) wired up before this can take actual payments.
+        flag to preview Pro features — it doesn't charge you anything.
       </p>
-    </div>
+    </>
   );
 }

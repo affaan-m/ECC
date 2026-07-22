@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth, useUser, useClerk, UserButton } from '@clerk/clerk-react';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
 import Select from '../components/Select.jsx';
@@ -14,6 +15,7 @@ import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
+import { CLERK_ENABLED } from '../data/clerkConfig.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
 const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: formatHour(h) }));
@@ -235,6 +237,8 @@ export default function MorePage() {
       <button className="donate-bubble" onClick={() => setConfirm('donate')}>
         ❤️ Support Stewardly
       </button>
+
+      {CLERK_ENABLED && <AccountSection />}
 
       <section className="detail-section">
         <div className="section-head">
@@ -910,6 +914,36 @@ export default function MorePage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function AccountSection() {
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
+  const clerk = useClerk();
+
+  return (
+    <section className="detail-section">
+      <span className="detail-label">Account</span>
+      {isSignedIn ? (
+        <div className="profile-row">
+          <UserButton afterSignOutUrl="/" />
+          <div>
+            <strong>{user?.primaryEmailAddress?.emailAddress || 'Signed in'}</strong>
+            <p className="muted small">Your subscription is tied to this account.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="muted small">
+            Sign in to subscribe to Pro and keep your subscription across devices.
+          </p>
+          <button className="btn btn-ghost full" onClick={() => clerk.openSignIn()}>
+            Sign in
+          </button>
+        </>
+      )}
+    </section>
   );
 }
 

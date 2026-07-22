@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
 import { setHapticsEnabled } from './data/haptics.js';
+import { fetchMe, backendConfigured } from './data/api.js';
+import { CLERK_ENABLED } from './data/clerkConfig.js';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
@@ -14,7 +17,28 @@ import ContactDetailPage from './pages/ContactDetailPage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import MorePage from './pages/MorePage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
-import { useStore } from './data/store.jsx';
+import { useStore, useActions } from './data/store.jsx';
+
+// Keeps state.settings.isPro (read all over the app already) in sync with
+// the real subscription status from the backend, once someone's signed in.
+// Only ever mounted when CLERK_ENABLED, so useAuth() always has a provider.
+function SubscriptionSync() {
+  const { isSignedIn, getToken } = useAuth();
+  const actions = useActions();
+  useEffect(() => {
+    if (!isSignedIn || !backendConfigured()) return;
+    let cancelled = false;
+    fetchMe(getToken)
+      .then((me) => {
+        if (!cancelled) actions.setSettings({ isPro: me.isPro, subscriptionStatus: me.subscriptionStatus });
+      })
+      .catch((err) => console.warn('Failed to sync subscription status:', err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
 
 export default function App() {
   const { state } = useStore();
@@ -125,6 +149,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {CLERK_ENABLED && <SubscriptionSync />}
       <main className="app-main" key={location.pathname}>
         <Routes>
           <Route path="/" element={<HomePage />} />
