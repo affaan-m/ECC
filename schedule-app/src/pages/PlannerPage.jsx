@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
+import ExpandableFab from '../components/ExpandableFab.jsx';
 import Select from '../components/Select.jsx';
 import MiniMapPicker from '../components/MiniMapPicker.jsx';
 import { Brand } from '../components/Logo.jsx';
@@ -492,9 +493,14 @@ export default function PlannerPage() {
       )}
 
       {!selectMode && (
-        <button className="fab" onClick={() => openNew(cursor)} aria-label="New event">
-          +
-        </button>
+        <ExpandableFab
+          onAction={(id) => {
+            if (id === 'event') openNew(cursor);
+            else if (id === 'contact') navigate('/contacts', { state: { quickNewContact: true } });
+            else if (id === 'task') navigate('/', { state: { quickNewTask: true } });
+            else if (id === 'note') navigate('/', { state: { quickNewNote: true } });
+          }}
+        />
       )}
 
       {selectMode && selected.size > 0 && (

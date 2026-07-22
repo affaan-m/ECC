@@ -18,6 +18,7 @@ import { confirmTick, selectTick } from '../data/haptics.js';
 import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
 import { HOME_SECTION_TYPES, normalizeHomeSections } from '../data/homeSections.js';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
+import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { backendConfigured } from '../data/api.js';
 
@@ -424,6 +425,32 @@ export default function MorePage() {
           <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
             <ul className="bubble-reorder-list bubble-reorder-list--preview">
               {HOME_SECTION_TYPES.map((t) => (
+                <li key={t.id} className="bubble-reorder-row">
+                  <span className="bubble-reorder-icon">{t.icon}</span>
+                  <span className="bubble-reorder-label">{t.label}</span>
+                </li>
+              ))}
+            </ul>
+            <span className="bubble-reorder-lock-hint">
+              <LockIcon /> Unlock to customize
+            </span>
+          </button>
+        )}
+      </section>
+
+      <section className="detail-section">
+        <span className="detail-label">Customize quick-add menu {!isPro && '· Pro'}</span>
+        <p className="muted small">Choose which actions the floating + button offers, and drag to reorder them.</p>
+        {isPro ? (
+          <ReorderToggleList
+            items={normalizeQuickAdd(s.quickAdd)}
+            types={QUICK_ADD_TYPES}
+            onChange={(next) => actions.setSettings({ quickAdd: next })}
+          />
+        ) : (
+          <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
+            <ul className="bubble-reorder-list bubble-reorder-list--preview">
+              {QUICK_ADD_TYPES.map((t) => (
                 <li key={t.id} className="bubble-reorder-row">
                   <span className="bubble-reorder-icon">{t.icon}</span>
                   <span className="bubble-reorder-label">{t.label}</span>

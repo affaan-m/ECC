@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
+import ExpandableFab from '../components/ExpandableFab.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
 import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
@@ -20,11 +21,24 @@ export default function HomePage() {
   const { state } = useStore();
   const actions = useActions();
   const navigate = useNavigate();
+  const location = useLocation();
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const tasksSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
   const scrollToSection = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Reached via the expandable quick-add FAB on another page (e.g. Planner).
+  useEffect(() => {
+    if (location.state?.quickNewTask) {
+      scrollToSection(tasksSectionRef);
+      setTimeout(() => document.querySelector('.task-add-row input')?.focus(), 300);
+      window.history.replaceState({}, '');
+    } else if (location.state?.quickNewNote) {
+      openNewNote();
+      window.history.replaceState({}, '');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const today = todayISO();
   const dailyKey = goalKey('daily', new Date());
@@ -169,9 +183,6 @@ export default function HomePage() {
   const addChecklistItem = () => {
     setEditingNote((n) => ({ ...n, checklist: [...(n.checklist || []), { text: '', done: false }] }));
   };
-
-  // --- Quick add ---
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // --- Home bubbles (Pro: customizable set + order) ---
   const homeBubbles = useMemo(
@@ -380,33 +391,14 @@ export default function HomePage() {
         return null;
       })}
 
-      <button className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Quick add">
-        +
-      </button>
-
-      {quickAddOpen && (
-        <div className="select-backdrop" onClick={() => setQuickAddOpen(false)}>
-          <div className="select-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="select-grip">
-              <span className="modal-handle" />
-            </div>
-            <div className="select-options">
-              <button className="select-option" onClick={() => { setQuickAddOpen(false); navigate('/planner', { state: { quickNewEvent: true } }); }}>
-                📅 New event
-              </button>
-              <button className="select-option" onClick={() => { setQuickAddOpen(false); navigate('/contacts', { state: { quickNewContact: true } }); }}>
-                👤 New person
-              </button>
-              <button className="select-option" onClick={() => { setQuickAddOpen(false); document.querySelector('.task-add-row input')?.focus(); }}>
-                ✅ New task
-              </button>
-              <button className="select-option" onClick={() => { setQuickAddOpen(false); openNewNote(); }}>
-                📝 New note
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ExpandableFab
+        onAction={(id) => {
+          if (id === 'event') navigate('/planner', { state: { quickNewEvent: true } });
+          else if (id === 'contact') navigate('/contacts', { state: { quickNewContact: true } });
+          else if (id === 'task') document.querySelector('.task-add-row input')?.focus();
+          else if (id === 'note') openNewNote();
+        }}
+      />
 
       <EditorSheet
         open={!!editingNote}

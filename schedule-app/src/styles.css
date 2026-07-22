@@ -1802,6 +1802,60 @@ textarea {
   transform: scale(0.94);
 }
 
+.expandable-fab-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+}
+.expandable-fab {
+  position: fixed;
+  right: max(16px, calc(50% - var(--maxw) / 2 + 16px));
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 12px;
+}
+.expandable-fab .fab {
+  /* The flex wrapper above handles fixed-positioning now. */
+  position: static;
+}
+.expandable-fab-trigger--open {
+  transform: rotate(45deg);
+}
+.expandable-fab-trigger--open:active {
+  transform: rotate(45deg) scale(0.94);
+}
+.expandable-fab-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 18px 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(20, 30, 45, 0.18);
+  cursor: pointer;
+  animation: fab-pill-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.expandable-fab-pill-icon {
+  font-size: 17px;
+}
+@keyframes fab-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* --- Contacts list ------------------------------------------------------ */
 .search {
   margin-top: 10px;
