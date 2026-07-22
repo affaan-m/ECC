@@ -1150,8 +1150,12 @@ textarea {
   font-size: 24px;
   margin: 0;
 }
+.editor-sheet-body > .tag {
+  display: inline-block;
+  margin: 0 0 14px;
+}
 .detail-done-row {
-  margin-top: 8px;
+  margin-top: 14px;
 }
 .share-event-btn {
   margin-top: 14px;
@@ -2719,7 +2723,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .profile-row strong {
   display: block;

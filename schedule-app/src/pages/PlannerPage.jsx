@@ -253,8 +253,9 @@ export default function PlannerPage() {
     setViewing((v) => (v ? { ...v, done: nextDone } : v));
   };
 
-  // Drag-to-reschedule: shift an occurrence by whole minutes.
-  const moveOccurrence = (occ, deltaMin) => {
+  // Drag-to-reschedule: shift an occurrence by whole minutes and/or whole
+  // days (dragging left/right moves it to the previous/next day).
+  const moveOccurrence = (occ, deltaMin, dayOffset = 0) => {
     const master = state.events.find((e) => e.id === occ.id);
     if (!master) return;
     const dur = timeToMinutes(occ.end) - timeToMinutes(occ.start);
@@ -262,8 +263,9 @@ export default function PlannerPage() {
     ns = Math.max(dayStartHour * 60, Math.min(dayEndHour * 60 - dur, ns));
     const start = minutesToTime(ns);
     const end = minutesToTime(ns + dur);
+    const newDate = dayOffset ? toISODate(addDays(occ.occDate, dayOffset)) : occ.occDate;
     if ((master.repeat || 'none') === 'none') {
-      actions.updateEvent({ ...master, start, end });
+      actions.updateEvent({ ...master, date: newDate, start, end });
     } else {
       const overrides = { ...(master.overrides || {}) };
       overrides[occ.recDate] = {
@@ -273,7 +275,7 @@ export default function PlannerPage() {
         contactId: occ.contactId,
         location: occ.location,
         notes: occ.notes,
-        ...(occ.occDate !== occ.recDate ? { date: occ.occDate } : {}),
+        ...(newDate !== occ.recDate ? { date: newDate } : {}),
       };
       actions.updateEvent({ ...master, overrides });
     }
@@ -534,6 +536,7 @@ function DayView({
   const pinchRef = useRef(null); // { pointers: Map<id,{x,y}>, startDist, startZoom }
   const [armedKey, setArmedKey] = useState(null);
   const [dragDy, setDragDy] = useState(0);
+  const [dragDx, setDragDx] = useState(0);
   const [groupDragging, setGroupDragging] = useState(false);
   const [groupDrag, setGroupDrag] = useState({ dy: 0, dx: 0, dayOffset: 0 });
 
@@ -599,6 +602,7 @@ function DayView({
     gestureRef.current = null;
     setArmedKey(null);
     setDragDy(0);
+    setDragDx(0);
   };
 
   const onDown = (e, occ) => {
@@ -606,7 +610,16 @@ function DayView({
     if (selectMode) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const key = `${occ.id}:${occ.recDate}`;
-    const g = { key, occ, phase: 'pending', startClientY: e.clientY, startClientX: e.clientX, timer: null, lastSnap: 0 };
+    const g = {
+      key,
+      occ,
+      phase: 'pending',
+      startClientY: e.clientY,
+      startClientX: e.clientX,
+      timer: null,
+      lastSnap: 0,
+      lastDayOffset: 0,
+    };
     g.timer = setTimeout(() => {
       if (gestureRef.current === g && g.phase === 'pending') {
         g.phase = 'armed';
@@ -630,10 +643,16 @@ function DayView({
     }
     if (g.phase === 'armed') {
       setDragDy(dy);
+      setDragDx(dx);
       const snap = Math.round(dy / pxPerMin / 15) * 15;
       if (snap !== g.lastSnap) {
         g.lastSnap = snap;
         selectTick();
+      }
+      const dayOffset = Math.round(dx / DAY_DRAG_PX);
+      if (dayOffset !== g.lastDayOffset) {
+        g.lastDayOffset = dayOffset;
+        confirmTick(); // a stronger tick specifically for crossing a day boundary
       }
     }
   };
@@ -646,8 +665,9 @@ function DayView({
       onOpen(occ);
     } else if (g.phase === 'armed') {
       const deltaMin = Math.round(dragDy / pxPerMin / 15) * 15;
-      if (deltaMin !== 0) {
-        onMove(occ, deltaMin);
+      const dayOffset = Math.round(dragDx / DAY_DRAG_PX);
+      if (deltaMin !== 0 || dayOffset !== 0) {
+        onMove(occ, deltaMin, dayOffset);
         confirmTick();
       }
     }
@@ -781,6 +801,8 @@ function DayView({
             const groupDy = isGroupDragging ? groupDrag.dy : 0;
             const groupDayOffset = isGroupDragging ? groupDrag.dayOffset : 0;
             const rubberX = isGroupDragging ? Math.max(-18, Math.min(18, groupDrag.dx * 0.2)) : 0;
+            const armedDayOffset = isArmed ? Math.round(dragDx / DAY_DRAG_PX) : 0;
+            const armedRubberX = isArmed ? Math.max(-18, Math.min(18, dragDx * 0.2)) : 0;
             const displayStartMin = isArmed
               ? clampStart(ev, dragDy, pxPerMin, dayStart, dayEnd)
               : isGroupDragging
@@ -789,7 +811,7 @@ function DayView({
             return (
               <button
                 key={key}
-                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isArmed ? ' event-block--armed' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
+                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isArmed ? ' event-block--armed' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isArmed && armedDayOffset !== 0 ? ' event-block--leaving' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
                 style={{
                   top,
                   height,
@@ -798,8 +820,8 @@ function DayView({
                   '--ev': color || 'var(--accent)',
                   '--ev-opacity': opacity / 100,
                   transform:
-                    isArmed && dragDy
-                      ? `translateY(${dragDy}px)`
+                    isArmed && (dragDy || dragDx)
+                      ? `translateY(${dragDy}px) translateX(${armedRubberX}px)`
                       : isGroupDragging
                       ? `translateY(${groupDy}px) translateX(${rubberX}px)`
                       : undefined,
@@ -869,6 +891,14 @@ function DayView({
         <div className="group-drag-indicator">
           {groupDrag.dayOffset !== 0 && <strong>{formatDayLabel(addDays(date, groupDrag.dayOffset))}</strong>}
           <span>{formatOffsetMinutes(Math.round(groupDrag.dy / pxPerMin / 15) * 15)}</span>
+        </div>
+      )}
+      {armedKey && (dragDy !== 0 || dragDx !== 0) && (
+        <div className="group-drag-indicator">
+          {Math.round(dragDx / DAY_DRAG_PX) !== 0 && (
+            <strong>{formatDayLabel(addDays(date, Math.round(dragDx / DAY_DRAG_PX)))}</strong>
+          )}
+          <span>{formatOffsetMinutes(Math.round(dragDy / pxPerMin / 15) * 15)}</span>
         </div>
       )}
       {dayEvents.length === 0 && (
