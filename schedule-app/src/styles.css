@@ -3111,3 +3111,74 @@ button.timeline-item {
   color: var(--muted);
   white-space: pre-wrap;
 }
+
+/* --- First-time tutorial -------------------------------------------------- */
+.tutorial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(15, 20, 26, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fade 0.2s ease;
+}
+.tutorial-card {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  background: var(--surface);
+  border-radius: 22px;
+  padding: 28px 22px 20px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.tutorial-skip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.tutorial-icon {
+  font-size: 44px;
+  margin-bottom: 10px;
+}
+.tutorial-card h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+.tutorial-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tutorial-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.tutorial-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.tutorial-dot--on {
+  background: var(--accent);
+  transform: scale(1.3);
+}
+.tutorial-actions {
+  display: flex;
+  gap: 10px;
+}

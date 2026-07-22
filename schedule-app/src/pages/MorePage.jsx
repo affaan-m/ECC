@@ -6,6 +6,7 @@ import Modal from '../components/Modal.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
+import Tutorial from '../components/Tutorial.jsx';
 import {
   notificationsSupported,
   notificationPermission,
@@ -74,6 +75,7 @@ export default function MorePage() {
   const [editingType, setEditingType] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | 'donate' | null
   const [feedback, setFeedback] = useState(null); // string | null
+  const [showTutorial, setShowTutorial] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
   const fileRef = useRef(null);
@@ -653,9 +655,14 @@ export default function MorePage() {
       <section className="detail-section">
         <span className="detail-label">Feedback</span>
         <p className="muted small">Have an idea or found a bug? I'd love to hear it.</p>
-        <button className="btn btn-ghost full" onClick={() => setFeedback('')}>
-          💡 Send feedback / suggest a feature
-        </button>
+        <div className="stack-btns">
+          <button className="btn btn-ghost full" onClick={() => setFeedback('')}>
+            💡 Send feedback / suggest a feature
+          </button>
+          <button className="btn btn-ghost full" onClick={() => setShowTutorial(true)}>
+            🏛️ Replay the tour
+          </button>
+        </div>
       </section>
 
       <section className="detail-section">
@@ -918,6 +925,8 @@ export default function MorePage() {
           </div>
         )}
       </Modal>
+
+      {showTutorial && <Tutorial onDone={() => setShowTutorial(false)} />}
     </div>
   );
 }

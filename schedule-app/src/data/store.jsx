@@ -53,6 +53,7 @@ function loadState() {
         taskCompleteAnim: true,
         hapticsEnabled: true,
         homeBubbles: DEFAULT_HOME_BUBBLES,
+        tutorialSeen: false,
         ...(parsed.settings || {}),
       },
     };

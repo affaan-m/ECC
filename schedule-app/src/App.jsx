@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
+import Tutorial from './components/Tutorial.jsx';
 import { runReminderScan } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
@@ -43,6 +44,7 @@ function SubscriptionSync() {
 
 export default function App() {
   const { state } = useStore();
+  const actions = useActions();
   const theme = state.settings?.theme || 'system';
   const location = useLocation();
 
@@ -170,6 +172,9 @@ export default function App() {
       </main>
       <TabBar />
       {showSplash && <SplashScreen fadingOut={splashOut} />}
+      {!showSplash && !state.settings?.tutorialSeen && (
+        <Tutorial onDone={() => actions.setSettings({ tutorialSeen: true })} />
+      )}
     </div>
   );
 }
