@@ -272,6 +272,7 @@ export function makeSeed() {
     pins,
     tasks,
     notes,
+    interactions: [],
     statuses,
     eventTypes,
     settings: { theme: 'system', reconnectDays: 30, notifications: false },

@@ -229,7 +229,7 @@ export default function MorePage() {
           <span className="pro-bubble-lg-crown">👑</span>
           <div>
             <strong>Upgrade to Keystone Pro</strong>
-            <p className="muted small">People, sharing, sync, themes, and more.</p>
+            <p className="muted small">Contact timelines, sharing, sync, themes, and more.</p>
           </div>
           <span className="pro-bubble-lg-arrow">›</span>
         </button>
@@ -598,10 +598,10 @@ export default function MorePage() {
 
       <section className="detail-section">
         <div className="section-head">
-          <span className="detail-label">People statuses</span>
+          <span className="detail-label">People statuses {!isPro && '· Pro'}</span>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => setEditingStatus({ label: '', color: PRESET_COLORS[0] })}
+            onClick={() => requirePro(() => setEditingStatus({ label: '', color: PRESET_COLORS[0] }))}
           >
             + Add
           </button>
@@ -610,7 +610,7 @@ export default function MorePage() {
         <ul className="status-list">
           {state.statuses.map((s) => (
             <li key={s.id}>
-              <button className="status-item" onClick={() => setEditingStatus({ ...s })}>
+              <button className="status-item" onClick={() => requirePro(() => setEditingStatus({ ...s }))}>
                 <span className="swatch" style={{ background: s.color }} />
                 <span>{s.label}</span>
                 <span className="muted count-tag">

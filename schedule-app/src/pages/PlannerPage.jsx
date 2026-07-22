@@ -352,6 +352,17 @@ export default function PlannerPage() {
       return toISODate(addMonths(c, n));
     });
   };
+
+  // Direction of the most recent cursor change, for the slide-in transition
+  // — works no matter how cursor changed (chevron, swipe, drag-to-page,
+  // jump-to-today, tapping a month cell) since it just diffs ISO date
+  // strings, which sort correctly as plain strings.
+  const prevCursorRef = useRef(cursor);
+  const navDir = cursor > prevCursorRef.current ? 1 : cursor < prevCursorRef.current ? -1 : 0;
+  useEffect(() => {
+    prevCursorRef.current = cursor;
+  }, [cursor]);
+
   const weekStart = startOfWeek(fromISODate(cursor));
   const monthStart = startOfMonth(fromISODate(cursor));
 
@@ -409,6 +420,9 @@ export default function PlannerPage() {
             {selectMode ? 'Cancel select' : 'Select'}
           </button>
           {selectMode && <span className="muted small">{selected.size} selected</span>}
+          <button className="today-btn" onClick={() => setCursor(todayISO())} aria-label="Jump to today" title="Jump to today">
+            <TodayIcon />
+          </button>
         </div>
       </header>
 
@@ -423,6 +437,7 @@ export default function PlannerPage() {
           onMove={moveOccurrence}
           onMoveSelected={moveSelected}
           onNavigateDay={step}
+          direction={navDir}
           selectMode={selectMode}
           selected={selected}
           onToggleSelect={toggleSelected}
@@ -515,8 +530,17 @@ function occToDraft(occ) {
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
 
-const DAY_DRAG_PX = 70; // horizontal drag distance per day of offset
+const EDGE_ZONE_PX = 30; // how close to the timeline's edge before a drag pages a day
 const SWIPE_THRESHOLD_PX = 60; // horizontal drag distance to swipe-navigate a day/month
+
+// Which edge (if any) of `rect` a pointer at `clientX` has reached. Used to
+// require a drag reach the very side of the page before it pages a day,
+// rather than any small horizontal wobble.
+function edgeOf(clientX, rect, zone) {
+  if (clientX <= rect.left + zone) return 'left';
+  if (clientX >= rect.right - zone) return 'right';
+  return null;
+}
 
 function DayView({
   date,
@@ -528,6 +552,7 @@ function DayView({
   onMove,
   onMoveSelected,
   onNavigateDay,
+  direction = 0,
   selectMode,
   selected,
   onToggleSelect,
@@ -653,14 +678,16 @@ function DayView({
     const g = {
       key,
       occ,
-      phase: 'pending',
+      phase: 'pending', // pending -> armed (long-press held) | swiping (moved before long-press fired)
       startClientY: e.clientY,
       startClientX: e.clientX,
       timer: null,
       lastSnap: 0,
-      // Net days paged during this drag — always moves one at a time, and
-      // paging back past the origin un-pages the same way (see onMoveP).
+      // Net days paged during this drag — always moves one at a time, only
+      // once the pointer reaches the very edge of the timeline, and paging
+      // back past the origin un-pages the same way (see onMoveP).
       pagedOffset: 0,
+      lastEdge: null,
     };
     g.timer = setTimeout(() => {
       if (gestureRef.current === g && g.phase === 'pending') {
@@ -678,7 +705,10 @@ function DayView({
     const dy = e.clientY - g.startClientY;
     if (g.phase === 'pending') {
       if (Math.hypot(dx, dy) > MOVE_TOLERANCE_PX) {
-        g.phase = 'cancelled';
+        // Moved before the long-press armed: not a reschedule-drag. Keep
+        // tracking so a fast horizontal swipe can still change the day
+        // (same as swiping empty timeline space) — evaluated on release.
+        g.phase = 'swiping';
         clearTimeout(g.timer);
       }
       return;
@@ -691,16 +721,20 @@ function DayView({
         g.lastSnap = snap;
         selectTick();
       }
-      // Page the visible day exactly one at a time: crossing a threshold
-      // navigates the whole timeline to that day (live) so the destination
-      // schedule is visible to drop into; dragging further keeps paging,
-      // and dragging back pages back the same way.
-      const rawOffset = Math.round(dx / DAY_DRAG_PX);
-      const step = Math.sign(rawOffset - g.pagedOffset);
-      if (step !== 0) {
-        g.pagedOffset += step;
-        onNavigateDay?.(step);
-        confirmTick();
+      // Page the visible day one at a time, only once the pointer reaches
+      // the very edge of the timeline — dragging back toward center re-arms
+      // the edge so paging again needs a deliberate return-and-reapproach,
+      // not just continuing to drift further past the threshold.
+      if (bodyRef.current) {
+        const rect = bodyRef.current.getBoundingClientRect();
+        const edge = edgeOf(e.clientX, rect, EDGE_ZONE_PX);
+        if (edge && edge !== g.lastEdge) {
+          const dir = edge === 'right' ? 1 : -1;
+          g.pagedOffset += dir;
+          onNavigateDay?.(dir);
+          confirmTick();
+        }
+        g.lastEdge = edge;
       }
     }
   };
@@ -711,6 +745,13 @@ function DayView({
     if (g.phase === 'pending') {
       // Released before the long-press threshold, without moving: a tap.
       onOpen(occ);
+    } else if (g.phase === 'swiping') {
+      const dx = e.clientX - g.startClientX;
+      const dy = e.clientY - g.startClientY;
+      if (Math.abs(dx) > SWIPE_THRESHOLD_PX && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        onNavigateDay?.(dx < 0 ? 1 : -1);
+        confirmTick();
+      }
     } else if (g.phase === 'armed') {
       const deltaMin = Math.round(dragDy / pxPerMin / 15) * 15;
       const dayOffset = g.pagedOffset;
@@ -722,6 +763,17 @@ function DayView({
     clearGesture();
   };
 
+  // Keep refs pointing at the latest onMoveP/onUp closures. They're recreated
+  // every render (so they always see current dragDy/dragDx state), but the
+  // window listener below is only wired up once per drag (see its own
+  // comment) — without this indirection it would keep calling the stale
+  // arm-time closure, which always saw dragDy/dragDx as 0 and silently
+  // dropped the time change on release.
+  const onMovePRef = useRef(onMoveP);
+  onMovePRef.current = onMoveP;
+  const onUpRef = useRef(onUp);
+  onUpRef.current = onUp;
+
   // Once armed, track the pointer at the window level rather than relying on
   // the originally-pressed DOM node: paging the visible day re-renders the
   // event layer for the new day, which can drop that node from the tree
@@ -729,8 +781,8 @@ function DayView({
   // silently end the gesture (lost pointer capture) mid-drag.
   useEffect(() => {
     if (!armedKey) return;
-    const move = (e) => onMoveP(e);
-    const up = (e) => onUp(e, gestureRef.current?.occ);
+    const move = (e) => onMovePRef.current(e);
+    const up = (e) => onUpRef.current(e, gestureRef.current?.occ);
     const cancel = () => clearGesture();
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -745,8 +797,8 @@ function DayView({
 
   // Multi-select group drag: press-and-hold a selected block to move every
   // selected occurrence together — vertically for time, horizontally for
-  // day (each DAY_DRAG_PX of horizontal movement = one day), committed only
-  // on release so a change of mind mid-drag costs nothing.
+  // day (one day per edge reached, same as the single-event drag), committed
+  // only on release so a change of mind mid-drag costs nothing.
   const clearGroupGesture = () => {
     if (groupGestureRef.current?.timer) clearTimeout(groupGestureRef.current.timer);
     groupGestureRef.current = null;
@@ -770,7 +822,8 @@ function DayView({
       startClientY: e.clientY,
       timer: null,
       lastMinSnap: 0,
-      lastDayOffset: 0,
+      dayOffset: 0,
+      lastEdge: null,
     };
     g.timer = setTimeout(() => {
       if (groupGestureRef.current === g && g.phase === 'pending') {
@@ -794,16 +847,20 @@ function DayView({
       return;
     }
     if (g.phase === 'armed') {
-      const dayOffset = Math.round(dx / DAY_DRAG_PX);
-      setGroupDrag({ dy, dx, dayOffset });
+      if (bodyRef.current) {
+        const rect = bodyRef.current.getBoundingClientRect();
+        const edge = edgeOf(e.clientX, rect, EDGE_ZONE_PX);
+        if (edge && edge !== g.lastEdge) {
+          g.dayOffset += edge === 'right' ? 1 : -1;
+          confirmTick(); // a stronger tick specifically for crossing a day boundary
+        }
+        g.lastEdge = edge;
+      }
+      setGroupDrag({ dy, dx, dayOffset: g.dayOffset });
       const minSnap = Math.round(dy / pxPerMin / 15) * 15;
       if (minSnap !== g.lastMinSnap) {
         g.lastMinSnap = minSnap;
         selectTick();
-      }
-      if (dayOffset !== g.lastDayOffset) {
-        g.lastDayOffset = dayOffset;
-        confirmTick(); // a stronger tick specifically for crossing a day boundary
       }
     }
   };
@@ -847,15 +904,19 @@ function DayView({
         onPointerUp={onBodyPointerUp}
         onPointerCancel={onBodyPointerUp}
       >
-        {hours.map((h) => (
-          <div className="hour-row" key={h} style={{ height: pxPerHour }}>
-            <span className="hour-label">{formatTime(`${String(h).padStart(2, '0')}:00`)}</span>
-            <div className="hour-line" />
-          </div>
-        ))}
+        <div
+          key={date}
+          className={`day-content${direction > 0 ? ' day-content--in-right' : direction < 0 ? ' day-content--in-left' : ''}`}
+        >
+          {hours.map((h) => (
+            <div className="hour-row" key={h} style={{ height: pxPerHour }}>
+              <span className="hour-label">{formatTime(`${String(h).padStart(2, '0')}:00`)}</span>
+              <div className="hour-line" />
+            </div>
+          ))}
 
-        <div className="event-layer">
-          {laid.map((ev) => {
+          <div className="event-layer">
+            {laid.map((ev) => {
             const key = `${ev.id}:${ev.recDate}`;
             if (armedKey === key) return null; // rendered separately as a floating ghost below
             const top = (ev.s - dayStart * 60) * pxPerMin;
@@ -945,20 +1006,23 @@ function DayView({
               </button>
             );
           })}
+          </div>
+        </div>
 
-          {armedKey &&
-            gestureRef.current?.occ &&
-            (() => {
-              const occ = gestureRef.current.occ;
-              const top = (occ.s - dayStart * 60) * pxPerMin;
-              const height = Math.max(24, (occ.e2 - occ.s) * pxPerMin - 3);
-              const short = occ.e2 - occ.s < 55;
-              const who = contactName(occ.contactId);
-              const recurring = occ.repeat && occ.repeat !== 'none';
-              const color = occ.color || typeColor(occ.typeId);
-              const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
-              const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
-              return (
+        {armedKey &&
+          gestureRef.current?.occ &&
+          (() => {
+            const occ = gestureRef.current.occ;
+            const top = (occ.s - dayStart * 60) * pxPerMin;
+            const height = Math.max(24, (occ.e2 - occ.s) * pxPerMin - 3);
+            const short = occ.e2 - occ.s < 55;
+            const who = contactName(occ.contactId);
+            const recurring = occ.repeat && occ.repeat !== 'none';
+            const color = occ.color || typeColor(occ.typeId);
+            const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
+            const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
+            return (
+              <div className="event-layer event-layer--ghost">
                 <div
                   className={`event-block event-block--armed${short ? ' event-block--short' : ''}${occ.done ? ' event-block--done' : ''}`}
                   style={{
@@ -990,18 +1054,15 @@ function DayView({
                     </>
                   )}
                 </div>
-              );
-            })()}
-        </div>
+              </div>
+            );
+          })()}
       </div>
       {groupDragging && (
         <div className="group-drag-indicator">
           {groupDrag.dayOffset !== 0 && <strong>{formatDayLabel(addDays(date, groupDrag.dayOffset))}</strong>}
           <span>{formatOffsetMinutes(Math.round(groupDrag.dy / pxPerMin / 15) * 15)}</span>
         </div>
-      )}
-      {dayEvents.length === 0 && (
-        <p className="timeline-hint muted">Tap to add. Press and hold a block to move it.</p>
       )}
     </div>
   );
@@ -1827,6 +1888,16 @@ function layout(events) {
   return out;
 }
 
+function TodayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="16" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 9.5h17" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="15" r="2.1" fill="currentColor" />
+    </svg>
+  );
+}
 function Chevron({ dir }) {
   const d = dir === 'left' ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6';
   return (

@@ -53,7 +53,7 @@ export default function ContactDetailPage() {
     return out.slice(0, 5);
   }, [state.events, contact]);
 
-  if (!state.settings?.isPro || !contact) {
+  if (!contact) {
     return (
       <div className="page">
         <header className="page-head">
@@ -61,13 +61,12 @@ export default function ContactDetailPage() {
             ‹ People
           </button>
         </header>
-        <p className="muted center-pad">
-          {contact ? 'People is a Pro feature.' : 'This person no longer exists.'}
-        </p>
+        <p className="muted center-pad">This person no longer exists.</p>
       </div>
     );
   }
 
+  const isPro = !!state.settings?.isPro;
   const initialEditJsonRef = useRef('');
   const startEdit = () => {
     const d = {
@@ -103,9 +102,6 @@ export default function ContactDetailPage() {
     if (address !== (contact.address || '')) syncContactAddressPin(updated, state, actions);
     setEditing(null);
   };
-
-  const logContact = () =>
-    actions.updateContact({ ...contact, lastContacted: todayISO() });
 
   return (
     <div className="page">
@@ -151,9 +147,12 @@ export default function ContactDetailPage() {
             <span>Email</span>
           </a>
         )}
-        <button className="qa" onClick={logContact}>
-          <QAIcon kind="check" />
-          <span>Log today</span>
+        <button
+          className="qa"
+          onClick={() => (isPro ? navigate(`/contacts/${contact.id}/timeline`) : navigate('/pricing'))}
+        >
+          <QAIcon kind="timeline" />
+          <span>Timeline {!isPro && '🔒'}</span>
         </button>
       </div>
 
@@ -270,14 +269,16 @@ export default function ContactDetailPage() {
               <span>Name</span>
               <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </label>
-            <label className="field">
-              <span>Status</span>
-              <Select
-                value={editing.statusId}
-                onChange={(v) => setEditing({ ...editing, statusId: v })}
-                options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
-              />
-            </label>
+            {isPro && (
+              <label className="field">
+                <span>Status</span>
+                <Select
+                  value={editing.statusId}
+                  onChange={(v) => setEditing({ ...editing, statusId: v })}
+                  options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
+                />
+              </label>
+            )}
             <div className="field-row">
               <label className="field">
                 <span>Phone</span>
@@ -367,11 +368,18 @@ function Field({ label, value, href }) {
 }
 
 function QAIcon({ kind }) {
+  if (kind === 'timeline') {
+    return (
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M12 7.5V12l3.2 2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
   const paths = {
     call: 'M6.5 3.5c.5 3 2 6 4.5 8.5s5.5 4 8.5 4.5l-1.5 3c-4-.5-8-3-11-6s-5.5-7-6-11z',
     text: 'M4 5h16v11H9l-4 3v-3H4z',
     mail: 'M3 6h18v12H3zM3 6l9 7 9-7',
-    check: 'M4 12l5 5 11-11',
   };
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

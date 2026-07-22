@@ -14,6 +14,7 @@ import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import ContactDetailPage from './pages/ContactDetailPage.jsx';
+import ContactTimelinePage from './pages/ContactTimelinePage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import MorePage from './pages/MorePage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
@@ -62,12 +63,15 @@ export default function App() {
   }, []);
 
   // App-wide haptic feedback: one delegated listener instead of wiring every
-  // button individually. Danger actions get a firmer double-pulse, primary
-  // actions a slightly stronger tick, everything else a light tap.
+  // button individually. Reserved for actions that actually commit or change
+  // something — destructive actions, primary/save actions, and toggles —
+  // rather than every tap; buzzing on literally every button (tabs, chips,
+  // plain/ghost buttons, links, icon buttons) reads as overwhelming rather
+  // than useful feedback.
   useEffect(() => {
     const onPointerDown = (e) => {
       const el = e.target.closest?.(
-        'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
+        'button, [role="switch"], input[type="checkbox"], input[type="radio"]'
       );
       if (!el || el.disabled) return;
       // The day timeline's event blocks run their own long-press-to-arm gesture
@@ -76,7 +80,7 @@ export default function App() {
       if (el.classList.contains('event-block')) return;
       if (el.classList.contains('btn-danger') || el.classList.contains('btn-danger-ghost')) warnTick();
       else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
-      else tapTick();
+      else if (el.getAttribute('role') === 'switch' || el.matches('input[type="checkbox"], input[type="radio"]')) tapTick();
     };
     document.addEventListener('pointerdown', onPointerDown, { passive: true });
     return () => document.removeEventListener('pointerdown', onPointerDown);
@@ -157,6 +161,7 @@ export default function App() {
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
+          <Route path="/contacts/:id/timeline" element={<ContactTimelinePage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="/pricing" element={<PricingPage />} />

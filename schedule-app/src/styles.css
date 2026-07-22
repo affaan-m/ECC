@@ -260,6 +260,23 @@ textarea {
   align-items: center;
   justify-content: center;
 }
+.today-btn {
+  margin-left: auto;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: #e0a020;
+  cursor: pointer;
+}
+.today-btn:active {
+  transform: scale(0.92);
+}
 .icon-btn:active {
   background: var(--surface-2);
 }
@@ -1383,6 +1400,42 @@ textarea {
   left: 52px;
   right: 4px;
 }
+.event-layer--ghost {
+  pointer-events: none;
+  z-index: 5;
+}
+.day-content--in-right,
+.day-content--in-left {
+  animation-duration: 0.22s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
+}
+.day-content--in-right {
+  animation-name: day-slide-in-right;
+}
+.day-content--in-left {
+  animation-name: day-slide-in-left;
+}
+@keyframes day-slide-in-right {
+  from {
+    transform: translateX(18px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes day-slide-in-left {
+  from {
+    transform: translateX(-18px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 .event-block {
   position: absolute;
   --ev: var(--accent);
@@ -1451,12 +1504,6 @@ textarea {
 }
 .event-block--done .event-title {
   text-decoration: line-through;
-}
-.timeline-hint {
-  text-align: center;
-  margin-top: -40%;
-  position: relative;
-  font-size: 14px;
 }
 
 /* --- Event editor: "Schedule from calendar" ------------------------------- */
@@ -2941,4 +2988,126 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* --- Contact timeline ---------------------------------------------------- */
+.detail-hero--compact {
+  padding: 4px 0 12px;
+}
+.detail-hero--compact .avatar {
+  margin: 0 auto 8px;
+}
+.detail-hero--compact h1 {
+  font-size: 19px;
+  margin: 0;
+}
+.pinned-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pinned-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.pinned-note-pin {
+  flex: none;
+  font-size: 15px;
+}
+.pinned-note-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pinned-note-body strong {
+  font-size: 14px;
+}
+.pinned-note-text {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timeline-scroll {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+.timeline-today-marker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.timeline-today-marker::before,
+.timeline-today-marker::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.4;
+}
+.timeline-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: default;
+  animation: rise 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+button.timeline-item {
+  cursor: pointer;
+}
+.timeline-item--event {
+  border-left-color: #5b7fb0;
+}
+.timeline-item--interaction {
+  border-left-color: var(--good);
+}
+.timeline-item--note {
+  border-left-color: var(--accent);
+}
+.timeline-item-date {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 52px;
+}
+.timeline-item-date small {
+  font-size: 11px;
+}
+.timeline-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.timeline-item-text {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
 }

@@ -27,6 +27,7 @@ function loadState() {
       eventTypes: parsed.eventTypes || seed.eventTypes,
       tasks: parsed.tasks || [],
       notes: parsed.notes || [],
+      interactions: parsed.interactions || [],
       settings: {
         theme: 'system',
         reconnectDays: 30,
@@ -108,13 +109,19 @@ function reducer(state, action) {
         // Unlink the deleted contact from any events. Pins the user placed
         // by hand are unlinked too (they still stand on their own); a pin
         // auto-created from the contact's address has no meaning without
-        // them, so it's removed outright.
+        // them, so it's removed outright. Interactions only make sense tied
+        // to a person, so those go with them; notes are unlinked (kept) —
+        // they're the user's own writing, not just a link.
         events: state.events.map((e) =>
           e.contactId === action.id ? { ...e, contactId: '' } : e
         ),
         pins: (state.pins || [])
           .filter((p) => !(p.contactId === action.id && p.source === 'contact-address'))
           .map((p) => (p.contactId === action.id ? { ...p, contactId: '' } : p)),
+        interactions: (state.interactions || []).filter((i) => i.contactId !== action.id),
+        notes: (state.notes || []).map((n) =>
+          n.contactId === action.id ? { ...n, contactId: '' } : n
+        ),
       };
     case 'CLEAR_CONTACTS':
       return {
@@ -124,6 +131,8 @@ function reducer(state, action) {
         pins: (state.pins || [])
           .filter((p) => !(p.contactId && p.source === 'contact-address'))
           .map((p) => (p.contactId ? { ...p, contactId: '' } : p)),
+        interactions: [],
+        notes: (state.notes || []).map((n) => (n.contactId ? { ...n, contactId: '' } : n)),
       };
 
     // Map pins
@@ -162,6 +171,14 @@ function reducer(state, action) {
     case 'DELETE_NOTE':
       return { ...state, notes: (state.notes || []).filter((n) => n.id !== action.id) };
 
+    // Interactions (logged past contact with a person — Timeline page)
+    case 'ADD_INTERACTION':
+      return { ...state, interactions: [...(state.interactions || []), action.interaction] };
+    case 'UPDATE_INTERACTION':
+      return { ...state, interactions: upsert(state.interactions || [], action.interaction) };
+    case 'DELETE_INTERACTION':
+      return { ...state, interactions: (state.interactions || []).filter((i) => i.id !== action.id) };
+
     // Statuses (user-defined labels)
     case 'ADD_STATUS':
       return { ...state, statuses: [...state.statuses, action.status] };
@@ -192,6 +209,7 @@ function reducer(state, action) {
         pins: [],
         tasks: [],
         notes: [],
+        interactions: [],
         statuses: state.statuses,
         eventTypes: state.eventTypes,
         settings: state.settings,
@@ -274,6 +292,11 @@ export function useActions() {
       }),
     updateNote: (note) => dispatch({ type: 'UPDATE_NOTE', note }),
     deleteNote: (id) => dispatch({ type: 'DELETE_NOTE', id }),
+
+    addInteraction: (data) =>
+      dispatch({ type: 'ADD_INTERACTION', interaction: { id: uid('ix'), ...data } }),
+    updateInteraction: (interaction) => dispatch({ type: 'UPDATE_INTERACTION', interaction }),
+    deleteInteraction: (id) => dispatch({ type: 'DELETE_INTERACTION', id }),
 
     addStatus: (data) => dispatch({ type: 'ADD_STATUS', status: { id: uid('st'), ...data } }),
     updateStatus: (status) => dispatch({ type: 'UPDATE_STATUS', status }),

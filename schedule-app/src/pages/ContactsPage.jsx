@@ -121,28 +121,6 @@ export default function ContactsPage() {
   };
 
   const isPro = !!state.settings?.isPro;
-  if (!isPro) {
-    return (
-      <div className="page">
-        <header className="page-head">
-          <div className="page-head-row">
-            <Brand>People</Brand>
-          </div>
-        </header>
-        <div className="empty upgrade-empty">
-          <div className="empty-icon">👑</div>
-          <h2>People is a Pro feature</h2>
-          <p className="muted">
-            Track the people in your life — statuses, reconnect reminders, notes, and linked
-            places — with Keystone Pro.
-          </p>
-          <button className="btn btn-primary" onClick={() => navigate('/pricing')}>
-            See Pro plans
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="page">
@@ -172,16 +150,24 @@ export default function ContactsPage() {
               Reconnect · {overdue.length}
             </button>
           )}
-          {state.statuses.map((s) => (
-            <button
-              key={s.id}
-              className={`chip${filter === s.id ? ' chip--on' : ''}`}
-              style={filter === s.id ? { background: s.color, borderColor: s.color, color: '#fff' } : { borderColor: s.color, color: s.color }}
-              onClick={() => setFilter(filter === s.id ? '' : s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
+          {isPro ? (
+            state.statuses.map((s) => (
+              <button
+                key={s.id}
+                className={`chip${filter === s.id ? ' chip--on' : ''}`}
+                style={filter === s.id ? { background: s.color, borderColor: s.color, color: '#fff' } : { borderColor: s.color, color: s.color }}
+                onClick={() => setFilter(filter === s.id ? '' : s.id)}
+              >
+                {s.label}
+              </button>
+            ))
+          ) : (
+            state.statuses.length > 0 && (
+              <button className="chip" onClick={() => navigate('/pricing')}>
+                🔒 Statuses · Pro
+              </button>
+            )
+          )}
         </div>
       </header>
 
@@ -275,14 +261,16 @@ export default function ContactsPage() {
                 placeholder="Full name"
               />
             </label>
-            <label className="field">
-              <span>Status</span>
-              <Select
-                value={adding.statusId}
-                onChange={(v) => setAdding({ ...adding, statusId: v })}
-                options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
-              />
-            </label>
+            {isPro && (
+              <label className="field">
+                <span>Status</span>
+                <Select
+                  value={adding.statusId}
+                  onChange={(v) => setAdding({ ...adding, statusId: v })}
+                  options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
+                />
+              </label>
+            )}
             <div className="field-row">
               <label className="field">
                 <span>Phone</span>

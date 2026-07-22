@@ -7,8 +7,9 @@ import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { startCheckout, openBillingPortal, backendConfigured } from '../data/api.js';
 
 const FEATURES = [
-  { label: 'Goals, Planner, Map', free: true, pro: true },
-  { label: 'People (contacts)', free: false, pro: true },
+  { label: 'Goals, Planner, Map, People', free: true, pro: true },
+  { label: 'Contact history timeline', free: false, pro: true },
+  { label: 'People status groups', free: false, pro: true },
   { label: 'Color themes (8 schemes)', free: false, pro: true },
   { label: 'Shared / collaborative events', free: false, pro: true },
   { label: 'Google account sync', free: false, pro: true },
@@ -36,7 +37,7 @@ export default function PricingPage() {
       <section className="pricing-hero">
         <div className="pricing-crown">👑</div>
         <h1>Keystone Pro</h1>
-        <p className="muted">Unlock People, sharing, sync, and more.</p>
+        <p className="muted">Unlock contact timelines, status groups, sharing, sync, and more.</p>
       </section>
 
       <div className="seg seg--full">
