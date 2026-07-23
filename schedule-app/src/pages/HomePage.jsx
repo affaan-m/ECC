@@ -25,15 +25,11 @@ export default function HomePage() {
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const [editMode, setEditMode] = useState(false);
-  const tasksSectionRef = useRef(null);
-  const notesSectionRef = useRef(null);
-  const scrollToSection = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Reached via the expandable quick-add FAB on another page (e.g. Planner).
   useEffect(() => {
     if (location.state?.quickNewTask) {
-      scrollToSection(tasksSectionRef);
-      setTimeout(() => document.querySelector('.task-add-row input')?.focus(), 300);
+      openNewTask();
       window.history.replaceState({}, '');
     } else if (location.state?.quickNewNote) {
       openNewNote();
@@ -267,7 +263,7 @@ export default function HomePage() {
           }
           if (b.id === 'tasks') {
             return (
-              <section className="detail-section" ref={tasksSectionRef} key="tasks">
+              <section className="detail-section" key="tasks">
                 <span className="detail-label">Tasks</span>
                 <ul className="task-list">
                   {tasks.map((t) => (
@@ -314,7 +310,7 @@ export default function HomePage() {
           }
           if (b.id === 'notes') {
             return (
-              <section className="detail-section" ref={notesSectionRef} key="notes">
+              <section className="detail-section" key="notes">
                 <div className="section-head">
                   <span className="detail-label">📝 Notes</span>
                   <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
@@ -363,7 +359,7 @@ export default function HomePage() {
         onAction={(id) => {
           if (id === 'event') navigate('/planner', { state: { quickNewEvent: true } });
           else if (id === 'contact') navigate('/contacts', { state: { quickNewContact: true } });
-          else if (id === 'task') document.querySelector('.task-add-row input')?.focus();
+          else if (id === 'task') openNewTask();
           else if (id === 'note') openNewNote();
         }}
       />
