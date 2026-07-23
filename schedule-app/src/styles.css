@@ -1524,12 +1524,14 @@ textarea {
   user-select: none;
   min-width: 0;
   line-height: 1.2;
-  /* pan-y (not none) so a touch that starts on a block but is actually just
-     a scroll — not a long-press-and-hold — still scrolls the timeline
-     natively, instead of the block being a dead zone for that gesture. The
-     long-press-to-drag gesture still works: it requires holding still
-     first, by which point the pointer is already captured in JS. */
-  touch-action: pan-y;
+  /* none, not pan-y: with pan-y, the browser can commit to native panning
+     partway through a real touch drag — even after the long-press has
+     already armed it — which cancels the gesture with no further pointer
+     events and silently drops the reschedule. JS owns the gesture instead,
+     and manually forwards vertical movement to the page scroll during the
+     pending phase (see onMoveP/onGroupMove) so starting a scroll on a
+     block still works without racing the browser for who owns the touch. */
+  touch-action: none;
   transition: box-shadow 0.15s ease, opacity 0.15s ease;
 }
 .event-block--dragging {

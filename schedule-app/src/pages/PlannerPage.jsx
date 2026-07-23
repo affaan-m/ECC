@@ -768,9 +768,10 @@ function DayView({
     const g = {
       key,
       occ,
-      phase: 'pending', // pending -> armed (long-press held) | swiping (moved before long-press fired)
+      phase: 'pending', // pending -> armed (long-press held) | swiping (horizontal, evaluated on release) | scrolling (vertical, forwarded live)
       startClientY: e.clientY,
       startClientX: e.clientX,
+      lastClientY: e.clientY,
       timer: null,
       lastSnap: 0,
       // Net days paged during this drag — always moves one at a time, only
@@ -795,12 +796,21 @@ function DayView({
     const dy = e.clientY - g.startClientY;
     if (g.phase === 'pending') {
       if (Math.hypot(dx, dy) > MOVE_TOLERANCE_PX) {
-        // Moved before the long-press armed: not a reschedule-drag. Keep
-        // tracking so a fast horizontal swipe can still change the day
-        // (same as swiping empty timeline space) — evaluated on release.
-        g.phase = 'swiping';
         clearTimeout(g.timer);
+        // Moved before the long-press armed: not a reschedule-drag. A
+        // vertical move means the user is trying to scroll the timeline —
+        // the block is touch-action: none so the browser won't do this
+        // natively, forward it by hand. A horizontal move is kept as a
+        // swipe-day candidate, evaluated on release (same as swiping empty
+        // timeline space).
+        g.phase = Math.abs(dy) > Math.abs(dx) ? 'scrolling' : 'swiping';
+      } else {
+        return;
       }
+    }
+    if (g.phase === 'scrolling') {
+      window.scrollBy(0, g.lastClientY - e.clientY);
+      g.lastClientY = e.clientY;
       return;
     }
     if (g.phase === 'armed') {
@@ -910,6 +920,7 @@ function DayView({
       phase: 'pending',
       startClientX: e.clientX,
       startClientY: e.clientY,
+      lastClientY: e.clientY,
       timer: null,
       lastMinSnap: 0,
       dayOffset: 0,
@@ -931,9 +942,18 @@ function DayView({
     const dy = e.clientY - g.startClientY;
     if (g.phase === 'pending') {
       if (Math.hypot(dx, dy) > MOVE_TOLERANCE_PX) {
-        g.phase = 'cancelled';
         clearTimeout(g.timer);
+        // Same reasoning as the single-event gesture: a vertical move before
+        // the long-press armed means the user wants to scroll, and
+        // touch-action: none means the browser won't do that on its own.
+        g.phase = Math.abs(dy) > Math.abs(dx) ? 'scrolling' : 'cancelled';
+      } else {
+        return;
       }
+    }
+    if (g.phase === 'scrolling') {
+      window.scrollBy(0, g.lastClientY - e.clientY);
+      g.lastClientY = e.clientY;
       return;
     }
     if (g.phase === 'armed') {
