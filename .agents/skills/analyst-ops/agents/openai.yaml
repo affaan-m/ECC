@@ -1,0 +1,7 @@
+interface:
+  display_name: "Analyst Ops"
+  short_description: "Source-backed analyst readouts"
+  brand_color: "#0F766E"
+  default_prompt: "Use $analyst-ops to produce or review source-backed analyst readouts."
+policy:
+  allow_implicit_invocation: true

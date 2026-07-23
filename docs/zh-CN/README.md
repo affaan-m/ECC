@@ -228,7 +228,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 67 个智能体、278 项技能和 94 个命令了。
+**搞定！** 你现在可以使用 68 个智能体、279 项技能和 94 个命令了。
 
 ***
 
@@ -1051,7 +1051,7 @@ Codex macOS 应用：
 |-----------|-------|---------|
 | 配置 | 1 | `.codex/config.toml` —— 顶级 approvals/sandbox/web\_search, MCP 服务器，通知，配置文件 |
 | AGENTS.md | 2 | 根目录（通用）+ `.codex/AGENTS.md`（Codex 特定补充） |
-| 技能 | 32 | `.agents/skills/` —— SKILL.md + agents/openai.yaml 每个技能 |
+| 技能 | 39 | `.agents/skills/` —— SKILL.md + agents/openai.yaml 每个技能 |
 | MCP 服务器 | 4 | GitHub, Context7, Memory, Sequential Thinking（基于命令） |
 | 配置文件 | 2 | `strict`（只读沙箱）和 `yolo`（完全自动批准） |
 | 代理角色 | 3 | `.codex/agents/` —— explorer, reviewer, docs-researcher |
@@ -1066,6 +1066,7 @@ Codex macOS 应用：
 |-------|-------------|
 | agent-introspection-debugging | 调试智能体行为、路由和提示边界 |
 | agent-sort | 整理智能体目录和分配表面 |
+| analyst-ops | 带来源归属的分析读出和指标契约 |
 | api-design | REST API 设计模式 |
 | article-writing | 根据笔记和语音参考进行长文写作 |
 | backend-patterns | API 设计、数据库、缓存 |
@@ -1140,9 +1141,9 @@ opencode
 
 | 功能特性 | Claude Code   | OpenCode | 状态 |
 |---------|---------------|----------|--------|
-| 智能体 | PASS: 67 个    | PASS: 12 个 | **Claude Code 领先** |
+| 智能体 | PASS: 68 个    | PASS: 12 个 | **Claude Code 领先** |
 | 命令 | PASS: 94 个    | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 278 项   | PASS: 37 项 | **Claude Code 领先** |
+| 技能 | PASS: 279 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
 | 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
 | MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
@@ -1248,9 +1249,9 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 
 | 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
 |---------|-----------------------|------------|-----------|----------|
-| **智能体** | 67                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **智能体** | 68                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
 | **命令** | 94                    | 共享 | 基于指令 | 35 |
-| **技能** | 278                   | 共享 | 10 (原生格式) | 37 |
+| **技能** | 279                   | 共享 | 10 (原生格式) | 37 |
 | **钩子事件** | 8 种类型                 | 15 种类型 | 暂无 | 11 种类型 |
 | **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
 | **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |
