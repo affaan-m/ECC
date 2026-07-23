@@ -8,13 +8,20 @@ if [[ "${ECC_SKIP_GIT_HOOKS:-0}" == "1" || "${ECC_SKIP_PREPUSH:-0}" == "1" ]]; t
   exit 0
 fi
 
-if [[ -f ".ecc-hooks-disable" || -f ".git/ecc-hooks-disable" ]]; then
+if ! repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
   exit 0
 fi
 
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+if [[ -f "$repo_root/.ecc-hooks-disable" || ( -n "$git_dir" && -f "$git_dir/ecc-hooks-disable" ) ]]; then
   exit 0
 fi
+
+if [[ "${ECC_PREPUSH_FULL:-0}" != "1" && -f "$repo_root/.ecc-prepush-disable" ]]; then
+  exit 0
+fi
+
+cd "$repo_root"
 
 # Skip checks for branch deletion pushes (e.g., git push origin --delete <branch>).
 # The pre-push hook receives lines on stdin: <local ref> <local sha> <remote ref> <remote sha>.
