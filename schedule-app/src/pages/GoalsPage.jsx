@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
+import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
   goalKey,
@@ -333,10 +334,10 @@ export default function GoalsPage() {
 
             <div className="field">
               <label className="check-row">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={editing.reminderOn}
                   onChange={(e) => setEditing({ ...editing, reminderOn: e.target.checked })}
+                  ariaLabel="Remind me"
                 />
                 <span>Remind me</span>
               </label>

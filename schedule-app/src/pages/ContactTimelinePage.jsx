@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Modal from '../components/Modal.jsx';
+import Checkbox from '../components/Checkbox.jsx';
 import { Avatar } from '../components/Avatar.jsx';
 import { todayISO, toISODate, addDays, formatShortDate, formatTime, expandEventOnDay } from '../data/helpers.js';
 
@@ -376,10 +377,10 @@ export default function ContactTimelinePage() {
               />
             </label>
             <label className="check-row">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={!!editingNote.pinned}
                 onChange={(e) => setEditingNote({ ...editingNote, pinned: e.target.checked })}
+                ariaLabel="Pin to top of timeline"
               />
               <span>📌 Pin to top of timeline</span>
             </label>

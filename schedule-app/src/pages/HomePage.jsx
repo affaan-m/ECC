@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import ExpandableFab from '../components/ExpandableFab.jsx';
+import Checkbox from '../components/Checkbox.jsx';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
@@ -150,6 +151,9 @@ export default function HomePage() {
   // --- Notes ---
   const [editingNote, setEditingNote] = useState(null);
   const initialNoteJson = useRef('');
+  const [poppedChecklistIdx, setPoppedChecklistIdx] = useState(null);
+  const checklistPopTimer = useRef(null);
+  useEffect(() => () => clearTimeout(checklistPopTimer.current), []);
   // Notes written from a contact's timeline carry a contactId and belong to
   // that contact only — Home's notes bar is for general, unattached notes.
   const notes = useMemo(
@@ -277,6 +281,9 @@ export default function HomePage() {
                         aria-label={t.done ? 'Mark not done' : 'Mark done'}
                       >
                         {t.done && <CheckIcon />}
+                        <span className="task-check-sparkles" aria-hidden="true">
+                          <i /><i /><i /><i /><i /><i />
+                        </span>
                       </button>
                       <button className="task-title-btn" onClick={() => openEditTask(t)}>
                         <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
@@ -389,10 +396,10 @@ export default function HomePage() {
             </label>
 
             <label className="check-row">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={!!editingNote.checklist}
                 onChange={(e) => toggleChecklist(e.target.checked)}
+                ariaLabel="Checklist"
               />
               <span>Checklist</span>
             </label>
@@ -403,14 +410,25 @@ export default function HomePage() {
                   <div className="checklist-row" key={i}>
                     <button
                       type="button"
-                      className={`task-check${item.done ? ' task-check--on' : ''}`}
+                      className={`task-check${item.done ? ' task-check--on' : ''}${poppedChecklistIdx === i ? ' task-check--pop' : ''}`}
                       onClick={() => {
                         const next = editingNote.checklist.slice();
-                        next[i] = { ...next[i], done: !next[i].done };
+                        const nowDone = !next[i].done;
+                        next[i] = { ...next[i], done: nowDone };
                         setEditingNote({ ...editingNote, checklist: next });
+                        clearTimeout(checklistPopTimer.current);
+                        if (nowDone) {
+                          setPoppedChecklistIdx(i);
+                          checklistPopTimer.current = setTimeout(() => setPoppedChecklistIdx(null), 500);
+                        } else {
+                          setPoppedChecklistIdx(null);
+                        }
                       }}
                     >
                       {item.done && <CheckIcon />}
+                      <span className="task-check-sparkles" aria-hidden="true">
+                        <i /><i /><i /><i /><i /><i />
+                      </span>
                     </button>
                     <input
                       value={item.text}
@@ -468,10 +486,10 @@ export default function HomePage() {
             </div>
 
             <label className="check-row">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={!!editingNote.pinned}
                 onChange={(e) => setEditingNote({ ...editingNote, pinned: e.target.checked })}
+                ariaLabel="Pin to top"
               />
               <span>Pin to top</span>
             </label>

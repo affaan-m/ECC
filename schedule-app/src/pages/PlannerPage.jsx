@@ -5,6 +5,7 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import ExpandableFab from '../components/ExpandableFab.jsx';
 import Select from '../components/Select.jsx';
 import MiniMapPicker from '../components/MiniMapPicker.jsx';
+import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { useBackDismiss } from '../data/useBackDismiss.js';
@@ -1506,8 +1507,16 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
         <div className="detail-title-row">
           {color && <span className="detail-dot" style={{ background: color }} />}
           <h1 className="detail-big-title">{occ.title || 'Untitled'}</h1>
+          <label className="check-row detail-done-check" title="Mark as done">
+            <Checkbox checked={!!occ.done} onChange={onToggleDone} ariaLabel="Mark as done" />
+          </label>
         </div>
         {type && <span className="tag" style={{ borderColor: type.color, color: type.color }}>{type.label}</span>}
+        {(linkedGoal || linkedTask) && (
+          <p className="muted small detail-done-hint">
+            Checking done updates {linkedGoal ? 'the linked goal' : 'the linked task'}.
+          </p>
+        )}
 
         <section className="detail-section">
           <div className="detail-field">
@@ -1566,16 +1575,6 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
             <span className="detail-label">Notes</span>
             <p className="notes-text">{occ.notes}</p>
           </section>
-        )}
-
-        <label className="check-row detail-done-row">
-          <input type="checkbox" checked={!!occ.done} onChange={onToggleDone} />
-          <span>Mark as done</span>
-        </label>
-        {(linkedGoal || linkedTask) && (
-          <p className="muted small">
-            Checking this updates {linkedGoal ? 'the linked goal' : 'the linked task'}.
-          </p>
         )}
 
         <button className="btn btn-ghost full share-event-btn" onClick={shareEvent}>
@@ -1956,7 +1955,11 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         </label>
 
         <label className="check-row">
-          <input type="checkbox" checked={!!draft.done} onChange={(e) => setDraft({ ...draft, done: e.target.checked })} />
+          <Checkbox
+            checked={!!draft.done}
+            onChange={(e) => setDraft({ ...draft, done: e.target.checked })}
+            ariaLabel={recurringMaster ? 'Mark this day done' : 'Mark as done'}
+          />
           <span>{recurringMaster ? 'Mark this day done' : 'Mark as done'}</span>
         </label>
 

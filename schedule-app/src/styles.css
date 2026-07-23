@@ -1193,7 +1193,8 @@ textarea {
 .detail-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   margin: 4px 0 8px;
 }
 .detail-dot {
@@ -1203,6 +1204,8 @@ textarea {
   flex: none;
 }
 .detail-big-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 24px;
   margin: 0;
 }
@@ -1210,8 +1213,11 @@ textarea {
   display: inline-block;
   margin: 0 0 14px;
 }
-.detail-done-row {
-  margin-top: 14px;
+/* Pinned to the far right of the title row — directly beside a short title,
+   pushed onto its own line (still right-aligned) if the title wraps. */
+.detail-done-check {
+  margin-left: auto;
+  flex: none;
 }
 .share-event-btn {
   margin-top: 14px;
@@ -2619,6 +2625,7 @@ textarea {
   gap: 10px;
 }
 .task-check {
+  position: relative;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -2648,6 +2655,80 @@ textarea {
   100% {
     transform: scale(1);
   }
+}
+/* A few green sparks that burst outward the moment a checkbox is checked —
+   shared by every checkbox in the app (.task-check buttons and the themed
+   <Checkbox> component both use these classes). Gated behind .task-check--pop
+   (a short-lived "just checked" class, not the persistent --on/:checked
+   state) so already-done items don't replay the celebration on mount. */
+.task-check-sparkles {
+  position: absolute;
+  inset: -11px;
+  pointer-events: none;
+}
+.task-check-sparkles i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #3ddc71;
+  opacity: 0;
+}
+.task-check--pop .task-check-sparkles i {
+  animation: task-spark 0.55s ease-out forwards;
+}
+.task-check-sparkles i:nth-child(1) {
+  --sx: -13px;
+  --sy: -13px;
+  animation-delay: 0s;
+}
+.task-check-sparkles i:nth-child(2) {
+  --sx: 13px;
+  --sy: -13px;
+  animation-delay: 0.03s;
+}
+.task-check-sparkles i:nth-child(3) {
+  --sx: -16px;
+  --sy: 3px;
+  animation-delay: 0.06s;
+}
+.task-check-sparkles i:nth-child(4) {
+  --sx: 16px;
+  --sy: 3px;
+  animation-delay: 0.02s;
+}
+.task-check-sparkles i:nth-child(5) {
+  --sx: -5px;
+  --sy: 15px;
+  animation-delay: 0.08s;
+}
+.task-check-sparkles i:nth-child(6) {
+  --sx: 5px;
+  --sy: 15px;
+  animation-delay: 0.045s;
+}
+@keyframes task-spark {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--sx)), calc(-50% + var(--sy))) scale(1);
+  }
+}
+.theme-checkbox-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 2;
 }
 .task-title-btn {
   flex: 1;
