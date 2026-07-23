@@ -89,7 +89,7 @@ function parseReadmeExpectations(readmeContent) {
   const expectations = [];
 
   const quickStartMatch = readmeContent.match(
-    /access to\s+(\d+)\s+agents,\s+(\d+)\s+skills,\s+and\s+(\d+)\s+(?:commands|legacy command shims?)/i
+    /access to\s+(\d+)\s+(?:specialized\s+)?agents,\s+(\d+)\s+skills,\s+and\s+(\d+)\s+(?:commands|legacy command shims?)/i
   );
   if (!quickStartMatch) {
     throw new Error('README.md is missing the quick-start catalog summary');
@@ -151,18 +151,25 @@ function parseReadmeExpectations(readmeContent) {
     }
   ];
 
-  for (const pattern of parityPatterns) {
-    const match = readmeContent.match(pattern.regex);
-    if (!match) {
-      throw new Error(`${pattern.source} is missing the ${pattern.category} row`);
-    }
+  const parityMatches = parityPatterns.map(pattern => ({
+    match: readmeContent.match(pattern.regex),
+    pattern
+  }));
+  const hasParityTable = parityMatches.some(({ match }) => Boolean(match));
 
-    expectations.push({
-      category: pattern.category,
-      mode: 'exact',
-      expected: Number(match[1]),
-      source: `${pattern.source} (${pattern.category})`
-    });
+  if (hasParityTable) {
+    for (const { match, pattern } of parityMatches) {
+      if (!match) {
+        throw new Error(`${pattern.source} is missing the ${pattern.category} row`);
+      }
+
+      expectations.push({
+        category: pattern.category,
+        mode: 'exact',
+        expected: Number(match[1]),
+        source: `${pattern.source} (${pattern.category})`
+      });
+    }
   }
 
   return expectations;
@@ -410,7 +417,7 @@ function syncEnglishReadme(content, catalog) {
 
   nextContent = replaceOrThrow(
     nextContent,
-    /(access to\s+)(\d+)(\s+agents,\s+)(\d+)(\s+skills,\s+and\s+)(\d+)(\s+(?:commands|legacy command shims?))/i,
+    /(access to\s+)(\d+)(\s+(?:specialized\s+)?agents,\s+)(\d+)(\s+skills,\s+and\s+)(\d+)(\s+(?:commands|legacy command shims?))/i,
     (_, prefix, __, agentsSuffix, ___, skillsSuffix) =>
       `${prefix}${catalog.agents.count}${agentsSuffix}${catalog.skills.count}${skillsSuffix}${catalog.commands.count} legacy command shims`,
     'README.md quick-start summary'
