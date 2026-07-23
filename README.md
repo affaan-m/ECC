@@ -441,6 +441,7 @@ The root is the source of truth. Platform adapters package or map these same wor
 | **Agents** | 67 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 94 | Shared | Instruction-based | 35 | 5 prompts |
 | **Skills** | 278 | Shared | 10 (native format) | 37 | Via instructions |
+| **Version** | Plugin | Plugin | Reference config | 2.0.0 | Instruction layer |
 
 </details>
 
