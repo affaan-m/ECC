@@ -2637,6 +2637,7 @@ textarea {
   flex: none;
   cursor: pointer;
   color: #fff;
+  -webkit-tap-highlight-color: transparent;
 }
 .task-check--on {
   background: var(--good);
@@ -2729,6 +2730,7 @@ textarea {
   margin: 0;
   cursor: pointer;
   z-index: 2;
+  -webkit-tap-highlight-color: transparent;
 }
 .task-title-btn {
   flex: 1;
