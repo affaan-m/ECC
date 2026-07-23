@@ -23,7 +23,11 @@ import subprocess
 import sys
 import re
 import shutil
+import ipaddress
+import socket
+import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
@@ -179,6 +183,55 @@ def _validate_instinct_id(instinct_id: str) -> bool:
     if instinct_id.startswith("."):
         return False
     return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", instinct_id))
+
+
+def _validate_import_url(source: str) -> str:
+    """Validate remote instinct imports before opening a network connection."""
+    parsed = urllib.parse.urlparse(source)
+    if parsed.scheme != "https":
+        raise ValueError("remote instinct imports require https URLs")
+    if not parsed.hostname:
+        raise ValueError("remote import URL is missing a hostname")
+
+    try:
+        addr_infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"remote import host could not be resolved: {parsed.hostname}") from exc
+
+    for family, _, _, _, sockaddr in addr_infos:
+        host = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ValueError(f"remote import host resolves to a non-public address: {host}")
+
+    return urllib.parse.urlunparse(parsed)
+
+
+def _fetch_import_url(source: str, *, max_bytes: int = 2 * 1024 * 1024) -> str:
+    """Fetch a validated remote instinct file with bounded size and timeout."""
+    url = _validate_import_url(source)
+    req = urllib.request.Request(url, headers={"User-Agent": "ECC-instinct-import/2"})
+    with urllib.request.urlopen(req, timeout=15) as response:
+        content_type = response.headers.get("Content-Type", "")
+        if content_type and not any(
+            allowed in content_type.lower()
+            for allowed in ("text/", "markdown", "yaml", "json", "octet-stream")
+        ):
+            raise ValueError(f"unsupported remote content type: {content_type}")
+        data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"remote import exceeds {max_bytes} bytes")
+    return data.decode("utf-8")
 
 
 def _yaml_quote(value: str) -> str:
@@ -342,33 +395,67 @@ def detect_project() -> dict:
     }
 
 
+@contextmanager
+def _registry_lock():
+    """Serialize registry read-modify-write across concurrent sessions.
+
+    Acquires the same advisory lock for every registry writer (``_update_registry``
+    and ``_write_registry``) so ``projects delete/gc/merge`` cannot interleave with
+    a concurrent observe-time update and corrupt ``projects.json``. No-op on
+    platforms without ``fcntl`` (Windows).
+    """
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
+    lock_fd = None
+    try:
+        if _HAS_FCNTL:
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+
 def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
     """Update the projects.json registry.
 
     Uses file locking (where available) to prevent concurrent sessions from
     overwriting each other's updates.
     """
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
-    lock_fd = None
-
-    try:
-        # Acquire advisory lock to serialize read-modify-write
-        if _HAS_FCNTL:
-            lock_fd = open(lock_path, "w")
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-
+    with _registry_lock():
         try:
             with open(REGISTRY_FILE, encoding="utf-8") as f:
                 registry = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             registry = {}
+        # A registry that is valid JSON but not a mapping (e.g. a list from a
+        # corrupt projects.json) must not crash the update before the per-entry
+        # guard below: fall back to an empty dict so the whole file is healed.
+        if not isinstance(registry, dict):
+            registry = {}
 
+        # Mirror the shell counterpart in detect-project.sh: the entry carries
+        # "id" and "created_at" alongside the other fields so a projects.json
+        # record has the same shape regardless of which path (Python CLI or
+        # shell hook) last wrote it. "created_at" is preserved from any
+        # existing entry; only "last_seen" advances on update.
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        existing = registry.get(pid, {})
+        # A malformed registry (e.g. a non-dict value for this id) must not
+        # crash the update: fall back to an empty dict so the corrupt entry is
+        # healed by the rewrite, matching the old unconditional-overwrite
+        # behavior.
+        if not isinstance(existing, dict):
+            existing = {}
         registry[pid] = {
+            "id": pid,
             "name": pname,
             "root": proot,
             "remote": premote,
-            "last_seen": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "created_at": existing.get("created_at", now),
+            "last_seen": now,
         }
 
         tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
@@ -377,10 +464,6 @@ def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_file, REGISTRY_FILE)
-    finally:
-        if lock_fd is not None:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
 
 
 def load_registry() -> dict:
@@ -393,15 +476,19 @@ def load_registry() -> dict:
 
 
 def _write_registry(registry: dict) -> None:
-    """Write the project registry atomically."""
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(registry, f, indent=2)
-        f.write("\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_file, REGISTRY_FILE)
+    """Write the project registry atomically.
+
+    Holds the same advisory lock as ``_update_registry`` so concurrent
+    ``projects delete/gc/merge`` and observe-time updates cannot corrupt the file.
+    """
+    with _registry_lock():
+        tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(registry, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, REGISTRY_FILE)
 
 
 def _validate_project_id(project_id: str) -> bool:
@@ -521,7 +608,14 @@ def _project_counts(project_id: str) -> dict:
 
 
 def _remove_project_storage(project_id: str) -> None:
-    project_dir = PROJECTS_DIR / project_id
+    # Defense-in-depth: resolve and confirm the target is contained within
+    # PROJECTS_DIR before recursively deleting, even though callers validate the
+    # project id. A relaxed validator or a future caller must never be able to
+    # turn this into an arbitrary-directory delete.
+    projects_root = PROJECTS_DIR.resolve()
+    project_dir = (PROJECTS_DIR / project_id).resolve()
+    if project_dir == projects_root or projects_root not in project_dir.parents:
+        raise ValueError(f"refusing to remove {project_dir}: escapes {projects_root}")
     if project_dir.exists():
         shutil.rmtree(project_dir)
 
@@ -703,8 +797,45 @@ def cmd_status(args) -> int:
                 days_left = max(0, PENDING_TTL_DAYS - item["age_days"])
                 print(f"    - {item['name']} ({days_left}d remaining)")
 
+    # Legacy data warning
+    _warn_legacy_data()
+
     print(f"\n{'='*60}\n")
     return 0
+
+
+def _warn_legacy_data() -> None:
+    """Warn if legacy ~/.claude/homunculus/ contains data while the active
+    path has moved to the XDG directory."""
+    legacy_dir = Path.home() / ".claude" / "homunculus"
+    if legacy_dir == HOMUNCULUS_DIR:
+        return  # CLV2_HOMUNCULUS_DIR explicitly points at the legacy path
+    if not legacy_dir.is_dir():
+        return
+
+    # Count substantive files (skip empty dirs and the directory itself)
+    try:
+        legacy_files = [f for f in legacy_dir.rglob("*") if f.is_file()]
+    except (PermissionError, OSError):
+        print(f"\n  Note: legacy directory exists but cannot be read: {legacy_dir}", file=sys.stderr)
+        return
+    if not legacy_files:
+        return
+
+    migrate_script = Path(__file__).resolve().parent / "migrate-homunculus.sh"
+
+    print(f"\n{'!'*60}")
+    print("  LEGACY DATA DETECTED")
+    print(f"{'!'*60}")
+    print(f"  Found {len(legacy_files)} file(s) in legacy path:")
+    print(f"    {legacy_dir}")
+    print("  Active data directory:")
+    print(f"    {HOMUNCULUS_DIR}")
+    print()
+    print("  Run the migration script to move your data:")
+    print(f'    bash "{migrate_script}"')
+    print(f"  Or set CLV2_HOMUNCULUS_DIR={legacy_dir} to use the legacy path.")
+    print(f"{'!'*60}\n")
 
 
 def _print_instincts_by_domain(instincts: list[dict]) -> None:
@@ -757,8 +888,7 @@ def cmd_import(args) -> int:
     if source.startswith('http://') or source.startswith('https://'):
         print(f"Fetching from URL: {source}")
         try:
-            with urllib.request.urlopen(source) as response:
-                content = response.read().decode('utf-8')
+            content = _fetch_import_url(source)
         except Exception as e:
             print(f"Error fetching URL: {e}", file=sys.stderr)
             return 1

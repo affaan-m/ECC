@@ -63,6 +63,11 @@ function runTests() {
       const result = runScript('bun run dev');
       assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
     }) ? passed++ : failed++);
+
+    (test('still blocks npm run dev:ssr — colon variant is a dev server (exit 2)', () => {
+      const result = runScript('npm run dev:ssr');
+      assert.strictEqual(result.code, 2, `Expected exit code 2, got ${result.code}`);
+    }) ? passed++ : failed++);
   } else {
     console.log('  (skipping blocking tests on Windows)\n');
   }
@@ -86,6 +91,23 @@ function runTests() {
 
   (test('allows npm run build (exit code 0)', () => {
     const result = runScript('npm run build');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  // --- dev-<suffix> scripts are distinct from the dev server, must not be blocked ---
+
+  (test('allows npm run dev-setup — distinct script, not the dev server (exit 0)', () => {
+    const result = runScript('npm run dev-setup');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows pnpm run dev-docs — distinct script (exit 0)', () => {
+    const result = runScript('pnpm run dev-docs');
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+  }) ? passed++ : failed++);
+
+  (test('allows yarn dev-build — distinct script (exit 0)', () => {
+    const result = runScript('yarn dev-build');
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
   }) ? passed++ : failed++);
 

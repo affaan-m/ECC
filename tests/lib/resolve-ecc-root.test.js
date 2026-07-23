@@ -284,6 +284,12 @@ function runTests() {
     assert.ok(INLINE_RESOLVE.length > 50, 'Should be a substantial inline expression');
   })) passed++; else failed++;
 
+  if (test('INLINE_RESOLVE does not contain spread, nested arrays, or escaped quotes', () => {
+    assert.ok(!INLINE_RESOLVE.includes('...'));
+    assert.ok(!INLINE_RESOLVE.includes('[['));
+    assert.ok(!INLINE_RESOLVE.includes('\\"'));
+  })) passed++; else failed++;
+
   if (test('INLINE_RESOLVE returns CLAUDE_PLUGIN_ROOT when set', () => {
     const { execFileSync } = require('child_process');
     const result = execFileSync('node', [
@@ -295,26 +301,37 @@ function runTests() {
     assert.strictEqual(result, '/inline/test/root');
   })) passed++; else failed++;
 
-  if (test('INLINE_RESOLVE discovers exact legacy plugin root when env var is unset', () => {
+  if (test('INLINE_RESOLVE delegates to committed resolver when env var is unset', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupLegacyPluginInstall(homeDir, ['marketplaces', 'ecc']);
+      const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'delegated:' + process.env.INLINE_RESOLVE_MARKER; } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
       ], {
-        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        env: {
+          PATH: process.env.PATH,
+          HOME: homeDir,
+          USERPROFILE: homeDir,
+          INLINE_RESOLVE_MARKER: 'ok',
+        },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, expected);
+      assert.strictEqual(result, 'delegated:ok');
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
-  if (test('INLINE_RESOLVE discovers plugin cache when env var is unset', () => {
+
+  if (test('INLINE_RESOLVE loads the committed resolver module from home base', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `const assert = require('assert');
+module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSON.stringify(homeDir)}); return 'module-loaded'; } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -322,7 +339,48 @@ function runTests() {
         env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, expected);
+      assert.strictEqual(result, 'module-loaded');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('INLINE_RESOLVE bootstraps module from an exact plugin root when env unset', () => {
+    const homeDir = createTempDir();
+    try {
+      const resolverDir = path.join(homeDir, '.claude', 'plugins', 'ecc', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'plugin-root'; } };`);
+      const { execFileSync } = require('child_process');
+      const result = execFileSync('node', [
+        '-e', `console.log(${INLINE_RESOLVE})`,
+      ], {
+        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        encoding: 'utf8',
+      }).trim();
+      assert.strictEqual(result, 'plugin-root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('INLINE_RESOLVE bootstraps module from the versioned plugin cache when env unset', () => {
+    const homeDir = createTempDir();
+    try {
+      const resolverDir = path.join(
+        homeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION,
+        'scripts', 'lib'
+      );
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'cache-root'; } };`);
+      const { execFileSync } = require('child_process');
+      const result = execFileSync('node', [
+        '-e', `console.log(${INLINE_RESOLVE})`,
+      ], {
+        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        encoding: 'utf8',
+      }).trim();
+      assert.strictEqual(result, 'cache-root');
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

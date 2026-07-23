@@ -1,7 +1,8 @@
 ---
 name: code-tour
 description: Create CodeTour `.tour` files — persona-targeted, step-by-step walkthroughs with real file and line anchors. Use for onboarding tours, architecture walkthroughs, PR tours, RCA tours, and structured "explain how this works" requests.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Code Tour
@@ -92,7 +93,24 @@ Before finishing:
 - every referenced path exists
 - every line or selection is valid
 - the first step is anchored to a real file or directory
+- the `ref` points at a branch or commit that actually has every file the tour references (see below)
 - the tour tells a coherent story rather than listing files
+
+## The `ref` Field
+
+`ref` ties the tour to a git branch or commit. It matters more than it looks: when `ref` is not the branch the reader has checked out, CodeTour opens each step's file from that revision in git, not from the files on disk. If a file is not in that revision, the step will not open — the reader sees *"The editor could not be opened because the file was not found"* even though the file is sitting right there. The tour and its comments still show, so the real cause is easy to miss.
+
+Pick `ref` by tour type:
+
+| Tour type | Set `ref` to |
+| --- | --- |
+| PR tour | the PR branch — never the base branch |
+| Onboarding / architecture | the branch the reader will be on (often `main`), or leave it out |
+| Not sure | leave `ref` out, so CodeTour reads files straight from disk |
+
+The PR case is the common trap: a PR usually adds new files, and new files do not exist on the base branch yet. Point `ref` at the base (e.g. `develop`) and every step on a new file fails to open.
+
+Before finishing, confirm each step's file actually exists at the `ref` you chose.
 
 ## Step Types
 

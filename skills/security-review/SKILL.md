@@ -1,7 +1,8 @@
 ---
 name: security-review
 description: Use this skill when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment/sensitive features. Provides comprehensive security checklist and patterns.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Security Review Skill
@@ -66,7 +67,7 @@ export async function createUser(input: unknown) {
     return await db.users.create(validated)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return { success: false, errors: error.errors }
+      return { success: false, errors: error.issues }
     }
     throw error
   }

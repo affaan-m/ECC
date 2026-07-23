@@ -1,8 +1,8 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 63 specialized agents, 249 skills, 79 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 67 specialized agents, 278 skills, 94 commands, and automated hook workflows for software development.
 
-**Version:** 2.0.0-rc.1
+**Version:** 2.0.0
 
 ## Core Principles
 
@@ -21,6 +21,7 @@ This is a **production-ready AI coding plugin** providing 63 specialized agents,
 | tdd-guide | Test-driven development | New features, bug fixes |
 | code-reviewer | Code quality and maintainability | After writing/modifying code |
 | security-reviewer | Vulnerability detection | Before commits, sensitive code |
+| spec-miner | Brownfield spec extraction | Onboarding brownfield projects to spec-driven development |
 | build-error-resolver | Fix build/type errors | When build fails |
 | e2e-runner | End-to-end Playwright testing | Critical user flows |
 | refactor-cleaner | Dead code cleanup | Code maintenance |
@@ -55,6 +56,7 @@ Use agents proactively without user prompt:
 - Bug fix or new feature → **tdd-guide**
 - Architectural decision → **architect**
 - Security-sensitive code → **security-reviewer**
+- Brownfield project onboarding → **spec-miner**
 - Autonomous loops / loop monitoring → **loop-operator**
 - Harness config reliability and cost → **harness-optimizer**
 
@@ -149,9 +151,9 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 63 specialized subagents
-skills/          — 249 workflow skills and domain knowledge
-commands/        — 79 slash commands
+agents/          — 67 specialized subagents
+skills/          — 278 workflow skills and domain knowledge
+commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)
 scripts/         — Cross-platform Node.js utilities

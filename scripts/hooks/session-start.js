@@ -27,8 +27,8 @@ const { detectProjectType } = require('../lib/project-detect');
 const path = require('path');
 const fs = require('fs');
 
-const INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
-const MAX_INJECTED_INSTINCTS = 6;
+const DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
+const DEFAULT_MAX_INJECTED_INSTINCTS = 6;
 const MAX_INJECTED_LEARNED_SKILLS = 6;
 const MAX_LEARNED_SKILL_SUMMARY_CHARS = 220;
 const DEFAULT_SESSION_START_CONTEXT_MAX_CHARS = 8000;
@@ -83,9 +83,22 @@ function dedupeRecentSessions(searchDirs) {
     .sort((left, right) => right.mtime - left.mtime || left.dirIndex - right.dirIndex);
 }
 
+/**
+ * Resolve session retention days from the ECC_SESSION_RETENTION_DAYS env var.
+ *
+ * @returns {number|null} The retention window in days, or `null` when the
+ *   user has explicitly opted out of pruning. Falsy/garbage values fall back
+ *   to {@link DEFAULT_SESSION_RETENTION_DAYS}.
+ */
 function getSessionRetentionDays() {
   const raw = process.env.ECC_SESSION_RETENTION_DAYS;
   if (!raw) return DEFAULT_SESSION_RETENTION_DAYS;
+
+  const normalized = String(raw).trim().toLowerCase();
+  if (['0', 'off', 'false', 'disabled', 'never', 'none'].includes(normalized)) {
+    return null;
+  }
+
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SESSION_RETENTION_DAYS;
 }
@@ -101,6 +114,52 @@ function getSessionStartMaxContextChars() {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_SESSION_START_CONTEXT_MAX_CHARS;
+}
+
+/**
+ * Resolve the minimum confidence an instinct needs to be injected at
+ * SessionStart. Overridable via `ECC_INSTINCT_CONFIDENCE_THRESHOLD`
+ * (a number in [0, 1]); falsy or out-of-range values fall back to
+ * {@link DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD}.
+ *
+ * @returns {number} The confidence floor for injected instincts.
+ */
+function getInstinctConfidenceThreshold() {
+  const raw = process.env.ECC_INSTINCT_CONFIDENCE_THRESHOLD;
+  if (!raw) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+
+  // Require a plain decimal (e.g. "0.7", "1", "0.95") so trailing junk
+  // ("0.7x") and non-decimal numeric syntax like "0x1" (hex) or "1e2"
+  // (exponent) are rejected whole rather than silently accepted by Number().
+  const normalized = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
+    ? parsed
+    : DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Resolve the maximum number of instincts injected at SessionStart.
+ * Overridable via `ECC_MAX_INJECTED_INSTINCTS` (a positive integer);
+ * falsy or invalid values fall back to
+ * {@link DEFAULT_MAX_INJECTED_INSTINCTS}.
+ *
+ * @returns {number} The cap on injected instincts.
+ */
+function getMaxInjectedInstincts() {
+  const raw = process.env.ECC_MAX_INJECTED_INSTINCTS;
+  if (!raw) return DEFAULT_MAX_INJECTED_INSTINCTS;
+
+  // Require a plain non-negative integer so "3.9", "6abc", "0x1" (hex),
+  // and "1e2" (exponent) are rejected whole and fall back to the default,
+  // rather than parseInt truncating or Number() accepting alternate syntax.
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) return DEFAULT_MAX_INJECTED_INSTINCTS;
+
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_INJECTED_INSTINCTS;
 }
 
 function getSessionStartMode(rawInput) {
@@ -360,9 +419,12 @@ function summarizeActiveInstincts(observerContext) {
     ...globalDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
   ];
 
+  const confidenceThreshold = getInstinctConfidenceThreshold();
+  const maxInjected = getMaxInjectedInstincts();
+
   const deduped = new Map();
   for (const instinct of scopedInstincts) {
-    if (!instinct.id || instinct.confidence < INSTINCT_CONFIDENCE_THRESHOLD) continue;
+    if (!instinct.id || instinct.confidence < confidenceThreshold) continue;
     const existing = deduped.get(instinct.id);
     if (!existing || (existing._scopeLabel !== 'project' && instinct._scopeLabel === 'project')) {
       deduped.set(instinct.id, instinct);
@@ -380,7 +442,7 @@ function summarizeActiveInstincts(observerContext) {
       if (left._scopeLabel !== right._scopeLabel) return left._scopeLabel === 'project' ? -1 : 1;
       return String(left.id).localeCompare(String(right.id));
     })
-    .slice(0, MAX_INJECTED_INSTINCTS);
+    .slice(0, maxInjected);
 
   if (ranked.length === 0) {
     return '';
@@ -526,9 +588,13 @@ async function main() {
   ensureDir(learnedDir);
 
   const retentionDays = getSessionRetentionDays();
-  const prunedSessions = pruneExpiredSessions(sessionSearchDirs, retentionDays);
-  if (prunedSessions > 0) {
-    log(`[SessionStart] Pruned ${prunedSessions} expired session(s) older than ${retentionDays} day(s)`);
+  if (retentionDays === null) {
+    log('[SessionStart] Pruning disabled via ECC_SESSION_RETENTION_DAYS');
+  } else {
+    const prunedSessions = pruneExpiredSessions(sessionSearchDirs, retentionDays);
+    if (prunedSessions > 0) {
+      log(`[SessionStart] Pruned ${prunedSessions} expired session(s) older than ${retentionDays} day(s)`);
+    }
   }
 
   const observerSessionId = resolveSessionId();

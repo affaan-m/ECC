@@ -3,6 +3,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { listAvailableLanguages } = require('./lib/install-executor');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 
 const COMMANDS = {
   install: {
@@ -20,6 +21,10 @@ const COMMANDS = {
   consult: {
     script: 'consult.js',
     description: 'Recommend ECC components and profiles from a natural language query',
+  },
+  'control-pane': {
+    script: 'control-pane.js',
+    description: 'Run the local ECC2 operator control pane',
   },
   'install-plan': {
     script: 'install-plan.js',
@@ -80,6 +85,7 @@ const PRIMARY_COMMANDS = [
   'plan',
   'catalog',
   'consult',
+  'control-pane',
   'list-installed',
   'doctor',
   'repair',
@@ -101,6 +107,7 @@ ECC selective-install CLI
 Usage:
   ecc <command> [args...]
   ecc [install args...]
+  ecc --dry-run <command> [args...]
 
 Commands:
 ${PRIMARY_COMMANDS.map(command => `  ${command.padEnd(15)} ${COMMANDS[command].description}`).join('\n')}
@@ -110,6 +117,12 @@ Compatibility:
   ecc [args...]      Without a command, args are routed to "install"
   ecc help <command> Show help for a specific command
 
+Global Flags:
+  --dry-run          Preview actions without executing (sets ECC_DRY_RUN=1)
+
+Compute:
+  ${getComputeSponsorCopy()}
+
 Examples:
   ecc typescript
   ecc install --profile developer --target claude
@@ -118,6 +131,7 @@ Examples:
   ecc catalog components --family language
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
+  ecc control-pane --port 8765
   ecc list-installed --json
   ecc doctor --target cursor
   ecc repair --dry-run
@@ -146,7 +160,21 @@ function resolveCommand(argv) {
     return { mode: 'help' };
   }
 
-  const [firstArg, ...restArgs] = args;
+  if (args.includes('--dry-run')) {
+    process.env.ECC_DRY_RUN = '1';
+  }
+
+  let cmdStart = 0;
+  while (cmdStart < args.length && args[cmdStart] === '--dry-run') {
+    cmdStart++;
+  }
+
+  if (cmdStart >= args.length) {
+    return { mode: 'help' };
+  }
+
+  const firstArg = args[cmdStart];
+  const restArgs = args.slice(cmdStart + 1);
 
   if (firstArg === '--help' || firstArg === '-h') {
     return { mode: 'help' };

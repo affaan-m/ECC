@@ -1,21 +1,25 @@
 ---
 name: prisma-patterns
 description: Prisma ORM patterns for TypeScript backends — schema design, query optimization, transactions, pagination, and critical traps like updateMany returning count not records, $transaction timeouts, migrate dev resetting the DB, @updatedAt skipped on bulk writes, and serverless connection exhaustion.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Prisma Patterns
 
 Production patterns and non-obvious traps for Prisma ORM in TypeScript backends.
-Tested against Prisma 5.x and 6.x. Some behaviors differ from Prisma 4.
 
-Check the Prisma version before applying version-specific patterns:
-
-```bash
-npx prisma --version
-```
-
-Prisma 5 introduced `relationJoins`, which can load relations via JOIN rather than separate queries depending on query strategy and configuration. The `omit` field modifier and `prisma.$extends` Client Extensions API were also added. Note: `relationJoins` can cause row explosion on large 1:N relations or deep nested `include` — benchmark both approaches when relations may return many rows per parent.
+> **Check your version before applying patterns.** The Prisma API surface has evolved across major releases:
+>
+> ```bash
+> npx prisma --version
+> ```
+>
+> Notable API differences across versions:
+> - `relationJoins` can load relations via JOIN rather than separate queries, but may cause row explosion on large 1:N relations or deep `include` — benchmark both approaches
+> - `omit` field modifier and `prisma.$extends` Client Extensions API were added
+> - **Newer installs**: the package may be named `prisma` instead of `@prisma/client`; `PrismaClient` may require a driver adapter (e.g. `@prisma/adapter-pg`); `datasource.url` may live in `prisma.config.ts` instead of `schema.prisma`
+> - CLI commands (`migrate dev`, `migrate deploy`, `generate`) are unchanged across versions
 
 ## When to Activate
 
@@ -121,18 +125,34 @@ Each `PrismaClient` instance opens its own connection pool. Instantiate once.
 
 ```ts
 // lib/prisma.ts
-import { PrismaClient } from '@prisma/client';
+
+// Option A — adapter-based initialization (required by newer Prisma installs)
+import { PrismaClient } from '@prisma/client'; // or the generated client path for your setup
+import { PrismaPg } from '@prisma/adapter-pg';
+
+function createPrismaClient() {
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL!,
+  });
+  return new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error'] : ['error'],
+  });
+}
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error'] : ['error'],
-  });
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+// Option B — direct initialization (older installs, no adapter needed)
+// import { PrismaClient } from '@prisma/client';
+// export const prisma = globalForPrisma.prisma ?? new PrismaClient({ ... });
 ```
+
+Use Option A if your Prisma install requires an `adapter` argument in the `PrismaClient` constructor.
+Use Option B if `new PrismaClient()` works without arguments. Let the compiler tell you which is correct.
 
 The `globalThis` pattern prevents duplicate instances during hot reload (Next.js, nodemon, ts-node-dev).
 
@@ -191,7 +211,7 @@ await prisma.user.update({ where: { id }, data: { deletedAt: null } }); // resto
 ### Error Handling
 
 ```ts
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client'; // or the generated client path for your setup
 
 try {
   await prisma.user.create({ data: { email } });
@@ -222,9 +242,19 @@ DATABASE_URL="postgresql://user:pass@host/db?pgbouncer=true&connection_limit=1"
 ```
 
 ```ts
-// Vercel, AWS Lambda, and similar serverless runtimes: cap pool to 1 per instance
-// connection_limit and pool_timeout are controlled via DATABASE_URL
-const prisma = new PrismaClient();
+// Vercel, AWS Lambda, and similar serverless runtimes:
+// cap pool to 1 per instance; connection_limit and pool_timeout controlled via DATABASE_URL
+
+// Adapter-based setup (if your Prisma install requires an adapter):
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
+
+// Direct setup (if your Prisma install does not require an adapter):
+// const prisma = new PrismaClient();
 ```
 
 ## Anti-Patterns

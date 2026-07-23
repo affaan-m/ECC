@@ -17,6 +17,23 @@ const cliPath = path.join(
   'instinct-cli.py'
 );
 
+function detectPython3() {
+  for (const bin of ['python3', 'python']) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+    if (r.status === 0 && /Python 3/.test(r.stdout + r.stderr)) return bin;
+  }
+  return null;
+}
+
+const PYTHON3 = detectPython3();
+if (!PYTHON3) {
+  console.log('\n=== Testing instinct-cli.py projects maintenance ===\n');
+  console.log('  - skipped: Python 3 not found in PATH');
+  console.log('\nPassed: 0');
+  console.log('Failed: 0');
+  process.exit(0);
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -101,7 +118,7 @@ function runGit(cwd, args) {
 }
 
 function runCli(root, args, options = {}) {
-  return spawnSync('python3', [cliPath, ...args], {
+  return spawnSync(PYTHON3, [cliPath, ...args], {
     cwd: options.cwd || repoRoot,
     encoding: 'utf8',
     env: {
@@ -214,6 +231,65 @@ test('projects merge deduplicates instincts, appends observations, and removes s
     );
     assert.match(observations, /from-event/);
     assert.match(observations, /into-event/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status warns when legacy ~/.claude/homunculus contains files', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus', 'instincts', 'personal');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'old-instinct.yaml'), '---\nid: old\n---\nOld instinct.\n');
+
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /LEGACY DATA DETECTED/);
+    assert.match(result.stdout, /legacy path/i);
+    assert.match(result.stdout, /migration script/i);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when legacy dir is empty', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus');
+    fs.mkdirSync(legacyDir, { recursive: true });
+
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when no legacy dir exists', () => {
+  const root = createTempDir();
+  try {
+    const result = runCli(root, ['status']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('status does not warn when CLV2_HOMUNCULUS_DIR points at legacy path', () => {
+  const root = createTempDir();
+  try {
+    const legacyDir = path.join(root, 'home', '.claude', 'homunculus', 'instincts', 'personal');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'active.yaml'), '---\nid: active\n---\nActive.\n');
+
+    const result = runCli(root, ['status'], {
+      env: { CLV2_HOMUNCULUS_DIR: path.join(root, 'home', '.claude', 'homunculus') },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /LEGACY DATA DETECTED/);
   } finally {
     cleanupDir(root);
   }

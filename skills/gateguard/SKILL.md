@@ -1,7 +1,8 @@
 ---
 name: gateguard
 description: Fact-forcing gate that blocks Edit/Write/Bash (including MultiEdit) and demands concrete investigation (importers, data schemas, user instruction) before allowing the action. Measurably improves output quality by +2.25 points vs ungated agents.
-origin: community
+metadata:
+  origin: community
 ---
 
 # GateGuard — Fact-Forcing Pre-Action Gate
@@ -52,7 +53,7 @@ MultiEdit is handled identically — each file in the batch is gated individuall
 ```
 Before editing {file_path}, present these facts:
 
-1. List ALL files that import/require this file (use Grep)
+1. List ALL files that import/require this file (search the tree — Glob/Grep, or find/grep via Bash)
 2. List the public functions/classes affected by this change
 3. If this file reads/writes data files, show field names, structure,
    and date format (use redacted or synthetic values, not raw production data)
@@ -65,7 +66,7 @@ Before editing {file_path}, present these facts:
 Before creating {file_path}, present these facts:
 
 1. Name the file(s) and line(s) that will call this new file
-2. Confirm no existing file serves the same purpose (use Glob)
+2. Confirm no existing file serves the same purpose (search the tree — Glob/Grep, or find/grep via Bash)
 3. If this file reads/writes data files, show field names, structure,
    and date format (use redacted or synthetic values, not raw production data)
 4. Quote the user's current instruction verbatim
@@ -97,6 +98,13 @@ The hook at `scripts/hooks/gateguard-fact-force.js` is included in this plugin. 
 If GateGuard blocks setup or repair work, start the session with
 `ECC_GATEGUARD=off`. For hook-level control, keep using
 `ECC_DISABLED_HOOKS` with the GateGuard hook ID.
+
+In long sessions, only the first `GATEGUARD_FACT_FORCE_FULL_DENIALS`
+fact-force denials (default 3) emit the full four-fact block; later
+denials are condensed to a single line carrying the denial ordinal, so
+near-identical blocks cannot accumulate in the context window and
+amplify model repetition loops (#2142). Retrying the same file or
+command after presenting facts never re-triggers the gate.
 
 ### Option B: Full package with config
 

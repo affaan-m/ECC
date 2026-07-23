@@ -1,107 +1,81 @@
 ---
-description: Generate a local Claude Code cost report from a cost-tracker SQLite database.
+description: Generate a local Claude Code cost report from the ECC cost-tracker metrics log.
 argument-hint: [csv]
 ---
 
 # Cost Report
 
-Query the local cost-tracking database and present a spending report by day,
-project, tool, and session. This command assumes a cost-tracking hook or plugin
-is already writing usage rows to `~/.claude-cost-tracker/usage.db`.
+Summarize local Claude Code spend by day, model, and session from the metrics
+log that ECC's `stop:cost-tracker` hook writes.
 
-## What This Command Does
+## Where the data lives
 
-1. Check that `sqlite3` is available.
-2. Check that `~/.claude-cost-tracker/usage.db` exists.
-3. Run aggregate queries against the `usage` table.
-4. Present a compact report, or export recent rows as CSV when the argument is
-   `csv`.
+The tracker appends one JSON object per session-stop to
+`~/.claude/metrics/costs.jsonl`. Each row is a **cumulative snapshot for that
+session**, so the report takes the **latest row per `session_id`** and sums
+across sessions (summing every row would multiply-count).
 
-## Prerequisites
+Row schema:
+`{ timestamp, session_id, transcript_path, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost_usd }`
 
-The database must be populated by a local cost tracker. If the file is missing,
-tell the user the tracker is not set up and suggest installing or enabling a
-trusted Claude Code cost-tracking hook/plugin first.
+## What this command does
 
-```bash
-test -f ~/.claude-cost-tracker/usage.db && echo "Database found" || echo "Database not found"
-```
+1. Check that `~/.claude/metrics/costs.jsonl` exists. If it does not, tell the
+   user the tracker is not set up yet (it populates after the first session ends
+   with the `stop:cost-tracker` hook enabled).
+2. Reduce rows to the latest snapshot per session and aggregate.
+3. Present a compact report, or export recent rows as CSV when the argument is `csv`.
 
-## Summary Query
+`node` is used instead of `sqlite3`/`jq` so this works identically on macOS,
+Linux, and Windows.
 
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT
-    ROUND(COALESCE(SUM(CASE WHEN date(timestamp) = date('now') THEN cost_usd END), 0), 4) AS today_cost,
-    ROUND(COALESCE(SUM(CASE WHEN date(timestamp) = date('now', '-1 day') THEN cost_usd END), 0), 4) AS yesterday_cost,
-    ROUND(COALESCE(SUM(cost_usd), 0), 4) AS total_cost,
-    COUNT(*) AS total_calls,
-    COUNT(DISTINCT session_id) AS sessions
-  FROM usage;
-"
-```
-
-## Project Breakdown
+## Report
 
 ```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT project, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY project
-  ORDER BY cost DESC;
-"
+node -e '
+const fs=require("fs"),os=require("os"),path=require("path");
+const f=path.join(os.homedir(),".claude","metrics","costs.jsonl");
+if(!fs.existsSync(f)){console.log("Cost tracker not set up: "+f+" not found. Enable the stop:cost-tracker hook and finish a session first.");process.exit(0);}
+const rows=fs.readFileSync(f,"utf8").split(/\r?\n/).filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean);
+const bySession=new Map();
+for(const r of rows){const k=r.session_id||r.transcript_path||r.timestamp;const p=bySession.get(k);if(!p||String(r.timestamp)>String(p.timestamp))bySession.set(k,r);}
+const latest=[...bySession.values()];
+const cost=r=>Number(r.estimated_cost_usd)||0;
+const day=r=>String(r.timestamp||"").slice(0,10);
+const today=new Date().toISOString().slice(0,10);
+const d=new Date(Date.now()-864e5).toISOString().slice(0,10);
+const sum=a=>a.reduce((s,r)=>s+cost(r),0);
+const f4=n=>"$"+n.toFixed(4);
+console.log("=== Cost summary ===");
+console.log("today:     "+f4(sum(latest.filter(r=>day(r)===today))));
+console.log("yesterday: "+f4(sum(latest.filter(r=>day(r)===d))));
+console.log("total:     "+f4(sum(latest))+"  ("+latest.length+" sessions)");
+const by=(key)=>{const m=new Map();for(const r of latest){const k=key(r)||"(unknown)";m.set(k,(m.get(k)||0)+cost(r));}return [...m.entries()].sort((a,b)=>b[1]-a[1]);};
+console.log("\n=== By model ===");for(const [k,v] of by(r=>r.model))console.log(f4(v).padStart(12)+"  "+k);
+console.log("\n=== Last 7 days ===");
+const days=new Map();for(const r of latest){const k=day(r);days.set(k,(days.get(k)||0)+cost(r));}
+[...days.entries()].sort((a,b)=>b[0]<a[0]?-1:1).slice(0,7).forEach(([k,v])=>console.log(k+"  "+f4(v)));
+'
 ```
 
-## Tool Breakdown
+## CSV export (`/cost-report csv`)
 
 ```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT tool_name, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY tool_name
-  ORDER BY cost DESC;
-"
+node -e '
+const fs=require("fs"),os=require("os"),path=require("path");
+const f=path.join(os.homedir(),".claude","metrics","costs.jsonl");
+if(!fs.existsSync(f)){console.error("no data");process.exit(0);}
+const rows=fs.readFileSync(f,"utf8").split(/\r?\n/).filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean).slice(-100);
+console.log("timestamp,session_id,model,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,estimated_cost_usd");
+for(const r of rows)console.log([r.timestamp,r.session_id,r.model,r.input_tokens,r.output_tokens,r.cache_write_tokens,r.cache_read_tokens,r.estimated_cost_usd].join(","));
+'
 ```
 
-## Last Seven Days
+## Report format
 
-```bash
-sqlite3 -header -column ~/.claude-cost-tracker/usage.db "
-  SELECT date(timestamp) AS date, ROUND(SUM(cost_usd), 4) AS cost, COUNT(*) AS calls
-  FROM usage
-  GROUP BY date(timestamp)
-  ORDER BY date DESC
-  LIMIT 7;
-"
-```
+1. Summary: today, yesterday, total, session count.
+2. By model: models ranked by total cost.
+3. Last seven days: date and cost.
 
-## CSV Export
-
-If the user asks for `/cost-report csv`, export the most recent usage rows with
-an explicit column list:
-
-```bash
-sqlite3 -csv -header ~/.claude-cost-tracker/usage.db "
-  SELECT timestamp, project, tool_name, input_tokens, output_tokens, cost_usd, session_id, model
-  FROM usage
-  ORDER BY timestamp DESC
-  LIMIT 100;
-"
-```
-
-## Report Format
-
-Format the response as:
-
-1. Summary: today, yesterday, total, calls, sessions.
-2. By project: projects ranked by total cost.
-3. By tool: tools ranked by total cost.
-4. Last seven days: date, cost, call count.
-
-Use four decimal places for sub-dollar amounts. Do not estimate pricing from raw
-tokens in this command; rely on the precomputed `cost_usd` values written by the
-tracker.
-
-## Source
-
-Salvaged from stale community PR #1304 by `MayurBhavsar`.
+Rely on the precomputed `estimated_cost_usd` values written by the tracker; do
+not re-estimate pricing from raw tokens here.

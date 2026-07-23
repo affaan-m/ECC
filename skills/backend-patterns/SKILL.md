@@ -1,7 +1,8 @@
 ---
 name: backend-patterns
 description: Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Backend Development Patterns
@@ -289,7 +290,7 @@ export function errorHandler(error: unknown, req: Request): Response {
     return NextResponse.json({
       success: false,
       error: 'Validation failed',
-      details: error.errors
+      details: error.issues
     }, { status: 400 })
   }
 

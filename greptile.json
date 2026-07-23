@@ -1,0 +1,67 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax", "style"],
+  "triggerOnUpdates": true,
+  "triggerOnDrafts": false,
+  "shouldUpdateDescription": false,
+  "updateExistingSummaryComment": true,
+  "statusCheck": true,
+  "statusCommentsEnabled": true,
+  "disabledLabels": ["no-review", "skip-review", "wip"],
+  "excludeBranches": ["dependabot/**"],
+  "fileChangeLimit": 80,
+  "ignoreKeywords": "no-review\nskip-review\nmechanical-format-only",
+  "ignorePatterns": "node_modules/**\ndist/**\nbuild/**\ncoverage/**\n.vite/**\n.next/**\n.cache/**\n*.lock\npackage-lock.json\nyarn.lock\npnpm-lock.yaml\nassets/**/*.png\nassets/**/*.jpg\nassets/**/*.jpeg\nassets/**/*.gif\nassets/**/*.webp\n**/*.generated.*",
+  "summarySection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "sequenceDiagramSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "customContext": {
+    "rules": [
+      {
+        "scope": [".github/workflows/**"],
+        "rule": "Flag unpinned third-party GitHub Actions, broad write permissions, persisted checkout credentials in write-token jobs, pull_request_target misuse, and untrusted GitHub context inside shell commands."
+      },
+      {
+        "scope": ["scripts/**", "bin/**", "skills/**/scripts/**"],
+        "rule": "Treat CLI inputs, URLs, file paths, and subprocess arguments as untrusted. Flag RCE, SSRF, path traversal, unsafe shell usage, and missing regression tests."
+      },
+      {
+        "scope": ["skills/**", "commands/**", "agents/**", "rules/**"],
+        "rule": "Review for prompt injection, tool-permission creep, destructive-action ambiguity, hidden persistence, and secret exfiltration risks."
+      },
+      {
+        "scope": ["SECURITY.md", "docs/security/**", "README.md"],
+        "rule": "Ensure package and distribution claims only list official ECC surfaces. Flag unofficial npm packages, stale historical repo paths, and misleading install instructions."
+      }
+    ],
+    "files": [
+      {
+        "scope": ["**/*"],
+        "path": "SECURITY.md",
+        "description": "ECC disclosure policy, official package surfaces, out-of-scope rules, and supply-chain guardrails."
+      },
+      {
+        "scope": ["**/*"],
+        "path": "AGENTS.md",
+        "description": "Workspace-level agent routing and operating constraints."
+      }
+    ]
+  }
+}

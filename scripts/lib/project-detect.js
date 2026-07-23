@@ -198,10 +198,13 @@ function getPythonDeps(projectDir) {
         const trimmed = line.trim();
         if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('-')) {
           const name = trimmed
-            .split(/[>=<![;]/)[0]
+            .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
-          if (name) deps.push(name);
+          // Bare VCS/URL requirement lines (e.g. `git+https://...#egg=pkg`)
+          // carry no leading package name; skip them instead of recording
+          // the URL fragment as a dependency name.
+          if (name && !name.startsWith('git+') && !name.includes('://')) deps.push(name);
         }
       });
     }
@@ -220,7 +223,7 @@ function getPythonDeps(projectDir) {
         block.match(/"([^"]+)"/g)?.forEach(m => {
           const name = m
             .replace(/"/g, '')
-            .split(/[>=<![;]/)[0]
+            .split(/[\s>=<!~@[;]/)[0]
             .trim()
             .toLowerCase();
           if (name) deps.push(name);
@@ -390,7 +393,20 @@ function detectProjectType(projectDir) {
           depList = elixirDeps;
           break;
       }
-      hasDep = rule.packageKeys.some(key => depList.some(dep => dep.toLowerCase().includes(key.toLowerCase())));
+      // Boundary-aware match: a dependency matches a packageKey only when it
+      // equals the key, or the key is a prefix immediately followed by a
+      // delimiter (/ . _ -). Plain substring matching wrongly classified
+      // `preact` / `reactive` as `react`. This still matches the real cases:
+      // react-dom, @remix-run/node, spring-boot-starter, org.springframework.boot,
+      // github.com/labstack/echo/v4, phoenix_live_view.
+      hasDep = rule.packageKeys.some(key => {
+        const k = key.toLowerCase();
+        return depList.some(dep => {
+          const d = dep.toLowerCase();
+          if (!d.startsWith(k)) return false;
+          return d.length === k.length || /[/._-]/.test(d[k.length]);
+        });
+      });
     }
 
     if (hasMarker || hasDep) {

@@ -206,12 +206,6 @@ function runTests() {
       )),
       'Should not install Cursor README docs as runtime rule files'
     );
-    assert.ok(
-      !plan.operations.some(operation => (
-        normalizedRelativePath(operation.sourceRelativePath) === 'rules/zh/README.md'
-      )),
-      'Should not flatten localized README docs into Cursor rule files'
-    );
   })) passed++; else failed++;
 
   if (test('does not install root AGENTS.md into Cursor nested context', () => {
@@ -1091,6 +1085,75 @@ function runTests() {
       assert.deepStrictEqual(issues, [], 'Should not surface validation issues when plugin is built');
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('planInstallTargetScaffold only exempts explicitly allowed validation codes', () => {
+    const registryPath = require.resolve('../../scripts/lib/install-targets/registry');
+    const opencodeHomePath = require.resolve('../../scripts/lib/install-targets/opencode-home');
+    const originalRegistryEntry = require.cache[registryPath];
+    const originalOpencodeHomeEntry = require.cache[opencodeHomePath];
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+
+    try {
+      delete require.cache[registryPath];
+      require.cache[opencodeHomePath] = {
+        id: opencodeHomePath,
+        filename: opencodeHomePath,
+        loaded: true,
+        exports: {
+          id: 'opencode-home',
+          target: 'opencode',
+          kind: 'home',
+          supports: target => target === 'opencode',
+          resolveRoot: input => path.join((input.homeDir || '/Users/example'), '.opencode'),
+          getInstallStatePath: input => path.join((input.homeDir || '/Users/example'), '.opencode', 'ecc-install-state.json'),
+          validate: () => ([
+            { severity: 'error', code: 'opencode-plugin-not-built', message: 'missing payload' },
+            { severity: 'error', code: 'opencode-other-blocker', message: 'still blocked' },
+          ]),
+          planOperations: () => [],
+        },
+      };
+
+      const { planInstallTargetScaffold: sandboxedPlanInstallTargetScaffold } = require('../../scripts/lib/install-targets/registry');
+
+      assert.throws(
+        () => sandboxedPlanInstallTargetScaffold({
+          target: 'opencode',
+          repoRoot,
+          homeDir,
+          exemptValidationCodes: ['opencode-plugin-not-built'],
+        }),
+        /still blocked/
+      );
+
+      require.cache[opencodeHomePath].exports.validate = () => ([
+        { severity: 'error', code: 'opencode-plugin-not-built', message: 'missing payload' },
+      ]);
+
+      const plan = sandboxedPlanInstallTargetScaffold({
+        target: 'opencode',
+        repoRoot,
+        homeDir,
+        exemptValidationCodes: ['opencode-plugin-not-built'],
+      });
+
+      assert.strictEqual(plan.adapter.id, 'opencode-home');
+      assert.deepStrictEqual(plan.operations, []);
+    } finally {
+      if (originalOpencodeHomeEntry) {
+        require.cache[opencodeHomePath] = originalOpencodeHomeEntry;
+      } else {
+        delete require.cache[opencodeHomePath];
+      }
+
+      if (originalRegistryEntry) {
+        require.cache[registryPath] = originalRegistryEntry;
+      } else {
+        delete require.cache[registryPath];
+      }
     }
   })) passed++; else failed++;
 

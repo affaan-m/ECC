@@ -70,6 +70,7 @@ function main() {
       assert.match(result.stdout, /doctor/);
       assert.match(result.stdout, /auto-update/);
       assert.match(result.stdout, /consult/);
+      assert.match(result.stdout, /control-pane/);
       assert.match(result.stdout, /loop-status/);
       assert.match(result.stdout, /work-items/);
       assert.match(result.stdout, /platform-audit/);
@@ -113,6 +114,12 @@ function main() {
       const payload = parseJson(result.stdout);
       assert.strictEqual(payload.schemaVersion, 'ecc.consult.v1');
       assert.strictEqual(payload.matches[0].componentId, 'capability:security');
+    }],
+    ['supports help for the control-pane subcommand', () => {
+      const result = runCli(['help', 'control-pane']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Usage:/);
+      assert.match(result.stdout, /control-pane/);
     }],
     ['delegates lifecycle commands', () => {
       const homeDir = createTempDir('ecc-cli-home-');

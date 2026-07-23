@@ -98,6 +98,14 @@
       ]
     },
     {
+      "id": "framework:vue",
+      "family": "framework",
+      "description": "Vue.js, Nuxt, Pinia, and Vue Router engineering guidance. Currently resolves through the shared framework-language module.",
+      "modules": [
+        "framework-language"
+      ]
+    },
+    {
       "id": "framework:nextjs",
       "family": "framework",
       "description": "Next.js-focused engineering guidance. Currently resolves through the shared framework-language module.",
@@ -181,7 +189,7 @@
     {
       "id": "capability:prediction-markets",
       "family": "capability",
-      "description": "Public, non-advisory prediction-market and Itô basket research workflows with gated Itô API access.",
+      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
       "modules": [
         "prediction-market-skills"
       ]
@@ -447,6 +455,14 @@
       ]
     },
     {
+      "id": "skill:plan-canvas",
+      "family": "skill",
+      "description": "Browser review canvas for plan artifacts: annotate, chat, approve or request changes.",
+      "modules": [
+        "workflow-quality"
+      ]
+    },
+    {
       "id": "skill:tdd-workflow",
       "family": "skill",
       "description": "Test-driven development workflow skill.",
@@ -506,6 +522,14 @@
       "id": "skill:frontend-patterns",
       "family": "skill",
       "description": "React and frontend engineering patterns.",
+      "modules": [
+        "framework-language"
+      ]
+    },
+    {
+      "id": "skill:vue-patterns",
+      "family": "skill",
+      "description": "Vue.js 3 Composition API, reactivity, Pinia, Vue Router, and Nuxt SSR patterns.",
       "modules": [
         "framework-language"
       ]

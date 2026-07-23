@@ -11,9 +11,12 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
 const syncScript = path.join(repoRoot, 'scripts', 'sync-ecc-to-codex.sh');
+const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+const packageVersion = packageJson.version;
 const deterministicPackageEnv = {
   CLAUDE_PACKAGE_MANAGER: 'npm',
   CLAUDE_CODE_PACKAGE_MANAGER: 'npm',
@@ -82,8 +85,176 @@ function makeHermeticCodexEnv(homeDir, codexDir, extraEnv = {}) {
   };
 }
 
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function seedPluginCache(codexDir, manifest, files = []) {
+  const cacheDir = path.join(codexDir, 'plugins', 'cache', 'ecc', 'ecc', packageVersion);
+  writeJson(path.join(cacheDir, '.codex-plugin', 'plugin.json'), manifest);
+  fs.writeFileSync(path.join(cacheDir, 'README.md'), '# cached plugin\n');
+  for (const [relativePath, content] of files) {
+    const target = path.join(cacheDir, relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+  }
+  return cacheDir;
+}
+
+const cacheManifestWithLocalRefs = {
+  name: 'ecc',
+  version: packageVersion,
+  skills: './skills/',
+  mcpServers: './.mcp.json',
+  interface: {
+    composerIcon: './assets/ecc-icon.svg',
+    logo: './assets/hero.png',
+  },
+};
+
 let passed = 0;
 let failed = 0;
+
+if (
+  test('check-plugin-cache fails when the installed cache is missing manifest-referenced files', () => {
+    const homeDir = createTempDir('codex-plugin-cache-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      seedPluginCache(codexDir, cacheManifestWithLocalRefs);
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /Plugin cache:/);
+      assert.match(result.stdout, /\[FAIL\] skills missing/);
+      assert.match(result.stdout, /\[FAIL\] mcpServers missing/);
+      assert.match(result.stdout, /codex plugin list only confirms marketplace registration/);
+      assert.match(result.stdout, /sync-ecc-to-codex\.sh/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache rejects manifest references that escape the cache boundary', () => {
+    const homeDir = createTempDir('codex-plugin-cache-manifest-traversal-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      seedPluginCache(codexDir, {
+        name: 'ecc',
+        version: packageVersion,
+        skills: '../../../../../etc/passwd',
+        mcpServers: '../../.mcp.json',
+      });
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[FAIL\] skills escapes cache boundary/);
+      assert.match(result.stdout, /\[FAIL\] mcpServers escapes cache boundary/);
+      assert.doesNotMatch(result.stdout, /etc\/passwd/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache passes when cached manifest references resolve inside the cache', () => {
+    const homeDir = createTempDir('codex-plugin-cache-ok-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const cacheDir = seedPluginCache(codexDir, cacheManifestWithLocalRefs, [
+        ['.mcp.json', '{"mcpServers":{}}\n'],
+        ['assets/ecc-icon.svg', '<svg />\n'],
+        ['assets/hero.png', 'png\n'],
+      ]);
+      fs.mkdirSync(path.join(cacheDir, 'skills'), { recursive: true });
+
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[OK\] skills/);
+      assert.match(result.stdout, /\[OK\] mcpServers/);
+      assert.match(result.stdout, /All cached manifest references resolve/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache reports a missing installed cache clearly', () => {
+    const homeDir = createTempDir('codex-plugin-cache-missing-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(pluginCacheCheckScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /Cached plugin manifest missing/);
+      assert.match(result.stdout, /codex plugin marketplace add affaan-m\/ECC/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache rejects traversal in cache path segments', () => {
+    const homeDir = createTempDir('codex-plugin-cache-traversal-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(
+        pluginCacheCheckScript,
+        ['--marketplace', '../outside'],
+        makeHermeticCodexEnv(homeDir, codexDir)
+      );
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /Invalid --marketplace/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('check-plugin-cache names custom missing cache entries in diagnostics', () => {
+    const homeDir = createTempDir('codex-plugin-cache-custom-home-');
+    const codexDir = path.join(homeDir, '.codex');
+
+    try {
+      const result = runNode(
+        pluginCacheCheckScript,
+        ['--marketplace', 'custom-market', '--plugin', 'custom-plugin', '--version', '1.2.3'],
+        makeHermeticCodexEnv(homeDir, codexDir)
+      );
+
+      assert.strictEqual(result.status, 1, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /No installed cache entries found for custom-market\/custom-plugin/);
+      assert.match(result.stdout, /Install the requested plugin into the Codex plugin cache/);
+    } finally {
+      cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
 
 // Windows NTFS does not allow double-quote characters in file paths,
 // so the quoted-path shell-injection test is only meaningful on Unix.
@@ -261,7 +432,7 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config dry-run appends all recommended servers without mutating target', () => {
+  test('merge-mcp-config dry-run appends the current default set without mutating target', () => {
     const tempDir = createTempDir('mcp-merge-dry-run-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = '';
@@ -272,9 +443,12 @@ if (
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /Package manager: npm \(exec: npx\)/);
-      assert.match(result.stdout, /\[add\] mcp_servers\.supabase/);
-      assert.match(result.stdout, /\[mcp_servers\.github\]/);
+      assert.match(result.stdout, /\[add\] mcp_servers\.chrome-devtools/);
+      assert.match(result.stdout, /\[mcp_servers\.chrome-devtools\]/);
       assert.match(result.stdout, /Dry run/);
+      // Retired defaults (June 2026 connector policy) must not be emitted.
+      assert.doesNotMatch(result.stdout, /mcp_servers\.(supabase|playwright|context7|exa|github|memory|sequential-thinking)\b/);
+      assert.doesNotMatch(result.stdout, /url = /);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original);
     } finally {
       cleanup(tempDir);
@@ -296,14 +470,17 @@ if (
 
       const merged = fs.readFileSync(configPath, 'utf8');
       const parsed = TOML.parse(merged);
-      assert.strictEqual(parsed.mcp_servers.exa.url, 'https://mcp.exa.ai/mcp');
-      assert.strictEqual(parsed.mcp_servers.github.command, 'bash');
-      assert.deepStrictEqual(parsed.mcp_servers.memory.args, ['@modelcontextprotocol/server-memory']);
-      assert.strictEqual(parsed.mcp_servers.supabase.tool_timeout_sec, 120);
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
+      assert.deepStrictEqual(parsed.mcp_servers['chrome-devtools'].args, ['chrome-devtools-mcp@latest']);
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].startup_timeout_sec, 30);
+      // No retired server may be (re-)emitted — exa's url form broke Codex (#2224).
+      assert.strictEqual(parsed.mcp_servers.exa, undefined);
+      assert.strictEqual(parsed.mcp_servers.github, undefined);
+      assert.strictEqual(parsed.mcp_servers.supabase, undefined);
 
       const second = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
       assert.strictEqual(second.status, 0, `${second.stdout}\n${second.stderr}`);
-      assert.match(second.stdout, /\[ok\] mcp_servers\.github/);
+      assert.match(second.stdout, /\[ok\] mcp_servers\.chrome-devtools/);
       assert.match(second.stdout, /All ECC MCP servers already present/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), merged);
     } finally {
@@ -315,24 +492,88 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config update dry-run reports canonical and legacy section refreshes', () => {
+  test('merge-mcp-config repairs the invalid exa url entry from earlier ECC versions (#2224)', () => {
+    const tempDir = createTempDir('mcp-merge-exa-repair-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '[mcp_servers.github]',
+      'command = "npx"',
+      'args = ["-y", "@modelcontextprotocol/server-github"]',
+      '',
+      '[mcp_servers.exa]',
+      'url = "https://mcp.exa.ai/mcp"',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const result = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /\[repair\] mcp_servers\.exa/);
+
+      const updated = fs.readFileSync(configPath, 'utf8');
+      const parsed = TOML.parse(updated);
+      assert.strictEqual(parsed.mcp_servers.exa, undefined, 'invalid exa url entry must be removed');
+      assert.doesNotMatch(updated, /url = "https:\/\/mcp\.exa\.ai\/mcp"/);
+      // User-managed servers are untouched; current default is added.
+      assert.strictEqual(parsed.mcp_servers.github.command, 'npx');
+      assert.strictEqual(parsed.mcp_servers['chrome-devtools'].command, 'npx');
+
+      // Re-running must not re-introduce the invalid entry.
+      const second = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+      assert.strictEqual(second.status, 0, `${second.stdout}\n${second.stderr}`);
+      assert.doesNotMatch(fs.readFileSync(configPath, 'utf8'), /mcp_servers\.exa/);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config leaves a user-managed stdio exa entry untouched', () => {
+    const tempDir = createTempDir('mcp-merge-exa-stdio-');
+    const configPath = path.join(tempDir, 'config.toml');
+    const original = [
+      '[mcp_servers.exa]',
+      'command = "npx"',
+      'args = ["-y", "mcp-remote", "https://mcp.exa.ai/mcp"]',
+      'startup_timeout_sec = 30',
+      '',
+    ].join('\n');
+
+    try {
+      fs.writeFileSync(configPath, original);
+      const result = runNode(mergeMcpConfigScript, [configPath], deterministicPackageEnv);
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(result.stdout, /\[repair\]/);
+
+      const parsed = TOML.parse(fs.readFileSync(configPath, 'utf8'));
+      assert.strictEqual(parsed.mcp_servers.exa.command, 'npx');
+      assert.deepStrictEqual(parsed.mcp_servers.exa.args, ['-y', 'mcp-remote', 'https://mcp.exa.ai/mcp']);
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('merge-mcp-config update dry-run refreshes managed sections and leaves user servers alone', () => {
     const tempDir = createTempDir('mcp-merge-update-dry-run-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = [
+      '[mcp_servers.chrome-devtools]',
+      'command = "custom"',
+      'args = ["old"]',
+      '',
       '[mcp_servers.context7]',
-      'command = "custom"',
-      'args = ["old"]',
-      '',
-      '[mcp_servers.context7-mcp]',
       'command = "npx"',
-      'args = ["legacy"]',
-      '',
-      '[mcp_servers.supabase]',
-      'command = "custom"',
-      'args = ["old"]',
-      '',
-      '[mcp_servers.supabase.env]',
-      'SUPABASE_ACCESS_TOKEN = "token"',
+      'args = ["-y", "@upstash/context7-mcp@latest"]',
       '',
     ].join('\n');
 
@@ -341,11 +582,10 @@ if (
       const result = runNode(mergeMcpConfigScript, [configPath, '--update-mcp', '--dry-run'], deterministicPackageEnv);
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.context7/);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.context7-mcp/);
-      assert.match(result.stdout, /\[remove\] mcp_servers\.supabase/);
-      assert.match(result.stdout, /\[mcp_servers\.supabase\]/);
-      assert.match(result.stdout, /\[mcp_servers\.context7\]/);
+      assert.match(result.stdout, /\[remove\] mcp_servers\.chrome-devtools/);
+      assert.match(result.stdout, /\[mcp_servers\.chrome-devtools\]/);
+      // Retired servers are no longer ECC-managed: never removed or re-added.
+      assert.doesNotMatch(result.stdout, /\[remove\] mcp_servers\.context7/);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), original);
     } finally {
       cleanup(tempDir);
@@ -356,38 +596,31 @@ if (
 else failed++;
 
 if (
-  test('merge-mcp-config removes disabled legacy servers without appending replacements', () => {
+  test('merge-mcp-config removes disabled servers without appending replacements', () => {
     const tempDir = createTempDir('mcp-merge-disabled-');
     const configPath = path.join(tempDir, 'config.toml');
     const original = [
-      '[mcp_servers.context7-mcp]',
+      '[mcp_servers.chrome-devtools]',
       'command = "npx"',
-      'args = ["legacy"]',
-      '',
-      '[mcp_servers.exa]',
-      'url = "https://mcp.exa.ai/mcp"',
+      'args = ["chrome-devtools-mcp@latest"]',
       '',
     ].join('\n');
-    const allServersDisabled = 'supabase,playwright,context7,exa,github,memory,sequential-thinking';
 
     try {
       fs.writeFileSync(configPath, original);
       const result = runNode(mergeMcpConfigScript, [configPath], {
         ...deterministicPackageEnv,
-        ECC_DISABLED_MCPS: allServersDisabled,
+        ECC_DISABLED_MCPS: 'chrome-devtools',
       });
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /Disabled via ECC_DISABLED_MCPS/);
-      assert.match(result.stdout, /\[skip\] mcp_servers\.context7 \(disabled\)/);
-      assert.match(result.stdout, /\[skip\] mcp_servers\.exa \(disabled\)/);
-      assert.match(result.stdout, /\[update\] mcp_servers\.context7-mcp \(disabled\)/);
-      assert.match(result.stdout, /\[update\] mcp_servers\.exa \(disabled\)/);
-      assert.match(result.stdout, /Done\. Removed 2 disabled server\(s\)\./);
+      assert.match(result.stdout, /\[skip\] mcp_servers\.chrome-devtools \(disabled\)/);
+      assert.match(result.stdout, /\[update\] mcp_servers\.chrome-devtools \(disabled\)/);
+      assert.match(result.stdout, /Done\. Removed 1 server section\(s\)\./);
 
       const updated = fs.readFileSync(configPath, 'utf8');
-      assert.doesNotMatch(updated, /context7-mcp/);
-      assert.doesNotMatch(updated, /mcp_servers\.exa/);
+      assert.doesNotMatch(updated, /chrome-devtools/);
     } finally {
       cleanup(tempDir);
     }
@@ -454,7 +687,10 @@ if (
       assert.strictEqual(parsedConfig.agents.explorer.config_file, 'agents/explorer.toml');
       assert.strictEqual(parsedConfig.agents.reviewer.config_file, 'agents/reviewer.toml');
       assert.strictEqual(parsedConfig.agents.docs_researcher.config_file, 'agents/docs-researcher.toml');
-      assert.ok(parsedConfig.mcp_servers.exa);
+      // Current default connector is added; retired servers are not emitted,
+      // and pre-existing user-managed entries are preserved untouched.
+      assert.ok(parsedConfig.mcp_servers['chrome-devtools']);
+      assert.strictEqual(parsedConfig.mcp_servers.exa, undefined);
       assert.ok(parsedConfig.mcp_servers.github);
       assert.ok(parsedConfig.mcp_servers.memory);
       assert.ok(parsedConfig.mcp_servers['sequential-thinking']);

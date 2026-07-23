@@ -15,7 +15,12 @@ const {
   renderText,
 } = require(SCRIPT);
 
-const RELEASE_DIR = 'docs/releases/2.0.0-rc.1';
+const CURRENT_RELEASE = require(path.join(__dirname, '..', '..', 'package.json')).version;
+const RC_RELEASE = '2.0.0-rc.1';
+
+function releaseDirFor(release) {
+  return `docs/releases/${release}`;
+}
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -31,14 +36,14 @@ function writeFile(rootDir, relativePath, content) {
   fs.writeFileSync(targetPath, content);
 }
 
-function approvedPacketContent(overrides = {}) {
+function approvedPacketContent(overrides = {}, release = CURRENT_RELEASE) {
   const decisions = new Map(REQUIRED_DECISIONS.map(decision => [decision.label, 'approve']));
   for (const [label, value] of Object.entries(overrides)) {
     decisions.set(label, value);
   }
 
   return [
-    '# ECC v2.0.0-rc.1 Owner Approval Packet',
+    `# ECC v${release} Owner Approval Packet`,
     '',
     '## Decision Register',
     '',
@@ -58,16 +63,16 @@ function approvedPacketContent(overrides = {}) {
   ].join('\n');
 }
 
-function finalLedgerContent(extra = '') {
+function finalLedgerContent(extra = '', release = CURRENT_RELEASE) {
   return [
-    '# ECC v2.0.0-rc.1 Release URL Ledger',
+    `# ECC v${release} Release URL Ledger`,
     '',
     '## Final Published URLs',
     '',
     '| Surface | URL | Verification |',
     '| --- | --- | --- |',
     ...REQUIRED_URL_SURFACES.map(surface => (
-      `| ${surface.label} | ${surface.exampleUrl} | readback from final release commit |`
+      `| ${surface.label} | ${surface.exampleUrl.split(RC_RELEASE).join(release)} | readback from final release commit |`
     )),
     '',
     '## Final Verification Commands',
@@ -80,9 +85,9 @@ function finalLedgerContent(extra = '') {
   ].join('\n');
 }
 
-function manifestContent() {
+function manifestContent(release = CURRENT_RELEASE) {
   return [
-    '# ECC v2.0.0-rc.1 Preview Pack Manifest',
+    `# ECC v${release} Preview Pack Manifest`,
     '',
     '| Artifact | Role | Gate |',
     '| --- | --- | --- |',
@@ -96,23 +101,26 @@ function manifestContent() {
   ].join('\n');
 }
 
-function seedRepo(rootDir, overrides = {}) {
+function seedRepo(rootDir, overrides = {}, options = {}) {
+  const release = options.release || CURRENT_RELEASE;
+  const releaseDir = releaseDirFor(release);
   const files = {
     'package.json': JSON.stringify({
+      version: release,
       files: ['scripts/release-approval-gate.js'],
       scripts: {
         'release:approval-gate': 'node scripts/release-approval-gate.js',
       },
     }, null, 2),
     'scripts/release-approval-gate.js': 'release approval gate script',
-    [`${RELEASE_DIR}/owner-approval-packet-2026-05-19.md`]: approvedPacketContent(),
-    [`${RELEASE_DIR}/release-url-ledger-2026-05-19.md`]: finalLedgerContent(),
-    [`${RELEASE_DIR}/preview-pack-manifest.md`]: manifestContent(),
-    [`${RELEASE_DIR}/release-notes.md`]: 'Release notes with final URLs.',
-    [`${RELEASE_DIR}/x-thread.md`]: 'X post with final URLs.',
-    [`${RELEASE_DIR}/linkedin-post.md`]: 'LinkedIn post with final URLs.',
-    [`${RELEASE_DIR}/article-outline.md`]: 'Article outline with final URLs.',
-    [`${RELEASE_DIR}/partner-sponsor-talks-pack.md`]: 'Outbound copy with final URLs.',
+    [`${releaseDir}/owner-approval-packet-2026-05-19.md`]: approvedPacketContent({}, release),
+    [`${releaseDir}/release-url-ledger-2026-05-19.md`]: finalLedgerContent('', release),
+    [`${releaseDir}/preview-pack-manifest.md`]: manifestContent(release),
+    [`${releaseDir}/release-notes.md`]: 'Release notes with final URLs.',
+    [`${releaseDir}/x-thread.md`]: 'X post with final URLs.',
+    [`${releaseDir}/linkedin-post.md`]: 'LinkedIn post with final URLs.',
+    [`${releaseDir}/article-outline.md`]: 'Article outline with final URLs.',
+    [`${releaseDir}/partner-sponsor-talks-pack.md`]: 'Outbound copy with final URLs.',
     'docs/business/social-launch-copy.md': 'Business launch copy with final URLs.',
   };
 
@@ -189,6 +197,7 @@ function runTests() {
       const report = buildReport({ root: rootDir });
 
       assert.strictEqual(report.schema_version, 'ecc.release-approval-gate.v1');
+      assert.strictEqual(report.release, CURRENT_RELEASE);
       assert.strictEqual(report.ready, true);
       assert.strictEqual(report.summary.failed, 0);
       assert.deepStrictEqual(report.top_actions, []);
@@ -202,12 +211,27 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('release override keeps rc.1 approval fixtures testable', () => {
+    const rootDir = createTempDir('release-approval-rc-');
+
+    try {
+      seedRepo(rootDir, {}, { release: RC_RELEASE });
+      const report = buildReport({ root: rootDir, release: RC_RELEASE });
+
+      assert.strictEqual(report.release, RC_RELEASE);
+      assert.strictEqual(report.ready, true);
+    } finally {
+      cleanup(rootDir);
+    }
+  })) passed++; else failed++;
+
   if (test('deferred owner decisions keep the publication gate blocked', () => {
     const rootDir = createTempDir('release-approval-deferred-');
 
     try {
+      const releaseDir = releaseDirFor(CURRENT_RELEASE);
       seedRepo(rootDir, {
-        [`${RELEASE_DIR}/owner-approval-packet-2026-05-19.md`]: approvedPacketContent({
+        [`${releaseDir}/owner-approval-packet-2026-05-19.md`]: approvedPacketContent({
           'GitHub prerelease': 'defer',
           'Sponsor, partner, consulting, conference, podcast outreach': 'block',
         }),
@@ -230,15 +254,16 @@ function runTests() {
     const rootDir = createTempDir('release-approval-ledger-');
 
     try {
+      const releaseDir = releaseDirFor(CURRENT_RELEASE);
       seedRepo(rootDir, {
-        [`${RELEASE_DIR}/release-url-ledger-2026-05-19.md`]: [
-          '# ECC v2.0.0-rc.1 Release URL Ledger',
+        [`${releaseDir}/release-url-ledger-2026-05-19.md`]: [
+          `# ECC v${CURRENT_RELEASE} Release URL Ledger`,
           '',
           '## Approval-Gated URLs',
           '',
           '| Surface | Intended URL or command | Gate before use |',
           '| --- | --- | --- |',
-          '| GitHub prerelease | https://github.com/affaan-m/ECC/releases/tag/v2.0.0-rc.1 | must return the prerelease |',
+          `| GitHub prerelease | https://github.com/affaan-m/ECC/releases/tag/v${CURRENT_RELEASE} | must return the prerelease |`,
         ].join('\n'),
       });
 
@@ -257,8 +282,9 @@ function runTests() {
     const rootDir = createTempDir('release-approval-copy-');
 
     try {
+      const releaseDir = releaseDirFor(CURRENT_RELEASE);
       seedRepo(rootDir, {
-        [`${RELEASE_DIR}/x-thread.md`]: 'Ship copy with <video-url> and /Users/affaan/raw-footage.',
+        [`${releaseDir}/x-thread.md`]: 'Ship copy with <video-url> and /Users/affaan/raw-footage.',
       });
 
       const report = buildReport({ root: rootDir });
@@ -266,7 +292,7 @@ function runTests() {
 
       assert.strictEqual(report.ready, false);
       assert.strictEqual(copy.status, 'fail');
-      assert.ok(copy.evidence.includes(`${RELEASE_DIR}/x-thread.md:1`));
+      assert.ok(copy.evidence.includes(`${releaseDir}/x-thread.md:1`));
     } finally {
       cleanup(rootDir);
     }
@@ -280,10 +306,12 @@ function runTests() {
       const stdout = run(['--format=json', `--root=${rootDir}`], { cwd: rootDir });
       const parsed = JSON.parse(stdout);
       assert.strictEqual(parsed.ready, true);
+      assert.strictEqual(parsed.release, CURRENT_RELEASE);
 
+      const releaseDir = releaseDirFor(CURRENT_RELEASE);
       writeFile(
         rootDir,
-        `${RELEASE_DIR}/owner-approval-packet-2026-05-19.md`,
+        `${releaseDir}/owner-approval-packet-2026-05-19.md`,
         approvedPacketContent({ 'Video upload': 'defer' })
       );
       const failedRun = runProcess(['--format=json', `--root=${rootDir}`], { cwd: rootDir });

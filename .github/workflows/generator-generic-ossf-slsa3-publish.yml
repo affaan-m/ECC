@@ -1,0 +1,100 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+# This workflow lets you generate SLSA provenance file for your project.
+# The generation satisfies level 3 for the provenance requirements - see https://slsa.dev/spec/v0.1/requirements
+# The project is an initiative of the OpenSSF (openssf.org) and is developed at
+# https://github.com/slsa-framework/slsa-github-generator.
+# The provenance file can be verified using https://github.com/slsa-framework/slsa-verifier.
+# For more information about SLSA and how it improves the supply-chain, visit slsa.dev.
+name: SLSA generic generator
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: write
+
+    outputs:
+      package_file: ${{ steps.build.outputs.package_file }}
+      digests: ${{ steps.hash.outputs.digests }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build artifacts
+        id: build
+        run: |
+          set -euo pipefail
+
+          npm pack --json > npm-pack.json
+
+          PACKAGE_FILE=$(node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8'));
+            console.log(data[0].filename);
+          ")
+
+          echo "package_file=${PACKAGE_FILE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate subject for provenance
+        id: hash
+        run: |
+          set -euo pipefail
+
+          FILE="${{ steps.build.outputs.package_file }}"
+
+          if [ ! -f "$FILE" ]; then
+            echo "Package file not found: $FILE"
+            exit 1
+          fi
+
+          DIGESTS=$(sha256sum "$FILE" | base64 -w0)
+
+          echo "digests=${DIGESTS}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.build.outputs.package_file }}
+          path: ${{ steps.build.outputs.package_file }}
+          if-no-files-found: error
+
+  provenance:
+    needs:
+      - build
+
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+
+    with:
+      base64-subjects: ${{ needs.build.outputs.digests }}
+      upload-assets: true

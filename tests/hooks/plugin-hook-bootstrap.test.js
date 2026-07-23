@@ -11,6 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
+const { normalizePluginRootForPlatform } = require(SCRIPT);
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-hook-bootstrap-'));
@@ -66,6 +67,50 @@ function runTests() {
     assert.strictEqual(result.status, 0);
     assert.strictEqual(result.stdout, '{"ok":true}');
     assert.strictEqual(result.stderr, '');
+  })) passed++; else failed++;
+
+  if (test('normalizes Windows Git Bash POSIX drive roots', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/z/Work/ECC/scripts/hooks/check-console-log.js', 'win32'),
+      'Z:/Work/ECC/scripts/hooks/check-console-log.js'
+    );
+  })) passed++; else failed++;
+
+  if (test('leaves already-Windows roots unchanged', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('C:/Users/x/.claude/plugins/ecc', 'win32'),
+      'C:/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('D:\\Users\\x\\.claude\\plugins\\ecc', 'win32'),
+      'D:\\Users\\x\\.claude\\plugins\\ecc'
+    );
+  })) passed++; else failed++;
+
+  if (test('leaves POSIX-looking roots unchanged off Windows', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'darwin'),
+      '/c/Users/x/.claude/plugins/ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/c/Users/x/.claude/plugins/ecc', 'linux'),
+      '/c/Users/x/.claude/plugins/ecc'
+    );
+  })) passed++; else failed++;
+
+  if (test('does not mangle UNC or non-drive absolute paths on Windows', () => {
+    assert.strictEqual(
+      normalizePluginRootForPlatform('\\\\server\\share\\ecc', 'win32'),
+      '\\\\server\\share\\ecc'
+    );
+    assert.strictEqual(
+      normalizePluginRootForPlatform('/workspace/ecc', 'win32'),
+      '/workspace/ecc'
+    );
   })) passed++; else failed++;
 
   if (test('node mode runs target script with plugin root environment', () => {
@@ -246,6 +291,101 @@ process.exit(7);
       cleanup(root);
     }
   })) passed++; else failed++;
+
+  // Windows-only: PowerShell preference and .sh fallback behaviour.
+  if (process.platform === 'win32') {
+    if (test('shell mode selects PowerShell when BASH is unset on Windows', () => {
+      // Skip if no PowerShell is available.
+      const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
+      const ps = psProbe.error
+        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 }).error
+          ? null : 'powershell.exe'
+        : 'pwsh.exe';
+      if (!ps) {
+        console.log('    SKIP: no PowerShell found');
+        return;
+      }
+
+      const root = createTempDir();
+      try {
+        // UTF8 encoding set explicitly — PowerShell 5.1 defaults to UTF-16LE.
+        writeFile(root, path.join('scripts', 'hook.ps1'), [
+          '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+          '$OutputEncoding = [System.Text.Encoding]::UTF8',
+          '$input_data = [Console]::In.ReadToEnd()',
+          'Write-Host -NoNewline ("ps1:" + $args[0] + ":" + $input_data)',
+        ].join('\n'));
+
+        const result = run(['shell', path.join('scripts', 'hook.ps1'), 'arg'], {
+          root,
+          input: 'payload',
+          env: { BASH: '' },
+        });
+
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(result.stdout, 'ps1:arg:payload');
+      } finally {
+        cleanup(root);
+      }
+    })) passed++; else failed++;
+
+    if (test('shell mode falls back to bash for .sh scripts when PowerShell is the resolved shell', () => {
+      // Skip if no bash is available (headless CI without Git for Windows).
+      const bashProbe = spawnSync('bash.exe', ['-c', ':'], { stdio: 'ignore', timeout: 5000 });
+      if (bashProbe.error) {
+        console.log('    SKIP: bash.exe not found');
+        return;
+      }
+
+      const root = createTempDir();
+      try {
+        writeFile(root, path.join('scripts', 'hook.sh'), [
+          'input=$(cat)',
+          'printf "sh:%s:%s" "$1" "$input"',
+          '',
+        ].join('\n'));
+
+        // Clear BASH so PowerShell is resolved first, but script is .sh.
+        const result = run(['shell', path.join('scripts', 'hook.sh'), 'arg'], {
+          root,
+          input: 'payload',
+          env: { BASH: '' },
+        });
+
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(result.stdout, 'sh:arg:payload');
+      } finally {
+        cleanup(root);
+      }
+    })) passed++; else failed++;
+
+    if (test('shell mode emits skip warning for .sh script when no bash found on Windows', () => {
+      const root = createTempDir();
+      try {
+        writeFile(root, path.join('scripts', 'hook.sh'), 'printf unreachable\n');
+
+        // Keep PowerShell on PATH so it is resolved as the shell, then strip
+        // bash candidates so the .sh fallback path hits the skip-warning branch.
+        const result = run(['shell', path.join('scripts', 'hook.sh')], {
+          root,
+          input: 'raw-input',
+          env: { BASH: '', PATH: process.env.SystemRoot
+            ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0;${process.env.SystemRoot}\\System32`
+            : '' },
+        });
+
+        assert.strictEqual(result.status, 0);
+        assert.strictEqual(result.stdout, 'raw-input');
+        assert.ok(
+          result.stderr.includes('no bash binary found') ||
+          result.stderr.includes('shell runtime unavailable'),
+          `unexpected stderr: ${result.stderr}`
+        );
+      } finally {
+        cleanup(root);
+      }
+    })) passed++; else failed++;
+  }
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);

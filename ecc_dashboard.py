@@ -4,8 +4,23 @@ ECC Dashboard - Everything Claude Code GUI
 Cross-platform TkInter application for managing ECC components
 """
 
-import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+import sys
+
+try:
+    import tkinter as tk
+    from tkinter import ttk, scrolledtext, messagebox
+except ImportError:
+    sys.stderr.write(
+        "ECC Dashboard requires Tkinter, which is missing from this Python install.\n"
+        "Install it, then re-run `npm run dashboard`:\n"
+        "  Debian/Ubuntu: sudo apt-get install python3-tk\n"
+        "  Fedora:        sudo dnf install python3-tkinter\n"
+        "  macOS (brew):  brew install python-tk\n"
+        "  Windows:       re-run the python.org installer and enable 'tcl/tk and IDLE'\n"
+        "Alternatively, use the browser dashboard (no Tkinter needed): npm run dashboard:web\n"
+    )
+    sys.exit(1)
+
 import os
 import json
 from pathlib import Path
@@ -796,7 +811,7 @@ A cross-platform desktop application for
 managing and exploring ECC components.
 
 Version: 1.10.0
-Project: github.com/affaan-m/everything-claude-code"""
+Project: github.com/affaan-m/ECC"""
         
         ttk.Label(about_frame, text=about_text, justify=tk.LEFT).pack(anchor=tk.W)
     

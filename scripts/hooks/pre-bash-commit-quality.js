@@ -108,6 +108,7 @@ function findFileIssues(filePath) {
       
       // Check for hardcoded secrets (basic patterns)
       const secretPatterns = [
+        { pattern: /sk-ant-[a-zA-Z0-9_-]{20,}/, name: 'Anthropic API key' },
         { pattern: /sk-[a-zA-Z0-9]{20,}/, name: 'OpenAI API key' },
         { pattern: /ghp_[a-zA-Z0-9]{36}/, name: 'GitHub PAT' },
         { pattern: /AKIA[A-Z0-9]{16}/, name: 'AWS Access Key' },

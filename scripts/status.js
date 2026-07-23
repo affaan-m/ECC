@@ -165,6 +165,74 @@ function printWorkItems(section) {
   }
 }
 
+function summarizeGithubCoordination(workItems) {
+  const epicItems = workItems.items.filter(item => item.source === 'github-epic');
+  const summary = {
+    totalCount: epicItems.length,
+    availableCount: 0,
+    claimedCount: 0,
+    readyCount: 0,
+    blockedCount: 0,
+    validatedCount: 0,
+    publishedCount: 0,
+    recent: epicItems.slice(0, 10),
+  };
+
+  for (const item of epicItems) {
+    const state = item.metadata && item.metadata.coordination ? item.metadata.coordination.status : item.status;
+    switch (state) {
+      case 'available':
+        summary.availableCount += 1;
+        break;
+      case 'claimed':
+        summary.claimedCount += 1;
+        break;
+      case 'ready':
+        summary.readyCount += 1;
+        break;
+      case 'blocked':
+        summary.blockedCount += 1;
+        break;
+      case 'validated':
+        summary.validatedCount += 1;
+        break;
+      case 'published':
+        summary.publishedCount += 1;
+        break;
+      default:
+        summary.availableCount += 1;
+        break;
+    }
+  }
+
+  return summary;
+}
+
+function printGithubCoordination(section) {
+  console.log(`GitHub epic coordination: ${section.totalCount} tracked`);
+  if (section.totalCount === 0) {
+    console.log('  - none');
+    return;
+  }
+
+  console.log(`  Available: ${section.availableCount}`);
+  console.log(`  Claimed: ${section.claimedCount}`);
+  console.log(`  Ready: ${section.readyCount}`);
+  console.log(`  Blocked: ${section.blockedCount}`);
+  console.log(`  Validated: ${section.validatedCount}`);
+  console.log(`  Published: ${section.publishedCount}`);
+
+  for (const item of section.recent) {
+    console.log(`  - ${item.source}/${item.sourceId || item.id} ${item.status}: ${item.title}`);
+    if (item.metadata && item.metadata.coordination) {
+      const coordination = item.metadata.coordination;
+      console.log(`    Epic status: ${coordination.status}`);
+      console.log(`    Owner: ${coordination.owner || '(unassigned)'}`);
+      console.log(`    Branch: ${coordination.branch || '(none)'}`);
+    }
+  }
+}
+
 function printReadiness(section) {
   console.log(`Readiness: ${section.status}`);
   console.log(`  Attention items: ${section.attentionCount}`);
@@ -188,6 +256,10 @@ function printHuman(payload) {
   console.log();
   printGovernance(payload.governance);
   console.log();
+  if (payload.githubCoordination) {
+    printGithubCoordination(payload.githubCoordination);
+    console.log();
+  }
   printWorkItems(payload.workItems);
 }
 
@@ -318,6 +390,35 @@ function renderMarkdown(payload) {
     }
   }
 
+  if (payload.githubCoordination) {
+    lines.push(
+      '',
+      '## GitHub Epic Coordination',
+      '',
+      `Tracked: ${payload.githubCoordination.totalCount}`,
+      `Available: ${payload.githubCoordination.availableCount}`,
+      `Claimed: ${payload.githubCoordination.claimedCount}`,
+      `Ready: ${payload.githubCoordination.readyCount}`,
+      `Blocked: ${payload.githubCoordination.blockedCount}`,
+      `Validated: ${payload.githubCoordination.validatedCount}`,
+      `Published: ${payload.githubCoordination.publishedCount}`
+    );
+
+    if (payload.githubCoordination.recent.length === 0) {
+      lines.push('', '- none');
+    } else {
+      lines.push('', 'Recent epics:');
+      for (const item of payload.githubCoordination.recent) {
+        lines.push(`- ${formatCode(item.source)} ${formatCode(item.sourceId || item.id)} ${item.status}: ${item.title}`);
+        if (item.metadata && item.metadata.coordination) {
+          lines.push(`  - Epic status: ${item.metadata.coordination.status}`);
+          lines.push(`  - Owner: ${item.metadata.coordination.owner || '(unassigned)'}`);
+          lines.push(`  - Branch: ${item.metadata.coordination.branch || '(none)'}`);
+        }
+      }
+    }
+  }
+
   return `${lines.join('\n')}\n`;
 }
 
@@ -350,6 +451,7 @@ async function main() {
         workItemLimit: options.limit,
       }),
     };
+    payload.githubCoordination = summarizeGithubCoordination(payload.workItems);
 
     if (options.json) {
       const output = `${JSON.stringify(payload, null, 2)}\n`;

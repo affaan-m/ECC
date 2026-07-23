@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "nexus": {
+      "command": "nexus",
+      "args": ["mcp"],
+      "description": "Local cost/privacy proxy - query your own usage & savings, route to the cheapest capable model, and mask secrets/PII before egress (nexus_stats, nexus_savings, nexus_recent, nexus_providers, nexus_cost_breakdown)"
+    },
     "jira": {
       "command": "uvx",
       "args": ["mcp-atlassian==0.21.0"],
@@ -94,15 +99,36 @@
       },
       "description": "Web search, research, and data ingestion via Exa API — prefer task-scoped use for broader research after GitHub search and primary docs"
     },
+    "parallel-search": {
+      "type": "http",
+      "url": "https://search.parallel.ai/mcp",
+      "description": "Parallel Web Search — LLM-optimized web_search and web_fetch tools that take an objective + queries and return citation-backed excerpts in a single call (replaces multiple keyword searches). Works key-free for anonymous use. For higher rate limits, add a headers block: { \"Authorization\": \"Bearer YOUR_PARALLEL_API_KEY_HERE\" } using a key from platform.parallel.ai."
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
       "description": "Live documentation lookup — use with /docs command and documentation-lookup skill (resolve-library-id, query-docs)."
     },
+    "codescene": {
+      "command": "npx",
+      "args": ["-y", "@codescene/codehealth-mcp"],
+      "env": {
+        "CS_ACCESS_TOKEN": "YOUR_CS_ACCESS_TOKEN_HERE"
+      },
+      "description": "Optional. CodeScene Code Health MCP (community skill: codehealth-mcp). Not enabled by default — copy only if you opt in. Requires your own CS_ACCESS_TOKEN (no bundled credentials). See skills/codehealth-mcp/SKILL.md for data boundaries and failure behavior."
+    },
     "magic": {
       "command": "npx",
       "args": ["-y", "@magicuidesign/mcp@latest"],
       "description": "Magic UI components"
+    },
+    "memxus": {
+      "type": "http",
+      "url": "https://mcp.memxus.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MEMXUS_API_KEY_HERE"
+      },
+      "description": "Universal persistent memory across Claude Code, Cursor, Gemini CLI and any AI tool — save context once, auto-recalled in every session. Note: review stored memories before use in production agents to avoid prompt-injection via memory-poisoning. Free at memxus.com"
     },
     "filesystem": {
       "command": "npx",

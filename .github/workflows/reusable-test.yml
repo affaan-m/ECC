@@ -27,16 +27,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Setup pnpm
         if: inputs.package-manager == 'pnpm' && inputs.node-version != '18.x'
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           # Keep an explicit pnpm major because this repo's packageManager is Yarn.
           version: 10
@@ -67,8 +69,9 @@ jobs:
           COREPACK_ENABLE_STRICT: '0'
           npm_config_ignore_scripts: 'true'
           YARN_ENABLE_SCRIPTS: 'false'
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
         run: |
-          case "${{ inputs.package-manager }}" in
+          case "$PACKAGE_MANAGER" in
             npm) npm ci --ignore-scripts ;;
             # pnpm v10 can fail CI on ignored native build scripts
             # (for example msgpackr-extract) even though this repo is Yarn-native
@@ -77,7 +80,7 @@ jobs:
             # Yarn Berry (v4+) removed --ignore-engines; engine checking is no longer a core feature
             yarn) yarn install --mode=skip-build ;;
             bun) bun install --ignore-scripts ;;
-            *) echo "Unsupported package manager: ${{ inputs.package-manager }}" && exit 1 ;;
+            *) echo "Unsupported package manager: $PACKAGE_MANAGER" && exit 1 ;;
           esac
 
       - name: Run tests

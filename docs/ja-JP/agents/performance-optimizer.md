@@ -362,14 +362,14 @@ npx lighthouse https://your-app.com --only-categories=performance
 ### Web Vitalsモニタリング
 
 ```typescript
-// Core Web Vitalsの追跡
-import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals';
+// Track Core Web Vitals (web-vitals v4 API)
+import { onCLS, onINP, onLCP, onFCP, onTTFB } from 'web-vitals';
 
-getCLS(console.log);  // Cumulative Layout Shift
-getFID(console.log);  // First Input Delay
-getLCP(console.log);  // Largest Contentful Paint
-getFCP(console.log);  // First Contentful Paint
-getTTFB(console.log); // Time to First Byte
+onCLS(console.log);  // Cumulative Layout Shift
+onINP(console.log);  // Interaction to Next Paint
+onLCP(console.log);  // Largest Contentful Paint
+onFCP(console.log);  // First Contentful Paint
+onTTFB(console.log); // Time to First Byte
 ```
 
 ## パフォーマンスレポートテンプレート
@@ -393,7 +393,7 @@ getTTFB(console.log); // Time to First Byte
 | メトリクス | 現在 | 目標 | ステータス |
 |-----------|------|------|----------|
 | LCP | X.X秒 | < 2.5秒 | PASS: |
-| FID | XXms | < 100ms | PASS: |
+| INP | XXms | < 200ms | PASS: |
 | CLS | X.XX | < 0.1 | WARNING: |
 
 ## 重大な問題

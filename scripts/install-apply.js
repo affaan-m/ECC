@@ -17,6 +17,7 @@ const {
   normalizeInstallRequest,
   parseInstallArgs,
 } = require('./lib/install/request');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -42,6 +43,9 @@ Targets:
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
+  hermes       - Install shared rules/skills/commands into ~/.hermes/
+  kimi         - Install shared rules/skills/commands into ./.kimi/
+  openclaw     - Install shared rules/skills/commands into ~/.openclaw/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
@@ -56,6 +60,9 @@ Options:
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
+
+Compute:
+  ${getComputeSponsorCopy()}
 
 Available languages:
 ${languages.map(language => `  - ${language}`).join('\n')}
@@ -112,6 +119,8 @@ function printHumanPlan(plan, dryRun) {
   if (!dryRun) {
     console.log(`\nDone. Install-state written to ${plan.installStatePath}`);
   }
+
+  console.log('\nCompute: ' + getComputeSponsorCopy());
 }
 
 function main() {

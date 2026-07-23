@@ -119,7 +119,7 @@ async function main() {
   }
 
   // stdio トランスポートを介して agentpay MCP サーバーに接続する。
-  // サーバーが必要とする env 変数のみをホワイトリストに登録する — 
+  // サーバーが必要とする env 変数のみをホワイトリストに登録する —
   // 秘密鍵を管理するサードパーティのサブプロセスに process.env のすべてを渡さない。
   const transport = new StdioClientTransport({
     command: "npx",

@@ -31,6 +31,21 @@ def print_providers(providers: list[tuple[str, str]]) -> None:
         print(f"  {Color.GREEN}{i}{Color.RESET}. {Color.BOLD}{name}{Color.RESET} - {desc}")
 
 
+def print_self_host_compute_notice(provider: str) -> None:
+    if provider != "ollama":
+        return
+
+    print(
+        "\nRun or self-host any open-source model. "
+        "Itô is ECC's preferred compute sponsor: "
+        "https://compute.itomarkets.com"
+    )
+    print(
+        "Any GPU provider works. ECC only links to the Itô dashboard; it does not "
+        "provision compute or serving. Managed inference through Itô is not live yet."
+    )
+
+
 def select_provider(providers: list[tuple[str, str]]) -> str | None:
     if not providers:
         print("No providers available.")
@@ -105,9 +120,9 @@ def interactive_select(
     if models_per_provider is None:
         models_per_provider = {
             "claude": [
-                ("claude-opus-4-5", "Claude Opus 4.5 - Most capable"),
-                ("claude-sonnet-4-7", "Claude Sonnet 4.7 - Balanced"),
-                ("claude-haiku-4-7", "Claude Haiku 4.7 - Fast"),
+                ("claude-opus-4-8", "Claude Opus 4.8 - Most capable"),
+                ("claude-sonnet-4-6", "Claude Sonnet 4.6 - Balanced"),
+                ("claude-haiku-4-5", "Claude Haiku 4.5 - Fast"),
             ],
             "openai": [
                 ("gpt-4o", "GPT-4o - Most capable"),
@@ -125,6 +140,8 @@ def interactive_select(
     provider = select_provider(providers)
     if not provider:
         return None
+
+    print_self_host_compute_notice(provider)
 
     models = models_per_provider.get(provider, [])
     model = select_model(models)

@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { isHookEnabled } = require('../lib/hook-flags');
+const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
@@ -45,40 +45,52 @@ function writeStderr(stderr) {
   process.stderr.write(stderr.endsWith('\n') ? stderr : `${stderr}\n`);
 }
 
-function emitHookResult(raw, output) {
+/**
+ * Write stdout fully, then exit. `process.exit()` immediately after
+ * `process.stdout.write()` drops anything beyond the ~64KB pipe buffer,
+ * which cut large pass-through payloads mid-JSON and made the harness
+ * treat the hook as failed (#2222). The write callback fires only after
+ * the chunk is flushed to the pipe.
+ */
+function exitWithStdout(text, exitCode) {
+  if (typeof text !== 'string' || text.length === 0) {
+    process.exit(exitCode);
+  }
+  process.stdout.write(text, () => process.exit(exitCode));
+}
+
+function resolveHookResult(raw, output) {
   if (typeof output === 'string' || Buffer.isBuffer(output)) {
-    process.stdout.write(String(output));
-    return 0;
+    return { stdout: String(output), exitCode: 0 };
   }
 
   if (output && typeof output === 'object') {
     writeStderr(output.stderr);
+    const exitCode = Number.isInteger(output.exitCode) ? output.exitCode : 0;
 
     if (Object.prototype.hasOwnProperty.call(output, 'additionalContext')) {
-      process.stdout.write(buildPreToolUseAdditionalContext(output.additionalContext));
-    } else if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
-      process.stdout.write(String(output.stdout ?? ''));
-    } else if (!Number.isInteger(output.exitCode) || output.exitCode === 0) {
-      process.stdout.write(raw);
+      return { stdout: buildPreToolUseAdditionalContext(output.additionalContext), exitCode };
     }
-
-    return Number.isInteger(output.exitCode) ? output.exitCode : 0;
+    if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
+      return { stdout: String(output.stdout ?? ''), exitCode };
+    }
+    return { stdout: exitCode === 0 ? raw : '', exitCode };
   }
 
-  process.stdout.write(raw);
-  return 0;
+  return { stdout: raw, exitCode: 0 };
 }
 
-function writeLegacySpawnOutput(raw, result) {
+function resolveLegacySpawnStdout(raw, result) {
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
   if (stdout) {
-    process.stdout.write(stdout);
-    return;
+    return stdout;
   }
 
   if (Number.isInteger(result.status) && result.status === 0) {
-    process.stdout.write(raw);
+    return raw;
   }
+
+  return '';
 }
 
 function getPluginRoot() {
@@ -88,16 +100,75 @@ function getPluginRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+//Safely extract target context from hook stdin JSON for dry-run preview.
+
+function extractTargetContext(raw) {
+  const result = { tool: '', filePath: '', command: '' };
+  if (!raw || typeof raw !== 'string') return result;
+
+  try {
+    const payload = JSON.parse(raw);
+    if (payload && typeof payload === 'object') {
+      result.tool = String(payload.tool || '');
+      const input = payload.tool_input;
+      if (input && typeof input === 'object') {
+        result.filePath = String(input.file_path || input.path || '');
+        result.command = String(input.command || '');
+      }
+    }
+  } catch {
+    // best-effort field extraction; ignore malformed input
+  }
+  return result;
+}
+
+// Build the [DryRun] preview line for stderr.
+
+function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
+  const ctx = extractTargetContext(raw);
+  const parts = [`[DryRun] Hook "${hookId}" would execute: ${relScriptPath}`, `(enabled=true, profiles=${profilesCsv || 'default'})`];
+
+  if (ctx.tool) {
+    parts.push(`tool=${ctx.tool}`);
+  }
+  if (ctx.filePath) {
+    parts.push(`target=${ctx.filePath}`);
+  }
+  if (ctx.command) {
+    parts.push(`command=${ctx.command}`);
+  }
+
+  return parts.join(' ') + '\n';
+}
+
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
 
+  // Oversized payloads: never echo the truncated string — a JSON document
+  // cut mid-stream is treated by the harness as a hook failure, blocking the
+  // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
+  // pass-through paths fail open. The hook itself still runs and receives
+  // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
+  // security hooks like config-protection can still choose to block.
+  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
+  if (truncated) {
+    process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
+  }
+
   if (!hookId || !relScriptPath) {
-    process.stdout.write(raw);
-    process.exit(0);
+    exitWithStdout(sanitizeEcho(raw), 0);
+    return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
+    exitWithStdout(sanitizeEcho(raw), 0);
+    return;
+  }
+
+  if (isDryRun()) {
+    const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
+    process.stderr.write(preview);
     process.stdout.write(raw);
     process.exit(0);
   }
@@ -109,14 +180,14 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    process.stdout.write(raw);
-    process.exit(0);
+    exitWithStdout(sanitizeEcho(raw), 0);
+    return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    process.stdout.write(raw);
-    process.exit(0);
+    exitWithStdout(sanitizeEcho(raw), 0);
+    return;
   }
 
   // Prefer direct require() when the hook exports a run(rawInput) function.
@@ -147,12 +218,13 @@ async function main() {
         truncated,
         maxStdin: MAX_STDIN
       });
-      process.exit(emitHookResult(raw, output));
+      const result = resolveHookResult(raw, output);
+      exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      process.stdout.write(raw);
+      exitWithStdout(sanitizeEcho(raw), 0);
     }
-    process.exit(0);
+    return;
   }
 
   // Legacy path: spawn a child Node process for hooks without run() export
@@ -171,20 +243,17 @@ async function main() {
     timeout: 30000
   });
 
-  writeLegacySpawnOutput(raw, result);
+  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
-    const failureDetail = result.error
-      ? result.error.message
-      : result.signal
-        ? `terminated by signal ${result.signal}`
-        : 'missing exit status';
+    const failureDetail = result.error ? result.error.message : result.signal ? `terminated by signal ${result.signal}` : 'missing exit status';
     writeStderr(`[Hook] legacy hook execution failed for ${hookId}: ${failureDetail}`);
-    process.exit(1);
+    exitWithStdout(legacyStdout, 1);
+    return;
   }
 
-  process.exit(Number.isInteger(result.status) ? result.status : 0);
+  exitWithStdout(legacyStdout, Number.isInteger(result.status) ? result.status : 0);
 }
 
 main().catch(err => {

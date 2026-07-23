@@ -4,7 +4,8 @@ description: >
   Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes,
   form labeling, keyboard navigation, focus management, and screen reader support.
   Use when building any interactive UI component or form.
-origin: community
+metadata:
+  origin: community
 ---
 
 # Frontend Accessibility Patterns
@@ -203,8 +204,7 @@ Use ARIA only when native HTML semantics are insufficient. Wrong ARIA is worse t
 <button
   aria-describedby="delete-warning"
   onClick={handleDelete}
->
-  Delete account
+> Delete account
 </button>
 <p id="delete-warning">This action cannot be undone.</p>
 ```

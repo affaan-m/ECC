@@ -19,7 +19,6 @@ import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
 import pytest
 
@@ -44,7 +43,10 @@ _promote_auto = _mod._promote_auto
 _find_cross_project_instincts = _mod._find_cross_project_instincts
 load_registry = _mod.load_registry
 _validate_instinct_id = _mod._validate_instinct_id
+_validate_import_url = _mod._validate_import_url
 _update_registry = _mod._update_registry
+_write_registry = _mod._write_registry
+_remove_project_storage = _mod._remove_project_storage
 _confidence_bar = _mod._confidence_bar
 
 
@@ -324,6 +326,32 @@ def test_validate_relative_path(tmp_path, monkeypatch):
     test_file.write_text("content")
     result = _validate_file_path("rel.yaml", must_exist=True)
     assert result == test_file.resolve()
+
+
+def test_validate_import_url_rejects_http():
+    """Remote imports should not downgrade to plaintext HTTP."""
+    with pytest.raises(ValueError, match="require https"):
+        _validate_import_url("http://example.com/instincts.yaml")
+
+
+def test_validate_import_url_rejects_private_hosts(monkeypatch):
+    """Remote imports should not resolve to private or loopback addresses."""
+    monkeypatch.setattr(
+        _mod.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 443))],
+    )
+    with pytest.raises(ValueError, match="non-public address"):
+        _validate_import_url("https://example.com/instincts.yaml")
+
+
+def test_validate_import_url_allows_public_https(monkeypatch):
+    monkeypatch.setattr(
+        _mod.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    assert _validate_import_url("https://example.com/instincts.yaml") == "https://example.com/instincts.yaml"
 
 
 # ─────────────────────────────────────────────
@@ -1016,3 +1044,377 @@ def test_update_registry_atomic_replaces_file(patch_globals):
     assert "abc123" in data
     leftovers = list(tree["registry_file"].parent.glob(".projects.json.tmp.*"))
     assert leftovers == []
+
+
+def test_update_registry_matches_shell_schema(patch_globals):
+    # Issue #2299: the Python writer must emit the same field set as the shell
+    # counterpart in detect-project.sh (id, name, root, remote, created_at,
+    # last_seen) so a projects.json entry has a consistent shape regardless of
+    # which path wrote it.
+    tree = patch_globals
+    _update_registry("abc123", "demo", "/repo", "https://example.com/repo.git")
+    entry = json.loads(tree["registry_file"].read_text())["abc123"]
+    assert set(entry) == {"id", "name", "root", "remote", "created_at", "last_seen"}
+    assert entry["id"] == "abc123"
+    assert entry["name"] == "demo"
+    assert entry["root"] == "/repo"
+    assert entry["remote"] == "https://example.com/repo.git"
+    # On the initial write both timestamps come from the same `now`, so the
+    # first-write contract is created_at == last_seen.
+    assert entry["created_at"]
+    assert entry["created_at"] == entry["last_seen"]
+
+
+def test_update_registry_preserves_created_at(patch_globals):
+    # created_at is stamped on first write and preserved on subsequent updates,
+    # while last_seen advances — matching entry.get("created_at", now) in the
+    # shell counterpart.
+    tree = patch_globals
+    _update_registry("abc123", "demo", "/repo", "https://example.com/repo.git")
+    first = json.loads(tree["registry_file"].read_text())["abc123"]
+
+    _update_registry("abc123", "demo-renamed", "/repo", "https://example.com/repo.git")
+    second = json.loads(tree["registry_file"].read_text())["abc123"]
+
+    assert second["created_at"] == first["created_at"]
+    assert second["name"] == "demo-renamed"
+    assert second["last_seen"] >= first["last_seen"]
+
+
+def test_update_registry_heals_malformed_entry(patch_globals):
+    # Issue #2299 follow-up: a non-dict value for the project id (e.g. a
+    # corrupt registry) must not crash _update_registry. The entry is healed by
+    # the rewrite, preserving the old unconditional-overwrite behavior.
+    tree = patch_globals
+    tree["registry_file"].write_text(json.dumps({"abc123": None}), encoding="utf-8")
+    _update_registry("abc123", "demo", "/repo", "https://example.com/repo.git")
+    entry = json.loads(tree["registry_file"].read_text())["abc123"]
+    assert isinstance(entry, dict)
+    assert entry["id"] == "abc123"
+    assert entry["created_at"]
+    assert entry["created_at"] == entry["last_seen"]
+
+
+def test_update_registry_heals_non_dict_registry(patch_globals):
+    # Issue #2299 follow-up: a top-level registry that is valid JSON but not a
+    # mapping (e.g. a list or string from a corrupt projects.json) must not
+    # crash _update_registry before the per-entry guard runs. The whole file is
+    # healed by the rewrite, preserving the old unconditional-overwrite behavior.
+    tree = patch_globals
+    tree["registry_file"].write_text(json.dumps(["oops"]), encoding="utf-8")
+    _update_registry("abc123", "demo", "/repo", "https://example.com/repo.git")
+    registry = json.loads(tree["registry_file"].read_text())
+    assert isinstance(registry, dict)
+    entry = registry["abc123"]
+    assert entry["id"] == "abc123"
+    assert entry["created_at"] == entry["last_seen"]
+
+
+def test_write_registry_atomic_no_tmp_leftovers(patch_globals):
+    # Issue #2294: _write_registry now holds the registry lock like
+    # _update_registry. It must still write atomically with no stray tmp files.
+    tree = patch_globals
+    _write_registry({"keep": {"name": "demo", "root": "/repo", "remote": ""}})
+    data = json.loads(tree["registry_file"].read_text())
+    assert data == {"keep": {"name": "demo", "root": "/repo", "remote": ""}}
+    leftovers = list(tree["registry_file"].parent.glob(".projects.json.tmp.*"))
+    assert leftovers == []
+
+
+def test_remove_project_storage_deletes_contained_dir(patch_globals):
+    tree = patch_globals
+    target = tree["projects_dir"] / "proj-1"
+    (target / "instincts").mkdir(parents=True)
+    (target / "instincts" / "x.md").write_text("hi", encoding="utf-8")
+    _remove_project_storage("proj-1")
+    assert not target.exists()
+
+
+def test_remove_project_storage_missing_dir_is_noop(patch_globals):
+    # No raise when the contained dir simply does not exist.
+    _remove_project_storage("never-created")
+
+
+def test_remove_project_storage_blocks_traversal(patch_globals):
+    # Issue #2297: defense-in-depth — a traversal id must be refused even when a
+    # caller skips _validate_project_id, so this can never delete outside
+    # PROJECTS_DIR.
+    with pytest.raises(ValueError):
+        _remove_project_storage("../../etc")
+
+
+def test_remove_project_storage_blocks_root_itself(patch_globals):
+    with pytest.raises(ValueError):
+        _remove_project_storage(".")
+
+
+# ─────────────────────────────────────────────
+# Issue #2302 coverage:
+#   _normalize_remote_url, _promote_specific dry-run,
+#   projects delete/gc/merge, cmd_prune
+# ─────────────────────────────────────────────
+
+_normalize_remote_url = _mod._normalize_remote_url
+_cmd_projects_delete = _mod._cmd_projects_delete
+_cmd_projects_gc = _mod._cmd_projects_gc
+_cmd_projects_merge = _mod._cmd_projects_merge
+cmd_prune = _mod.cmd_prune
+
+
+# ── _normalize_remote_url ────────────────────
+
+def test_normalize_remote_url_empty_returns_empty():
+    assert _normalize_remote_url("") == ""
+    assert _normalize_remote_url(None) == ""
+
+
+def test_normalize_remote_url_scp_form():
+    # scp-style host:path -> host/path, credentials/.git stripped, lowercased
+    assert _normalize_remote_url("git@github.com:Test/Repo.git") == "github.com/test/repo"
+
+
+def test_normalize_remote_url_https_strips_credentials_and_scheme():
+    assert (
+        _normalize_remote_url("https://user:token@github.com/test/repo.git")
+        == "github.com/test/repo"
+    )
+
+
+def test_normalize_remote_url_network_is_lowercased():
+    assert _normalize_remote_url("https://GitHub.com/Owner/Project") == "github.com/owner/project"
+
+
+def test_normalize_remote_url_trailing_slash_and_dotgit_stripped():
+    assert _normalize_remote_url("https://github.com/a/b.git/") == "github.com/a/b"
+
+
+def test_normalize_remote_url_file_scheme_preserves_case():
+    # Local file paths are not network URLs: scheme is stripped but case is preserved.
+    assert _normalize_remote_url("file:///srv/Repos/My-Repo/") == "/srv/Repos/My-Repo"
+
+
+def test_normalize_remote_url_idempotent():
+    once = _normalize_remote_url("https://user@github.com/Test/Repo.git")
+    assert _normalize_remote_url(once) == once
+
+
+# ── _promote_specific dry-run ────────────────
+
+def test_promote_specific_dry_run_writes_nothing(patch_globals, capsys):
+    """dry_run returns 0, prints [DRY RUN], and writes no global file."""
+    tree = patch_globals
+    project = _make_project(tree)
+    (project["instincts_personal"] / "inst.yaml").write_text(SAMPLE_INSTINCT_YAML)
+
+    ret = _promote_specific(project, "test-instinct", force=True, dry_run=True)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "[DRY RUN]" in out
+    assert not (tree["global_personal"] / "test-instinct.yaml").exists()
+    assert list(tree["global_personal"].iterdir()) == []
+
+
+# ── projects delete ──────────────────────────
+
+def test_projects_delete_rejects_invalid_id(patch_globals, capsys):
+    args = SimpleNamespace(project_id="../escape", dry_run=False, force=True)
+    assert _cmd_projects_delete(args) == 1
+    assert "Invalid project ID" in capsys.readouterr().err
+
+
+def test_projects_delete_not_found(patch_globals, capsys):
+    args = SimpleNamespace(project_id="ghost123", dry_run=False, force=True)
+    assert _cmd_projects_delete(args) == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_projects_delete_dry_run_keeps_registry_and_storage(patch_globals, capsys):
+    tree = patch_globals
+    _make_project(tree, pid="proj1", pname="p1")
+    tree["registry_file"].write_text(json.dumps({"proj1": {"name": "p1"}}))
+
+    args = SimpleNamespace(project_id="proj1", dry_run=True, force=False)
+    assert _cmd_projects_delete(args) == 0
+    assert "[DRY RUN]" in capsys.readouterr().out
+    assert (tree["projects_dir"] / "proj1").exists()
+    assert "proj1" in json.loads(tree["registry_file"].read_text())
+
+
+def test_projects_delete_force_removes_registry_and_storage(patch_globals, capsys):
+    tree = patch_globals
+    _make_project(tree, pid="proj1", pname="p1")
+    tree["registry_file"].write_text(json.dumps({"proj1": {"name": "p1"}}))
+
+    args = SimpleNamespace(project_id="proj1", dry_run=False, force=True)
+    assert _cmd_projects_delete(args) == 0
+    assert "Deleted project" in capsys.readouterr().out
+    assert not (tree["projects_dir"] / "proj1").exists()
+    assert "proj1" not in json.loads(tree["registry_file"].read_text())
+
+
+# ── projects gc ──────────────────────────────
+
+def test_projects_gc_no_candidates(patch_globals, capsys):
+    tree = patch_globals
+    tree["registry_file"].write_text("{}")
+    args = SimpleNamespace(dry_run=False, force=True)
+    assert _cmd_projects_gc(args) == 0
+    assert "No zero-value project entries" in capsys.readouterr().out
+
+
+def test_projects_gc_dry_run_keeps_entry(patch_globals, capsys):
+    tree = patch_globals
+    _make_project(tree, pid="empty1", pname="e1")  # zero instincts/observations
+    tree["registry_file"].write_text(json.dumps({"empty1": {"name": "e1"}}))
+
+    args = SimpleNamespace(dry_run=True, force=False)
+    assert _cmd_projects_gc(args) == 0
+    assert "[DRY RUN]" in capsys.readouterr().out
+    assert "empty1" in json.loads(tree["registry_file"].read_text())
+    # dry-run must not touch storage on disk
+    assert (tree["projects_dir"] / "empty1").exists()
+
+
+def test_projects_gc_force_removes_only_zero_value(patch_globals, capsys):
+    tree = patch_globals
+    _make_project(tree, pid="empty1", pname="e1")
+    full = _make_project(tree, pid="full1", pname="f1")
+    (full["instincts_personal"] / "inst.yaml").write_text(SAMPLE_INSTINCT_YAML)
+    tree["registry_file"].write_text(
+        json.dumps({"empty1": {"name": "e1"}, "full1": {"name": "f1"}})
+    )
+
+    args = SimpleNamespace(dry_run=False, force=True)
+    assert _cmd_projects_gc(args) == 0
+    reg = json.loads(tree["registry_file"].read_text())
+    assert "empty1" not in reg
+    assert "full1" in reg
+    assert not (tree["projects_dir"] / "empty1").exists()
+    assert (tree["projects_dir"] / "full1").exists()
+
+
+# ── projects merge ───────────────────────────
+
+def test_projects_merge_rejects_same_id(patch_globals, capsys):
+    args = SimpleNamespace(from_id="dup", into_id="dup", dry_run=False, force=True)
+    assert _cmd_projects_merge(args) == 1
+    assert "into itself" in capsys.readouterr().err
+
+
+def test_projects_merge_missing_source(patch_globals, capsys):
+    tree = patch_globals
+    tree["registry_file"].write_text(json.dumps({"dest": {"name": "d"}}))
+    args = SimpleNamespace(from_id="src", into_id="dest", dry_run=False, force=True)
+    assert _cmd_projects_merge(args) == 1
+    assert "Source project" in capsys.readouterr().err
+
+
+def test_projects_merge_missing_destination(patch_globals, capsys):
+    tree = patch_globals
+    # Source present, destination absent — exercises the symmetric error branch.
+    tree["registry_file"].write_text(json.dumps({"src": {"name": "s"}}))
+    args = SimpleNamespace(from_id="src", into_id="dest", dry_run=False, force=True)
+    assert _cmd_projects_merge(args) == 1
+    assert "Destination project" in capsys.readouterr().err
+
+
+def test_projects_merge_dry_run_no_changes(patch_globals, capsys):
+    tree = patch_globals
+    src = _make_project(tree, pid="src", pname="s")
+    _make_project(tree, pid="dest", pname="d")
+    (src["instincts_personal"] / "i.yaml").write_text(SAMPLE_INSTINCT_YAML)
+    tree["registry_file"].write_text(json.dumps({"src": {"name": "s"}, "dest": {"name": "d"}}))
+
+    args = SimpleNamespace(from_id="src", into_id="dest", dry_run=True, force=False)
+    assert _cmd_projects_merge(args) == 0
+    assert "[DRY RUN]" in capsys.readouterr().out
+    reg = json.loads(tree["registry_file"].read_text())
+    assert "src" in reg and "dest" in reg
+    assert (tree["projects_dir"] / "src").exists()
+    # dry-run must not copy any instinct into the destination storage
+    assert not list((tree["projects_dir"] / "dest" / "instincts" / "personal").glob("*.yaml"))
+
+
+def test_projects_merge_force_moves_and_removes_source(patch_globals, capsys):
+    tree = patch_globals
+    src = _make_project(tree, pid="src", pname="s")
+    _make_project(tree, pid="dest", pname="d")
+    (src["instincts_personal"] / "i.yaml").write_text(SAMPLE_INSTINCT_YAML)
+    tree["registry_file"].write_text(json.dumps({"src": {"name": "s"}, "dest": {"name": "d"}}))
+
+    args = SimpleNamespace(from_id="src", into_id="dest", dry_run=False, force=True)
+    assert _cmd_projects_merge(args) == 0
+    reg = json.loads(tree["registry_file"].read_text())
+    assert "src" not in reg
+    assert "dest" in reg
+    assert not (tree["projects_dir"] / "src").exists()
+    moved = list((tree["projects_dir"] / "dest" / "instincts" / "personal").glob("*.yaml"))
+    assert len(moved) >= 1
+
+
+# ── cmd_prune ────────────────────────────────
+
+def _pending_item(path, age_days):
+    return {
+        "path": path,
+        "created": None,
+        "age_days": age_days,
+        "name": path.stem,
+        "parent_dir": str(path.parent),
+    }
+
+
+def test_cmd_prune_dry_run_keeps_files(monkeypatch, tmp_path, capsys):
+    f_old = tmp_path / "old.yaml"
+    f_old.write_text("x", encoding="utf-8")
+    f_new = tmp_path / "new.yaml"
+    f_new.write_text("y", encoding="utf-8")
+    items = [_pending_item(f_old, 40), _pending_item(f_new, 5)]
+    monkeypatch.setattr(_mod, "_collect_pending_instincts", lambda: items)
+
+    args = SimpleNamespace(max_age=30, dry_run=True, quiet=False)
+    assert cmd_prune(args) == 0
+    assert "[DRY RUN]" in capsys.readouterr().out
+    assert f_old.exists()
+    assert f_new.exists()
+
+
+def test_cmd_prune_deletes_only_expired(monkeypatch, tmp_path, capsys):
+    f_old = tmp_path / "old.yaml"
+    f_old.write_text("x", encoding="utf-8")
+    f_new = tmp_path / "new.yaml"
+    f_new.write_text("y", encoding="utf-8")
+    items = [_pending_item(f_old, 40), _pending_item(f_new, 5)]
+    monkeypatch.setattr(_mod, "_collect_pending_instincts", lambda: items)
+
+    args = SimpleNamespace(max_age=30, dry_run=False, quiet=False)
+    assert cmd_prune(args) == 0
+    assert not f_old.exists()
+    assert f_new.exists()
+    assert "Pruned 1" in capsys.readouterr().out
+
+
+def test_cmd_prune_quiet_suppresses_output(monkeypatch, tmp_path, capsys):
+    f_old = tmp_path / "old.yaml"
+    f_old.write_text("x", encoding="utf-8")
+    items = [_pending_item(f_old, 99)]
+    monkeypatch.setattr(_mod, "_collect_pending_instincts", lambda: items)
+
+    args = SimpleNamespace(max_age=30, dry_run=False, quiet=True)
+    assert cmd_prune(args) == 0
+    assert not f_old.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_cmd_prune_empty_pending_nothing_to_do(monkeypatch, capsys):
+    # Nothing pending at all: the non-dry-run, non-quiet branch must report
+    # "nothing to do" (not "[DRY RUN]"), return 0, and not crash.
+    monkeypatch.setattr(_mod, "_collect_pending_instincts", lambda: [])
+
+    args = SimpleNamespace(max_age=30, dry_run=False, quiet=False)
+    assert cmd_prune(args) == 0
+    out = capsys.readouterr().out
+    assert "No pending instincts older than 30 days." in out
+    assert "[DRY RUN]" not in out

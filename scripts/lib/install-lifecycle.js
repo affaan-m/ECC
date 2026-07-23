@@ -1,16 +1,16 @@
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 
 const { resolveInstallPlan, loadInstallManifests } = require('./install-manifests');
 const { readInstallState, writeInstallState } = require('./install-state');
-const {
-  createManifestInstallPlan,
-} = require('./install-executor');
-const {
-  getInstallTargetAdapter,
-  listInstallTargetAdapters,
-} = require('./install-targets/registry');
+const { assertWithinTrustedRoot } = require('./path-safety');
+const { createManifestInstallPlan } = require('./install-executor');
+const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
+const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
+const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
+const OPENCODE_PLUGIN_NOT_BUILT_CODE = 'opencode-plugin-not-built';
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
 
@@ -50,10 +50,33 @@ function compareStringArrays(left, right) {
   return leftValues.every((value, index) => value === rightValues[index]);
 }
 
+function hasOpencodeBuildError(issues) {
+  return Array.isArray(issues) && issues.some(issue => issue.code === OPENCODE_PLUGIN_NOT_BUILT_CODE);
+}
+
+function getOpencodeBuildValidationIssues(context) {
+  return getInstallTargetAdapter('opencode').validate({
+    homeDir: context.homeDir,
+    repoRoot: context.repoRoot,
+  });
+}
+
+function buildOpencodePayload(repoRoot, buildRunner = execFileSync) {
+  buildRunner(process.execPath, [path.join(repoRoot, OPENCODE_BUILD_SCRIPT)], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function formatBuildErrorMessage(error) {
+  const stderr = typeof error.stderr === 'string' ? error.stderr.trim() : '';
+  const stdout = typeof error.stdout === 'string' ? error.stdout.trim() : '';
+  return stderr || stdout || error.message || 'Failed to build OpenCode payload';
+}
+
 function getManagedOperations(state) {
-  return Array.isArray(state && state.operations)
-    ? state.operations.filter(operation => operation.ownership === 'managed')
-    : [];
+  return Array.isArray(state && state.operations) ? state.operations.filter(operation => operation.ownership === 'managed') : [];
 }
 
 function resolveOperationSourcePath(repoRoot, operation) {
@@ -115,13 +138,7 @@ function parseJsonLikeValue(value, label) {
 }
 
 function getOperationTextContent(operation) {
-  const candidateKeys = [
-    'renderedContent',
-    'content',
-    'managedContent',
-    'expectedContent',
-    'templateOutput',
-  ];
+  const candidateKeys = ['renderedContent', 'content', 'managedContent', 'expectedContent', 'templateOutput'];
 
   for (const key of candidateKeys) {
     if (typeof operation[key] === 'string') {
@@ -133,13 +150,7 @@ function getOperationTextContent(operation) {
 }
 
 function getOperationJsonPayload(operation) {
-  const candidateKeys = [
-    'mergePayload',
-    'managedPayload',
-    'payload',
-    'value',
-    'expectedValue',
-  ];
+  const candidateKeys = ['mergePayload', 'managedPayload', 'payload', 'value', 'expectedValue'];
 
   for (const key of candidateKeys) {
     if (operation[key] !== undefined) {
@@ -151,11 +162,7 @@ function getOperationJsonPayload(operation) {
 }
 
 function getOperationPreviousContent(operation) {
-  const candidateKeys = [
-    'previousContent',
-    'originalContent',
-    'backupContent',
-  ];
+  const candidateKeys = ['previousContent', 'originalContent', 'backupContent'];
 
   for (const key of candidateKeys) {
     if (typeof operation[key] === 'string') {
@@ -167,11 +174,7 @@ function getOperationPreviousContent(operation) {
 }
 
 function getOperationPreviousJson(operation) {
-  const candidateKeys = [
-    'previousValue',
-    'previousJson',
-    'originalValue',
-  ];
+  const candidateKeys = ['previousValue', 'previousJson', 'originalValue'];
 
   for (const key of candidateKeys) {
     if (operation[key] !== undefined) {
@@ -216,10 +219,7 @@ function jsonContainsSubset(actualValue, expectedValue) {
       return false;
     }
 
-    return Object.entries(expectedValue).every(([key, value]) => (
-      Object.prototype.hasOwnProperty.call(actualValue, key)
-      && jsonContainsSubset(actualValue[key], value)
-    ));
+    return Object.entries(expectedValue).every(([key, value]) => Object.prototype.hasOwnProperty.call(actualValue, key) && jsonContainsSubset(actualValue[key], value));
   }
 
   if (Array.isArray(expectedValue)) {
@@ -287,7 +287,7 @@ function hydrateRecordedOperations(repoRoot, operations) {
 
     return {
       ...operation,
-      sourcePath: resolveOperationSourcePath(repoRoot, operation),
+      sourcePath: resolveOperationSourcePath(repoRoot, operation)
     };
   });
 }
@@ -299,9 +299,9 @@ function buildRecordedStatePreview(state, context, operations) {
     source: {
       ...state.source,
       repoVersion: context.packageVersion,
-      manifestVersion: context.manifestVersion,
+      manifestVersion: context.manifestVersion
     },
-    lastValidatedAt: new Date().toISOString(),
+    lastValidatedAt: new Date().toISOString()
   };
 }
 
@@ -309,7 +309,12 @@ function shouldRepairFromRecordedOperations(state) {
   return getManagedOperations(state).some(operation => operation.kind !== 'copy-file');
 }
 
-function executeRepairOperation(repoRoot, operation) {
+function executeRepairOperation(repoRoot, operation, trustedRoot) {
+  // Install-state is attacker-controllable; never write/delete outside the
+  // adapter-derived trusted root, regardless of what the state file claims
+  // (GHSA-hfpv-w6mp-5g95).
+  assertWithinTrustedRoot(operation.destinationPath, trustedRoot, 'repair');
+
   if (operation.kind === 'copy-file') {
     const sourcePath = resolveOperationSourcePath(repoRoot, operation);
     if (!sourcePath || !fs.existsSync(sourcePath)) {
@@ -338,9 +343,7 @@ function executeRepairOperation(repoRoot, operation) {
       throw new Error(`Missing merge payload for repair: ${operation.destinationPath}`);
     }
 
-    const currentValue = fs.existsSync(operation.destinationPath)
-      ? readJsonFile(operation.destinationPath)
-      : {};
+    const currentValue = fs.existsSync(operation.destinationPath) ? readJsonFile(operation.destinationPath) : {};
     const mergedValue = deepMergeJson(currentValue, payload);
 
     ensureParentDir(operation.destinationPath);
@@ -360,19 +363,22 @@ function executeRepairOperation(repoRoot, operation) {
   throw new Error(`Unsupported repair operation kind: ${operation.kind}`);
 }
 
-function executeUninstallOperation(operation) {
+function executeUninstallOperation(operation, trustedRoot) {
+  // Confine deletes to the trusted install root (GHSA-hfpv-w6mp-5g95).
+  assertWithinTrustedRoot(operation.destinationPath, trustedRoot, 'uninstall');
+
   if (operation.kind === 'copy-file') {
     if (!fs.existsSync(operation.destinationPath)) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     fs.rmSync(operation.destinationPath, { force: true });
     return {
       removedPaths: [operation.destinationPath],
-      cleanupTargets: [operation.destinationPath],
+      cleanupTargets: [operation.destinationPath]
     };
   }
 
@@ -383,7 +389,7 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, previousContent);
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
@@ -393,21 +399,21 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     if (!fs.existsSync(operation.destinationPath)) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     fs.rmSync(operation.destinationPath, { force: true });
     return {
       removedPaths: [operation.destinationPath],
-      cleanupTargets: [operation.destinationPath],
+      cleanupTargets: [operation.destinationPath]
     };
   }
 
@@ -418,7 +424,7 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, previousContent);
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
@@ -428,14 +434,14 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     if (!fs.existsSync(operation.destinationPath)) {
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
@@ -450,7 +456,7 @@ function executeUninstallOperation(operation) {
       fs.rmSync(operation.destinationPath, { force: true });
       return {
         removedPaths: [operation.destinationPath],
-        cleanupTargets: [operation.destinationPath],
+        cleanupTargets: [operation.destinationPath]
       };
     }
 
@@ -458,7 +464,7 @@ function executeUninstallOperation(operation) {
     fs.writeFileSync(operation.destinationPath, formatJson(nextValue));
     return {
       removedPaths: [],
-      cleanupTargets: [],
+      cleanupTargets: []
     };
   }
 
@@ -469,7 +475,7 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, previousContent);
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
@@ -479,13 +485,13 @@ function executeUninstallOperation(operation) {
       fs.writeFileSync(operation.destinationPath, formatJson(previousJson));
       return {
         removedPaths: [],
-        cleanupTargets: [],
+        cleanupTargets: []
       };
     }
 
     return {
       removedPaths: [],
-      cleanupTargets: [],
+      cleanupTargets: []
     };
   }
 
@@ -497,7 +503,7 @@ function inspectManagedOperation(repoRoot, operation) {
   if (!destinationPath) {
     return {
       status: 'invalid-destination',
-      operation,
+      operation
     };
   }
 
@@ -506,14 +512,14 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
@@ -521,7 +527,7 @@ function inspectManagedOperation(repoRoot, operation) {
     return {
       status: 'missing',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
@@ -532,7 +538,7 @@ function inspectManagedOperation(repoRoot, operation) {
         status: 'missing-source',
         operation,
         destinationPath,
-        sourcePath,
+        sourcePath
       };
     }
 
@@ -541,7 +547,7 @@ function inspectManagedOperation(repoRoot, operation) {
         status: 'drifted',
         operation,
         destinationPath,
-        sourcePath,
+        sourcePath
       };
     }
 
@@ -549,7 +555,7 @@ function inspectManagedOperation(repoRoot, operation) {
       status: 'ok',
       operation,
       destinationPath,
-      sourcePath,
+      sourcePath
     };
   }
 
@@ -559,7 +565,7 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'unverified',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
@@ -567,14 +573,14 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
@@ -584,7 +590,7 @@ function inspectManagedOperation(repoRoot, operation) {
       return {
         status: 'unverified',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
@@ -594,57 +600,60 @@ function inspectManagedOperation(repoRoot, operation) {
         return {
           status: 'drifted',
           operation,
-          destinationPath,
+          destinationPath
         };
       }
     } catch (_error) {
       return {
         status: 'drifted',
         operation,
-        destinationPath,
+        destinationPath
       };
     }
 
     return {
       status: 'ok',
       operation,
-      destinationPath,
+      destinationPath
     };
   }
 
   return {
     status: 'unverified',
     operation,
-    destinationPath,
+    destinationPath
   };
 }
 
 function summarizeManagedOperationHealth(repoRoot, operations) {
-  return operations.reduce((summary, operation) => {
-    const inspection = inspectManagedOperation(repoRoot, operation);
-    if (inspection.status === 'missing') {
-      summary.missing.push(inspection);
-    } else if (inspection.status === 'drifted') {
-      summary.drifted.push(inspection);
-    } else if (inspection.status === 'missing-source') {
-      summary.missingSource.push(inspection);
-    } else if (inspection.status === 'unverified' || inspection.status === 'invalid-destination') {
-      summary.unverified.push(inspection);
+  return operations.reduce(
+    (summary, operation) => {
+      const inspection = inspectManagedOperation(repoRoot, operation);
+      if (inspection.status === 'missing') {
+        summary.missing.push(inspection);
+      } else if (inspection.status === 'drifted') {
+        summary.drifted.push(inspection);
+      } else if (inspection.status === 'missing-source') {
+        summary.missingSource.push(inspection);
+      } else if (inspection.status === 'unverified' || inspection.status === 'invalid-destination') {
+        summary.unverified.push(inspection);
+      }
+      return summary;
+    },
+    {
+      missing: [],
+      drifted: [],
+      missingSource: [],
+      unverified: []
     }
-    return summary;
-  }, {
-    missing: [],
-    drifted: [],
-    missingSource: [],
-    unverified: [],
-  });
+  );
 }
 
 function buildDiscoveryRecord(adapter, context) {
   const installTargetInput = {
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
-    repoRoot: context.projectRoot,
+    repoRoot: context.projectRoot
   };
   const targetRoot = adapter.resolveRoot(installTargetInput);
   const installStatePath = adapter.getInstallStatePath(installTargetInput);
@@ -655,13 +664,13 @@ function buildDiscoveryRecord(adapter, context) {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: false,
       state: null,
-      error: null,
+      error: null
     };
   }
 
@@ -671,26 +680,26 @@ function buildDiscoveryRecord(adapter, context) {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: true,
       state,
-      error: null,
+      error: null
     };
   } catch (error) {
     return {
       adapter: {
         id: adapter.id,
         target: adapter.target,
-        kind: adapter.kind,
+        kind: adapter.kind
       },
       targetRoot,
       installStatePath,
       exists: true,
       state: null,
-      error: error.message,
+      error: error.message
     };
   }
 }
@@ -698,7 +707,7 @@ function buildDiscoveryRecord(adapter, context) {
 function discoverInstalledStates(options = {}) {
   const context = {
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
-    projectRoot: options.projectRoot || process.cwd(),
+    projectRoot: options.projectRoot || process.cwd()
   };
   const targets = normalizeTargets(options.targets);
 
@@ -713,7 +722,7 @@ function buildIssue(severity, code, message, extra = {}) {
     severity,
     code,
     message,
-    ...extra,
+    ...extra
   };
 }
 
@@ -737,7 +746,7 @@ function analyzeRecord(record, context) {
     return {
       ...record,
       status: determineStatus(issues),
-      issues,
+      issues
     };
   }
 
@@ -746,40 +755,30 @@ function analyzeRecord(record, context) {
     return {
       ...record,
       status: 'missing',
-      issues,
+      issues
     };
   }
 
   if (!fs.existsSync(state.target.root)) {
-    issues.push(buildIssue(
-      'error',
-      'missing-target-root',
-      `Target root does not exist: ${state.target.root}`
-    ));
+    issues.push(buildIssue('error', 'missing-target-root', `Target root does not exist: ${state.target.root}`));
   }
 
   if (state.target.root !== record.targetRoot) {
-    issues.push(buildIssue(
-      'warning',
-      'target-root-mismatch',
-      `Recorded target root differs from current target root (${record.targetRoot})`,
-      {
+    issues.push(
+      buildIssue('warning', 'target-root-mismatch', `Recorded target root differs from current target root (${record.targetRoot})`, {
         recordedTargetRoot: state.target.root,
-        currentTargetRoot: record.targetRoot,
-      }
-    ));
+        currentTargetRoot: record.targetRoot
+      })
+    );
   }
 
   if (state.target.installStatePath !== record.installStatePath) {
-    issues.push(buildIssue(
-      'warning',
-      'install-state-path-mismatch',
-      `Recorded install-state path differs from current path (${record.installStatePath})`,
-      {
+    issues.push(
+      buildIssue('warning', 'install-state-path-mismatch', `Recorded install-state path differs from current path (${record.installStatePath})`, {
         recordedInstallStatePath: state.target.installStatePath,
-        currentInstallStatePath: record.installStatePath,
-      }
-    ));
+        currentInstallStatePath: record.installStatePath
+      })
+    );
   }
 
   const managedOperations = getManagedOperations(state);
@@ -787,67 +786,43 @@ function analyzeRecord(record, context) {
   const missingManagedOperations = operationHealth.missing;
 
   if (missingManagedOperations.length > 0) {
-    issues.push(buildIssue(
-      'error',
-      'missing-managed-files',
-      `${missingManagedOperations.length} managed file(s) are missing`,
-      {
-        paths: missingManagedOperations.map(entry => entry.destinationPath),
-      }
-    ));
+    issues.push(
+      buildIssue('error', 'missing-managed-files', `${missingManagedOperations.length} managed file(s) are missing`, {
+        paths: missingManagedOperations.map(entry => entry.destinationPath)
+      })
+    );
   }
 
   if (operationHealth.drifted.length > 0) {
-    issues.push(buildIssue(
-      'warning',
-      'drifted-managed-files',
-      `${operationHealth.drifted.length} managed file(s) differ from the source repo`,
-      {
-        paths: operationHealth.drifted.map(entry => entry.destinationPath),
-      }
-    ));
+    issues.push(
+      buildIssue('warning', 'drifted-managed-files', `${operationHealth.drifted.length} managed file(s) differ from the source repo`, {
+        paths: operationHealth.drifted.map(entry => entry.destinationPath)
+      })
+    );
   }
 
   if (operationHealth.missingSource.length > 0) {
-    issues.push(buildIssue(
-      'error',
-      'missing-source-files',
-      `${operationHealth.missingSource.length} source file(s) referenced by install-state are missing`,
-      {
-        paths: operationHealth.missingSource.map(entry => entry.sourcePath).filter(Boolean),
-      }
-    ));
+    issues.push(
+      buildIssue('error', 'missing-source-files', `${operationHealth.missingSource.length} source file(s) referenced by install-state are missing`, {
+        paths: operationHealth.missingSource.map(entry => entry.sourcePath).filter(Boolean)
+      })
+    );
   }
 
   if (operationHealth.unverified.length > 0) {
-    issues.push(buildIssue(
-      'warning',
-      'unverified-managed-operations',
-      `${operationHealth.unverified.length} managed operation(s) could not be content-verified`,
-      {
-        paths: operationHealth.unverified.map(entry => entry.destinationPath).filter(Boolean),
-      }
-    ));
+    issues.push(
+      buildIssue('warning', 'unverified-managed-operations', `${operationHealth.unverified.length} managed operation(s) could not be content-verified`, {
+        paths: operationHealth.unverified.map(entry => entry.destinationPath).filter(Boolean)
+      })
+    );
   }
 
   if (state.source.manifestVersion !== context.manifestVersion) {
-    issues.push(buildIssue(
-      'warning',
-      'manifest-version-mismatch',
-      `Recorded manifest version ${state.source.manifestVersion} differs from current manifest version ${context.manifestVersion}`
-    ));
+    issues.push(buildIssue('warning', 'manifest-version-mismatch', `Recorded manifest version ${state.source.manifestVersion} differs from current manifest version ${context.manifestVersion}`));
   }
 
-  if (
-    context.packageVersion
-    && state.source.repoVersion
-    && state.source.repoVersion !== context.packageVersion
-  ) {
-    issues.push(buildIssue(
-      'warning',
-      'repo-version-mismatch',
-      `Recorded repo version ${state.source.repoVersion} differs from current repo version ${context.packageVersion}`
-    ));
+  if (context.packageVersion && state.source.repoVersion && state.source.repoVersion !== context.packageVersion) {
+    issues.push(buildIssue('warning', 'repo-version-mismatch', `Recorded repo version ${state.source.repoVersion} differs from current repo version ${context.packageVersion}`));
   }
 
   if (!state.request.legacyMode) {
@@ -860,38 +835,28 @@ function analyzeRecord(record, context) {
         profileId: state.request.profile || null,
         moduleIds: state.request.modules || [],
         includeComponentIds: state.request.includeComponents || [],
-        excludeComponentIds: state.request.excludeComponents || [],
+        excludeComponentIds: state.request.excludeComponents || []
       });
 
-      if (
-        !compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules)
-        || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)
-      ) {
-        issues.push(buildIssue(
-          'warning',
-          'resolution-drift',
-          'Current manifest resolution differs from recorded install-state',
-          {
+      if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
+        issues.push(
+          buildIssue('warning', 'resolution-drift', 'Current manifest resolution differs from recorded install-state', {
             expectedSelectedModules: desiredPlan.selectedModuleIds,
             recordedSelectedModules: state.resolution.selectedModules,
             expectedSkippedModules: desiredPlan.skippedModuleIds,
-            recordedSkippedModules: state.resolution.skippedModules,
-          }
-        ));
+            recordedSkippedModules: state.resolution.skippedModules
+          })
+        );
       }
     } catch (error) {
-      issues.push(buildIssue(
-        'error',
-        'resolution-unavailable',
-        error.message
-      ));
+      issues.push(buildIssue('error', 'resolution-unavailable', error.message));
     }
   }
 
   return {
     ...record,
     status: determineStatus(issues),
-    issues,
+    issues
   };
 }
 
@@ -901,43 +866,46 @@ function buildDoctorReport(options = {}) {
   const records = discoverInstalledStates({
     homeDir: options.homeDir,
     projectRoot: options.projectRoot,
-    targets: options.targets,
+    targets: options.targets
   }).filter(record => record.exists);
   const context = {
     repoRoot,
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
     projectRoot: options.projectRoot || process.cwd(),
     manifestVersion: manifests.modulesVersion,
-    packageVersion: readPackageVersion(repoRoot),
+    packageVersion: readPackageVersion(repoRoot)
   };
   const results = records.map(record => analyzeRecord(record, context));
-  const summary = results.reduce((accumulator, result) => {
-    const errorCount = result.issues.filter(issue => issue.severity === 'error').length;
-    const warningCount = result.issues.filter(issue => issue.severity === 'warning').length;
+  const summary = results.reduce(
+    (accumulator, result) => {
+      const errorCount = result.issues.filter(issue => issue.severity === 'error').length;
+      const warningCount = result.issues.filter(issue => issue.severity === 'warning').length;
 
-    return {
-      checkedCount: accumulator.checkedCount + 1,
-      okCount: accumulator.okCount + (result.status === 'ok' ? 1 : 0),
-      errorCount: accumulator.errorCount + errorCount,
-      warningCount: accumulator.warningCount + warningCount,
-    };
-  }, {
-    checkedCount: 0,
-    okCount: 0,
-    errorCount: 0,
-    warningCount: 0,
-  });
+      return {
+        checkedCount: accumulator.checkedCount + 1,
+        okCount: accumulator.okCount + (result.status === 'ok' ? 1 : 0),
+        errorCount: accumulator.errorCount + errorCount,
+        warningCount: accumulator.warningCount + warningCount
+      };
+    },
+    {
+      checkedCount: 0,
+      okCount: 0,
+      errorCount: 0,
+      warningCount: 0
+    }
+  );
 
   return {
     generatedAt: new Date().toISOString(),
     packageVersion: context.packageVersion,
     manifestVersion: context.manifestVersion,
     results,
-    summary,
+    summary
   };
 }
 
-function createRepairPlanFromRecord(record, context) {
+function createRepairPlanFromRecord(record, context, options = {}) {
   const state = record.state;
   if (!state) {
     throw new Error('No install-state available for repair');
@@ -955,11 +923,9 @@ function createRepairPlanFromRecord(record, context) {
       installRoot: state.target.root,
       installStatePath: state.target.installStatePath,
       warnings: [],
-      languages: Array.isArray(state.request.legacyLanguages)
-        ? [...state.request.legacyLanguages]
-        : [],
+      languages: Array.isArray(state.request.legacyLanguages) ? [...state.request.legacyLanguages] : [],
       operations,
-      statePreview,
+      statePreview
     };
   }
 
@@ -972,6 +938,7 @@ function createRepairPlanFromRecord(record, context) {
     excludeComponentIds: state.request.excludeComponents || [],
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
+    exemptValidationCodes: options.exemptValidationCodes || [],
   });
 
   return {
@@ -979,8 +946,8 @@ function createRepairPlanFromRecord(record, context) {
     statePreview: {
       ...desiredPlan.statePreview,
       installedAt: state.installedAt,
-      lastValidatedAt: new Date().toISOString(),
-    },
+      lastValidatedAt: new Date().toISOString()
+    }
   };
 }
 
@@ -992,12 +959,15 @@ function repairInstalledStates(options = {}) {
     homeDir: options.homeDir || process.env.HOME || os.homedir(),
     projectRoot: options.projectRoot || process.cwd(),
     manifestVersion: manifests.modulesVersion,
-    packageVersion: readPackageVersion(repoRoot),
+    packageVersion: readPackageVersion(repoRoot)
   };
+  const buildOpencodeRunner = typeof options.buildOpencodePayload === 'function'
+    ? options.buildOpencodePayload
+    : buildOpencodePayload;
   const records = discoverInstalledStates({
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
-    targets: options.targets,
+    targets: options.targets
   }).filter(record => record.exists);
 
   const results = records.map(record => {
@@ -1008,11 +978,49 @@ function repairInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         repairedPaths: [],
         plannedRepairs: [],
-        error: record.error,
+        error: record.error
       };
     }
 
     try {
+      const needsOpencodeBuild = record.adapter.target === 'opencode'
+        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
+      const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
+
+      if (needsOpencodeBuild && options.dryRun) {
+        const desiredPlan = createRepairPlanFromRecord(record, context, {
+          exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
+        });
+        const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
+        const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
+        const plannedRepairs = [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)];
+
+        return {
+          adapter: record.adapter,
+          status: 'planned',
+          installStatePath: record.installStatePath,
+          repairedPaths: [],
+          plannedRepairs,
+          stateRefreshed: false,
+          error: null
+        };
+      }
+
+      if (needsOpencodeBuild) {
+        try {
+          buildOpencodeRunner(context.repoRoot);
+        } catch (error) {
+          return {
+            adapter: record.adapter,
+            status: 'error',
+            installStatePath: record.installStatePath,
+            repairedPaths: [],
+            plannedRepairs: [],
+            error: formatBuildErrorMessage(error)
+          };
+        }
+      }
+
       const desiredPlan = createRepairPlanFromRecord(record, context);
       const operationHealth = summarizeManagedOperationHealth(context.repoRoot, desiredPlan.operations);
 
@@ -1023,15 +1031,14 @@ function repairInstalledStates(options = {}) {
           installStatePath: record.installStatePath,
           repairedPaths: [],
           plannedRepairs: [],
-          error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`,
+          error: `Missing source file(s): ${operationHealth.missingSource.map(entry => entry.sourcePath).join(', ')}`
         };
       }
 
-      const repairOperations = [
-        ...operationHealth.missing.map(entry => ({ ...entry.operation })),
-        ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
-      ];
-      const plannedRepairs = repairOperations.map(operation => operation.destinationPath);
+      const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
+      const plannedRepairs = needsOpencodeBuild
+        ? [opencodeBuildRepairPath, ...repairOperations.map(operation => operation.destinationPath)]
+        : repairOperations.map(operation => operation.destinationPath);
 
       if (options.dryRun) {
         return {
@@ -1041,13 +1048,13 @@ function repairInstalledStates(options = {}) {
           repairedPaths: [],
           plannedRepairs,
           stateRefreshed: plannedRepairs.length === 0,
-          error: null,
+          error: null
         };
       }
 
       if (repairOperations.length > 0) {
         for (const operation of repairOperations) {
-          executeRepairOperation(context.repoRoot, operation);
+          executeRepairOperation(context.repoRoot, operation, record.targetRoot);
         }
         writeInstallState(desiredPlan.installStatePath, desiredPlan.statePreview);
       } else {
@@ -1056,12 +1063,12 @@ function repairInstalledStates(options = {}) {
 
       return {
         adapter: record.adapter,
-        status: repairOperations.length > 0 ? 'repaired' : 'ok',
+        status: (repairOperations.length > 0 || needsOpencodeBuild) ? 'repaired' : 'ok',
         installStatePath: record.installStatePath,
         repairedPaths: plannedRepairs,
         plannedRepairs: [],
         stateRefreshed: true,
-        error: null,
+        error: null
       };
     } catch (error) {
       return {
@@ -1070,28 +1077,31 @@ function repairInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         repairedPaths: [],
         plannedRepairs: [],
-        error: error.message,
+        error: error.message
       };
     }
   });
 
-  const summary = results.reduce((accumulator, result) => ({
-    checkedCount: accumulator.checkedCount + 1,
-    repairedCount: accumulator.repairedCount + (result.status === 'repaired' ? 1 : 0),
-    plannedRepairCount: accumulator.plannedRepairCount + (result.status === 'planned' ? 1 : 0),
-    errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0),
-  }), {
-    checkedCount: 0,
-    repairedCount: 0,
-    plannedRepairCount: 0,
-    errorCount: 0,
-  });
+  const summary = results.reduce(
+    (accumulator, result) => ({
+      checkedCount: accumulator.checkedCount + 1,
+      repairedCount: accumulator.repairedCount + (result.status === 'repaired' ? 1 : 0),
+      plannedRepairCount: accumulator.plannedRepairCount + (result.status === 'planned' ? 1 : 0),
+      errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0)
+    }),
+    {
+      checkedCount: 0,
+      repairedCount: 0,
+      plannedRepairCount: 0,
+      errorCount: 0
+    }
+  );
 
   return {
     dryRun: Boolean(options.dryRun),
     generatedAt: new Date().toISOString(),
     results,
-    summary,
+    summary
   };
 }
 
@@ -1099,11 +1109,7 @@ function cleanupEmptyParentDirs(filePath, stopAt) {
   let currentPath = path.dirname(filePath);
   const normalizedStopAt = path.resolve(stopAt);
 
-  while (
-    currentPath
-    && path.resolve(currentPath).startsWith(normalizedStopAt)
-    && path.resolve(currentPath) !== normalizedStopAt
-  ) {
+  while (currentPath && path.resolve(currentPath).startsWith(normalizedStopAt) && path.resolve(currentPath) !== normalizedStopAt) {
     if (!fs.existsSync(currentPath)) {
       currentPath = path.dirname(currentPath);
       continue;
@@ -1123,7 +1129,7 @@ function uninstallInstalledStates(options = {}) {
   const records = discoverInstalledStates({
     homeDir: options.homeDir,
     projectRoot: options.projectRoot,
-    targets: options.targets,
+    targets: options.targets
   }).filter(record => record.exists);
 
   const results = records.map(record => {
@@ -1134,15 +1140,12 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals: [],
-        error: record.error || 'No valid install-state available',
+        error: record.error || 'No valid install-state available'
       };
     }
 
     const state = record.state;
-    const plannedRemovals = Array.from(new Set([
-      ...getManagedOperations(state).map(operation => operation.destinationPath),
-      state.target.installStatePath,
-    ]));
+    const plannedRemovals = Array.from(new Set([...getManagedOperations(state).map(operation => operation.destinationPath), state.target.installStatePath]));
 
     if (options.dryRun) {
       return {
@@ -1151,7 +1154,7 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals,
-        error: null,
+        error: null
       };
     }
 
@@ -1161,12 +1164,13 @@ function uninstallInstalledStates(options = {}) {
       const operations = getManagedOperations(state);
 
       for (const operation of operations) {
-        const outcome = executeUninstallOperation(operation);
+        const outcome = executeUninstallOperation(operation, record.targetRoot);
         removedPaths.push(...outcome.removedPaths);
         cleanupTargets.push(...outcome.cleanupTargets);
       }
 
       if (fs.existsSync(state.target.installStatePath)) {
+        assertWithinTrustedRoot(state.target.installStatePath, record.targetRoot, 'uninstall');
         fs.rmSync(state.target.installStatePath, { force: true });
         removedPaths.push(state.target.installStatePath);
         cleanupTargets.push(state.target.installStatePath);
@@ -1182,7 +1186,7 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths,
         plannedRemovals: [],
-        error: null,
+        error: null
       };
     } catch (error) {
       return {
@@ -1191,28 +1195,31 @@ function uninstallInstalledStates(options = {}) {
         installStatePath: record.installStatePath,
         removedPaths: [],
         plannedRemovals,
-        error: error.message,
+        error: error.message
       };
     }
   });
 
-  const summary = results.reduce((accumulator, result) => ({
-    checkedCount: accumulator.checkedCount + 1,
-    uninstalledCount: accumulator.uninstalledCount + (result.status === 'uninstalled' ? 1 : 0),
-    plannedRemovalCount: accumulator.plannedRemovalCount + (result.status === 'planned' ? 1 : 0),
-    errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0),
-  }), {
-    checkedCount: 0,
-    uninstalledCount: 0,
-    plannedRemovalCount: 0,
-    errorCount: 0,
-  });
+  const summary = results.reduce(
+    (accumulator, result) => ({
+      checkedCount: accumulator.checkedCount + 1,
+      uninstalledCount: accumulator.uninstalledCount + (result.status === 'uninstalled' ? 1 : 0),
+      plannedRemovalCount: accumulator.plannedRemovalCount + (result.status === 'planned' ? 1 : 0),
+      errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0)
+    }),
+    {
+      checkedCount: 0,
+      uninstalledCount: 0,
+      plannedRemovalCount: 0,
+      errorCount: 0
+    }
+  );
 
   return {
     dryRun: Boolean(options.dryRun),
     generatedAt: new Date().toISOString(),
     results,
-    summary,
+    summary
   };
 }
 
@@ -1222,5 +1229,5 @@ module.exports = {
   discoverInstalledStates,
   normalizeTargets,
   repairInstalledStates,
-  uninstallInstalledStates,
+  uninstallInstalledStates
 };
