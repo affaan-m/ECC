@@ -2482,50 +2482,20 @@ textarea {
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(180, 130, 0, 0.35);
 }
-.home-bubbles {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.home-bubble {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-}
 .home-bubble-rings {
   display: flex;
   gap: 14px;
 }
-.home-bubble-label {
-  font-weight: 700;
-  color: var(--text);
-  margin-left: auto;
-}
-.home-bubble--stat {
-  gap: 12px;
-}
-.home-bubble-icon {
-  font-size: 22px;
-  line-height: 1;
-}
-.home-bubble-stat {
-  font-weight: 800;
-  font-size: 17px;
-  color: var(--text);
-}
-.home-bubble-textblock {
+.home-block-goals {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   text-align: left;
+  cursor: pointer;
+}
+.home-block-goals .detail-label {
+  margin: 0;
 }
 .mini-ring-wrap {
   display: flex;
@@ -3124,22 +3094,26 @@ textarea {
   font-size: 19px;
   margin: 0;
 }
-.pinned-notes {
+.contact-notes {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
 }
-.pinned-note {
+.contact-note {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   text-align: left;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
   cursor: pointer;
+}
+.contact-note--pinned {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 .pinned-note-pin {
   flex: none;
@@ -3165,6 +3139,19 @@ textarea {
   display: flex;
   flex-direction: column;
   padding-bottom: 24px;
+}
+/* Hints that there are more future events above than currently visible —
+   docked just below the sticky header (see the ref-measured `top` inline
+   style) since the whole page scrolls as one unit rather than the timeline
+   having its own scroll container. */
+.timeline-fade-top {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 36px;
+  background: linear-gradient(var(--bg), transparent);
+  pointer-events: none;
+  z-index: 8;
 }
 .timeline-today-marker {
   display: flex;

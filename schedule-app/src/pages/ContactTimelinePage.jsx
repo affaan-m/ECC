@@ -19,6 +19,8 @@ export default function ContactTimelinePage() {
   const scrollRef = useRef(null);
   const anchorRef = useRef(null);
   const didLandRef = useRef(false);
+  const headerRef = useRef(null);
+  const [fadeTop, setFadeTop] = useState(56);
 
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [editingInteraction, setEditingInteraction] = useState(null);
@@ -28,10 +30,11 @@ export default function ContactTimelinePage() {
   const today = todayISO();
 
   // Combined chronological feed: calendar events linked to this person
-  // (past and future), logged interactions, and unpinned notes about them.
-  // Sorted newest/future-first so the DOM reads future (top) -> today ->
-  // past (bottom): scrolling down moves toward the past, scrolling up moves
-  // toward the future, matching the "start on today" anchor below.
+  // (past and future), and logged interactions. Notes live in their own bar
+  // above the timeline instead (see contactNotes) rather than being mixed
+  // in by date. Sorted newest/future-first so the DOM reads future (top) ->
+  // today -> past (bottom): scrolling down moves toward the past, scrolling
+  // up moves toward the future, matching the "start on today" anchor below.
   const entries = useMemo(() => {
     if (!contact) return [];
     const out = [];
@@ -50,20 +53,45 @@ export default function ContactTimelinePage() {
         out.push({ type: 'interaction', date: ix.date, key: `ix:${ix.id}`, interaction: ix });
       }
     }
-    for (const n of state.notes || []) {
-      if (n.contactId === contact.id && !n.pinned) {
-        out.push({ type: 'note', date: n.updatedAt || n.createdAt || today, key: `n:${n.id}`, note: n });
-      }
-    }
     out.sort((a, b) => b.date.localeCompare(a.date));
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.events, state.interactions, state.notes, contact?.id]);
+  }, [state.events, state.interactions, contact?.id]);
 
-  const pinnedNotes = useMemo(
-    () => (state.notes || []).filter((n) => n.contactId === contact?.id && n.pinned),
+  // All notes for this contact — pinned first — shown together in their own
+  // bar above the timeline rather than interleaved chronologically with
+  // events and logged contacts.
+  const contactNotes = useMemo(
+    () =>
+      (state.notes || [])
+        .filter((n) => n.contactId === contact?.id)
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned)),
     [state.notes, contact?.id]
   );
+
+  // Future events beyond the first few fade at the top of the timeline
+  // until the user actually scrolls up to reveal them.
+  const futureCount = useMemo(() => entries.filter((e) => e.type === 'event' && e.date > today).length, [entries, today]);
+  const [atTop, setAtTop] = useState(true);
+  useEffect(() => {
+    const onScroll = () => setAtTop(window.scrollY <= 2);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Dock the fade right below the sticky header (whatever height it ends up
+  // being) rather than at the literal top of the viewport, since the header
+  // is itself pinned there and would otherwise sit on top of it.
+  useEffect(() => {
+    const measure = () => {
+      const r = headerRef.current?.getBoundingClientRect();
+      if (r) setFadeTop(r.bottom);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
 
   // Index of the first entry that's today-or-earlier: everything above it in
   // the (descending) list is future, this is the "now" anchor to land on.
@@ -149,7 +177,7 @@ export default function ContactTimelinePage() {
 
   return (
     <div className="page timeline-page">
-      <header className="page-head">
+      <header className="page-head" ref={headerRef}>
         <div className="page-head-row">
           <button className="back-btn" onClick={() => navigate(`/contacts/${id}`)}>
             ‹ {contact.name}
@@ -160,16 +188,22 @@ export default function ContactTimelinePage() {
         </div>
       </header>
 
+      {futureCount > 3 && !atTop && <div className="timeline-fade-top" style={{ top: fadeTop }} />}
+
       <div className="detail-hero detail-hero--compact">
         <Avatar name={contact.name} photo={contact.photo} size="md" />
         <h1>{contact.name}'s timeline</h1>
       </div>
 
-      {pinnedNotes.length > 0 && (
-        <section className="pinned-notes">
-          {pinnedNotes.map((n) => (
-            <button key={n.id} className="pinned-note" onClick={() => setEditingNote({ ...n })}>
-              <span className="pinned-note-pin">📌</span>
+      {contactNotes.length > 0 && (
+        <section className="contact-notes">
+          {contactNotes.map((n) => (
+            <button
+              key={n.id}
+              className={`contact-note${n.pinned ? ' contact-note--pinned' : ''}`}
+              onClick={() => setEditingNote({ ...n })}
+            >
+              {n.pinned && <span className="pinned-note-pin">📌</span>}
               <span className="pinned-note-body">
                 {n.title && <strong>{n.title}</strong>}
                 {n.body && <span className="pinned-note-text">{n.body}</span>}
@@ -196,7 +230,6 @@ export default function ContactTimelinePage() {
               entry={entry}
               onEditInteraction={(ix) => setEditingInteraction({ ...ix })}
               onDeleteInteraction={(ixId) => setConfirmDelete({ kind: 'interaction', id: ixId })}
-              onEditNote={(n) => setEditingNote({ ...n })}
             />
           </div>
         ))}
@@ -365,7 +398,7 @@ export default function ContactTimelinePage() {
   );
 }
 
-function TimelineEntry({ entry, onEditInteraction, onDeleteInteraction, onEditNote }) {
+function TimelineEntry({ entry, onEditInteraction }) {
   if (entry.type === 'event') {
     const { occ } = entry;
     return (
@@ -381,25 +414,13 @@ function TimelineEntry({ entry, onEditInteraction, onDeleteInteraction, onEditNo
       </div>
     );
   }
-  if (entry.type === 'interaction') {
-    const ix = entry.interaction;
-    return (
-      <button className="timeline-item timeline-item--interaction" onClick={() => onEditInteraction(ix)}>
-        <span className="timeline-item-date">{formatShortDate(entry.date)}</span>
-        <span className="timeline-item-body">
-          <strong>🤝 Contact logged</strong>
-          {ix.text && <span className="timeline-item-text">{ix.text}</span>}
-        </span>
-      </button>
-    );
-  }
-  const n = entry.note;
+  const ix = entry.interaction;
   return (
-    <button className="timeline-item timeline-item--note" onClick={() => onEditNote(n)}>
+    <button className="timeline-item timeline-item--interaction" onClick={() => onEditInteraction(ix)}>
       <span className="timeline-item-date">{formatShortDate(entry.date)}</span>
       <span className="timeline-item-body">
-        <strong>📝 {n.title || 'Note'}</strong>
-        {n.body && <span className="timeline-item-text">{n.body}</span>}
+        <strong>🤝 Contact logged</strong>
+        {ix.text && <span className="timeline-item-text">{ix.text}</span>}
       </span>
     </button>
   );

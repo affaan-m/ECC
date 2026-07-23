@@ -1,19 +1,32 @@
 // Client-side, key-free geocoding via OpenStreetMap's Nominatim. Best-effort:
 // on any failure (offline, blocked, no results) resolves to null rather than
 // throwing, since this drives a "nice to have" auto-pin, not a required save.
+// One retry after a short delay, since a single dropped request (a common
+// failure mode for a public, unauthenticated third-party endpoint called
+// straight from the browser) shouldn't cost the pin entirely.
+async function geocodeOnce(q) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`geocode ${res.status}`); // retry-worthy (rate limit, transient 5xx)
+  const results = await res.json();
+  const hit = results?.[0];
+  if (!hit) return null; // genuinely no match — retrying won't help
+  return { lat: Number(hit.lat), lng: Number(hit.lon) };
+}
+
 export async function geocodeAddress(query) {
   const q = query?.trim();
   if (!q) return null;
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return null;
-    const results = await res.json();
-    const hit = results?.[0];
-    if (!hit) return null;
-    return { lat: Number(hit.lat), lng: Number(hit.lon) };
+    return await geocodeOnce(q);
   } catch {
-    return null;
+    // Transient network blip — try once more before giving up.
+    await new Promise((r) => setTimeout(r, 800));
+    try {
+      return await geocodeOnce(q);
+    } catch {
+      return null;
+    }
   }
 }
 

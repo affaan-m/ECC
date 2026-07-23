@@ -133,11 +133,11 @@ export default function App() {
   }, []);
 
   // App-wide haptic feedback: one delegated listener instead of wiring every
-  // button individually. Reserved for actions that actually commit or change
-  // something — destructive actions, primary/save actions, and toggles —
-  // rather than every tap; buzzing on literally every button (tabs, chips,
-  // plain/ghost buttons, links, icon buttons) reads as overwhelming rather
-  // than useful feedback.
+  // button individually. Destructive/primary/toggle actions get their own
+  // distinct, firmer tick; everything else clickable still gets the
+  // lightest tap so navigation, chips, and list rows don't feel dead — that
+  // was the "overwhelming" complaint's actual cause (every button ticking
+  // at the SAME strength as a save/delete), not tapping in general.
   useEffect(() => {
     const onPointerDown = (e) => {
       const el = e.target.closest?.(
@@ -150,7 +150,7 @@ export default function App() {
       if (el.classList.contains('event-block')) return;
       if (el.classList.contains('btn-danger') || el.classList.contains('btn-danger-ghost')) warnTick();
       else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
-      else if (el.getAttribute('role') === 'switch' || el.matches('input[type="checkbox"], input[type="radio"]')) tapTick();
+      else tapTick();
     };
     document.addEventListener('pointerdown', onPointerDown, { passive: true });
     return () => document.removeEventListener('pointerdown', onPointerDown);

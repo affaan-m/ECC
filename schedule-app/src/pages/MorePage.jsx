@@ -14,9 +14,8 @@ import {
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
-import { confirmTick, selectTick } from '../data/haptics.js';
-import { BUBBLE_TYPES, normalizeHomeBubbles } from '../data/homeBubbles.js';
-import { HOME_SECTION_TYPES, normalizeHomeSections } from '../data/homeSections.js';
+import ReorderToggleList from '../components/ReorderToggleList.jsx';
+import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
@@ -385,46 +384,20 @@ export default function MorePage() {
 
       <section className="detail-section">
         <span className="detail-label">Customize home screen {!isPro && '· Pro'}</span>
-        <p className="muted small">Choose which bubbles show on Home, and drag to reorder them.</p>
+        <p className="muted small">
+          Choose which blocks show on Home, and drag to reorder them — or edit this right from the Home page itself
+          via the pencil icon in its header.
+        </p>
         {isPro ? (
           <ReorderToggleList
-            items={normalizeHomeBubbles(s.homeBubbles)}
-            types={BUBBLE_TYPES}
-            onChange={(next) => actions.setSettings({ homeBubbles: next })}
+            items={normalizeHomeBlocks(s.homeBlocks)}
+            types={HOME_BLOCK_TYPES}
+            onChange={(next) => actions.setSettings({ homeBlocks: next })}
           />
         ) : (
           <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
             <ul className="bubble-reorder-list bubble-reorder-list--preview">
-              {normalizeHomeBubbles(s.homeBubbles).map((b) => {
-                const type = BUBBLE_TYPES.find((t) => t.id === b.id);
-                return (
-                  <li key={b.id} className="bubble-reorder-row">
-                    <span className="bubble-reorder-icon">{type?.icon}</span>
-                    <span className="bubble-reorder-label">{type?.label}</span>
-                  </li>
-                );
-              })}
-            </ul>
-            <span className="bubble-reorder-lock-hint">
-              <LockIcon /> Unlock to customize
-            </span>
-          </button>
-        )}
-      </section>
-
-      <section className="detail-section">
-        <span className="detail-label">Customize home page sections {!isPro && '· Pro'}</span>
-        <p className="muted small">Choose which sections show below the bubbles, and drag to reorder them.</p>
-        {isPro ? (
-          <ReorderToggleList
-            items={normalizeHomeSections(s.homeSections)}
-            types={HOME_SECTION_TYPES}
-            onChange={(next) => actions.setSettings({ homeSections: next })}
-          />
-        ) : (
-          <button type="button" className="bubble-reorder-locked" onClick={() => navigate('/pricing')}>
-            <ul className="bubble-reorder-list bubble-reorder-list--preview">
-              {HOME_SECTION_TYPES.map((t) => (
+              {HOME_BLOCK_TYPES.map((t) => (
                 <li key={t.id} className="bubble-reorder-row">
                   <span className="bubble-reorder-icon">{t.icon}</span>
                   <span className="bubble-reorder-label">{t.label}</span>
@@ -1057,119 +1030,6 @@ function CloudSyncStatus({ cloudSyncOn }) {
     return <p className="muted small">Sign in above to start syncing your data to your account.</p>;
   }
   return <p className="muted small">Your data syncs automatically to your account.</p>;
-}
-
-// Shared drag-to-reorder + enable toggle list, used for home bubbles, home
-// sections, and nav tabs — anywhere Settings lets Pro users reorder/hide a
-// fixed set of named items. `items` is [{id, enabled}] in display order;
-// `types` supplies each id's label (and optional icon); `lockedIds` marks
-// ids whose toggle is forced on and non-interactive (e.g. the nav tab that's
-// the only way back to this screen).
-function ReorderToggleList({ items, types, onChange, lockedIds = [] }) {
-  const [dragIndex, setDragIndex] = useState(null);
-  const [dragY, setDragY] = useState(0);
-  const dragRef = useRef(null);
-  const rowRefs = useRef([]);
-
-  const reorder = (from, to) => {
-    if (from === to) return;
-    const next = items.slice();
-    const [item] = next.splice(from, 1);
-    next.splice(to, 0, item);
-    onChange(next);
-  };
-
-  const onDown = (i) => (e) => {
-    const rowH = rowRefs.current[i]?.getBoundingClientRect().height || 48;
-    dragRef.current = { index: i, startY: e.clientY, rowH };
-    setDragIndex(i);
-    setDragY(0);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    confirmTick();
-  };
-  const onMove = (e) => {
-    const g = dragRef.current;
-    if (!g) return;
-    const dy = e.clientY - g.startY;
-    setDragY(dy);
-    const steps = Math.round(dy / g.rowH);
-    if (steps !== 0) {
-      const target = Math.max(0, Math.min(items.length - 1, g.index + steps));
-      if (target !== g.index) {
-        reorder(g.index, target);
-        g.startY += (target - g.index) * g.rowH;
-        g.index = target;
-        setDragIndex(target);
-        setDragY(e.clientY - g.startY);
-        selectTick();
-      }
-    }
-  };
-  const onUp = () => {
-    if (!dragRef.current) return;
-    dragRef.current = null;
-    setDragIndex(null);
-    setDragY(0);
-    confirmTick();
-  };
-
-  return (
-    <ul className="bubble-reorder-list">
-      {items.map((it, i) => {
-        const type = types.find((t) => t.id === it.id);
-        const locked = lockedIds.includes(it.id);
-        const dragging = dragIndex === i;
-        return (
-          <li
-            key={it.id}
-            ref={(el) => (rowRefs.current[i] = el)}
-            className={`bubble-reorder-row${dragging ? ' bubble-reorder-row--dragging' : ''}`}
-            style={dragging ? { transform: `translateY(${dragY}px)` } : undefined}
-          >
-            <button
-              type="button"
-              className="bubble-drag-handle"
-              onPointerDown={onDown(i)}
-              onPointerMove={onMove}
-              onPointerUp={onUp}
-              onPointerCancel={onUp}
-              aria-label={`Drag to reorder ${type?.label}`}
-            >
-              <DragHandleIcon />
-            </button>
-            {type?.icon && <span className="bubble-reorder-icon">{type.icon}</span>}
-            <span className="bubble-reorder-label">{type?.label}</span>
-            {locked ? (
-              <span className="muted small">Always shown</span>
-            ) : (
-              <button
-                type="button"
-                className={`toggle${it.enabled ? ' toggle--on' : ''}`}
-                role="switch"
-                aria-checked={it.enabled}
-                onClick={() => onChange(items.map((x) => (x.id === it.id ? { ...x, enabled: !x.enabled } : x)))}
-              >
-                <span className="toggle-knob" />
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function DragHandleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-      <circle cx="9" cy="6" r="1.6" fill="currentColor" />
-      <circle cx="15" cy="6" r="1.6" fill="currentColor" />
-      <circle cx="9" cy="12" r="1.6" fill="currentColor" />
-      <circle cx="15" cy="12" r="1.6" fill="currentColor" />
-      <circle cx="9" cy="18" r="1.6" fill="currentColor" />
-      <circle cx="15" cy="18" r="1.6" fill="currentColor" />
-    </svg>
-  );
 }
 
 function LockIcon() {

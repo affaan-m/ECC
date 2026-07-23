@@ -9,7 +9,7 @@ export const QUICK_ADD_TYPES = [
 
 export const DEFAULT_QUICK_ADD = QUICK_ADD_TYPES.map((t) => ({ id: t.id, enabled: true }));
 
-// Same merge pattern as normalizeHomeBubbles/normalizeHomeSections.
+// Same merge pattern as normalizeHomeBlocks (see ../data/homeBlocks.js).
 export function normalizeQuickAdd(list) {
   const known = new Set(QUICK_ADD_TYPES.map((t) => t.id));
   const seen = new Set();

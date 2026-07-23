@@ -3,12 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import ExpandableFab from '../components/ExpandableFab.jsx';
+import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick } from '../data/haptics.js';
 import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
-import { normalizeHomeBubbles } from '../data/homeBubbles.js';
-import { normalizeHomeSections } from '../data/homeSections.js';
+import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 const TASK_REMINDER_OFFSETS = [
@@ -24,6 +24,7 @@ export default function HomePage() {
   const location = useLocation();
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
+  const [editMode, setEditMode] = useState(false);
   const tasksSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
   const scrollToSection = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -153,8 +154,10 @@ export default function HomePage() {
   // --- Notes ---
   const [editingNote, setEditingNote] = useState(null);
   const initialNoteJson = useRef('');
+  // Notes written from a contact's timeline carry a contactId and belong to
+  // that contact only — Home's notes bar is for general, unattached notes.
   const notes = useMemo(
-    () => [...(state.notes || [])].sort((a, b) => Number(b.pinned) - Number(a.pinned)),
+    () => (state.notes || []).filter((n) => !n.contactId).sort((a, b) => Number(b.pinned) - Number(a.pinned)),
     [state.notes]
   );
   const openNewNote = () => {
@@ -184,212 +187,177 @@ export default function HomePage() {
     setEditingNote((n) => ({ ...n, checklist: [...(n.checklist || []), { text: '', done: false }] }));
   };
 
-  // --- Home bubbles (Pro: customizable set + order) ---
-  const homeBubbles = useMemo(
-    () => normalizeHomeBubbles(state.settings?.homeBubbles).filter((b) => b.enabled),
-    [state.settings?.homeBubbles]
+  // --- Home blocks (Pro: reorder + show/hide, editable right here) ---
+  const homeBlocks = useMemo(
+    () => normalizeHomeBlocks(state.settings?.homeBlocks),
+    [state.settings?.homeBlocks]
   );
-  const homeSections = useMemo(
-    () => normalizeHomeSections(state.settings?.homeSections).filter((s) => s.enabled),
-    [state.settings?.homeSections]
-  );
-  const openTaskCount = tasks.filter((t) => !t.done).length;
-  const todaysEvents = useMemo(
-    () => [...state.events].filter((e) => e.date === today).sort((a, b) => (a.start || '').localeCompare(b.start || '')),
-    [state.events, today]
-  );
-  const nextEvent = todaysEvents.find((e) => !e.done) || null;
+  const visibleBlocks = useMemo(() => homeBlocks.filter((b) => b.enabled), [homeBlocks]);
 
   return (
     <div className="page">
       <header className="page-head">
         <div className="page-head-row">
           <Brand>Home</Brand>
-          {!isPro && (
-            <button className="pro-bubble" onClick={() => navigate('/pricing')}>
-              <CrownIcon /> Pro
+          <div className="page-head-actions">
+            {!isPro && (
+              <button className="pro-bubble" onClick={() => navigate('/pricing')}>
+                <CrownIcon /> Pro
+              </button>
+            )}
+            <button
+              className="icon-btn"
+              onClick={() => (isPro ? setEditMode((v) => !v) : navigate('/pricing'))}
+              aria-label={editMode ? 'Done editing home screen' : 'Edit home screen'}
+              title={editMode ? 'Done' : 'Edit home screen'}
+            >
+              {editMode ? <CheckIcon /> : <PencilIcon />}
             </button>
-          )}
+          </div>
         </div>
       </header>
 
-      <div className="home-bubbles">
-        {homeBubbles.map((b) => {
+      {editMode ? (
+        <section className="detail-section">
+          <span className="detail-label">Customize home screen</span>
+          <p className="muted small">Drag to reorder, toggle off to hide. Tap Done above when finished.</p>
+          <ReorderToggleList
+            items={homeBlocks}
+            types={HOME_BLOCK_TYPES}
+            onChange={(next) => actions.setSettings({ homeBlocks: next })}
+          />
+        </section>
+      ) : (
+        visibleBlocks.map((b) => {
           if (b.id === 'goals') {
             return (
-              <button key="goals" className="home-bubble" onClick={() => navigate('/goals')}>
+              <button key="goals" className="detail-section home-block-goals" onClick={() => navigate('/goals')}>
+                <span className="detail-label">🎯 Goals</span>
                 <div className="home-bubble-rings">
                   <MiniRing pct={dailyPct} label="Today" />
                   <MiniRing pct={weeklyPct} label="Week" />
                 </div>
-                <span className="home-bubble-label">Goals</span>
               </button>
+            );
+          }
+          if (b.id === 'reminders') {
+            if (reminders.length === 0) return null;
+            return (
+              <section className="detail-section" key="reminders">
+                <span className="detail-label">🔔 Important reminders</span>
+                <ul className="reminder-list">
+                  {reminders.map((r) => (
+                    <li key={`${r.kind}:${r.id}`}>
+                      <button
+                        className="reminder-row"
+                        onClick={() => {
+                          if (r.kind === 'goal') navigate('/goals');
+                          else if (r.kind === 'event') navigate('/planner');
+                        }}
+                      >
+                        <span className={`reminder-kind reminder-kind--${r.kind}`}>{r.kind}</span>
+                        <span className="reminder-label">{r.label}</span>
+                        {r.time && <span className="reminder-time">{formatTime(r.time)}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             );
           }
           if (b.id === 'tasks') {
             return (
-              <button key="tasks" className="home-bubble home-bubble--stat" onClick={() => scrollToSection(tasksSectionRef)}>
-                <span className="home-bubble-icon">✅</span>
-                <span className="home-bubble-stat">{openTaskCount}</span>
-                <span className="home-bubble-label">Tasks</span>
-              </button>
+              <section className="detail-section" ref={tasksSectionRef} key="tasks">
+                <span className="detail-label">Tasks</span>
+                <ul className="task-list">
+                  {tasks.map((t) => (
+                    <li key={t.id} className="task-row">
+                      <button
+                        className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
+                        onClick={() => {
+                          actions.updateTask({ ...t, done: !t.done });
+                          if (!t.done) confirmTick();
+                        }}
+                        aria-label={t.done ? 'Mark not done' : 'Mark done'}
+                      >
+                        {t.done && <CheckIcon />}
+                      </button>
+                      <button className="task-title-btn" onClick={() => openEditTask(t)}>
+                        <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+                        {(t.location || t.dueDate) && !t.done && (
+                          <span className="task-meta muted small">
+                            {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </button>
+                      {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
+                      <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                  {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
+                </ul>
+                <div className="task-add-row">
+                  <input
+                    value={newTaskText}
+                    onChange={(e) => setNewTaskText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && openNewTask()}
+                    placeholder="Add a task…"
+                  />
+                  <button className="btn btn-primary btn-sm" onClick={openNewTask}>
+                    Add
+                  </button>
+                </div>
+              </section>
             );
           }
           if (b.id === 'notes') {
             return (
-              <button key="notes" className="home-bubble home-bubble--stat" onClick={() => scrollToSection(notesSectionRef)}>
-                <span className="home-bubble-icon">📝</span>
-                <span className="home-bubble-stat">{notes.length}</span>
-                <span className="home-bubble-label">Notes</span>
-              </button>
-            );
-          }
-          if (b.id === 'events') {
-            return (
-              <button key="events" className="home-bubble home-bubble--stat" onClick={() => navigate('/planner')}>
-                <span className="home-bubble-icon">📅</span>
-                {nextEvent ? (
-                  <span className="home-bubble-textblock">
-                    <strong>{nextEvent.title || 'Event'}</strong>
-                    <span className="muted small">{formatTime(nextEvent.start)}</span>
-                  </span>
+              <section className="detail-section" ref={notesSectionRef} key="notes">
+                <div className="section-head">
+                  <span className="detail-label">📝 Notes</span>
+                  <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
+                    + Add
+                  </button>
+                </div>
+                {notes.length === 0 ? (
+                  <p className="muted small">No notes yet.</p>
                 ) : (
-                  <span className="home-bubble-textblock muted small">No events today</span>
+                  <div className="notes-grid">
+                    {notes.map((n) => (
+                      <button
+                        key={n.id}
+                        className={`note-card${n.color ? ' note-card--tinted' : ''}`}
+                        style={n.color ? { background: n.color } : undefined}
+                        onClick={() => openEditNote(n)}
+                      >
+                        {n.pinned && <span className="note-pin">📌</span>}
+                        {n.title && <strong className="note-title">{n.title}</strong>}
+                        {n.checklist ? (
+                          <ul className="note-checklist">
+                            {n.checklist.slice(0, 5).map((item, i) => (
+                              <li key={i} className={item.done ? 'note-check--done' : ''}>
+                                <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
+                                  {item.done ? '✓' : ''}
+                                </span>
+                                {item.text || 'Item'}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="note-body">{n.body}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </button>
-            );
-          }
-          if (b.id === 'contacts') {
-            return (
-              <button key="contacts" className="home-bubble home-bubble--stat" onClick={() => navigate('/contacts')}>
-                <span className="home-bubble-icon">👤</span>
-                <span className="home-bubble-stat">{state.contacts.length}</span>
-                <span className="home-bubble-label">People</span>
-              </button>
+              </section>
             );
           }
           return null;
-        })}
-      </div>
-
-      {homeSections.map((sec) => {
-        if (sec.id === 'reminders') {
-          if (reminders.length === 0) return null;
-          return (
-            <section className="detail-section" key="reminders">
-              <span className="detail-label">🔔 Important reminders</span>
-              <ul className="reminder-list">
-                {reminders.map((r) => (
-                  <li key={`${r.kind}:${r.id}`}>
-                    <button
-                      className="reminder-row"
-                      onClick={() => {
-                        if (r.kind === 'goal') navigate('/goals');
-                        else if (r.kind === 'event') navigate('/planner');
-                      }}
-                    >
-                      <span className={`reminder-kind reminder-kind--${r.kind}`}>{r.kind}</span>
-                      <span className="reminder-label">{r.label}</span>
-                      {r.time && <span className="reminder-time">{formatTime(r.time)}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        }
-        if (sec.id === 'tasks') {
-          return (
-            <section className="detail-section" ref={tasksSectionRef} key="tasks">
-              <span className="detail-label">Tasks</span>
-              <ul className="task-list">
-                {tasks.map((t) => (
-                  <li key={t.id} className="task-row">
-                    <button
-                      className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                      onClick={() => {
-                        actions.updateTask({ ...t, done: !t.done });
-                        if (!t.done) confirmTick();
-                      }}
-                      aria-label={t.done ? 'Mark not done' : 'Mark done'}
-                    >
-                      {t.done && <CheckIcon />}
-                    </button>
-                    <button className="task-title-btn" onClick={() => openEditTask(t)}>
-                      <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
-                      {(t.location || t.dueDate) && !t.done && (
-                        <span className="task-meta muted small">
-                          {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
-                    </button>
-                    {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
-                    <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
-                      ✕
-                    </button>
-                  </li>
-                ))}
-                {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
-              </ul>
-              <div className="task-add-row">
-                <input
-                  value={newTaskText}
-                  onChange={(e) => setNewTaskText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && openNewTask()}
-                  placeholder="Add a task…"
-                />
-                <button className="btn btn-primary btn-sm" onClick={openNewTask}>
-                  Add
-                </button>
-              </div>
-            </section>
-          );
-        }
-        if (sec.id === 'notes') {
-          return (
-            <section className="detail-section" ref={notesSectionRef} key="notes">
-              <div className="section-head">
-                <span className="detail-label">📝 Notes</span>
-                <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
-                  + Add
-                </button>
-              </div>
-              {notes.length === 0 ? (
-                <p className="muted small">No notes yet.</p>
-              ) : (
-                <div className="notes-grid">
-                  {notes.map((n) => (
-                    <button
-                      key={n.id}
-                      className={`note-card${n.color ? ' note-card--tinted' : ''}`}
-                      style={n.color ? { background: n.color } : undefined}
-                      onClick={() => openEditNote(n)}
-                    >
-                      {n.pinned && <span className="note-pin">📌</span>}
-                      {n.title && <strong className="note-title">{n.title}</strong>}
-                      {n.checklist ? (
-                        <ul className="note-checklist">
-                          {n.checklist.slice(0, 5).map((item, i) => (
-                            <li key={i} className={item.done ? 'note-check--done' : ''}>
-                              <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
-                                {item.done ? '✓' : ''}
-                              </span>
-                              {item.text || 'Item'}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="note-body">{n.body}</p>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        }
-        return null;
-      })}
+        })
+      )}
 
       <ExpandableFab
         onAction={(id) => {
@@ -620,6 +588,20 @@ function CrownIcon() {
       <path
         d="M3 8l4 3 5-6 5 6 4-3-1.5 10h-15L3 8z"
         fill="currentColor"
+      />
+    </svg>
+  );
+}
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        d="M4 20l1-4.5L15.5 5 19 8.5 8.5 19 4 20z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
