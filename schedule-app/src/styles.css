@@ -1347,8 +1347,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--text);
-  color: var(--bg);
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 999px;
   padding: 8px 16px;
   font-size: 13px;

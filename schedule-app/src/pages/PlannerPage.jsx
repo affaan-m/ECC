@@ -636,6 +636,13 @@ function DayView({
     return out;
   }, [selected, events]);
 
+  // Selection can span multiple days (navigating days doesn't clear it), but
+  // only one day's worth of ghosts should ever render at once — anything
+  // from a different original day would show up superimposed on whatever
+  // day the drag has live-paged to, which looks like a phantom duplicate.
+  // Scope to the day the dragged item itself started on.
+  const groupDragAnchorDate = groupGestureRef.current?.occ?.recDate;
+
   const hours = [];
   for (let h = dayStart; h <= dayEnd; h++) hours.push(h);
 
@@ -1199,7 +1206,9 @@ function DayView({
 
         {groupDragging && selectedOccs.length > 0 && (
           <div className="event-layer event-layer--ghost">
-            {selectedOccs.map((occ) => {
+            {selectedOccs
+              .filter((occ) => occ.recDate === groupDragAnchorDate)
+              .map((occ) => {
               const top = (occ.s - dayStart * 60) * pxPerMin;
               const height = Math.max(24, (occ.e2 - occ.s) * pxPerMin - 3);
               const short = occ.e2 - occ.s < 55;
