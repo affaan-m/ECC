@@ -1314,6 +1314,39 @@ def _show_promotion_candidates(project: dict) -> None:
         print(f"  Run `instinct-cli.py promote` to promote these to global scope.\n")
 
 
+def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None:
+    """Strip one instinct block from its project-scoped source file after promotion.
+
+    Without this, the project copy keeps shadowing the new global copy in
+    load_all_instincts()'s dedup (project wins on ID collision), so `status`
+    silently under-reports the global count until the stale copy is removed by hand.
+    Deletes the file if it was the only instinct in it, otherwise rewrites the
+    remaining blocks in the same frontmatter format.
+    """
+    source_file = Path(source_file_str)
+    if not source_file.exists():
+        return
+
+    remaining = [i for i in parse_instinct_file(source_file.read_text(encoding="utf-8"))
+                 if i.get('id') != instinct_id]
+
+    if not remaining:
+        source_file.unlink()
+        return
+
+    blocks = []
+    for inst in remaining:
+        block = "---\n"
+        for key, value in inst.items():
+            if key == 'content' or key.startswith('_'):
+                continue
+            block += f"{key}: {_yaml_quote(value) if key == 'trigger' else value}\n"
+        block += "---\n\n"
+        block += inst.get('content', '') + "\n"
+        blocks.append(block)
+    source_file.write_text("\n".join(blocks), encoding="utf-8")
+
+
 def cmd_promote(args) -> int:
     """Promote project-scoped instincts to global scope."""
     project = detect_project()
@@ -1376,6 +1409,11 @@ def _promote_specific(project: dict, instinct_id: str, force: bool, dry_run: boo
     output_content += target.get('content', '') + "\n"
 
     output_file.write_text(output_content, encoding="utf-8")
+
+    source_file = target.get('_source_file')
+    if source_file:
+        _remove_instinct_from_source(source_file, instinct_id)
+
     print(f"\nPromoted '{instinct_id}' to global scope.")
     print(f"  Saved to: {output_file}")
     return 0
@@ -1449,6 +1487,12 @@ def _promote_auto(project: dict, force: bool, dry_run: bool) -> int:
         output_content += inst.get('content', '') + "\n"
 
         output_file.write_text(output_content, encoding="utf-8")
+
+        for _, _, entry_inst in cand['entries']:
+            entry_source = entry_inst.get('_source_file')
+            if entry_source:
+                _remove_instinct_from_source(entry_source, cand['id'])
+
         promoted += 1
 
     print(f"\nPromoted {promoted} instincts to global scope.")
