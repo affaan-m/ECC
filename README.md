@@ -88,27 +88,42 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
 
 <table>
 <tr>
-<td align="center" width="220">
+<td align="center" width="20%">
   <a href="https://www.coderabbit.ai">
-    <img src="assets/images/sponsors/coderabbit.png" width="96" alt="CodeRabbit logo" /><br />
+    <img src="assets/images/sponsors/coderabbit.png" height="56" alt="CodeRabbit logo" /><br />
     <strong>CodeRabbit</strong>
   </a>
 </td>
-<td align="center" width="220">
+<td align="center" width="20%">
   <a href="https://www.greptile.com/go/ecc">
-    <img src="assets/images/sponsors/greptile.png" width="96" alt="Greptile logo" /><br />
+    <img src="assets/images/sponsors/greptile.png" height="56" alt="Greptile logo" /><br />
     <strong>Greptile</strong>
   </a>
 </td>
-<td align="center" width="220">
+<td align="center" width="20%">
   <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC">
-    <img src="assets/images/sponsors/atlascloud.png" width="96" alt="Atlas Cloud logo" /><br />
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" />
+      <img src="assets/images/sponsors/atlascloud.svg" height="28" alt="Atlas Cloud logo" />
+    </picture><br />
     <strong>Atlas Cloud</strong>
   </a>
 </td>
-<td align="center" width="220">
+<td align="center" width="20%">
+  <a href="https://www.moonshot.ai">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" />
+      <img src="assets/images/sponsors/moonshot.png" height="44" alt="Moonshot AI Kimi logo" />
+    </picture><br />
+    <strong>Moonshot AI</strong>
+  </a>
+</td>
+<td align="center" width="20%">
   <a href="https://compute.itomarkets.com">
-    <img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /><br />
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" />
+      <img src="assets/images/sponsors/ito.svg" height="44" alt="Itô Markets logo" />
+    </picture><br />
     <strong>Itô</strong>
   </a>
 </td>
@@ -1196,7 +1211,7 @@ claude
 
 If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working.
 
-Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management—it does not provision compute or serving. Managed inference through Itô is not live yet.
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management—it does not provision compute or serving. Managed inference through Itô is not live yet. The `ito-compute` skill can rent fixed-rate GPU blocks for this straight from the harness (CLI: `ito-compute-cli` on npm, coming soon).
 
 Official references:
 - [Claude Code LLM gateway docs](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)
@@ -1848,20 +1863,9 @@ ECC takes supply-chain and agent safety seriously.
 
 ## Sponsors
 
-Featured sponsors are at the top of this README — full list and tiers in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
+Business sponsors: [CodeRabbit](https://www.coderabbit.ai) · [Greptile](https://www.greptile.com/go/ecc) · [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) · [Moonshot AI (Kimi)](https://www.moonshot.ai) · [Itô Markets](https://itomarkets.com). Logos at the top of this README, full list and tiers in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
 
-### GPU compute: Itô Markets
-
-<a href="https://itomarkets.com"><img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /></a>
-
-[Itô Markets](https://itomarkets.com) sponsors GPU compute for ECC. Rent or manage GPUs through the [Itô compute dashboard](https://compute.itomarkets.com). Any GPU provider works: ECC only links to the dashboard and does not provision compute or serving. Managed inference through Itô is not live yet.
-
-<!--
-  PLACEHOLDER: Moonshot AI (Kimi) sponsor entry. PENDING COUNTERSIGN.
-  Render nothing for Moonshot publicly until the sponsorship agreement is
-  countersigned. Once countersigned, replace this comment with a public
-  entry (logo + link) following the Itô Markets pattern above.
--->
+For GPU capacity, [Itô's compute dashboard](https://compute.itomarkets.com) rents fixed-rate GPU blocks. Any provider works: ECC links to the dashboard and does not provision compute or serving.
 
 ---
 
