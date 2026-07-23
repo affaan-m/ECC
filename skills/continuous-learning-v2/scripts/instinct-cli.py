@@ -1327,8 +1327,14 @@ def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None
     if not source_file.exists():
         return
 
-    remaining = [i for i in parse_instinct_file(source_file.read_text(encoding="utf-8"))
-                 if i.get('id') != instinct_id]
+    parsed = parse_instinct_file(source_file.read_text(encoding="utf-8"))
+    if not any(i.get('id') == instinct_id for i in parsed):
+        # Target not found in a successful parse - either already removed, or the
+        # file is malformed/foreign content. Either way, don't touch it: a parse
+        # failure must never be treated as proof the file is safe to delete.
+        return
+
+    remaining = [i for i in parsed if i.get('id') != instinct_id]
 
     if not remaining:
         source_file.unlink()
