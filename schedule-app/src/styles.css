@@ -67,6 +67,10 @@
 
 * {
   box-sizing: border-box;
+  /* Kill the browser's own tap-highlight rectangle everywhere — every
+     tappable surface gets its own themed :active feedback instead (see
+     .event-block, .month-cell, .task-check, .theme-checkbox-input, etc.). */
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -1385,6 +1389,11 @@ textarea {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.timeline-task-chip:active {
+  background: var(--accent-soft);
+  transform: scale(0.96);
 }
 .timeline-task-dot {
   width: 8px;
@@ -1466,6 +1475,11 @@ textarea {
   pointer-events: auto;
   cursor: pointer;
   z-index: 2;
+  transition: filter 0.1s ease, transform 0.1s ease;
+}
+.task-time-block:active {
+  filter: brightness(0.95);
+  transform: scale(0.97);
 }
 .task-time-check {
   width: 13px;
@@ -1538,7 +1552,7 @@ textarea {
      pending phase (see onMoveP/onGroupMove) so starting a scroll on a
      block still works without racing the browser for who owns the touch. */
   touch-action: none;
-  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
 }
 .event-block--dragging {
   z-index: 30;
@@ -1562,6 +1576,8 @@ textarea {
 }
 .event-block:active {
   filter: brightness(0.97);
+  transform: scale(0.97);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ev, var(--accent)) 45%, transparent);
 }
 .event-time {
   font-size: 10px;
@@ -1675,6 +1691,11 @@ textarea {
   padding: 4px 2px;
   cursor: pointer;
   gap: 3px;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.month-cell:active {
+  background: var(--accent-soft);
+  transform: scale(0.94);
 }
 .month-cell--out {
   opacity: 0.4;
@@ -1742,6 +1763,12 @@ textarea {
   align-items: center;
   width: 44px;
   color: var(--text);
+  border-radius: 10px;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.agenda-date-btn:active {
+  background: var(--accent-soft);
+  transform: scale(0.95);
 }
 .agenda-dow {
   font-size: 11px;
@@ -1773,6 +1800,11 @@ textarea {
   padding: 6px 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.agenda-empty:active {
+  background: var(--accent-soft);
+  transform: scale(0.96);
 }
 .agenda-chip {
   display: flex;
@@ -1786,6 +1818,11 @@ textarea {
   cursor: pointer;
   text-align: left;
   min-width: 0;
+  transition: filter 0.1s ease, transform 0.1s ease;
+}
+.agenda-chip:active {
+  filter: brightness(0.95);
+  transform: scale(0.97);
 }
 .chip-time {
   font-size: 12px;
