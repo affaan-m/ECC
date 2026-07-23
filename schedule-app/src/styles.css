@@ -3111,10 +3111,19 @@ textarea {
   margin: 0;
 }
 .contact-notes {
+  /* Sticky (not static) so notes stay reachable at any scroll position —
+     landing on "today" scrolls past several future events on open, which
+     would otherwise bury them off-screen every time the page opens. */
+  position: sticky;
+  z-index: 9;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
+  max-height: 32vh;
+  overflow-y: auto;
+  padding-bottom: 2px;
 }
 .contact-note {
   display: flex;
@@ -3168,6 +3177,7 @@ textarea {
   background: linear-gradient(var(--bg), transparent);
   pointer-events: none;
   z-index: 8;
+  transition: opacity 0.1s linear;
 }
 .timeline-today-marker {
   display: flex;

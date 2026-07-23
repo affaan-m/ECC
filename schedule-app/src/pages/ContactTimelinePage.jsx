@@ -20,6 +20,8 @@ export default function ContactTimelinePage() {
   const anchorRef = useRef(null);
   const didLandRef = useRef(false);
   const headerRef = useRef(null);
+  const notesRef = useRef(null);
+  const [notesTop, setNotesTop] = useState(56);
   const [fadeTop, setFadeTop] = useState(56);
 
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -70,28 +72,42 @@ export default function ContactTimelinePage() {
   );
 
   // Future events beyond the first few fade at the top of the timeline
-  // until the user actually scrolls up to reveal them.
+  // until the user actually scrolls up to reveal them. The fade's opacity
+  // tracks scroll position directly (instead of a hard on/off toggle) so it
+  // eases in and out smoothly as you scroll, rather than snapping.
   const futureCount = useMemo(() => entries.filter((e) => e.type === 'event' && e.date > today).length, [entries, today]);
-  const [atTop, setAtTop] = useState(true);
+  const FADE_SCROLL_RANGE = 40; // px of scroll over which the fade eases in
+  const [scrollY, setScrollY] = useState(0);
   useEffect(() => {
-    const onScroll = () => setAtTop(window.scrollY <= 2);
+    const onScroll = () => setScrollY(window.scrollY);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+  const fadeOpacity = Math.max(0, Math.min(1, scrollY / FADE_SCROLL_RANGE));
 
-  // Dock the fade right below the sticky header (whatever height it ends up
-  // being) rather than at the literal top of the viewport, since the header
-  // is itself pinned there and would otherwise sit on top of it.
+  // Dock the notes bar right below the sticky header, and the fade right
+  // below the (also sticky) notes bar — so the notes stay reachable at any
+  // scroll position instead of being landed-past on open, and the fade only
+  // ever covers the actual event list, never the notes themselves.
   useEffect(() => {
     const measure = () => {
-      const r = headerRef.current?.getBoundingClientRect();
-      if (r) setFadeTop(r.bottom);
+      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 56;
+      setNotesTop(headerBottom);
+      const notesHeight = notesRef.current?.getBoundingClientRect().height ?? 0;
+      setFadeTop(headerBottom + notesHeight);
     };
     measure();
+    // The page's mount-in animation (see .page's page-in keyframes) can
+    // still be settling when this first runs, giving a slightly-off
+    // reading — one more pass after it finishes catches the resting layout.
+    const settleTimer = setTimeout(measure, 450);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+    return () => {
+      clearTimeout(settleTimer);
+      window.removeEventListener('resize', measure);
+    };
+  }, [contactNotes.length]);
 
   // Index of the first entry that's today-or-earlier: everything above it in
   // the (descending) list is future, this is the "now" anchor to land on.
@@ -188,15 +204,13 @@ export default function ContactTimelinePage() {
         </div>
       </header>
 
-      {futureCount > 3 && !atTop && <div className="timeline-fade-top" style={{ top: fadeTop }} />}
-
       <div className="detail-hero detail-hero--compact">
         <Avatar name={contact.name} photo={contact.photo} size="md" />
         <h1>{contact.name}'s timeline</h1>
       </div>
 
       {contactNotes.length > 0 && (
-        <section className="contact-notes">
+        <section className="contact-notes" ref={notesRef} style={{ top: notesTop }}>
           {contactNotes.map((n) => (
             <button
               key={n.id}
@@ -211,6 +225,10 @@ export default function ContactTimelinePage() {
             </button>
           ))}
         </section>
+      )}
+
+      {futureCount > 3 && (
+        <div className="timeline-fade-top" style={{ top: fadeTop, opacity: fadeOpacity }} />
       )}
 
       <div className="timeline-scroll" ref={scrollRef}>
