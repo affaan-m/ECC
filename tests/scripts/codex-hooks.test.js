@@ -11,6 +11,8 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const preCommitHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-commit');
+const prePushHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-push');
 const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
@@ -64,6 +66,75 @@ function runNode(scriptPath, args = [], env = {}, cwd = repoRoot) {
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+}
+
+function runGit(args, cwd) {
+  const disabledHooksPath = os.platform() === 'win32' ? 'NUL' : '/dev/null';
+  return spawnSync('git', ['-c', `core.hooksPath=${disabledHooksPath}`, ...args], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
+function runHook(scriptPath, cwd, env = {}, input = '') {
+  return spawnSync('bash', [scriptPath], {
+    cwd,
+    env: {
+      ...process.env,
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PRECOMMIT: '0',
+      ECC_SKIP_PREPUSH: '0',
+      ECC_PREPUSH_FULL: '0',
+      ...env,
+    },
+    input,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
+function createLinkedWorktreeFixture({ withPrePushMarker = true } = {}) {
+  const rootDir = createTempDir('codex-hooks-worktree-');
+  const primaryDir = path.join(rootDir, 'primary');
+  const linkedDir = path.join(rootDir, 'linked');
+  const failingScript = [
+    "require('fs').writeFileSync('suite-ran.txt', 'ran\\n')",
+    'process.exit(17)',
+  ].join(';');
+
+  fs.mkdirSync(primaryDir, { recursive: true });
+  writeJson(path.join(primaryDir, 'package.json'), {
+    private: true,
+    scripts: {
+      lint: `node -e "${failingScript}"`,
+    },
+  });
+  fs.writeFileSync(path.join(primaryDir, 'tracked.txt'), 'fixture\n');
+  if (withPrePushMarker) {
+    fs.writeFileSync(path.join(primaryDir, '.ecc-prepush-disable'), 'Disable only the ECC pre-push suite.\n');
+  }
+
+  const init = runGit(['init', '--initial-branch=main'], primaryDir);
+  assert.strictEqual(init.status, 0, `${init.stdout}\n${init.stderr}`);
+  assert.strictEqual(runGit(['config', 'user.name', 'ECC Test'], primaryDir).status, 0);
+  assert.strictEqual(runGit(['config', 'user.email', 'ecc-test@example.invalid'], primaryDir).status, 0);
+  assert.strictEqual(runGit(['add', '.'], primaryDir).status, 0);
+  const commit = runGit(['commit', '-m', 'test fixture'], primaryDir);
+  assert.strictEqual(commit.status, 0, `${commit.stdout}\n${commit.stderr}`);
+  const worktree = runGit(['worktree', 'add', '-b', 'feature', linkedDir], primaryDir);
+  assert.strictEqual(worktree.status, 0, `${worktree.stdout}\n${worktree.stderr}`);
+
+  return { rootDir, primaryDir, linkedDir };
+}
+
+function cleanupLinkedWorktreeFixture(fixture) {
+  runGit(['worktree', 'remove', '--force', fixture.linkedDir], fixture.primaryDir);
+  cleanup(fixture.rootDir);
+}
+
+function pushUpdateInput() {
+  return `refs/heads/feature ${'1'.repeat(40)} refs/heads/feature ${'0'.repeat(40)}\n`;
 }
 
 function makeHermeticCodexEnv(homeDir, codexDir, extraEnv = {}) {
@@ -276,6 +347,97 @@ if (os.platform() === 'win32') {
       assert.ok(fs.existsSync(path.join(weirdHooksDir, 'pre-push')));
     } finally {
       cleanup(homeDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('installed pre-push honors tracked repo opt-out in a linked worktree', () => {
+    const fixture = createLinkedWorktreeFixture();
+    const homeDir = path.join(fixture.rootDir, 'home');
+    const codexDir = path.join(homeDir, '.codex');
+    const installedPrePush = path.join(codexDir, 'git-hooks', 'pre-push');
+
+    try {
+      fs.mkdirSync(homeDir, { recursive: true });
+      const install = runBash(installScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+      assert.strictEqual(install.status, 0, `${install.stdout}\n${install.stderr}`);
+      assert.strictEqual(
+        runGit(['ls-files', '--error-unmatch', '.ecc-prepush-disable'], fixture.linkedDir).status,
+        0,
+        'the opt-out marker must be tracked in the linked worktree'
+      );
+
+      const result = runHook(installedPrePush, fixture.linkedDir, {}, pushUpdateInput());
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.ok(!fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'Node scripts must not run');
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('ECC_PREPUSH_FULL overrides the repo opt-out and blocks on suite failure', () => {
+    const fixture = createLinkedWorktreeFixture();
+
+    try {
+      const result = runHook(
+        prePushHook,
+        fixture.linkedDir,
+        { ECC_PREPUSH_FULL: '1' },
+        pushUpdateInput()
+      );
+
+      assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.ok(fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'the opted-in suite must run');
+      assert.match(result.stderr, /lint failed/);
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('repo pre-push opt-out does not disable pre-commit secret detection', () => {
+    const fixture = createLinkedWorktreeFixture();
+    const syntheticToken = `ghp_${'A'.repeat(36)}`;
+
+    try {
+      fs.writeFileSync(path.join(fixture.linkedDir, 'synthetic-secret.txt'), `${syntheticToken}\n`);
+      assert.strictEqual(runGit(['add', 'synthetic-secret.txt'], fixture.linkedDir).status, 0);
+
+      const result = runHook(preCommitHook, fixture.linkedDir);
+
+      assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /Potential secret detected/);
+      assert.match(result.stderr, /Commit blocked/);
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push still runs by default when the repo opt-out marker is absent', () => {
+    const fixture = createLinkedWorktreeFixture({ withPrePushMarker: false });
+
+    try {
+      const result = runHook(prePushHook, fixture.linkedDir, {}, pushUpdateInput());
+
+      assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.ok(fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'the default suite must run');
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
     }
   })
 )
@@ -699,6 +861,10 @@ if (
       for (const roleFile of ['explorer.toml', 'reviewer.toml', 'docs-researcher.toml']) {
         assert.ok(fs.existsSync(path.join(codexDir, 'agents', roleFile)));
       }
+
+      const syncedPrePush = fs.readFileSync(path.join(codexDir, 'git-hooks', 'pre-push'), 'utf8');
+      assert.match(syncedPrePush, /\.ecc-prepush-disable/);
+      assert.match(syncedPrePush, /ECC_PREPUSH_FULL/);
     } finally {
       cleanup(homeDir);
     }
