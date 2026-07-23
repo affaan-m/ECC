@@ -1422,6 +1422,13 @@ textarea {
   bottom: 0;
   left: 52px;
   right: 4px;
+  /* This div spans nearly the whole timeline, mostly empty space between
+     blocks — without this, a tap on that empty space hits the layer div
+     itself as e.target (it's on top, even though invisible), which fails
+     the background-tap-to-add check in DayView (it wants the tap to land
+     directly on .timeline-body or an .hour-line). .event-block re-enables
+     pointer-events so the blocks themselves stay fully interactive. */
+  pointer-events: none;
 }
 .event-layer--ghost {
   pointer-events: none;
@@ -1494,6 +1501,7 @@ textarea {
 }
 .event-block {
   position: absolute;
+  pointer-events: auto;
   --ev: var(--accent);
   --ev-opacity: 1;
   opacity: var(--ev-opacity);
@@ -1515,7 +1523,12 @@ textarea {
   user-select: none;
   min-width: 0;
   line-height: 1.2;
-  touch-action: none;
+  /* pan-y (not none) so a touch that starts on a block but is actually just
+     a scroll — not a long-press-and-hold — still scrolls the timeline
+     natively, instead of the block being a dead zone for that gesture. The
+     long-press-to-drag gesture still works: it requires holding still
+     first, by which point the pointer is already captured in JS. */
+  touch-action: pan-y;
   transition: box-shadow 0.15s ease, opacity 0.15s ease;
 }
 .event-block--dragging {

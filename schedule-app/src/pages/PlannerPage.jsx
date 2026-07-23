@@ -620,6 +620,22 @@ function DayView({
   const contactName = (id) => contacts.find((c) => c.id === id)?.name;
   const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
 
+  // Resolved against each occurrence's OWN recDate (not whatever `date` is
+  // currently on screen) so the group-drag ghost below stays correct across
+  // the live day-paging that happens while dragging past the timeline edge.
+  const selectedOccs = useMemo(() => {
+    if (!selected || selected.size === 0) return [];
+    const out = [];
+    for (const key of selected) {
+      const [id, recDate] = key.split('|');
+      const master = events.find((e) => e.id === id);
+      if (!master) continue;
+      const occ = expandEventOnDay(master, recDate).find((o) => o.recDate === recDate);
+      if (occ) out.push({ ...occ, s: timeToMinutes(occ.start), e2: timeToMinutes(occ.end) });
+    }
+    return out;
+  }, [selected, events]);
+
   const hours = [];
   for (let h = dayStart; h <= dayEnd; h++) hours.push(h);
 
@@ -647,7 +663,11 @@ function DayView({
       bgSwipeSuppressRef.current = false;
       return;
     }
-    if (e.target !== bodyRef.current && !e.target.classList.contains('hour-line')) return;
+    // Event/task blocks stop propagation on their own clicks, so anything
+    // that bubbles up to .timeline-body itself is a tap on empty space —
+    // no need to match a specific target (hour-row's full-height div sits
+    // between .timeline-body and .hour-line, so most taps never land on
+    // either of those exactly).
     const rect = bodyRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top;
     let mins = dayStart * 60 + y / pxPerMin;
@@ -914,7 +934,13 @@ function DayView({
         const rect = bodyRef.current.getBoundingClientRect();
         const edge = edgeOf(e.clientX, rect, EDGE_ZONE_PX);
         if (edge && edge !== g.lastEdge) {
-          g.dayOffset += edge === 'right' ? 1 : -1;
+          const dir = edge === 'right' ? 1 : -1;
+          g.dayOffset += dir;
+          // Live-page the visible day, same as single-event dragging — the
+          // selected blocks stay on screen via the group ghost layer below,
+          // which is keyed to each occurrence's own recDate rather than the
+          // day currently on screen, so it survives the remount.
+          onNavigateDay?.(dir);
           confirmTick(); // a stronger tick specifically for crossing a day boundary
         }
         g.lastEdge = edge;
@@ -944,6 +970,32 @@ function DayView({
     }
     clearGroupGesture();
   };
+
+  // Same reasoning as the single-event drag's window-level listener above:
+  // once armed, the dragged blocks stop rendering as normal event-blocks
+  // (replaced by the ghost layer, which live-pages with the day) — so their
+  // pointer capture is lost the moment they unmount. Track at the window
+  // level instead once armed, handing off cleanly from the element-level
+  // handlers used during the pre-arm phase.
+  const onGroupMoveRef = useRef(onGroupMove);
+  onGroupMoveRef.current = onGroupMove;
+  const onGroupUpRef = useRef(onGroupUp);
+  onGroupUpRef.current = onGroupUp;
+  useEffect(() => {
+    if (!groupDragging) return;
+    const move = (e) => onGroupMoveRef.current(e);
+    const up = (e) => onGroupUpRef.current(e, groupGestureRef.current?.occ);
+    const cancel = () => clearGroupGesture();
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupDragging]);
 
   return (
     <div className="timeline">
@@ -985,26 +1037,24 @@ function DayView({
           <div className="event-layer">
             {laid.map((ev) => {
             const key = `${ev.id}:${ev.recDate}`;
-            if (armedKey === key) return null; // rendered separately as a floating ghost below
+            const selKey = `${ev.id}|${ev.recDate}`;
+            const isSel = selected?.has(selKey);
+            const isGroupDragging = groupDragging && isSel;
+            // Both armed single-drag and group-drag render as a floating
+            // ghost below instead (the group ghost is keyed to each
+            // occurrence's own recDate, so it survives live day-paging).
+            if (armedKey === key || isGroupDragging) return null;
             const top = (ev.s - dayStart * 60) * pxPerMin;
             const height = Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3);
             const short = ev.e2 - ev.s < 55;
             const who = contactName(ev.contactId);
             const recurring = ev.repeat && ev.repeat !== 'none';
             const color = ev.color || typeColor(ev.typeId);
-            const selKey = `${ev.id}|${ev.recDate}`;
-            const isSel = selected?.has(selKey);
-            const isGroupDragging = groupDragging && isSel;
-            const groupDy = isGroupDragging ? groupDrag.dy : 0;
-            const groupDayOffset = isGroupDragging ? groupDrag.dayOffset : 0;
-            const rubberX = isGroupDragging ? Math.max(-18, Math.min(18, groupDrag.dx * 0.2)) : 0;
-            const displayStartMin = isGroupDragging
-              ? clampStart(ev, groupDy, pxPerMin, dayStart, dayEnd)
-              : ev.s;
+            const displayStartMin = ev.s;
             return (
               <button
                 key={key}
-                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}${isGroupDragging ? ' event-block--armed' : ''}${isGroupDragging && groupDayOffset !== 0 ? ' event-block--leaving' : ''}`}
+                className={`event-block${ev.done ? ' event-block--done' : ''}${short ? ' event-block--short' : ''}`}
                 style={{
                   top,
                   height,
@@ -1012,7 +1062,6 @@ function DayView({
                   width: `calc(${100 / ev.cols}% - 4px)`,
                   '--ev': color || 'var(--accent)',
                   '--ev-opacity': opacity / 100,
-                  transform: isGroupDragging ? `translateY(${groupDy}px) translateX(${rubberX}px)` : undefined,
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1051,7 +1100,6 @@ function DayView({
                   groupClickSuppressRef.current = false;
                 }}
               >
-                {isGroupDragging && <span className="drag-grip">⠿⠿</span>}
                 {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                 {short ? (
                   <span className="event-title">
@@ -1148,10 +1196,57 @@ function DayView({
               </div>
             );
           })()}
+
+        {groupDragging && selectedOccs.length > 0 && (
+          <div className="event-layer event-layer--ghost">
+            {selectedOccs.map((occ) => {
+              const top = (occ.s - dayStart * 60) * pxPerMin;
+              const height = Math.max(24, (occ.e2 - occ.s) * pxPerMin - 3);
+              const short = occ.e2 - occ.s < 55;
+              const who = contactName(occ.contactId);
+              const recurring = occ.repeat && occ.repeat !== 'none';
+              const color = occ.color || typeColor(occ.typeId);
+              const rubberX = Math.max(-18, Math.min(18, groupDrag.dx * 0.2));
+              const displayStartMin = clampStart(occ, groupDrag.dy, pxPerMin, dayStart, dayEnd);
+              return (
+                <div
+                  key={`${occ.id}:${occ.recDate}`}
+                  className={`event-block event-block--armed${short ? ' event-block--short' : ''}${occ.done ? ' event-block--done' : ''}`}
+                  style={{
+                    top,
+                    height,
+                    left: 4,
+                    width: 'calc(100% - 8px)',
+                    '--ev': color || 'var(--accent)',
+                    '--ev-opacity': opacity / 100,
+                    transform: `translateY(${groupDrag.dy}px) translateX(${rubberX}px)`,
+                  }}
+                >
+                  <span className="drag-grip">⠿⠿</span>
+                  {short ? (
+                    <span className="event-title">
+                      <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
+                      {occ.title || 'Untitled'}
+                      {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="event-time">
+                        {formatTime(minutesToTime(displayStartMin))}
+                        {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                      </span>
+                      <span className="event-title">{occ.title || 'Untitled'}</span>
+                      {who && <span className="event-who">{who}</span>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       {groupDragging && (
         <div className="group-drag-indicator">
-          {groupDrag.dayOffset !== 0 && <strong>{formatDayLabel(addDays(date, groupDrag.dayOffset))}</strong>}
           <span>{formatOffsetMinutes(Math.round(groupDrag.dy / pxPerMin / 15) * 15)}</span>
         </div>
       )}
