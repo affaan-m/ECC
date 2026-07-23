@@ -1850,6 +1850,19 @@ ECC takes supply-chain and agent safety seriously.
 
 Featured sponsors are at the top of this README — full list and tiers in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
 
+### GPU compute: Itô Markets
+
+<a href="https://itomarkets.com"><img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /></a>
+
+[Itô Markets](https://itomarkets.com) sponsors GPU compute for ECC. Rent or manage GPUs through the [Itô compute dashboard](https://compute.itomarkets.com). Any GPU provider works: ECC only links to the dashboard and does not provision compute or serving. Managed inference through Itô is not live yet.
+
+<!--
+  PLACEHOLDER: Moonshot AI (Kimi) sponsor entry. PENDING COUNTERSIGN.
+  Render nothing for Moonshot publicly until the sponsorship agreement is
+  countersigned. Once countersigned, replace this comment with a public
+  entry (logo + link) following the Itô Markets pattern above.
+-->
+
 ---
 
 ## Links
