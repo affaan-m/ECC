@@ -89,6 +89,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "assets/hero.png",
     "docs/CODEX-NAVIGATION-GUIDE.md",
     "docs/COMMAND-AGENT-MAP.md",
+    "assets/images/sponsors",
   ]
   const exclusionPaths = [
     "!**/__pycache__/**",

@@ -10,7 +10,7 @@ const path = require('path');
  * (a cloned/forked repo can ship a crafted `.cursor/ecc-install-state.json`).
  * `repair`/`uninstall`/`auto-update` replay recorded operations, so every
  * write/delete destination MUST be confined to the adapter-derived trusted
- * root — never trusted from the state file itself (GHSA-hfpv-w6mp-5g95).
+ * root - never trusted from the state file itself (GHSA-hfpv-w6mp-5g95).
  */
 
 function safeRealpath(target) {

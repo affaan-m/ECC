@@ -248,13 +248,16 @@ PROMPT
   # Pass prompt via -p flag instead of stdin redirect for Windows compatibility (#842).
   # prompt_content is already loaded in-memory so this no longer depends on the
   # mktemp absolute path continuing to resolve after cwd changes (#1296).
+  # stdin is explicitly closed with </dev/null: on Git Bash/MSYS2 the backgrounded
+  # child otherwise inherits an open stdin, and claude waits on it, warns
+  # "no stdin data received", and exits 1 before reading the analysis file (#2452).
   # Model is configurable via ECC_OBSERVER_MODEL (defaults to haiku for cost efficiency);
   # e.g. ECC_OBSERVER_MODEL=opus for higher-quality instinct extraction. Heavier models are
   # slower — consider raising ECC_OBSERVER_TIMEOUT_SECONDS (default 120s) so the watchdog
   # doesn't kill the analysis mid-run.
   ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model "${ECC_OBSERVER_MODEL:-haiku}" --max-turns "$max_turns" --print \
     --allowedTools "Read,Write" \
-    -p "$prompt_content" >> "$LOG_FILE" 2>&1 &
+    -p "$prompt_content" < /dev/null >> "$LOG_FILE" 2>&1 &
   claude_pid=$!
 
   (

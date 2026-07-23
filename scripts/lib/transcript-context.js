@@ -28,6 +28,32 @@ const DEFAULT_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MAX_TOKEN_SETTING = 10000000;
 const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 
+// Known large-window model families whose ids carry no `[1m]` marker (#2461).
+// Matched boundary-aware against the model id — covers dated/region-prefixed
+// variants (e.g. `us.anthropic.claude-fable-5-20260115-v1:0`) without matching
+// hypothetical smaller tiers sharing the prefix (e.g. `claude-fable-5-mini`).
+// Checked in order, first match wins. Best-effort and expected to lag new
+// releases; the env override remains the escape hatch for unlisted models.
+const KNOWN_MODEL_WINDOW_TOKENS = [
+  ['claude-fable-5', LARGE_CONTEXT_WINDOW_TOKENS],
+  ['claude-mythos-5', LARGE_CONTEXT_WINDOW_TOKENS]
+];
+
+/**
+ * True when `model` contains `familyId` ending at a token boundary: end of id,
+ * a delimiter (`[`, `:`, `.`), or a dated/versioned suffix (`-20260115`).
+ * Alphanumeric continuations and letter suffixes (`-mini`) are different
+ * models, possibly with smaller windows, and must not match.
+ */
+function isKnownModelFamilyMatch(model, familyId) {
+  const start = model.indexOf(familyId);
+  if (start === -1) {
+    return false;
+  }
+  const rest = model.slice(start + familyId.length);
+  return !/^[A-Za-z0-9]/.test(rest) && !/^-[A-Za-z]/.test(rest);
+}
+
 /**
  * Read the trailing `tailBytes` of a file as UTF-8.
  * Returns null when the file is missing or unreadable.
@@ -132,9 +158,10 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 
 /**
  * Detect the context window size for a turn.
- * 1M when the model id carries the `[1m]` marker, or when the observed token
- * count already exceeds the standard 200k window (covers logs that drop the
- * suffix); otherwise the standard 200k window.
+ * 1M when the model id carries the `[1m]` marker, matches a known large-window
+ * model family, or when the observed token count already exceeds the standard
+ * 200k window (covers logs that drop the suffix); otherwise the standard 200k
+ * window.
  */
 function resolveContextWindowTokens(tokens, model) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
@@ -148,6 +175,15 @@ function resolveContextWindowTokens(tokens, model) {
 
   if (typeof model === 'string' && model.includes(LARGE_WINDOW_MODEL_MARKER)) {
     return LARGE_CONTEXT_WINDOW_TOKENS;
+  }
+
+  // Large-window model families without a [1m] marker fall through the checks
+  // above and would be misreported against the 200k default (#2461).
+  if (typeof model === 'string') {
+    const known = KNOWN_MODEL_WINDOW_TOKENS.find(([familyId]) => isKnownModelFamilyMatch(model, familyId));
+    if (known) {
+      return known[1];
+    }
   }
 
   if (Number.isFinite(tokens) && tokens > STANDARD_CONTEXT_WINDOW_TOKENS) {

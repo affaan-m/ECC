@@ -3,6 +3,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { listAvailableLanguages } = require('./lib/install-executor');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 
 const COMMANDS = {
   install: {
@@ -118,6 +119,9 @@ Compatibility:
 
 Global Flags:
   --dry-run          Preview actions without executing (sets ECC_DRY_RUN=1)
+
+Compute:
+  ${getComputeSponsorCopy()}
 
 Examples:
   ecc typescript

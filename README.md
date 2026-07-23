@@ -106,8 +106,16 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
     <strong>Atlas Cloud</strong>
   </a>
 </td>
+<td align="center" width="220">
+  <a href="https://compute.itomarkets.com">
+    <img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /><br />
+    <strong>Itô</strong>
+  </a>
+</td>
 </tr>
 </table>
+
+<sub><strong>Run or self-host any open-source model.</strong> Itô is ECC's preferred compute sponsor: <a href="https://compute.itomarkets.com">open the Itô dashboard to sign in and rent or manage GPUs</a>. Any GPU provider works. ECC only provides this link; it does not provision compute or serving. Managed inference through Itô is not live yet.</sub>
 
 <sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
 
@@ -1187,6 +1195,8 @@ claude
 ```
 
 If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working.
+
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management—it does not provision compute or serving. Managed inference through Itô is not live yet.
 
 Official references:
 - [Claude Code LLM gateway docs](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)

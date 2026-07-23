@@ -61,6 +61,7 @@
     "agent.yaml",
     "assets/ecc-icon.svg",
     "assets/hero.png",
+    "assets/images/sponsors/",
     "agents/",
     "commands/",
     "docs/de-DE/",
@@ -416,7 +417,7 @@
     "ecc-plan-canvas": "scripts/plan-canvas.js"
   },
   "scripts": {
-    "postinstall": "echo '\\n  ecc-universal installed!\\n  Run: npx ecc typescript\\n  Compat: npx ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n'",
+    "welcome": "echo '\\n  ecc-universal installed!\\n  Run: ecc typescript\\n  Compat: ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n  Run or self-host any open-source model.\\n  Compute: Itô is the preferred compute sponsor — https://compute.itomarkets.com\\n  Any GPU provider works; ECC only links to the dashboard and does not provision compute or serving.\\n  Managed inference through Itô is not live yet.\\n'",
     "catalog:check": "node scripts/ci/catalog.js --text",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
@@ -447,30 +448,32 @@
     "dashboard:web": "node scripts/dashboard-web.js"
   },
   "dependencies": {
-    "@iarna/toml": "^2.2.5",
-    "ajv": "^8.20.0",
-    "sql.js": "^1.14.1"
+    "@iarna/toml": "2.2.5",
+    "ajv": "8.20.0",
+    "sql.js": "1.14.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "@opencode-ai/plugin": "^1.16.2",
+    "@eslint/js": "9.39.2",
+    "@opencode-ai/plugin": "1.17.3",
     "@types/node": "25.9.2",
-    "c8": "^11.0.0",
-    "eslint": "^10.6.0",
-    "globals": "^17.4.0",
-    "markdownlint-cli": "^0.48.0",
-    "typescript": "^6.0.3"
+    "c8": "11.0.0",
+    "eslint": "10.6.0",
+    "globals": "17.4.0",
+    "markdownlint-cli": "0.48.0",
+    "typescript": "6.0.3"
   },
   "engines": {
     "node": ">=18"
   },
   "overrides": {
-    "markdown-it": ">=14.2.0",
-    "js-yaml": ">=4.2.0"
+    "fast-uri": "3.1.4",
+    "markdown-it": "14.3.0",
+    "js-yaml": "4.3.0"
   },
   "resolutions": {
-    "markdown-it": ">=14.2.0",
-    "js-yaml": ">=4.2.0"
+    "fast-uri": "3.1.4",
+    "markdown-it": "14.3.0",
+    "js-yaml": "4.3.0"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
 }

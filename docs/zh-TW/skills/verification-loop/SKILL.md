@@ -1,3 +1,10 @@
+---
+name: verification-loop
+description: A comprehensive verification system for Claude Code sessions.
+metadata:
+  origin: ECC
+---
+
 # 驗證循環技能
 
 Claude Code 工作階段的完整驗證系統。

@@ -13,10 +13,10 @@ let failed = 0;
 function test(name, fn) {
   try {
     fn();
-    console.log(`  PASS ${name}`);
+    console.log(`  ✓ ${name}`);
     passed++;
   } catch (error) {
-    console.log(`  FAIL ${name}`);
+    console.log(`  ✗ ${name}`);
     console.log(`    Error: ${error.message}`);
     failed++;
   }
@@ -76,9 +76,5 @@ test('README and Codex supplement link to the navigation map', () => {
   assert.ok(codexAgents.includes(guidePath), '.codex/AGENTS.md must link the Codex navigation map');
 });
 
-if (failed > 0) {
-  console.log(`\nFailed: ${failed}`);
-  process.exit(1);
-}
-
-console.log(`\nPassed: ${passed}`);
+console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+process.exit(failed > 0 ? 1 : 0);

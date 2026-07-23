@@ -159,8 +159,8 @@ function rewriteRelativeLinks(content, options) {
         }
         // If the recomputed link points to the same place as the original
         // (e.g. an intra-namespace `./sibling.md` whose endpoints both shift by
-        // the same prefix), keep the original text verbatim — including any
-        // leading `./` — so the rewrite stays a strict no-op where it must.
+        // the same prefix), keep the original text verbatim - including any
+        // leading `./` - so the rewrite stays a strict no-op where it must.
         if (posix.normalize(rewritten) === posix.normalize(pathPart)) {
           return match;
         }
