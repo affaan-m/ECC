@@ -67,7 +67,7 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, with first-class Codex support and adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses.
 
-Access to 67 specialized agents, 278 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning.
+Access to 67 agents, 278 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning.
 
 | Included | Count | What it gives you |
 |---|---:|---|
@@ -394,25 +394,15 @@ Manual installs may expose the shorter compatibility form:
 Skills are the primary workflow surface. Commands remain convenient entry points and compatibility shims.
 </details>
 
-<details>
-<summary><strong>Manual multi-agent orchestration</strong></summary>
-
-Use in-process subagents for focused planning, research, or review. Use ECC's tmux/worktree orchestration when workers need isolated branches, independent terminals, or separate test runs.
-
-The [Manual Orchestration Guide](docs/MANUAL-ORCHESTRATION-GUIDE.md) covers the decision, plan format, dry run, launch, status inspection, handoffs, and cleanup. The [team-agent-orchestration skill](skills/team-agent-orchestration/SKILL.md) adds ownership, Kanban state, evidence, and merge gates for larger teams.
-</details>
-
 ## Guides
 
-| Guide                                                            | Read it when...                                                  |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [The Shorthand Guide](./the-shortform-guide.md)                  | You want the fastest conceptual walkthrough and day-one setup    |
-| [The Longform Guide](./the-longform-guide.md)                    | You want context economics, memory, evals, and parallel agents   |
-| [The Security Guide](./the-security-guide.md)                    | You want prompt-injection, hook, MCP, and AgentShield guidance   |
-| [Manual Orchestration Guide](docs/MANUAL-ORCHESTRATION-GUIDE.md) | You want isolated agents running across worktrees and tmux panes |
-| [Commands Quick Reference](./COMMANDS-QUICK-REF.md)              | You want a compact command index                                 |
-| [Manual Adaptation Guide](docs/MANUAL-ADAPTATION-GUIDE.md)       | Your harness has no native ECC target                            |
-|                                                                  |                                                                  |
+| Guide                                                      | Read it when...                                                |
+| ---------------------------------------------------------- | -------------------------------------------------------------- |
+| [The Shorthand Guide](./the-shortform-guide.md)            | You want the fastest conceptual walkthrough and day-one setup  |
+| [The Longform Guide](./the-longform-guide.md)              | You want context economics, memory, evals, and parallel agents |
+| [The Security Guide](./the-security-guide.md)              | You want prompt-injection, hook, MCP, and AgentShield guidance |
+| [Commands Quick Reference](./COMMANDS-QUICK-REF.md)        | You want a compact command index                               |
+| [Manual Adaptation Guide](docs/MANUAL-ADAPTATION-GUIDE.md) | Your harness has no native ECC target                          |
 
 <details>
 <summary><strong>What is inside the repository</strong></summary>
@@ -446,7 +436,12 @@ The root is the source of truth. Platform adapters package or map these same wor
 | OpenCode | Built plugin plus selective installer | `opencode.json`, instructions, commands | OpenCode plugin events |
 | GitHub Copilot | Checked-in instruction layer | `copilot-instructions.md`, prompt files | No ECC hook runtime |
 
-| **Version** | Plugin | Plugin | Reference config | 2.0.0 | Instruction layer |
+| Feature | Claude Code | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
+| --- | --- | --- | --- | --- | --- |
+| **Agents** | 67 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
+| **Commands** | 94 | Shared | Instruction-based | 35 | 5 prompts |
+| **Skills** | 278 | Shared | 10 (native format) | 37 | Via instructions |
+
 </details>
 
 <details>
