@@ -137,6 +137,10 @@ function pushUpdateInput() {
   return `refs/heads/feature ${'1'.repeat(40)} refs/heads/feature ${'0'.repeat(40)}\n`;
 }
 
+function pushDeletionInput() {
+  return `refs/heads/feature ${'0'.repeat(40)} refs/heads/feature ${'1'.repeat(40)}\n`;
+}
+
 function makeHermeticCodexEnv(homeDir, codexDir, extraEnv = {}) {
   const agentsHome = path.join(homeDir, '.agents');
   const hooksDir = path.join(codexDir, 'git-hooks');
@@ -374,6 +378,62 @@ if (
 
       assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
       assert.ok(!fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'Node scripts must not run');
+      assert.match(result.stdout, /repository opt-out.*\.ecc-prepush-disable/i);
+      assert.match(result.stdout, /CI\/remote checks remain authoritative/i);
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('untracked repo opt-out marker does not skip the pre-push suite', () => {
+    const fixture = createLinkedWorktreeFixture({ withPrePushMarker: false });
+
+    try {
+      fs.writeFileSync(
+        path.join(fixture.linkedDir, '.ecc-prepush-disable'),
+        'An untracked marker must not disable checks.\n'
+      );
+      assert.notStrictEqual(
+        runGit(['ls-files', '--error-unmatch', '.ecc-prepush-disable'], fixture.linkedDir).status,
+        0,
+        'the marker must remain untracked for this regression'
+      );
+
+      const result = runHook(prePushHook, fixture.linkedDir, {}, pushUpdateInput());
+
+      assert.notStrictEqual(
+        result.status,
+        0,
+        `an untracked .ecc-prepush-disable must not skip the suite\n${result.stdout}\n${result.stderr}`
+      );
+      assert.ok(fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'the suite must run and block');
+      assert.match(result.stderr, /lint failed/);
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('deletion-only push skips the full suite even when explicitly opted in', () => {
+    const fixture = createLinkedWorktreeFixture({ withPrePushMarker: false });
+
+    try {
+      const result = runHook(
+        prePushHook,
+        fixture.linkedDir,
+        { ECC_PREPUSH_FULL: '1' },
+        pushDeletionInput()
+      );
+
+      assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.ok(!fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'deletion must not run the suite');
     } finally {
       cleanupLinkedWorktreeFixture(fixture);
     }
