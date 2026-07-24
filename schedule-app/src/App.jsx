@@ -5,7 +5,7 @@ import TabBar from './components/TabBar.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
 import Tutorial from './components/Tutorial.jsx';
 import { runReminderScan } from './data/notifications.js';
-import { tapTick, confirmTick, warnTick } from './data/haptics.js';
+import { tapTick, confirmTick, warnTick, selectTick, successTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
 import { setHapticsEnabled } from './data/haptics.js';
 import { fetchMe, backendConfigured, fetchSyncedData, pushSyncedData } from './data/api.js';
@@ -139,18 +139,42 @@ export default function App() {
   // was the "overwhelming" complaint's actual cause (every button ticking
   // at the SAME strength as a save/delete), not tapping in general. Links
   // (Directions, call/text/email quick actions, contact links) are real
-  // tap targets too and were left out of an earlier reduction pass —
-  // included here for parity with buttons, not as a separate step up.
+  // tap targets too.
+  //
+  // Elements that need a tick the classList heuristic below can't express —
+  // conditional (only warn if there are unsaved changes), state-dependent
+  // (a checkbox feels different checking vs. unchecking), or driven by their
+  // own gesture rather than a click (drag handles, event blocks) — declare
+  // it explicitly with data-haptic instead of also being caught here twice:
+  //   data-haptic="none"                 this element manages its own ticks
+  //   data-haptic="tap|confirm|warn|select|success"   fire this one instead
+  //     of the classList guess (can be set dynamically per render, e.g.
+  //     data-haptic={done ? 'tap' : 'success'} for a toggle)
+  const HAPTIC_KINDS = { tap: tapTick, confirm: confirmTick, warn: warnTick, select: selectTick, success: successTick };
   useEffect(() => {
     const onPointerDown = (e) => {
       const el = e.target.closest?.(
         'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
       );
       if (!el || el.disabled) return;
+      const explicit = el.dataset.haptic;
+      if (explicit === 'none') return;
+      if (explicit && HAPTIC_KINDS[explicit]) {
+        HAPTIC_KINDS[explicit]();
+        return;
+      }
       // The day timeline's event blocks run their own long-press-to-arm gesture
       // with its own haptics (see PlannerPage) — a delegated tap here on every
       // pointerdown would double up with (and pre-empt) that feedback.
       if (el.classList.contains('event-block')) return;
+      if (el.getAttribute('role') === 'switch') {
+        // Direction-aware: turning a setting ON is a firmer confirm, turning
+        // it OFF is the lighter routine tap — instead of every switch in
+        // Settings feeling identical regardless of which way it flipped.
+        if (el.getAttribute('aria-checked') === 'true') tapTick();
+        else confirmTick();
+        return;
+      }
       if (el.classList.contains('btn-danger') || el.classList.contains('btn-danger-ghost')) warnTick();
       else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
       else tapTick();

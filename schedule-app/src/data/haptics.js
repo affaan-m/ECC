@@ -38,3 +38,11 @@ export function warnTick() {
 export function selectTick() {
   fire(5);
 }
+
+// A brighter double-pulse for the moment something gets genuinely completed
+// (a task checked off, a goal target reached) — distinct from confirmTick's
+// single pulse so a real accomplishment reads differently from a routine
+// save/toggle, pairing with the checkmark bounce + spark animation.
+export function successTick() {
+  fire([10, 30, 18]);
+}

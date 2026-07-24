@@ -105,7 +105,7 @@ export default function EditorSheet({
           <span className="modal-handle" />
         </div>
         <div className="editor-sheet-head">
-          <button className="editor-sheet-close" onClick={requestClose} aria-label="Close">
+          <button className="editor-sheet-close" data-haptic="none" onClick={requestClose} aria-label="Close">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
@@ -113,6 +113,7 @@ export default function EditorSheet({
           <h2>{title}</h2>
           <button
             className={`editor-sheet-save${justSaved ? ' editor-sheet-save--pop' : ''}`}
+            data-haptic="none"
             onClick={doSave}
             disabled={saveDisabled}
             onAnimationEnd={() => setJustSaved(false)}

@@ -3,6 +3,7 @@ import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
+import { successTick } from '../data/haptics.js';
 import {
   goalKey,
   weekKey,
@@ -209,6 +210,7 @@ export default function GoalsPage() {
                   <div className="stepper">
                     <button
                       className="step-btn"
+                      data-haptic="select"
                       onClick={() => actions.setGoalProgress(g.id, key, value - 1)}
                       disabled={value <= 0}
                       aria-label={`Decrease ${g.title}`}
@@ -217,7 +219,12 @@ export default function GoalsPage() {
                     </button>
                     <button
                       className="step-btn step-btn--plus"
-                      onClick={() => actions.setGoalProgress(g.id, key, value + 1)}
+                      data-haptic={!done && value + 1 >= g.target ? 'none' : 'select'}
+                      onClick={() => {
+                        const nextValue = value + 1;
+                        actions.setGoalProgress(g.id, key, nextValue);
+                        if (!done && nextValue >= g.target) successTick();
+                      }}
                       aria-label={`Increase ${g.title}`}
                     >
                       +

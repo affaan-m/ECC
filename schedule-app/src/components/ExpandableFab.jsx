@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useStore } from '../data/store.jsx';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
-import { selectTick } from '../data/haptics.js';
 
 // Floating "+" that expands into a stack of labeled pills (one per enabled
 // quick-add action, in the user's configured order) instead of jumping
 // straight to a single action. The trigger rotates into an "x" while open.
 // `onAction(id)` is called with the tapped action's id ('event' | 'task' |
-// 'contact' | 'note'); the menu closes itself first.
+// 'contact' | 'note'); the menu closes itself first. Haptics on the trigger
+// come from the app-wide delegated listener (it's a .fab, same as every
+// other FAB) rather than a call here, so it doesn't double up.
 export default function ExpandableFab({ onAction }) {
   const { state } = useStore();
   const [open, setOpen] = useState(false);
@@ -17,10 +18,7 @@ export default function ExpandableFab({ onAction }) {
     return null;
   }
 
-  const toggle = () => {
-    setOpen((o) => !o);
-    selectTick();
-  };
+  const toggle = () => setOpen((o) => !o);
 
   return (
     <>

@@ -508,13 +508,13 @@ export default function PlannerPage() {
         <div className="select-bar">
           <span>{selected.size} selected</span>
           <div className="select-bar-actions">
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: 1 })}>
+            <button className="btn btn-ghost btn-sm" data-haptic="none" onClick={() => moveSelected({ dayOffset: 1 })}>
               +1 day
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: 7 })}>
+            <button className="btn btn-ghost btn-sm" data-haptic="none" onClick={() => moveSelected({ dayOffset: 7 })}>
               +1 week
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => moveSelected({ dayOffset: -1 })}>
+            <button className="btn btn-ghost btn-sm" data-haptic="none" onClick={() => moveSelected({ dayOffset: -1 })}>
               −1 day
             </button>
           </div>

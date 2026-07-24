@@ -7,6 +7,7 @@ import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import Tutorial from '../components/Tutorial.jsx';
+import { selectTick } from '../data/haptics.js';
 import {
   notificationsSupported,
   notificationPermission,
@@ -564,7 +565,10 @@ export default function MorePage() {
             max="100"
             step="10"
             value={s.eventBlockOpacity ?? 100}
-            onChange={(e) => requirePro(() => actions.setSettings({ eventBlockOpacity: Number(e.target.value) }))}
+            onChange={(e) => {
+              selectTick();
+              requirePro(() => actions.setSettings({ eventBlockOpacity: Number(e.target.value) }));
+            }}
             className="range-slider"
             disabled={!isPro}
           />
@@ -602,7 +606,10 @@ export default function MorePage() {
           max="160"
           step="10"
           value={s.mapEmojiSize ?? 100}
-          onChange={(e) => actions.setSettings({ mapEmojiSize: Number(e.target.value) })}
+          onChange={(e) => {
+            selectTick();
+            actions.setSettings({ mapEmojiSize: Number(e.target.value) });
+          }}
           className="range-slider"
         />
       </section>

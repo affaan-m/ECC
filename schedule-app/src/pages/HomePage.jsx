@@ -6,7 +6,6 @@ import ExpandableFab from '../components/ExpandableFab.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import { Brand } from '../components/Logo.jsx';
-import { confirmTick } from '../data/haptics.js';
 import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
@@ -145,7 +144,6 @@ export default function HomePage() {
     if (editingTask.id) actions.updateTask({ ...editingTask, ...payload });
     else actions.addTask({ ...payload, createdAt: today });
     setEditingTask(null);
-    confirmTick();
   };
 
   // --- Notes ---
@@ -274,10 +272,8 @@ export default function HomePage() {
                     <li key={t.id} className="task-row">
                       <button
                         className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                        onClick={() => {
-                          actions.updateTask({ ...t, done: !t.done });
-                          if (!t.done) confirmTick();
-                        }}
+                        data-haptic={t.done ? 'tap' : 'success'}
+                        onClick={() => actions.updateTask({ ...t, done: !t.done })}
                         aria-label={t.done ? 'Mark not done' : 'Mark done'}
                       >
                         {t.done && <CheckIcon />}
@@ -411,6 +407,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       className={`task-check${item.done ? ' task-check--on' : ''}${poppedChecklistIdx === i ? ' task-check--pop' : ''}`}
+                      data-haptic={item.done ? 'tap' : 'success'}
                       onClick={() => {
                         const next = editingNote.checklist.slice();
                         const nowDone = !next[i].done;

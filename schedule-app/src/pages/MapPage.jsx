@@ -345,7 +345,6 @@ export default function MapPage() {
   const cancelPick = () => navigate(pickReturnTo, { state: { eventDraftReturn: true } });
   const confirmPick = () => {
     if (!pickLatLng) return;
-    confirmTick();
     navigate(pickReturnTo, { state: { eventDraftReturn: true, locationPicked: pickLatLng } });
   };
 

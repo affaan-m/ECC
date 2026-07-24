@@ -71,6 +71,7 @@ export default function ReorderToggleList({ items, types, onChange, lockedIds = 
             <button
               type="button"
               className="bubble-drag-handle"
+              data-haptic="none"
               onPointerDown={onDown(i)}
               onPointerMove={onMove}
               onPointerUp={onUp}

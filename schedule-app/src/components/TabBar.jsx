@@ -1,5 +1,4 @@
 import { NavLink } from 'react-router-dom';
-import { tapTick } from '../data/haptics.js';
 import { useStore } from '../data/store.jsx';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 
@@ -29,7 +28,6 @@ export default function TabBar() {
             key={to}
             to={to}
             end={id === 'home'}
-            onClick={tapTick}
             aria-label={label}
             title={label}
             className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
