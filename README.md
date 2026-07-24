@@ -86,49 +86,13 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
 
 <sub><strong>Partners &amp; sponsors</strong></sub>
 
-<table>
-<tr>
-<td align="center" width="20%">
-  <a href="https://www.coderabbit.ai">
-    <img src="assets/images/sponsors/coderabbit.png" height="56" alt="CodeRabbit logo" /><br />
-    <strong>CodeRabbit</strong>
-  </a>
-</td>
-<td align="center" width="20%">
-  <a href="https://www.greptile.com/go/ecc">
-    <img src="assets/images/sponsors/greptile.png" height="56" alt="Greptile logo" /><br />
-    <strong>Greptile</strong>
-  </a>
-</td>
-<td align="center" width="20%">
-  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" />
-      <img src="assets/images/sponsors/atlascloud.svg" height="28" alt="Atlas Cloud logo" />
-    </picture><br />
-    <strong>Atlas Cloud</strong>
-  </a>
-</td>
-<td align="center" width="20%">
-  <a href="https://www.moonshot.ai">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" />
-      <img src="assets/images/sponsors/moonshot.png" height="44" alt="Moonshot AI Kimi logo" />
-    </picture><br />
-    <strong>Moonshot AI</strong>
-  </a>
-</td>
-<td align="center" width="20%">
-  <a href="https://compute.itomarkets.com">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" />
-      <img src="assets/images/sponsors/ito.svg" height="44" alt="Itô Markets logo" />
-    </picture><br />
-    <strong>Itô</strong>
-  </a>
-</td>
-</tr>
-</table>
+<p align="center" aria-label="Partners and sponsors">
+  <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.moonshot.ai" title="Moonshot AI — Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI — Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="190" alt="Itô Markets" /></picture></a>
+</p>
 
 <sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
 

@@ -94,6 +94,13 @@ function main() {
       const readme = read('README.md');
       assert.ok(readme.includes('assets/images/sponsors/ito.svg'));
       assert.ok(readme.includes('assets/images/sponsors/ito-dark.svg'));
+      assert.match(readme, /<p align="center" aria-label="Partners and sponsors">/);
+      assert.doesNotMatch(
+        readme,
+        /<sub><strong>Partners &amp; sponsors<\/strong><\/sub>\s*<table>/
+      );
+      assert.doesNotMatch(readme, /<strong>Itô<\/strong>/);
+      assert.doesNotMatch(readme, /<strong>Moonshot AI<\/strong>/);
       assertHonestComputeCopy(readme);
       assert.match(
         readme,
