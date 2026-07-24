@@ -2117,6 +2117,9 @@ textarea {
 .section-head + .section-head {
   margin-top: 10px;
 }
+.seg--full + .section-head {
+  margin-top: 10px;
+}
 .detail-label {
   font-size: 12px;
   text-transform: uppercase;
