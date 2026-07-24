@@ -340,25 +340,6 @@ textarea {
 .tab svg {
   opacity: 0.9;
 }
-.tab-icon-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.tab-streak-badge {
-  position: absolute;
-  top: -6px;
-  right: -12px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: 99px;
-  background: var(--warn);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 16px;
-  text-align: center;
-}
 
 /* --- Week / date nav ---------------------------------------------------- */
 .week-nav {
