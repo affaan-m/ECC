@@ -603,6 +603,8 @@ function DayView({
   const gestureRef = useRef(null); // { key, occ, phase, startY, startX, startClientY }
   const groupGestureRef = useRef(null); // { phase, startClientX, startClientY, timer, lastMinSnap, lastDayOffset }
   const groupClickSuppressRef = useRef(false); // swallow the native click that follows a group-gesture pointerup
+  const momentumRef = useRef(null); // requestAnimationFrame id for the coast-down after a manual scroll (see startMomentumScroll)
+  useEffect(() => () => cancelAnimationFrame(momentumRef.current), []);
   const pinchRef = useRef(null); // { pointers: Map<id,{x,y}>, startDist, startZoom }
   const swipeRef = useRef(null); // { pointerId, startX, startY } — single-pointer swipe to change day
   const [armedKey, setArmedKey] = useState(null);
@@ -761,9 +763,38 @@ function DayView({
     setDragDx(0);
   };
 
+  // A scroll that starts on an event block is forwarded to window.scrollBy
+  // by hand (see the 'scrolling' phase below) since the block is
+  // touch-action: none and the browser won't pan it natively. Cutting that
+  // off dead the instant the finger lifts — with no coast-down — is what
+  // reads as "not continuous" next to a real scroll starting on empty
+  // space. This replicates that momentum: keep scrolling at the release
+  // velocity, decaying it each frame, until it's imperceptibly small.
+  const MOMENTUM_FRICTION = 0.95; // multiplier applied to velocity per frame
+  const MOMENTUM_MIN_VELOCITY = 0.05; // px/ms — below this, momentum stops
+  const startMomentumScroll = (velocity) => {
+    cancelAnimationFrame(momentumRef.current);
+    if (Math.abs(velocity) < MOMENTUM_MIN_VELOCITY) return;
+    let v = velocity;
+    let lastT = performance.now();
+    const step = (t) => {
+      const dt = t - lastT;
+      lastT = t;
+      window.scrollBy(0, v * dt);
+      v *= MOMENTUM_FRICTION;
+      if (Math.abs(v) < MOMENTUM_MIN_VELOCITY) {
+        momentumRef.current = null;
+        return;
+      }
+      momentumRef.current = requestAnimationFrame(step);
+    };
+    momentumRef.current = requestAnimationFrame(step);
+  };
+
   const onDown = (e, occ) => {
     e.stopPropagation();
     if (selectMode) return;
+    cancelAnimationFrame(momentumRef.current);
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const key = `${occ.id}:${occ.recDate}`;
     const g = {
@@ -773,6 +804,8 @@ function DayView({
       startClientY: e.clientY,
       startClientX: e.clientX,
       lastClientY: e.clientY,
+      lastMoveTime: performance.now(),
+      velocity: 0,
       timer: null,
       lastSnap: 0,
       // Net days paged during this drag — always moves one at a time, only
@@ -810,8 +843,18 @@ function DayView({
       }
     }
     if (g.phase === 'scrolling') {
-      window.scrollBy(0, g.lastClientY - e.clientY);
+      const now = performance.now();
+      const dt = now - g.lastMoveTime;
+      const scrollDelta = g.lastClientY - e.clientY;
+      window.scrollBy(0, scrollDelta);
+      if (dt > 0) {
+        const instVelocity = scrollDelta / dt;
+        // Smoothed rather than the raw last-frame value, so one jittery
+        // sample right at release doesn't set the whole coast-down speed.
+        g.velocity = g.velocity * 0.7 + instVelocity * 0.3;
+      }
       g.lastClientY = e.clientY;
+      g.lastMoveTime = now;
       return;
     }
     if (g.phase === 'armed') {
@@ -846,6 +889,8 @@ function DayView({
     if (g.phase === 'pending') {
       // Released before the long-press threshold, without moving: a tap.
       onOpen(occ);
+    } else if (g.phase === 'scrolling') {
+      startMomentumScroll(g.velocity);
     } else if (g.phase === 'swiping') {
       const dx = e.clientX - g.startClientX;
       const dy = e.clientY - g.startClientY;
@@ -915,6 +960,7 @@ function DayView({
     // POST-toggle state and immediately undo what pointerup just did. Flag
     // it here and swallow that one click instead of trusting its closure.
     groupClickSuppressRef.current = true;
+    cancelAnimationFrame(momentumRef.current);
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const g = {
       occ,
@@ -922,6 +968,8 @@ function DayView({
       startClientX: e.clientX,
       startClientY: e.clientY,
       lastClientY: e.clientY,
+      lastMoveTime: performance.now(),
+      velocity: 0,
       timer: null,
       lastMinSnap: 0,
       dayOffset: 0,
@@ -953,8 +1001,16 @@ function DayView({
       }
     }
     if (g.phase === 'scrolling') {
-      window.scrollBy(0, g.lastClientY - e.clientY);
+      const now = performance.now();
+      const dt = now - g.lastMoveTime;
+      const scrollDelta = g.lastClientY - e.clientY;
+      window.scrollBy(0, scrollDelta);
+      if (dt > 0) {
+        const instVelocity = scrollDelta / dt;
+        g.velocity = g.velocity * 0.7 + instVelocity * 0.3;
+      }
       g.lastClientY = e.clientY;
+      g.lastMoveTime = now;
       return;
     }
     if (g.phase === 'armed') {
@@ -989,6 +1045,8 @@ function DayView({
       // Released before the long-press threshold, without moving: a tap
       // deselects (it was already selected to be draggable at all).
       onToggleSelect(occ);
+    } else if (g.phase === 'scrolling') {
+      startMomentumScroll(g.velocity);
     } else if (g.phase === 'armed') {
       const minOffset = Math.round(groupDrag.dy / pxPerMin / 15) * 15;
       const dayOffset = groupDrag.dayOffset;
