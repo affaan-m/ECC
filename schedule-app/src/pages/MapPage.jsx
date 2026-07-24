@@ -118,18 +118,34 @@ export default function MapPage() {
         suppressClickRef.current = true;
         setSelectedId(null);
         setTempPin({ lat: latlng.lat, lng: latlng.lng, x: startPoint.x, y: startPoint.y });
-        confirmTick();
+        // Not confirmTick() here directly: this callback runs off a
+        // setTimeout, and Chrome silently drops navigator.vibrate() calls
+        // that aren't tied closely enough to a real user gesture. Flag it
+        // and fire from the next actual pointer event instead.
+        pressRef.current.pendingArmTick = true;
       }, LONG_PRESS_MS),
     };
   };
   handlersRef.current.onPressMove = (e) => {
     const p = pressRef.current;
-    if (!p || p.fired) return;
+    if (!p) return;
+    if (p.pendingArmTick) {
+      p.pendingArmTick = false;
+      confirmTick();
+    }
+    if (p.fired) return;
     const dx = e.clientX - p.startPoint.x;
     const dy = e.clientY - p.startPoint.y;
     if (Math.hypot(dx, dy) > LONG_PRESS_TOLERANCE_PX) clearPressTimer();
   };
   handlersRef.current.onPressEnd = () => {
+    // Fallback for a held-perfectly-still long-press: if no pointermove
+    // followed to fire the pending arm tick, this release is itself a real
+    // event to fire it from instead of losing it.
+    if (pressRef.current?.pendingArmTick) {
+      pressRef.current.pendingArmTick = false;
+      confirmTick();
+    }
     if (!pressRef.current?.fired) clearPressTimer();
     else pressRef.current = null;
   };

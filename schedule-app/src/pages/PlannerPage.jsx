@@ -818,7 +818,13 @@ function DayView({
       if (gestureRef.current === g && g.phase === 'pending') {
         g.phase = 'armed';
         setArmedKey(key);
-        confirmTick();
+        // Not confirmTick() here directly: this callback runs off a
+        // setTimeout, and Chrome silently drops navigator.vibrate() calls
+        // that aren't tied closely enough to a real user gesture — this was
+        // the one haptic in the whole app fired that way, and the one that
+        // silently did nothing on real devices. Flag it and fire from the
+        // next actual pointer event instead (still effectively instant).
+        g.pendingArmTick = true;
       }
     }, LONG_PRESS_MS);
     gestureRef.current = g;
@@ -826,6 +832,10 @@ function DayView({
   const onMoveP = (e) => {
     const g = gestureRef.current;
     if (!g) return;
+    if (g.pendingArmTick) {
+      g.pendingArmTick = false;
+      confirmTick();
+    }
     const dx = e.clientX - g.startClientX;
     const dy = e.clientY - g.startClientY;
     if (g.phase === 'pending') {
@@ -886,6 +896,13 @@ function DayView({
     const g = gestureRef.current;
     if (!g) return;
     clearTimeout(g.timer);
+    // Fallback for a held-perfectly-still long-press: if it armed but no
+    // pointermove ever followed to fire the pending arm tick, this pointerup
+    // is itself a real event to fire it from instead of losing it.
+    if (g.pendingArmTick) {
+      g.pendingArmTick = false;
+      confirmTick();
+    }
     if (g.phase === 'pending') {
       // Released before the long-press threshold, without moving: a tap.
       onOpen(occ);
@@ -979,7 +996,11 @@ function DayView({
       if (groupGestureRef.current === g && g.phase === 'pending') {
         g.phase = 'armed';
         setGroupDragging(true);
-        confirmTick();
+        // Same reasoning as the single-event gesture: this callback runs off
+        // a setTimeout, and Chrome silently drops navigator.vibrate() calls
+        // that aren't tied closely enough to a real user gesture. Fire from
+        // the next actual pointer event instead.
+        g.pendingArmTick = true;
       }
     }, LONG_PRESS_MS);
     groupGestureRef.current = g;
@@ -987,6 +1008,10 @@ function DayView({
   const onGroupMove = (e) => {
     const g = groupGestureRef.current;
     if (!g) return;
+    if (g.pendingArmTick) {
+      g.pendingArmTick = false;
+      confirmTick();
+    }
     const dx = e.clientX - g.startClientX;
     const dy = e.clientY - g.startClientY;
     if (g.phase === 'pending') {
@@ -1041,6 +1066,10 @@ function DayView({
     const g = groupGestureRef.current;
     if (!g) return;
     clearTimeout(g.timer);
+    if (g.pendingArmTick) {
+      g.pendingArmTick = false;
+      confirmTick();
+    }
     if (g.phase === 'pending') {
       // Released before the long-press threshold, without moving: a tap
       // deselects (it was already selected to be draggable at all).
