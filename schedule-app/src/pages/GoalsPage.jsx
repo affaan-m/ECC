@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
-import { successTick } from '../data/haptics.js';
+import { successTick, selectTick } from '../data/haptics.js';
 import {
   goalKey,
   weekKey,
@@ -56,6 +56,69 @@ export default function GoalsPage() {
     });
   }, [state.goals, period, isDaily, day]);
   const progressOf = (g) => g.progress?.[key] || 0;
+
+  // Press-and-hold on a stepper +/- button: after holding past HOLD_DELAY_MS
+  // it starts auto-repeating at REPEAT_INTERVAL_MS until released, instead of
+  // requiring a tap per step. A plain tap still applies exactly one step —
+  // repeat mode only engages once the hold has actually lasted a second, and
+  // the click that a pointerup would otherwise also fire is suppressed once
+  // it has, so holding never double-applies its last step.
+  const HOLD_DELAY_MS = 1000;
+  const REPEAT_INTERVAL_MS = 150;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const holdRef = useRef({});
+  const suppressClickRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      Object.values(holdRef.current).forEach((h) => {
+        clearTimeout(h.timer);
+        clearInterval(h.intervalId);
+      });
+    },
+    []
+  );
+
+  // `repeatTick` is only passed from the hold-repeat path below: a plain tap
+  // already gets its "select" tick from the app-wide delegated pointerdown
+  // listener, but repeated auto-increments never fire another pointerdown,
+  // so they need their own light tick to keep confirming each step landed —
+  // unless this is the step that completes the goal, which keeps the
+  // stronger successTick instead of also firing this one.
+  const applyDelta = (goalId, periodKey, delta, { repeatTick = false } = {}) => {
+    const g = stateRef.current.goals.find((x) => x.id === goalId);
+    if (!g) return;
+    const current = g.progress?.[periodKey] || 0;
+    const wasDone = current >= g.target;
+    const next = Math.max(0, current + delta);
+    actions.setGoalProgress(goalId, periodKey, next);
+    if (delta > 0 && !wasDone && next >= g.target) successTick();
+    else if (repeatTick) selectTick();
+  };
+  const clearHold = (holdKey) => {
+    const h = holdRef.current[holdKey];
+    if (!h) return;
+    clearTimeout(h.timer);
+    clearInterval(h.intervalId);
+    delete holdRef.current[holdKey];
+  };
+  const startHold = (goalId, periodKey, delta) => {
+    const holdKey = `${goalId}:${delta}`;
+    clearHold(holdKey);
+    const h = { repeating: false };
+    holdRef.current[holdKey] = h;
+    h.timer = setTimeout(() => {
+      h.repeating = true;
+      applyDelta(goalId, periodKey, delta, { repeatTick: true });
+      h.intervalId = setInterval(() => applyDelta(goalId, periodKey, delta, { repeatTick: true }), REPEAT_INTERVAL_MS);
+    }, HOLD_DELAY_MS);
+  };
+  const endHold = (goalId, delta) => {
+    const holdKey = `${goalId}:${delta}`;
+    if (holdRef.current[holdKey]?.repeating) suppressClickRef.current = holdKey;
+    clearHold(holdKey);
+  };
 
   const totals = useMemo(() => {
     const target = goals.reduce((s, g) => s + (g.target || 0), 0);
@@ -220,7 +283,18 @@ export default function GoalsPage() {
                     <button
                       className="step-btn"
                       data-haptic="select"
-                      onClick={() => actions.setGoalProgress(g.id, key, value - 1)}
+                      onPointerDown={() => startHold(g.id, key, -1)}
+                      onPointerUp={() => endHold(g.id, -1)}
+                      onPointerLeave={() => clearHold(`${g.id}:-1`)}
+                      onPointerCancel={() => clearHold(`${g.id}:-1`)}
+                      onClick={() => {
+                        const holdKey = `${g.id}:-1`;
+                        if (suppressClickRef.current === holdKey) {
+                          suppressClickRef.current = null;
+                          return;
+                        }
+                        applyDelta(g.id, key, -1);
+                      }}
                       disabled={value <= 0}
                       aria-label={`Decrease ${g.title}`}
                     >
@@ -229,10 +303,17 @@ export default function GoalsPage() {
                     <button
                       className="step-btn step-btn--plus"
                       data-haptic={!done && value + 1 >= g.target ? 'none' : 'select'}
+                      onPointerDown={() => startHold(g.id, key, 1)}
+                      onPointerUp={() => endHold(g.id, 1)}
+                      onPointerLeave={() => clearHold(`${g.id}:1`)}
+                      onPointerCancel={() => clearHold(`${g.id}:1`)}
                       onClick={() => {
-                        const nextValue = value + 1;
-                        actions.setGoalProgress(g.id, key, nextValue);
-                        if (!done && nextValue >= g.target) successTick();
+                        const holdKey = `${g.id}:1`;
+                        if (suppressClickRef.current === holdKey) {
+                          suppressClickRef.current = null;
+                          return;
+                        }
+                        applyDelta(g.id, key, 1);
                       }}
                       aria-label={`Increase ${g.title}`}
                     >
