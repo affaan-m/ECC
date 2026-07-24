@@ -152,12 +152,21 @@ export default function App() {
   //     of the classList guess (can be set dynamically per render, e.g.
   //     data-haptic={done ? 'tap' : 'success'} for a toggle)
   const HAPTIC_KINDS = { tap: tapTick, confirm: confirmTick, warn: warnTick, select: selectTick, success: successTick };
+  // A tick has to wait for an actual press-and-release, not just a touch —
+  // firing on pointerdown meant starting a scroll on top of any button (an
+  // event block, a list row, a nav link under your thumb) ticked immediately
+  // even though the gesture turned into a scroll, not a tap. pointerdown now
+  // only arms a pending press; pointermove past a small tolerance (the
+  // finger is dragging/scrolling, not tapping) disarms it, and only a
+  // pointerup that's still armed actually fires. pointerup is just as
+  // "fresh" a trusted gesture as pointerdown for Chrome's vibrate() gesture
+  // requirement, so this doesn't reintroduce the setTimeout-drops-vibrate
+  // issue fixed earlier — only the trigger event changed, not its freshness.
+  const MOVE_CANCEL_PX = 10;
   useEffect(() => {
-    const onPointerDown = (e) => {
-      const el = e.target.closest?.(
-        'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
-      );
-      if (!el || el.disabled) return;
+    let pending = null; // { el, pointerId, startX, startY }
+
+    const fireForElement = (el) => {
       const explicit = el.dataset.haptic;
       if (explicit === 'none') return;
       if (explicit && HAPTIC_KINDS[explicit]) {
@@ -166,7 +175,7 @@ export default function App() {
       }
       // The day timeline's event blocks run their own long-press-to-arm gesture
       // with its own haptics (see PlannerPage) — a delegated tap here on every
-      // pointerdown would double up with (and pre-empt) that feedback.
+      // press would double up with (and pre-empt) that feedback.
       if (el.classList.contains('event-block')) return;
       if (el.getAttribute('role') === 'switch') {
         // Direction-aware: turning a setting ON is a firmer confirm, turning
@@ -180,8 +189,39 @@ export default function App() {
       else if (el.classList.contains('btn-primary') || el.classList.contains('fab')) confirmTick();
       else tapTick();
     };
+
+    const onPointerDown = (e) => {
+      const el = e.target.closest?.(
+        'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
+      );
+      if (!el || el.disabled) return;
+      pending = { el, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
+    };
+    const onPointerMove = (e) => {
+      if (!pending || e.pointerId !== pending.pointerId) return;
+      const dx = e.clientX - pending.startX;
+      const dy = e.clientY - pending.startY;
+      if (Math.hypot(dx, dy) > MOVE_CANCEL_PX) pending = null;
+    };
+    const onPointerUp = (e) => {
+      if (!pending || e.pointerId !== pending.pointerId) return;
+      fireForElement(pending.el);
+      pending = null;
+    };
+    const onPointerCancel = (e) => {
+      if (pending && e.pointerId === pending.pointerId) pending = null;
+    };
+
     document.addEventListener('pointerdown', onPointerDown, { passive: true });
-    return () => document.removeEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointermove', onPointerMove, { passive: true });
+    document.addEventListener('pointerup', onPointerUp, { passive: true });
+    document.addEventListener('pointercancel', onPointerCancel, { passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerCancel);
+    };
   }, []);
 
   // Toggle switches (and other small controls deep in a scrollable settings
