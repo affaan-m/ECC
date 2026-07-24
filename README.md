@@ -27,6 +27,32 @@
   <a href="https://www.npmjs.com/package/ecc-agentshield"><img src="https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield&logo=npm" alt="ecc-agentshield npm downloads" /></a>
 </p>
 
+<table aria-label="ECC primary links" width="100%">
+<tr>
+<td width="33%" align="center">
+  <a href="https://ecc.tools/pricing">
+    <img src="assets/images/community/ecc-tools-mark.svg" height="42" alt="ECC Tools" /><br />
+    <strong>ECC Pro + GitHub App</strong>
+  </a><br />
+  <sub><a href="https://github.com/apps/ecc-tools">Install free</a> · <a href="https://ecc.tools/pricing">Private repos from $19/seat/mo</a></sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://github.com/sponsors/affaan-m">
+    <img src="assets/images/community/heart.svg" height="42" alt="" /><br />
+    <strong>Sponsor ECC</strong>
+  </a><br />
+  <sub>Fund the open-source project</sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://discord.gg/36yGMHGFbR">
+    <img src="assets/images/community/discord.svg" height="42" alt="Discord" /><br />
+    <strong>Community</strong>
+  </a><br />
+  <sub>Discord · Q&amp;A · Show and Tell</sub>
+</td>
+</tr>
+</table>
+
 # Everything Claude Code
 
 Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, verifies changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
@@ -305,9 +331,47 @@ pwsh -File .\install.ps1 --target claude --modules hooks-runtime
 
 ECC works through each harness's normal configuration, so you can use an official provider, a compatible custom API endpoint or model gateway, or a self-hosted model without changing ECC's workflows.
 
-Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management; it does not provision compute or serving. Managed inference through Itô is not live yet.
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. The sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, `ecc ito find` invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
 
 For Claude Code, see Anthropic's [LLM gateway documentation](https://docs.anthropic.com/en/docs/claude-code/llm-gateway) and [model configuration documentation](https://docs.anthropic.com/en/docs/claude-code/model-config).
+
+For a local Kimi setup, keep the harness, model-serving endpoint, and GPU provider as separate choices:
+
+<table aria-label="Local Kimi model path" width="100%">
+<tr>
+<td width="33%" align="center">
+  <a href="https://compute.itomarkets.com">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="164" alt="Itô Markets" /></picture><br />
+    <strong>1. Get GPU capacity</strong>
+  </a><br />
+  <sub>Use Itô or any GPU provider.</sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://www.moonshot.ai">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="126" alt="Moonshot AI - Kimi" /></picture><br />
+    <strong>2. Serve Kimi</strong>
+  </a><br />
+  <sub>Expose the chosen checkpoint through a compatible endpoint.</sub>
+</td>
+<td width="33%" align="center">
+  <a href=".kimi/README.md">
+    <img src="assets/images/community/ecc-tools-mark.svg" height="52" alt="ECC Tools" /><br />
+    <strong>3. Run Kimi Code with ECC</strong>
+  </a><br />
+  <sub>Install project instructions and skills, then start Kimi Code.</sub>
+</td>
+</tr>
+</table>
+
+Configure the endpoint with Kimi Code's <a href="https://moonshotai.github.io/kimi-cli/en/configuration/providers.html">official provider guide</a>, then install ECC:
+
+```bash
+bash ./install.sh --target kimi --profile minimal
+npx ecc doctor --target kimi
+kimi
+```
+
+Kimi Code discovers the installed `.kimi/AGENTS.md` instructions and `.kimi/skills/` workflows natively.
 </details>
 
 <details>
@@ -370,13 +434,33 @@ Skills are the primary workflow surface. Commands remain convenient entry points
 
 ## Guides
 
-| Guide                                                      | Read it when...                                                |
-| ---------------------------------------------------------- | -------------------------------------------------------------- |
-| [The Shorthand Guide](./the-shortform-guide.md)            | You want the fastest conceptual walkthrough and day-one setup  |
-| [The Longform Guide](./the-longform-guide.md)              | You want context economics, memory, evals, and parallel agents |
-| [The Security Guide](./the-security-guide.md)              | You want prompt-injection, hook, MCP, and AgentShield guidance |
-| [Commands Quick Reference](./COMMANDS-QUICK-REF.md)        | You want a compact command index                               |
-| [Manual Adaptation Guide](docs/MANUAL-ADAPTATION-GUIDE.md) | Your harness has no native ECC target                          |
+<table aria-label="ECC guides" width="100%">
+<tr>
+<td width="33%" align="center">
+<a href="./the-shortform-guide.md">
+<img src="assets/images/guides/shorthand-guide.png" width="213" height="120" alt="The Shorthand Guide to ECC" /><br />
+<strong>The Shorthand Guide</strong>
+</a>
+<br /><sub>Setup, foundations, and day-one use.</sub>
+</td>
+<td width="33%" align="center">
+<a href="./the-longform-guide.md">
+<img src="assets/images/guides/longform-guide.png" width="213" height="120" alt="The Longform Guide to ECC" /><br />
+<strong>The Longform Guide</strong>
+</a>
+<br /><sub>Context economics, memory, evals, and parallel agents.</sub>
+</td>
+<td width="33%" align="center">
+<a href="./the-security-guide.md">
+<img src="assets/images/guides/security-guide.png" width="213" height="120" alt="The Security Guide to ECC" /><br />
+<strong>The Security Guide</strong>
+</a>
+<br /><sub>Prompt injection, hooks, MCP, and AgentShield.</sub>
+</td>
+</tr>
+</table>
+
+[Commands Quick Reference](./COMMANDS-QUICK-REF.md) | [Manual Adaptation Guide](docs/MANUAL-ADAPTATION-GUIDE.md)
 
 <details>
 <summary><strong>What is inside the repository</strong></summary>
