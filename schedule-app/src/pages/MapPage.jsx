@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
-import Modal from '../components/Modal.jsx';
+import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { todayISO } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
@@ -44,6 +44,14 @@ export default function MapPage() {
   const [placing, setPlacing] = useState(false);
   const [pendingContact, setPendingContact] = useState('');
   const [editing, setEditing] = useState(null);
+  const [initialEditingJson, setInitialEditingJson] = useState('');
+  const wasEditingRef = useRef(false);
+  if (editing && !wasEditingRef.current) {
+    wasEditingRef.current = true;
+    setInitialEditingJson(JSON.stringify(editing));
+  } else if (!editing && wasEditingRef.current) {
+    wasEditingRef.current = false;
+  }
   const [tempPin, setTempPin] = useState(null); // { lat, lng, x, y } from a long-press
 
   // "Select location" picking flow, entered from the event editor.
@@ -522,17 +530,12 @@ export default function MapPage() {
       )}
 
       {/* Pin editor */}
-      <Modal
+      <EditorSheet
         open={!!editing}
         title={editing?.id ? 'Edit pin' : 'New pin'}
-        onClose={() => setEditing(null)}
-        footer={
-          <div className="modal-actions">
-            <button className="btn btn-primary" onClick={savePin}>
-              Save
-            </button>
-          </div>
-        }
+        dirty={editing ? JSON.stringify(editing) !== initialEditingJson : false}
+        onSave={savePin}
+        onDiscard={() => setEditing(null)}
       >
         {editing && (
           <div className="form">
@@ -588,7 +591,7 @@ export default function MapPage() {
             </p>
           </div>
         )}
-      </Modal>
+      </EditorSheet>
     </div>
   );
 }
