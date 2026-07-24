@@ -16,9 +16,9 @@ Thank you to everyone funding ECC's open-source work. Your sponsorship is what l
 | [**Moonshot AI (Kimi)**](https://www.moonshot.ai) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="100" alt="Moonshot AI Kimi logo" /></picture> | 2026 |
 | [**Itô**](https://compute.itomarkets.com) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="120" alt="Itô Markets logo" /></picture> | 2026 |
 
-*[Become a Business sponsor](https://github.com/sponsors/affaan-m) to get README sponsor placement + SPONSORS.md listing. Current Business tier is $500/mo. No seats, SLA, custom development, or preferential technical placement is bundled unless separately agreed.*
+*[Become a Business sponsor](https://github.com/sponsors/affaan-m) to get README sponsor placement + SPONSORS.md listing. Current Business tier is $800/mo. No seats, SLA, custom development, or preferential technical placement is bundled unless separately agreed.*
 
-Run or self-host any open-source model. Itô is ECC's preferred compute sponsor, while ECC remains provider-agnostic and any GPU provider works. ECC only links to the [Itô dashboard](https://compute.itomarkets.com) for sign-in and GPU rental or management; it does not provision compute or serving. Managed inference through Itô is not live yet.
+Run or self-host any open-source model. Itô partners with ECC on compute, while ECC remains provider-agnostic and any GPU provider works. The [Itô dashboard](https://compute.itomarkets.com) sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
 
 ## Team Sponsors — $200/mo
 

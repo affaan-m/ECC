@@ -195,6 +195,14 @@
       ]
     },
     {
+      "id": "capability:ito-compute",
+      "family": "capability",
+      "description": "Authenticated Itô GPU inventory, RFQ, and status workflows through the separately installed canonical CLI.",
+      "modules": [
+        "ito-compute"
+      ]
+    },
+    {
       "id": "capability:social",
       "family": "capability",
       "description": "Social publishing and distribution skills.",
