@@ -368,6 +368,11 @@ if (
       fs.mkdirSync(homeDir, { recursive: true });
       const install = runBash(installScript, [], makeHermeticCodexEnv(homeDir, codexDir));
       assert.strictEqual(install.status, 0, `${install.stdout}\n${install.stderr}`);
+      assert.match(
+        install.stdout,
+        /tracking a regular \.ecc-prepush-disable file/i,
+        'installer guidance must describe the tracked regular-file requirement'
+      );
       assert.strictEqual(
         runGit(['ls-files', '--error-unmatch', '.ecc-prepush-disable'], fixture.linkedDir).status,
         0,
@@ -409,6 +414,44 @@ if (
         result.status,
         0,
         `an untracked .ecc-prepush-disable must not skip the suite\n${result.stdout}\n${result.stderr}`
+      );
+      assert.ok(fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'the suite must run and block');
+      assert.match(result.stderr, /lint failed/);
+    } finally {
+      cleanupLinkedWorktreeFixture(fixture);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('tracked symlink-mode marker does not skip when core.symlinks is false', () => {
+    const fixture = createLinkedWorktreeFixture({ withPrePushMarker: false });
+    const markerPath = path.join(fixture.linkedDir, '.ecc-prepush-disable');
+
+    try {
+      fs.writeFileSync(markerPath, 'tracked.txt\n');
+      const blob = runGit(['hash-object', '-w', '.ecc-prepush-disable'], fixture.linkedDir);
+      assert.strictEqual(blob.status, 0, `${blob.stdout}\n${blob.stderr}`);
+      assert.strictEqual(runGit(['config', 'core.symlinks', 'false'], fixture.linkedDir).status, 0);
+      const updateIndex = runGit(
+        ['update-index', '--add', '--cacheinfo', `120000,${blob.stdout.trim()},.ecc-prepush-disable`],
+        fixture.linkedDir
+      );
+      assert.strictEqual(updateIndex.status, 0, `${updateIndex.stdout}\n${updateIndex.stderr}`);
+      fs.rmSync(markerPath);
+      const checkout = runGit(['checkout-index', '--force', '--', '.ecc-prepush-disable'], fixture.linkedDir);
+      assert.strictEqual(checkout.status, 0, `${checkout.stdout}\n${checkout.stderr}`);
+      assert.ok(fs.statSync(markerPath).isFile(), 'core.symlinks=false must materialize a regular file');
+      assert.ok(!fs.lstatSync(markerPath).isSymbolicLink(), 'filesystem-only symlink checks must be insufficient');
+
+      const result = runHook(prePushHook, fixture.linkedDir, {}, pushUpdateInput());
+
+      assert.notStrictEqual(
+        result.status,
+        0,
+        `an index mode 120000 marker must not skip the suite\n${result.stdout}\n${result.stderr}`
       );
       assert.ok(fs.existsSync(path.join(fixture.linkedDir, 'suite-ran.txt')), 'the suite must run and block');
       assert.match(result.stderr, /lint failed/);
