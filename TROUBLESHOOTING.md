@@ -307,9 +307,10 @@ rm package-lock.json  # If using pnpm/yarn/bun
 
 ### OpenCode Fails to Start on Termux/Android
 
-**Symptom:** The `changed-files` tool fails when invoked with an installation
-error, or (on older versions) `opencode` crashes on startup with a Bun
-`ResolveMessage`, e.g.:
+**Symptom:** Changed-files tracking silently stops working (a one-time
+`[ECC] changed-files tracking disabled` warning appears in the OpenCode
+logs), or (on older versions) `opencode` crashes on startup entirely with a
+Bun `ResolveMessage`, e.g.:
 
 ```
 ResolveMessage: Cannot find module '../plugins/lib/changed-files-store.js' from '.../.opencode/tools/changed-files.ts'
@@ -317,11 +318,14 @@ ResolveMessage: Cannot find module '../plugins/lib/changed-files-store.js' from 
 
 **Causes:**
 - The `~/.opencode` install is missing or incomplete for this machine —
-  usually `tools/` is present but `plugins/` never finished copying (an
-  interrupted install, or a storage/permission hiccup that's more common on
-  Android's filesystem). Every custom tool is re-exported from a single
-  `tools/index.ts` barrel file, so one tool with a missing dependency can
-  fail the whole tools module and block session startup, not just that tool.
+  usually `tools/` and `plugins/` are present but `plugins/lib/` never
+  finished copying (an interrupted install, or a storage/permission hiccup
+  that's more common on Android's filesystem). Both the `changed-files` tool
+  and the `ecc-hooks` plugin depend on `plugins/lib/changed-files-store.js`;
+  since `ecc-hooks.ts` is OpenCode's plugin entry point (loaded once at
+  session startup, before `tools/index.ts`'s barrel file), a missing
+  dependency there used to crash the entire OpenCode session before any
+  hooks could load — not just the one tool.
 
 **Solutions:**
 ```bash

@@ -16,11 +16,6 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import * as fs from "fs"
 import * as path from "path"
-import {
-  initStore,
-  recordChange,
-  clearChanges,
-} from "./lib/changed-files-store.js"
 import changedFilesTool from "../tools/changed-files.js"
 import dependencyAnalyzerTool from "../tools/dependency-analyzer.js"
 
@@ -80,7 +75,6 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   type HookProfile = "minimal" | "standard" | "strict"
 
   const worktreePath = worktree || directory
-  initStore(worktreePath)
 
   const editedFiles = new Set<string>()
 
@@ -109,6 +103,26 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   // Helper to call the SDK's log API with correct signature
   const log = (level: "debug" | "info" | "warn" | "error", message: string) =>
     client.app.log({ body: { service: "ecc", level, message } })
+
+  // Loaded lazily (instead of via a top-level import) so that a missing or
+  // partially-installed `~/.opencode/plugins/lib` directory (e.g. an
+  // interrupted or partial ECC install on Termux/Android) only disables
+  // changed-files tracking, rather than throwing during module evaluation.
+  // This plugin is OpenCode's startup entry point, so a static import
+  // failure here previously crashed the whole plugin -- and with it, the
+  // entire OpenCode session -- before any hooks could load (see #2530).
+  let changedFilesStore: typeof import("./lib/changed-files-store.js") | undefined
+  try {
+    changedFilesStore = await import("./lib/changed-files-store.js")
+    changedFilesStore.initStore(worktreePath)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    log(
+      "warn",
+      `[ECC] changed-files tracking disabled: could not load './lib/changed-files-store.js' (${reason}). ` +
+        "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
+    )
+  }
 
   const normalizeProfile = (value: string | undefined): HookProfile => {
     if (value === "minimal" || value === "strict") return value
@@ -154,7 +168,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
      */
     "file.edited": async (event: { path: string }) => {
       editedFiles.add(event.path)
-      recordChange(event.path, "modified")
+      changedFilesStore?.recordChange(event.path, "modified")
 
       // Auto-format JS/TS files
       if (hookEnabled("post:edit:format", ["strict"]) && event.path.match(/\.(ts|tsx|js|jsx)$/)) {
@@ -198,16 +212,16 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     ) => {
       const filePath = getFilePath(input.args)
       if (input.tool === "edit" && filePath) {
-        recordChange(filePath, "modified")
+        changedFilesStore?.recordChange(filePath, "modified")
       }
       if (input.tool === "write" && filePath) {
         const key = input.callID ?? `write-${++writeCounter}-${filePath}`
         const pending = pendingToolChanges.get(key)
         if (pending) {
-          recordChange(pending.path, pending.type)
+          changedFilesStore?.recordChange(pending.path, pending.type)
           pendingToolChanges.delete(key)
         } else {
-          recordChange(filePath, "modified")
+          changedFilesStore?.recordChange(filePath, "modified")
         }
       }
 
@@ -413,7 +427,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       if (!hookEnabled("session:end-marker", ["minimal", "standard", "strict"])) return
       log("info", "[ECC] Session ended - cleaning up")
       editedFiles.clear()
-      clearChanges()
+      changedFilesStore?.clearChanges()
       pendingToolChanges.clear()
     },
 
@@ -428,7 +442,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       let changeType: "added" | "modified" | "deleted" = "modified"
       if (event.type === "create" || event.type === "add") changeType = "added"
       else if (event.type === "delete" || event.type === "remove") changeType = "deleted"
-      recordChange(event.path, changeType)
+      changedFilesStore?.recordChange(event.path, changeType)
       if (event.type === "change" && event.path.match(/\.(ts|tsx|js|jsx)$/)) {
         editedFiles.add(event.path)
       }
