@@ -467,6 +467,15 @@ textarea {
   font-size: 12px;
   line-height: 1;
 }
+.streak-badge {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--warn);
+  background: var(--accent-soft);
+  border-radius: 99px;
+  padding: 3px 7px;
+}
 .progress-track {
   height: 8px;
   background: var(--track);
@@ -2640,6 +2649,11 @@ textarea {
 }
 .home-block-goals .detail-label {
   margin: 0;
+}
+.goals-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .mini-ring-wrap {
   display: flex;

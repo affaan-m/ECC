@@ -6,7 +6,15 @@ import ExpandableFab from '../components/ExpandableFab.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import { Brand } from '../components/Logo.jsx';
-import { todayISO, weekKey, goalKey, formatTime, formatShortDate, expandEventOnDay } from '../data/helpers.js';
+import {
+  todayISO,
+  weekKey,
+  goalKey,
+  formatTime,
+  formatShortDate,
+  expandEventOnDay,
+  computeGoalStreak,
+} from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 
@@ -63,6 +71,9 @@ export default function HomePage() {
   };
   const dailyPct = ringPct(dailyGoals, dailyKey);
   const weeklyPct = ringPct(weeklyGoals, weekKey(new Date()));
+  // Best current streak across every goal — the single most eye-catching
+  // number to lead with on the page people actually open every day.
+  const bestStreak = state.goals.reduce((max, g) => Math.max(max, computeGoalStreak(g)), 0);
 
   // "Important reminders": anything with a reminder firing today that isn't
   // done yet — goals, tasks, and today's events (including recurring ones,
@@ -242,7 +253,10 @@ export default function HomePage() {
           if (b.id === 'goals') {
             return (
               <button key="goals" className="detail-section home-block-goals" onClick={() => navigate('/goals')}>
-                <span className="detail-label">🎯 Goals</span>
+                <div className="goals-block-head">
+                  <span className="detail-label">🎯 Goals</span>
+                  {bestStreak >= 2 && <span className="streak-badge">🔥 {bestStreak}</span>}
+                </div>
                 <div className="home-bubble-rings">
                   <MiniRing pct={dailyPct} label="Today" />
                   <MiniRing pct={weeklyPct} label="Week" />

@@ -238,6 +238,29 @@ export function goalKey(period, date) {
   return period === 'daily' ? toISODate(date) : weekKey(date);
 }
 
+// How many consecutive days (daily goals) or weeks (weekly goals) this goal
+// has been met, counting back from now. Today/this week doesn't have to be
+// met yet for the streak to still count — an unfinished-but-not-over period
+// shouldn't zero out an otherwise-alive streak, so counting starts from
+// yesterday/last week instead when the current one isn't done yet.
+export function computeGoalStreak(goal) {
+  const target = goal.target || 0;
+  if (target <= 0) return 0;
+  const progress = goal.progress || {};
+  const period = goal.period || 'weekly';
+  const step = period === 'daily' ? 1 : 7;
+  const met = (d) => (progress[goalKey(period, d)] || 0) >= target;
+
+  let cursor = new Date();
+  if (!met(cursor)) cursor = addDays(cursor, -step);
+  let count = 0;
+  while (met(cursor)) {
+    count++;
+    cursor = addDays(cursor, -step);
+  }
+  return count;
+}
+
 // --- Recurring events ------------------------------------------------------
 
 export const REPEAT_OPTIONS = [

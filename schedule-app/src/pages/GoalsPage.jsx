@@ -15,6 +15,7 @@ import {
   formatWeekRange,
   formatDayLabel,
   isToday,
+  computeGoalStreak,
   WEEKDAY_LETTERS,
 } from '../data/helpers.js';
 import {
@@ -192,11 +193,19 @@ export default function GoalsPage() {
               const value = progressOf(g);
               const pct = g.target ? Math.min(100, Math.round((value / g.target) * 100)) : 0;
               const done = value >= g.target;
+              const streak = computeGoalStreak(g);
               return (
                 <div key={g.id} className={`goal-card${done ? ' goal-card--done' : ''}`}>
                   <button className="goal-info" onClick={() => openEdit(g)}>
                     <div className="goal-title-row">
                       <span className="goal-title">{g.title}</span>
+                      {/* Only worth flagging once it's actually a streak — a
+                          single completion doesn't need a badge. */}
+                      {streak >= 2 && (
+                        <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
+                          🔥 {streak}
+                        </span>
+                      )}
                       {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}
                       {done && <span className="check-badge" aria-label="Goal met">✓</span>}
                     </div>
