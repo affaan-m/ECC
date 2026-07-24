@@ -27,35 +27,9 @@
   <a href="https://www.npmjs.com/package/ecc-agentshield"><img src="https://img.shields.io/npm/dw/ecc-agentshield?label=ecc-agentshield&logo=npm" alt="ecc-agentshield npm downloads" /></a>
 </p>
 
-## Sponsors
-
-ECC stays free because sponsors and Pro users fund the work.
-
-<table>
-<tr>
-<td align="center" width="220"><a href="https://www.coderabbit.ai"><img src="assets/images/sponsors/coderabbit.png" width="88" alt="CodeRabbit logo" /><br /><strong>CodeRabbit</strong></a></td>
-<td align="center" width="220"><a href="https://www.greptile.com/go/ecc"><img src="assets/images/sponsors/greptile.png" width="88" alt="Greptile logo" /><br /><strong>Greptile</strong></a></td>
-<td align="center" width="220"><a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC"><img src="assets/images/sponsors/atlascloud.png" width="88" alt="Atlas Cloud logo" /><br /><strong>Atlas Cloud</strong></a></td>
-<td align="center" width="220"><a href="https://compute.itomarkets.com"><img src="assets/images/sponsors/ito.svg" width="88" alt="Itô Markets logo" /><br /><strong>Itô</strong></a></td>
-</tr>
-</table>
-
-<p align="center"><sub><strong>Run or self-host any open-source model.</strong> Itô is ECC's preferred compute sponsor: <a href="https://compute.itomarkets.com">open the Itô dashboard to sign in and rent or manage GPUs</a>. Any GPU provider works. ECC only provides this link; it does not provision compute or serving. Managed inference through Itô is not live yet.</sub></p>
-
-<p align="center">
-  <a href="https://ecc.tools/pricing"><strong>Upgrade to ECC Pro</strong></a>
-  · Private-repo analysis, PR-triggered audits, AgentShield-backed scanning, automatic push and PR checks, pooled team usage, and priority support.
-</p>
-
-<p align="center">
-  <a href="https://github.com/sponsors/affaan-m"><strong>Become a sponsor</strong></a>
-  · <a href="SPONSORS.md">Sponsor tiers</a>
-  · <a href="SPONSORING.md">Sponsorship program</a>
-</p>
-
 # Everything Claude Code
 
-ECC is the workflow layer and agent harness that turns one general-purpose coding agent into a coordinated team with repeatable standards and evidence at every step. Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, proves changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
+Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, verifies changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
 
 ```text
 plan -> test -> implement -> review -> verify -> remember -> improve
@@ -67,16 +41,16 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, with first-class Codex support and adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses.
 
-Access to 67 agents, 278 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning.
+Access to 67 agents, 279 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
-| Included | Count | What it gives you |
-|---|---:|---|
-| Agents | 67 agents | Planning, review, build repair, security, architecture, and domain work |
-| Skills | 278 skills | TDD, research, security, docs, frontend, data, ML, operations, and more |
-| Commands | 94 commands | Convenient entry points while ECC moves to a skills-first surface |
-| Hooks and memory | Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
-| Rules | Selective | Always-loaded standards you choose by language or project |
-| AgentShield | Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files |
+| Included         |       Count | What it gives you                                                                    |
+| ---------------- | ----------: | ------------------------------------------------------------------------------------ |
+| Agents           |   67 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Skills           |  279 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
+| Rules            |   Selective | Always-loaded standards you choose by language or project                            |
+| AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
 
 ## Why It Feels Different
 
@@ -329,11 +303,11 @@ pwsh -File .\install.ps1 --target claude --modules hooks-runtime
 <details>
 <summary><strong>Custom API endpoints, model gateways, and self-hosted models</strong></summary>
 
-ECC works through Claude Code's normal CLI and plugin surfaces, so it can run with Anthropic-hosted Claude Code, an official Claude Code gateway, or a compatible custom API endpoint or model gateway. Configure transport and model-name mapping in Claude Code rather than ECC.
+ECC works through each harness's normal configuration, so you can use an official provider, a compatible custom API endpoint or model gateway, or a self-hosted model without changing ECC's workflows.
 
 Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management; it does not provision compute or serving. Managed inference through Itô is not live yet.
 
-See Anthropic's [LLM gateway documentation](https://docs.anthropic.com/en/docs/claude-code/llm-gateway) and [model configuration documentation](https://docs.anthropic.com/en/docs/claude-code/model-config).
+For Claude Code, see Anthropic's [LLM gateway documentation](https://docs.anthropic.com/en/docs/claude-code/llm-gateway) and [model configuration documentation](https://docs.anthropic.com/en/docs/claude-code/model-config).
 </details>
 
 <details>
@@ -410,7 +384,7 @@ Skills are the primary workflow surface. Commands remain convenient entry points
 ```text
 ECC/
 |-- agents/           # 67 specialized subagents for delegation
-|-- skills/           # 278 reusable workflows loaded on demand
+|-- skills/           # 279 reusable workflows loaded on demand
 |-- commands/         # 94 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
@@ -440,15 +414,14 @@ The root is the source of truth. Platform adapters package or map these same wor
 | --- | --- | --- | --- | --- | --- |
 | **Agents** | 67 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 94 | Shared | Instruction-based | 35 | 5 prompts |
-| **Skills** | 278 | Shared | 10 (native format) | 37 | Via instructions |
+| **Skills** | 279 | Shared | 10 (native format) | 37 | Via instructions |
 | **Version** | Plugin | Plugin | Reference config | 2.0.0 | Instruction layer |
-
 </details>
 
 <details>
 <summary><strong>What changed in v2.0.0</strong></summary>
 
-ECC v2.0.0 stabilizes the 2.0 line with the public Hermes operator story, 278 skills, 67 agents, 94 command shims, session adapters, MCP inventory, worktree lifecycle services, orchestrator workflows, and the ECC Discord community.
+ECC v2.0.0 stabilizes the 2.0 line with the public Hermes operator story, 279 skills, 67 agents, 94 command shims, session adapters, MCP inventory, worktree lifecycle services, orchestrator workflows, and the ECC Discord community.
 
 - [v2.0.0 release notes](docs/releases/2.0.0/release-notes.md)
 - [ECC 2.0 reference architecture](docs/ECC-2.0-REFERENCE-ARCHITECTURE.md)
@@ -527,6 +500,35 @@ Use the [manual adaptation guide](docs/MANUAL-ADAPTATION-GUIDE.md), or open a [G
 </details>
 
 ## Community and Project
+
+<details>
+<summary><strong>Sponsors and ECC Pro</strong></summary>
+
+ECC stays free because sponsors and Pro users fund the work.
+
+ECC Pro adds private-repo analysis, PR-triggered audits, AgentShield-backed scanning, automatic push and PR checks, pooled team usage, and priority support through the hosted GitHub App.
+
+<table>
+<tr>
+<td width="25%" align="center"><a href="https://ecc.tools/pricing"><strong>ECC Pro</strong><br /><sub>Hosted GitHub App for private repos</sub></a></td>
+<td width="25%" align="center"><a href="https://github.com/sponsors/affaan-m"><strong>Sponsor ECC</strong><br /><sub>Fund the OSS work</sub></a></td>
+<td width="25%" align="center"><a href="https://github.com/affaan-m/ECC/discussions"><strong>Community</strong><br /><sub>Q&amp;A, ideas, and Show and Tell</sub></a></td>
+<td width="25%" align="center"><a href="https://github.com/apps/ecc-tools"><strong>GitHub App</strong><br /><sub>PR audits and hosted workflows</sub></a></td>
+</tr>
+</table>
+
+<p align="center" aria-label="Partners and sponsors">
+  <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.moonshot.ai" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="172" alt="Itô Markets" /></picture></a>
+</p>
+
+**Community sponsors:** [Mike Morgan](https://github.com/mikejmorgan-ai) | [@jasonwu513](https://github.com/jasonwu513) | [@1anter](https://github.com/1anter) | [@massimotodaro](https://github.com/massimotodaro) | [@meadmccabe](https://github.com/meadmccabe)
+
+[Become a sponsor](https://github.com/sponsors/affaan-m) | [Sponsor tiers](SPONSORS.md) | [Sponsorship program](SPONSORING.md)
+</details>
 
 <details>
 <summary><strong>Contributing</strong></summary>
