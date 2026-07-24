@@ -2114,10 +2114,11 @@ textarea {
   justify-content: space-between;
   min-height: 30px;
 }
-.section-head + .section-head {
-  margin-top: 10px;
-}
-.seg--full + .section-head {
+/* Whatever precedes it — a label, a segmented control, another row — needs
+   the same breathing room a .section-head gets from a sibling .section-head.
+   :not(:first-child) so a .section-head that opens its own card (e.g.
+   "Notifications") doesn't get pushed down with unwanted extra padding. */
+.section-head:not(:first-child) {
   margin-top: 10px;
 }
 .detail-label {
