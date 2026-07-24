@@ -1,6 +1,6 @@
 ---
 name: agent-payment-x402
-description: タスクごとのバジェット、支出コントロール、ノンカストディアルウォレットを備えた x402 決済実行を AI エージェントに追加します。agentwallet-sdk を通じて Base をサポートし、OKX Payments / OKX エージェント決済プロトコルを通じて X Layer をサポートします。
+description: タスクごとのバジェット、支出コントロール、ノンカストディアルウォレットを備えた x402 決済実行を AI エージェントに追加します。agentwallet-sdk を通じて Base を、OKX Payments / OKX エージェント決済プロトコルを通じて X Layer を、PayAI ファシリテーターを通じてガスレスな USDC 決済で Solana をサポートします。
 origin: community
 ---
 
@@ -20,6 +20,8 @@ origin: community
 |------|------------------|
 | エージェントが Base または他の agentwallet 対応チェーンの 402 ゲート API に支払う | 厳格な支出ポリシーで `agentwallet-sdk` を MCP 決済サーバーとして使用 |
 | エージェントが X Layer の 402 ゲート API に支払う | `okx/onchainos-skills` の OKX エージェント決済プロトコルを使用；`okx-x402-payment` は廃止されたレガシーエイリアス |
+| エージェントが Solana の 402 ゲート API に支払う | エージェントの HTTP クライアント（Fetch、Axios、または httpx）を exact-SVM スキームと Solana 署名者でラップし、PayAI ファシリテーター経由で決済する；支払い可能なリソースは PayAI バザールで発見する |
+| API が Solana でエージェントに課金する（TypeScript、Python、または Go） | `@payai/facilitator` をバックエンドとする x402 ミドルウェアを追加 — Express/Hono/Next.js は `@x402/*`、FastAPI は `x402`、Gin は `coinbase/x402/go` |
 | TypeScript API がエージェントに課金する | Express、Hono、Fastify、または Next.js 向け OKX Payments TypeScript セラー SDK ドキュメントを使用 |
 | Go API がエージェントに課金する | Gin、Echo、または `net/http` 向け OKX Payments Go セラー SDK ドキュメントを使用 |
 | Rust API がエージェントに課金する | Axum 向け OKX Payments Rust セラー SDK ドキュメントを使用 |
@@ -30,6 +32,7 @@ origin: community
 
 - `agentwallet-sdk`: 本番使用前に現在のネットワークカバレッジをパッケージドキュメントで確認。Base Sepolia が最も安全な開発デフォルト；Base メインネットがオリジナルスキルで説明されている本番パス。
 - OKX Payments / X Layer: 現在のセラードキュメントは X Layer（`eip155:196`）と USDT0 決済を対象。決済パッケージとファシリテーターの動作が迅速に変わる可能性があるため、本番コードを生成する前に現在の SDK ドキュメントを取得すること。
+- PayAI ファシリテーター / Solana: Solana メインネット（`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）と Solana デブネット（`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`）で USDC を決済。ファシリテーターがネットワーク手数料を負担するため、支払者は USDC のみを保有すればよく、ガス用の SOL は不要。開発デフォルトは Solana デブネット、本番は Solana メインネットを使用。ファシリテーターはマルチネットワーク対応で複数の EVM チェーンもフロントするため、本番前にここにハードコードするのではなく `/supported` エンドポイントでライブリストを確認すること。
 
 ## 仕組み
 
@@ -97,6 +100,57 @@ X Layer x402、マルチパーティ決済（MPP）、セッション決済、�
 | Java | `https://raw.githubusercontent.com/okx/payments/main/java/SELLER.md` |
 
 現在の OKX リポジトリを確認せずに古いドキュメントの例をコピーしないこと。現在の OKX ガイダンスはディスパッチャーとして `okx-agent-payments-protocol` を使用しており、Java セラードキュメントが利用可能になっています。
+
+### オプション C: PayAI ファシリテーター（Solana）
+
+エージェントが Solana で決済する 402 ゲート API に支払う場合にこのパスを使用します。オプション A・B と異なり、Solana のバイヤーフローは別個の MCP サーバーではありません — エージェント自身の HTTP クライアントを x402 インターセプターでラップし、USDC 転送に署名して [PayAI ファシリテーター](https://facilitator.payai.network) に検証・決済させます。ファシリテーターが手数料支払者となるため、エージェントは USDC のみを消費し、ガス用の SOL は不要です。
+
+**バイヤー側（エージェントが支払う）。** exact-SVM スキームと Solana 署名者で `fetch` をラップします（`@x402/axios` 経由の Axios と `x402` パッケージ経由の Python `httpx` も同じ形です）：
+
+```typescript
+import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
+import { registerExactSvmScheme } from "@x402/svm/exact/client";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { base58 } from "@scure/base";
+
+// 署名者のキーはオーケストレーターの env に属する — ハードコードせず、エージェントが書き込めないようにする。
+const svmKey = process.env.SVM_PRIVATE_KEY;
+if (!svmKey) {
+  throw new Error("SVM_PRIVATE_KEY is not set — refusing to start payment client");
+}
+
+const client = new x402Client();
+registerExactSvmScheme(client, {
+  signer: await createKeyPairSignerFromBytes(base58.decode(svmKey)),
+});
+
+// ラップする前にすべての有料呼び出しをフェイルクローズドでゲートする — タスクごと/セッションごとの
+// バジェットと許可リストのホストを、Examples セクションの preToolCheck と同様に強制する。
+await assertWithinBudget({ cost: 0.01, host: "api.example.com" });
+
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
+```
+
+ラップされたクライアントは、`network` が登録済みの Solana CAIP-2 id であり、`asset` が期待する USDC ミントであり、`amount` がゲートした価格以内であるチャレンジのみに支払います。不一致はフェイルクローズドとして扱う：署名せず、リトライしない。
+
+**発見。** エンドポイントをハードコードする代わりに、PayAI バザールで支払い可能な Solana リソースを見つけます：
+
+```bash
+curl -s 'https://facilitator.payai.network/discovery/resources' | jq '.'
+```
+
+**セラー側（API がエージェントに課金する）。** `@payai/facilitator` をバックエンドとする x402 ミドルウェアを追加します。各スターターは動作する Solana サーバーまたはクライアントをスキャフォールドします；本番では `@latest` を追うのではなくバージョンを固定すること：
+
+| ランタイム | スキャフォールド |
+|---------|----------|
+| Express サーバー | `npx @payai/x402-express-starter@latest my-server` |
+| Hono サーバー | `npx @payai/x402-hono-starter@latest my-server` |
+| Next.js フルスタック | `npx @payai/x402-next-starter@latest my-app` |
+| Fetch クライアント | `npx @payai/x402-fetch-starter@latest my-client` |
+| Axios クライアント | `npx @payai/x402-axios-starter@latest my-client` |
+
+実際のマーチャントにエージェントを向ける前に、[x402.payai.network](https://x402.payai.network) の PayAI Echo Merchant に対して無料でエンドツーエンドのテストを行ってください — Solana デブネットとメインネットのパスを公開し、トークンを返金し、手数料を負担します。
 
 ## 例
 
@@ -212,7 +266,8 @@ main().catch((err) => {
 - **監査証跡**: タスク後のフックで `list_transactions` を使用して何が使われたかをログに記録する。
 - **フェイルクローズド**: 決済ツールに到達できない場合、有料アクションをブロックする — 課金されないアクセスにフォールバックしない。
 - **security-review と組み合わせる**: 決済ツールは高い権限を持つ。シェルアクセスと同じ精査を適用する。
-- **まずテストネットでテストする**: 開発には Base Sepolia を使用；本番には Base メインネットに切り替える。
+- **まずテストネットでテストする**: 開発には Base Sepolia を使用；本番には Base メインネットに切り替える。Solana では、メインネットの前に Solana デブネット（`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`）と無料の PayAI Echo Merchant を使用する。
+- **Solana では SOL ではなく USDC を資金として入れる**: PayAI ファシリテーターがネットワーク手数料を負担するため、SOL を持たないウォレットでも支払える。署名前に各チャレンジの `asset` が期待する USDC ミントであることを検証する — 任意のアセットに支払うラップクライアントはバジェットの穴になる。
 
 ## 本番リファレンス
 
@@ -222,3 +277,7 @@ main().catch((err) => {
 - **OKX Payments SDK**: [`okx/payments`](https://github.com/okx/payments) — X Layer x402 向け TypeScript、Go、Rust、Java セラー統合
 - **OKX エージェント決済プロトコルスキル**: [`okx/onchainos-skills`](https://github.com/okx/onchainos-skills/tree/main/skills/okx-agent-payments-protocol)
 - **OKX Payments 概要**: [web3.okx.com/onchainos/dev-docs/payments/overview](https://web3.okx.com/onchainos/dev-docs/payments/overview)
+- **PayAI ファシリテーター（Solana x402）**: [facilitator.payai.network](https://facilitator.payai.network) — ガスレスな Solana USDC 決済を備えたマルチネットワークファシリテーター；`/discovery/resources` にライブリソースバザール
+- **PayAI ドキュメント**: [docs.payai.network](https://docs.payai.network)
+- **PayAI スターターと Echo Merchant**: [npm の `@payai`](https://www.npmjs.com/org/payai)；[x402.payai.network](https://x402.payai.network) で無料のエンドツーエンドテスト
+- **GitHub の PayAI**: [`PayAINetwork`](https://github.com/PayAINetwork)
