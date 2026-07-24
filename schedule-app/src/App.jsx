@@ -137,11 +137,14 @@ export default function App() {
   // distinct, firmer tick; everything else clickable still gets the
   // lightest tap so navigation, chips, and list rows don't feel dead — that
   // was the "overwhelming" complaint's actual cause (every button ticking
-  // at the SAME strength as a save/delete), not tapping in general.
+  // at the SAME strength as a save/delete), not tapping in general. Links
+  // (Directions, call/text/email quick actions, contact links) are real
+  // tap targets too and were left out of an earlier reduction pass —
+  // included here for parity with buttons, not as a separate step up.
   useEffect(() => {
     const onPointerDown = (e) => {
       const el = e.target.closest?.(
-        'button, [role="switch"], input[type="checkbox"], input[type="radio"]'
+        'button, a, [role="button"], [role="switch"], input[type="checkbox"], input[type="radio"]'
       );
       if (!el || el.disabled) return;
       // The day timeline's event blocks run their own long-press-to-arm gesture
