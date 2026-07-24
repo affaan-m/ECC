@@ -434,8 +434,14 @@ export default function MapPage() {
             top: Math.max(tempPin.y - 74, 64),
           }}
         >
+          {/* The long-press that dropped this pin already fired its own arm
+              tick; these three quick-choice buttons appear as its immediate,
+              same-gesture follow-up, right where the finger just was — a
+              second tick that close behind the first read as a double-buzz
+              bug rather than two distinct actions, so they stay silent. */}
           <button
             className="temp-pin-action"
+            data-haptic="none"
             onClick={() => directionsTo(tempPin)}
             aria-label="Get directions"
             title="Directions"
@@ -444,6 +450,7 @@ export default function MapPage() {
           </button>
           <button
             className="temp-pin-action"
+            data-haptic="none"
             onClick={() => {
               setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '' });
               setTempPin(null);
@@ -453,7 +460,12 @@ export default function MapPage() {
           >
             📌
           </button>
-          <button className="temp-pin-action temp-pin-action--x" onClick={() => setTempPin(null)} aria-label="Dismiss">
+          <button
+            className="temp-pin-action temp-pin-action--x"
+            data-haptic="none"
+            onClick={() => setTempPin(null)}
+            aria-label="Dismiss"
+          >
             ✕
           </button>
         </div>

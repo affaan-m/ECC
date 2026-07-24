@@ -272,7 +272,7 @@ export default function HomePage() {
                     <li key={t.id} className="task-row">
                       <button
                         className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                        data-haptic={t.done ? 'tap' : 'success'}
+                        data-haptic={t.done ? 'tap' : 'confirm'}
                         onClick={() => actions.updateTask({ ...t, done: !t.done })}
                         aria-label={t.done ? 'Mark not done' : 'Mark done'}
                       >
@@ -407,7 +407,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       className={`task-check${item.done ? ' task-check--on' : ''}${poppedChecklistIdx === i ? ' task-check--pop' : ''}`}
-                      data-haptic={item.done ? 'tap' : 'success'}
+                      data-haptic={item.done ? 'tap' : 'confirm'}
                       onClick={() => {
                         const next = editingNote.checklist.slice();
                         const nowDone = !next[i].done;

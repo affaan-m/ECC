@@ -35,7 +35,7 @@ export default function Checkbox({ checked, onChange, id, ariaLabel }) {
         onChange={handleChange}
         id={id}
         aria-label={ariaLabel}
-        data-haptic={checked ? 'tap' : 'success'}
+        data-haptic={checked ? 'tap' : 'confirm'}
       />
       {checked && (
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
