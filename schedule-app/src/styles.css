@@ -3110,12 +3110,19 @@ textarea {
   justify-content: center;
   padding: 6px;
   margin: -6px;
+  background: none;
+  border: none;
+  border-radius: 8px;
   color: var(--muted);
   cursor: grab;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.1s ease, background 0.1s ease;
 }
 .bubble-drag-handle:active {
   cursor: grabbing;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .bubble-reorder-icon {
   font-size: 18px;
