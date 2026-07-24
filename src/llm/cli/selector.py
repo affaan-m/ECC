@@ -41,8 +41,11 @@ def print_self_host_compute_notice(provider: str) -> None:
         "https://compute.itomarkets.com"
     )
     print(
-        "Any GPU provider works. ECC only links to the Itô dashboard; it does not "
-        "provision compute or serving. Managed inference through Itô is not live yet."
+        "Any GPU provider works. This sponsorship link is passive: it does not invoke "
+        "an RFQ, reserve capacity, provision compute, or configure serving. Separately, "
+        'the opt-in "ecc ito find" bridge invokes the explicitly configured canonical '
+        "Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. "
+        "Managed inference through Itô is not live yet."
     )
 
 

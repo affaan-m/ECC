@@ -29,7 +29,7 @@ const COMMANDS = {
   },
   ito: {
     script: 'ito.js',
-    description: 'Prepare a read-only sandbox handoff to the Itô compute desk',
+    description: 'Invoke the separately installed canonical Itô compute CLI',
   },
   'install-plan': {
     script: 'install-plan.js',
@@ -138,8 +138,9 @@ Examples:
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
   ecc control-pane --port 8765
-  ecc ito rent --accelerator h100 --count 1 --hours 24
-  ecc --dry-run ito rent --accelerator h100 --count 1 --hours 24 --json
+  ecc ito auth
+  ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
+  ecc ito status --json
   ecc list-installed --json
   ecc doctor --target cursor
   ecc repair --dry-run
@@ -232,7 +233,12 @@ function runCommand(commandName, args) {
     {
       cwd: process.cwd(),
       env: commandName === 'ito'
-        ? { ...createSafeItoEnvironment(process.env, { includeControls: true }) }
+        ? {
+          ...createSafeItoEnvironment(process.env, {
+            includeControls: true,
+            includeItoRuntime: true,
+          }),
+        }
         : process.env,
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,

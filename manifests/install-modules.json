@@ -572,6 +572,36 @@
       "stability": "beta"
     },
     {
+      "id": "ito-compute",
+      "kind": "skills",
+      "description": "Authenticated Itô GPU inventory, RFQ, and status workflows through the separately installed canonical CLI.",
+      "paths": [
+        "skills/ito-compute"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "social-distribution",
       "kind": "skills",
       "description": "Social publishing and distribution skills.",

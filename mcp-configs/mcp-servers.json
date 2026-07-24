@@ -5,6 +5,11 @@
       "args": ["mcp"],
       "description": "Local cost/privacy proxy - query your own usage & savings, route to the cheapest capable model, and mask secrets/PII before egress (nexus_stats, nexus_savings, nexus_recent, nexus_providers, nexus_cost_breakdown)"
     },
+    "ito-compute": {
+      "command": "node",
+      "args": ["/absolute/path/to/ito-cloud-runtime/cli/ito-compute-cli/dist/bin/ito-mcp.js"],
+      "description": "Opt-in local Itô compute MCP. The canonical package is unpublished and must be built from Ito-Markets/ito-cloud-runtime/cli/ito-compute-cli. Exposes only ito_auth, ito_find, and ito_status; inject ITO_API_KEY from the launching environment."
+    },
     "jira": {
       "command": "uvx",
       "args": ["mcp-atlassian==0.21.0"],

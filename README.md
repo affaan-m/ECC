@@ -1,4 +1,4 @@
-1`**Language:** English | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md) | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [Español](docs/es/README.md)
+**Language:** English | [Português (Brasil)](docs/pt-BR/README.md) | [简体中文](README.zh-CN.md) | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja-JP/README.md) | [한국어](docs/ko-KR/README.md) | [Türkçe](docs/tr/README.md) | [Русский](docs/ru/README.md) | [Tiếng Việt](docs/vi-VN/README.md) | [ไทย](docs/th/README.md) | [Deutsch](docs/de-DE/README.md) | [Español](docs/es/README.md)
 
 ![ECC — the agent harness operating system](assets/hero.png)
 
@@ -110,6 +110,12 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
   <a href="https://compute.itomarkets.com">
     <img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /><br />
     <strong>Itô</strong>
+  </a>
+</td>
+<td align="center" width="220">
+  <a href="https://www.moonshot.ai/">
+    <img src="assets/images/sponsors/moonshot.svg" width="96" alt="Moonshot AI Kimi logo" /><br />
+    <strong>Moonshot AI</strong>
   </a>
 </td>
 </tr>
@@ -445,7 +451,7 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 67 agents, 278 skills, and 94 legacy command shims.
+**That's it!** You now have access to 67 agents, 279 skills, and 94 legacy command shims.
 
 ### Dashboard GUI
 
@@ -1194,7 +1200,27 @@ claude
 
 If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working.
 
-Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management—it does not provision compute or serving. Managed inference through Itô is not live yet.
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. That sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
+
+### Itô compute CLI bridge
+
+`ecc ito` delegates to the separately installed canonical Itô client; ECC does
+not maintain a second API client or browser handoff. The available operations
+are `ecc ito auth`, `ecc ito find`, and `ecc ito status`. The matching MCP tools
+are `ito_auth`, `ito_find`, and `ito_status`.
+
+The `ito-compute-cli` package is currently unpublished. Build it locally from
+[`Ito-Markets/ito-cloud-runtime`](https://github.com/Ito-Markets/ito-cloud-runtime)
+under `cli/ito-compute-cli`, run `npm ci` and `npm run check`, then set
+`ECC_ITO_CLI_EXECUTABLE` to that build's absolute `dist/bin/ito.js` path.
+Inject `ITO_API_KEY` from 1Password or the launching environment. ECC does not
+discover this credential-bearing client through `PATH`. See the [`ito-compute`
+skill](skills/ito-compute/SKILL.md) for the full RFQ authority and MCP setup
+contract.
+
+`find` submits a live authenticated RFQ. It does not reserve capacity. ECC
+exposes no quote lock, purchase, workload, node-evaluation, or inference path,
+and it never replaces a missing client or failed live call with a local result.
 
 Official references:
 - [Claude Code LLM gateway docs](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)
@@ -1542,7 +1568,7 @@ The configuration is automatically detected from `.opencode/opencode.json`.
 |---------|---------------------|----------|--------|
 | Agents | PASS: 67 agents     | PASS: 12 agents | **Claude Code leads** |
 | Commands | PASS: 94 commands   | PASS: 35 commands | **Claude Code leads** |
-| Skills | PASS: 278 skills    | PASS: 37 skills | **Claude Code leads** |
+| Skills | PASS: 279 skills    | PASS: 37 skills | **Claude Code leads** |
 | Hooks | PASS: 8 event types | PASS: 11 events | **OpenCode has more!** |
 | Rules | PASS: 29 rules      | PASS: 13 instructions | **Claude Code leads** |
 | MCP Servers | PASS: 14 servers    | PASS: Full | **Full parity** |
@@ -1703,7 +1729,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 |---------|-----------------------|------------|-----------|----------|----------------|
 | **Agents** | 67                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 94                    | Shared | Instruction-based | 35 | 5 prompts |
-| **Skills** | 278                   | Shared | 10 (native format) | 37 | Via instructions |
+| **Skills** | 279                   | Shared | 10 (native format) | 37 | Via instructions |
 | **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
 | **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
 | **Rules** | 34 (common + lang)    | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |

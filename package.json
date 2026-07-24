@@ -214,6 +214,7 @@
     "skills/hookify-rules/",
     "skills/inventory-demand-planning/",
     "skills/ito-basket-compare/",
+    "skills/ito-compute/",
     "skills/ito-data-atlas-agent/",
     "skills/ito-market-intelligence/",
     "skills/ito-trade-planner/",
@@ -418,7 +419,7 @@
     "ecc-plan-canvas": "scripts/plan-canvas.js"
   },
   "scripts": {
-    "welcome": "echo '\\n  ecc-universal installed!\\n  Run: ecc typescript\\n  Compat: ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n  Run or self-host any open-source model.\\n  Compute: Itô is the preferred compute sponsor — https://compute.itomarkets.com\\n  Any GPU provider works; ECC only links to the dashboard and does not provision compute or serving.\\n  Managed inference through Itô is not live yet.\\n'",
+    "welcome": "echo '\\n  ecc-universal installed!\\n  Run: ecc typescript\\n  Compat: ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n  Run or self-host any open-source model.\\n  Compute: Itô is the preferred compute sponsor — https://compute.itomarkets.com\\n  Any GPU provider works. This sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving.\\n  Separately, the opt-in ecc ito find bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity.\\n  Managed inference through Itô is not live yet.\\n'",
     "catalog:check": "node scripts/ci/catalog.js --text",
     "catalog:sync": "node scripts/ci/catalog.js --write --text",
     "command-registry:generate": "node scripts/ci/generate-command-registry.js",
