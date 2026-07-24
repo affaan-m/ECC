@@ -18,8 +18,15 @@ if [[ -f "$repo_root/.ecc-hooks-disable" || ( -n "$git_dir" && -f "$git_dir/ecc-
 fi
 
 prepush_marker="$repo_root/.ecc-prepush-disable"
+prepush_marker_mode=""
+prepush_marker_stage=""
+prepush_marker_entry="$(git -C "$repo_root" ls-files --stage -- ".ecc-prepush-disable" 2>/dev/null || true)"
+if [[ -n "$prepush_marker_entry" ]]; then
+  read -r prepush_marker_mode _prepush_marker_oid prepush_marker_stage _prepush_marker_path <<< "$prepush_marker_entry"
+fi
 if [[ "${ECC_PREPUSH_FULL:-0}" != "1" && -f "$prepush_marker" && ! -L "$prepush_marker" ]] \
-  && git -C "$repo_root" ls-files --error-unmatch -- ".ecc-prepush-disable" >/dev/null 2>&1; then
+  && [[ "$prepush_marker_stage" == "0" ]] \
+  && [[ "$prepush_marker_mode" == "100644" || "$prepush_marker_mode" == "100755" ]]; then
   printf '[ECC pre-push] Skipping: repository opt-out .ecc-prepush-disable is tracked; CI/remote checks remain authoritative.\n'
   exit 0
 fi

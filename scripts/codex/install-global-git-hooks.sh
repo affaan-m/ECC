@@ -62,6 +62,6 @@ run_or_echo git config --global core.hooksPath "$DEST_DIR"
 
 log "Installed ECC global git hooks."
 log "Disable all hooks per repo by creating .ecc-hooks-disable in project root."
-log "Disable only pre-push by creating .ecc-prepush-disable in project root."
+log "Disable only pre-push by creating and tracking a regular .ecc-prepush-disable file in project root."
 log "One-shot override for .ecc-prepush-disable: ECC_PREPUSH_FULL=1 git push ..."
 log "Temporary bypass: ECC_SKIP_PRECOMMIT=1 or ECC_SKIP_PREPUSH=1"
