@@ -34,7 +34,12 @@
   --good: #7bc350;
   --warn: #e0a13e;
   --warn-ink: #f0c078;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
+  /* A black shadow barely reads against an already-near-black page, so dark
+     mode leans on a faint inset top highlight instead — catching a hint of
+     light along a card's upper edge is what actually communicates "raised"
+     here, the outer shadow layers alone were doing almost nothing. */
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 1px 3px rgba(0, 0, 0, 0.3),
+    0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 /* --- Color schemes (Pro) -------------------------------------------------
@@ -1844,6 +1849,19 @@ textarea {
 .agenda-chip--done .chip-title {
   text-decoration: line-through;
 }
+.chip-time--wide {
+  width: auto;
+  white-space: nowrap;
+}
+.month-upcoming {
+  margin-top: 18px;
+}
+.month-upcoming .detail-label {
+  margin-bottom: 8px;
+}
+.month-upcoming .agenda-events {
+  gap: 8px;
+}
 
 /* --- FAB ---------------------------------------------------------------- */
 .fab {
@@ -1930,6 +1948,11 @@ textarea {
   overflow-x: auto;
   padding: 12px 0 4px;
   scrollbar-width: none;
+  /* Fading the last ~24px on each edge (rather than a hard clip) is the
+     visual cue that there's more to scroll — a chip cut off flush against
+     the screen edge gave no hint it was scrollable at all. */
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
 }
 .chips::-webkit-scrollbar {
   display: none;
@@ -2630,8 +2653,11 @@ textarea {
   color: var(--accent-ink);
 }
 .reminder-kind--task {
-  background: var(--warn);
-  color: var(--accent-ink);
+  /* GOAL already uses --accent (gold); --warn is close enough in hue that
+     the two badges read as nearly identical at a glance. A distinct blue
+     keeps all three kinds (goal/task/event) instantly tell-apart-able. */
+  background: #3f7fbf;
+  color: #fff;
 }
 .reminder-kind--event {
   background: #8a5cd1;
@@ -2999,8 +3025,12 @@ textarea {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: linear-gradient(135deg, #cdeee0, #9fd9bd);
-  color: #0e4a30;
+  background: linear-gradient(135deg, #2b2210, #171208);
+  border: 1px solid rgba(224, 193, 90, 0.4);
+  color: #f0d488;
+}
+.pro-bubble-lg--active p {
+  color: #c9a962;
 }
 .donate-bubble {
   width: 100%;

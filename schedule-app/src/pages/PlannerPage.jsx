@@ -490,7 +490,15 @@ export default function PlannerPage() {
         />
       )}
       {mode === 'month' && (
-        <MonthView monthStart={monthStart} events={state.events} onOpenDay={openDay} cursor={cursor} onSwipe={step} />
+        <MonthView
+          monthStart={monthStart}
+          events={state.events}
+          eventTypes={state.eventTypes || []}
+          onOpenDay={openDay}
+          onOpen={openView}
+          cursor={cursor}
+          onSwipe={step}
+        />
       )}
 
       {!selectMode && (
@@ -1440,11 +1448,31 @@ function WeekView({ weekStart, events, eventTypes, onOpenDay, onOpen, onAdd, sel
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, onOpenDay, cursor, onSwipe }) {
+function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
+  const year = monthStart.getFullYear();
   const swipeRef = useRef(null);
   const suppressClickRef = useRef(false);
+  const typeColor = (id) => eventTypes?.find((t) => t.id === id)?.color;
+
+  // The grid alone rarely fills the page, leaving a big dead gap above the
+  // tab bar — a scannable list of what's actually coming up this month puts
+  // that space to use instead of just padding it out.
+  const today = todayISO();
+  const upcoming = useMemo(() => {
+    const fromToday = todayISO() >= toISODate(monthStart);
+    const days = weeks.flat().filter((d) => d.getMonth() === month && (!fromToday || toISODate(d) >= today));
+    const rows = [];
+    for (const d of days) {
+      const iso = toISODate(d);
+      for (const ev of occurrencesFor(events, iso).sort((a, b) => a.s - b.s)) {
+        rows.push({ ...ev, iso, dayNum: d.getDate() });
+      }
+    }
+    return rows.slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, monthStart]);
 
   const onPointerDown = (e) => {
     // A swipe that crosses from one cell to another never fires a native
@@ -1475,6 +1503,7 @@ function MonthView({ monthStart, events, onOpenDay, cursor, onSwipe }) {
   };
 
   return (
+    <>
     <div
       className="month-grid"
       onPointerDown={onPointerDown}
@@ -1513,7 +1542,33 @@ function MonthView({ monthStart, events, onOpenDay, cursor, onSwipe }) {
           })}
         </div>
       ))}
-    </div>
+      </div>
+      {upcoming.length > 0 && (
+        <section className="month-upcoming">
+          <div className="detail-label">Upcoming this month</div>
+          <div className="agenda-events">
+            {upcoming.map((ev) => {
+              const recurring = ev.repeat && ev.repeat !== 'none';
+              return (
+                <button
+                  key={`${ev.id}:${ev.recDate}`}
+                  className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
+                  style={{ '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)' }}
+                  onClick={() => onOpen(ev)}
+                >
+                  <span className="chip-time chip-time--wide">
+                    {formatShortDate(ev.iso)} · {formatTime(ev.start)}
+                  </span>
+                  <span className="chip-title">{ev.title || 'Untitled'}</span>
+                  {ev.reminder > 0 && <span className="repeat-glyph">🔔</span>}
+                  {recurring && <span className="repeat-glyph">{ev.isException ? '✎' : '↻'}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ export default function ContactTimelinePage() {
   const { state } = useStore();
   const actions = useActions();
   const contact = state.contacts.find((c) => c.id === id);
+  const status = state.statuses.find((s) => s.id === contact?.statusId);
   const isPro = !!state.settings?.isPro;
 
   const scrollRef = useRef(null);
@@ -206,7 +207,7 @@ export default function ContactTimelinePage() {
       </header>
 
       <div className="detail-hero detail-hero--compact">
-        <Avatar name={contact.name} photo={contact.photo} size="md" />
+        <Avatar name={contact.name} photo={contact.photo} color={status?.color} size="md" />
         <h1>{contact.name}'s timeline</h1>
       </div>
 
