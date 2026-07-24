@@ -26,13 +26,22 @@ export default function HomePage() {
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const [editMode, setEditMode] = useState(false);
 
-  // Reached via the expandable quick-add FAB on another page (e.g. Planner).
+  // Reached via the expandable quick-add FAB on another page (e.g. Planner),
+  // or from a search result for a task/note.
   useEffect(() => {
     if (location.state?.quickNewTask) {
       openNewTask();
       window.history.replaceState({}, '');
     } else if (location.state?.quickNewNote) {
       openNewNote();
+      window.history.replaceState({}, '');
+    } else if (location.state?.openTaskId) {
+      const t = state.tasks.find((x) => x.id === location.state.openTaskId);
+      if (t) openEditTask(t);
+      window.history.replaceState({}, '');
+    } else if (location.state?.openNoteId) {
+      const n = state.notes.find((x) => x.id === location.state.openNoteId);
+      if (n) openEditNote(n);
       window.history.replaceState({}, '');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,6 +212,9 @@ export default function HomePage() {
                 <CrownIcon /> Pro
               </button>
             )}
+            <button className="icon-btn" onClick={() => navigate('/search')} aria-label="Search" title="Search">
+              <SearchIcon />
+            </button>
             <button
               className="icon-btn"
               onClick={() => (isPro ? setEditMode((v) => !v) : navigate('/pricing'))}
@@ -600,6 +612,14 @@ function CrownIcon() {
         d="M3 8l4 3 5-6 5 6 4-3-1.5 10h-15L3 8z"
         fill="currentColor"
       />
+    </svg>
+  );
+}
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20l-4.3-4.3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

@@ -19,6 +19,7 @@ import ContactTimelinePage from './pages/ContactTimelinePage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import MorePage from './pages/MorePage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
+import SearchPage from './pages/SearchPage.jsx';
 import { useStore, useActions } from './data/store.jsx';
 
 // Keeps state.settings.isPro (read all over the app already) in sync with
@@ -263,6 +264,7 @@ export default function App() {
           <Route path="/map" element={<MapPage />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

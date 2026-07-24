@@ -1994,6 +1994,64 @@ textarea {
   text-align: left;
   box-shadow: var(--shadow);
 }
+
+/* --- Search results ------------------------------------------------------- */
+.search-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.search-result-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 10px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: filter 0.1s ease, transform 0.1s ease;
+}
+.search-result-row:active {
+  filter: brightness(0.95);
+  transform: scale(0.98);
+}
+.search-result-icon {
+  font-size: 18px;
+  flex: none;
+  width: 24px;
+  text-align: center;
+}
+.search-result-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.search-result-title {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-row svg {
+  flex: none;
+  color: var(--muted);
+}
+.search-result-more {
+  margin: 6px 2px 0;
+}
 .avatar {
   width: 44px;
   height: 44px;

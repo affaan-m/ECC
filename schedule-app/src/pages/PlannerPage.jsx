@@ -122,9 +122,10 @@ export default function PlannerPage() {
     setViewing(null);
   };
 
-  // Opened from a person's page ("+ add event for this contact"), or from
-  // the Home page's quick-add menu, or returning from the "select location"
-  // full-map picker with a draft that was stashed before navigating away.
+  // Opened from a person's page ("+ add event for this contact"), the Home
+  // page's quick-add menu, a search result, or returning from the "select
+  // location" full-map picker with a draft that was stashed before
+  // navigating away.
   useEffect(() => {
     const cid = location.state?.newEventContact;
     if (cid) {
@@ -134,6 +135,17 @@ export default function PlannerPage() {
     }
     if (location.state?.quickNewEvent) {
       openNew(todayISO(), '09:00');
+      window.history.replaceState({}, '');
+      return;
+    }
+    if (location.state?.openEventId) {
+      const iso = location.state.openEventDate || todayISO();
+      const occ = occurrencesFor(state.events, iso).find((o) => o.id === location.state.openEventId);
+      if (occ) {
+        setCursor(iso);
+        setMode('day');
+        setViewing(occ);
+      }
       window.history.replaceState({}, '');
       return;
     }
