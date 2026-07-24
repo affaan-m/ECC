@@ -248,9 +248,11 @@ function createPlanCanvasServer({
     }
 
     if (req.method === 'GET' && pathname === '/api/await') {
+      const keyParam = url.searchParams.get('key');
       const file = url.searchParams.get('file');
-      if (!file) return sendJson(res, 400, { error: 'file query parameter is required' });
-      const session = store.findByFile(file);
+      if (keyParam && !/^[a-f0-9]{12}$/.test(keyParam)) return sendJson(res, 400, { error: 'invalid session key' });
+      if (!keyParam && !file) return sendJson(res, 400, { error: 'key or file query parameter is required' });
+      const session = keyParam ? store.get(keyParam) : store.findByFile(file);
       if (!session) return sendJson(res, 200, { status: 'missing' });
       const key = session.key;
       const timeoutRaw = url.searchParams.get('timeoutMs');

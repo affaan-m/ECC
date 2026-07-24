@@ -50,6 +50,11 @@ def test_ollama_notice_routes_to_ito_without_claiming_serving(capsys):
     assert_exact_compute_route(output)
     assert "preferred compute sponsor" in output
     assert "Any GPU provider works" in output
+    assert "sponsorship link is passive" in output
+    assert "ecc ito find" in output
+    assert "explicitly configured canonical Itô CLI" in output
+    assert "submits a live authenticated RFQ" in output
+    assert "does not reserve capacity" in output
     assert "Managed inference through Itô is not live yet" in output
 
 

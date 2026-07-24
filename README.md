@@ -50,72 +50,45 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
 
 ---
 
-<table>
+<table aria-label="ECC primary links" width="100%">
 <tr>
-<td width="25%" align="center">
+<td width="33%" align="center">
   <a href="https://ecc.tools/pricing">
-    <strong> ECC Pro</strong><br />
-    <sub>Private repos · GitHub App · $19/seat/mo</sub>
-  </a>
+    <img src="assets/images/community/ecc-tools-mark.svg" height="42" alt="ECC Tools" /><br />
+    <strong>ECC Pro + GitHub App</strong>
+  </a><br />
+  <sub><a href="https://github.com/apps/ecc-tools">Install free</a> · <a href="https://ecc.tools/pricing">Private repos from $19/seat/mo</a></sub>
 </td>
-<td width="25%" align="center">
+<td width="33%" align="center">
   <a href="https://github.com/sponsors/affaan-m">
-    <strong> Sponsor</strong><br />
-    <sub>Fund the OSS · From $5/mo</sub>
-  </a>
+    <img src="assets/images/community/heart.svg" height="42" alt="" /><br />
+    <strong>Sponsor ECC</strong>
+  </a><br />
+  <sub>Fund the OSS · From $5/mo</sub>
 </td>
-<td width="25%" align="center">
-  <a href="https://github.com/affaan-m/ECC/discussions">
+<td width="33%" align="center">
+  <a href="https://discord.gg/36yGMHGFbR">
+    <img src="assets/images/community/discord.svg" height="42" alt="Discord" /><br />
     <strong>Community</strong>
-    <br />
-    <sub>Discussions · Q&amp;A · Show & Tell</sub>
-  </a>
-</td>
-<td width="25%" align="center">
-  <a href="https://github.com/apps/ecc-tools">
-    <strong> GitHub App</strong><br />
-    <sub>Install · PR audits · Free tier</sub>
-  </a>
+  </a><br />
+  <sub>Discord · Q&amp;A · Show &amp; Tell</sub>
 </td>
 </tr>
 </table>
 
-<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work — that's why a single maintainer ships weekly across 7 harnesses.</sub>
+<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work. That's why a single maintainer ships weekly across 7 harnesses.</sub>
 
 <div align="center">
 
-<sub><strong>Business sponsors</strong></sub>
+<sub><strong>Partners &amp; sponsors</strong></sub>
 
-<table>
-<tr>
-<td align="center" width="220">
-  <a href="https://www.coderabbit.ai">
-    <img src="assets/images/sponsors/coderabbit.png" width="96" alt="CodeRabbit logo" /><br />
-    <strong>CodeRabbit</strong>
-  </a>
-</td>
-<td align="center" width="220">
-  <a href="https://www.greptile.com/go/ecc">
-    <img src="assets/images/sponsors/greptile.png" width="96" alt="Greptile logo" /><br />
-    <strong>Greptile</strong>
-  </a>
-</td>
-<td align="center" width="220">
-  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC">
-    <img src="assets/images/sponsors/atlascloud.png" width="96" alt="Atlas Cloud logo" /><br />
-    <strong>Atlas Cloud</strong>
-  </a>
-</td>
-<td align="center" width="220">
-  <a href="https://compute.itomarkets.com">
-    <img src="assets/images/sponsors/ito.svg" width="96" alt="Itô Markets logo" /><br />
-    <strong>Itô</strong>
-  </a>
-</td>
-</tr>
-</table>
-
-<sub><strong>Run or self-host any open-source model.</strong> Itô is ECC's preferred compute sponsor: <a href="https://compute.itomarkets.com">open the Itô dashboard to sign in and rent or manage GPUs</a>. Any GPU provider works. ECC only provides this link; it does not provision compute or serving. Managed inference through Itô is not live yet.</sub>
+<p align="center" aria-label="Partners and sponsors">
+  <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.moonshot.ai" title="Moonshot AI — Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI — Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="172" alt="Itô Markets" /></picture></a>
+</p>
 
 <sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
 
@@ -129,32 +102,31 @@ ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: 
 
 This repo is the raw code only. The guides explain everything.
 
-<table>
+<table aria-label="ECC guides" width="100%">
 <tr>
-<td width="50%" align="center">
+<td width="33%" align="center">
 <a href="./the-shortform-guide.md">
-<img src="./assets/images/shortform/00-header.png" width="420" alt="The Shorthand Guide to ECC" /><br />
+<img src="./assets/images/guides/shorthand-guide.png" width="213" height="120" alt="The Shorthand Guide to ECC" /><br />
 <b>The Shorthand Guide</b>
 </a>
 <br /><sub>Setup, foundations, philosophy. <b>Read this first.</b> (<a href="https://x.com/affaan/status/2012378465664745795">thread</a>)</sub>
 </td>
-<td width="50%" align="center">
+<td width="33%" align="center">
 <a href="./the-longform-guide.md">
-<img src="./assets/images/longform/01-header.png" width="420" alt="The Longform Guide to ECC" /><br />
+<img src="./assets/images/guides/longform-guide.png" width="213" height="120" alt="The Longform Guide to ECC" /><br />
 <b>The Longform Guide</b>
 </a>
 <br /><sub>Token optimization, memory persistence, evals, parallelization. (<a href="https://x.com/affaan/status/2014040193557471352">thread</a>)</sub>
 </td>
-</tr>
-</table>
-
-<div align="center">
+<td width="33%" align="center">
 <a href="./the-security-guide.md">
-<img src="./assets/images/security/security-guide-header.png" width="420" alt="The Shorthand Guide to Everything Agentic Security" /><br />
+<img src="./assets/images/guides/security-guide.png" width="213" height="120" alt="The Shorthand Guide to Everything Agentic Security" /><br />
 <b>The Security Guide</b>
 </a>
 <br /><sub>Attack vectors, sandboxing, sanitization, CVEs, AgentShield. (<a href="https://x.com/affaan/status/2033263813387223421">thread</a>)</sub>
-</div>
+</td>
+</tr>
+</table>
 
 | Topic | What You'll Learn |
 |-------|-------------------|
@@ -164,6 +136,52 @@ This repo is the raw code only. The guides explain everything.
 | Verification Loops | Checkpoint vs continuous evals, grader types, pass@k metrics |
 | Parallelization | Git worktrees, cascade method, when to scale instances |
 | Subagent Orchestration | The context problem, iterative retrieval pattern |
+
+---
+
+## Self-host Kimi with ECC + Itô compute
+
+The Kimi Code harness and the model-serving layer are separate. ECC configures the agent harness; you bring an API endpoint or self-host an open-weight Kimi model on your own GPU capacity.
+
+<table aria-label="Local Kimi model path" width="100%">
+<tr>
+<td width="33%" align="center">
+  <a href="https://compute.itomarkets.com">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="164" alt="Itô Markets" /></picture><br />
+    <strong>1. Get GPU capacity</strong>
+  </a><br />
+  <sub>Use Itô or any GPU provider.</sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://www.moonshot.ai">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="126" alt="Moonshot AI — Kimi" /></picture><br />
+    <strong>2. Serve Kimi</strong>
+  </a><br />
+  <sub>Expose the chosen checkpoint through a Kimi- or OpenAI-compatible endpoint.</sub>
+</td>
+<td width="33%" align="center">
+  <a href=".kimi/README.md">
+    <img src="assets/images/community/ecc-tools-mark.svg" height="52" alt="ECC Tools" /><br />
+    <strong>3. Run Kimi Code with ECC</strong>
+  </a><br />
+  <sub>Install project instructions and skills, then start <code>kimi</code>.</sub>
+</td>
+</tr>
+</table>
+
+Configure the endpoint using Kimi Code's <a href="https://moonshotai.github.io/kimi-cli/en/configuration/providers.html">official provider guide</a>, then install the ECC project surface:
+
+```bash
+bash ./install.sh --target kimi --profile minimal
+npx ecc doctor --target kimi
+kimi
+```
+
+Kimi Code discovers the installed `.kimi/AGENTS.md` instructions and `.kimi/skills/` workflows natively. The installer dry-run and regression suite verify that the Kimi target stays inside the project-local `.kimi/` root.
+
+Run or self-host any open-source model on owned or rented GPUs. Itô is ECC's preferred compute sponsor; any GPU provider works. The sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, `ecc ito find` invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
+
+<sub>This three-beat strip is also the video outline: capacity → serving endpoint → Kimi Code with ECC.</sub>
 
 ---
 
@@ -1196,7 +1214,31 @@ claude
 
 If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working.
 
-Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. ECC only links to the Itô dashboard for sign-in and GPU rental or management—it does not provision compute or serving. Managed inference through Itô is not live yet.
+Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. That sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, the opt-in `ecc ito find` bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
+
+### Itô compute CLI bridge
+
+`ecc ito` delegates to the separately installed canonical Itô client; ECC does
+not maintain a second API client or browser handoff. The available operations
+are `ecc ito auth`, `ecc ito find`, `ecc ito status`, and the separately gated
+`ecc ito evals`. The matching MCP tools remain `ito_auth`, `ito_find`, and
+`ito_status`; node qualification is CLI-only.
+
+The `ito-compute-cli` package is currently unpublished. Build it locally from the Itô runtime repo (private while the desk hardens;
+design partners get access) under `cli/ito-compute-cli`, run `npm ci` and `npm run check`, then set
+`ECC_ITO_CLI_EXECUTABLE` to that build's absolute `dist/bin/ito.js` path.
+Inject `ITO_API_KEY` from 1Password or the launching environment. ECC does not
+discover this credential-bearing client through `PATH`. See the [`ito-compute`
+skill](skills/ito-compute/SKILL.md) for the full RFQ authority and MCP setup
+contract.
+
+`find` submits a live authenticated RFQ. It does not reserve capacity.
+`evals` requires both `ITO_ENABLE_SIXTYTWO_LIVE=1` and `--live-sixtytwo`, a
+separately installed `sixtytwo-cli==0.3.33`, an explicit node list, and an
+existing absolute configuration directory. It cannot rent, launch, recover,
+repair, or purchase.
+ECC exposes no quote lock, purchase, workload, or inference path, and it never
+replaces a missing client or failed live call with a local result.
 
 Official references:
 - [Claude Code LLM gateway docs](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)
@@ -1385,7 +1427,7 @@ alwaysApply: false
 
 ## Codex macOS App + CLI Support
 
-ECC provides **first-class Codex support** for both the macOS app and CLI, with a reference configuration, Codex-specific AGENTS.md supplement, and shared skills.
+ECC provides **first-class Codex support** for both the macOS app and CLI, with a reference configuration, Codex-specific AGENTS.md supplement, and shared skills. For repo navigation, surface ownership, and PR diff packet guidance, start with [`docs/CODEX-NAVIGATION-GUIDE.md`](docs/CODEX-NAVIGATION-GUIDE.md).
 
 ### Quick Start (Codex App + CLI)
 
@@ -1849,7 +1891,7 @@ ECC takes supply-chain and agent safety seriously.
 
 ## Sponsors
 
-Featured sponsors are at the top of this README — full list and tiers in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
+Business sponsors: [CodeRabbit](https://www.coderabbit.ai) · [Greptile](https://www.greptile.com/go/ecc) · [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) · [Moonshot AI (Kimi)](https://www.moonshot.ai) · [Itô Markets](https://itomarkets.com). Logos are at the top of this README; the full roster and tiers are in [SPONSORS.md](SPONSORS.md). [Become a sponsor](https://github.com/sponsors/affaan-m).
 
 ---
 

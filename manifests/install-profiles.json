@@ -87,6 +87,7 @@
         "operator-workflows",
         "optimization-workflows",
         "prediction-market-skills",
+        "ito-compute",
         "social-distribution",
         "media-generation",
         "orchestration",

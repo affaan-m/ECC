@@ -37,6 +37,16 @@ const {
 
 const VERSION = require('../package.json').version;
 
+const SAFE_REQUEST_PATHS = new Set([
+  '/',
+  '/health',
+  '/shutdown',
+  '/api/await',
+  '/api/sessions',
+  '/api/end'
+]);
+const SESSION_REPLY_PATH = /^\/api\/session\/[a-f0-9]{12}\/reply$/;
+
 function usage() {
   return [
     'Plan Canvas - review plans and HTML artifacts in the browser',
@@ -77,19 +87,51 @@ function readServerInfo(stateDir) {
   }
 }
 
+function validatePort(port) {
+  const value = Number(port);
+  if (!Number.isInteger(value) || value < 0 || value > 65535) {
+    throw new Error(`invalid plan-canvas server port: ${port}`);
+  }
+  return value;
+}
+
+function validateRequestPath(requestPath) {
+  if (typeof requestPath !== 'string' || !requestPath.startsWith('/')) {
+    throw new Error('plan-canvas request path must be root-relative');
+  }
+  const url = new URL(requestPath, `http://${DEFAULT_HOST}`);
+  if (url.hostname !== DEFAULT_HOST) {
+    throw new Error('plan-canvas request path must stay on the loopback server');
+  }
+  if (!SAFE_REQUEST_PATHS.has(url.pathname) && !SESSION_REPLY_PATH.test(url.pathname)) {
+    throw new Error(`unsupported plan-canvas request path: ${url.pathname}`);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function requestOptions(port, method, requestPath, headers) {
+  return {
+    host: DEFAULT_HOST,
+    port: validatePort(port),
+    method,
+    path: validateRequestPath(requestPath),
+    agent: false,
+    headers
+  };
+}
+
 function request(port, method, requestPath, body = null) {
   return new Promise((resolve, reject) => {
     const payload = body === null ? null : JSON.stringify(body);
     const req = http.request(
-      {
-        host: DEFAULT_HOST,
+      requestOptions(
         port,
         method,
-        path: requestPath,
-        headers: payload
+        requestPath,
+        payload
           ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
           : {}
-      },
+      ),
       res => {
         let data = '';
         res.on('data', chunk => {
@@ -197,12 +239,13 @@ async function cmdOpen(file, args, { stateDir, port }) {
   };
 }
 
-function awaitRequest(port, file, timeoutMs) {
-  const params = new URLSearchParams({ file });
+function awaitRequest(port, key, timeoutMs) {
+  if (!/^[a-f0-9]{12}$/.test(key)) throw new Error('invalid plan-canvas session key');
+  const params = new URLSearchParams({ key });
   if (timeoutMs !== null) params.set('timeoutMs', String(timeoutMs));
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: DEFAULT_HOST, port, method: 'GET', path: `/api/await?${params}` },
+      requestOptions(port, 'GET', `/api/await?${params}`, {}),
       res => {
         let data = '';
         res.on('data', chunk => {
@@ -236,7 +279,7 @@ async function cmdAwait(file, args, { stateDir, port }) {
   const timeoutRaw = valueAfter(args, '--timeout-ms');
   const timeoutMs = timeoutRaw === null ? null : Number.parseInt(timeoutRaw, 10) || 0;
   process.stderr.write('[plan-canvas] waiting for human feedback... leave this running (re-run if interrupted; queued feedback is never lost)\n');
-  const result = await awaitRequest(port, path.resolve(file), timeoutMs);
+  const result = await awaitRequest(port, sessionKeyFor(canonicalizeArtifactPath(file)), timeoutMs);
   if (result.status === 'feedback') {
     result.next_step = result.sessionEnded
       ? 'The user sent this feedback and ended the session. Address it and report in chat; do not reopen the canvas uninvited.'
