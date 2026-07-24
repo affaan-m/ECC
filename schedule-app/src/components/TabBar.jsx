@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
+import { computeGoalStreak } from '../data/helpers.js';
 
 const ICONS = {
   home: HomeIcon,
@@ -19,6 +20,11 @@ export default function TabBar() {
   const order = isPro ? normalizeTabOrder(state.settings?.tabOrder) : TAB_TYPES.map((t) => ({ id: t.id, enabled: true }));
   const visible = order.filter((o) => o.enabled).map((o) => TAB_TYPES.find((t) => t.id === o.id)).filter(Boolean);
 
+  // Best current streak across every goal, badged onto the Goals tab so it's
+  // visible from anywhere in the app, not just when you're already on a
+  // page that shows it.
+  const bestStreak = state.goals.reduce((max, g) => Math.max(max, computeGoalStreak(g)), 0);
+
   return (
     <nav className="tabbar" aria-label="Primary">
       {visible.map(({ id, to, label }) => {
@@ -28,11 +34,14 @@ export default function TabBar() {
             key={to}
             to={to}
             end={id === 'home'}
-            aria-label={label}
+            aria-label={id === 'goals' && bestStreak >= 2 ? `${label}, ${bestStreak} day streak` : label}
             title={label}
             className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
           >
-            <Icon />
+            <span className="tab-icon-wrap">
+              <Icon />
+              {id === 'goals' && bestStreak >= 2 && <span className="tab-streak-badge">{bestStreak}</span>}
+            </span>
           </NavLink>
         );
       })}
