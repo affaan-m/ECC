@@ -381,33 +381,6 @@ export default function MorePage() {
             <span className="toggle-knob" />
           </button>
         </div>
-        {/* TEMPORARY diagnostic — remove once the no-vibration report is
-            resolved. Reports exactly what the browser does when asked to
-            vibrate, without needing devtools. */}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          data-haptic="none"
-          style={{ marginTop: 8 }}
-          onClick={() => {
-            const type = typeof navigator.vibrate;
-            let result;
-            try {
-              result = type === 'function' ? navigator.vibrate(200) : 'n/a';
-            } catch (err) {
-              result = `threw: ${err.message}`;
-            }
-            alert(
-              `navigator.vibrate type: ${type}\n` +
-              `call result: ${result}\n` +
-              `settings.hapticsEnabled: ${s.hapticsEnabled ?? true}\n` +
-              `isSecureContext: ${window.isSecureContext}\n` +
-              `userAgent: ${navigator.userAgent}`
-            );
-          }}
-        >
-          Debug: test vibrate
-        </button>
       </section>
 
       <section className="detail-section">
