@@ -563,14 +563,84 @@ function summarizeWorkItems(items) {
   return summary;
 }
 
-async function readWorkItemsSnapshot(stateDbPath) {
+const SKILL_RUN_LIMIT = 50;
+
+function normalizeSkillRunOutcome(outcome) {
+  const normalized = String(outcome || '')
+    .trim()
+    .toLowerCase();
+  if (['success', 'succeeded', 'pass', 'passed', 'ok'].includes(normalized)) return 'success';
+  if (['failure', 'failed', 'fail', 'error'].includes(normalized)) return 'failure';
+  return 'unknown';
+}
+
+function normalizeSkillRun(row) {
+  const optionalNumber = (value) => (value === null || value === undefined || value === '' ? null : toNumber(value, 0));
+  return {
+    id: String(row.id || ''),
+    skillId: String(row.skill_id || ''),
+    skillVersion: row.skill_version ? String(row.skill_version) : null,
+    sessionId: row.session_id ? String(row.session_id) : null,
+    taskDescription: String(row.task_description || ''),
+    outcome: normalizeSkillRunOutcome(row.outcome),
+    rawOutcome: String(row.outcome || ''),
+    failureReason: row.failure_reason ? String(row.failure_reason) : null,
+    tokensUsed: optionalNumber(row.tokens_used),
+    durationMs: optionalNumber(row.duration_ms),
+    userFeedback: row.user_feedback ? String(row.user_feedback) : null,
+    createdAt: String(row.created_at || '')
+  };
+}
+
+function readSkillRuns(db) {
+  if (!tableExists(db, 'skill_runs')) return [];
+  return execRows(
+    db,
+    `SELECT *
+     FROM skill_runs
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+    [SKILL_RUN_LIMIT]
+  ).map(normalizeSkillRun);
+}
+
+function summarizeSkillRuns(runs) {
+  const summary = {
+    totalCount: runs.length,
+    successCount: 0,
+    failureCount: 0,
+    unknownCount: 0,
+    successRate: null,
+    windowSize: SKILL_RUN_LIMIT,
+    items: runs
+  };
+
+  for (const run of runs) {
+    if (run.outcome === 'success') summary.successCount += 1;
+    else if (run.outcome === 'failure') summary.failureCount += 1;
+    else summary.unknownCount += 1;
+  }
+
+  // Unknown outcomes are excluded from the rate so a partially instrumented
+  // harness does not read as a drop in skill reliability.
+  const decided = summary.successCount + summary.failureCount;
+  if (decided > 0) summary.successRate = summary.successCount / decided;
+
+  return summary;
+}
+
+async function readStateStoreSnapshot(stateDbPath) {
+  const empty = { workItems: summarizeWorkItems([]), skillRuns: summarizeSkillRuns([]) };
   let db = null;
   try {
     db = await openSqlDatabase(stateDbPath);
-    if (!db) return summarizeWorkItems([]);
-    return summarizeWorkItems(readWorkItems(db));
+    if (!db) return empty;
+    return {
+      workItems: summarizeWorkItems(readWorkItems(db)),
+      skillRuns: summarizeSkillRuns(readSkillRuns(db))
+    };
   } catch {
-    return summarizeWorkItems([]);
+    return empty;
   } finally {
     if (db) db.close();
   }
@@ -590,7 +660,7 @@ async function buildControlPaneSnapshot(options = {}) {
   const query = String(options.query || '').trim();
   const limit = Math.max(1, Math.min(Number.parseInt(String(options.limit || 12), 10) || 12, 50));
   const generatedAt = new Date().toISOString();
-  const workItems = await readWorkItemsSnapshot(stateDbPath);
+  const { workItems, skillRuns } = await readStateStoreSnapshot(stateDbPath);
   const base = {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     generatedAt,
@@ -620,6 +690,7 @@ async function buildControlPaneSnapshot(options = {}) {
     },
     connectors: connectorStatus(config, null),
     workItems,
+    skillRuns,
     actions: buildControlPaneActions({ repoRoot, query, limit })
   };
 
