@@ -191,6 +191,10 @@ async function runTests() {
           host: '127.0.0.1',
           port: 0,
           dbPath,
+          // Isolate the state store too, otherwise the assertions below read the
+          // operator's real ~/.claude/ecc/state.db and fail on any machine that
+          // has recorded work items.
+          stateDbPath: path.join(tempDir, 'state.db'),
           repoRoot: REPO_ROOT,
           query: 'control pane',
           allowActions: false
@@ -656,6 +660,82 @@ async function runTests() {
         }
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('snapshot exposes skill runs from the state store', async () => {
+      const { createStateStore } = require('../../scripts/lib/state-store');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-skill-runs-'));
+      const stateDbPath = path.join(tempDir, 'state.db');
+
+      try {
+        const store = await createStateStore({ dbPath: stateDbPath });
+        store.upsertSession({ id: 'sid-1', adapterId: 'claude', harness: 'claude-code', state: 'active' });
+        store.insertSkillRun({
+          id: 'run-1',
+          skillId: 'security-review',
+          skillVersion: '1.0.0',
+          sessionId: 'sid-1',
+          taskDescription: 'Audit the auth module',
+          outcome: 'success',
+          durationMs: 1200,
+          createdAt: '2026-01-01T00:00:00.000Z'
+        });
+        store.insertSkillRun({
+          id: 'run-2',
+          skillId: 'security-review',
+          skillVersion: '1.0.0',
+          sessionId: 'sid-1',
+          taskDescription: 'Audit the billing module',
+          outcome: 'failure',
+          failureReason: 'missing test fixtures',
+          createdAt: '2026-01-02T00:00:00.000Z'
+        });
+        store.close();
+
+        const app = await createControlPaneServer({ host: '127.0.0.1', port: 0, stateDbPath, repoRoot: REPO_ROOT, allowActions: false });
+        await app.listen();
+        try {
+          const snapshot = await fetchLocal(`${app.url}/api/snapshot`).then(r => r.json());
+          assert.strictEqual(snapshot.skillRuns.totalCount, 2);
+          assert.strictEqual(snapshot.skillRuns.successCount, 1);
+          assert.strictEqual(snapshot.skillRuns.failureCount, 1);
+          assert.strictEqual(snapshot.skillRuns.successRate, 0.5);
+          // Newest first.
+          assert.strictEqual(snapshot.skillRuns.items[0].id, 'run-2');
+          assert.strictEqual(snapshot.skillRuns.items[0].outcome, 'failure');
+          assert.strictEqual(snapshot.skillRuns.items[0].failureReason, 'missing test fixtures');
+          assert.strictEqual(snapshot.skillRuns.items[1].skillId, 'security-review');
+          assert.strictEqual(snapshot.skillRuns.items[1].durationMs, 1200);
+        } finally {
+          await app.close();
+        }
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('snapshot returns an empty skill-run summary without a state store', async () => {
+      // Point at a path that does not exist so the test never reads the
+      // operator's real state store.
+      const stateDbPath = path.join(os.tmpdir(), 'ecc-control-pane-missing-state', 'state.db');
+      const app = await createControlPaneServer({ host: '127.0.0.1', port: 0, stateDbPath, repoRoot: REPO_ROOT, allowActions: false });
+      await app.listen();
+      try {
+        const snapshot = await fetchLocal(`${app.url}/api/snapshot`).then(r => r.json());
+        assert.strictEqual(snapshot.skillRuns.totalCount, 0);
+        assert.strictEqual(snapshot.skillRuns.successRate, null);
+        assert.deepStrictEqual(snapshot.skillRuns.items, []);
+      } finally {
+        await app.close();
       }
     })
   )
