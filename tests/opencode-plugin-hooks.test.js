@@ -105,14 +105,16 @@ async function main() {
           // cannot be found -- it must not throw and crash session startup (#2530).
           const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
 
-          assert.ok(
-            client.logs.some(
-              (entry) =>
-                entry.level === "warn" &&
-                entry.message.includes("[ECC] changed-files tracking disabled") &&
-                entry.message.includes("ecc repair --target opencode")
-            ),
-            "Expected a one-time warning when plugins/lib/changed-files-store.js cannot be loaded"
+          const disabledWarnings = client.logs.filter(
+            (entry) =>
+              entry.level === "warn" &&
+              entry.message.includes("[ECC] changed-files tracking disabled") &&
+              entry.message.includes("ecc repair --target opencode")
+          )
+          assert.strictEqual(
+            disabledWarnings.length,
+            1,
+            "Expected exactly one warning when plugins/lib/changed-files-store.js cannot be loaded"
           )
 
           // Every hook that touches the store must remain callable and must not throw.

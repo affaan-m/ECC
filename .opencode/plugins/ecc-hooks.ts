@@ -117,11 +117,16 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
     changedFilesStore.initStore(worktreePath)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    log(
-      "warn",
-      `[ECC] changed-files tracking disabled: could not load './lib/changed-files-store.js' (${reason}). ` +
-        "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
-    )
+    // Best-effort diagnostic only: if the SDK's log transport itself fails,
+    // that must never surface as an unhandled rejection -- this whole block
+    // exists to guarantee startup resilience even when things go wrong.
+    Promise.resolve(
+      log(
+        "warn",
+        `[ECC] changed-files tracking disabled: could not load './lib/changed-files-store.js' (${reason}). ` +
+          "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
+      )
+    ).catch(() => {})
   }
 
   const normalizeProfile = (value: string | undefined): HookProfile => {
