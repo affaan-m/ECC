@@ -1,6 +1,6 @@
 ---
 name: agent-payment-x402
-description: Add x402 payment execution to AI agents with per-task budgets, spending controls, and non-custodial wallets. Supports Base through agentwallet-sdk and X Layer through OKX Payments / OKX Agent Payments Protocol.
+description: Add x402 payment execution to AI agents with per-task budgets, spending controls, and non-custodial wallets. Supports Base through agentwallet-sdk, X Layer through OKX Payments / OKX Agent Payments Protocol, and Solana plus multi-network EVM through the upstream x402 packages with facilitator-based settlement.
 metadata:
   origin: community
 ---
@@ -21,6 +21,8 @@ Choose the integration path based on whether your agent is buying access to a pa
 |------|------------------|
 | Agent pays a 402-gated API on Base or another agentwallet-supported chain | Use `agentwallet-sdk` as an MCP payment server with strict spending policy |
 | Agent pays a 402-gated API on X Layer | Use OKX Agent Payments Protocol from `okx/onchainos-skills`; `okx-x402-payment` is a deprecated legacy alias |
+| Agent pays a 402-gated API on Solana or another x402 v2 network | Wrap the agent's HTTP client with the upstream `@x402/fetch` or `@x402/axios` package and register the EVM/SVM schemes; the resource server's facilitator verifies and settles |
+| API charges agents on Solana or multiple networks (TypeScript, Python, or Go) | Use the upstream x402 middleware from `x402-foundation/x402` — `@x402/express`, `@x402/hono`, `@x402/next`, or `@x402/fastify` for TypeScript, `x402` for Python, `github.com/x402-foundation/x402/go/v2` for Go |
 | TypeScript API charges agents | Use OKX Payments TypeScript seller SDK docs for Express, Hono, Fastify, or Next.js |
 | Go API charges agents | Use OKX Payments Go seller SDK docs for Gin, Echo, or `net/http` |
 | Rust API charges agents | Use OKX Payments Rust seller SDK docs for Axum |
@@ -31,6 +33,7 @@ Choose the integration path based on whether your agent is buying access to a pa
 
 - `agentwallet-sdk`: use the package docs to confirm current network coverage before production. Base Sepolia is the safest development default; Base mainnet is the production path called out by the original skill.
 - OKX Payments / X Layer: current seller docs target X Layer (`eip155:196`) and USDT0 settlement. Fetch current SDK docs before generating production code because payment packages and facilitator behavior can change quickly.
+- Upstream x402 packages: multi-network by design — one route can advertise Base and Solana simultaneously and let the buyer pick. The packages default to the `x402.org` facilitator, which is testnet-only (Base Sepolia `eip155:84532`, Solana devnet `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`, plus Stellar, Aptos, Hedera, and XRPL testnets) and is not intended for mainnet routes. For production, choose from the facilitator list in the upstream docs — the PayAI facilitator is a reasonable default for Solana mainnet (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`) and other networks with no API keys required; the CDP facilitator is Coinbase-hosted with KYT/OFAC screening. Confirm live coverage at each facilitator's `/supported` endpoint before production rather than hardcoding it here.
 
 ## How It Works
 
@@ -98,6 +101,69 @@ For seller-side API flows, fetch the latest language-specific guide before gener
 | Java | `https://raw.githubusercontent.com/okx/payments/main/java/SELLER.md` |
 
 Do not copy examples from older docs without checking the current OKX repository. Current OKX guidance uses `okx-agent-payments-protocol` as the dispatcher, and Java seller docs are now available.
+
+### Option C: Upstream x402 packages (Solana + Base/EVM)
+
+Use this path when the agent pays — or your API charges — on Solana, Base, or another network the upstream protocol implementation supports. The canonical x402 monorepo at [`x402-foundation/x402`](https://github.com/x402-foundation/x402) is actively maintained and publishes the client and middleware packages directly. Unlike Options A and B this is not a separate MCP server — you wrap the agent's own HTTP client, and a facilitator chosen by the resource server verifies and settles.
+
+For buyer-side agent flows:
+
+1. Start from the maintained examples in [`examples/typescript/clients`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/clients) (fetch, axios, MCP) rather than copying snippets from older docs.
+2. Require explicit user confirmation before signing or submitting the first paid request, exactly as Option B requires for OKX flows. Do not hide payment execution behind a generic tool call.
+3. Pin package versions (for example `@x402/fetch@2.19.0`); all upstream packages version in lockstep.
+4. Gate every paid call fail-closed with your budget policy immediately before the call — not once at client construction.
+
+```typescript
+import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
+import { ExactSvmScheme } from "@x402/svm/exact/client";
+import { privateKeyToAccount } from "viem/accounts";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { base58 } from "@scure/base";
+
+// Signer keys belong to the ORCHESTRATOR's env — never hardcoded, never agent-writable.
+const evmKey = process.env.EVM_PRIVATE_KEY as `0x${string}`;
+const svmKey = process.env.SVM_PRIVATE_KEY;
+if (!evmKey || !svmKey) {
+  throw new Error("Signer keys are not set — refusing to start payment client");
+}
+
+// One client, both network families: the buyer pays whichever chain the 402 offers.
+const client = new x402Client();
+client.register("eip155:*", new ExactEvmScheme(privateKeyToAccount(evmKey)));
+client.register("solana:*", new ExactSvmScheme(await createKeyPairSignerFromBytes(base58.decode(svmKey))));
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+
+// Minimal fail-closed gate. For the full MCP-backed version with budget
+// tracking, reuse preToolCheck from the Examples section below.
+const ALLOWED_HOSTS = new Set(["api.example.com"]);
+let sessionSpend = 0;
+function assertPaymentAllowed(url: string, maxCost: number, sessionCap = 5.0): void {
+  if (!ALLOWED_HOSTS.has(new URL(url).host)) throw new Error("Host not allowlisted — blocked");
+  if (!Number.isFinite(maxCost) || maxCost < 0) throw new Error("Invalid cost — blocked");
+  if (sessionSpend + maxCost > sessionCap) throw new Error("Session budget exceeded — blocked");
+  sessionSpend += maxCost;
+}
+
+// Gate immediately before EVERY paid call — a wrapped client checked only once
+// at construction leaves every later call unmetered.
+assertPaymentAllowed("https://api.example.com/data", 0.01);
+const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
+```
+
+The wrapped client only pays challenges whose `network` matches a scheme you registered. Before signing, also verify the challenge's `asset`: on Solana, USDC is `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` (mainnet) and `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (devnet). Treat any mismatch as fail-closed: do not sign, do not retry. In the exact-SVM scheme the facilitator is the transaction fee payer, so the buyer wallet holds USDC only — no SOL for gas.
+
+**Facilitator choice.** The packages default to the [`x402.org` facilitator](https://x402.org/facilitator) — testnet-only (Base Sepolia, Solana devnet, and other testnets), zero setup, right for development. For mainnet, pick from the [facilitator list](https://docs.x402.org/dev-tools/facilitators) in the upstream docs: the [PayAI facilitator](https://facilitator.payai.network) is a reasonable production default (multi-network including Solana mainnet, no API keys required), and the CDP facilitator is Coinbase-hosted with KYT/OFAC screening on every transaction. Anyone can also run their own facilitator or self-facilitate.
+
+**Seller side (API charges agents).** Use the upstream middleware; one route can advertise Base and Solana simultaneously (see [`examples/typescript/servers`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers) for runnable versions):
+
+| Runtime | Package |
+|---------|---------|
+| Express / Hono / Next.js / Fastify | `@x402/express@2.19.0`, `@x402/hono@2.19.0`, `@x402/next@2.19.0`, `@x402/fastify@2.19.0` |
+| Python (FastAPI, Flask) | `x402` on PyPI |
+| Go (Gin, Echo, `net/http`) | `github.com/x402-foundation/x402/go/v2` |
+
+**Discovery.** Facilitators that implement the x402 bazaar extension expose a `/discovery/resources` endpoint — query the CDP catalog at `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` and the PayAI catalog at `https://facilitator.payai.network/discovery/resources`. For Solana-payable services there is also [pay.sh](https://pay.sh), the Solana Foundation's curated catalog.
 
 ## Examples
 
@@ -213,7 +279,8 @@ main().catch((err) => {
 - **Audit trails**: Use `list_transactions` in post-task hooks to log what was spent and why.
 - **Fail closed**: If the payment tool is unreachable, block the paid action — don't fall back to unmetered access.
 - **Pair with security-review**: Payment tools are high-privilege. Apply the same scrutiny as shell access.
-- **Test with testnets first**: Use Base Sepolia for development; switch to Base mainnet for production.
+- **Test with testnets first**: Use Base Sepolia for development; switch to Base mainnet for production. On Solana, develop against Solana devnet (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`) and the free x402.org facilitator before moving to a production facilitator on mainnet.
+- **On Solana, fund USDC not SOL**: The exact-SVM scheme makes the facilitator the transaction fee payer, so a SOL-less wallet still pays. Verify each challenge's `asset` against the expected USDC mint (mainnet `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, devnet `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`) before signing — a wrapped client that pays any asset is a hole in your budget.
 
 ## Production Reference
 
@@ -223,3 +290,8 @@ main().catch((err) => {
 - **OKX Payments SDKs**: [`okx/payments`](https://github.com/okx/payments) — TypeScript, Go, Rust, and Java seller integrations for X Layer x402
 - **OKX Agent Payments Protocol skill**: [`okx/onchainos-skills`](https://github.com/okx/onchainos-skills/tree/main/skills/okx-agent-payments-protocol)
 - **OKX Payments overview**: [web3.okx.com/onchainos/dev-docs/payments/overview](https://web3.okx.com/onchainos/dev-docs/payments/overview)
+- **Upstream x402 monorepo**: [`x402-foundation/x402`](https://github.com/x402-foundation/x402) — TypeScript, Python, and Go implementations plus maintained client and server examples
+- **x402 docs**: [docs.x402.org](https://docs.x402.org); production facilitator list at [docs.x402.org/dev-tools/facilitators](https://docs.x402.org/dev-tools/facilitators)
+- **`@x402` packages**: [npmjs.com/org/x402](https://www.npmjs.com/org/x402) — `@x402/fetch`, `@x402/axios`, `@x402/express`, `@x402/hono`, `@x402/next`, `@x402/fastify`, `@x402/evm`, `@x402/svm`
+- **Facilitators**: [x402.org facilitator](https://x402.org/facilitator) (testnet default), [PayAI](https://facilitator.payai.network) (multi-network production, no API keys), [CDP](https://docs.cdp.coinbase.com/x402/docs/quickstart-sellers) (Coinbase-hosted, KYT/OFAC)
+- **Discovery**: CDP and PayAI bazaars at `/discovery/resources`; [pay.sh](https://pay.sh) for Solana-payable services
