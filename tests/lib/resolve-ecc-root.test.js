@@ -324,6 +324,45 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('rejects a partial exact plugin root (scripts, no ECC skill) and prefers a complete root (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // An exact plugin root under ~/.claude/plugins/ecc ships ECC's scripts but
+      // not ECC's skills. The stricter predicate must reject it on the
+      // exact-plugin branch too, not only for ~/.claude.
+      const partialScripts = path.join(homeDir, '.claude', 'plugins', 'ecc', 'scripts', 'lib');
+      fs.mkdirSync(partialScripts, { recursive: true });
+      fs.writeFileSync(path.join(partialScripts, 'utils.js'), '// stub');
+      // A COMPLETE ECC root exists in the plugin cache (scripts + ECC skill).
+      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected,
+        'a scripts-only exact plugin root must not shadow a complete plugin-cache root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects a partial plugin-cache root (scripts, no ECC skill) and falls back to ~/.claude (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // A versioned plugin-cache root ships ECC's scripts but not ECC's skills.
+      // The stricter predicate must reject it on the cache branch, so the
+      // resolver returns the last-resort ~/.claude rather than the partial root.
+      const cacheScripts = path.join(
+        homeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION,
+        'scripts', 'lib'
+      );
+      fs.mkdirSync(cacheScripts, { recursive: true });
+      fs.writeFileSync(path.join(cacheScripts, 'utils.js'), '// stub');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, path.join(homeDir, '.claude'),
+        'a scripts-only plugin-cache root must not be returned; fall back to ~/.claude');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // ─── INLINE_RESOLVE ───
 
   if (test('INLINE_RESOLVE is a non-empty string', () => {

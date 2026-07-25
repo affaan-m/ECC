@@ -6,6 +6,10 @@ const os = require('os');
 const assert = require('assert');
 const { INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
+// Sentinel ECC skill that resolveEccRoot() requires alongside the script tree
+// before accepting a root; kept in sync with the module's DEFAULT_SKILL_PROBE.
+const ECC_SKILL_SENTINEL = path.join('skills', 'continuous-learning-v2');
+
 let passed = 0;
 let failed = 0;
 
@@ -55,7 +59,7 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
     const legacyRoot = path.join(legacyHomeDir, '.claude', 'plugins', 'marketplaces', 'ecc');
     fs.mkdirSync(path.join(legacyRoot, 'scripts', 'lib'), { recursive: true });
     fs.writeFileSync(path.join(legacyRoot, 'scripts', 'lib', 'utils.js'), '// stub');
-    fs.mkdirSync(path.join(legacyRoot, 'skills', 'continuous-learning-v2'), { recursive: true });
+    fs.mkdirSync(path.join(legacyRoot, ECC_SKILL_SENTINEL), { recursive: true });
     assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir: legacyHomeDir }), legacyRoot);
   } finally {
     fs.rmSync(legacyHomeDir, { recursive: true, force: true });
@@ -66,7 +70,7 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
     const cacheRoot = path.join(cacheHomeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', '1.0.0');
     fs.mkdirSync(path.join(cacheRoot, 'scripts', 'lib'), { recursive: true });
     fs.writeFileSync(path.join(cacheRoot, 'scripts', 'lib', 'utils.js'), '// stub');
-    fs.mkdirSync(path.join(cacheRoot, 'skills', 'continuous-learning-v2'), { recursive: true });
+    fs.mkdirSync(path.join(cacheRoot, ECC_SKILL_SENTINEL), { recursive: true });
     assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir: cacheHomeDir }), cacheRoot);
   } finally {
     fs.rmSync(cacheHomeDir, { recursive: true, force: true });
