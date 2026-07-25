@@ -64,6 +64,36 @@ test('list --segment filters, list --all includes archived companies', () => {
   });
 });
 
+test('add accepts --stage, --source and --notes, all visible in show', () => {
+  withTempFile(filePath => {
+    run(
+      ['add', 'Voltus', '--segment', 'Demand Response', '--stage', 'Series C', '--source', 'https://voltus.co', '--notes', 'Initial research'],
+      filePath
+    );
+
+    const show = run(['show', '1'], filePath);
+    assert.match(show.stdout, /Series C/);
+    assert.match(show.stdout, /https:\/\/voltus\.co/);
+    assert.match(show.stdout, /Initial research/);
+  });
+});
+
+test('show reports no notes for a freshly added company', () => {
+  withTempFile(filePath => {
+    run(['add', 'Voltus', '--segment', 'Demand Response'], filePath);
+    const show = run(['show', '1'], filePath);
+    assert.match(show.stdout, /No notes\./);
+  });
+});
+
+test('segments reports nothing tracked when the watchlist is empty', () => {
+  withTempFile(filePath => {
+    const segments = run(['segments'], filePath);
+    assert.equal(segments.status, 0);
+    assert.match(segments.stdout, /No segments tracked\./);
+  });
+});
+
 test('note appends research notes visible in show', () => {
   withTempFile(filePath => {
     run(['add', 'Voltus', '--segment', 'Demand Response'], filePath);

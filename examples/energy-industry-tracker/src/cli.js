@@ -79,7 +79,7 @@ function cmdAdd(positional, options, companies, streams) {
   return 0;
 }
 
-function cmdList(positional, options, companies, streams) {
+function cmdList(_positional, options, companies, streams) {
   const result = listCompanies(companies, { all: options.all, segment: options.segment });
   if (result.length === 0) {
     streams.stdout.write('No companies tracked.\n');
@@ -91,7 +91,7 @@ function cmdList(positional, options, companies, streams) {
   return 0;
 }
 
-function cmdShow(positional, options, companies, streams) {
+function cmdShow(positional, _options, companies, streams) {
   const id = Number(positional[0]);
   const company = findCompanyOrThrow(companies, id);
   streams.stdout.write(`${formatCompanyLine(company)}\n`);
@@ -134,7 +134,7 @@ function cmdRm(positional, options, companies, streams) {
   return 0;
 }
 
-function cmdSegments(positional, options, companies, streams) {
+function cmdSegments(_positional, _options, companies, streams) {
   const summary = segmentSummary(companies);
   if (summary.length === 0) {
     streams.stdout.write('No segments tracked.\n');
