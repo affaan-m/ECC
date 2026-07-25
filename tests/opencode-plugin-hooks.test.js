@@ -85,6 +85,82 @@ async function main() {
   const { ECCHooksPlugin } = await loadPlugin()
   const tests = [
     [
+      "plugin initializes and hooks stay usable when plugins/lib is missing",
+      async () => withTempProject([], async (projectDir) => {
+        const repoRoot = path.join(__dirname, "..")
+        const libDir = path.join(repoRoot, ".opencode", "dist", "plugins", "lib")
+        const backupDir = path.join(
+          repoRoot,
+          ".opencode",
+          "dist",
+          "plugins",
+          "lib.missing-store-test-backup"
+        )
+        fs.renameSync(libDir, backupDir)
+        try {
+          const client = createClient()
+          const $ = createFailingShell()
+
+          // Plugin initialization must resolve even though changed-files-store.js
+          // cannot be found -- it must not throw and crash session startup (#2530).
+          const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+          assert.ok(
+            client.logs.some(
+              (entry) =>
+                entry.level === "warn" &&
+                entry.message.includes("[ECC] changed-files tracking disabled") &&
+                entry.message.includes("ecc repair --target opencode")
+            ),
+            "Expected a one-time warning when plugins/lib/changed-files-store.js cannot be loaded"
+          )
+
+          // Every hook that touches the store must remain callable and must not throw.
+          await hooks["file.edited"]({ path: "src/example.ts" })
+          await hooks["tool.execute.after"]({ tool: "edit", args: { path: "src/other.ts" } }, {})
+          await hooks["session.deleted"]()
+        } finally {
+          fs.renameSync(backupDir, libDir)
+        }
+      }),
+    ],
+    [
+      "changed-files tracking records and clears through the plugin hooks",
+      async () => withTempProject([], async (projectDir) => {
+        const client = createClient()
+        const $ = createFailingShell()
+
+        const hooks = await ECCHooksPlugin({ client, $, directory: projectDir })
+
+        assert.ok(
+          !client.logs.some(
+            (entry) => entry.level === "warn" && entry.message.includes("changed-files tracking disabled")
+          ),
+          "Did not expect a disabled warning when plugins/lib is present"
+        )
+
+        const storeUrl = pathToFileURL(
+          path.join(__dirname, "..", ".opencode", "dist", "plugins", "lib", "changed-files-store.js")
+        ).href
+        const store = await import(storeUrl)
+
+        await hooks["file.edited"]({ path: "src/example.ts" })
+        assert.ok(
+          store.getChangedPaths().some((entry) => entry.path === "src/example.ts" && entry.changeType === "modified"),
+          "Expected file.edited to record a change via the plugin hook"
+        )
+
+        await hooks["tool.execute.after"]({ tool: "edit", args: { path: "src/other.ts" } }, {})
+        assert.ok(
+          store.getChangedPaths().some((entry) => entry.path === "src/other.ts"),
+          "Expected tool.execute.after to record a change for the edit tool"
+        )
+
+        await hooks["session.deleted"]()
+        assert.ok(!store.hasChanges(), "Expected session.deleted to clear tracked changes")
+      }),
+    ],
+    [
       "shell.env detects project markers without shelling out to test -f",
       async () => withTempProject(
         ["pnpm-lock.yaml", "tsconfig.json", "pyproject.toml"],
