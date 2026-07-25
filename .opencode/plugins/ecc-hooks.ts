@@ -113,20 +113,26 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
   // entire OpenCode session -- before any hooks could load (see #2530).
   let changedFilesStore: typeof import("./lib/changed-files-store.js") | undefined
   try {
-    changedFilesStore = await import("./lib/changed-files-store.js")
-    changedFilesStore.initStore(worktreePath)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    // Best-effort diagnostic only: if the SDK's log transport itself fails,
-    // that must never surface as an unhandled rejection -- this whole block
-    // exists to guarantee startup resilience even when things go wrong.
-    Promise.resolve(
-      log(
-        "warn",
-        `[ECC] changed-files tracking disabled: could not load './lib/changed-files-store.js' (${reason}). ` +
-          "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
+    const store = await import("./lib/changed-files-store.js")
+    store.initStore(worktreePath)
+    changedFilesStore = store
+  } catch {
+    // Best-effort diagnostic only: deferred via .then() (rather than
+    // Promise.resolve(log(...))) so that even a *synchronous* throw inside
+    // log() -- not just an async rejection -- is caught here instead of
+    // escaping this catch block. The raw loader error is intentionally not
+    // included in the message since it can contain absolute filesystem
+    // paths; this whole block exists to guarantee startup resilience even
+    // when things go wrong.
+    Promise.resolve()
+      .then(() =>
+        log(
+          "warn",
+          "[ECC] changed-files tracking disabled: could not load the changed-files store. " +
+            "Run `ecc repair --target opencode` to restore the missing files. Other ECC hooks are unaffected."
+        )
       )
-    ).catch(() => {})
+      .catch(() => {})
   }
 
   const normalizeProfile = (value: string | undefined): HookProfile => {
