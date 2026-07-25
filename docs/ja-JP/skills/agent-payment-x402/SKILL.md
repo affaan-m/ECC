@@ -162,6 +162,23 @@ const res = await fetchWithPayment("https://api.example.com/data", { method: "GE
 | Python（FastAPI、Flask） | PyPI の `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
+**Solana のセラー：`payTo` アドレスには先にトークンアカウントが必要。** exact-SVM クライアントは `payTo` から導出した*関連トークンアカウント*（ATA）に送金するが、それを作成はしない。そのアカウントが存在しないと決済はシミュレーション段階で失敗し、402 が `transaction_simulation_failed` を返す — クライアントのバグのように見えるが、実際は受取側アカウントの欠落である。本番投入前に確認すること：
+
+```bash
+curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
+       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
+  | jq '.result.value | length'   # 0 なら USDC アカウントなし — 支払い受付前に作成する
+```
+
+次のいずれかで作成できる（作成者が少額のレントを負担し、支払者ではない）：
+
+- そのトークンを `payTo` に一度でも送金する — 送金側の転送でアカウントが作成される。
+- spl-token CLI で `spl-token create-account <MINT> --owner <PAYTO_ADDRESS>`。
+- コード上では `@solana-program/token` の `getCreateAssociatedTokenIdempotentInstruction` をプロビジョニングフローに追加する — 冪等版なので再実行しても安全。
+
+これは新規プロビジョニングされたウォレットやカストディアルウォレットへの支払いで最も問題になりやすい。そうしたウォレットは対象アセットの ATA をまだ持っていないことが多い。
+
 **発見。** x402 バザール拡張を実装するファシリテーターは `/discovery/resources` エンドポイントを公開する — CDP カタログは `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources`、PayAI カタログは `https://facilitator.payai.network/discovery/resources` で照会できる。Solana で支払い可能なサービスには、Solana Foundation のキュレーションカタログである [pay.sh](https://pay.sh) もある。
 
 ## 例

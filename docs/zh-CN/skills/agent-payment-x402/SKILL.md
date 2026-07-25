@@ -162,6 +162,23 @@ const res = await fetchWithPayment("https://api.example.com/data", { method: "GE
 | Python（FastAPI、Flask） | PyPI 上的 `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
+**Solana 卖方：`payTo` 地址需要先有代币账户。** exact-SVM 客户端会转账到它为 `payTo` 推导出的*关联代币账户*（ATA），但不会创建它。如果该账户不存在，结算会在模拟阶段失败——402 返回 `transaction_simulation_failed`，看起来像客户端 bug，实际是收款方账户缺失。上线前请检查：
+
+```bash
+curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
+       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
+  | jq '.result.value | length'   # 0 表示没有 USDC 账户 —— 接受付款前先创建
+```
+
+以下任一方式都能创建（由创建者支付少量租金，而非付款方）：
+
+- 向 `payTo` 转一次该代币的任意数量——发送方的转账会创建该账户。
+- 用 spl-token CLI：`spl-token create-account <MINT> --owner <PAYTO_ADDRESS>`。
+- 在代码中，将 `@solana-program/token` 的 `getCreateAssociatedTokenIdempotentInstruction` 加入你的开通流程——幂等版本可安全重复执行。
+
+这个问题在向新开通的钱包或托管钱包付款时最容易出现，这类钱包往往还没有该资产的 ATA。
+
 **发现。** 实现 x402 集市扩展的结算器会公开 `/discovery/resources` 端点——可在 `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` 查询 CDP 目录，在 `https://facilitator.payai.network/discovery/resources` 查询 PayAI 目录。对于 Solana 可付费服务，还有 Solana 基金会的精选目录 [pay.sh](https://pay.sh)。
 
 ## 示例

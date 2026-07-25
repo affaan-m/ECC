@@ -163,6 +163,23 @@ The wrapped client only pays challenges whose `network` matches a scheme you reg
 | Python (FastAPI, Flask) | `x402` on PyPI |
 | Go (Gin, Echo, `net/http`) | `github.com/x402-foundation/x402/go/v2` |
 
+**Solana sellers: the `payTo` address needs a token account first.** The exact-SVM client transfers to the *associated token account* (ATA) it derives for `payTo` and does not create it. If that account does not exist, settlement fails at simulation — the 402 comes back with `transaction_simulation_failed`, which reads like a client bug but is a missing recipient account. Check before going live:
+
+```bash
+curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
+       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
+  | jq '.result.value | length'   # 0 means no USDC account — create it before accepting payments
+```
+
+Any one of these creates it (whoever creates it pays the small rent, not the payer):
+
+- Send any amount of that token to `payTo` once — the sender's transfer creates the account.
+- `spl-token create-account <MINT> --owner <PAYTO_ADDRESS>` with the spl-token CLI.
+- In code, add `getCreateAssociatedTokenIdempotentInstruction` from `@solana-program/token` to your provisioning flow — the idempotent variant is safe to re-run.
+
+This bites hardest when payouts go to freshly provisioned or custodial wallets, which often have no ATA for the asset yet.
+
 **Discovery.** Facilitators that implement the x402 bazaar extension expose a `/discovery/resources` endpoint — query the CDP catalog at `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` and the PayAI catalog at `https://facilitator.payai.network/discovery/resources`. For Solana-payable services there is also [pay.sh](https://pay.sh), the Solana Foundation's curated catalog.
 
 ## Examples
