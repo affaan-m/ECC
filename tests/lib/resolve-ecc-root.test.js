@@ -19,6 +19,11 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
 
 const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
+// Sentinel ECC skill that resolveEccRoot() requires (alongside the script tree)
+// before accepting a root for skill consumers. Kept in sync with the module's
+// DEFAULT_SKILL_PROBE; the #2544 regression test guards the behaviour.
+const ECC_SKILL_SENTINEL = path.join('skills', 'continuous-learning-v2');
+
 function test(name, fn) {
   try {
     fn();
@@ -40,6 +45,7 @@ function setupStandardInstall(homeDir) {
   const scriptDir = path.join(claudeDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(claudeDir, ECC_SKILL_SENTINEL), { recursive: true });
   return claudeDir;
 }
 
@@ -48,6 +54,7 @@ function setupLegacyPluginInstall(homeDir, segments) {
   const scriptDir = path.join(legacyDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(legacyDir, ECC_SKILL_SENTINEL), { recursive: true });
   return legacyDir;
 }
 function setupPluginCache(homeDir, pluginSlug, orgName, version) {
@@ -58,6 +65,7 @@ function setupPluginCache(homeDir, pluginSlug, orgName, version) {
   const scriptDir = path.join(cacheDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(cacheDir, ECC_SKILL_SENTINEL), { recursive: true });
   return cacheDir;
 }
 
@@ -271,6 +279,45 @@ function runTests() {
         homeDir,
         probe: path.join('custom', 'marker.js'),
       });
+      assert.strictEqual(result, claudeDir);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  // ─── Partial install (#2544) ───
+
+  if (test('rejects a partial ~/.claude (scripts + non-ECC skills) and prefers a complete root (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // ~/.claude has ECC's scripts and a user's OWN skills/ dir, but not ECC's
+      // skills. The old script-only probe accepted it and every skill path 404'd.
+      const claudeDir = path.join(homeDir, '.claude');
+      const scriptDir = path.join(claudeDir, 'scripts', 'lib');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+      fs.mkdirSync(path.join(claudeDir, 'skills', 'my-own-skill'), { recursive: true });
+      // A COMPLETE ECC root exists in the plugin cache (scripts + ECC skill).
+      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected,
+        'a scripts-only ~/.claude must not shadow a complete plugin-cache root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('a scripts-only ~/.claude with no complete root falls back to ~/.claude (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // No complete root anywhere: the resolver still returns ~/.claude as a
+      // last resort (unchanged fallback), so callers fail loudly at the missing
+      // path rather than the resolver inventing one.
+      const claudeDir = path.join(homeDir, '.claude');
+      const scriptDir = path.join(claudeDir, 'scripts', 'lib');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
       assert.strictEqual(result, claudeDir);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });

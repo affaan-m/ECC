@@ -55,6 +55,7 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
     const legacyRoot = path.join(legacyHomeDir, '.claude', 'plugins', 'marketplaces', 'ecc');
     fs.mkdirSync(path.join(legacyRoot, 'scripts', 'lib'), { recursive: true });
     fs.writeFileSync(path.join(legacyRoot, 'scripts', 'lib', 'utils.js'), '// stub');
+    fs.mkdirSync(path.join(legacyRoot, 'skills', 'continuous-learning-v2'), { recursive: true });
     assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir: legacyHomeDir }), legacyRoot);
   } finally {
     fs.rmSync(legacyHomeDir, { recursive: true, force: true });
@@ -65,6 +66,7 @@ test('resolveEccRoot module covers current and legacy marketplace plugin roots',
     const cacheRoot = path.join(cacheHomeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', '1.0.0');
     fs.mkdirSync(path.join(cacheRoot, 'scripts', 'lib'), { recursive: true });
     fs.writeFileSync(path.join(cacheRoot, 'scripts', 'lib', 'utils.js'), '// stub');
+    fs.mkdirSync(path.join(cacheRoot, 'skills', 'continuous-learning-v2'), { recursive: true });
     assert.strictEqual(resolveEccRoot({ envRoot: '', homeDir: cacheHomeDir }), cacheRoot);
   } finally {
     fs.rmSync(cacheHomeDir, { recursive: true, force: true });
