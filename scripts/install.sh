@@ -142,7 +142,11 @@ copy_dir() {
         log_skip "$label_dest"
         skipped=$((skipped + 1))
     else
-        cp -r "$src" "$dest"
+        # Copy directory *contents* so a force-reinstall overlays the existing
+        # destination instead of nesting a copy inside it (cp -r src dest with
+        # an existing dest creates dest/src-name/).
+        mkdir -p "$dest"
+        cp -r "$src"/. "$dest"/
         log_copy "$label_src" "$label_dest"
         copied=$((copied + 1))
     fi
@@ -207,6 +211,17 @@ merge_hooks() {
     # Replace ${CLAUDE_PLUGIN_ROOT} with actual ~/.claude path
     content="${content//\$\{CLAUDE_PLUGIN_ROOT\}/$CLAUDE_DIR}"
 
+    # settings.json holds more than hooks (enabledPlugins, permissions, model,
+    # tui, ...). When overwriting an existing file, replace only the hooks key
+    # (and $schema) and preserve everything else.
+    if [[ -f "$dest" ]] && command -v jq &>/dev/null; then
+        content=$(jq -s '.[0] * {hooks: .[1].hooks}
+            * (if .[1]."$schema" != null then {"$schema": .[1]."$schema"} else {} end)' \
+            "$dest" <(echo "$content"))
+    elif [[ -f "$dest" ]]; then
+        log_warn "jq not found: overwriting settings.json wholesale (non-hook keys will be lost)"
+    fi
+
     echo "$content" > "$dest"
 }
 
@@ -263,6 +278,8 @@ if $DRY_RUN; then
 fi
 echo -e "Installing: ${GREEN}${LANGUAGES[*]}${NC} → ${CLAUDE_DIR}/"
 echo ""
+
+$DRY_RUN || mkdir -p "$CLAUDE_DIR"
 
 # Install global CLAUDE.md
 global_claude="${REPO_ROOT}/global/CLAUDE.md"

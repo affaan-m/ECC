@@ -325,7 +325,23 @@ done
 
 if $has_hooks; then
     echo -e "${CYAN}[global hooks]${NC}"
-    remove_file "${CLAUDE_DIR}/settings.json" "settings.json"
+    settings_file="${CLAUDE_DIR}/settings.json"
+    # settings.json holds user state beyond hooks (enabledPlugins, permissions,
+    # model, tui, ...) — remove only the hooks key instead of the whole file.
+    if [[ ! -f "$settings_file" ]]; then
+        log_not_found "settings.json"
+        not_found=$((not_found + 1))
+    elif $DRY_RUN; then
+        log_dry "settings.json (hooks key only)"
+        removed=$((removed + 1))
+    elif command -v jq &>/dev/null; then
+        settings_content=$(jq 'del(.hooks)' "$settings_file")
+        echo "$settings_content" > "$settings_file"
+        log_rm "settings.json (hooks key only; other settings preserved)"
+        removed=$((removed + 1))
+    else
+        log_info "jq not found: leaving settings.json untouched — remove the hooks key manually"
+    fi
     echo ""
 fi
 
