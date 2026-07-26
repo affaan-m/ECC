@@ -239,14 +239,24 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('blocking hooks output BLOCKED message', async () => {
-    // Test the dev server blocking hook from project-hooks.json
+    // Test the dev server blocking hook from project-hooks.json.
+    // Clear multiplexer env vars so the test is deterministic even when
+    // the test runner itself is inside zellij/tmux.
     const blockingHook = projectHooks.hooks.PreToolUse[0];
-    const result = await runInlineHook(blockingHook.hooks[0].command);
+    const result = await runInlineHook(blockingHook.hooks[0].command, {}, { ZELLIJ: '', TMUX: '' });
 
     assert.ok(result.stderr.includes('BLOCKED'), 'Blocking hook should output BLOCKED');
     // Claude Code only blocks a PreToolUse tool call on exit code 2;
     // exit 1 is a non-blocking error.
     assert.strictEqual(result.code, 2, 'Blocking hook should exit with code 2');
+  })) passed++; else failed++;
+
+  if (await asyncTest('dev server blocker passes inside a multiplexer', async () => {
+    const blockingHook = projectHooks.hooks.PreToolUse[0];
+    const result = await runInlineHook(blockingHook.hooks[0].command, {}, { ZELLIJ: '0' });
+
+    assert.strictEqual(result.code, 0, 'Should not block inside zellij');
+    assert.ok(!result.stderr.includes('BLOCKED'), 'Should not warn inside zellij');
   })) passed++; else failed++;
 
   // ==========================================
@@ -260,10 +270,10 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('blocking hooks exit with code 2', async () => {
-    // The dev server blocker always blocks; only exit code 2 actually
-    // blocks the tool call in Claude Code.
+    // Only exit code 2 actually blocks the tool call in Claude Code.
+    // Multiplexer env vars cleared for determinism.
     const blockingHook = projectHooks.hooks.PreToolUse[0];
-    const result = await runInlineHook(blockingHook.hooks[0].command);
+    const result = await runInlineHook(blockingHook.hooks[0].command, {}, { ZELLIJ: '', TMUX: '' });
 
     assert.strictEqual(result.code, 2, 'Blocking hook should exit 2');
   })) passed++; else failed++;

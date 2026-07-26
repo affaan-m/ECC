@@ -48,7 +48,7 @@ Hooks are trigger-based automations that fire on specific events. Unlike skills,
 5. **PreCompact** - Before context compaction
 6. **Notification** - Permission requests
 
-### Example: tmux reminder before long-running commands
+### Example: zellij reminder before long-running commands
 
 ```json
 {
@@ -58,7 +58,7 @@ Hooks are trigger-based automations that fire on specific events. Unlike skills,
       "hooks": [
         {
           "type": "command",
-          "command": "if [ -z \"$TMUX\" ]; then echo '[Hook] Consider tmux for session persistence' >&2; fi"
+          "command": "if [ -z \"$ZELLIJ\" ] && [ -z \"$TMUX\" ]; then echo '[Hook] Consider zellij for session persistence' >&2; fi"
         }
       ]
     }
@@ -206,16 +206,16 @@ git worktree add ../feature-branch feature-branch
 # Now run separate Claude instances in each worktree
 ```
 
-### tmux for Long-Running Commands
+### zellij for Long-Running Commands
 
 Stream and watch logs/bash processes Claude runs:
 
 <https://github.com/user-attachments/assets/shortform/07-tmux-video.mp4>
 
 ```bash
-tmux new -s dev
+zellij -s dev
 # Claude runs commands here, you can detach and reattach
-tmux attach -t dev
+zellij attach dev
 ```
 
 ### mgrep > grep
@@ -343,7 +343,7 @@ This is the key - I have 14 MCPs configured but only ~5-6 enabled per project. K
 ```json
 {
   "PreToolUse": [
-    { "matcher": "npm|pnpm|yarn|cargo|pytest", "hooks": ["tmux reminder"] },
+    { "matcher": "npm|pnpm|yarn|cargo|pytest", "hooks": ["zellij reminder"] },
     { "matcher": "Write && .md file", "hooks": ["block unless README/CLAUDE"] },
     { "matcher": "git push", "hooks": ["open editor for review"] }
   ],
