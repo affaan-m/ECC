@@ -13,7 +13,7 @@
       "C": "Cyan - username, todos",
       "T": "Gray - model name"
     },
-    "output_example": "affoon:~/projects/myapp main* ctx:73% sonnet-4.5 14:30 todos:3",
+    "output_example": "affoon:~/projects/myapp main* ctx:73% sonnet 14:30 todos:3",
     "usage": "Copy the statusLine object to your ~/.claude/settings.json"
   }
 }
