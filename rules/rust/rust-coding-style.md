@@ -147,5 +147,3 @@ src/
 - Re-export public API from `lib.rs`
 
 ## References
-
-See skill: `rust-patterns` for comprehensive Rust idioms and patterns.

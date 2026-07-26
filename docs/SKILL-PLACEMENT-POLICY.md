@@ -33,7 +33,6 @@ Language-specific shipped skills keep the language prefix in the skill directory
 
 - `skills/python/python-patterns/`
 - `skills/python/fastapi-patterns/`
-- `skills/rust/rust-patterns/`
 - `skills/node/node-tdd-workflow/`
 
 Do not copy upstream flat paths directly into `skills/`. Port them into the matching language directory and update command references to the nested path.

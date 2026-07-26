@@ -303,6 +303,3 @@ cargo test --no-fail-fast
 - `verification-loop` skill - Run full verification loop
 
 ## Related
-
-- Skill: `skills/rust/rust-testing/`
-- Skill: `skills/rust/rust-patterns/`

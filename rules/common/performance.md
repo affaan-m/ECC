@@ -60,8 +60,8 @@ Avoid the last 20% of the context window for large-scale refactoring,
 multi-file feature work, and complex debugging. Single-file edits,
 documentation updates, and simple fixes are less context-sensitive.
 
-Compact at natural phase boundaries rather than waiting for
-auto-compaction — see the strategic-compact skill.
+Compact at natural phase boundaries (after exploration, before
+implementation) rather than waiting for auto-compaction.
 
 ## Build Troubleshooting
 

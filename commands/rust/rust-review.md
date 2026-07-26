@@ -139,4 +139,3 @@ Recommendation: Block merge until CRITICAL issue is fixed
 ## Related
 
 - Agent: `agents/rust/rust-reviewer.md`
-- Skills: `skills/rust/rust-patterns/`, `skills/rust/rust-testing/`

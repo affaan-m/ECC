@@ -63,18 +63,6 @@ function runScript(scriptPath, input = '', env = {}) {
   });
 }
 
-// Create a temporary test directory
-function createTestDir() {
-  const testDir = path.join(os.tmpdir(), `hooks-test-${Date.now()}`);
-  fs.mkdirSync(testDir, { recursive: true });
-  return testDir;
-}
-
-// Clean up test directory
-function cleanupTestDir(testDir) {
-  fs.rmSync(testDir, { recursive: true, force: true });
-}
-
 // Test suite
 async function runTests() {
   console.log('\n=== Testing Hook Scripts ===\n');
@@ -163,104 +151,6 @@ async function runTests() {
     assert.ok(fs.existsSync(logFile), 'Compaction log should exist');
   })) passed++; else failed++;
 
-  // suggest-compact.js tests
-  console.log('\nsuggest-compact.js:');
-
-  if (await asyncTest('runs without error', async () => {
-    const result = await runScript(path.join(scriptsDir, 'suggest-compact.js'), '', {
-      CLAUDE_SESSION_ID: 'test-session-' + Date.now()
-    });
-    assert.strictEqual(result.code, 0, `Exit code should be 0, got ${result.code}`);
-  })) passed++; else failed++;
-
-  if (await asyncTest('increments counter on each call', async () => {
-    const sessionId = 'test-counter-' + Date.now();
-
-    // Run multiple times
-    for (let i = 0; i < 3; i++) {
-      await runScript(path.join(scriptsDir, 'suggest-compact.js'), '', {
-        CLAUDE_SESSION_ID: sessionId
-      });
-    }
-
-    // Check counter file
-    const counterFile = path.join(os.tmpdir(), `claude-tool-count-${sessionId}`);
-    const count = parseInt(fs.readFileSync(counterFile, 'utf8').trim(), 10);
-    assert.strictEqual(count, 3, `Counter should be 3, got ${count}`);
-
-    // Cleanup
-    fs.unlinkSync(counterFile);
-  })) passed++; else failed++;
-
-  if (await asyncTest('suggests compact at threshold', async () => {
-    const sessionId = 'test-threshold-' + Date.now();
-    const counterFile = path.join(os.tmpdir(), `claude-tool-count-${sessionId}`);
-
-    // Set counter to threshold - 1
-    fs.writeFileSync(counterFile, '49');
-
-    const result = await runScript(path.join(scriptsDir, 'suggest-compact.js'), '', {
-      CLAUDE_SESSION_ID: sessionId,
-      COMPACT_THRESHOLD: '50'
-    });
-
-    assert.ok(
-      result.stderr.includes('50 tool calls reached'),
-      'Should suggest compact at threshold'
-    );
-
-    // Cleanup
-    fs.unlinkSync(counterFile);
-  })) passed++; else failed++;
-
-  // evaluate-session.js tests
-  console.log('\nevaluate-session.js:');
-
-  if (await asyncTest('runs without error when no transcript', async () => {
-    const result = await runScript(path.join(scriptsDir, 'evaluate-session.js'));
-    assert.strictEqual(result.code, 0, `Exit code should be 0, got ${result.code}`);
-  })) passed++; else failed++;
-
-  if (await asyncTest('skips short sessions', async () => {
-    const testDir = createTestDir();
-    const transcriptPath = path.join(testDir, 'transcript.jsonl');
-
-    // Create a short transcript (less than 10 user messages)
-    const transcript = Array(5).fill('{"type":"user","content":"test"}\n').join('');
-    fs.writeFileSync(transcriptPath, transcript);
-
-    const result = await runScript(path.join(scriptsDir, 'evaluate-session.js'), '', {
-      CLAUDE_TRANSCRIPT_PATH: transcriptPath
-    });
-
-    assert.ok(
-      result.stderr.includes('Session too short'),
-      'Should indicate session is too short'
-    );
-
-    cleanupTestDir(testDir);
-  })) passed++; else failed++;
-
-  if (await asyncTest('processes sessions with enough messages', async () => {
-    const testDir = createTestDir();
-    const transcriptPath = path.join(testDir, 'transcript.jsonl');
-
-    // Create a longer transcript (more than 10 user messages)
-    const transcript = Array(15).fill('{"type":"user","content":"test"}\n').join('');
-    fs.writeFileSync(transcriptPath, transcript);
-
-    const result = await runScript(path.join(scriptsDir, 'evaluate-session.js'), '', {
-      CLAUDE_TRANSCRIPT_PATH: transcriptPath
-    });
-
-    assert.ok(
-      result.stderr.includes('15 messages'),
-      'Should report message count'
-    );
-
-    cleanupTestDir(testDir);
-  })) passed++; else failed++;
-
   // hooks JSON validation (common + node global hooks)
   console.log('\ncommon/hooks.json Validation:');
 
@@ -288,7 +178,6 @@ async function runTests() {
 
   if (test('node/global-hooks.json has required event types', () => {
     const hooks = JSON.parse(fs.readFileSync(nodeHooksPath, 'utf8'));
-    assert.ok(hooks.hooks.PreToolUse, 'Should have PreToolUse hooks');
     assert.ok(hooks.hooks.SessionStart, 'Should have SessionStart hooks');
     assert.ok(hooks.hooks.SessionEnd, 'Should have SessionEnd hooks');
     assert.ok(hooks.hooks.PreCompact, 'Should have PreCompact hooks');

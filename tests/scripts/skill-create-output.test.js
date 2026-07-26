@@ -122,46 +122,26 @@ function runTests() {
     assert.ok(stripAnsi(combined).includes('80%'), 'Should default to 80% confidence');
   })) passed++; else failed++;
 
-  // instincts() tests
-  console.log('\ninstincts():');
-
-  if (test('displays instincts in a box', () => {
-    const output = new SkillCreateOutput('repo');
-    const logs = captureLog(() => output.instincts([
-      { name: 'instinct-1', confidence: 0.95 },
-      { name: 'instinct-2', confidence: 0.7 },
-    ]));
-    const combined = logs.join('\n');
-    assert.ok(combined.includes('instinct-1'), 'Should show instinct name');
-    assert.ok(combined.includes('95%'), 'Should show confidence percentage');
-    assert.ok(combined.includes('70%'), 'Should show second confidence');
-  })) passed++; else failed++;
-
   // output() tests
   console.log('\noutput():');
 
   if (test('displays file paths', () => {
     const output = new SkillCreateOutput('repo');
-    const logs = captureLog(() => output.output(
-      '/path/to/SKILL.md',
-      '/path/to/instincts.yaml'
-    ));
+    const logs = captureLog(() => output.output('/path/to/SKILL.md'));
     const combined = logs.join('\n');
     assert.ok(combined.includes('SKILL.md'), 'Should show skill path');
-    assert.ok(combined.includes('instincts.yaml'), 'Should show instincts path');
     assert.ok(combined.includes('Complete'), 'Should show completion message');
   })) passed++; else failed++;
 
   // nextSteps() tests
   console.log('\nnextSteps():');
 
-  if (test('displays next steps with commands', () => {
+  if (test('displays next steps', () => {
     const output = new SkillCreateOutput('repo');
     const logs = captureLog(() => output.nextSteps());
     const combined = logs.join('\n');
     assert.ok(combined.includes('Next Steps'), 'Should show Next Steps title');
-    assert.ok(combined.includes('/instinct-import'), 'Should show import command');
-    assert.ok(combined.includes('/evolve'), 'Should show evolve command');
+    assert.ok(combined.includes('SKILL.md'), 'Should mention reviewing the skill');
   })) passed++; else failed++;
 
   // footer() tests
@@ -217,23 +197,8 @@ function runTests() {
     assert.ok(combined.includes('Patterns'), 'Should show header');
   })) passed++; else failed++;
 
-  if (test('instincts() with empty array produces box but no entries', () => {
-    const output = new SkillCreateOutput('repo');
-    const logs = captureLog(() => output.instincts([]));
-    const combined = logs.join('\n');
-    assert.ok(combined.includes('Instincts'), 'Should show box title');
-  })) passed++; else failed++;
-
   // Box drawing crash fix (regression test)
   console.log('\nbox() crash prevention:');
-
-  if (test('box does not crash on title longer than width', () => {
-    const output = new SkillCreateOutput('repo', { width: 20 });
-    const logs = captureLog(() => output.instincts([
-      { name: 'a-very-long-instinct-name', confidence: 0.9 },
-    ]));
-    assert.ok(logs.length > 0, 'Should produce output without crash');
-  })) passed++; else failed++;
 
   if (test('analysisResults does not crash with very narrow width', () => {
     const output = new SkillCreateOutput('repo', { width: 10 });
@@ -248,9 +213,9 @@ function runTests() {
 
   if (test('top, middle, and bottom lines have equal visual width', () => {
     const output = new SkillCreateOutput('repo', { width: 40 });
-    const logs = captureLog(() => output.instincts([
-      { name: 'test', confidence: 0.9 },
-    ]));
+    const logs = captureLog(() => output.analysisResults({
+      commits: 5, timeRange: 'today', contributors: 1, files: 3,
+    }));
     const combined = logs.join('\n');
     const boxLines = combined.split('\n').filter(l => stripAnsi(l).trim().length > 0);
     const boxDrawn = boxLines.filter(l => {
@@ -272,9 +237,12 @@ function runTests() {
 
   if (test('box does not crash when content line exceeds width', () => {
     const output = new SkillCreateOutput('repo', { width: 30 });
-    const logs = captureLog(() => output.instincts([
-      { name: 'this-is-an-extremely-long-instinct-name-that-clearly-exceeds-width', confidence: 0.9 },
-    ]));
+    const logs = captureLog(() => output.analysisResults({
+      commits: 1,
+      timeRange: 'an-extremely-long-time-range-string-that-clearly-exceeds-the-box-width',
+      contributors: 1,
+      files: 1,
+    }));
     assert.ok(logs.length > 0, 'Should produce output without RangeError');
   })) passed++; else failed++;
 
@@ -332,11 +300,11 @@ function runTests() {
   // box() width accuracy
   console.log('\nbox() width accuracy:');
 
-  if (test('box lines in instincts() match the default box width of 60', () => {
+  if (test('box lines in analysisResults() match the default box width of 60', () => {
     const output = new SkillCreateOutput('repo');
-    const logs = captureLog(() => output.instincts([
-      { name: 'test-instinct', confidence: 0.85 },
-    ]));
+    const logs = captureLog(() => output.analysisResults({
+      commits: 10, timeRange: 'this week', contributors: 2, files: 12,
+    }));
     const combined = logs.join('\n');
     const boxLines = combined.split('\n').filter(l => {
       const s = stripAnsi(l).trim();
@@ -352,9 +320,9 @@ function runTests() {
 
   if (test('box lines with custom width match self-consistently', () => {
     const output = new SkillCreateOutput('repo', { width: 40 });
-    const logs = captureLog(() => output.instincts([
-      { name: 'short', confidence: 0.9 },
-    ]));
+    const logs = captureLog(() => output.analysisResults({
+      commits: 2, timeRange: 'short', contributors: 1, files: 2,
+    }));
     const combined = logs.join('\n');
     const boxLines = combined.split('\n').filter(l => {
       const s = stripAnsi(l).trim();
