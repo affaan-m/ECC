@@ -2954,6 +2954,25 @@ textarea {
   align-items: center;
   gap: 8px;
 }
+.recap-stats {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+  margin-top: 6px;
+}
+.recap-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recap-stat strong {
+  font-size: 22px;
+}
+.recap-of {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
 .mini-ring-wrap {
   display: flex;
   flex-direction: column;

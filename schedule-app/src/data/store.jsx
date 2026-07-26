@@ -25,7 +25,11 @@ function loadState() {
         reminder: g.reminder || null,
       })),
       eventTypes: parsed.eventTypes || seed.eventTypes,
-      tasks: parsed.tasks || [],
+      tasks: (parsed.tasks || []).map((t) => ({
+        repeat: 'none',
+        completedDates: [],
+        ...t,
+      })),
       notes: parsed.notes || [],
       interactions: parsed.interactions || [],
       settings: {
@@ -283,7 +287,10 @@ export function useActions() {
     deletePin: (id) => dispatch({ type: 'DELETE_PIN', id }),
 
     addTask: (data) =>
-      dispatch({ type: 'ADD_TASK', task: { id: uid('t'), done: false, dueTime: '', reminderOffsets: [], ...data } }),
+      dispatch({
+        type: 'ADD_TASK',
+        task: { id: uid('t'), done: false, dueTime: '', reminderOffsets: [], repeat: 'none', completedDates: [], ...data },
+      }),
     updateTask: (task) => dispatch({ type: 'UPDATE_TASK', task }),
     deleteTask: (id) => dispatch({ type: 'DELETE_TASK', id }),
 

@@ -5,6 +5,7 @@
 export const HOME_BLOCK_TYPES = [
   { id: 'goals', label: 'Goals', icon: '🎯' },
   { id: 'reminders', label: 'Important reminders', icon: '🔔' },
+  { id: 'recap', label: 'Weekly recap', icon: '📊' },
   { id: 'tasks', label: 'Tasks', icon: '✅' },
   { id: 'notes', label: 'Notes', icon: '📝' },
 ];

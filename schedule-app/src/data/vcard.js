@@ -1,9 +1,35 @@
-// Minimal vCard (.vcf) import — enough to read contacts exported by common
-// address book apps (Google Contacts, Apple Contacts, Outlook). A .vcf file
-// can hold multiple concatenated vCards; each becomes one contact record.
+// Minimal vCard (.vcf) import/export — enough to read contacts exported by
+// common address book apps (Google Contacts, Apple Contacts, Outlook), and
+// to write a .vcf those same apps can re-import. A .vcf file can hold
+// multiple concatenated vCards; each becomes one contact record.
 
 function unescapeText(s = '') {
   return s.replace(/\\n/g, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+}
+
+function escapeText(s = '') {
+  return String(s).replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+}
+
+// Builds a single .vcf file (vCard 3.0) holding one entry per contact —
+// the inverse of parseVCard, for the "Export selected" bulk action.
+export function generateVCard(contacts) {
+  return contacts
+    .map((c) =>
+      [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        `FN:${escapeText(c.name)}`,
+        c.phone && `TEL:${escapeText(c.phone)}`,
+        c.email && `EMAIL:${escapeText(c.email)}`,
+        c.address && `ADR:;;${escapeText(c.address)};;;;`,
+        c.notes && `NOTE:${escapeText(c.notes)}`,
+        'END:VCARD',
+      ]
+        .filter(Boolean)
+        .join('\r\n')
+    )
+    .join('\r\n');
 }
 
 // N is "Family;Given;Middle;Prefix;Suffix" — used only when FN is missing.

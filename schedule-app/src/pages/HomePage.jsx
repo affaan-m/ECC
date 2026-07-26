@@ -16,9 +16,12 @@ import {
   formatShortDate,
   expandEventOnDay,
   computeGoalStreak,
+  addDays,
+  toISODate,
 } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
+import { computeWeeklyRecap } from '../data/weeklyRecap.js';
 import { useToast } from '../data/toast.jsx';
 import { useCountUp } from '../data/useCountUp.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
@@ -48,6 +51,42 @@ export default function HomePage() {
   const deleteTaskWithUndo = (t) => {
     actions.deleteTask(t.id);
     showToast(`"${t.title || 'Task'}" deleted`, 'Undo', () => actions.addTask(t));
+  };
+  // A repeating task's checkbox resets to unchecked in the very same update
+  // (see toggleTaskDone below), so without this it would never visibly
+  // render "checked" — the tap would look like it did nothing. Flashing the
+  // checked/pop state locally for a beat gives the same "done!" confirmation
+  // a normal task gets, before the row settles back to its next occurrence.
+  const [justCompletedIds, setJustCompletedIds] = useState(new Set());
+  const flashCompleted = (id) => {
+    setJustCompletedIds((prev) => new Set(prev).add(id));
+    setTimeout(() => {
+      setJustCompletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 500);
+  };
+  // Checking off a plain task just marks it done, same as always. Checking
+  // off a repeating one instead rolls its due date forward and resets done
+  // to false, so it comes back for its next occurrence instead of sitting
+  // done forever — both cases log the date to completedDates for the
+  // weekly recap. Un-checking (done -> not done) never repeats forward or
+  // logs anything; it's just undoing a mistaken tap.
+  const toggleTaskDone = (t) => {
+    if (t.done) {
+      actions.updateTask({ ...t, done: false });
+      return;
+    }
+    flashCompleted(t.id);
+    const completedDates = [...(t.completedDates || []), todayISO()];
+    if (t.repeat && t.repeat !== 'none' && t.dueDate) {
+      const nextDueDate = toISODate(addDays(t.dueDate, t.repeat === 'weekly' ? 7 : 1));
+      actions.updateTask({ ...t, done: false, dueDate: nextDueDate, completedDates });
+    } else {
+      actions.updateTask({ ...t, done: true, completedDates });
+    }
   };
   const createFromSmartAdd = (kind, parsed) => {
     if (kind === 'event') {
@@ -175,6 +214,7 @@ export default function HomePage() {
       dueDate: '',
       dueTime: '',
       reminderOffsets: [],
+      repeat: 'none',
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
@@ -188,6 +228,7 @@ export default function HomePage() {
       dueDate: t.dueDate || '',
       dueTime: t.dueTime || '',
       reminderOffsets: t.reminderOffsets || [],
+      repeat: t.repeat || 'none',
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
@@ -218,6 +259,10 @@ export default function HomePage() {
       dueDate: editingTask.dueDate,
       dueTime: editingTask.dueTime,
       reminderOffsets,
+      // A repeating task needs an anchor date to advance from each time
+      // it's checked off — without one "repeats" would have nothing to
+      // count forward from, so it's meaningless.
+      repeat: editingTask.dueDate ? editingTask.repeat || 'none' : 'none',
     };
     if (editingTask.id) actions.updateTask({ ...editingTask, ...payload });
     else actions.addTask({ ...payload, createdAt: today });
@@ -269,6 +314,7 @@ export default function HomePage() {
     [state.settings?.homeBlocks]
   );
   const visibleBlocks = useMemo(() => homeBlocks.filter((b) => b.enabled), [homeBlocks]);
+  const recap = useMemo(() => computeWeeklyRecap(state), [state]);
 
   return (
     <div className="page">
@@ -326,6 +372,37 @@ export default function HomePage() {
               </button>
             );
           }
+          if (b.id === 'recap') {
+            const nothingYet =
+              recap.goalsCompleted === 0 && recap.contactsReconnected === 0 && recap.tasksCompleted === 0;
+            if (nothingYet) return null;
+            return (
+              <section className="detail-section recap-block" key="recap">
+                <span className="detail-label">📊 This week</span>
+                <div className="recap-stats">
+                  <div className="recap-stat">
+                    <strong>
+                      <AnimatedNumber value={recap.goalsCompleted} />
+                      {recap.goalsPossible > 0 && <span className="recap-of">/{recap.goalsPossible}</span>}
+                    </strong>
+                    <span className="muted small">Goals hit</span>
+                  </div>
+                  <div className="recap-stat">
+                    <strong>
+                      <AnimatedNumber value={recap.tasksCompleted} />
+                    </strong>
+                    <span className="muted small">Tasks done</span>
+                  </div>
+                  <div className="recap-stat">
+                    <strong>
+                      <AnimatedNumber value={recap.contactsReconnected} />
+                    </strong>
+                    <span className="muted small">People reconnected</span>
+                  </div>
+                </div>
+              </section>
+            );
+          }
           if (b.id === 'reminders') {
             if (reminders.length === 0) return null;
             return (
@@ -367,18 +444,21 @@ export default function HomePage() {
                       >
                         <div className="task-row">
                           <button
-                            className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
+                            className={`task-check${t.done || justCompletedIds.has(t.id) ? ' task-check--on' : ''}${(t.done || justCompletedIds.has(t.id)) && taskCompleteAnim ? ' task-check--pop' : ''}`}
                             data-haptic={t.done ? 'tap' : 'confirm'}
-                            onClick={() => actions.updateTask({ ...t, done: !t.done })}
+                            onClick={() => toggleTaskDone(t)}
                             aria-label={t.done ? 'Mark not done' : 'Mark done'}
                           >
-                            {t.done && <CheckIcon />}
+                            {(t.done || justCompletedIds.has(t.id)) && <CheckIcon />}
                             <span className="task-check-sparkles" aria-hidden="true">
                               <i /><i /><i /><i /><i /><i />
                             </span>
                           </button>
                           <button className="task-title-btn" onClick={() => openEditTask(t)}>
-                            <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+                            <span className={`task-title${t.done ? ' task-title--done' : ''}`}>
+                              {t.title}
+                              {t.repeat && t.repeat !== 'none' && <span className="repeat-glyph"> ↻</span>}
+                            </span>
                             {(t.location || t.dueDate) && !t.done && (
                               <span className="task-meta muted small">
                                 {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
@@ -654,6 +734,32 @@ export default function HomePage() {
             </div>
             {editingTask.dueDate && editingTask.dueTime && (
               <p className="muted small">Shows on the Planner calendar at that time.</p>
+            )}
+            {editingTask.dueDate && (
+              <div className="field">
+                <span>Repeats</span>
+                <div className="seg seg--full">
+                  {[
+                    { value: 'none', label: 'Never' },
+                    { value: 'daily', label: 'Daily' },
+                    { value: 'weekly', label: 'Weekly' },
+                  ].map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      className={`seg-btn${(editingTask.repeat || 'none') === o.value ? ' seg-btn--on' : ''}`}
+                      onClick={() => setEditingTask({ ...editingTask, repeat: o.value })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                {editingTask.repeat && editingTask.repeat !== 'none' && (
+                  <p className="muted small">
+                    Checking it off moves the due date forward instead of leaving it done for good.
+                  </p>
+                )}
+              </div>
             )}
             <label className="field">
               <span>Notes</span>

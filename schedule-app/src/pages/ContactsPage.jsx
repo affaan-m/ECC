@@ -3,13 +3,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
+import Modal from '../components/Modal.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
 import SwipeToDelete from '../components/SwipeToDelete.jsx';
 import { daysAgoLabel, daysSince, todayISO, uid } from '../data/helpers.js';
 import { syncContactAddressPin } from '../data/geocode.js';
-import { parseVCard } from '../data/vcard.js';
+import { parseVCard, generateVCard } from '../data/vcard.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
+import { useToast } from '../data/toast.jsx';
 
 // A contact is "overdue" when the time since last contact (or since they were
 // added, if never contacted) meets or exceeds their reconnect cadence.
@@ -29,9 +31,56 @@ export default function ContactsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const deleteContactWithUndo = useDeleteContactWithUndo();
+  const showToast = useToast();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState(''); // statusId, '__overdue', or ''
   const [adding, setAdding] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkTagText, setBulkTagText] = useState('');
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+  const selectedContacts = () =>
+    [...selected].map((id) => state.contacts.find((c) => c.id === id)).filter(Boolean);
+  const bulkDelete = () => {
+    deleteContactWithUndo(selectedContacts());
+    exitSelectMode();
+  };
+  const bulkExport = () => {
+    const list = selectedContacts();
+    const blob = new Blob([generateVCard(list)], { type: 'text/vcard' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contacts-${todayISO()}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const applyBulkTag = () => {
+    const tag = bulkTagText.trim();
+    if (!tag) return;
+    for (const c of selectedContacts()) {
+      if (!(c.tags || []).includes(tag)) {
+        actions.updateContact({ ...c, tags: [...(c.tags || []), tag] });
+      }
+    }
+    showToast(`Tagged ${selected.size} ${selected.size === 1 ? 'person' : 'people'} "${tag}"`);
+    setBulkTagOpen(false);
+    setBulkTagText('');
+    exitSelectMode();
+  };
 
   const reconnectDays = state.settings?.reconnectDays ?? 30;
   const iconSize = state.settings?.contactIconSize || 'md';
@@ -214,6 +263,17 @@ export default function ContactsPage() {
             )
           )}
         </div>
+        {state.contacts.length > 0 && (
+          <div className="select-toggle-row">
+            <button
+              className={`btn btn-sm ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            >
+              {selectMode ? 'Cancel select' : 'Select'}
+            </button>
+            {selectMode && <span className="muted small">{selected.size} selected</span>}
+          </div>
+        )}
       </header>
 
       {showBanner && (
@@ -263,10 +323,15 @@ export default function ContactsPage() {
           {filtered.map((c) => {
             const st = statusById[c.statusId];
             const over = isOverdue(c, reconnectDays);
+            const isSel = selected.has(c.id);
             return (
               <li key={c.id}>
-                <SwipeToDelete onDelete={() => deleteContactWithUndo(c)}>
-                  <button className="contact-row" onClick={() => navigate(`/contacts/${c.id}`)}>
+                <SwipeToDelete disabled={selectMode} onDelete={() => deleteContactWithUndo(c)}>
+                  <button
+                    className="contact-row"
+                    onClick={() => (selectMode ? toggleSelected(c.id) : navigate(`/contacts/${c.id}`))}
+                  >
+                    {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                     <span className="avatar-slot">
                       <Avatar name={c.name} photo={c.photo} color={st?.color} size={iconSize} />
                       {over && <span className="overdue-dot" aria-hidden="true" />}
@@ -282,7 +347,7 @@ export default function ContactsPage() {
                         Last: {daysAgoLabel(c.lastContacted)}
                       </span>
                     </span>
-                    <Chevron />
+                    {!selectMode && <Chevron />}
                   </button>
                 </SwipeToDelete>
               </li>
@@ -290,6 +355,50 @@ export default function ContactsPage() {
           })}
         </ul>
       )}
+
+      {selectMode && selected.size > 0 && (
+        <div className="select-bar">
+          <span>{selected.size} selected</span>
+          <div className="select-bar-actions">
+            <button className="btn btn-ghost btn-sm" data-haptic="none" onClick={() => setBulkTagOpen(true)}>
+              Tag
+            </button>
+            <button className="btn btn-ghost btn-sm" data-haptic="none" onClick={bulkExport}>
+              Export
+            </button>
+            <button className="btn btn-danger-ghost btn-sm" data-haptic="none" onClick={bulkDelete}>
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        open={bulkTagOpen}
+        title="Add a tag"
+        onClose={() => setBulkTagOpen(false)}
+        footer={
+          <div className="modal-actions">
+            <button className="btn btn-ghost" onClick={() => setBulkTagOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={applyBulkTag} disabled={!bulkTagText.trim()}>
+              Apply
+            </button>
+          </div>
+        }
+      >
+        <label className="field">
+          <span>Tag</span>
+          <input
+            autoFocus
+            value={bulkTagText}
+            onChange={(e) => setBulkTagText(e.target.value)}
+            placeholder="e.g. neighbor"
+            onKeyDown={(e) => e.key === 'Enter' && applyBulkTag()}
+          />
+        </label>
+      </Modal>
 
       <EditorSheet open={!!adding} title="Add person" dirty={addDirty} onSave={saveNew} onDiscard={() => setAdding(null)}>
         {adding && (
