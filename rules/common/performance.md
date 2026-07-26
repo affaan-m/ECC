@@ -12,8 +12,11 @@ aliases track the current generation automatically.
   balanced cost and latency
 - **opus**: deep reasoning — architectural decisions, complex
   debugging, research and analysis
-- **fable**: frontier tier above opus — the hardest long-horizon and
-  reasoning-heavy work, when correctness matters more than cost
+- **fable**: highest-capability tier for the most demanding reasoning —
+  but not strictly better than opus everywhere: for coding and agentic
+  work the newer Opus generation often matches or beats it at half the
+  cost. Prefer `opus` as the default; reach for `fable` when your own
+  evals show it wins
 
 ## Model Catalog
 
@@ -24,8 +27,8 @@ Pricing is $ per MTok (input / output).
 
 | Model | Alias | Tier | Pricing | Notes |
 |-------|-------|------|---------|-------|
-| Claude Fable 5 | `fable` | Frontier | $10 / $50 | Most capable; thinking always on |
-| Claude Opus 5 | `opus` | Flagship | $5 / $25 | Long-horizon agentic work; drop-in upgrade from Opus 4.8 |
+| Claude Fable 5 | `fable` | Frontier | $10 / $50 | Highest-capability tier; thinking always on. Not strictly ahead of Opus 5 on coding/agentic — compare on your workload |
+| Claude Opus 5 | `opus` | Flagship | $5 / $25 | Recommended default for coding and long-horizon agentic work; drop-in upgrade from Opus 4.8 |
 | Claude Opus 4.8 | — | Previous flagship | $5 / $25 | Recommended fallback for Opus 5 / Fable 5 refusals |
 | Claude Sonnet 5 | `sonnet` | Balanced | $3 / $15 | Near-Opus coding quality at Sonnet cost |
 | Claude Sonnet 4.6 | — | Previous balanced | $3 / $15 | |
