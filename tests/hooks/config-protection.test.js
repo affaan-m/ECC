@@ -234,10 +234,52 @@ function runTests() {
         const result = runHook(input);
         assert.strictEqual(result.code, 2, `Expected exit 2 for dangling symlink, got ${result.code}; stderr: ${result.stderr}`);
         assert.strictEqual(result.stdout, '', 'Blocked hook should not echo raw input');
-        assert.ok(
-          result.stderr.includes('BLOCKED: Modifying .eslintrc.js is not allowed.'),
-          `Expected block message, got: ${result.stderr}`
-        );
+        assert.ok(result.stderr.includes('BLOCKED: Modifying .eslintrc.js is not allowed.'), `Expected block message, got: ${result.stderr}`);
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('blocks case-variant writes that resolve to an existing protected config', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-'));
+      try {
+        const realPath = path.join(tmpDir, '.eslintrc.js');
+        const variantPath = path.join(tmpDir, '.ESLINTRC.JS');
+        fs.writeFileSync(realPath, 'module.exports = { rules: { "no-explicit-any": "error" } };');
+
+        // Only meaningful on a case-insensitive filesystem (macOS APFS/HFS+,
+        // Windows NTFS), where the uppercase path is the SAME inode. On a
+        // case-sensitive filesystem the variant is a genuinely different file
+        // and the write is harmless, so skip rather than assert.
+        let sameFile = false;
+        try {
+          sameFile = fs.lstatSync(variantPath).ino === fs.lstatSync(realPath).ino;
+        } catch {
+          sameFile = false;
+        }
+        if (!sameFile) {
+          console.log('    (skipped: case-sensitive filesystem)');
+          return;
+        }
+
+        const result = runHook({
+          tool_name: 'Write',
+          tool_input: {
+            file_path: variantPath,
+            content: 'module.exports = { rules: {} }; // WEAKENED'
+          }
+        });
+
+        assert.strictEqual(result.code, 2, `Case-variant write must be blocked: it overwrites ${path.basename(realPath)} on this filesystem. Got ${result.code}; stderr: ${result.stderr}`);
+        assert.strictEqual(result.stdout, '', 'Blocked hook should not echo raw input');
       } finally {
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });

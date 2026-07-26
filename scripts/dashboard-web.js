@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const { normalizeAgentTools } = require('./lib/agent-tools');
 
 function parsePort(v) {
   const n = parseInt(String(v), 10);
@@ -31,7 +32,11 @@ function readFrontmatter(p) {
       const s = l.indexOf(':'); if (s <= 0) continue;
       let k = l.slice(0, s).trim(), v = l.slice(s + 1).trim();
       if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
-      if (v.startsWith('[') && v.endsWith(']')) { try { v = JSON.parse(v); } catch { v = v.slice(1, -1).split(',').map(x => x.trim().replace(/["']/g, '')); } }
+      if (k === 'tools') {
+        v = normalizeAgentTools(v);
+      } else if (v.startsWith('[') && v.endsWith(']')) {
+        try { v = JSON.parse(v); } catch { v = v.slice(1, -1).split(',').map(x => x.trim().replace(/["']/g, '')); }
+      }
       fm[k] = v;
     }
     fm._body = c.replace(/^---[\s\S]*?---\n*/, '').trim();
@@ -80,10 +85,41 @@ function loadMcps(_root) {
   if (fs.existsSync(dir)) { for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) { try { const d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); r.push({ f, s: Object.entries(d.mcpServers || {}).map(([k, v]) => ({ n: k, cmd: typeof v === 'object' ? (v.command || v.url || '') : String(v), args: v.args || [], env: v.env ? Object.keys(v.env).reduce((a,k)=>{a[k]='••••••'; return a;}, {}) : {}, type: v.type || 'stdio' })) }); } catch (e) { console.error('[ECC] Failed to parse mcp-configs/' + f + ':', e.message); } } }
   return r;
 }
+function loadPostToolUseChildren(root) {
+  if (path.resolve(root) !== ROOT) return [];
+  try {
+    const dispatcher = require(path.join(root, 'scripts', 'hooks', 'posttooluse-dispatcher.js'));
+    return [
+      ...dispatcher.SYNC_HOOKS.map(hook => ({ ...hook, mode: 'sync' })),
+      ...dispatcher.ASYNC_HOOKS.map(hook => ({ ...hook, mode: 'async' })),
+    ].map(hook => ({
+      ev: 'PostToolUse',
+      m: hook.matcher,
+      id: hook.id,
+      d: `Managed by the consolidated PostToolUse ${hook.mode} dispatcher`,
+    }));
+  } catch (error) {
+    console.error('[ECC] Failed to load PostToolUse dispatcher registry:', error.message);
+    return [];
+  }
+}
 function loadHooks(_root) {
   const root = _root || ROOT;
-  const p = path.join(root, 'hooks', 'hooks.json'); if (!fs.existsSync(p)) return [];
-  try { const d = JSON.parse(fs.readFileSync(p, 'utf8')); const h = []; for (const [ev, es] of Object.entries(d.hooks || {})) for (const e of es || []) h.push({ ev, m: e.matcher || '*', id: e.id || '', d: e.description || '' }); return h; } catch (e) { console.error('[ECC] Failed to parse hooks/hooks.json:', e.message); return []; }
+  const hooksPath = path.join(root, 'hooks', 'hooks.json');
+  if (!fs.existsSync(hooksPath)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    const hooks = [];
+    for (const [eventName, entries] of Object.entries(data.hooks || {})) {
+      for (const entry of entries || []) {
+        hooks.push({ ev: eventName, m: entry.matcher || '*', id: entry.id || '', d: entry.description || '' });
+      }
+    }
+    return [...hooks, ...loadPostToolUseChildren(root)];
+  } catch (error) {
+    console.error('[ECC] Failed to parse hooks/hooks.json:', error.message);
+    return [];
+  }
 }
 
 const LANG = {

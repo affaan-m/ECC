@@ -634,6 +634,103 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('Claude repair and dry-run preserve user-owned flat skills during legacy migration', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+      const flatSkillPath = path.join(targetRoot, 'skills', 'tdd-workflow', 'SKILL.md');
+      const legacySkillPath = path.join(
+        targetRoot,
+        'skills',
+        'ecc',
+        'tdd-workflow',
+        'SKILL.md'
+      );
+      fs.mkdirSync(path.dirname(flatSkillPath), { recursive: true });
+      fs.mkdirSync(path.dirname(legacySkillPath), { recursive: true });
+      fs.writeFileSync(flatSkillPath, '# User-owned flat skill\n');
+      fs.writeFileSync(legacySkillPath, '# Previously managed nested skill\n');
+
+      writeState(installStatePath, {
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        targetRoot,
+        installStatePath,
+        request: {
+          profile: null,
+          modules: ['workflow-quality'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs', 'workflow-quality'],
+          skippedModules: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'workflow-quality',
+          sourcePath: path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          sourceRelativePath: path.join('skills', 'tdd-workflow', 'SKILL.md'),
+          destinationPath: legacySkillPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const dryRun = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+        dryRun: true,
+      });
+      assert.ok(!dryRun.results[0].plannedRepairs.includes(flatSkillPath));
+      assert.ok(dryRun.results[0].warnings.some(warning => warning.includes('user-owned')));
+      assert.strictEqual(fs.readFileSync(flatSkillPath, 'utf8'), '# User-owned flat skill\n');
+      assert.strictEqual(
+        fs.readFileSync(legacySkillPath, 'utf8'),
+        '# Previously managed nested skill\n'
+      );
+
+      const repaired = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(repaired.results[0].status, 'repaired');
+      assert.ok(repaired.results[0].warnings.some(warning => warning.includes('user-owned')));
+      assert.strictEqual(fs.readFileSync(flatSkillPath, 'utf8'), '# User-owned flat skill\n');
+      assert.strictEqual(
+        fs.readFileSync(legacySkillPath, 'utf8'),
+        fs.readFileSync(
+          path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          'utf8'
+        )
+      );
+      const repairedState = JSON.parse(fs.readFileSync(installStatePath, 'utf8'));
+      assert.ok(repairedState.operations.some(operation => (
+        operation.destinationPath === legacySkillPath
+      )));
+      assert.ok(!repairedState.operations.some(operation => (
+        operation.destinationPath === flatSkillPath
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('repair copies missing managed files from recorded source paths', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');

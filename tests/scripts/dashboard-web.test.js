@@ -36,6 +36,29 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function withTempDir(prefix, fn) {
+  const dirPath = createTempDir(prefix);
+  try {
+    return fn(dirPath);
+  } finally {
+    cleanup(dirPath);
+  }
+}
+
+test('withTempDir removes temp directories when the callback throws', () => {
+  let createdDir = '';
+  assert.throws(() => {
+    withTempDir('ecc-test-', dirPath => {
+      createdDir = dirPath;
+      assert.ok(fs.existsSync(createdDir));
+      throw new Error('fixture failure');
+    });
+  }, /fixture failure/);
+
+  assert.ok(createdDir);
+  assert.ok(!fs.existsSync(createdDir));
+});
+
 function writeFile(rootDir, relativePath, content) {
   const targetPath = path.join(rootDir, relativePath);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -125,6 +148,43 @@ test('readFrontmatter parses array tools field', () => {
   cleanup(testRoot);
 });
 
+test('readFrontmatter preserves scoped tools in legacy flow sequences', () => {
+  const { readFrontmatter } = require(SCRIPT);
+  withTempDir('ecc-test-', tempDir => {
+    writeFile(tempDir, 'agent.md', [
+      '---',
+      'name: scoped-agent',
+      'tools: [Agent(worker, researcher), Read, Bash(git commit:*, git status:*)]',
+      '---',
+      'body',
+    ].join('\n'));
+
+    const fm = readFrontmatter(path.join(tempDir, 'agent.md'));
+    assert.deepStrictEqual(fm.tools, [
+      'Agent(worker, researcher)',
+      'Read',
+      'Bash(git commit:*, git status:*)',
+    ]);
+  });
+});
+
+test('readFrontmatter normalizes comma-separated scalar tools to an array', () => {
+  const { readFrontmatter } = require(SCRIPT);
+  testRoot = createTempDir('ecc-test-');
+  writeFile(testRoot, 'agent.md', [
+    '---',
+    'name: test-agent',
+    'tools: Bash, Read, Write',
+    '---',
+    '# Body',
+  ].join('\n'));
+
+  const fm = readFrontmatter(path.join(testRoot, 'agent.md'));
+  assert.ok(Array.isArray(fm.tools));
+  assert.deepStrictEqual(fm.tools, ['Bash', 'Read', 'Write']);
+  cleanup(testRoot);
+});
+
 test('readFrontmatter handles quoted values', () => {
   const { readFrontmatter } = require(SCRIPT);
   testRoot = createTempDir('ecc-test-');
@@ -202,7 +262,7 @@ test('loadAgents loads agent markdown files', () => {
     'name: typescript-reviewer',
     'description: Reviews TypeScript code',
     'model: claude-sonnet-4-6',
-    'tools: [Bash, Read, Write, Grep]',
+    'tools: Bash, Read, Write, Grep',
     '---',
     '# TypeScript Reviewer',
     'You are a TypeScript code reviewer.',
@@ -212,7 +272,7 @@ test('loadAgents loads agent markdown files', () => {
     'name: python-reviewer',
     'description: Reviews Python code',
     'model: claude-opus-4-8',
-    'tools: [Bash, Read]',
+    'tools: Bash, Read',
     '---',
     '# Python Reviewer',
   ].join('\n'));
@@ -538,6 +598,18 @@ test('loadHooks loads hook definitions', () => {
   assert.strictEqual(lintJs.m, '*.js');
   assert.strictEqual(lintJs.d, 'Lint JS files after commit');
   cleanup(testRoot);
+});
+
+test('loadHooks exposes consolidated PostToolUse child IDs', () => {
+  const { loadHooks } = require(SCRIPT);
+  const repoRoot = path.join(__dirname, '..', '..');
+  const hooks = loadHooks(repoRoot);
+
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:sync'));
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:async'));
+  assert.ok(hooks.some(hook => hook.id === 'post:quality-gate'));
+  assert.ok(hooks.some(hook => hook.id === 'post:edit:accumulator'));
+  assert.ok(hooks.some(hook => hook.id === 'post:ecc-context-monitor'));
 });
 
 test('loadHooks handles malformed JSON gracefully', () => {

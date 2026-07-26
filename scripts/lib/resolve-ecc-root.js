@@ -18,6 +18,17 @@ const PLUGIN_ROOT_SEGMENTS = [
   ['marketplaces', LEGACY_PLUGIN_SLUG],
 ];
 
+// Artifacts that identify a COMPLETE ECC root when the caller gives no explicit
+// probe. A real ECC root ships both the script tree AND ECC's skills; a partial
+// install (scripts copied, skills not) must not qualify for skill-resolving
+// callers, which build `skills/...` paths against the resolved root (#2544).
+// Checking "skills/ exists" is not enough — a user's own ~/.claude/skills/ can
+// be present with none of ECC's skills — so we probe for a sentinel skill that
+// ships in every ECC root and is exactly what the failing skill commands need.
+// If that skill is ever renamed, move this sentinel with it.
+const DEFAULT_SCRIPT_PROBE = path.join('scripts', 'lib', 'utils.js');
+const DEFAULT_SKILL_PROBE = path.join('skills', 'continuous-learning-v2');
+
 /**
  * Resolve the ECC source root directory.
  *
@@ -31,8 +42,14 @@ const PLUGIN_ROOT_SEGMENTS = [
  * @param {object} [options]
  * @param {string} [options.homeDir]  Override home directory (for testing)
  * @param {string} [options.envRoot]  Override CLAUDE_PLUGIN_ROOT (for testing)
- * @param {string} [options.probe]    Relative path used to verify a candidate root
- *                                    contains ECC scripts. Default: 'scripts/lib/utils.js'
+ * @param {string} [options.probe]    Relative path used to verify a candidate
+ *                                    root contains what the caller needs. When
+ *                                    given, it is honored exactly (script
+ *                                    consumers pass their own script path). When
+ *                                    omitted, a candidate must contain BOTH the
+ *                                    ECC script tree and a sentinel ECC skill,
+ *                                    so a partial install (scripts without
+ *                                    skills) is rejected for skill consumers.
  * @returns {string} Resolved ECC root path
  */
 function resolveEccRoot(options = {}) {
@@ -46,10 +63,20 @@ function resolveEccRoot(options = {}) {
 
   const homeDir = options.homeDir || os.homedir();
   const claudeDir = path.join(homeDir, '.claude');
-  const probe = options.probe || path.join('scripts', 'lib', 'utils.js');
+
+  // Decide whether a candidate directory is a usable ECC root. An explicit
+  // caller probe is honored exactly (script consumers know the artifact they
+  // need). With the default probe the caller is a skill consumer, so a
+  // candidate must contain both ECC's scripts and a sentinel ECC skill —
+  // otherwise a scripts-only ~/.claude short-circuits and every skill path
+  // resolves to a location that does not exist (#2544).
+  const isRoot = options.probe
+    ? (dir) => fs.existsSync(path.join(dir, options.probe))
+    : (dir) => fs.existsSync(path.join(dir, DEFAULT_SCRIPT_PROBE))
+            && fs.existsSync(path.join(dir, DEFAULT_SKILL_PROBE));
 
   // Standard install — files are copied directly into ~/.claude/
-  if (fs.existsSync(path.join(claudeDir, probe))) {
+  if (isRoot(claudeDir)) {
     return claudeDir;
   }
 
@@ -60,7 +87,7 @@ function resolveEccRoot(options = {}) {
   );
 
   for (const candidate of legacyPluginRoots) {
-    if (fs.existsSync(path.join(candidate, probe))) {
+    if (isRoot(candidate)) {
       return candidate;
     }
   }
@@ -86,7 +113,7 @@ function resolveEccRoot(options = {}) {
         for (const verEntry of versionDirs) {
           if (!verEntry.isDirectory()) continue;
           const candidate = path.join(orgPath, verEntry.name);
-          if (fs.existsSync(path.join(candidate, probe))) {
+          if (isRoot(candidate)) {
             return candidate;
           }
         }

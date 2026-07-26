@@ -123,6 +123,11 @@ function applyInstallPlan(plan) {
   return applyPlan(plan);
 }
 
+function previewInstallPlan(plan) {
+  const { previewInstallPlan: previewPlan } = require('./install/apply');
+  return previewPlan(plan);
+}
+
 function buildCopyFileOperation({ moduleId, sourcePath, sourceRelativePath, destinationPath, strategy }) {
   return {
     kind: 'copy-file',
@@ -695,8 +700,8 @@ function dedupeCopyFileOperations(operations) {
   // actually determines the installed content. Recording the shadowed earlier
   // writes in install-state makes `doctor` report perpetual drift and drives
   // `repair` to clobber the override with the generic source (issue #2414).
-  // Keep only the last `copy-file` per destination — matching the sequential
-  // apply order in applyInstallPlan — and leave every other operation kind
+  // Keep only the last `copy-file` per destination - matching the sequential
+  // apply order in applyInstallPlan - and leave every other operation kind
   // (e.g. accumulating `merge-json` writes into a shared config) untouched and
   // in order.
   const lastCopyIndexByDestination = new Map();
@@ -802,6 +807,7 @@ module.exports = {
   SUPPORTED_INSTALL_TARGETS,
   LEGACY_INSTALL_TARGETS,
   applyInstallPlan,
+  previewInstallPlan,
   createLegacyCompatInstallPlan,
   createManifestInstallPlan,
   createLegacyInstallPlan,

@@ -95,6 +95,34 @@ function runTests() {
     assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
   })) passed++; else failed++;
 
+  if (test('flushes a large dry-run preview when oversized stdout is suppressed', () => {
+    const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
+    const hookScript = 'scripts/hooks/block-no-verify.js';
+    const command = 'x'.repeat(900 * 1024);
+    const document = JSON.stringify({ tool: 'Bash', tool_input: { command } });
+    const input = document.padEnd(1024 * 1024 + 1024, ' ');
+
+    const result = spawnSync(process.execPath, [
+      runWithFlags,
+      'pre:bash:block-no-verify',
+      hookScript,
+      'standard,strict',
+    ], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, ECC_DRY_RUN: '1' },
+      cwd: path.resolve(__dirname, '..', '..'),
+      maxBuffer: 4 * 1024 * 1024,
+    });
+
+    assert.strictEqual(result.status, 0, `Expected exit 0, got ${result.status}`);
+    assert.strictEqual(result.stdout, '', 'Oversized dry-run input must keep stdout suppressed');
+    assert.ok(
+      result.stderr.endsWith(`command=${command}\n`),
+      `Expected the complete dry-run preview on stderr, got ${result.stderr.length} characters`
+    );
+  })) passed++; else failed++;
+
   if (test('dry-run preview includes command for bash hooks', () => {
     const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
     const hookScript = 'scripts/hooks/block-no-verify.js';

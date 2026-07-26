@@ -109,6 +109,24 @@ async function main() {
     ])
 
     tests.push([
+      "format-code: normalizes Windows backslash paths to forward slashes",
+      async () => withTempProject(
+        ["tsconfig.json", "src/index.ts"],
+        async (projectDir) => {
+          const context = createMockContext(projectDir)
+          const result = await tools.formatcode.execute(
+            { filePath: "src\\index.ts" },
+            context
+          )
+          const parsed = JSON.parse(result)
+          assert.strictEqual(parsed.success, true)
+          assert.ok(parsed.command.includes("src/index.ts"), `expected forward slashes in command: ${parsed.command}`)
+          assert.ok(!parsed.command.includes("src\\index.ts"), `unexpected backslashes in command: ${parsed.command}`)
+        }
+      ),
+    ])
+
+    tests.push([
       "format-code: detects Python formatter",
       async () => withTempProject(
         ["pyproject.toml", "src/main.py"],

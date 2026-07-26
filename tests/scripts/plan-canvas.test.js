@@ -118,7 +118,8 @@ async function main() {
   const htmlArtifact = path.join(tmp, 'report.html');
   fs.writeFileSync(htmlArtifact, '<!DOCTYPE html><html><body><h1>Report</h1></body></html>');
   fs.writeFileSync(path.join(tmp, 'style.css'), 'body { color: red }');
-  fs.writeFileSync(path.join(os.tmpdir(), 'plan-canvas-outside.txt'), 'secret');
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-outside-'));
+  fs.writeFileSync(path.join(outsideDir, 'secret.txt'), 'secret');
 
   const store = createSessionStore({ stateDir: path.join(tmp, 'state') });
   let idleFired = false;
@@ -209,7 +210,7 @@ async function main() {
     const ok = await request(port, 'GET', `/artifact/${key}/style.css`);
     assert.strictEqual(ok.statusCode, 200);
     assert.ok(ok.body.includes('color: red'));
-    const escape = await request(port, 'GET', `/artifact/${key}/..%2Fplan-canvas-outside.txt`);
+    const escape = await request(port, 'GET', `/artifact/${key}/..%2F${path.basename(outsideDir)}%2Fsecret.txt`);
     assert.strictEqual(escape.statusCode, 403);
   })) passed++; else failed++;
 
@@ -359,7 +360,7 @@ async function main() {
   })) passed++; else failed++;
 
   fs.rmSync(tmp, { recursive: true, force: true });
-  fs.rmSync(path.join(os.tmpdir(), 'plan-canvas-outside.txt'), { force: true });
+  fs.rmSync(outsideDir, { recursive: true, force: true });
 
   console.log('\n' + '='.repeat(40));
   console.log(`Passed: ${passed}`);
