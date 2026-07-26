@@ -463,12 +463,35 @@ textarea {
     transform: none;
   }
 }
-.task-row,
-.contact-row,
-.note-card,
-.goal-card {
-  animation: rowIn 0.28s ease both;
+/* Applied to list *items* (not the inner row) so the whole row — including
+   the swipe-to-delete backdrop behind it — cascades in as one piece, and so
+   a single stagger rule below can drive every list.
+   `backwards`, never `both`: a forwards fill would keep asserting
+   `transform: none` after the animation ends, which outranks the :active
+   press transforms further down and would silently kill them. */
+.contact-list > li,
+.task-list > li,
+.reminder-list > li,
+.nudge-list > li,
+.place-list > li,
+.mini-events > li,
+.route-list > li,
+.notes-grid > .note-card,
+.goal-group > .goal-card {
+  animation: rowIn 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
+
+/* Lists cascade instead of appearing as one slab — the clearest signal that
+   a screen was composed rather than dumped. Capped at ~8 so a long list
+   never makes the user wait on a queue. */
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(1) { animation-delay: 0ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(2) { animation-delay: 42ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(3) { animation-delay: 84ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(4) { animation-delay: 126ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(5) { animation-delay: 168ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(6) { animation-delay: 205ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(7) { animation-delay: 238ms; }
+:is(.contact-list, .task-list, .reminder-list, .nudge-list, .place-list, .mini-events, .route-list, .notes-grid, .goal-group) > *:nth-child(n + 8) { animation-delay: 265ms; }
 
 /* --- Toast ---------------------------------------------------------------- */
 @keyframes toastIn {
@@ -3805,11 +3828,17 @@ textarea {
 }
 
 /* --- Motion & transitions ---------------------------------------------- */
-.contact-list li,
-.goal-card,
+/* `.contact-list li` and `.goal-card` used to be animated here too, but they
+   now come in via the staggered rowIn rule further up — running both meant
+   two competing entrance animations on the same elements, with this one
+   (being later in the file) silently winning and cancelling the stagger.
+   `backwards` rather than `both` for the same reason as rowIn: a forwards
+   fill keeps asserting `transform: none` forever afterwards, which outranks
+   the :active press transforms — .home-block-goals is a .detail-section and
+   would otherwise never visibly respond to a tap. */
 .agenda-day,
 .detail-section {
-  animation: rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
 @keyframes rise {
   from {
@@ -3833,6 +3862,207 @@ textarea {
 .contact-row,
 .status-item {
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+
+/* --- Press feedback ------------------------------------------------------
+   Every tappable surface acknowledges the touch the instant it happens,
+   before any navigation or state change lands. Rows and cards had none of
+   this — the app looked frozen for the moment between tap and result,
+   which is the single most recognisable "cheap" tell on touch.
+   Kept small (a ~2% squeeze) and fast: felt, not watched. */
+.contact-row,
+.note-card,
+.reminder-row,
+.nudge-row,
+.place-row,
+.mini-event-row,
+.home-block-goals,
+.freeze-row,
+.goal-info,
+.task-title-btn,
+.reconnect-open {
+  transition: transform 0.13s cubic-bezier(0.2, 0, 0.2, 1), filter 0.13s ease;
+}
+.contact-row:active,
+.note-card:active,
+.reminder-row:active,
+.nudge-row:active,
+.place-row:active,
+.mini-event-row:active:not(:disabled),
+.home-block-goals:active,
+.freeze-row:active,
+.reconnect-open:active {
+  transform: scale(0.978);
+  filter: brightness(0.94);
+}
+/* The goal card and task row are containers whose children take the tap, so
+   the squeeze has to be driven from the pressed descendant to keep the whole
+   card moving as one object rather than just its text block. */
+.goal-card,
+.task-row {
+  transition: transform 0.13s cubic-bezier(0.2, 0, 0.2, 1), filter 0.13s ease;
+}
+.goal-card:has(.goal-info:active),
+.task-row:has(.task-title-btn:active) {
+  transform: scale(0.985);
+  filter: brightness(0.95);
+}
+
+/* --- Tab bar: active indicator ------------------------------------------
+   A soft accent pill blooms behind whichever tab is current, so switching
+   tabs has a moving part instead of only a colour swap. */
+.tab {
+  position: relative;
+}
+.tab::before {
+  content: '';
+  position: absolute;
+  top: calc(50% - 2px);
+  left: 50%;
+  width: 44px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  transform: translate(-50%, -50%) scale(0.55);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tab--active::before {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.tab svg {
+  position: relative;
+  z-index: 1;
+}
+/* The icon nudges up and settles as the pill arrives behind it. `backwards`
+   so the resting `.tab--active svg` transform above still owns the element
+   once the animation is over. */
+@keyframes tabIconPop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  55% {
+    transform: translateY(-4px) scale(1.12);
+  }
+  100% {
+    transform: translateY(-2px) scale(1.06);
+  }
+}
+.tab--active svg {
+  animation: tabIconPop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+/* --- Page header: backdrop on scroll -------------------------------------
+   At rest the header is a gradient that fades out, so rows scrolling beneath
+   it are half-visible through its lower half — readable as a design choice
+   when the page is at the top, but muddy once a list is actually moving
+   under it. So a solid backdrop fades in whenever there is something
+   scrolled underneath, ending in a short soft tail so content dissolves out
+   rather than meeting a hard edge.
+
+   Deliberately *not* a hairline: the header's own background is transparent
+   at its bottom edge, so a line there gets drawn straight across whatever
+   row happens to be passing under it.
+
+   `z-index: -1` keeps it above the header's own background but behind the
+   title and controls — `.page-head` is a positioned, z-indexed stacking
+   context, so the negative index can't escape it.
+
+   `body.is-scrolled` is toggled by a single passive scroll listener in
+   App.jsx rather than per-page, since all 14 pages share this header. */
+.page-head::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  top: 0;
+  bottom: -20px;
+  background: linear-gradient(var(--bg) calc(100% - 20px), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: -1;
+  pointer-events: none;
+}
+body.is-scrolled .page-head::before {
+  opacity: 1;
+}
+
+/* --- Progress bars -------------------------------------------------------
+   A goal's bar is the one element people watch change, so it gets a longer,
+   decelerating travel instead of a flat 0.3s — the fill reads as moving to
+   its new value rather than snapping there. */
+.progress-fill {
+  transition: width 0.55s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.3s ease;
+}
+/* One-shot sheen the moment a goal completes: the rule only starts applying
+   when `--done` lands on the card, so it fires exactly once per completion. */
+@keyframes progressSheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+.goal-card--done .progress-fill {
+  position: relative;
+  overflow: hidden;
+}
+.goal-card--done .progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: progressSheen 0.85s cubic-bezier(0.3, 0, 0.3, 1) 0.15s backwards;
+}
+
+/* --- Detail hero ---------------------------------------------------------
+   Opening a contact should feel like arriving somewhere, so the avatar and
+   name lead the page in slightly ahead of the rest of the content. */
+@keyframes heroIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.detail-hero .avatar {
+  animation: heroIn 0.44s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.detail-hero h1 {
+  animation: rowIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 70ms backwards;
+}
+
+/* --- Chips: press + selection -------------------------------------------
+   No overshoot, to stay consistent with the restrained motion signature the
+   splash and the rest of the app already use. */
+.chip {
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease,
+    border-color 0.2s ease, color 0.2s ease;
+}
+.chip:active {
+  transform: scale(0.93);
+}
+@keyframes chipSelect {
+  from {
+    transform: scale(0.9);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.chip--on {
+  animation: chipSelect 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

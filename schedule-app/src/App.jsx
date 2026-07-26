@@ -300,6 +300,24 @@ export default function App() {
     return () => document.removeEventListener('click', onClick);
   }, []);
 
+  // Sticky page headers fade in a solid backdrop once there's content
+  // scrolled underneath them (see `body.is-scrolled .page-head::before`).
+  // Every page shares the same header, and the window is the scroller, so
+  // one passive listener here beats threading a hook through 14 pages.
+  // Re-runs per route so a freshly opened page starts flat, and reads the
+  // scroll position immediately in case the browser restored it.
+  useEffect(() => {
+    const onScroll = () => {
+      document.body.classList.toggle('is-scrolled', window.scrollY > 4);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.body.classList.remove('is-scrolled');
+    };
+  }, [location.pathname]);
+
   // Launch splash: the mark builds itself (see SplashScreen.jsx/styles.css
   // for the choreography — arch blocks rise for 650ms, the keystone drops
   // in over the next 380ms, then its glow bursts) before the whole overlay
