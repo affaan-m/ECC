@@ -86,6 +86,28 @@
 
 ---
 
+## Cross-Harness Memory CLI
+
+These are `ecc` CLI commands, not slash commands. They use one inspectable
+Markdown vault across Claude, Codex, Hermes, OpenClaw, Kimi, and other
+harnesses.
+
+| Command | What it does |
+|---------|-------------|
+| `ecc memory init` | Create project, team, or user vault directories |
+| `ecc memory save` | Create an unreviewed context, decision, fact, lesson, note, preference, or runbook |
+| `ecc memory handoff` | Transfer bounded work state from one harness to another |
+| `ecc memory search` | Search memories by text, scope, kind, or target harness |
+| `ecc memory read` | Read a memory and its backlinks by stable ID |
+| `ecc memory doctor` | Report malformed files, duplicate IDs, broken links, and skipped symlinks |
+| `ecc-memory-mcp` | Start the optional local stdio MCP server |
+
+Pass memory bodies with `--stdin` or `--body-file`; they are intentionally not
+accepted as command-line values. Recalled memories are untrusted context, not
+executable instructions or policy.
+
+---
+
 ## Learning & Improvement
 
 | Command | What it does |

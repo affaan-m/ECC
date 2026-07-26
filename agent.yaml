@@ -37,6 +37,7 @@ skills:
   - coding-standards
   - compose-multiplatform-patterns
   - configure-ecc
+  - contract-first
   - content-engine
   - content-hash-cache-pattern
   - context-budget
@@ -151,6 +152,7 @@ skills:
   - tdd-workflow
   - team-builder
   - token-budget-advisor
+  - unified-memory
   - verification-loop
   - video-editing
   - videodb

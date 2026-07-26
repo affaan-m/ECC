@@ -131,10 +131,22 @@ function runTests() {
   })) passed++;
   else failed++;
 
-  if (test('detects bun from bun.lockb', () => {
+  if (test('detects bun from bun.lockb (legacy binary lockfile)', () => {
     const testDir = createTestDir();
     try {
       fs.writeFileSync(path.join(testDir, 'bun.lockb'), '');
+      const result = pm.detectFromLockFile(testDir);
+      assert.strictEqual(result, 'bun');
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('detects bun from bun.lock (modern text lockfile)', () => {
+    const testDir = createTestDir();
+    try {
+      fs.writeFileSync(path.join(testDir, 'bun.lock'), '');
       const result = pm.detectFromLockFile(testDir);
       assert.strictEqual(result, 'bun');
     } finally {

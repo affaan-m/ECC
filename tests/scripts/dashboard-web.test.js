@@ -540,6 +540,18 @@ test('loadHooks loads hook definitions', () => {
   cleanup(testRoot);
 });
 
+test('loadHooks exposes consolidated PostToolUse child IDs', () => {
+  const { loadHooks } = require(SCRIPT);
+  const repoRoot = path.join(__dirname, '..', '..');
+  const hooks = loadHooks(repoRoot);
+
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:sync'));
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:async'));
+  assert.ok(hooks.some(hook => hook.id === 'post:quality-gate'));
+  assert.ok(hooks.some(hook => hook.id === 'post:edit:accumulator'));
+  assert.ok(hooks.some(hook => hook.id === 'post:ecc-context-monitor'));
+});
+
 test('loadHooks handles malformed JSON gracefully', () => {
   const { loadHooks } = require(SCRIPT);
   testRoot = createTempDir('ecc-test-');

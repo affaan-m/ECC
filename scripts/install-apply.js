@@ -17,6 +17,7 @@ const {
   normalizeInstallRequest,
   parseInstallArgs,
 } = require('./lib/install/request');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -59,6 +60,9 @@ Options:
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
+
+Compute:
+  ${getComputeSponsorCopy()}
 
 Available languages:
 ${languages.map(language => `  - ${language}`).join('\n')}
@@ -115,6 +119,8 @@ function printHumanPlan(plan, dryRun) {
   if (!dryRun) {
     console.log(`\nDone. Install-state written to ${plan.installStatePath}`);
   }
+
+  console.log('\nCompute: ' + getComputeSponsorCopy());
 }
 
 function main() {

@@ -154,6 +154,7 @@
         "skills/backend-patterns",
         "skills/coding-standards",
         "skills/compose-multiplatform-patterns",
+        "skills/contract-first",
         "skills/csharp-testing",
         "skills/fsharp-testing",
         "skills/cpp-coding-standards",
@@ -272,9 +273,39 @@
       "stability": "stable"
     },
     {
+      "id": "skill-unified-memory",
+      "kind": "skills",
+      "description": "Single-skill unified-memory guidance; requires the separately installed ecc-universal CLI runtime.",
+      "paths": [
+        "skills/unified-memory"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "workflow-quality",
       "kind": "skills",
-      "description": "Evaluation, TDD, verification, compaction, and learning skills, including the legacy continuous-learning v1 path.",
+      "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory skills, including the legacy continuous-learning v1 path. The unified-memory workflow requires the separately installed ecc-universal CLI runtime.",
       "paths": [
         "skills/agent-sort",
         "skills/agent-introspection-debugging",
@@ -337,7 +368,7 @@
         "kimi"
       ],
       "dependencies": [
-        "platform-configs"
+        "skill-unified-memory"
       ],
       "defaultInstall": true,
       "cost": "medium",
@@ -542,7 +573,7 @@
     {
       "id": "prediction-market-skills",
       "kind": "skills",
-      "description": "Public, non-advisory prediction-market and Itô basket research workflows with gated Itô API access.",
+      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
       "paths": [
         "skills/ito-basket-compare",
         "skills/ito-data-atlas-agent",
@@ -570,6 +601,36 @@
       ],
       "defaultInstall": false,
       "cost": "medium",
+      "stability": "beta"
+    },
+    {
+      "id": "ito-compute",
+      "kind": "skills",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "paths": [
+        "skills/ito-compute"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
       "stability": "beta"
     },
     {

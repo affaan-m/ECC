@@ -132,8 +132,12 @@ function renderListItem(text) {
   return '<li>' + renderInline(text) + '</li>';
 }
 
+function listTag(marker) {
+  return /^\d/.test(marker) ? 'ol' : 'ul';
+}
+
 function buildList(items, start, indent) {
-  const tag = /^\d/.test(items[start].marker) ? 'ol' : 'ul';
+  const tag = listTag(items[start].marker);
   const parts = [];
   let i = start;
   while (i < items.length && items[i].indent >= indent) {
@@ -148,11 +152,26 @@ function buildList(items, start, indent) {
       }
       i = nested.end;
     } else {
+      // A marker-type change at the same indent starts a new list
+      // (CommonMark); stop here so the caller renders the next run with
+      // its own tag instead of absorbing it into this one.
+      if (listTag(items[i].marker) !== tag) break;
       parts.push(renderListItem(items[i].text));
       i += 1;
     }
   }
   return { html: '<' + tag + '>\n' + parts.join('\n') + '\n</' + tag + '>', end: i };
+}
+
+function buildListBlock(items) {
+  let lists = [];
+  let i = 0;
+  while (i < items.length) {
+    const list = buildList(items, i, items[i].indent);
+    lists = [...lists, list.html];
+    i = list.end;
+  }
+  return lists.join('\n');
 }
 
 function startsBlock(line, nextLine) {
@@ -257,7 +276,10 @@ function renderMarkdown(text) {
         items.push({ indent: m[1].length, marker: m[2], text: m[3] });
         i += 1;
       }
-      out.push(buildList(items, 0, items[0].indent).html);
+      // An outdent below the first item's indentation ends that list. Render
+      // the remaining run as a sibling list so malformed indentation cannot
+      // silently drop content or create an empty parent item.
+      out.push(buildListBlock(items));
       continue;
     }
 

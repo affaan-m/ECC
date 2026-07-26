@@ -298,10 +298,19 @@ def detect_project() -> dict:
             "observations_file": GLOBAL_OBSERVATIONS_FILE,
         }
 
-    # 1. CLAUDE_PROJECT_DIR env var
+    # 1. CLAUDE_PROJECT_DIR env var (explicit override)
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_dir and os.path.isdir(env_dir):
         project_root = _git_repo_root(env_dir)
+        # Non-git directory explicitly pointed at by CLAUDE_PROJECT_DIR: honor it
+        # as a project root (path-hash identity) rather than collapsing to the
+        # shared `global` bucket. Mirrors detect-project.sh so the observer
+        # (shell) and this CLI agree on the project id for the same directory;
+        # os.path.realpath matches the shell's `cd ... && pwd -P`. Gated on the
+        # explicit env var so an arbitrary non-git cwd (priority 2) never
+        # becomes a "project".
+        if not project_root:
+            project_root = os.path.realpath(env_dir)
 
     # 2. git repo root
     if not project_root:

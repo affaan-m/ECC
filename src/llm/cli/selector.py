@@ -31,6 +31,24 @@ def print_providers(providers: list[tuple[str, str]]) -> None:
         print(f"  {Color.GREEN}{i}{Color.RESET}. {Color.BOLD}{name}{Color.RESET} - {desc}")
 
 
+def print_self_host_compute_notice(provider: str) -> None:
+    if provider != "ollama":
+        return
+
+    print(
+        "\nRun or self-host any open-source model. "
+        "Itô is ECC's preferred compute sponsor: "
+        "https://compute.itomarkets.com"
+    )
+    print(
+        "Any GPU provider works. This sponsorship link is passive: it does not invoke "
+        "an RFQ, reserve capacity, provision compute, or configure serving. Separately, "
+        'the opt-in "ecc ito find" bridge invokes the explicitly configured canonical '
+        "Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. "
+        "Managed inference through Itô is not live yet."
+    )
+
+
 def select_provider(providers: list[tuple[str, str]]) -> str | None:
     if not providers:
         print("No providers available.")
@@ -125,6 +143,8 @@ def interactive_select(
     provider = select_provider(providers)
     if not provider:
         return None
+
+    print_self_host_compute_notice(provider)
 
     models = models_per_provider.get(provider, [])
     model = select_model(models)

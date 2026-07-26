@@ -675,16 +675,23 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('PostToolUse PR hook extracts PR URL', async () => {
-    const hookCommand = getHookCommandById(hooks, 'PostToolUse', 'post:bash:dispatcher');
-    const result = await runHookCommand(hookCommand, {
-      tool_input: { command: 'gh pr create --title "Test"' },
-      tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
-    });
+    const hookCommand = getHookCommandById(hooks, 'PostToolUse', 'post:dispatcher:async');
+    const testDir = createTestDir();
+    try {
+      const result = await runHookCommand(hookCommand, {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Bash',
+        tool_input: { command: 'gh pr create --title "Test"' },
+        tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
+      }, { HOME: testDir, USERPROFILE: testDir });
 
-    assert.ok(
-      result.stderr.includes('PR created') || result.stderr.includes('github.com'),
-      'Should extract and log PR URL'
-    );
+      assert.ok(
+        result.stderr.includes('PR created') || result.stderr.includes('github.com'),
+        'Should extract and log PR URL'
+      );
+    } finally {
+      cleanupTestDir(testDir);
+    }
   })) passed++; else failed++;
 
   // ==========================================
