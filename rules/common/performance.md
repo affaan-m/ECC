@@ -1,54 +1,35 @@
 # Performance Optimization
 
-## Model Selection Strategy
+## Model Selection
 
-**Haiku 4.5** (90% of Sonnet capability, 3x cost savings):
+Use model aliases (`haiku`, `sonnet`, `opus`) in agent frontmatter and
+configs, not pinned version strings — aliases track the current
+generation automatically.
 
-- Lightweight agents with frequent invocation
-- Pair programming and code generation
-- Worker agents in multi-agent systems
+- **haiku**: lightweight, high-frequency work — worker agents in
+  multi-agent systems, quick classification and triage
+- **sonnet**: default for main development work — strong coding at
+  balanced cost and latency
+- **opus**: deepest reasoning — architectural decisions, complex
+  debugging, research and analysis
 
-**Sonnet 4.5** (Best coding model):
+## Thinking Depth
 
-- Main development work
-- Orchestrating multi-agent workflows
-- Complex coding tasks
-
-**Opus 4.5** (Deepest reasoning):
-
-- Complex architectural decisions
-- Maximum reasoning requirements
-- Research and analysis tasks
+Current models use adaptive thinking: the model decides when and how
+deeply to think. Do not use manual thinking-trigger keywords
+(`ultrathink`, "think harder") — control depth with the effort setting
+instead, and use Plan Mode for structured multi-step work.
 
 ## Context Window Management
 
-Avoid last 20% of context window for:
+Avoid the last 20% of the context window for large-scale refactoring,
+multi-file feature work, and complex debugging. Single-file edits,
+documentation updates, and simple fixes are less context-sensitive.
 
-- Large-scale refactoring
-- Feature implementation spanning multiple files
-- Debugging complex interactions
-
-Lower context sensitivity tasks:
-
-- Single-file edits
-- Independent utility creation
-- Documentation updates
-- Simple bug fixes
-
-## Ultrathink + Plan Mode
-
-For complex tasks requiring deep reasoning:
-
-1. Use `ultrathink` for enhanced thinking
-2. Enable **Plan Mode** for structured approach
-3. "Rev the engine" with multiple critique rounds
-4. Use split role sub-agents for diverse analysis
+Compact at natural phase boundaries rather than waiting for
+auto-compaction — see the strategic-compact skill.
 
 ## Build Troubleshooting
 
-If build fails:
-
-1. Use **build-error-resolver** agent
-2. Analyze error messages
-3. Fix incrementally
-4. Verify after each fix
+If a build fails, use the **build-error-resolver** agent: analyze the
+errors, fix incrementally, and verify after each fix.
