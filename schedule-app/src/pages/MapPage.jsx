@@ -21,6 +21,7 @@ const escapeHtml = (s = '') =>
 export default function MapPage() {
   const { state } = useStore();
   const actions = useActions();
+  const isPro = !!state.settings?.isPro;
   const showContactPins = state.settings?.mapShowContactPins ?? true;
   const showCustomPins = state.settings?.mapShowCustomPins ?? true;
   const emojiSizePct = state.settings?.mapEmojiSize ?? 100;
@@ -367,6 +368,14 @@ export default function MapPage() {
         <div className="map-corner">
           <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
             <LocateIcon />
+          </button>
+          <button
+            className="map-round"
+            onClick={() => (isPro ? navigate('/plan-day') : navigate('/pricing'))}
+            aria-label="Plan my day"
+            title="Plan my day"
+          >
+            🧭{!isPro && <span className="map-round-lock">🔒</span>}
           </button>
           {selected && (
             <button

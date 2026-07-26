@@ -970,6 +970,42 @@ textarea {
   font-weight: 600;
   flex: 1;
 }
+.place-row--selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* --- Route planner --------------------------------------------------------- */
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+.route-stop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.route-stop-num {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+.route-stop-label {
+  flex: 1;
+  font-weight: 600;
+}
 .place-go {
   font-size: 13px;
   font-weight: 600;
@@ -2626,6 +2662,7 @@ textarea {
   gap: 10px;
 }
 .map-round {
+  position: relative;
   width: 46px;
   height: 46px;
   border-radius: 14px;
@@ -2644,6 +2681,13 @@ textarea {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent);
+}
+.map-round-lock {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .map-banner {
@@ -3052,6 +3096,35 @@ textarea {
 .reminder-kind--event {
   background: #8a5cd1;
   color: #fff;
+}
+.nudge-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nudge-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.nudge-icon {
+  flex: none;
+  font-size: 18px;
+}
+.nudge-text {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
 }
 .reminder-label {
   flex: 1;

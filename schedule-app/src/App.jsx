@@ -19,6 +19,7 @@ import ContactsPage from './pages/ContactsPage.jsx';
 import ContactDetailPage from './pages/ContactDetailPage.jsx';
 import ContactTimelinePage from './pages/ContactTimelinePage.jsx';
 import MapPage from './pages/MapPage.jsx';
+import RoutePlannerPage from './pages/RoutePlannerPage.jsx';
 import MorePage from './pages/MorePage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
 import SearchPage from './pages/SearchPage.jsx';
@@ -363,6 +364,7 @@ export default function App() {
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
           <Route path="/contacts/:id/timeline" element={<ContactTimelinePage />} />
           <Route path="/map" element={<MapPage />} />
+          <Route path="/plan-day" element={<RoutePlannerPage />} />
           <Route path="/more" element={<MorePage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/search" element={<SearchPage />} />

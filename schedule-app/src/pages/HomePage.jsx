@@ -22,6 +22,7 @@ import {
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 import { computeWeeklyRecap } from '../data/weeklyRecap.js';
+import { computeNudges } from '../data/nudges.js';
 import { useToast } from '../data/toast.jsx';
 import { useCountUp } from '../data/useCountUp.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
@@ -315,6 +316,7 @@ export default function HomePage() {
   );
   const visibleBlocks = useMemo(() => homeBlocks.filter((b) => b.enabled), [homeBlocks]);
   const recap = useMemo(() => computeWeeklyRecap(state), [state]);
+  const nudges = useMemo(() => computeNudges(state), [state]);
 
   return (
     <div className="page">
@@ -370,6 +372,24 @@ export default function HomePage() {
                   <MiniRing pct={weeklyPct} label="Week" />
                 </div>
               </button>
+            );
+          }
+          if (b.id === 'nudges') {
+            if (nudges.length === 0) return null;
+            return (
+              <section className="detail-section" key="nudges">
+                <span className="detail-label">💡 Nudges</span>
+                <ul className="nudge-list">
+                  {nudges.map((n) => (
+                    <li key={n.id}>
+                      <button className="nudge-row" onClick={() => navigate(n.to)}>
+                        <span className="nudge-icon" aria-hidden="true">{n.icon}</span>
+                        <span className="nudge-text">{n.text}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             );
           }
           if (b.id === 'recap') {
