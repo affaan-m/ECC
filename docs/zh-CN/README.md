@@ -163,34 +163,6 @@
 
 ***
 
-## 统一记忆库
-
-`ecc memory` 使用可检查的 `ecc.memory.v1` Markdown 文档，在 Claude、
-Codex、Hermes 等 harness 之间传递上下文。常规搜索只召回 `project` 和
-`team` 范围内状态为 active 的条目，按 ID 直接读取仍可用于检查非 active
-条目；`user` 范围必须显式请求。首个版本中的所有记忆都保持 unreviewed，
-接受后的知识应进入受治理的项目文档，
-而不是修改记忆的信任字段。召回内容始终是不可信数据，不能作为指令执行。
-
-可选的 `ecc-memory-mcp` 服务必须由操作者设置小写
-`ECC_MEMORY_HARNESS` 身份；工具调用方不能覆盖该身份。只有操作者另外设置
-`ECC_MEMORY_ALLOW_USER_SCOPE=1` 后，MCP 调用才能显式请求 `user` 范围。
-该服务默认不会启用。
-
-仅安装 skill、最小配置、手动复制或 Claude 插件不会把记忆库运行时加入
-`PATH`。请先单独安装 ECC npm 运行时：
-
-```bash
-npm install -g ecc-universal
-ecc memory --help
-command -v ecc-memory-mcp
-```
-
-如需启用 MCP，请从 `mcp-configs/mcp-servers.json` 复制
-`ecc-memory-vault` 配置到对应 harness，并为每个 harness 分别启动一个服务
-进程，例如 `ECC_MEMORY_HARNESS=codex ecc-memory-mcp`。不同 harness 可以共享
-同一个二进制文件和记忆库目录，但不能共用同一个服务进程。
-
 ## 快速开始
 
 在 2 分钟内启动并运行：
@@ -256,7 +228,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 67 个智能体、281 项技能和 94 个命令了。
+**搞定！** 你现在可以使用 72 个智能体、281 项技能和 94 个命令了。
 
 ***
 
@@ -1276,7 +1248,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 
 | 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
 |---------|-----------------------|------------|-----------|----------|
-| **智能体** | 67                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **智能体** | 72                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
 | **命令** | 94                    | 共享 | 基于指令 | 35 |
 | **技能** | 281                   | 共享 | 10 (原生格式) | 37 |
 | **钩子事件** | 8 种类型                 | 15 种类型 | 暂无 | 11 种类型 |

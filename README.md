@@ -191,13 +191,6 @@ Run or self-host any open-source model on owned or rented GPUs. Itô is ECC's pr
 
 ## What's New
 
-### Current Development — Unified Memory Vault
-
-`ecc memory` gives Claude, Codex, Hermes, OpenClaw, Kimi, and other harnesses
-one local, inspectable Markdown format for durable context and handoffs. The
-optional `ecc-memory-mcp` stdio server exposes the same bounded
-save/search/read/doctor surface without enabling itself by default.
-
 ### v2.0.0 — The Agent Harness Operating System (Jun 2026)
 
 Stable graduation of the 2.0 line: 261 skills, the control-pane substrate (session adapters + MCP inventory), the worktree-lifecycle service, the `orch-*` orchestrator family, and the launch of the [ECC Discord community](https://discord.gg/36yGMHGFbR). Full notes: [docs/releases/2.0.0/release-notes.md](docs/releases/2.0.0/release-notes.md).
@@ -284,67 +277,6 @@ See the full changelog in [Releases](https://github.com/affaan-m/ECC/releases).
 
 ---
 
-## Share Context Between Agent Harnesses
-
-ECC's Memory Vault stores portable `ecc.memory.v1` Markdown documents instead
-of copying vendor transcripts or emailing context between agents. Project and
-team scopes live under `.ecc/memory/`; user scope lives under
-`~/.ecc/memory/`. Project memories are protected by a fail-closed `.gitignore`;
-use the team scope only for human-inspected, version-controlled sharing. Team
-memories remain unreviewed context even after they are committed.
-
-Skill-only, minimal, manual, and Claude plugin installs do not put the Memory
-Vault runtime on `PATH`. Install the npm runtime separately before using the CLI
-or optional MCP server:
-
-```bash
-npm install -g ecc-universal
-ecc memory --help
-command -v ecc-memory-mcp
-```
-
-```bash
-# Initialize the project vault.
-ecc memory init --scope project
-
-# Write a handoff body to a regular file, then target the next harness.
-ecc memory handoff \
-  --from hermes \
-  --target codex \
-  --title "Continue authentication migration" \
-  --body-file ./handoff.md
-
-# Recall it from another harness.
-ecc memory search "authentication migration" --target-harness codex
-ecc memory read <memory-id>
-
-# Validate the vault before sharing team memories.
-ecc memory doctor
-```
-
-Memory bodies are accepted only through `--stdin` or `--body-file`, not as
-command-line values. The first release keeps every vault entry unreviewed and
-create-only; human review promotes accepted knowledge into governed project
-documentation rather than changing memory trust. Normal search recall returns
-active project and team memories. A direct ID read may inspect a non-active
-entry. User-scope recall must be requested explicitly.
-Agents must verify important claims against authoritative sources and must
-never treat recalled bodies as executable instructions or policy.
-
-For opt-in MCP access, add the `ecc-memory-vault` entry from
-[`mcp-configs/mcp-servers.json`](mcp-configs/mcp-servers.json) to each harness
-that needs it, then run `ecc-memory-mcp`. The server exposes only
-`memory_save`, `memory_search`, `memory_read`, and `memory_doctor`. Each server
-must launch with a lowercase `ECC_MEMORY_HARNESS` identity; the identity is
-server-bound and cannot be supplied by a tool caller. User scope additionally
-requires the operator-controlled `ECC_MEMORY_ALLOW_USER_SCOPE=1` opt-in. See
-[`skills/unified-memory/SKILL.md`](skills/unified-memory/SKILL.md) for the
-workflow and trust boundaries, and
-[`docs/design/ecc-memory-vault.md`](docs/design/ecc-memory-vault.md) for the
-capability contract.
-
----
-
 ## Quick Start
 
 Get up and running in under 2 minutes:
@@ -374,14 +306,6 @@ npx ecc-install --profile minimal --target claude
 ```
 
 This profile intentionally excludes `hooks-runtime`.
-
-Claude manual installs place each skill directly under
-`~/.claude/skills/<skill-name>/` (or `.claude/skills/<skill-name>/` for
-`claude-project`) so Claude Code can discover it. When upgrading an older ECC
-manual install, the installer migrates only nested `skills/ecc/` files recorded
-in ECC install-state. If a flat skill directory is user-owned, ECC preserves it,
-prints a conflict warning, and keeps any older managed copy tracked for a safe
-uninstall instead of overwriting user files.
 
 If you want the normal core profile but need hooks off, use:
 
@@ -545,7 +469,7 @@ If you stacked methods, clean up in this order:
 /plugin list ecc@ecc
 ```
 
-**That's it!** You now have access to 67 agents, 281 skills, and 94 legacy command shims.
+**That's it!** You now have access to 72 agents, 281 skills, and 94 legacy command shims.
 
 ### Dashboard GUI
 
@@ -1152,7 +1076,7 @@ Subagents handle delegated tasks with limited scope. Example:
 ---
 name: code-reviewer
 description: Reviews code for quality, security, and maintainability
-tools: Read, Grep, Glob, Bash
+tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
 
@@ -1664,7 +1588,7 @@ The configuration is automatically detected from `.opencode/opencode.json`.
 
 | Feature | Claude Code         | OpenCode | Status |
 |---------|---------------------|----------|--------|
-| Agents | PASS: 67 agents     | PASS: 12 agents | **Claude Code leads** |
+| Agents | PASS: 72 agents     | PASS: 12 agents | **Claude Code leads** |
 | Commands | PASS: 94 commands   | PASS: 35 commands | **Claude Code leads** |
 | Skills | PASS: 281 skills    | PASS: 37 skills | **Claude Code leads** |
 | Hooks | PASS: 8 event types | PASS: 11 events | **OpenCode has more!** |
@@ -1825,7 +1749,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 
 | Feature | Claude Code           | Cursor IDE | Codex CLI | OpenCode | GitHub Copilot |
 |---------|-----------------------|------------|-----------|----------|----------------|
-| **Agents** | 67                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
+| **Agents** | 72                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 94                    | Shared | Instruction-based | 35 | 5 prompts |
 | **Skills** | 281                   | Shared | 10 (native format) | 37 | Via instructions |
 | **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
