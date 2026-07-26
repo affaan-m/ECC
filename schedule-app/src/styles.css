@@ -2292,9 +2292,21 @@ textarea {
   overflow-x: auto;
   padding: 12px 0 4px;
   scrollbar-width: none;
-  /* Fading the last ~24px on each edge (rather than a hard clip) is the
-     visual cue that there's more to scroll — a chip cut off flush against
-     the screen edge gave no hint it was scrollable at all. */
+}
+/* Fading the last ~24px on the edge (rather than a hard clip) is the visual
+   cue that there's more to scroll that way — but only when there actually
+   is; these classes are toggled by useEdgeFade based on real scroll
+   position, so a row that fits on screen (or a chip already scrolled flush
+   against one end) never looks faded for no reason. */
+.chips--fade-left {
+  mask-image: linear-gradient(to right, transparent, black 16px, black 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black 100%);
+}
+.chips--fade-right {
+  mask-image: linear-gradient(to right, black 0%, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black 0%, black calc(100% - 24px), transparent);
+}
+.chips--fade-left.chips--fade-right {
   mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
 }

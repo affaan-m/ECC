@@ -23,6 +23,7 @@ import { requestNotificationPermission, notificationsSupported } from '../data/n
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 import { computeWeeklyRecap } from '../data/weeklyRecap.js';
 import { computeNudges } from '../data/nudges.js';
+import { useEdgeFade } from '../data/useEdgeFade.js';
 import { useToast } from '../data/toast.jsx';
 import { useCountUp } from '../data/useCountUp.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
@@ -203,6 +204,8 @@ export default function HomePage() {
   const [newTaskText, setNewTaskText] = useState('');
   const [editingTask, setEditingTask] = useState(null);
   const initialTaskJson = useRef('');
+  const reminderChipsRef = useRef(null);
+  const reminderChipsFade = useEdgeFade(reminderChipsRef, [editingTask?.id]);
   const tasks = useMemo(
     () => [...(state.tasks || [])].sort((a, b) => Number(a.done) - Number(b.done)),
     [state.tasks]
@@ -793,7 +796,10 @@ export default function HomePage() {
             {editingTask.dueDate && editingTask.dueTime && (
               <div className="field">
                 <span>Remind me</span>
-                <div className="chips">
+                <div
+                  ref={reminderChipsRef}
+                  className={`chips${reminderChipsFade.left ? ' chips--fade-left' : ''}${reminderChipsFade.right ? ' chips--fade-right' : ''}`}
+                >
                   {TASK_REMINDER_OFFSETS.map((o) => (
                     <button
                       key={o.mins}

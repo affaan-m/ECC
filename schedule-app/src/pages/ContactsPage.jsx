@@ -12,6 +12,7 @@ import { syncContactAddressPin } from '../data/geocode.js';
 import { parseVCard, generateVCard } from '../data/vcard.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
 import { useToast } from '../data/toast.jsx';
+import { useEdgeFade } from '../data/useEdgeFade.js';
 
 // A contact is "overdue" when the time since last contact (or since they were
 // added, if never contacted) meets or exceeds their reconnect cadence.
@@ -84,6 +85,7 @@ export default function ContactsPage() {
 
   const reconnectDays = state.settings?.reconnectDays ?? 30;
   const iconSize = state.settings?.contactIconSize || 'md';
+  const chipsRef = useRef(null);
 
   const statusById = useMemo(
     () => Object.fromEntries(state.statuses.map((s) => [s.id, s])),
@@ -174,6 +176,7 @@ export default function ContactsPage() {
   };
 
   const isPro = !!state.settings?.isPro;
+  const chipsFade = useEdgeFade(chipsRef, [overdue.length, isPro, state.statuses.length]);
 
   const vcfFileRef = useRef(null);
   const importVCard = (e) => {
@@ -232,7 +235,10 @@ export default function ContactsPage() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search name, tag, or note"
         />
-        <div className="chips">
+        <div
+          ref={chipsRef}
+          className={`chips${chipsFade.left ? ' chips--fade-left' : ''}${chipsFade.right ? ' chips--fade-right' : ''}`}
+        >
           <button className={`chip${!filter ? ' chip--on' : ''}`} onClick={() => setFilter('')}>
             All
           </button>

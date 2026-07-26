@@ -39,6 +39,7 @@ import {
   WEEKDAY_LETTERS,
   goalKey,
 } from '../data/helpers.js';
+import { useEdgeFade } from '../data/useEdgeFade.js';
 
 const DAY_START = 6;
 const DAY_END = 23;
@@ -1749,6 +1750,8 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
   const [scheduling, setScheduling] = useState(false);
+  const typeChipsRef = useRef(null);
+  const typeChipsFade = useEdgeFade(typeChipsRef, [eventTypes.length, draft?.typeId]);
   const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
 
   const key = editing ? `${editing.id || 'new'}|${editing.recDate || editing.date}|${editing.start}` : null;
@@ -1918,7 +1921,10 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         {eventTypes.length > 0 && (
           <div className="field">
             <span>Type</span>
-            <div className="chips">
+            <div
+              ref={typeChipsRef}
+              className={`chips${typeChipsFade.left ? ' chips--fade-left' : ''}${typeChipsFade.right ? ' chips--fade-right' : ''}`}
+            >
               <button className={`chip${!draft.typeId ? ' chip--on' : ''}`} onClick={() => setDraft({ ...draft, typeId: '' })}>
                 None
               </button>
