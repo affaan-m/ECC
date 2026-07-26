@@ -244,7 +244,9 @@ async function runTests() {
     const result = await runInlineHook(blockingHook.hooks[0].command);
 
     assert.ok(result.stderr.includes('BLOCKED'), 'Blocking hook should output BLOCKED');
-    assert.strictEqual(result.code, 1, 'Blocking hook should exit with code 1');
+    // Claude Code only blocks a PreToolUse tool call on exit code 2;
+    // exit 1 is a non-blocking error.
+    assert.strictEqual(result.code, 2, 'Blocking hook should exit with code 2');
   })) passed++; else failed++;
 
   // ==========================================
@@ -257,12 +259,13 @@ async function runTests() {
     assert.strictEqual(result.code, 0, 'Non-blocking hook should exit 0');
   })) passed++; else failed++;
 
-  if (await asyncTest('blocking hooks exit with code 1', async () => {
-    // The dev server blocker always blocks
+  if (await asyncTest('blocking hooks exit with code 2', async () => {
+    // The dev server blocker always blocks; only exit code 2 actually
+    // blocks the tool call in Claude Code.
     const blockingHook = projectHooks.hooks.PreToolUse[0];
     const result = await runInlineHook(blockingHook.hooks[0].command);
 
-    assert.strictEqual(result.code, 1, 'Blocking hook should exit 1');
+    assert.strictEqual(result.code, 2, 'Blocking hook should exit 2');
   })) passed++; else failed++;
 
   if (await asyncTest('hooks handle missing files gracefully', async () => {

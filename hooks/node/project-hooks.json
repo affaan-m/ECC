@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun -e \"console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');console.error('[Hook] Use: tmux new-session -d -s dev \\\"bun run dev\\\"');console.error('[Hook] Then: tmux attach -t dev');process.exit(1)\""
+            "command": "bun -e \"console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');console.error('[Hook] Use: tmux new-session -d -s dev \\\"bun run dev\\\"');console.error('[Hook] Then: tmux attach -t dev');process.exit(2)\""
           }
         ]
       },

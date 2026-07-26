@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Dev server must run in tmux for log access\\n[Hook] Use: tmux new-session -d -s dev \\\"uv run manage.py runserver\\\"\\n[Hook] Then: tmux attach -t dev\\n'); sys.exit(1)\""
+            "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Dev server must run in tmux for log access\\n[Hook] Use: tmux new-session -d -s dev \\\"uv run manage.py runserver\\\"\\n[Hook] Then: tmux attach -t dev\\n'); sys.exit(2)\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Use uv instead of pip install\\n[Hook] Use: uv sync --group <group> or uv sync --extra <extra>\\n[Hook] Example: uv sync --group docs --group dev\\n[Hook] Example: uv sync --group docs --group dev --extra cu128\\n'); sys.exit(1)\""
+            "command": "uv run python3 -c \"import sys; sys.stderr.write('[Hook] BLOCKED: Use uv instead of pip install\\n[Hook] Use: uv sync --group <group> or uv sync --extra <extra>\\n[Hook] Example: uv sync --group docs --group dev\\n[Hook] Example: uv sync --group docs --group dev --extra cu128\\n'); sys.exit(2)\""
           }
         ]
       },

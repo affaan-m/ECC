@@ -12,11 +12,11 @@
         ]
       },
       {
-        "matcher": "tool == \"Write\" && tool_input.file_path matches \"\\\\.(md|txt)$\" && !(tool_input.file_path matches \"README\\\\.md|CLAUDE\\\\.md|AGENTS\\\\.md|CONTRIBUTING\\\\.md\")",
+        "matcher": "tool == \"Write\" && tool_input.file_path matches \"\\\\.(md|txt)$\" && !(tool_input.file_path matches \"README\\\\.md|CLAUDE\\\\.md|AGENTS\\\\.md|CONTRIBUTING\\\\.md|IMPLEMENTATION_PLAN\\\\.md|SKILL\\\\.md\")",
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); (re.search(r'\\.(md|txt)$',p) and not re.search(r'(README|CLAUDE|AGENTS|CONTRIBUTING)\\.md$',p)) and (sys.stderr.write('[Hook] BLOCKED: Unnecessary documentation file creation\\n[Hook] File: '+p+'\\n[Hook] Use README.md for documentation instead\\n') or sys.exit(1)); print(d,end='')\""
+            "command": "uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); (re.search(r'\\.(md|txt)$',p) and not re.search(r'(README|CLAUDE|AGENTS|CONTRIBUTING|IMPLEMENTATION_PLAN|SKILL)\\.md$',p)) and (sys.stderr.write('[Hook] BLOCKED: Unnecessary documentation file creation\\n[Hook] File: '+p+'\\n[Hook] Use README.md for documentation instead\\n'), sys.exit(2)); print(d,end='')\""
           }
         ]
       }

@@ -1,8 +1,8 @@
 # Coding Style
 
-## Immutability (CRITICAL)
+## Immutability
 
-ALWAYS create new objects, NEVER mutate existing ones:
+Prefer creating new objects over mutating existing ones:
 
 ```
 // Pseudocode
@@ -42,19 +42,20 @@ MANY SMALL FILES > FEW LARGE FILES:
 
 ## Error Handling
 
-ALWAYS handle errors comprehensively:
-- Handle errors explicitly at every level
+Handle errors explicitly; don't silently swallow them:
 - Provide user-friendly error messages in UI-facing code
 - Log detailed error context on the server side
-- Never silently swallow errors
+- Trust internal code and framework guarantees — comprehensive
+  handling belongs at system boundaries, not on every internal call
 
 ## Input Validation
 
-ALWAYS validate at system boundaries:
-- Validate all user input before processing
+Validate at system boundaries (user input, external APIs, file
+content):
 - Use schema-based validation where available
 - Fail fast with clear error messages
-- Never trust external data (API responses, user input, file content)
+- Don't trust external data; don't add validation for internal
+  scenarios that cannot happen
 
 ## Naming Conventions
 
