@@ -105,12 +105,38 @@ Both work the same way for this service:
 | `POST /api/billing/portal` | Clerk session | returns `{ url }` for Stripe's hosted subscription-management page |
 | `POST /api/webhooks/clerk` | Clerk webhook signature | keeps `User.email` in sync |
 | `POST /api/webhooks/stripe` | Stripe webhook signature | keeps subscription status in sync |
+| `GET /api/calendars` | Clerk session | calendars you're a member of, with your role on each |
+| `POST /api/calendars` | Clerk session | body `{ name, color? }`, creates a calendar with you as owner |
+| `GET /api/calendars/:id` | Clerk session, member | `{ calendar, role, members, events }` |
+| `PATCH /api/calendars/:id` | Clerk session, owner | body `{ name?, color? }` |
+| `DELETE /api/calendars/:id` | Clerk session, owner | |
+| `DELETE /api/calendars/:id/members/:memberId` | Clerk session, self or owner | can't remove the owner |
+| `GET /api/calendars/:id/invites` | Clerk session, owner | pending invites |
+| `POST /api/calendars/:id/invites` | Clerk session, owner/editor | body `{ email, role? }`, returns `{ invite }` (send the `token` yourself — no email is sent) |
+| `DELETE /api/calendars/:id/invites/:inviteId` | Clerk session, owner | revoke a pending invite |
+| `POST /api/calendars/invites/:token/accept` | Clerk session | joins the calendar the token was issued for |
+| `POST /api/calendars/:id/events` | Clerk session, owner/editor | body `{ title, date, start, end, notes? }` |
+| `PATCH /api/calendars/:id/events/:eventId` | Clerk session, owner/editor | |
+| `DELETE /api/calendars/:id/events/:eventId` | Clerk session, owner/editor | |
 
 Authenticated routes expect `Authorization: Bearer <clerk session token>` —
 the frontend gets this from Clerk's `useAuth().getToken()`.
 
 ## Known gaps / next steps
 
+- **Shared calendars are scaffolded but not migrated.** The
+  `SharedCalendar` / `SharedCalendarMember` / `SharedCalendarInvite` /
+  `SharedEvent` models exist in `prisma/schema.prisma` and the routes in
+  `src/routes/calendars.js` are wired up, but no migration has been run
+  against any database — run `npm run db:migrate` (creates one against
+  your local dev DB) or `npm run db:deploy` (applies pending migrations,
+  for CI/production) once you're ready to turn this on. Invites don't send
+  an email; `POST /api/calendars/:id/invites` just returns the invite
+  (with its `token`) for you to deliver however you like (a `mailto:`
+  link, copy-to-clipboard, etc.) — see `schedule-app/src/pages/
+  SharedCalendarsPage.jsx` for the frontend that already expects this
+  shape. Shared events are intentionally simple (no recurrence) — see the
+  schema comment for why.
 - Data sync (`/api/data`) stores the whole app state as one JSON blob per
   user — simple last-write-wins across a person's own devices, not a
   conflict-resolving multi-editor sync. It's a real prerequisite for any

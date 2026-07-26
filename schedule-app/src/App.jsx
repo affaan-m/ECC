@@ -21,6 +21,9 @@ import ContactTimelinePage from './pages/ContactTimelinePage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import RoutePlannerPage from './pages/RoutePlannerPage.jsx';
 import MorePage from './pages/MorePage.jsx';
+import SharedCalendarsPage from './pages/SharedCalendarsPage.jsx';
+import SharedCalendarDetailPage from './pages/SharedCalendarDetailPage.jsx';
+import SharedCalendarJoinPage from './pages/SharedCalendarJoinPage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
 import SearchPage from './pages/SearchPage.jsx';
 import { useStore, useActions } from './data/store.jsx';
@@ -366,6 +369,9 @@ export default function App() {
           <Route path="/map" element={<MapPage />} />
           <Route path="/plan-day" element={<RoutePlannerPage />} />
           <Route path="/more" element={<MorePage />} />
+          <Route path="/shared-calendars" element={<SharedCalendarsPage />} />
+          <Route path="/shared-calendars/join/:token" element={<SharedCalendarJoinPage />} />
+          <Route path="/shared-calendars/:id" element={<SharedCalendarDetailPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

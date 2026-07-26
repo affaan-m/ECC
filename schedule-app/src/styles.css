@@ -2623,6 +2623,17 @@ textarea {
 .mini-title {
   font-weight: 600;
 }
+.mini-event-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
 
 /* --- Map ---------------------------------------------------------------- */
 .map-page {

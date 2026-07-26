@@ -31,4 +31,32 @@ export const fetchSyncedData = (getToken) => request('/api/data', { getToken });
 export const pushSyncedData = (getToken, data) =>
   request('/api/data', { getToken, method: 'PUT', body: { data } });
 
+// Shared calendars — invite someone to see/add simple events with you.
+// Backend-only feature (see backend/README.md's "Known gaps" section for
+// what still needs deploying before these calls will succeed).
+export const fetchCalendars = (getToken) => request('/api/calendars', { getToken });
+export const createCalendar = (getToken, name, color) =>
+  request('/api/calendars', { getToken, method: 'POST', body: { name, color } });
+export const fetchCalendar = (getToken, id) => request(`/api/calendars/${id}`, { getToken });
+export const renameCalendar = (getToken, id, patch) =>
+  request(`/api/calendars/${id}`, { getToken, method: 'PATCH', body: patch });
+export const deleteCalendar = (getToken, id) =>
+  request(`/api/calendars/${id}`, { getToken, method: 'DELETE' });
+export const removeCalendarMember = (getToken, id, memberId) =>
+  request(`/api/calendars/${id}/members/${memberId}`, { getToken, method: 'DELETE' });
+export const fetchCalendarInvites = (getToken, id) =>
+  request(`/api/calendars/${id}/invites`, { getToken });
+export const inviteToCalendar = (getToken, id, email, role) =>
+  request(`/api/calendars/${id}/invites`, { getToken, method: 'POST', body: { email, role } });
+export const revokeCalendarInvite = (getToken, id, inviteId) =>
+  request(`/api/calendars/${id}/invites/${inviteId}`, { getToken, method: 'DELETE' });
+export const acceptCalendarInvite = (getToken, token) =>
+  request(`/api/calendars/invites/${token}/accept`, { getToken, method: 'POST' });
+export const addSharedEvent = (getToken, id, event) =>
+  request(`/api/calendars/${id}/events`, { getToken, method: 'POST', body: event });
+export const updateSharedEvent = (getToken, id, eventId, patch) =>
+  request(`/api/calendars/${id}/events/${eventId}`, { getToken, method: 'PATCH', body: patch });
+export const deleteSharedEvent = (getToken, id, eventId) =>
+  request(`/api/calendars/${id}/events/${eventId}`, { getToken, method: 'DELETE' });
+
 export const backendConfigured = () => !!BASE_URL;

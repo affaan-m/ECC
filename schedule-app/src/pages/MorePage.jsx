@@ -295,6 +295,17 @@ export default function MorePage() {
       </section>
 
       <section className="detail-section">
+        <span className="detail-label">Shared calendars</span>
+        <p className="muted small">Invite someone to see or add events with you on a calendar you both share.</p>
+        <button
+          className="btn btn-ghost full"
+          onClick={() => (isPro ? navigate('/shared-calendars') : navigate('/pricing'))}
+        >
+          👥 Manage shared calendars {!isPro && '· Pro'}
+        </button>
+      </section>
+
+      <section className="detail-section">
         <span className="detail-label">Calendar import / export</span>
         <p className="muted small">Move events to or from other calendar apps using the .ics format.</p>
         <div className="stack-btns">

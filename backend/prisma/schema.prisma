@@ -23,6 +23,8 @@ model User {
   updatedAt            DateTime  @updatedAt
 
   data                 UserData?
+  ownedCalendars       SharedCalendar[]       @relation("OwnedCalendars")
+  calendarMemberships  SharedCalendarMember[]
 }
 
 // The whole app data blob (goals, events, contacts, notes, ...) as one JSON
@@ -36,4 +38,71 @@ model UserData {
   data      Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// --- Shared calendars --------------------------------------------------
+//
+// A calendar someone owns and invites others to see/edit — deliberately a
+// separate relational model from UserData rather than trying to make the
+// per-user JSON blob multi-writer. Each SharedEvent here is a simple,
+// non-recurring event; the richer recurring-event model in each person's
+// private blob stays local-only for now (recurrence, per-occurrence
+// overrides, etc. would need real conflict resolution to share safely).
+
+model SharedCalendar {
+  id        String    @id @default(cuid())
+  name      String
+  color     String    @default("#0f8f72")
+  ownerId   String
+  owner     User      @relation("OwnedCalendars", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  members SharedCalendarMember[]
+  invites SharedCalendarInvite[]
+  events  SharedEvent[]
+}
+
+// Everyone who can see a calendar, including the owner (added as an
+// "owner" member at creation time) — so "which calendars can I see" is one
+// query against this table instead of a union with SharedCalendar.ownerId.
+model SharedCalendarMember {
+  id         String         @id @default(cuid())
+  calendarId String
+  calendar   SharedCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       String         @default("editor") // owner | editor | viewer
+  joinedAt   DateTime       @default(now())
+
+  @@unique([calendarId, userId])
+}
+
+// A pending invite by email, accepted via a tokenized link — the invited
+// person doesn't need to exist as a User yet when the invite is created.
+model SharedCalendarInvite {
+  id         String         @id @default(cuid())
+  calendarId String
+  calendar   SharedCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  email      String
+  token      String         @unique @default(cuid())
+  role       String         @default("editor")
+  invitedBy  String
+  createdAt  DateTime       @default(now())
+  expiresAt  DateTime
+  acceptedAt DateTime?
+}
+
+model SharedEvent {
+  id         String         @id @default(cuid())
+  calendarId String
+  calendar   SharedCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  title      String
+  date       String // YYYY-MM-DD
+  start      String // HH:MM
+  end        String // HH:MM
+  notes      String         @default("")
+  createdBy  String
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 }
