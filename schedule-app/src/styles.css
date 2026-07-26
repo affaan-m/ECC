@@ -661,6 +661,22 @@ textarea {
   border-radius: 99px;
   padding: 3px 7px;
 }
+.streak-badge--frozen {
+  color: var(--accent);
+}
+.freeze-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 4px;
+  margin: -6px 0 10px;
+  cursor: pointer;
+}
 .progress-track {
   height: 8px;
   background: var(--track);

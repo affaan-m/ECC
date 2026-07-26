@@ -4,12 +4,13 @@ import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
 import Tutorial from './components/Tutorial.jsx';
-import { runReminderScan } from './data/notifications.js';
+import { runReminderScan, notify, notificationPermission } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick, selectTick, successTick } from './data/haptics.js';
-import { setUse24hFormat, setSundayWeekStart } from './data/helpers.js';
+import { setUse24hFormat, setSundayWeekStart, distanceMeters } from './data/helpers.js';
 import { setHapticsEnabled } from './data/haptics.js';
 import { fetchMe, backendConfigured, fetchSyncedData, pushSyncedData } from './data/api.js';
 import { CLERK_ENABLED } from './data/clerkConfig.js';
+import { useToast } from './data/toast.jsx';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
@@ -107,6 +108,63 @@ function DataSync() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, active]);
+
+  return null;
+}
+
+// Best-effort "you've arrived" reminders for pins the user opted in to (Map →
+// edit a pin → Arrival reminder). A PWA has no true background geofencing —
+// especially on iOS, which has neither a Geofencing API nor reliable
+// background geolocation for web apps — so this only ever watches position
+// while Keystone is open in a tab (foreground or briefly backgrounded), the
+// same honest limitation as the existing time-based reminder scanner above.
+function ArrivalWatch() {
+  const { state } = useStore();
+  const showToast = useToast();
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const insideRef = useRef(new Set()); // pin ids currently inside their radius
+  const watchIdRef = useRef(null);
+
+  const enabled = !!state.settings?.locationRemindersEnabled;
+  const armedPins = (state.pins || []).filter((p) => p.arriveRadius > 0);
+  const hasArmedPins = armedPins.length > 0;
+
+  useEffect(() => {
+    if (!enabled || !hasArmedPins || !navigator.geolocation) return undefined;
+
+    const onPosition = (pos) => {
+      const { latitude, longitude } = pos.coords;
+      for (const p of (stateRef.current.pins || []).filter((x) => x.arriveRadius > 0)) {
+        const dist = distanceMeters(latitude, longitude, p.lat, p.lng);
+        const isInside = dist <= p.arriveRadius;
+        const wasInside = insideRef.current.has(p.id);
+        if (isInside && !wasInside) {
+          insideRef.current.add(p.id);
+          warnTick();
+          const label = p.label || 'a saved place';
+          showToast(`You've arrived near ${label}`);
+          if (notificationPermission() === 'granted') {
+            notify('You have arrived', `Near ${label}`);
+          }
+        } else if (!isInside && wasInside) {
+          insideRef.current.delete(p.id);
+        }
+      }
+    };
+
+    const watchId = navigator.geolocation.watchPosition(onPosition, () => {}, {
+      enableHighAccuracy: false,
+      maximumAge: 20000,
+      timeout: 20000,
+    });
+    watchIdRef.current = watchId;
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      watchIdRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, hasArmedPins]);
 
   return null;
 }
@@ -293,6 +351,7 @@ export default function App() {
     <div className="app">
       {CLERK_ENABLED && <SubscriptionSync />}
       {CLERK_ENABLED && <DataSync />}
+      <ArrivalWatch />
       <main className="app-main" key={location.pathname}>
         <Routes>
           <Route path="/" element={<HomePage />} />

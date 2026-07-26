@@ -24,7 +24,7 @@ export async function requestNotificationPermission() {
   }
 }
 
-function notify(title, body) {
+export function notify(title, body) {
   if (notificationPermission() !== 'granted') return;
   try {
     // Prefer the service worker registration so notifications survive when the

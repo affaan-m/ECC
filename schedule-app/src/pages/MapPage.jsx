@@ -87,6 +87,7 @@ export default function MapPage() {
         lat: e.latlng.lat,
         lng: e.latlng.lng,
         contactId: pendingContact || '',
+        arriveRadius: 0,
       });
       setPendingContact('');
     } else {
@@ -327,6 +328,7 @@ export default function MapPage() {
       lat: editing.lat,
       lng: editing.lng,
       contactId: editing.contactId || '',
+      arriveRadius: Number(editing.arriveRadius) || 0,
     };
     if (editing.id) {
       actions.updatePin({ ...editing, ...payload });
@@ -460,7 +462,7 @@ export default function MapPage() {
             className="temp-pin-action"
             data-haptic="none"
             onClick={() => {
-              setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '' });
+              setEditing({ emoji: '📍', label: '', notes: '', lat: tempPin.lat, lng: tempPin.lng, contactId: '', arriveRadius: 0 });
               setTempPin(null);
             }}
             aria-label="Save as pin"
@@ -586,6 +588,24 @@ export default function MapPage() {
                 options={[{ value: '', label: 'No one' }, ...state.contacts.map((c) => ({ value: c.id, label: c.name }))]}
               />
             </label>
+            <label className="field">
+              <span>Arrival reminder</span>
+              <Select
+                value={String(editing.arriveRadius || 0)}
+                onChange={(v) => setEditing({ ...editing, arriveRadius: Number(v) })}
+                options={[
+                  { value: '0', label: 'Off' },
+                  { value: '100', label: 'Notify within 100m' },
+                  { value: '250', label: 'Notify within 250m' },
+                  { value: '500', label: 'Notify within 500m' },
+                ]}
+              />
+            </label>
+            {editing.arriveRadius > 0 && (
+              <p className="muted small">
+                Turn on Arrival reminders in More → Settings, and keep Keystone open, to get notified.
+              </p>
+            )}
             <p className="muted small">
               Location: {editing.lat.toFixed(5)}, {editing.lng.toFixed(5)}
             </p>

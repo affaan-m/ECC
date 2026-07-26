@@ -230,6 +230,20 @@ export function initials(name) {
     .join('');
 }
 
+// --- Geo --------------------------------------------------------------------
+
+// Great-circle distance between two lat/lng points, in meters (haversine).
+export function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
 // --- Goals -----------------------------------------------------------------
 
 // The progress key for a goal in a given date context: daily goals track by
@@ -242,14 +256,20 @@ export function goalKey(period, date) {
 // has been met, counting back from now. Today/this week doesn't have to be
 // met yet for the streak to still count — an unfinished-but-not-over period
 // shouldn't zero out an otherwise-alive streak, so counting starts from
-// yesterday/last week instead when the current one isn't done yet.
+// yesterday/last week instead when the current one isn't done yet. A period
+// listed in goal.frozenKeys counts as met even if its target wasn't hit —
+// that's a manually-spent streak freeze protecting a missed day.
 export function computeGoalStreak(goal) {
   const target = goal.target || 0;
   if (target <= 0) return 0;
   const progress = goal.progress || {};
+  const frozen = goal.frozenKeys || [];
   const period = goal.period || 'weekly';
   const step = period === 'daily' ? 1 : 7;
-  const met = (d) => (progress[goalKey(period, d)] || 0) >= target;
+  const met = (d) => {
+    const key = goalKey(period, d);
+    return (progress[key] || 0) >= target || frozen.includes(key);
+  };
 
   let cursor = new Date();
   if (!met(cursor)) cursor = addDays(cursor, -step);
@@ -259,6 +279,14 @@ export function computeGoalStreak(goal) {
     cursor = addDays(cursor, -step);
   }
   return count;
+}
+
+// Every goal starts with a small, non-replenishing pool of streak freezes —
+// spending one protects the current day/week's streak even if its target
+// goes unmet, the same "streak repair" idea as Duolingo's freeze.
+export const DEFAULT_GOAL_FREEZES = 2;
+export function goalFreezesLeft(goal) {
+  return goal.freezesAvailable ?? DEFAULT_GOAL_FREEZES;
 }
 
 // --- Recurring events ------------------------------------------------------

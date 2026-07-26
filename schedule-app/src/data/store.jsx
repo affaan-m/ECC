@@ -32,6 +32,7 @@ function loadState() {
         theme: 'system',
         reconnectDays: 30,
         notifications: false,
+        locationRemindersEnabled: false,
         isPro: false,
         colorScheme: 'default',
         timelineZoom: 1,

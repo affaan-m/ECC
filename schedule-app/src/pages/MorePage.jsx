@@ -635,6 +635,28 @@ export default function MorePage() {
       </section>
 
       <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Arrival reminders</span>
+          <button
+            className={`toggle${state.settings?.locationRemindersEnabled ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={!!state.settings?.locationRemindersEnabled}
+            onClick={() =>
+              actions.setSettings({ locationRemindersEnabled: !state.settings?.locationRemindersEnabled })
+            }
+            disabled={!navigator.geolocation}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">
+          {navigator.geolocation
+            ? 'Get notified when you’re near a place you’ve pinned on the Map with a reminder radius set. Only works while Keystone is open — a web app can’t track your location in the background.'
+            : 'This browser doesn’t support location.'}
+        </p>
+      </section>
+
+      <section className="detail-section">
         <span className="detail-label">Reconnect reminders</span>
         <p className="muted small">
           Flag people on the People tab when you haven't been in touch for this long.

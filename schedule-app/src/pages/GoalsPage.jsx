@@ -19,6 +19,7 @@ import {
   formatDayLabel,
   isToday,
   computeGoalStreak,
+  goalFreezesLeft,
   WEEKDAY_LETTERS,
 } from '../data/helpers.js';
 import {
@@ -127,6 +128,17 @@ export default function GoalsPage() {
     actions.setGoalProgress(goalId, periodKey, next);
     if (delta > 0 && !wasDone && next >= g.target) successTick();
     else if (repeatTick) selectTick();
+  };
+  const useFreeze = (g, periodKey) => {
+    if ((g.frozenKeys || []).includes(periodKey)) return;
+    const left = goalFreezesLeft(g);
+    if (left <= 0) return;
+    actions.updateGoal({
+      ...g,
+      frozenKeys: [...(g.frozenKeys || []), periodKey],
+      freezesAvailable: left - 1,
+    });
+    successTick();
   };
   const clearHold = (holdKey) => {
     const h = holdRef.current[holdKey];
@@ -291,69 +303,90 @@ export default function GoalsPage() {
               const pct = g.target ? Math.min(100, Math.round((value / g.target) * 100)) : 0;
               const done = value >= g.target;
               const streak = computeGoalStreak(g);
+              const frozenHere = (g.frozenKeys || []).includes(key);
+              const freezesLeft = goalFreezesLeft(g);
+              // Freezing only makes sense for the period actually in progress
+              // right now — not some other day/week the user has navigated to.
+              const canFreeze = atCurrent && !done && !frozenHere && freezesLeft > 0 && streak >= 1;
               return (
-                <div key={g.id} className={`goal-card${done ? ' goal-card--done' : ''}`}>
-                  <button className="goal-info" onClick={() => openEdit(g)}>
-                    <div className="goal-title-row">
-                      <span className="goal-title">{g.title}</span>
-                      {/* Only worth flagging once it's actually a streak — a
-                          single completion doesn't need a badge. */}
-                      {streak >= 2 && (
-                        <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
-                          🔥 <AnimatedNumber value={streak} />
-                        </span>
-                      )}
-                      {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}
-                      {done && <span className="check-badge" aria-label="Goal met">✓</span>}
-                    </div>
-                    <div className="progress-track">
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="goal-count">
-                      {value} / {g.target} {g.unit}
-                    </span>
-                  </button>
-                  <div className="stepper">
-                    <button
-                      className="step-btn"
-                      data-haptic="select"
-                      onPointerDown={() => startHold(g.id, key, -1)}
-                      onPointerUp={() => endHold(g.id, -1)}
-                      onPointerLeave={() => clearHold(`${g.id}:-1`)}
-                      onPointerCancel={() => clearHold(`${g.id}:-1`)}
-                      onClick={() => {
-                        const holdKey = `${g.id}:-1`;
-                        if (suppressClickRef.current === holdKey) {
-                          suppressClickRef.current = null;
-                          return;
-                        }
-                        applyDelta(g.id, key, -1);
-                      }}
-                      disabled={value <= 0}
-                      aria-label={`Decrease ${g.title}`}
-                    >
-                      −
+                <div key={g.id}>
+                  <div className={`goal-card${done ? ' goal-card--done' : ''}`}>
+                    <button className="goal-info" onClick={() => openEdit(g)}>
+                      <div className="goal-title-row">
+                        <span className="goal-title">{g.title}</span>
+                        {/* Only worth flagging once it's actually a streak — a
+                            single completion doesn't need a badge. */}
+                        {streak >= 2 && (
+                          <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
+                            🔥 <AnimatedNumber value={streak} />
+                          </span>
+                        )}
+                        {frozenHere && (
+                          <span className="streak-badge streak-badge--frozen" title="This period is protected by a streak freeze">
+                            ❄️ Protected
+                          </span>
+                        )}
+                        {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}
+                        {done && <span className="check-badge" aria-label="Goal met">✓</span>}
+                      </div>
+                      <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="goal-count">
+                        {value} / {g.target} {g.unit}
+                      </span>
                     </button>
-                    <button
-                      className="step-btn step-btn--plus"
-                      data-haptic={!done && value + 1 >= g.target ? 'none' : 'select'}
-                      onPointerDown={() => startHold(g.id, key, 1)}
-                      onPointerUp={() => endHold(g.id, 1)}
-                      onPointerLeave={() => clearHold(`${g.id}:1`)}
-                      onPointerCancel={() => clearHold(`${g.id}:1`)}
-                      onClick={() => {
-                        const holdKey = `${g.id}:1`;
-                        if (suppressClickRef.current === holdKey) {
-                          suppressClickRef.current = null;
-                          return;
-                        }
-                        applyDelta(g.id, key, 1);
-                      }}
-                      aria-label={`Increase ${g.title}`}
-                    >
-                      +
-                    </button>
+                    <div className="stepper">
+                      <button
+                        className="step-btn"
+                        data-haptic="select"
+                        onPointerDown={() => startHold(g.id, key, -1)}
+                        onPointerUp={() => endHold(g.id, -1)}
+                        onPointerLeave={() => clearHold(`${g.id}:-1`)}
+                        onPointerCancel={() => clearHold(`${g.id}:-1`)}
+                        onClick={() => {
+                          const holdKey = `${g.id}:-1`;
+                          if (suppressClickRef.current === holdKey) {
+                            suppressClickRef.current = null;
+                            return;
+                          }
+                          applyDelta(g.id, key, -1);
+                        }}
+                        disabled={value <= 0}
+                        aria-label={`Decrease ${g.title}`}
+                      >
+                        −
+                      </button>
+                      <button
+                        className="step-btn step-btn--plus"
+                        data-haptic={!done && value + 1 >= g.target ? 'none' : 'select'}
+                        onPointerDown={() => startHold(g.id, key, 1)}
+                        onPointerUp={() => endHold(g.id, 1)}
+                        onPointerLeave={() => clearHold(`${g.id}:1`)}
+                        onPointerCancel={() => clearHold(`${g.id}:1`)}
+                        onClick={() => {
+                          const holdKey = `${g.id}:1`;
+                          if (suppressClickRef.current === holdKey) {
+                            suppressClickRef.current = null;
+                            return;
+                          }
+                          applyDelta(g.id, key, 1);
+                        }}
+                        aria-label={`Increase ${g.title}`}
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
+                  {canFreeze && (
+                    <button
+                      className="freeze-row"
+                      data-haptic="select"
+                      onClick={() => useFreeze(g, key)}
+                    >
+                      ❄️ Use a streak freeze to protect {isDaily ? 'today' : 'this week'} ({freezesLeft} left)
+                    </button>
+                  )}
                 </div>
               );
             })}
