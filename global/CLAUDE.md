@@ -5,161 +5,60 @@
 - **Code, commits, PR/MR**: English
 - **Conversation with user**: Korean
 
-## Before Writing Any Code
+## Before Writing Code
 
-Always orient yourself first:
-
-- Read existing code in the affected area before making changes
-- Match the project's naming conventions, patterns, and idioms
-- Check how similar problems were solved elsewhere in the codebase
-- If a local `CLAUDE.md` or style guide exists, read it before proceeding
-
-## Scope Assessment
-
-Before choosing Simple vs Complex path:
-
-- Files affected: 1–2 → Simple candidate
-- Files affected: 3+ or cross-directory → Complex
-- Risky/irreversible change → Complex regardless of size
-
-## Simple Changes
-
-Trivial fixes (typos, single-line, obvious bugs):
-
-1. Create branch (`<type>/<short-description>`) & worktree
-2. Fix → verify → commit
-3. PR/MR (with user confirmation)
-
-Worktree is **always required** — even for simple changes.
-Parallel sessions without isolation cause conflicts.
+Read the affected area first and match the project's existing
+conventions, patterns, and idioms. If a local `CLAUDE.md` or style
+guide exists, follow it. Verify assumptions against the code instead
+of guessing.
 
 ## Git Workflow
 
-- Always create git worktrees inside `.claude/` and make all
-  edits in the worktree branch, never the main checkout.
-- Pull/rebase `origin/main` before starting doc or code work to
-  avoid redundant changes.
+- All work happens on a branch (`<type>/<short-description>`; types:
+  feat, fix, refactor, docs, test, chore, perf, ci) in a git worktree
+  under `.claude/` — never edit the main checkout directly. Parallel
+  sessions without isolation cause conflicts.
+- Pull/rebase `origin/main` before starting doc or code work.
+- Commit at the end of every meaningful stage, not all at once at the
+  end.
+- **Get explicit user confirmation before creating a PR/MR** (GitHub:
+  `gh`, GitLab: `glab`).
 
-## Complex Changes Workflow
+## Planning
 
-### 1. Plan
+Plan before implementing: understand the actual problem, the affected
+code, and the risks; prefer the simplest approach that works. For
+non-trivial work, write the plan to `IMPLEMENTATION_PLAN.md` in the
+worktree root and keep its status current; before removing it, record
+a summary (stages, key decisions, verification results) in the issue
+or PR. The `ship` skill covers the full plan → issue → worktree →
+TDD → PR flow.
 
-**Planning comes first — before writing any code.**
+## Quality Gate
 
-Before doing anything, think through:
-
-- What is the actual problem being solved?
-- What are the edge cases and risks?
-- What parts of the codebase are affected?
-- What is the right approach, and why?
-- Are there simpler alternatives?
-
-Only after this thinking is done, decide whether to document it.
-For non-trivial work, create `IMPLEMENTATION_PLAN.md` in the worktree root:
-
-```markdown
-## Stage N: [Name]
-**Goal**: [Specific deliverable]
-**Success Criteria**: [Testable outcomes]
-**Tests**: [Specific test cases]
-**Status**: [Not Started|In Progress|Complete]
-```
-
-- Update status as you progress
-- Before removing the file, leave a short summary in the related issue and PR/MR:
-  - completed stages
-  - key decisions
-  - verification/test results
-- Remove file only after the summary is recorded
-
-### 2. Create Issue
-
-- GitHub: `gh issue create`
-- GitLab: `glab issue create`
-
-### 3. Create Branch & Worktree
-
-Branch naming: `<type>/<short-description>`
-Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
-
-Worktree policy:
-
-- **Always required** for all changes to prevent
-  conflicts during parallel sessions
-
-### 4. Implement
-
-For each stage: implement → verify quality (lint, format, type check, tests) → **commit**
-
-Commit at the end of **every stage**, not all at once at the end.
-
-### 5. Tests
-
-- If the touched area has a test infrastructure,
-  write/update unit tests for new or changed behavior
-- If user-facing flows are affected and E2E
-  infrastructure exists, create/update E2E tests
-- If no automated test infrastructure exists (common
-  in dotfiles), document manual verification steps
-  and outcomes
-
-### 6. Create PR/MR
-
-**Get explicit user confirmation before creating the PR/MR.**
-
-- GitHub: `gh pr create`
-- GitLab: `glab mr create`
-
-## Testing
-
-- Run long-running test/check commands (`vitest`, `svelte-check`)
-  in background or with explicit single-run flags (for example,
-  `vitest run`), never in watch/foreground mode, to avoid
-  process/fork exhaustion.
+Use the project's own lint/format/type-check/test commands and run
+them against the whole project, not single files. Write or update
+tests for changed behavior when test infrastructure exists; otherwise
+document manual verification steps and outcomes. Run long test
+commands with explicit single-run flags (e.g. `vitest run`), never in
+watch mode.
 
 ## Debugging
 
-- Base bug fixes on empirical evidence (logs, repro) before
-  proposing a root cause; explicitly state and test the hypothesis
-  before implementing.
+Base bug fixes on empirical evidence (logs, repro) before proposing a
+root cause. State the hypothesis and test it before implementing the
+fix.
 
-## Build & Tooling
-
-- Use the project's exact lint/format/test commands (project
-  scripts, not `npx oxfmt` on individual files or `bun test`).
-  Verify the whole project's quality gate, not single files.
-
-## Safety / Cleanup
+## Safety
 
 - Never include destructive commands (`rm -rf`,
   `git worktree remove --force`) in subagent prompts or automated
-  steps; use safe verification and confirm with the user before any
-  cleanup/deletion.
-
-## Definition of Done
-
-- [ ] Tests written and passing
-- [ ] Code follows project conventions
-- [ ] No linter/formatter warnings
-- [ ] Commit messages are clear
-- [ ] Implementation matches plan (if plan exists)
-- [ ] No TODOs without issue numbers
+  steps; confirm with the user before any cleanup or deletion.
+- Never bypass commit hooks (`--no-verify`), disable tests instead of
+  fixing them, or commit code that doesn't compile.
 
 ## When Stuck
 
-Maximum **3 attempts**. After that, stop and report
-to user:
-
-- What you tried and why it failed
-- 2-3 alternative approaches
-- Ask for direction before proceeding
-
-## NEVER
-
-- Use `--no-verify` to bypass commit hooks
-- Disable tests instead of fixing them
-- Commit code that doesn't compile
-- Make assumptions — verify with existing code
-- Keep trying after 3 failed attempts
-- Create a PR/MR without user confirmation
-- Skip planning and jump straight into implementation
+After 3 failed attempts, stop and report: what you tried and why it
+failed, plus 2–3 alternative approaches. Ask for direction before
+continuing.
