@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\nif [ -z \"$TMUX\" ]; then echo '[Hook] BLOCKED: Dev server must run in tmux for log access' >&2; echo '[Hook] Use: tmux new-session -d -s dev \"cargo run\"' >&2; echo '[Hook] Then: tmux attach -t dev' >&2; exit 1; fi"
+            "command": "#!/bin/bash\nif [ -z \"$TMUX\" ]; then echo '[Hook] BLOCKED: Dev server must run in tmux for log access' >&2; echo '[Hook] Use: tmux new-session -d -s dev \"cargo run\"' >&2; echo '[Hook] Then: tmux attach -t dev' >&2; exit 2; fi"
           }
         ]
       },
