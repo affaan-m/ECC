@@ -458,8 +458,9 @@
     {
       "id": "business-content",
       "kind": "skills",
-      "description": "Business, writing, market, and investor communication skills.",
+      "description": "Business, writing, market, investor communication, and analyst operations skills.",
       "paths": [
+        "skills/analyst-ops",
         "skills/article-writing",
         "skills/brand-voice",
         "skills/content-engine",
