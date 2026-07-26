@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { warnTick } from '../data/haptics.js';
 
 const DELETE_THRESHOLD_PX = 90;
@@ -16,12 +16,26 @@ const MOVE_ARM_PX = 8;
 // normally), swallowing the click that would otherwise also fire on
 // whatever button was under the finger — the same swipe-vs-tap pattern
 // used for the calendar's month grid.
-export default function SwipeToDelete({ onDelete, children, disabled }) {
+//
+// Also exposes a `remove()` imperative method via ref so a row's own
+// delete button can trigger the same slide-away-then-onDelete animation
+// as a real swipe, instead of the row just vanishing instantly.
+const SwipeToDelete = forwardRef(function SwipeToDelete({ onDelete, children, disabled }, ref) {
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [removing, setRemoving] = useState(false);
   const gestureRef = useRef(null); // { startX, startY, pointerId, dragging, armed }
   const suppressClickRef = useRef(false);
+
+  useImperativeHandle(ref, () => ({
+    remove: () => {
+      if (removing) return;
+      setDragging(false);
+      setRemoving(true);
+      setDx(-480);
+      setTimeout(() => onDelete(), 200);
+    },
+  }));
 
   const onPointerDown = (e) => {
     if (disabled || removing) return;
@@ -95,7 +109,9 @@ export default function SwipeToDelete({ onDelete, children, disabled }) {
       </div>
     </div>
   );
-}
+});
+
+export default SwipeToDelete;
 
 function DeleteIcon() {
   return (

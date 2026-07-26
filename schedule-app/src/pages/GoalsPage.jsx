@@ -4,6 +4,9 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { successTick, selectTick } from '../data/haptics.js';
+import { useCountUp } from '../data/useCountUp.js';
+import AnimatedNumber from '../components/AnimatedNumber.jsx';
+import MilestoneCelebration from '../components/MilestoneCelebration.jsx';
 import {
   goalKey,
   weekKey,
@@ -41,6 +44,35 @@ export default function GoalsPage() {
   const [day, setDay] = useState(() => todayISO());
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [editing, setEditing] = useState(null);
+  const [celebrate, setCelebrate] = useState(null);
+  const streakSeenRef = useRef(null); // goalId -> last-seen streak, seeded silently on first sight
+
+  // Fire a one-time celebration the moment a goal's streak crosses a
+  // milestone (7/30/100), rather than every time the page happens to render
+  // while already past one — the ref is seeded (not compared) on the very
+  // first sighting of each goal so simply opening the page never retriggers
+  // a milestone the goal already passed in an earlier session.
+  useEffect(() => {
+    const seen = streakSeenRef.current || new Map();
+    const milestones = [7, 30, 100];
+    for (const g of state.goals) {
+      const streak = computeGoalStreak(g);
+      const prev = seen.has(g.id) ? seen.get(g.id) : streak;
+      if (streak > prev) {
+        const crossed = milestones.filter((m) => prev < m && streak >= m).pop();
+        if (crossed) {
+          successTick();
+          setCelebrate({
+            title: g.title,
+            milestone: crossed,
+            periodLabel: (g.period || 'weekly') === 'daily' ? 'day' : 'week',
+          });
+        }
+      }
+      seen.set(g.id, streak);
+    }
+    streakSeenRef.current = seen;
+  }, [state.goals]);
 
   const isDaily = period === 'daily';
   const ctx = isDaily ? fromISODate(day) : weekStart;
@@ -126,6 +158,7 @@ export default function GoalsPage() {
     const met = goals.filter((g) => progressOf(g) >= (g.target || 0) && g.target > 0).length;
     return { target, done, met, pct: target ? Math.round((done / target) * 100) : 0 };
   }, [goals, key]);
+  const shownTotalsPct = useCountUp(totals.pct);
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -187,6 +220,7 @@ export default function GoalsPage() {
 
   return (
     <div className="page">
+      <MilestoneCelebration celebrate={celebrate} onDone={() => setCelebrate(null)} />
       <header className="page-head">
         <div className="page-head-row">
           <Brand>Goals</Brand>
@@ -232,8 +266,8 @@ export default function GoalsPage() {
 
       {goals.length > 0 && (
         <section className="summary-card">
-          <div className="summary-ring" style={ringStyle(totals.pct)}>
-            <span>{totals.pct}%</span>
+          <div className="summary-ring" style={ringStyle(shownTotalsPct)}>
+            <span>{shownTotalsPct}%</span>
           </div>
           <div className="summary-meta">
             <strong>
@@ -266,7 +300,7 @@ export default function GoalsPage() {
                           single completion doesn't need a badge. */}
                       {streak >= 2 && (
                         <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
-                          🔥 {streak}
+                          🔥 <AnimatedNumber value={streak} />
                         </span>
                       )}
                       {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}

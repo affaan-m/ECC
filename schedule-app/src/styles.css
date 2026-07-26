@@ -93,6 +93,22 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Crossfade the theme/color-scheme switch instead of an instant snap.
+   Scoped to body and the main surface containers (not a blanket * rule) so
+   it doesn't fight the many existing per-element transitions elsewhere. */
+body,
+.app,
+.detail-section,
+.summary-card,
+.agenda-day,
+.contact-row,
+.task-row,
+.note-card,
+.goal-card,
+.search-result-row {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
 button,
 input,
 select,
@@ -337,6 +353,24 @@ textarea {
   opacity: 0;
 }
 
+/* --- List row enter animation ---------------------------------------------- */
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.task-row,
+.contact-row,
+.note-card,
+.goal-card {
+  animation: rowIn 0.28s ease both;
+}
+
 /* --- Toast ---------------------------------------------------------------- */
 @keyframes toastIn {
   from {
@@ -385,6 +419,76 @@ textarea {
   font-size: 14px;
   cursor: pointer;
   padding: 4px 6px;
+}
+
+/* --- Milestone celebration -------------------------------------------------- */
+.milestone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.milestone-confetti {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+}
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confettiBurst 0.9s ease-out forwards;
+}
+@keyframes confettiBurst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(320deg);
+  }
+}
+.milestone-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 26px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: milestonePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-align: center;
+}
+.milestone-fire {
+  font-size: 34px;
+  line-height: 1;
+}
+.milestone-card strong {
+  font-size: 17px;
+}
+@keyframes milestonePop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* --- Tab bar ------------------------------------------------------------ */

@@ -19,6 +19,8 @@ import {
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 import { useToast } from '../data/toast.jsx';
+import { useCountUp } from '../data/useCountUp.js';
+import AnimatedNumber from '../components/AnimatedNumber.jsx';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 const TASK_REMINDER_OFFSETS = [
@@ -36,6 +38,7 @@ export default function HomePage() {
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const [editMode, setEditMode] = useState(false);
+  const taskSwipeRefs = useRef(new Map());
 
   // A delete is reversible for a few seconds instead of instant and silent —
   // the add actions preserve the original id when it's included in the
@@ -270,7 +273,11 @@ export default function HomePage() {
               <button key="goals" className="detail-section home-block-goals" onClick={() => navigate('/goals')}>
                 <div className="goals-block-head">
                   <span className="detail-label">🎯 Goals</span>
-                  {bestStreak >= 2 && <span className="streak-badge">🔥 {bestStreak}</span>}
+                  {bestStreak >= 2 && (
+                    <span className="streak-badge">
+                      🔥 <AnimatedNumber value={bestStreak} />
+                    </span>
+                  )}
                 </div>
                 <div className="home-bubble-rings">
                   <MiniRing pct={dailyPct} label="Today" />
@@ -311,7 +318,13 @@ export default function HomePage() {
                 <ul className="task-list">
                   {tasks.map((t) => (
                     <li key={t.id}>
-                      <SwipeToDelete onDelete={() => deleteTaskWithUndo(t)}>
+                      <SwipeToDelete
+                        ref={(el) => {
+                          if (el) taskSwipeRefs.current.set(t.id, el);
+                          else taskSwipeRefs.current.delete(t.id);
+                        }}
+                        onDelete={() => deleteTaskWithUndo(t)}
+                      >
                         <div className="task-row">
                           <button
                             className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
@@ -333,7 +346,11 @@ export default function HomePage() {
                             )}
                           </button>
                           {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
-                          <button className="icon-btn task-del" onClick={() => deleteTaskWithUndo(t)} aria-label="Delete task">
+                          <button
+                            className="icon-btn task-del"
+                            onClick={() => taskSwipeRefs.current.get(t.id)?.remove()}
+                            aria-label="Delete task"
+                          >
                             ✕
                           </button>
                         </div>
@@ -628,10 +645,11 @@ export default function HomePage() {
 }
 
 function MiniRing({ pct, label }) {
+  const shown = useCountUp(pct);
   return (
     <div className="mini-ring-wrap">
-      <div className="mini-ring" style={{ background: `conic-gradient(var(--accent) ${pct * 3.6}deg, var(--track) 0deg)` }}>
-        <span>{pct}%</span>
+      <div className="mini-ring" style={{ background: `conic-gradient(var(--accent) ${shown * 3.6}deg, var(--track) 0deg)` }}>
+        <span>{shown}%</span>
       </div>
       <span className="mini-ring-label">{label}</span>
     </div>
