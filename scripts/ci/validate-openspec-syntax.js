@@ -109,11 +109,12 @@ function parseBlocks(content) {
       continue;
     }
 
-    // HTML comment metadata
-    const commentMatch = line.match(/<!--\s*([a-z_]+):\s*(.*?)\s*-->/);
-    if (commentMatch) {
-      const key = commentMatch[1];
-      const value = commentMatch[2];
+    // HTML comment metadata — handle multiple comments per line
+    const commentRe = /<!--\s*([a-z_]+):\s*(.*?)\s*-->/g;
+    let cm;
+    while ((cm = commentRe.exec(line)) !== null) {
+      const key = cm[1];
+      const value = cm[2];
       if (!VALID_META_KEYS.has(key)) {
         if (!currentBlock.unknownKeys) currentBlock.unknownKeys = [];
         currentBlock.unknownKeys.push({ line: i + 1, key });

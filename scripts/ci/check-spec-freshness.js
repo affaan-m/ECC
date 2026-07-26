@@ -34,7 +34,11 @@ function git(args, opts = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
       ...opts,
     }).trim();
-  } catch {
+  } catch (err) {
+    // Distinguish "git not installed" from command errors
+    if (err.code === 'ENOENT') {
+      throw new Error('git is not available — required for spec freshness checks');
+    }
     return null;
   }
 }
@@ -127,6 +131,11 @@ function main() {
     const now = new Date();
     const ageDays = Math.floor((now - verifiedDate) / (1000 * 60 * 60 * 24));
 
+    // Guard against Invalid Date (e.g., month 13, day 32)
+    if (Number.isNaN(ageDays)) {
+      return { ...spec, status: 'UNVERIFIED', ageDays: null, commitsSince: null, filesChanged: 0, changedFiles: [] };
+    }
+
     // Count commits since verification
     const commitsSinceRaw = git(`rev-list --count ${spec.lastVerifiedCommit}..HEAD`);
     const commitsSince = commitsSinceRaw ? parseInt(commitsSinceRaw, 10) : 0;
@@ -140,12 +149,21 @@ function main() {
         return parts[0];
       }))];
 
+      // Batch all enforced files into a single git diff call (avoid N+1 subprocesses)
+      const allChanged = git(`diff --name-only ${spec.lastVerifiedCommit}..HEAD`);
+      const allChangedFiles = allChanged ? allChanged.split('\n').filter(Boolean) : [];
+
       for (const fileName of fileNames) {
-        // Find the actual file by searching
-        const found = git(`diff --name-only ${spec.lastVerifiedCommit}..HEAD -- '**/${fileName}.*'`);
-        if (found && found.length > 0) {
-          changedFiles.push(...found.split('\n').filter(Boolean));
+        // Guard against command injection: only allow [a-zA-Z0-9_-] in file names
+        if (!/^[a-zA-Z0-9_-]+$/.test(fileName)) {
+          continue;
         }
+        // Match changed files against the enforcement file name
+        const matches = allChangedFiles.filter(f => {
+          const base = path.basename(f, path.extname(f));
+          return base === fileName || f.includes(`/${fileName}.`);
+        });
+        changedFiles.push(...matches);
       }
     }
 
@@ -190,21 +208,29 @@ function main() {
     errors.forEach(e => console.error(`  - ${e}`));
   }
 
-  // Exit code logic
-  if (WARN_ONLY) {
-    console.log('\n[WARN ONLY] Spec freshness check completed with warnings.');
-    process.exit(0);
-  }
+  // Exit code logic — check orphaned BEFORE WARN_ONLY to avoid silently swallowing data loss
+  let hasWarnings = false;
 
   if (summary.orphaned > 0) {
     console.error(`\nERROR: ${summary.orphaned} spec(s) orphaned — verification commits lost.`);
-    process.exit(2);
+    if (!WARN_ONLY) {
+      process.exit(2);
+    }
+    hasWarnings = true;
   }
 
   if (summary.stale > 0 || summary.unverified > 0) {
     console.error(`\nFAIL: ${summary.stale} stale, ${summary.unverified} unverified.`);
     console.error('Run spec-miner to update baseline specs, or set ECC_SPEC_STALE_WARN_ONLY=true.');
-    process.exit(1);
+    if (!WARN_ONLY) {
+      process.exit(1);
+    }
+    hasWarnings = true;
+  }
+
+  if (WARN_ONLY && hasWarnings) {
+    console.log('\n[WARN ONLY] Spec freshness check completed with warnings.');
+    process.exit(0);
   }
 
   console.log('\nAll specs fresh.');
