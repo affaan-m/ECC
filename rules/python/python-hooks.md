@@ -29,9 +29,9 @@ Applied only to the current project. Initialize with:
 
 #### PreToolUse
 
-- **tmux blocker**: Blocks dev servers (uvicorn, gunicorn, manage.py runserver) outside tmux
+- **zellij blocker**: Blocks dev servers (uvicorn, gunicorn, manage.py runserver) outside zellij (tmux also accepted)
 - **pip blocker**: Blocks pip install - enforces uv sync instead
-- **tmux reminder**: Suggests tmux for long-running commands (uv sync, pytest, docker, make)
+- **zellij reminder**: Suggests zellij for long-running commands (uv sync, pytest, docker, make)
 
 #### PostToolUse
 

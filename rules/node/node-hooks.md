@@ -42,8 +42,8 @@ Applied only to the current project. Initialize with:
 
 #### PreToolUse
 
-- **dev server blocker**: Blocks dev servers outside tmux
-- **tmux reminder**: Suggests tmux for long-running commands (bun, npm, pnpm, yarn, cargo, etc.)
+- **dev server blocker**: Blocks dev servers outside zellij (tmux also accepted)
+- **zellij reminder**: Suggests zellij for long-running commands (bun, npm, pnpm, yarn, cargo, etc.)
 
 #### PostToolUse
 

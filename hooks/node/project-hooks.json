@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun -e \"console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');console.error('[Hook] Use: tmux new-session -d -s dev \\\"bun run dev\\\"');console.error('[Hook] Then: tmux attach -t dev');process.exit(2)\""
+            "command": "bun -e \"if(!process.env.ZELLIJ && !process.env.TMUX){console.error('[Hook] BLOCKED: Dev server must run in zellij for log access');console.error('[Hook] Use: zellij -s dev, then run \\\"bun run dev\\\" inside');console.error('[Hook] Reattach: zellij attach dev');process.exit(2)}\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun -e \"if(!process.env.TMUX){console.error('[Hook] Consider running in tmux for session persistence');console.error('[Hook] tmux new -s dev  |  tmux attach -t dev')}\""
+            "command": "bun -e \"if(!process.env.ZELLIJ && !process.env.TMUX){console.error('[Hook] Consider running in zellij for session persistence');console.error('[Hook] zellij -s dev  |  zellij attach dev')}\""
           }
         ]
       }
