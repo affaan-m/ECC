@@ -140,6 +140,105 @@ textarea {
 .splash--out {
   opacity: 0;
 }
+.splash-mark-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+.splash-mark {
+  position: relative;
+  z-index: 1;
+}
+/* Reveals bottom-up in 4 discrete jumps rather than a smooth wipe, so the
+   arch reads as blocks stacking into place instead of liquid filling. */
+.splash-arch-clip-rect {
+  animation: splashArchBuild 650ms steps(4, jump-end) forwards;
+}
+@keyframes splashArchBuild {
+  from {
+    y: 388px;
+    height: 0px;
+  }
+  to {
+    y: 126px;
+    height: 262px;
+  }
+}
+/* Drops in once the sides finish (delay matches splashArchBuild's 650ms),
+   overshooting slightly past its resting spot before settling — a keystone
+   dropped into place, not just faded in. */
+.splash-keystone {
+  opacity: 0;
+  /* This transform lives inside the viewBox's own 512-unit coordinate
+     space (scaled down to the icon's small rendered size), not screen
+     pixels — needs to be large here for the fall to actually read as a
+     fall once scaled down, not just a subtle nudge. */
+  transform: translateY(-240px);
+  transform-origin: center;
+  animation: splashKeystoneDrop 440ms linear 650ms forwards;
+}
+/* Per-keyframe easing so the fall actually reads as a fall rather than a
+   pop: opacity ramps in fast while it's still high up (so it's visible for
+   the part that matters), the middle stretch accelerates like a real drop
+   (ease-in), then it settles with a small overshoot (ease-out). */
+@keyframes splashKeystoneDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-240px);
+    animation-timing-function: ease-out;
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-200px);
+    animation-timing-function: ease-in;
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(4px);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* The gold burst as the keystone lands (delay lines up with the drop
+   above), expanding and fading — the "glow into the app" the splash
+   overlay's own opacity fade (see .splash--out) picks up from. */
+.splash-glow {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(224, 193, 90, 0.9) 0%,
+    rgba(169, 130, 42, 0.5) 40%,
+    rgba(169, 130, 42, 0) 75%
+  );
+  filter: blur(2px);
+  opacity: 0;
+  transform: scale(0.4);
+  animation: splashGlow 650ms ease-out 980ms forwards;
+  pointer-events: none;
+}
+@keyframes splashGlow {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  30% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
 
 .app-main {
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 8px);

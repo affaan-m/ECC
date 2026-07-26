@@ -300,12 +300,17 @@ export default function App() {
     return () => document.removeEventListener('click', onClick);
   }, []);
 
-  // Launch splash: hold the mark on screen briefly, then fade it away.
+  // Launch splash: the mark builds itself (see SplashScreen.jsx/styles.css
+  // for the choreography — arch blocks rise for 650ms, the keystone drops
+  // in over the next 380ms, then its glow bursts) before the whole overlay
+  // fades away. These timers just need to start that fade once the glow
+  // has had a moment to peak, and unmount after the .splash opacity
+  // transition (0.4s) has had time to finish.
   const [showSplash, setShowSplash] = useState(true);
   const [splashOut, setSplashOut] = useState(false);
   useEffect(() => {
-    const outTimer = setTimeout(() => setSplashOut(true), 500);
-    const removeTimer = setTimeout(() => setShowSplash(false), 900);
+    const outTimer = setTimeout(() => setSplashOut(true), 1200);
+    const removeTimer = setTimeout(() => setShowSplash(false), 1600);
     return () => {
       clearTimeout(outTimer);
       clearTimeout(removeTimer);
