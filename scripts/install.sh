@@ -332,13 +332,16 @@ for category in "${CATEGORIES[@]}"; do
     fi
 done
 
-# Copy hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/hooks/)
+# Copy hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/{lang}/hooks/)
+# The per-language layout must be preserved: hook configs reference
+# ${CLAUDE_PLUGIN_ROOT}/scripts/{lang}/hooks/*.js, which install substitutes
+# to ~/.claude/scripts/{lang}/hooks/*.js.
 has_hook_scripts=false
 for lang in "${LANGUAGES[@]}"; do
     scripts_dir="${REPO_ROOT}/scripts/${lang}/hooks"
     [[ -d "$scripts_dir" ]] || continue
 
-    dest_scripts="${CLAUDE_DIR}/scripts/hooks"
+    dest_scripts="${CLAUDE_DIR}/scripts/${lang}/hooks"
     mkdir -p "$dest_scripts"
 
     for script in "$scripts_dir"/*; do
@@ -351,7 +354,7 @@ for lang in "${LANGUAGES[@]}"; do
         fi
 
         copy_file "$script" "${dest_scripts}/${filename}" \
-            "scripts/${lang}/hooks/${filename}" "scripts/hooks/${filename}"
+            "scripts/${lang}/hooks/${filename}" "scripts/${lang}/hooks/${filename}"
     done
 done
 
@@ -359,13 +362,15 @@ if $has_hook_scripts; then
     echo ""
 fi
 
-# Copy hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/lib/)
+# Copy hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/{lang}/lib/)
+# Hook scripts resolve their libs relatively (../lib), so the per-language
+# layout must match the hooks layout above.
 has_lib_files=false
 for lang in "${LANGUAGES[@]}"; do
     lib_dir="${REPO_ROOT}/scripts/${lang}/lib"
     [[ -d "$lib_dir" ]] || continue
 
-    dest_lib="${CLAUDE_DIR}/scripts/lib"
+    dest_lib="${CLAUDE_DIR}/scripts/${lang}/lib"
     mkdir -p "$dest_lib"
 
     for lib_file in "$lib_dir"/*; do
@@ -378,7 +383,7 @@ for lang in "${LANGUAGES[@]}"; do
         fi
 
         copy_file "$lib_file" "${dest_lib}/${filename}" \
-            "scripts/${lang}/lib/${filename}" "scripts/lib/${filename}"
+            "scripts/${lang}/lib/${filename}" "scripts/${lang}/lib/${filename}"
     done
 done
 
@@ -401,6 +406,29 @@ for lang in "${LANGUAGES[@]}"; do
     fi
 done
 merge_hooks "${hooks_to_merge[@]}"
+
+# Smoke test: every script path referenced by hook commands in settings.json
+# must exist, otherwise those hooks are silent no-ops at runtime.
+verify_hook_paths() {
+    local dest="${CLAUDE_DIR}/settings.json"
+    $DRY_RUN && return 0
+    [[ -f "$dest" ]] || return 0
+    command -v jq &>/dev/null || return 0
+
+    local missing=0 script_path
+    while IFS= read -r script_path; do
+        if [[ ! -f "$script_path" ]]; then
+            log_warn "hook references missing script: $script_path"
+            missing=$((missing + 1))
+        fi
+    done < <(jq -r '.. | .command? // empty' "$dest" 2>/dev/null \
+        | grep -oE "${CLAUDE_DIR}[^\" ]*\.(js|sh|py)" | sort -u)
+
+    if [[ $missing -gt 0 ]]; then
+        log_warn "${missing} hook script path(s) missing — affected hooks will be no-ops"
+    fi
+}
+verify_hook_paths
 
 # Copy project hooks templates (hooks/*/project-hooks.json → ~/.claude/project-hooks/{lang}.json)
 has_project_hooks=false
