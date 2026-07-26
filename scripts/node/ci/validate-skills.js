@@ -70,6 +70,26 @@ function validateSkills() {
       continue;
     }
 
+    // Skill discovery keys off YAML frontmatter: without name/description the
+    // skill cannot trigger reliably.
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) {
+      console.error(`ERROR: ${skill.name}/SKILL.md - Missing YAML frontmatter (--- block)`);
+      hasErrors = true;
+      continue;
+    }
+    const frontmatter = fmMatch[1];
+    let skillOk = true;
+    for (const field of ['name', 'description']) {
+      const fieldMatch = frontmatter.match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
+      if (!fieldMatch || fieldMatch[1].trim().length === 0) {
+        console.error(`ERROR: ${skill.name}/SKILL.md - Frontmatter missing non-empty "${field}"`);
+        hasErrors = true;
+        skillOk = false;
+      }
+    }
+    if (!skillOk) continue;
+
     validCount++;
   }
 

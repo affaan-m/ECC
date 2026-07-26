@@ -255,7 +255,7 @@ for category in "${CATEGORIES[@]}"; do
     fi
 done
 
-# Remove hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/hooks/)
+# Remove hook scripts (scripts/{lang}/hooks/ → ~/.claude/scripts/{lang}/hooks/)
 has_hook_scripts=false
 for lang in "${LANGUAGES[@]}"; do
     scripts_dir="${REPO_ROOT}/scripts/${lang}/hooks"
@@ -270,18 +270,20 @@ for lang in "${LANGUAGES[@]}"; do
             has_hook_scripts=true
         fi
 
-        remove_file "${CLAUDE_DIR}/scripts/hooks/${filename}" "scripts/hooks/${filename}"
+        remove_file "${CLAUDE_DIR}/scripts/${lang}/hooks/${filename}" "scripts/${lang}/hooks/${filename}"
     done
 done
 
-# Clean up empty scripts/hooks directory
-cleanup_empty_dir "${CLAUDE_DIR}/scripts/hooks" "scripts/hooks/"
+# Clean up empty per-language scripts/hooks directories
+for lang in "${LANGUAGES[@]}"; do
+    cleanup_empty_dir "${CLAUDE_DIR}/scripts/${lang}/hooks" "scripts/${lang}/hooks/"
+done
 
 if $has_hook_scripts; then
     echo ""
 fi
 
-# Remove hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/lib/)
+# Remove hook libraries (scripts/{lang}/lib/ → ~/.claude/scripts/{lang}/lib/)
 has_lib_files=false
 for lang in "${LANGUAGES[@]}"; do
     lib_dir="${REPO_ROOT}/scripts/${lang}/lib"
@@ -296,12 +298,15 @@ for lang in "${LANGUAGES[@]}"; do
             has_lib_files=true
         fi
 
-        remove_file "${CLAUDE_DIR}/scripts/lib/${filename}" "scripts/lib/${filename}"
+        remove_file "${CLAUDE_DIR}/scripts/${lang}/lib/${filename}" "scripts/${lang}/lib/${filename}"
     done
 done
 
-# Clean up empty scripts/lib and scripts directories
-cleanup_empty_dir "${CLAUDE_DIR}/scripts/lib" "scripts/lib/"
+# Clean up empty per-language lib/, language, and top-level scripts directories
+for lang in "${LANGUAGES[@]}"; do
+    cleanup_empty_dir "${CLAUDE_DIR}/scripts/${lang}/lib" "scripts/${lang}/lib/"
+    cleanup_empty_dir "${CLAUDE_DIR}/scripts/${lang}" "scripts/${lang}/"
+done
 cleanup_empty_dir "${CLAUDE_DIR}/scripts" "scripts/"
 
 if $has_lib_files; then
@@ -320,7 +325,23 @@ done
 
 if $has_hooks; then
     echo -e "${CYAN}[global hooks]${NC}"
-    remove_file "${CLAUDE_DIR}/settings.json" "settings.json"
+    settings_file="${CLAUDE_DIR}/settings.json"
+    # settings.json holds user state beyond hooks (enabledPlugins, permissions,
+    # model, tui, ...) — remove only the hooks key instead of the whole file.
+    if [[ ! -f "$settings_file" ]]; then
+        log_not_found "settings.json"
+        not_found=$((not_found + 1))
+    elif $DRY_RUN; then
+        log_dry "settings.json (hooks key only)"
+        removed=$((removed + 1))
+    elif command -v jq &>/dev/null; then
+        settings_content=$(jq 'del(.hooks)' "$settings_file")
+        echo "$settings_content" > "$settings_file"
+        log_rm "settings.json (hooks key only; other settings preserved)"
+        removed=$((removed + 1))
+    else
+        log_info "jq not found: leaving settings.json untouched — remove the hooks key manually"
+    fi
     echo ""
 fi
 

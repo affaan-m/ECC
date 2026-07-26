@@ -449,7 +449,8 @@ function runTests() {
     const testDir = createTestDir();
     const skillDir = path.join(testDir, 'good-skill');
     fs.mkdirSync(skillDir);
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# My Skill\nDescription here.');
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: good-skill\ndescription: Use when testing skill validation.\n---\n\n# My Skill\nDescription here.');
 
     const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
     assert.strictEqual(result.code, 0, 'Should pass for valid skill');
@@ -462,11 +463,37 @@ function runTests() {
     fs.writeFileSync(path.join(testDir, 'not-a-skill.md'), '# README');
     const skillDir = path.join(testDir, 'real-skill');
     fs.mkdirSync(skillDir);
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Skill');
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: real-skill\ndescription: Use when testing directory filtering.\n---\n\n# Skill');
 
     const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
     assert.strictEqual(result.code, 0, 'Should ignore non-directory entries');
     assert.ok(result.stdout.includes('Validated 1'), 'Should count only directories');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('fails on SKILL.md without frontmatter', () => {
+    const testDir = createTestDir();
+    const skillDir = path.join(testDir, 'no-fm-skill');
+    fs.mkdirSync(skillDir);
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# My Skill\nBody without frontmatter.');
+
+    const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
+    assert.strictEqual(result.code, 1, 'Should fail without frontmatter');
+    assert.ok(result.stderr.includes('frontmatter'), 'Should report missing frontmatter');
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('fails on frontmatter missing description', () => {
+    const testDir = createTestDir();
+    const skillDir = path.join(testDir, 'no-desc-skill');
+    fs.mkdirSync(skillDir);
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: no-desc-skill\n---\n\n# Skill');
+
+    const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
+    assert.strictEqual(result.code, 1, 'Should fail without description');
+    assert.ok(result.stderr.includes('description'), 'Should name the missing field');
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 

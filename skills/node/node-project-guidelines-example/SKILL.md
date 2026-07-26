@@ -1,3 +1,8 @@
+---
+name: node-project-guidelines-example
+description: Example template for writing a project-specific skill. Use when creating or structuring per-project guidelines (architecture, conventions, common tasks, warnings) for a codebase — copy this file and adapt it to your project.
+---
+
 # Project Guidelines Skill (Example)
 
 This is an example of a project-specific skill. Use this as a template for your own projects.
@@ -163,7 +168,7 @@ async def analyze_with_claude(content: str) -> AnalysisResult:
     client = Anthropic()
 
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model="claude-sonnet-4-5",
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
         tools=[{
