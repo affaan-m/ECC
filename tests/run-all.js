@@ -14,8 +14,6 @@ const testFiles = [
   'lib/utils.test.js',
   'lib/package-manager.test.js',
   'hooks/hooks.test.js',
-  'hooks/evaluate-session.test.js',
-  'hooks/suggest-compact.test.js',
   'integration/hooks.test.js',
   'ci/validators.test.js',
   'ci/no-personal-paths.test.js',

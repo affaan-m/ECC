@@ -184,4 +184,3 @@ The agent will stop and report if:
 ## Related
 
 - Agent: `agents/rust/rust-build-resolver.md`
-- Skill: `skills/rust/rust-patterns/`

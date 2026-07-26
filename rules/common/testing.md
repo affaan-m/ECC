@@ -8,8 +8,8 @@ per language).
 ## Test-Driven Development
 
 Prefer writing tests first: red → green → refactor, then verify
-coverage. The tdd skills (`node-tdd-workflow`, `python-testing`,
-`rust-testing`) and the **tdd-guide** agents enforce the full
+coverage. The tdd skills (`node-tdd-workflow`, `python-testing`)
+and the **tdd-guide** agents enforce the full
 workflow — reach for them when building features or fixing bugs.
 
 ## Test Structure

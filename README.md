@@ -165,12 +165,7 @@ everything-claude-code/
 |
 |-- skills/           # Workflow definitions and domain knowledge
 |   |-- common/              # Language-agnostic skills
-|   |   |-- continuous-learning/
-|   |   |-- continuous-learning-v2/
-|   |   |-- eval-harness/
-|   |   |-- iterative-retrieval/
 |   |   |-- security-review/
-|   |   |-- strategic-compact/
 |   |-- node/                # Node.js/TypeScript skills
 |   |   |-- node-coding-standards/
 |   |   |-- node-backend-patterns/
@@ -181,13 +176,10 @@ everything-claude-code/
 |   |   |-- fastapi-patterns/
 |   |   |-- python-patterns/
 |   |   |-- python-testing/
-|   |-- rust/                # Rust skills
-|       |-- rust-patterns/
-|       |-- rust-testing/
 |
 |-- commands/         # Slash commands for quick execution
 |   |-- common/              # Language-agnostic commands
-|   |   |-- plan.md, code-review.md, learn.md, verify.md, ...
+|   |   |-- plan.md, code-review.md, verify.md, ...
 |   |-- node/                # Node.js commands
 |   |   |-- node-tdd.md, node-build-fix.md, node-e2e.md, ...
 |   |-- python/              # Python commands
@@ -263,7 +255,6 @@ Use the `/skill-create` command for local analysis without external services:
 
 ```bash
 /skill-create                    # Analyze current repo
-/skill-create --instincts        # Also generate instincts for continuous-learning
 ```
 
 This analyzes your git history locally and generates SKILL.md files.
@@ -284,21 +275,7 @@ For advanced features (10k+ commits, auto-PRs, team sharing):
 Both options create:
 
 - **SKILL.md files** - Ready-to-use skills for Claude Code
-- **Instinct collections** - For continuous-learning-v2
 - **Pattern extraction** - Learns from your commit history
-
-### 🧠 Continuous Learning v2
-
-The instinct-based learning system automatically learns your patterns:
-
-```bash
-/instinct-status        # Show learned instincts with confidence
-/instinct-import <file> # Import instincts from others
-/instinct-export        # Export your instincts for sharing
-/evolve                 # Cluster related instincts into skills
-```
-
-See `skills/continuous-learning-v2/` for full documentation.
 
 ---
 

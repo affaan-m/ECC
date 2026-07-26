@@ -26,11 +26,9 @@ Applied to ALL projects. Contains language-agnostic and infrastructure hooks:
 
 **Node infrastructure (bun, safety-wrapped):**
 
-- **suggest-compact**: Suggests manual compaction at logical intervals
 - **pre-compact**: Saves state before context compaction
 - **session-start**: Loads previous context and detects package manager
 - **session-end**: Persists session state
-- **evaluate-session**: Evaluates session for extractable patterns
 
 ### Project Hooks (in .claude/settings.json per project)
 

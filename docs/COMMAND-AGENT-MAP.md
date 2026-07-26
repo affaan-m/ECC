@@ -9,10 +9,10 @@ This map records the command surface after the selective upstream port. Paths us
 | `/python-review` | `agents/python/python-reviewer.md` | Python review with local `uv`, `ruff`, and `ty` guidance |
 | `/fastapi-review` | `agents/python/fastapi-reviewer.md`, `skills/python/fastapi-patterns/` | FastAPI-specific review |
 | `/rust-build` | `agents/rust/rust-build-resolver.md` | Rust build and borrow-checker repair |
-| `/rust-review` | `agents/rust/rust-reviewer.md`, `skills/rust/rust-patterns/` | Rust code review |
-| `/rust-test` | `skills/rust/rust-testing/` | Rust TDD and coverage workflow |
+| `/rust-review` | `agents/rust/rust-reviewer.md` | Rust code review |
+| `/rust-test` | self-contained command doc | Rust TDD and coverage workflow |
 | `/node-tdd` | `skills/node/node-tdd-workflow/` | Existing Node TDD flow |
-| `/verify` | `skills/common/continuous-learning-v2/` and common verification docs | Existing verification flow |
+| `/verify` | common verification docs (`commands/common/verify.md`) | Existing verification flow |
 
 ## Direct-Use Agents
 
@@ -24,4 +24,4 @@ This map records the command surface after the selective upstream port. Paths us
 
 ## Refactoring Rule
 
-When importing upstream command docs, replace flat references such as `agents/rust-reviewer.md` and `skills/rust-patterns/` with nested references such as `agents/rust/rust-reviewer.md` and `skills/rust/rust-patterns/`.
+When importing upstream command docs, replace flat references such as `agents/rust-reviewer.md` and `skills/python-patterns/` with nested references such as `agents/rust/rust-reviewer.md` and `skills/python/python-patterns/`.

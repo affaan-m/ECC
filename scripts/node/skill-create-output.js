@@ -135,32 +135,21 @@ ${chalk.bold('Files Tracked:')}    ${chalk.green(data.files)}
     });
   }
 
-  instincts(instincts) {
-    console.log('\n');
-    console.log(box('🧠 Instincts Generated', instincts.map((inst, i) =>
-      `${chalk.yellow(`${i + 1}.`)} ${chalk.bold(inst.name)} ${chalk.gray(`(${Math.round(inst.confidence * 100)}%)`)}`
-    ).join('\n')));
-  }
-
-  output(skillPath, instinctsPath) {
+  output(skillPath) {
     console.log('\n');
     console.log(chalk.bold(chalk.green('✨ Generation Complete!')));
     console.log(chalk.gray('─'.repeat(50)));
     console.log(`
   ${chalk.green('📄')} ${chalk.bold('Skill File:')}
      ${chalk.cyan(skillPath)}
-
-  ${chalk.green('🧠')} ${chalk.bold('Instincts File:')}
-     ${chalk.cyan(instinctsPath)}
 `);
   }
 
   nextSteps() {
     console.log(box('📋 Next Steps', `
 ${chalk.yellow('1.')} Review the generated SKILL.md
-${chalk.yellow('2.')} Import instincts: ${chalk.cyan('/instinct-import <path>')}
-${chalk.yellow('3.')} View learned patterns: ${chalk.cyan('/instinct-status')}
-${chalk.yellow('4.')} Evolve into skills: ${chalk.cyan('/evolve')}
+${chalk.yellow('2.')} Adjust the description so it states when to use the skill
+${chalk.yellow('3.')} Install it to ~/.claude/skills/ (scripts/install.sh)
 `));
     console.log('\n');
   }
@@ -217,19 +206,7 @@ async function demo() {
     },
   ]);
 
-  output.instincts([
-    { name: 'pmx-conventional-commits', confidence: 0.85 },
-    { name: 'pmx-client-component-pattern', confidence: 0.90 },
-    { name: 'pmx-service-layer', confidence: 0.85 },
-    { name: 'pmx-e2e-test-location', confidence: 0.90 },
-    { name: 'pmx-package-manager', confidence: 0.95 },
-    { name: 'pmx-hot-path-caution', confidence: 0.90 },
-  ]);
-
-  output.output(
-    '.claude/skills/pmx-patterns/SKILL.md',
-    '.claude/homunculus/instincts/inherited/pmx-instincts.yaml'
-  );
+  output.output('.claude/skills/pmx-patterns/SKILL.md');
 
   output.nextSteps();
   output.footer();

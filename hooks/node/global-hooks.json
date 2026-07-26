@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "tool == \"Edit\" || tool == \"Write\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/suggest-compact.js\" || true"
-          }
-        ]
-      }
-    ],
     "PreCompact": [
       {
         "matcher": "*",
@@ -40,15 +29,6 @@
           {
             "type": "command",
             "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/session-end.js\" || true"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "command -v bun >/dev/null 2>&1 && bun \"${CLAUDE_PLUGIN_ROOT}/scripts/node/hooks/evaluate-session.js\" || true"
           }
         ]
       }

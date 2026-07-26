@@ -9,7 +9,6 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawn } = require('child_process');
 
 // Async test helper
@@ -147,16 +146,6 @@ function runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
   });
 }
 
-// Create a temporary test directory
-function createTestDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'hook-integration-test-'));
-}
-
-// Clean up test directory
-function cleanupTestDir(testDir) {
-  fs.rmSync(testDir, { recursive: true, force: true });
-}
-
 // Test suite
 async function runTests() {
   console.log('\n=== Hook Integration Tests ===\n');
@@ -278,79 +267,10 @@ async function runTests() {
     assert.strictEqual(result.code, 2, 'Blocking hook should exit 2');
   })) passed++; else failed++;
 
-  if (await asyncTest('hooks handle missing files gracefully', async () => {
-    const testDir = createTestDir();
-    const transcriptPath = path.join(testDir, 'nonexistent.jsonl');
-
-    try {
-      const result = await runHookWithInput(
-        path.join(scriptsDir, 'evaluate-session.js'),
-        {},
-        { CLAUDE_TRANSCRIPT_PATH: transcriptPath }
-      );
-
-      // Should not crash, just skip processing
-      assert.strictEqual(result.code, 0, 'Should exit 0 for missing file');
-    } finally {
-      cleanupTestDir(testDir);
-    }
-  })) passed++; else failed++;
-
   // ==========================================
   // Realistic Scenario Tests
   // ==========================================
   console.log('\nRealistic Scenarios:');
-
-  if (await asyncTest('suggest-compact increments and triggers at threshold', async () => {
-    const sessionId = 'integration-test-' + Date.now();
-    const counterFile = path.join(os.tmpdir(), `claude-tool-count-${sessionId}`);
-
-    try {
-      // Set counter just below threshold
-      fs.writeFileSync(counterFile, '49');
-
-      const result = await runHookWithInput(
-        path.join(scriptsDir, 'suggest-compact.js'),
-        {},
-        { CLAUDE_SESSION_ID: sessionId, COMPACT_THRESHOLD: '50' }
-      );
-
-      assert.ok(
-        result.stderr.includes('50 tool calls'),
-        'Should suggest compact at threshold'
-      );
-    } finally {
-      if (fs.existsSync(counterFile)) fs.unlinkSync(counterFile);
-    }
-  })) passed++; else failed++;
-
-  if (await asyncTest('evaluate-session processes transcript with sufficient messages', async () => {
-    const testDir = createTestDir();
-    const transcriptPath = path.join(testDir, 'transcript.jsonl');
-
-    // Create a transcript with 15 user messages
-    const messages = Array(15).fill(null).map((_, i) => ({
-      type: 'user',
-      content: `Test message ${i + 1}`
-    }));
-
-    fs.writeFileSync(
-      transcriptPath,
-      messages.map(m => JSON.stringify(m)).join('\n')
-    );
-
-    try {
-      const result = await runHookWithInput(
-        path.join(scriptsDir, 'evaluate-session.js'),
-        {},
-        { CLAUDE_TRANSCRIPT_PATH: transcriptPath }
-      );
-
-      assert.ok(result.stderr.includes('15 messages'), 'Should process session');
-    } finally {
-      cleanupTestDir(testDir);
-    }
-  })) passed++; else failed++;
 
   if (await asyncTest('PostToolUse PR hook extracts PR URL', async () => {
     // Find the PR logging hook in common hooks
@@ -378,7 +298,7 @@ async function runTests() {
 
   if (await asyncTest('hooks do not crash on unexpected input structure', async () => {
     const result = await runHookWithInput(
-      path.join(scriptsDir, 'suggest-compact.js'),
+      path.join(scriptsDir, 'session-end.js'),
       { unexpected: { nested: { deeply: 'value' } } }
     );
 
