@@ -32,15 +32,14 @@ let changedFilesStorePromise: Promise<ChangedFilesStore> | undefined
 
 async function loadChangedFilesStore(): Promise<ChangedFilesStore> {
   if (!changedFilesStorePromise) {
-    changedFilesStorePromise = import("../plugins/lib/changed-files-store.js").catch((error) => {
+    changedFilesStorePromise = import("../plugins/lib/changed-files-store.js").catch(() => {
       changedFilesStorePromise = undefined
-      const reason = error instanceof Error ? error.message : String(error)
       throw new Error(
-        "changed-files tool: could not load '../plugins/lib/changed-files-store.js'. " +
+        "changed-files tool: could not load the changed-files store. " +
           "This usually means the ~/.opencode/plugins directory is missing or incomplete " +
           "(an interrupted or partial ECC install can leave tools/ populated without plugins/). " +
           "Run `node scripts/repair.js --target opencode` (or `ecc repair --target opencode`) " +
-          `from the ECC repo to restore the missing files. Original error: ${reason}`
+          "from the ECC repo to restore the missing files."
       )
     })
   }

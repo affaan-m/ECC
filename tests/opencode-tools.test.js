@@ -216,6 +216,79 @@ async function main() {
     ])
   }
 
+  // Test changed-files tool
+  if (tools.changedfiles) {
+    tests.push([
+      "changed-files: reports an actionable, scrubbed error when plugins/lib is missing",
+      async () => withTempProject([], async (projectDir) => {
+        const repoRoot = path.join(__dirname, "..")
+        const libDir = path.join(repoRoot, ".opencode", "dist", "plugins", "lib")
+        const backupDir = path.join(
+          repoRoot,
+          ".opencode",
+          "dist",
+          "plugins",
+          "lib.missing-store-test-backup"
+        )
+        fs.renameSync(libDir, backupDir)
+        try {
+          const context = createMockContext(projectDir)
+          await assert.rejects(
+            () => tools.changedfiles.execute({}, context),
+            (error) => {
+              assert.ok(error instanceof Error)
+              assert.ok(
+                error.message.includes("ecc repair --target opencode"),
+                "Expected the error to point at the repair command"
+              )
+              assert.ok(
+                !error.message.includes(repoRoot),
+                "Error message must not leak the local filesystem path"
+              )
+              assert.ok(
+                !error.message.includes("Original error"),
+                "Error message must not include the raw underlying loader error"
+              )
+              return true
+            }
+          )
+        } finally {
+          fs.renameSync(backupDir, libDir)
+        }
+      }),
+    ])
+
+    tests.push([
+      "changed-files: renders tracked changes once plugins/lib is present",
+      async () => withTempProject([], async (projectDir) => {
+        const repoRoot = path.join(__dirname, "..")
+        const storeUrl = pathToFileURL(
+          path.join(repoRoot, ".opencode", "dist", "plugins", "lib", "changed-files-store.js")
+        ).href
+        const store = await import(storeUrl)
+        store.initStore(projectDir)
+        store.clearChanges()
+        store.recordChange("src/example.ts", "modified")
+        store.recordChange("src/new-file.ts", "added")
+
+        try {
+          const context = createMockContext(projectDir)
+          const result = await tools.changedfiles.execute({ format: "json" }, context)
+          const parsed = JSON.parse(result)
+          assert.strictEqual(parsed.changed, true)
+          assert.ok(
+            parsed.files.some((f) => f.path === "src/example.ts" && f.changeType === "modified")
+          )
+          assert.ok(
+            parsed.files.some((f) => f.path === "src/new-file.ts" && f.changeType === "added")
+          )
+        } finally {
+          store.clearChanges()
+        }
+      }),
+    ])
+  }
+
   // Run all tests
   let passed = 0
   let failed = 0
