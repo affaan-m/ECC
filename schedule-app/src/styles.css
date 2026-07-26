@@ -306,6 +306,87 @@ textarea {
   padding: 32px 12px;
 }
 
+/* --- Swipe to delete ------------------------------------------------------- */
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+}
+.swipe-row-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 22px;
+  background: var(--danger);
+  color: #fff;
+}
+.swipe-row-content {
+  position: relative;
+  background: var(--surface);
+  /* Let the browser keep handling native vertical scroll through this row;
+     only horizontal movement is ours to interpret as a swipe. Without this
+     the browser's default touch handling can decide partway through a drag
+     that it might be a scroll and cancel the gesture out from under us. */
+  touch-action: pan-y;
+  transition: transform 0.18s ease;
+}
+.swipe-row-content--removing {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0;
+}
+
+/* --- Toast ---------------------------------------------------------------- */
+@keyframes toastIn {
+  from {
+    transform: translate(-50%, 12px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  transform: translate(-50%, 0);
+  width: calc(100% - 32px);
+  max-width: calc(var(--maxw) - 32px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  animation: toastIn 0.22s ease;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.toast--closing {
+  opacity: 0;
+  transform: translate(-50%, 12px);
+}
+.toast-message {
+  font-size: 14px;
+  font-weight: 600;
+}
+.toast-action {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
 /* --- Tab bar ------------------------------------------------------------ */
 .tabbar {
   position: fixed;

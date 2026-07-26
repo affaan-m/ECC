@@ -7,6 +7,7 @@ import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { syncContactAddressPin } from '../data/geocode.js';
+import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
 import {
   todayISO,
   toISODate,
@@ -22,6 +23,7 @@ export default function ContactDetailPage() {
   const navigate = useNavigate();
   const { state } = useStore();
   const actions = useActions();
+  const deleteContactWithUndo = useDeleteContactWithUndo();
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -335,7 +337,7 @@ export default function ContactDetailPage() {
             <button
               className="btn btn-danger"
               onClick={() => {
-                actions.deleteContact(contact.id);
+                deleteContactWithUndo(contact);
                 navigate('/contacts');
               }}
             >

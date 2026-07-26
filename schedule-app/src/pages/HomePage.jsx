@@ -5,6 +5,7 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import ExpandableFab from '../components/ExpandableFab.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
+import SwipeToDelete from '../components/SwipeToDelete.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
   todayISO,
@@ -17,6 +18,7 @@ import {
 } from '../data/helpers.js';
 import { requestNotificationPermission, notificationsSupported } from '../data/notifications.js';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
+import { useToast } from '../data/toast.jsx';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
 const TASK_REMINDER_OFFSETS = [
@@ -30,9 +32,22 @@ export default function HomePage() {
   const actions = useActions();
   const navigate = useNavigate();
   const location = useLocation();
+  const showToast = useToast();
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const [editMode, setEditMode] = useState(false);
+
+  // A delete is reversible for a few seconds instead of instant and silent —
+  // the add actions preserve the original id when it's included in the
+  // passed-in data, so undo just re-adds the exact same object back.
+  const deleteTaskWithUndo = (t) => {
+    actions.deleteTask(t.id);
+    showToast(`"${t.title || 'Task'}" deleted`, 'Undo', () => actions.addTask(t));
+  };
+  const deleteNoteWithUndo = (n) => {
+    actions.deleteNote(n.id);
+    showToast(`"${n.title || 'Note'}" deleted`, 'Undo', () => actions.addNote(n));
+  };
 
   // Reached via the expandable quick-add FAB on another page (e.g. Planner),
   // or from a search result for a task/note.
@@ -295,30 +310,34 @@ export default function HomePage() {
                 <span className="detail-label">Tasks</span>
                 <ul className="task-list">
                   {tasks.map((t) => (
-                    <li key={t.id} className="task-row">
-                      <button
-                        className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                        data-haptic={t.done ? 'tap' : 'confirm'}
-                        onClick={() => actions.updateTask({ ...t, done: !t.done })}
-                        aria-label={t.done ? 'Mark not done' : 'Mark done'}
-                      >
-                        {t.done && <CheckIcon />}
-                        <span className="task-check-sparkles" aria-hidden="true">
-                          <i /><i /><i /><i /><i /><i />
-                        </span>
-                      </button>
-                      <button className="task-title-btn" onClick={() => openEditTask(t)}>
-                        <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
-                        {(t.location || t.dueDate) && !t.done && (
-                          <span className="task-meta muted small">
-                            {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
-                          </span>
-                        )}
-                      </button>
-                      {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
-                      <button className="icon-btn task-del" onClick={() => actions.deleteTask(t.id)} aria-label="Delete task">
-                        ✕
-                      </button>
+                    <li key={t.id}>
+                      <SwipeToDelete onDelete={() => deleteTaskWithUndo(t)}>
+                        <div className="task-row">
+                          <button
+                            className={`task-check${t.done ? ' task-check--on' : ''}${t.done && taskCompleteAnim ? ' task-check--pop' : ''}`}
+                            data-haptic={t.done ? 'tap' : 'confirm'}
+                            onClick={() => actions.updateTask({ ...t, done: !t.done })}
+                            aria-label={t.done ? 'Mark not done' : 'Mark done'}
+                          >
+                            {t.done && <CheckIcon />}
+                            <span className="task-check-sparkles" aria-hidden="true">
+                              <i /><i /><i /><i /><i /><i />
+                            </span>
+                          </button>
+                          <button className="task-title-btn" onClick={() => openEditTask(t)}>
+                            <span className={`task-title${t.done ? ' task-title--done' : ''}`}>{t.title}</span>
+                            {(t.location || t.dueDate) && !t.done && (
+                              <span className="task-meta muted small">
+                                {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
+                              </span>
+                            )}
+                          </button>
+                          {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
+                          <button className="icon-btn task-del" onClick={() => deleteTaskWithUndo(t)} aria-label="Delete task">
+                            ✕
+                          </button>
+                        </div>
+                      </SwipeToDelete>
                     </li>
                   ))}
                   {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
@@ -401,7 +420,7 @@ export default function HomePage() {
         onDiscard={() => setEditingNote(null)}
         danger={
           editingNote?.id
-            ? { label: 'Delete note', onClick: () => { actions.deleteNote(editingNote.id); setEditingNote(null); } }
+            ? { label: 'Delete note', onClick: () => { deleteNoteWithUndo(editingNote); setEditingNote(null); } }
             : undefined
         }
       >
@@ -528,7 +547,7 @@ export default function HomePage() {
         onDiscard={() => setEditingTask(null)}
         danger={
           editingTask?.id
-            ? { label: 'Delete task', onClick: () => { actions.deleteTask(editingTask.id); setEditingTask(null); } }
+            ? { label: 'Delete task', onClick: () => { deleteTaskWithUndo(editingTask); setEditingTask(null); } }
             : undefined
         }
       >

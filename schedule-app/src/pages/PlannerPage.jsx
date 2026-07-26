@@ -9,6 +9,7 @@ import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { useBackDismiss } from '../data/useBackDismiss.js';
+import { useToast } from '../data/toast.jsx';
 import {
   requestNotificationPermission,
   notificationsSupported,
@@ -97,6 +98,7 @@ const PENDING_DRAFT_KEY = 'keystone.pendingEventDraft';
 export default function PlannerPage() {
   const { state } = useStore();
   const actions = useActions();
+  const showToast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const [mode, setMode] = useState('day'); // day | week | month
@@ -262,9 +264,11 @@ export default function PlannerPage() {
   };
 
   const deleteEvent = (id) => {
+    const ev = state.events.find((e) => e.id === id);
     actions.deleteEvent(id);
     setEditing(null);
     setViewing(null);
+    if (ev) showToast(`"${ev.title || 'Event'}" deleted`, 'Undo', () => actions.addEvent(ev));
   };
 
   const skipOccurrence = (id, recDate) => {

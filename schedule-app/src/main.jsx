@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import { ClerkProvider } from '@clerk/clerk-react';
 import App from './App.jsx';
 import { StoreProvider } from './data/store.jsx';
+import { ToastProvider } from './data/toast.jsx';
 import { CLERK_ENABLED } from './data/clerkConfig.js';
 import './styles.css';
 
@@ -22,7 +23,9 @@ createRoot(document.getElementById('root')).render(
     <Root>
       <HashRouter>
         <StoreProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </StoreProvider>
       </HashRouter>
     </Root>

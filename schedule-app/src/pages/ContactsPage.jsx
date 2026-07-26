@@ -5,9 +5,11 @@ import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
+import SwipeToDelete from '../components/SwipeToDelete.jsx';
 import { daysAgoLabel, daysSince, todayISO, uid } from '../data/helpers.js';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { parseVCard } from '../data/vcard.js';
+import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
 
 // A contact is "overdue" when the time since last contact (or since they were
 // added, if never contacted) meets or exceeds their reconnect cadence.
@@ -26,6 +28,7 @@ export default function ContactsPage() {
   const actions = useActions();
   const navigate = useNavigate();
   const location = useLocation();
+  const deleteContactWithUndo = useDeleteContactWithUndo();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState(''); // statusId, '__overdue', or ''
   const [adding, setAdding] = useState(null);
@@ -262,24 +265,26 @@ export default function ContactsPage() {
             const over = isOverdue(c, reconnectDays);
             return (
               <li key={c.id}>
-                <button className="contact-row" onClick={() => navigate(`/contacts/${c.id}`)}>
-                  <span className="avatar-slot">
-                    <Avatar name={c.name} photo={c.photo} color={st?.color} size={iconSize} />
-                    {over && <span className="overdue-dot" aria-hidden="true" />}
-                  </span>
-                  <span className="contact-main">
-                    <span className="contact-name">
-                      {c.name}
-                      {over && <span className="overdue-tag">Reconnect</span>}
+                <SwipeToDelete onDelete={() => deleteContactWithUndo(c)}>
+                  <button className="contact-row" onClick={() => navigate(`/contacts/${c.id}`)}>
+                    <span className="avatar-slot">
+                      <Avatar name={c.name} photo={c.photo} color={st?.color} size={iconSize} />
+                      {over && <span className="overdue-dot" aria-hidden="true" />}
                     </span>
-                    <span className="contact-sub muted">
-                      {st && <span className="dot-badge" style={{ color: st.color }}>{st.label}</span>}
-                      {st && ' · '}
-                      Last: {daysAgoLabel(c.lastContacted)}
+                    <span className="contact-main">
+                      <span className="contact-name">
+                        {c.name}
+                        {over && <span className="overdue-tag">Reconnect</span>}
+                      </span>
+                      <span className="contact-sub muted">
+                        {st && <span className="dot-badge" style={{ color: st.color }}>{st.label}</span>}
+                        {st && ' · '}
+                        Last: {daysAgoLabel(c.lastContacted)}
+                      </span>
                     </span>
-                  </span>
-                  <Chevron />
-                </button>
+                    <Chevron />
+                  </button>
+                </SwipeToDelete>
               </li>
             );
           })}
