@@ -6,6 +6,7 @@ import ExpandableFab from '../components/ExpandableFab.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import SwipeToDelete from '../components/SwipeToDelete.jsx';
+import SmartQuickAdd from '../components/SmartQuickAdd.jsx';
 import { Brand } from '../components/Logo.jsx';
 import {
   todayISO,
@@ -38,6 +39,7 @@ export default function HomePage() {
   const isPro = !!state.settings?.isPro;
   const taskCompleteAnim = state.settings?.taskCompleteAnim ?? true;
   const [editMode, setEditMode] = useState(false);
+  const [smartAddOpen, setSmartAddOpen] = useState(false);
   const taskSwipeRefs = useRef(new Map());
 
   // A delete is reversible for a few seconds instead of instant and silent —
@@ -46,6 +48,44 @@ export default function HomePage() {
   const deleteTaskWithUndo = (t) => {
     actions.deleteTask(t.id);
     showToast(`"${t.title || 'Task'}" deleted`, 'Undo', () => actions.addTask(t));
+  };
+  const createFromSmartAdd = (kind, parsed) => {
+    if (kind === 'event') {
+      const start = parsed.time || '09:00';
+      const [h, m] = start.split(':').map(Number);
+      const endMins = Math.min(23 * 60 + 59, h * 60 + m + 60);
+      const end = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
+      actions.addEvent({
+        title: parsed.title,
+        date: parsed.date || todayISO(),
+        start,
+        end,
+        contactId: '',
+        location: '',
+        locLat: null,
+        locLng: null,
+        notes: '',
+        done: false,
+        repeat: 'none',
+        repeatUntil: '',
+        repeatDays: [],
+        typeId: '',
+        color: '',
+        reminder: 0,
+      });
+      showToast(`"${parsed.title}" added to your calendar`);
+    } else {
+      actions.addTask({
+        title: parsed.title,
+        notes: '',
+        location: '',
+        dueDate: parsed.date || '',
+        dueTime: parsed.time || '',
+        reminderOffsets: [],
+      });
+      showToast(`"${parsed.title}" added to your tasks`);
+    }
+    setSmartAddOpen(false);
   };
   const deleteNoteWithUndo = (n) => {
     actions.deleteNote(n.id);
@@ -426,7 +466,14 @@ export default function HomePage() {
           else if (id === 'contact') navigate('/contacts', { state: { quickNewContact: true } });
           else if (id === 'task') openNewTask();
           else if (id === 'note') openNewNote();
+          else if (id === 'smart') (isPro ? setSmartAddOpen(true) : navigate('/pricing'));
         }}
+      />
+
+      <SmartQuickAdd
+        open={smartAddOpen}
+        onClose={() => setSmartAddOpen(false)}
+        onCreate={createFromSmartAdd}
       />
 
       <EditorSheet

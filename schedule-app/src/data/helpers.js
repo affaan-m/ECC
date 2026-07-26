@@ -281,12 +281,18 @@ export function computeGoalStreak(goal) {
   return count;
 }
 
-// Every goal starts with a small, non-replenishing pool of streak freezes —
-// spending one protects the current day/week's streak even if its target
-// goes unmet, the same "streak repair" idea as Duolingo's freeze.
-export const DEFAULT_GOAL_FREEZES = 2;
-export function goalFreezesLeft(goal) {
-  return goal.freezesAvailable ?? DEFAULT_GOAL_FREEZES;
+// Streak freezes reset monthly rather than being a lifetime pool — Pro gets
+// a bigger monthly allowance ("streak insurance") as one of the perks of the
+// subscription. Usage is derived from the dates already recorded in
+// goal.frozenKeys rather than a separate decrementing counter, so it just
+// naturally rolls over into a fresh quota each month.
+export const FREE_MONTHLY_FREEZES = 2;
+export const PRO_MONTHLY_FREEZES = 5;
+export function goalFreezesLeft(goal, isPro) {
+  const quota = isPro ? PRO_MONTHLY_FREEZES : FREE_MONTHLY_FREEZES;
+  const thisMonth = todayISO().slice(0, 7); // 'YYYY-MM'
+  const used = (goal.frozenKeys || []).filter((k) => k.slice(0, 7) === thisMonth).length;
+  return Math.max(0, quota - used);
 }
 
 // --- Recurring events ------------------------------------------------------

@@ -5,6 +5,7 @@ export const QUICK_ADD_TYPES = [
   { id: 'task', label: 'Task', icon: '✅' },
   { id: 'contact', label: 'Contact', icon: '👤' },
   { id: 'note', label: 'Note', icon: '📝' },
+  { id: 'smart', label: 'Smart add', icon: '✨' },
 ];
 
 export const DEFAULT_QUICK_ADD = QUICK_ADD_TYPES.map((t) => ({ id: t.id, enabled: true }));

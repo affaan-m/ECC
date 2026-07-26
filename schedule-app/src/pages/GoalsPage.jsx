@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Checkbox from '../components/Checkbox.jsx';
@@ -41,6 +42,8 @@ const emptyGoal = (period) => ({
 export default function GoalsPage() {
   const { state } = useStore();
   const actions = useActions();
+  const navigate = useNavigate();
+  const isPro = !!state.settings?.isPro;
   const [period, setPeriod] = useState('daily');
   const [day, setDay] = useState(() => todayISO());
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -131,13 +134,8 @@ export default function GoalsPage() {
   };
   const useFreeze = (g, periodKey) => {
     if ((g.frozenKeys || []).includes(periodKey)) return;
-    const left = goalFreezesLeft(g);
-    if (left <= 0) return;
-    actions.updateGoal({
-      ...g,
-      frozenKeys: [...(g.frozenKeys || []), periodKey],
-      freezesAvailable: left - 1,
-    });
+    if (goalFreezesLeft(g, isPro) <= 0) return;
+    actions.updateGoal({ ...g, frozenKeys: [...(g.frozenKeys || []), periodKey] });
     successTick();
   };
   const clearHold = (holdKey) => {
@@ -304,10 +302,11 @@ export default function GoalsPage() {
               const done = value >= g.target;
               const streak = computeGoalStreak(g);
               const frozenHere = (g.frozenKeys || []).includes(key);
-              const freezesLeft = goalFreezesLeft(g);
+              const freezesLeft = goalFreezesLeft(g, isPro);
               // Freezing only makes sense for the period actually in progress
               // right now — not some other day/week the user has navigated to.
               const canFreeze = atCurrent && !done && !frozenHere && freezesLeft > 0 && streak >= 1;
+              const outOfFreezes = atCurrent && !done && !frozenHere && freezesLeft === 0 && streak >= 1 && !isPro;
               return (
                 <div key={g.id}>
                   <div className={`goal-card${done ? ' goal-card--done' : ''}`}>
@@ -384,7 +383,12 @@ export default function GoalsPage() {
                       data-haptic="select"
                       onClick={() => useFreeze(g, key)}
                     >
-                      ❄️ Use a streak freeze to protect {isDaily ? 'today' : 'this week'} ({freezesLeft} left)
+                      ❄️ Use a streak freeze to protect {isDaily ? 'today' : 'this week'} ({freezesLeft} left this month)
+                    </button>
+                  )}
+                  {outOfFreezes && (
+                    <button className="freeze-row" data-haptic="select" onClick={() => navigate('/pricing')}>
+                      🔒 Out of freezes this month — get 5/mo with Pro
                     </button>
                   )}
                 </div>
@@ -427,6 +431,15 @@ export default function GoalsPage() {
                 placeholder="e.g. Drink water"
               />
             </label>
+            {editing.id && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm history-link"
+                onClick={() => (isPro ? navigate(`/goals/${editing.id}/history`) : navigate('/pricing'))}
+              >
+                📈 View history {!isPro && '🔒'}
+              </button>
+            )}
             <div className="field">
               <span>Repeats</span>
               <div className="seg seg--full">

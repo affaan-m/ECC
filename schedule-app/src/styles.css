@@ -727,6 +727,92 @@ textarea {
   color: var(--accent-ink);
   border-color: var(--accent);
 }
+.history-link {
+  align-self: flex-start;
+  margin: -4px 0 4px;
+}
+
+/* --- Goal history (Pro) -------------------------------------------------- */
+.history-stats {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+}
+.history-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.history-stat strong {
+  font-size: 22px;
+}
+.history-heatmap {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--track);
+}
+.heatmap-cell--met {
+  background: var(--accent);
+}
+.heatmap-cell--frozen {
+  background: color-mix(in srgb, var(--accent) 35%, var(--track));
+}
+.history-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  margin-top: 8px;
+}
+.history-bar-col {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+.history-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--track);
+}
+.history-bar--met {
+  background: var(--accent);
+}
+.history-bar--frozen {
+  background: color-mix(in srgb, var(--accent) 35%, var(--track));
+}
+.history-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--track);
+}
+.legend-dot--met {
+  background: var(--accent);
+}
+.legend-dot--frozen {
+  background: color-mix(in srgb, var(--accent) 35%, var(--track));
+}
 
 /* --- Recurring event glyph ---------------------------------------------- */
 .repeat-glyph {
@@ -1501,6 +1587,18 @@ textarea {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow);
+}
+.smart-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+.smart-preview strong {
+  font-size: 15px;
 }
 
 /* --- Planner: select mode ------------------------------------------------ */

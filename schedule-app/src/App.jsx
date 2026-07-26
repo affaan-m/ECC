@@ -13,6 +13,7 @@ import { CLERK_ENABLED } from './data/clerkConfig.js';
 import { useToast } from './data/toast.jsx';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
+import GoalHistoryPage from './pages/GoalHistoryPage.jsx';
 import PlannerPage from './pages/PlannerPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import ContactDetailPage from './pages/ContactDetailPage.jsx';
@@ -356,6 +357,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/goals/:id/history" element={<GoalHistoryPage />} />
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
