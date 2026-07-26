@@ -1,6 +1,6 @@
 ---
 name: strategic-compact
-description: Suggests manual context compaction at logical intervals to preserve context through task phases rather than arbitrary auto-compaction.
+description: Use in long sessions to decide when to run /compact — at phase boundaries (after exploration, before implementation; after a milestone, before the next) rather than at arbitrary auto-compaction points, so task-critical context survives.
 ---
 
 # Strategic Compact Skill

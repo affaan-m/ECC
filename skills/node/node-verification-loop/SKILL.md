@@ -1,3 +1,8 @@
+---
+name: node-verification-loop
+description: Use after completing a feature, before creating a PR, or after refactoring in Node/TypeScript projects. Runs build, type check, lint, tests, and security checks as a quality-gate loop and reports a pass/fail summary.
+---
+
 # Verification Loop Skill
 
 A comprehensive verification system for Claude Code sessions.

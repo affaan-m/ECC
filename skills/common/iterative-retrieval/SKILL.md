@@ -1,6 +1,6 @@
 ---
 name: iterative-retrieval
-description: Pattern for progressively refining context retrieval to solve the subagent context problem
+description: Use when a subagent needs context it cannot name upfront, or when a first round of search/retrieval came back incomplete — iteratively broaden, analyze, and refine retrieval instead of one-shot searching.
 ---
 
 # Iterative Retrieval Pattern

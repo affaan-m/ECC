@@ -1,3 +1,8 @@
+---
+name: node-project-guidelines-example
+description: Example template for writing a project-specific skill. Use when creating or structuring per-project guidelines (architecture, conventions, common tasks, warnings) for a codebase — copy this file and adapt it to your project.
+---
+
 # Project Guidelines Skill (Example)
 
 This is an example of a project-specific skill. Use this as a template for your own projects.
