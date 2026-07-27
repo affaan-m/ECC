@@ -323,6 +323,52 @@ async function runRejectsZeroThreshold() {
   }
 }
 
+// "00" is zero with or without the base-10 conversion, so it does not exercise
+// it. "08" does: without `10#` bash reads it as octal, and an invalid octal
+// digit is an arithmetic error that aborts the whole hook under `set -e`.
+async function runLeadingZeroThreshold() {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  try {
+    fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${deadPid()}\n`);
+    // runObserve rejects on a non-zero exit, so an octal abort fails here.
+    await runObserve(testObserve, projectDir, { ECC_OBSERVER_NOSURVIVE_WARN_AFTER: '08' });
+
+    assert.strictEqual(readStreak(projectDir), 1, 'streak should advance under an "08" threshold');
+    assert.ok(
+      !readStartLog(projectDir).includes(WARN_MARKER),
+      '"08" should be read as decimal 8, so a streak of 1 must not warn yet'
+    );
+  } finally {
+    cleanupDir(testDir);
+  }
+}
+
+// If the counter cannot be persisted, the file stays below the threshold and
+// every later invocation would re-increment in memory and warn again -- turning
+// the once-per-streak diagnostic into once-per-tool-call spam. An unpersisted
+// increment must therefore stay silent, while the hook still exits 0.
+async function runSilentWhenCounterUnwritable() {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  try {
+    // A directory where the counter file goes makes the `>` redirection fail.
+    fs.mkdirSync(path.join(projectDir, STREAK_FILE), { recursive: true });
+
+    for (let i = 0; i < 2; i++) {
+      fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${deadPid()}\n`);
+      // runObserve rejects on a non-zero exit, so this also asserts the hook
+      // never fails the tool call just because the counter is unwritable.
+      await runObserve(testObserve, projectDir, { ECC_OBSERVER_NOSURVIVE_WARN_AFTER: '1' });
+    }
+
+    assert.ok(
+      !readStartLog(projectDir).includes(WARN_MARKER),
+      'an unpersisted streak must not warn, or it would repeat on every tool call'
+    );
+  } finally {
+    cleanupDir(testDir);
+  }
+}
+
 // A healthy observer clears the streak, so an unrelated one-off crash later on
 // does not inherit an old count and warn spuriously.
 async function runResetWhenAlive() {
@@ -359,6 +405,8 @@ async function runResetWhenAlive() {
     await asyncTest('warns in observer-start.log once the streak reaches the threshold', runWarnsAtThreshold);
     await asyncTest('stays silent while the streak is below the threshold', runSilentBelowThreshold);
     await asyncTest('an all-zero threshold falls back to the default instead of disabling the warning', runRejectsZeroThreshold);
+    await asyncTest('a leading-zero threshold is read as decimal, not octal', runLeadingZeroThreshold);
+    await asyncTest('an unpersisted streak stays silent instead of warning every call', runSilentWhenCounterUnwritable);
     await asyncTest('a live observer resets the non-survival streak', runResetWhenAlive);
   } else {
     console.log('  - skipping shell-execution tests (requires non-Windows + python3)');

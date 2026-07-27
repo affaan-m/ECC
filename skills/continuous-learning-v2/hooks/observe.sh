@@ -434,14 +434,18 @@ _NOTE_OBSERVER_NOSURVIVE() {
   case "$warn_after" in ''|*[!0-9]*) warn_after=3 ;; *) warn_after=$((10#$warn_after)) ;; esac
   if [ "$warn_after" -lt 1 ]; then warn_after=3; fi
   streak=$((streak + 1))
-  # Never fail the hook on a write error: observe.sh runs on every tool call and
-  # the repo rule is that hooks exit 0 on non-critical errors. A stalled counter
-  # only delays this diagnostic; it cannot corrupt state.
-  printf '%s\n' "$streak" > "$streak_file" 2>/dev/null || true
 
-  # Fire on equality, not >=, so a persistent failure logs once per streak
-  # instead of once per tool call.
-  if [ "$streak" -eq "$warn_after" ]; then
+  # Warn only on a persisted increment, and only on equality. Both conditions
+  # are what keep this to one warning per streak:
+  #   - `-eq` rather than `-ge` stops it repeating once the threshold is passed.
+  #   - Requiring the write to succeed stops it repeating when the write fails:
+  #     a stuck counter file would otherwise be reread at `warn_after - 1` on
+  #     every tool call, re-incremented in memory, and warn every time.
+  # A failed write is still never fatal -- observe.sh runs on every tool call
+  # and the repo rule is that hooks exit 0 on non-critical errors, so a full
+  # disk must not break tool execution. The `if` context keeps `set -e` happy.
+  if printf '%s\n' "$streak" > "$streak_file" 2>/dev/null &&
+     [ "$streak" -eq "$warn_after" ]; then
     local platform_hint
     local uname_lower
     uname_lower=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
