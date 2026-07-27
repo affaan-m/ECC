@@ -1,31 +1,41 @@
-// Opening Google Maps from Keystone.
+// Opening a map from Keystone.
 //
-// The awkward part is not the URL, it's the *opening*. Installed to a home
-// screen, the app runs in a standalone window with no browser chrome, and
-// two things that work fine in a normal tab stop working there:
+// Harder than it looks, because the app runs in three quite different
+// containers and each one breaks a different approach.
 //
-//   - `window.open(url, '_blank')` is heavily restricted in a standalone
-//     iOS PWA and commonly does nothing at all — no new window, no error.
-//     This was why the Directions buttons appeared dead.
-//   - `target="_blank"` on an anchor is unreliable in the same context, and
-//     where it does work it can strand the user in a chrome-less view with
-//     no back button.
+// What went wrong before, in order:
 //
-// What is reliable is a plain same-window navigation to an out-of-scope
-// URL. The manifest scopes the app to its own origin, so navigating to
-// google.com is out of scope, and the platform takes over: iOS hands off to
-// Safari — or straight to the Google Maps app, since these are universal
-// links — and Android opens a Custom Tab over the app. The PWA is left
-// intact underneath in both cases, and all app state lives in localStorage
-// anyway, so returning to it loses nothing.
+//   1. `window.open(url, '_blank')` — restricted in an installed PWA and
+//      commonly does nothing at all, no window and no error.
+//   2. A same-window navigation to `https://www.google.com/maps/...` — this
+//      one produced a visible `net::ERR_UNKNOWN_URL_SCHEME` error page
+//      *inside* the app on Android. Google's maps URL sniffs the container,
+//      decides it is a webview (the redirect carries `utm_campaign=ardl-wv`)
+//      and 302s to an `intent://…#Intent;scheme=https;package=…;end` URL to
+//      hand off to the Maps app. Only a real browser resolves `intent:`; a
+//      PWA window does not, so the navigation dead-ends on an error page and
+//      the user is stranded inside the app with no address bar.
 //
-// In an ordinary browser tab a real anchor click is still the better
-// behaviour (keeps the app open in its own tab), so that path is unchanged.
+// So: never navigate the app's own window to a maps URL, and on Android
+// don't go via the web at all. Android's documented mechanism for "show this
+// place" is the `geo:` URI, which the OS routes straight to a maps app —
+// no redirect chain, no browser, no intent: URL for us to resolve. Elsewhere
+// (iOS, desktop) the https URL is a universal link that opens the Google Maps
+// app when installed, so it just needs to be opened in a *separate* context.
+//
+// A `geo:` handoff that nothing claims is silent rather than an error, so it
+// gets a timer-based fallback to the web URL: if we're still on screen a
+// beat later, the handoff didn't happen and we open the web map instead.
+
+const FALLBACK_MS = 1200;
+
+export function isAndroid() {
+  if (typeof navigator === 'undefined') return false;
+  return /android/i.test(navigator.userAgent);
+}
 
 export function isStandalone() {
   if (typeof window === 'undefined') return false;
-  // navigator.standalone is the iOS-specific flag; the media queries cover
-  // Android/desktop installs, including the less common display modes.
   return (
     window.navigator.standalone === true ||
     ['standalone', 'fullscreen', 'minimal-ui'].some(
@@ -34,14 +44,11 @@ export function isStandalone() {
   );
 }
 
-export function openExternal(url) {
-  if (!url) return;
-  if (isStandalone()) {
-    window.location.href = url;
-    return;
-  }
-  // A real anchor click rather than window.open: it isn't subject to popup
-  // blocking and doesn't need a popup permission.
+// A real anchor click rather than window.open: not subject to popup blocking,
+// and it opens a Custom Tab / new tab rather than navigating this window —
+// which is the part that matters, since a browser can resolve `intent:` and
+// this window can't.
+function openInNewContext(url) {
   const a = document.createElement('a');
   a.href = url;
   a.target = '_blank';
@@ -51,34 +58,87 @@ export function openExternal(url) {
   a.remove();
 }
 
-// For places that should stay a real <a> — keeping link semantics like
-// long-press to copy or share — while still opening correctly when
-// installed. Spread onto the element.
-export function externalLinkProps(url) {
+// Hands off to a native scheme, falling back to the web URL if nothing
+// claims it. A successful handoff backgrounds the page, so any of
+// hide/pagehide/blur means it worked and cancels the fallback.
+function openWithNativeFallback(nativeUrl, webUrl) {
+  let settled = false;
+  const cancel = () => {
+    settled = true;
+    clearTimeout(timer);
+    window.removeEventListener('pagehide', cancel);
+    window.removeEventListener('blur', cancel);
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') cancel();
+  };
+  const timer = setTimeout(() => {
+    if (settled) return;
+    cancel();
+    if (webUrl) openInNewContext(webUrl);
+  }, FALLBACK_MS);
+
+  window.addEventListener('pagehide', cancel);
+  window.addEventListener('blur', cancel);
+  document.addEventListener('visibilitychange', onVisibility);
+
+  window.location.href = nativeUrl;
+}
+
+// --- Targets --------------------------------------------------------------
+// A target is { web, native } — the https URL that works everywhere, plus an
+// optional platform-native URI preferred where it exists.
+
+export function directionsTarget(lat, lng) {
+  if (lat == null || lng == null) return null;
   return {
-    href: url,
-    target: '_blank',
-    rel: 'noopener noreferrer',
-    onClick: (e) => {
-      if (!isStandalone()) return;
-      e.preventDefault();
-      window.location.href = url;
-    },
+    web: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+    // `geo:` has no notion of "route from here", but every Android maps app
+    // offers directions the moment the place is on screen, and this is the
+    // one form guaranteed not to bounce through the web.
+    native: isAndroid() ? `geo:${lat},${lng}?q=${lat},${lng}` : null,
   };
 }
 
-// --- URL builders ---------------------------------------------------------
-// `api=1` is Google's documented, stable cross-platform Maps URL format; it
-// resolves to the native app where one is installed and the web map
-// otherwise.
-
-export function directionsUrl(lat, lng) {
-  if (lat == null || lng == null) return '';
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+export function addressTarget(address) {
+  const q = (address || '').trim();
+  if (!q) return null;
+  return {
+    web: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
+    native: isAndroid() ? `geo:0,0?q=${encodeURIComponent(q)}` : null,
+  };
 }
 
-export function addressSearchUrl(address) {
-  const q = (address || '').trim();
-  if (!q) return '';
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+// For URLs with no native equivalent — a multi-stop route can't be expressed
+// as a `geo:` URI, so it stays on the web but still opens out-of-window.
+export function webTarget(url) {
+  return url ? { web: url, native: null } : null;
+}
+
+// --- Opening --------------------------------------------------------------
+
+export function openMaps(target) {
+  if (!target?.web && !target?.native) return;
+  if (target.native) {
+    openWithNativeFallback(target.native, target.web);
+    return;
+  }
+  openInNewContext(target.web);
+}
+
+// Props for elements that should stay real anchors — keeping link semantics
+// like long-press to copy or share — while still opening correctly. The href
+// is always the web URL so those menus show something meaningful.
+export function mapsLinkProps(target) {
+  if (!target) return {};
+  return {
+    href: target.web,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    onClick: (e) => {
+      e.preventDefault();
+      openMaps(target);
+    },
+  };
 }

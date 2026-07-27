@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { optimizeRoute, formatDistance, buildGoogleMapsUrl } from '../data/routePlanner.js';
-import { externalLinkProps } from '../data/maps.js';
+import { mapsLinkProps, webTarget } from '../data/maps.js';
 
 export default function RoutePlannerPage() {
   const { state } = useStore();
@@ -158,7 +158,7 @@ export default function RoutePlannerPage() {
               </ul>
               <a
                 className="btn btn-primary full"
-                {...externalLinkProps(buildGoogleMapsUrl(route.start, route.stops))}
+                {...mapsLinkProps(webTarget(buildGoogleMapsUrl(route.start, route.stops)))}
               >
                 ➤ Open full route in Google Maps
               </a>

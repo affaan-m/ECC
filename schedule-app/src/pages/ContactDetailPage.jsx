@@ -8,7 +8,7 @@ import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
-import { addressSearchUrl, externalLinkProps } from '../data/maps.js';
+import { addressTarget, mapsLinkProps } from '../data/maps.js';
 import {
   todayISO,
   toISODate,
@@ -170,7 +170,7 @@ export default function ContactDetailPage() {
             value={contact.address}
             // Was plain text — an address you can see but not act on. Opens
             // it in Maps, the same way Phone and Email already act.
-            linkProps={externalLinkProps(addressSearchUrl(contact.address))}
+            linkProps={mapsLinkProps(addressTarget(contact.address))}
           />
         )}
         {(contact.tags || []).length > 0 && (

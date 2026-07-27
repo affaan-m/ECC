@@ -8,7 +8,7 @@ import Select from '../components/Select.jsx';
 import { todayISO } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { geocodeAddress } from '../data/geocode.js';
-import { directionsUrl, openExternal } from '../data/maps.js';
+import { directionsTarget, openMaps } from '../data/maps.js';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -319,7 +319,7 @@ export default function MapPage() {
 
   // openExternal, not window.open — see data/maps.js for why the latter
   // silently does nothing once the app is installed to a home screen.
-  const directionsTo = (p) => openExternal(directionsUrl(p.lat, p.lng));
+  const directionsTo = (p) => openMaps(directionsTarget(p.lat, p.lng));
 
   const savePin = () => {
     const payload = {
