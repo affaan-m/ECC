@@ -895,6 +895,7 @@
         "skills/energy-procurement",
         "skills/inventory-demand-planning",
         "skills/logistics-exception-management",
+        "skills/otif-analysis",
         "skills/production-scheduling",
         "skills/quality-nonconformance",
         "skills/returns-reverse-logistics"
