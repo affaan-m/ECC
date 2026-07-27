@@ -450,9 +450,13 @@ export default function PlannerPage() {
   const dismissConflict = (id) =>
     setDismissedConflicts((prev) => new Set(prev).add(id));
 
+  const isPro = !!state.settings?.isPro;
   const templates = state.templates || [];
   const templateKind = mode === 'week' ? 'week' : 'day';
+  // Guarded here as well as at the button, so the only way in stays the only
+  // way in even if something else ever opens the sheet.
   const saveTemplate = () => {
+    if (!isPro) return navigate('/pricing');
     const blocks =
       templateKind === 'week' ? captureWeek(state.events, weekStart) : captureDay(state.events, cursor);
     if (blocks.length === 0) {
@@ -465,6 +469,7 @@ export default function PlannerPage() {
     showToast(`Saved ${blocks.length} block${blocks.length === 1 ? '' : 's'} as a template.`);
   };
   const applyTemplate = (t) => {
+    if (!isPro) return navigate('/pricing');
     const events = instantiate(t, cursor);
     actions.applyTemplate(events);
     setTemplatesOpen(false);
@@ -517,8 +522,11 @@ export default function PlannerPage() {
           </button>
           {selectMode && <span className="muted small">{selected.size} selected</span>}
           {mode !== 'month' && (
-            <button className="btn btn-sm btn-ghost" onClick={() => setTemplatesOpen(true)}>
-              Templates
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => (isPro ? setTemplatesOpen(true) : navigate('/pricing'))}
+            >
+              Templates {!isPro && '🔒'}
             </button>
           )}
           <button className="today-btn" onClick={() => setCursor(todayISO())} aria-label="Jump to today" title="Jump to today">
@@ -634,7 +642,7 @@ export default function PlannerPage() {
           screen, which is why the button is only offered in day/week mode —
           "apply to a month" has no sensible meaning. */}
       <Modal
-        open={templatesOpen}
+        open={templatesOpen && isPro}
         title={templateKind === 'week' ? 'Week templates' : 'Day templates'}
         onClose={() => setTemplatesOpen(false)}
       >
