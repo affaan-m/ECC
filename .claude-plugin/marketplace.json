@@ -10,7 +10,10 @@
   "plugins": [
     {
       "name": "ecc",
-      "source": "./",
+      "source": {
+        "source": "github",
+        "repo": "affaan-m/ECC"
+      },
       "description": "Harness-native ECC operator layer - 67 agents, 281 skills, 94 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
       "version": "2.1.0",
       "author": {
