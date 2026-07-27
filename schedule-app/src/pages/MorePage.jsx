@@ -62,6 +62,14 @@ const COLOR_SCHEMES = [
   { value: 'forest', label: 'Forest', swatch: '#2f7d3a' },
   { value: 'slate', label: 'Slate', swatch: '#46586b' },
   { value: 'berry', label: 'Berry', swatch: '#a3306f' },
+  { value: 'crimson', label: 'Crimson', swatch: '#c0392b' },
+  { value: 'wine', label: 'Wine', swatch: '#8c2f43' },
+  { value: 'clay', label: 'Clay', swatch: '#9c5b3c' },
+  { value: 'olive', label: 'Olive', swatch: '#6d7d24' },
+  { value: 'teal', label: 'Teal', swatch: '#0d8a9e' },
+  { value: 'indigo', label: 'Indigo', swatch: '#4b56c9' },
+  { value: 'plum', label: 'Plum', swatch: '#6b3b7a' },
+  { value: 'charcoal', label: 'Charcoal', swatch: '#3d4348' },
 ];
 
 const PASTEL_SCHEMES = [

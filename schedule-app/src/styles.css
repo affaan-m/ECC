@@ -70,6 +70,30 @@
 :root[data-theme='light'][data-scheme='berry'] { --accent: #a3306f; --accent-soft: #f6e2ec; }
 :root[data-theme='dark'][data-scheme='berry']  { --accent: #d9679f; --accent-soft: #35202b; }
 
+:root[data-theme='light'][data-scheme='crimson'] { --accent: #c0392b; --accent-soft: #fbe6e3; }
+:root[data-theme='dark'][data-scheme='crimson']  { --accent: #f08578; --accent-soft: #3a1f1c; }
+
+:root[data-theme='light'][data-scheme='wine'] { --accent: #8c2f43; --accent-soft: #f7e3e8; }
+:root[data-theme='dark'][data-scheme='wine']  { --accent: #e0788f; --accent-soft: #38202a; }
+
+:root[data-theme='light'][data-scheme='clay'] { --accent: #9c5b3c; --accent-soft: #f8e9e1; }
+:root[data-theme='dark'][data-scheme='clay']  { --accent: #e0a07d; --accent-soft: #352520; }
+
+:root[data-theme='light'][data-scheme='olive'] { --accent: #6d7d24; --accent-soft: #eff2df; }
+:root[data-theme='dark'][data-scheme='olive']  { --accent: #bccb72; --accent-soft: #2a2e14; }
+
+:root[data-theme='light'][data-scheme='teal'] { --accent: #0d8a9e; --accent-soft: #e0f1f4; }
+:root[data-theme='dark'][data-scheme='teal']  { --accent: #4fc6dc; --accent-soft: #12313a; }
+
+:root[data-theme='light'][data-scheme='indigo'] { --accent: #4b56c9; --accent-soft: #e7e9fb; }
+:root[data-theme='dark'][data-scheme='indigo']  { --accent: #939bf0; --accent-soft: #1f2246; }
+
+:root[data-theme='light'][data-scheme='plum'] { --accent: #6b3b7a; --accent-soft: #f0e7f4; }
+:root[data-theme='dark'][data-scheme='plum']  { --accent: #c090d4; --accent-soft: #2d1f36; }
+
+:root[data-theme='light'][data-scheme='charcoal'] { --accent: #3d4348; --accent-soft: #e9eaeb; }
+:root[data-theme='dark'][data-scheme='charcoal']  { --accent: #a3adb5; --accent-soft: #252a2e; }
+
 /* --- Pastels -------------------------------------------------------------
    Softer, dustier hues than the set above. Note these are muted rather than
    pale: --accent is used as a *text* colour in about thirty places, so a
