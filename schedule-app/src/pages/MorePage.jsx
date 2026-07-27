@@ -536,6 +536,34 @@ export default function MorePage() {
           </button>
         </div>
 
+        {/* The two schedule warnings the planner can raise, separately
+            switchable — the travel estimate is a guess from straight-line
+            distance and some people will want it quiet while still being
+            told about a genuine double-booking, which is a fact. */}
+        <div className="section-head">
+          <span>Warn about overlapping events</span>
+          <button
+            className={`toggle${s.warnOverlaps !== false ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.warnOverlaps !== false}
+            onClick={() => actions.setSettings({ warnOverlaps: s.warnOverlaps === false })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="section-head">
+          <span>Warn about tight travel time</span>
+          <button
+            className={`toggle${s.warnTravelTime !== false ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.warnTravelTime !== false}
+            onClick={() => actions.setSettings({ warnTravelTime: s.warnTravelTime === false })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
         <p className="muted small">Default event length</p>
         <div className="cadence-setting">
           <button className="step-btn" onClick={() => step('defaultEventDuration', -15, 15, 240)} aria-label="Shorter">

@@ -49,6 +49,12 @@ function loadState() {
         timelineStartHour: 6,
         timelineEndHour: 23,
         showTasksOnTimeline: false,
+        // Schedule warnings, on by default — the point of them is to catch a
+        // clash you hadn't noticed, which only works if they're on until you
+        // decide otherwise. Read as `!== false` everywhere so an older saved
+        // settings object (which has neither key) still gets them.
+        warnOverlaps: true,
+        warnTravelTime: true,
         eventBlockOpacity: 100,
         // Map
         mapShowContactPins: true,

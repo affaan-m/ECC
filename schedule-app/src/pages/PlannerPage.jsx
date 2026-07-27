@@ -442,10 +442,19 @@ export default function PlannerPage() {
   // Only computed for the day being looked at — a conflict on some other day
   // isn't actionable from here, and scanning the whole calendar on every
   // render would cost far more than it's worth.
-  const conflicts = useMemo(
-    () => (mode === 'day' ? findDayConflicts(occurrencesFor(state.events, cursor), state) : []),
-    [mode, state, cursor]
-  );
+  // Each warning kind can be switched off in Calendar settings. Filtered
+  // after detection rather than by skipping the scan — it's a handful of
+  // events on one day, and keeping detection unconditional means flipping
+  // the setting back on shows the warning immediately.
+  const conflicts = useMemo(() => {
+    if (mode !== 'day') return [];
+    const found = findDayConflicts(occurrencesFor(state.events, cursor), state);
+    return found.filter((c) =>
+      c.kind === 'overlap'
+        ? state.settings?.warnOverlaps !== false
+        : state.settings?.warnTravelTime !== false
+    );
+  }, [mode, state, cursor]);
   const shownConflicts = conflicts.filter((c) => !dismissedConflicts.has(c.id));
 
   // Dismissals are per-conflict and deliberately not persisted: they last
