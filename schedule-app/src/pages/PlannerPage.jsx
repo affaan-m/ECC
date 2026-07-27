@@ -7,7 +7,7 @@ import Select from '../components/Select.jsx';
 import MiniMapPicker from '../components/MiniMapPicker.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
-import { confirmTick, selectTick } from '../data/haptics.js';
+import { confirmTick, selectTick, warnTick } from '../data/haptics.js';
 import { useBackDismiss } from '../data/useBackDismiss.js';
 import { useToast } from '../data/toast.jsx';
 import {
@@ -388,15 +388,29 @@ export default function PlannerPage() {
     setSelectMode(false);
   };
 
+  // Multi-select is confined to one day. Moving a set of events keeps their
+  // times and shifts them together, which only means anything when they
+  // started on the same day — a mixed-day selection would silently do
+  // something different to each one. Returns false when a pick is refused so
+  // the caller can say so (see WeekView's shake).
+  const [selectedDay, setSelectedDay] = useState(null);
   const toggleSelected = (occ) => {
     const key = `${occ.id}|${occ.recDate}`;
+    const already = selected.has(key);
+    if (!already && selected.size > 0 && selectedDay && occ.occDate !== selectedDay) {
+      warnTick();
+      return false;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      if (next.size === 0) setSelectedDay(null);
+      else if (!selectedDay) setSelectedDay(occ.occDate);
       return next;
     });
     selectTick();
+    return true;
   };
 
   // Uses the functional setCursor form (not the `cursor` closed over above)
@@ -530,6 +544,7 @@ export default function PlannerPage() {
             onClick={() => {
               setSelectMode((v) => !v);
               setSelected(new Set());
+              setSelectedDay(null);
             }}
           >
             {selectMode ? 'Cancel select' : 'Select'}
@@ -610,6 +625,14 @@ export default function PlannerPage() {
           selectMode={selectMode}
           selected={selected}
           onToggleSelect={toggleSelected}
+          onMoveToDay={(occ, iso) => {
+            // moveOccurrence works in day offsets from the occurrence's own
+            // date, so convert the dropped-on date into one.
+            const offset = Math.round(
+              (fromISODate(iso) - fromISODate(occ.occDate)) / 86400000
+            );
+            if (offset) moveOccurrence(occ, 0, offset);
+          }}
         />
       )}
       {mode === 'month' && (
@@ -1615,16 +1638,136 @@ function clampStart(ev, dy, pxPerMin, dayStart, dayEnd) {
 
 // --- Week agenda -----------------------------------------------------------
 
-function WeekView({ weekStart, events, eventTypes, onOpenDay, onOpen, onAdd, selectMode, selected, onToggleSelect }) {
+function WeekView({
+  weekStart,
+  events,
+  eventTypes,
+  onOpenDay,
+  onOpen,
+  onAdd,
+  selectMode,
+  selected,
+  onToggleSelect,
+  onMoveToDay,
+}) {
   const days = weekDays(weekStart);
   const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
+
+  // Same long-press-to-arm gesture the day timeline uses, so dragging an
+  // event means the same thing in both views. Holding is what distinguishes
+  // "move this" from "open this" and from scrolling the week.
+  const dayRefs = useRef({});
+  const pressRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const [drag, setDrag] = useState(null); // { key, occ, x, y, overIso }
+  const [rejectedKey, setRejectedKey] = useState(null);
+
+  const dayUnder = (clientY) => {
+    for (const [iso, el] of Object.entries(dayRefs.current)) {
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clientY >= r.top && clientY <= r.bottom) return iso;
+    }
+    return null;
+  };
+
+  const clearPress = () => {
+    if (pressRef.current?.timer) clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
+  };
+
+  const onChipDown = (ev, key) => (e) => {
+    // Cleared before the select-mode bail, not after: a drag leaves this set
+    // so the click it generates is ignored, and if the next press happened
+    // to be in select mode the flag was never reset — swallowing that tap.
+    suppressClickRef.current = false;
+    if (selectMode) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    clearPress();
+    const startPoint = { x: e.clientX, y: e.clientY };
+    const target = e.currentTarget;
+    pressRef.current = {
+      startPoint,
+      armed: false,
+      timer: setTimeout(() => {
+        if (!pressRef.current) return;
+        pressRef.current.armed = true;
+        suppressClickRef.current = true;
+        target.setPointerCapture?.(e.pointerId);
+        setDrag({ key, occ: ev, startY: startPoint.y, y: startPoint.y, overIso: ev.occDate });
+        // Fired from the next real pointer event rather than here: Chrome
+        // drops vibrate() calls that aren't close enough to a user gesture,
+        // and this runs off a timer.
+        pressRef.current.pendingTick = true;
+      }, LONG_PRESS_MS),
+    };
+  };
+
+  const onChipMove = (e) => {
+    const g = pressRef.current;
+    if (!g) return;
+    if (g.pendingTick) {
+      g.pendingTick = false;
+      confirmTick();
+    }
+    if (!g.armed) {
+      const dx = e.clientX - g.startPoint.x;
+      const dy = e.clientY - g.startPoint.y;
+      if (Math.hypot(dx, dy) > MOVE_TOLERANCE_PX) clearPress();
+      return;
+    }
+    const overIso = dayUnder(e.clientY);
+    setDrag((d) => {
+      if (!d) return d;
+      if (overIso && overIso !== d.overIso) selectTick();
+      return { ...d, y: e.clientY, overIso: overIso || d.overIso };
+    });
+  };
+
+  const onChipUp = () => {
+    const g = pressRef.current;
+    if (g?.pendingTick) {
+      g.pendingTick = false;
+      confirmTick();
+    }
+    if (g?.armed && drag) {
+      if (drag.overIso && drag.overIso !== drag.occ.occDate) {
+        onMoveToDay(drag.occ, drag.overIso);
+        confirmTick();
+      }
+    }
+    clearPress();
+    setDrag(null);
+  };
+
+  const handleChipClick = (ev, key) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (!selectMode) return onOpen(ev);
+    // Refused because it's on a different day from what's already picked —
+    // flash the chip rather than silently doing nothing.
+    if (onToggleSelect(ev) === false) {
+      setRejectedKey(key);
+      setTimeout(() => setRejectedKey((k) => (k === key ? null : k)), 500);
+    }
+  };
+
   return (
     <div className="agenda">
       {days.map((d) => {
         const iso = toISODate(d);
         const dayEvents = occurrencesFor(events, iso).sort((a, b) => a.s - b.s);
+        const isDropTarget = drag && drag.overIso === iso && iso !== drag.occ.occDate;
         return (
-          <section key={iso} className={`agenda-day${isToday(iso) ? ' agenda-day--today' : ''}`}>
+          <section
+            key={iso}
+            ref={(el) => (dayRefs.current[iso] = el)}
+            className={`agenda-day${isToday(iso) ? ' agenda-day--today' : ''}${
+              isDropTarget ? ' agenda-day--drop' : ''
+            }`}
+          >
             <div className="agenda-date">
               <button className="agenda-date-btn" onClick={() => onOpenDay(iso)}>
                 <span className="agenda-dow">{weekdayShort(d)}</span>
@@ -1641,12 +1784,22 @@ function WeekView({ weekStart, events, eventTypes, onOpenDay, onOpen, onAdd, sel
                   const recurring = ev.repeat && ev.repeat !== 'none';
                   const selKey = `${ev.id}|${ev.recDate}`;
                   const isSel = selected?.has(selKey);
+                  const dragging = drag?.key === selKey;
                   return (
                     <button
                       key={`${ev.id}:${ev.recDate}`}
-                      className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
-                      style={{ '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)' }}
-                      onClick={() => (selectMode ? onToggleSelect(ev) : onOpen(ev))}
+                      className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}${
+                        dragging ? ' agenda-chip--dragging' : ''
+                      }${rejectedKey === selKey ? ' agenda-chip--refused' : ''}`}
+                      style={{
+                        '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)',
+                        ...(dragging ? { transform: `translateY(${drag.y - drag.startY}px)` } : null),
+                      }}
+                      onPointerDown={onChipDown(ev, selKey)}
+                      onPointerMove={onChipMove}
+                      onPointerUp={onChipUp}
+                      onPointerCancel={onChipUp}
+                      onClick={() => handleChipClick(ev, selKey)}
                     >
                       {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                       <span className="chip-time">{formatTime(ev.start)}</span>
@@ -1661,6 +1814,11 @@ function WeekView({ weekStart, events, eventTypes, onOpenDay, onOpen, onAdd, sel
           </section>
         );
       })}
+      {drag && (
+        <p className="agenda-drag-hint muted small">
+          Drop on a day to move &ldquo;{drag.occ.title || 'Untitled'}&rdquo;
+        </p>
+      )}
     </div>
   );
 }

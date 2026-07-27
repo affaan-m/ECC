@@ -3953,12 +3953,26 @@ textarea {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  /* Settling back after a drop. Declared here, before the --dragging and
+     --shifting rules below, so those can override it — all three are
+     single-class selectors, so source order is what decides. */
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 .bubble-reorder-row--dragging {
   z-index: 5;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.26);
   background: var(--surface);
+  /* Deliberately no transition: the row under your finger must track it
+     exactly, and easing it would feel like drag through treacle. */
+  transition: none;
 }
+/* The rows being displaced are the ones that need easing — they glide a slot
+   out of the way and leave a visible gap to drop into. */
+.bubble-reorder-row--shifting {
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .bubble-drag-handle {
   display: flex;
   align-items: center;
@@ -4276,6 +4290,60 @@ body.is-scrolled .page-head::before {
 }
 .chip--on {
   animation: chipSelect 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* --- Week view: drag between days ---------------------------------------- */
+.agenda-chip--dragging {
+  z-index: 6;
+  position: relative;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+  opacity: 0.95;
+  transition: none; /* must track the finger exactly */
+}
+/* The day the event would land on. Deliberately the accent rather than a
+   neutral highlight — it's answering "where will this go", so it should read
+   as an affirmative target. */
+.agenda-day--drop {
+  background: var(--accent-soft);
+  border-radius: 12px;
+  outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -3px;
+}
+.agenda-drag-hint {
+  position: sticky;
+  bottom: 0;
+  text-align: center;
+  padding: 6px 0 2px;
+}
+
+/* Refusing a cross-day pick. A shake plus a red wash says "not that one"
+   without a dialog for something the user will understand instantly and
+   won't want explained twice. */
+@keyframes chipRefuse {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-5px);
+  }
+  30% {
+    transform: translateX(5px);
+  }
+  45% {
+    transform: translateX(-4px);
+  }
+  60% {
+    transform: translateX(4px);
+  }
+  80% {
+    transform: translateX(-2px);
+  }
+}
+.agenda-chip--refused {
+  animation: chipRefuse 0.42s ease;
+  background: color-mix(in srgb, var(--danger) 22%, var(--surface));
+  border-color: var(--danger);
 }
 
 /* --- Address autocomplete ------------------------------------------------ */
