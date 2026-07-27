@@ -2146,6 +2146,29 @@ textarea {
   border: 2px solid var(--accent);
   flex: none;
 }
+.timeline-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.timeline-date-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.timeline-date-chip:active {
+  background: var(--accent-soft);
+  transform: scale(0.96);
+}
 .timeline-body {
   position: relative;
   cursor: pointer;
@@ -2425,6 +2448,7 @@ textarea {
   margin-bottom: 4px;
 }
 .month-cell {
+  position: relative;
   aspect-ratio: 1;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2436,6 +2460,17 @@ textarea {
   cursor: pointer;
   gap: 3px;
   transition: background 0.1s ease, transform 0.1s ease;
+}
+/* A birthday/anniversary this month, pinned to the corner rather than
+   joining .month-dots — those represent real events, and mixing a
+   synthetic marker into that count would misrepresent how many things are
+   actually scheduled that day. */
+.month-birthday {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-size: 9px;
+  line-height: 1;
 }
 .month-cell:active {
   background: var(--accent-soft);
@@ -3725,6 +3760,56 @@ textarea {
   flex: 1;
 }
 
+/* Subtask progress pill on a task row — tap expands the checklist below it
+   in place, so ticking off "pack passport" doesn't require opening the
+   full task editor first. */
+.subtask-badge {
+  flex: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.subtask-badge--open {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.subtask-list {
+  list-style: none;
+  margin: 2px 0 0 34px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: rise 0.16s ease backwards;
+}
+.subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-check--sm {
+  width: 18px;
+  height: 18px;
+  border-width: 1.5px;
+}
+.task-check--sm svg {
+  width: 12px;
+  height: 12px;
+}
+.subtask-text {
+  font-size: 13px;
+}
+.subtask-text--done {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
 /* Notes (Keep-style grid) */
 .notes-grid {
   margin-top: 10px;
@@ -4534,6 +4619,23 @@ body.is-scrolled .page-head::before {
 .conflict-detail {
   font-size: 12.5px;
   color: var(--muted);
+}
+/* Only on the travel-time warning — turns "you're short on time" into an
+   actual reserved block instead of just a sentence to dismiss. */
+.conflict-action {
+  align-self: flex-start;
+  margin-top: 2px;
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.conflict-action:active {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
 }
 .conflict-dismiss {
   flex: none;

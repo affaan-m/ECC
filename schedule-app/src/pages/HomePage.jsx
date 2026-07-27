@@ -204,6 +204,7 @@ export default function HomePage() {
       dueTime: '',
       reminderOffsets: [],
       repeat: 'none',
+      subtasks: [],
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
@@ -218,9 +219,28 @@ export default function HomePage() {
       dueTime: t.dueTime || '',
       reminderOffsets: t.reminderOffsets || [],
       repeat: t.repeat || 'none',
+      subtasks: t.subtasks || [],
     };
     setEditingTask(d);
     initialTaskJson.current = JSON.stringify(d);
+  };
+  const addTaskSubtask = () =>
+    setEditingTask((t) => ({ ...t, subtasks: [...(t.subtasks || []), { text: '', done: false }] }));
+  // Tracks which tasks have their subtask checklist expanded on the row
+  // itself — separate from the edit sheet, so ticking off "pack passport"
+  // doesn't require opening the full editor first.
+  const [expandedTaskIds, setExpandedTaskIds] = useState(new Set());
+  const toggleTaskExpanded = (id) =>
+    setExpandedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleSubtaskDone = (task, i) => {
+    const subtasks = task.subtasks.slice();
+    subtasks[i] = { ...subtasks[i], done: !subtasks[i].done };
+    actions.updateTask({ ...task, subtasks });
   };
   const taskDirty = editingTask ? JSON.stringify(editingTask) !== initialTaskJson.current : false;
   const toggleTaskReminderOffset = (mins) => {
@@ -252,6 +272,11 @@ export default function HomePage() {
       // it's checked off — without one "repeats" would have nothing to
       // count forward from, so it's meaningless.
       repeat: editingTask.dueDate ? editingTask.repeat || 'none' : 'none',
+      // Blank rows left over from "+ Add subtask" don't survive a save —
+      // same reasoning as the title itself needing to be non-empty.
+      subtasks: (editingTask.subtasks || [])
+        .map((s) => ({ ...s, text: s.text.trim() }))
+        .filter((s) => s.text),
     };
     if (editingTask.id) actions.updateTask({ ...editingTask, ...payload });
     else actions.addTask({ ...payload, createdAt: today });
@@ -482,6 +507,15 @@ export default function HomePage() {
                             )}
                           </button>
                           {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
+                          {(t.subtasks || []).length > 0 && (
+                            <button
+                              className={`subtask-badge${expandedTaskIds.has(t.id) ? ' subtask-badge--open' : ''}`}
+                              onClick={() => toggleTaskExpanded(t.id)}
+                              aria-label={expandedTaskIds.has(t.id) ? 'Hide subtasks' : 'Show subtasks'}
+                            >
+                              {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}
+                            </button>
+                          )}
                           <button
                             className="icon-btn task-del"
                             onClick={() => taskSwipeRefs.current.get(t.id)?.remove()}
@@ -491,6 +525,27 @@ export default function HomePage() {
                           </button>
                         </div>
                       </SwipeToDelete>
+                      {/* Quick-check without opening the full editor — outside
+                          SwipeToDelete so its own swipe-gesture measurement
+                          of the row above is never affected by this being
+                          open or closed. */}
+                      {(t.subtasks || []).length > 0 && expandedTaskIds.has(t.id) && (
+                        <ul className="subtask-list">
+                          {t.subtasks.map((s, i) => (
+                            <li key={i} className="subtask-row">
+                              <button
+                                className={`task-check task-check--sm${s.done ? ' task-check--on' : ''}`}
+                                data-haptic={s.done ? 'tap' : 'confirm'}
+                                onClick={() => toggleSubtaskDone(t, i)}
+                                aria-label={s.done ? 'Mark not done' : 'Mark done'}
+                              >
+                                {s.done && <CheckIcon />}
+                              </button>
+                              <span className={`subtask-text${s.done ? ' subtask-text--done' : ''}`}>{s.text}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                   {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
@@ -722,6 +777,52 @@ export default function HomePage() {
                 placeholder="What needs doing?"
               />
             </label>
+            <div className="field">
+              <span>Subtasks</span>
+              {(editingTask.subtasks || []).map((item, i) => (
+                <div className="checklist-row" key={i}>
+                  <button
+                    type="button"
+                    className={`task-check${item.done ? ' task-check--on' : ''}`}
+                    data-haptic={item.done ? 'tap' : 'confirm'}
+                    onClick={() => {
+                      const next = editingTask.subtasks.slice();
+                      next[i] = { ...next[i], done: !next[i].done };
+                      setEditingTask({ ...editingTask, subtasks: next });
+                    }}
+                    aria-label={item.done ? 'Mark not done' : 'Mark done'}
+                  >
+                    {item.done && <CheckIcon />}
+                    <span className="task-check-sparkles" aria-hidden="true">
+                      <i /><i /><i /><i /><i /><i />
+                    </span>
+                  </button>
+                  <input
+                    value={item.text}
+                    onChange={(e) => {
+                      const next = editingTask.subtasks.slice();
+                      next[i] = { ...next[i], text: e.target.value };
+                      setEditingTask({ ...editingTask, subtasks: next });
+                    }}
+                    placeholder="Subtask"
+                  />
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => {
+                      const next = editingTask.subtasks.filter((_, idx) => idx !== i);
+                      setEditingTask({ ...editingTask, subtasks: next });
+                    }}
+                    aria-label="Remove subtask"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addTaskSubtask}>
+                + Add subtask
+              </button>
+            </div>
             <label className="field">
               <span>Location</span>
               <input

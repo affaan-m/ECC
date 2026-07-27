@@ -69,6 +69,11 @@ export function startOfMonth(date) {
   return d;
 }
 
+// Last calendar day of the given date's month, as an ISO string.
+export function endOfMonthISO(date) {
+  return toISODate(addDays(addMonths(startOfMonth(date), 1), -1));
+}
+
 // A 6x7 grid of Dates covering the given month, padded with the trailing
 // days of the previous month and leading days of the next so every row is a
 // full Monday-start week.
@@ -345,6 +350,21 @@ export function occursOn(event, iso) {
     default:
       return false;
   }
+}
+
+// Does the event occur on any day within [fromISO, toISO] (inclusive)? Used
+// by search's date-phrase filtering ("next week", "this month") where the
+// query names a range rather than one specific day. A bounded day-by-day
+// scan rather than solving the recurrence rule algebraically — the ranges
+// search deals in are at most a few dozen days (a month, at most), so the
+// cost is trivial next to the clarity of reusing occursOn as-is.
+export function eventOccursInRange(event, fromISO, toISO) {
+  let iso = fromISO;
+  while (iso <= toISO) {
+    if (occursOn(event, iso)) return true;
+    iso = toISODate(addDays(iso, 1));
+  }
+  return false;
 }
 
 // Is a specific occurrence marked done? Single events use the `done` flag;

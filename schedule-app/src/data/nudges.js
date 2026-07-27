@@ -1,16 +1,49 @@
-import { computeGoalStreak, daysSince, todayISO } from './helpers.js';
+import { computeGoalStreak, daysSince, todayISO, fromISODate } from './helpers.js';
+import { contactDatesWithin, contactDateLabel } from './contactDates.js';
 
 const MILESTONES = [7, 30, 100];
+// How far ahead a birthday/anniversary starts showing up as "coming up" —
+// long enough to still be useful for buying a card or making plans, short
+// enough that it isn't just background noise for most of the year.
+const UPCOMING_DATE_WINDOW = 7;
 
 // Turns data the app already tracks (goals, contacts) into a small set of
 // proactive, actionable insights instead of the user having to notice them
 // on their own — "you're about to lose a streak," "so-and-so is overdue,"
-// "one more day and you hit a milestone." Capped at 2 so it stays a nudge,
+// "one more day and you hit a milestone." Capped at 3 so it stays a nudge,
 // not a wall of notifications; ordered most time-sensitive first.
 export function computeNudges(state) {
   const nudges = [];
   const reconnectDays = state.settings?.reconnectDays ?? 30;
   const today = todayISO();
+
+  // A birthday or anniversary today outranks everything else here — it's
+  // the one nudge with a hard deadline that can't be caught up on tomorrow.
+  // Optional: off entirely when the setting is off, same as the fields
+  // themselves being optional per contact.
+  if (state.settings?.contactBirthdaysEnabled !== false) {
+    const dates = contactDatesWithin(state.contacts || [], UPCOMING_DATE_WINDOW, today);
+    const dueToday = dates.find((d) => d.nextDate === today);
+    if (dueToday) {
+      const { icon, text, detail } = contactDateLabel(dueToday);
+      nudges.push({
+        id: `date:${dueToday.id}`,
+        icon,
+        text: `${text} is today${detail ? ` — ${detail}` : ''}.`,
+        to: `/contacts/${dueToday.contactId}`,
+      });
+    } else if (dates.length > 0) {
+      const soon = dates[0];
+      const days = Math.round((fromISODate(soon.nextDate) - fromISODate(today)) / 86400000);
+      const { icon, text } = contactDateLabel(soon);
+      nudges.push({
+        id: `date:${soon.id}`,
+        icon,
+        text: `${text} is in ${days} day${days === 1 ? '' : 's'}.`,
+        to: `/contacts/${soon.contactId}`,
+      });
+    }
+  }
 
   // Most at-risk daily-goal streak: still unmet today, not already
   // protected by a freeze, with the longest streak on the line.
@@ -103,5 +136,5 @@ export function computeNudges(state) {
     }
   }
 
-  return nudges.slice(0, 2);
+  return nudges.slice(0, 3);
 }

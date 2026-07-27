@@ -1,14 +1,17 @@
 import { todayISO, addDays, toISODate } from './helpers.js';
 
-const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const WEEKDAY_ABBR = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+export const WEEKDAY_ABBR = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
 // Finds the nearest day (today or later) whose weekday matches `dow`.
-function nextWeekday(dow) {
+// Exported — search's date-phrase parser (data/nlSearch.js) recognizes the
+// same weekday words and wants exactly this "nearest upcoming" reading
+// rather than a second, possibly-diverging implementation of it.
+export function nextWeekday(dow) {
   const today = new Date();
   const todayDow = today.getDay();
   const delta = (dow - todayDow + 7) % 7;

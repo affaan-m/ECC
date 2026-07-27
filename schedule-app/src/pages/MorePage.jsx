@@ -748,6 +748,24 @@ export default function MorePage() {
 
       <section className="detail-section">
         <div className="section-head">
+          <span>Birthdays & anniversaries</span>
+          <button
+            className={`toggle${s.contactBirthdaysEnabled !== false ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.contactBirthdaysEnabled !== false}
+            onClick={() => actions.setSettings({ contactBirthdaysEnabled: s.contactBirthdaysEnabled === false })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">
+          Surface a person's birthday or anniversary on Home and the calendar. Each is still
+          optional per person — set them from a contact's Edit sheet.
+        </p>
+      </section>
+
+      <section className="detail-section">
+        <div className="section-head">
           <span className="detail-label">People statuses {!isPro && '· Pro'}</span>
           <button
             className="btn btn-ghost btn-sm"

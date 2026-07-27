@@ -20,6 +20,7 @@ import {
   formatTime,
   expandEventOnDay,
 } from '../data/helpers.js';
+import { nextAnnualOccurrence, yearsBetween } from '../data/contactDates.js';
 
 export default function ContactDetailPage() {
   const { id } = useParams();
@@ -103,6 +104,8 @@ export default function ContactDetailPage() {
       photo: editing.photo || '',
       statusId: editing.statusId,
       notes: (editing.notes || '').trim(),
+      birthday: editing.birthday || '',
+      anniversary: editing.anniversary || '',
       cadenceDays: Number(editing.cadenceText) || 0,
       tags: (editing.tagsText || '')
         .split(',')
@@ -192,6 +195,22 @@ export default function ContactDetailPage() {
           </div>
         )}
       </section>
+
+      {/* Optional — most contacts won't have either. Each is shown as the
+          date it next comes around plus how old that makes it, computed on
+          the fly (see data/contactDates.js) rather than stored anywhere, so
+          it's always correct without needing yearly maintenance. */}
+      {(contact.birthday || contact.anniversary) && (
+        <section className="detail-section">
+          <span className="detail-label">Special dates</span>
+          {contact.birthday && (
+            <SpecialDateField icon="🎂" label="Birthday" iso={contact.birthday} ageNoun="turns" />
+          )}
+          {contact.anniversary && (
+            <SpecialDateField icon="💍" label="Anniversary" iso={contact.anniversary} ageNoun="years" />
+          )}
+        </section>
+      )}
 
       {/* Follow-up commitment. Distinct from "last connected", which drifts
           on its own — this is something the user actively promised, so it
@@ -372,6 +391,24 @@ export default function ContactDetailPage() {
                 }
               />
             </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Birthday (optional)</span>
+                <input
+                  type="date"
+                  value={editing.birthday || ''}
+                  onChange={(e) => setEditing({ ...editing, birthday: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>Anniversary (optional)</span>
+                <input
+                  type="date"
+                  value={editing.anniversary || ''}
+                  onChange={(e) => setEditing({ ...editing, anniversary: e.target.value })}
+                />
+              </label>
+            </div>
             <label className="field">
               <span>Tags</span>
               <input
@@ -539,6 +576,22 @@ function Field({ label, value, href, linkProps }) {
       ) : (
         <span className="detail-value">{value}</span>
       )}
+    </div>
+  );
+}
+
+function SpecialDateField({ icon, label, iso, ageNoun }) {
+  const next = nextAnnualOccurrence(iso);
+  const years = yearsBetween(iso, next);
+  return (
+    <div className="detail-field">
+      <span className="detail-label">
+        {icon} {label}
+      </span>
+      <span className="detail-value">
+        {formatShortDate(next)}
+        {years != null && <span className="muted"> · {ageNoun} {years}{next === todayISO() ? ' today' : ''}</span>}
+      </span>
     </div>
   );
 }

@@ -38,9 +38,11 @@ import {
   REPEAT_OPTIONS,
   WEEKDAY_LETTERS,
   goalKey,
+  uid,
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
 import { findDayConflicts } from '../data/conflicts.js';
+import { contactDatesOn, contactDatesInMonth, contactDateLabel } from '../data/contactDates.js';
 import { directionsTarget, mapsLinkProps } from '../data/maps.js';
 import SmartQuickAdd from '../components/SmartQuickAdd.jsx';
 import { useSmartAdd } from '../data/useSmartAdd.js';
@@ -136,6 +138,7 @@ export default function PlannerPage() {
     );
 
   const openView = (occ) => setViewing(occ);
+  const openContact = (id) => navigate(`/contacts/${id}`);
   const openEditFromView = () => {
     setEditing(occToDraft(viewing));
     setViewing(null);
@@ -477,6 +480,32 @@ export default function PlannerPage() {
   const dismissConflict = (id) =>
     setDismissedConflicts((prev) => new Set(prev).add(id));
 
+  // Turns a travel warning into an actual reserved block on the calendar,
+  // rather than just a sentence you can dismiss and forget. Spans the full
+  // travel estimate starting right where the first event ends — if that
+  // overruns into the second event (the whole reason it warned in the
+  // first place), the overlap itself is the point: it makes the shortfall
+  // visible as a real block instead of leaving it as free-looking gap time.
+  // A plain event, nothing bespoke — it renders, drags, and deletes exactly
+  // like anything else on the timeline.
+  const addTravelBuffer = (c) => {
+    const id = uid('e');
+    const start = minutesToTime(c.a.e2);
+    const end = minutesToTime(c.a.e2 + c.needed);
+    actions.addEvent({
+      id,
+      title: `🚗 Travel to ${c.b.title || 'next event'}`,
+      date: c.b.recDate || c.b.occDate || cursor,
+      start,
+      end,
+      color: '#6b7787',
+      notes: 'Added as a travel buffer.',
+    });
+    dismissConflict(c.id);
+    confirmTick();
+    showToast('Added a travel block.', 'Undo', () => actions.deleteEvent(id));
+  };
+
   const isPro = !!state.settings?.isPro;
   const smartAdd = useSmartAdd(cursor);
   const templates = state.templates || [];
@@ -577,6 +606,11 @@ export default function PlannerPage() {
               <span className="conflict-body">
                 <span className="conflict-text">{c.text}</span>
                 <span className="conflict-detail">{c.detail}</span>
+                {c.kind === 'travel' && (
+                  <button className="conflict-action" onClick={() => addTravelBuffer(c)}>
+                    + Add travel block
+                  </button>
+                )}
               </span>
               <button
                 className="conflict-dismiss"
@@ -612,6 +646,8 @@ export default function PlannerPage() {
           opacity={state.settings?.isPro ? state.settings?.eventBlockOpacity ?? 100 : 100}
           tasks={state.settings?.showTasksOnTimeline ? state.tasks : null}
           onToggleTask={(t) => actions.updateTask({ ...t, done: !t.done })}
+          birthdaysEnabled={state.settings?.contactBirthdaysEnabled !== false}
+          onOpenContact={openContact}
         />
       )}
       {mode === 'week' && (
@@ -644,6 +680,8 @@ export default function PlannerPage() {
           onOpen={openView}
           cursor={cursor}
           onSwipe={step}
+          contacts={state.contacts}
+          birthdaysEnabled={state.settings?.contactBirthdaysEnabled !== false}
         />
       )}
 
@@ -848,6 +886,8 @@ function DayView({
   opacity = 100,
   tasks,
   onToggleTask,
+  birthdaysEnabled = true,
+  onOpenContact,
 }) {
   const bodyRef = useRef(null);
   const gestureRef = useRef(null); // { key, occ, phase, startY, startX, startClientY }
@@ -914,6 +954,14 @@ function DayView({
             .sort((a, b) => a.dueTime.localeCompare(b.dueTime))
         : [],
     [tasks, date]
+  );
+
+  // Birthdays/anniversaries for the day on screen — computed on the fly from
+  // contacts rather than stored as events (see data/contactDates.js), so
+  // this is the one place they surface on the calendar itself.
+  const dayDates = useMemo(
+    () => (birthdaysEnabled ? contactDatesOn(contacts, date) : []),
+    [contacts, date, birthdaysEnabled]
   );
 
   const bgSwipeSuppressRef = useRef(false); // swallow the click that follows a background swipe-to-navigate
@@ -1364,6 +1412,24 @@ function DayView({
 
   return (
     <div className="timeline">
+      {dayDates.length > 0 && (
+        <div className="timeline-dates">
+          {dayDates.map((d) => {
+            const { icon, text, detail } = contactDateLabel(d);
+            return (
+              <button
+                key={d.id}
+                className="timeline-date-chip"
+                onClick={() => onOpenContact?.(d.contactId)}
+              >
+                <span aria-hidden="true">{icon}</span>
+                {text}
+                {detail && <span className="muted"> · {detail}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {pendingTasks && pendingTasks.length > 0 && (
         <div className="timeline-tasks">
           {pendingTasks.map((t) => (
@@ -1825,13 +1891,20 @@ function WeekView({
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe }) {
+function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe, contacts, birthdaysEnabled = true }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
   const year = monthStart.getFullYear();
   const swipeRef = useRef(null);
   const suppressClickRef = useRef(false);
   const typeColor = (id) => eventTypes?.find((t) => t.id === id)?.color;
+
+  // Which cells carry a birthday/anniversary this month — a plain Set of
+  // ISO dates is all a cell needs to know to show its badge.
+  const markedDates = useMemo(() => {
+    if (!birthdaysEnabled) return new Set();
+    return new Set(contactDatesInMonth(contacts, monthStart).map((d) => d.nextDate));
+  }, [contacts, monthStart, birthdaysEnabled]);
 
   // The grid alone rarely fills the page, leaving a big dead gap above the
   // tab bar — a scannable list of what's actually coming up this month puts
@@ -1908,6 +1981,11 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                 onClick={() => onOpenDay(iso)}
               >
                 <span className="month-daynum">{d.getDate()}</span>
+                {markedDates.has(iso) && (
+                  <span className="month-birthday" aria-hidden="true">
+                    🎂
+                  </span>
+                )}
                 <span className="month-dots">
                   {dayEvents.slice(0, 3).map((ev, i) => (
                     <span key={i} className="month-dot" style={{ background: ev.color || 'var(--accent)' }} />

@@ -28,6 +28,7 @@ function loadState() {
       tasks: (parsed.tasks || []).map((t) => ({
         repeat: 'none',
         completedDates: [],
+        subtasks: [],
         ...t,
       })),
       notes: parsed.notes || [],
@@ -62,6 +63,10 @@ function loadState() {
         mapEmojiSize: 100,
         // Appearance / people
         contactIconSize: 'md',
+        // Off would only ever mean "don't compute these" — the fields
+        // themselves stay optional on every contact either way, so there's
+        // nothing to migrate when someone flips it back on.
+        contactBirthdaysEnabled: true,
         taskCompleteAnim: true,
         hapticsEnabled: true,
         homeBlocks: DEFAULT_HOME_BLOCKS,
@@ -375,7 +380,16 @@ export function useActions() {
     addTask: (data) =>
       dispatch({
         type: 'ADD_TASK',
-        task: { id: uid('t'), done: false, dueTime: '', reminderOffsets: [], repeat: 'none', completedDates: [], ...data },
+        task: {
+          id: uid('t'),
+          done: false,
+          dueTime: '',
+          reminderOffsets: [],
+          repeat: 'none',
+          completedDates: [],
+          subtasks: [],
+          ...data,
+        },
       }),
     updateTask: (task) => dispatch({ type: 'UPDATE_TASK', task }),
     deleteTask: (id) => dispatch({ type: 'DELETE_TASK', id }),
