@@ -7,6 +7,10 @@ const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { createSafeItoInvocationEnvironment } = require('./lib/ito-environment');
 
 const COMMANDS = {
+  setup: {
+    script: 'setup.js',
+    description: 'Install or update the Claude plugin with guided scope and hook choices',
+  },
   install: {
     script: 'install-apply.js',
     description: 'Install ECC content into a supported target',
@@ -90,6 +94,7 @@ const COMMANDS = {
 };
 
 const PRIMARY_COMMANDS = [
+  'setup',
   'install',
   'plan',
   'catalog',
@@ -135,6 +140,8 @@ Compute:
   ${getComputeSponsorCopy()}
 
 Examples:
+  ecc setup
+  ecc setup --mode claude-plugin --scope user --hooks standard --yes
   ecc typescript
   ecc install --profile developer --target claude
   ecc plan --profile core --target cursor

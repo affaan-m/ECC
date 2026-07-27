@@ -34,30 +34,15 @@ function readConfigureEccDoc(relativePath) {
 console.log('\n=== Testing configure-ecc install path guidance ===\n');
 
 for (const relativePath of configureEccDocs) {
-  test(`${relativePath} separates core and niche skill source roots`, () => {
+  test(`${relativePath} delegates to guided plugin setup`, () => {
     const content = readConfigureEccDoc(relativePath);
 
-    assert.ok(
-      content.includes('$ECC_ROOT/.agents/skills/<skill-name>'),
-      'Expected configure-ecc to document the core skill source root'
-    );
-    assert.ok(
-      content.includes('$ECC_ROOT/skills/<skill-name>'),
-      'Expected configure-ecc to document the niche skill source root'
-    );
-  });
-
-  test(`${relativePath} documents defensive copy form for trailing slash sources`, () => {
-    const content = readConfigureEccDoc(relativePath);
-
-    assert.ok(
-      content.includes('${src%/}'),
-      'Expected configure-ecc to strip trailing slash before copying'
-    );
-    assert.ok(
-      content.includes('$(basename "${src%/}")'),
-      'Expected configure-ecc to preserve the skill directory name explicitly'
-    );
+    assert.ok(content.includes('ecc setup'));
+    assert.ok(content.includes('--mode claude-plugin'));
+    assert.ok(content.includes('--scope user'));
+    assert.ok(content.includes('--hooks standard'));
+    assert.ok(!content.includes('rm -rf /tmp/everything-claude-code'));
+    assert.ok(!content.includes('cp -R "$ECC_ROOT'));
   });
 }
 

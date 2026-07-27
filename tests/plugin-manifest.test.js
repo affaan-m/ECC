@@ -225,6 +225,34 @@ test('claude plugin.json does NOT have explicit hooks declaration', () => {
   assert.ok(!('hooks' in claudePlugin), 'hooks field must NOT be declared — Claude Code v2.1+ auto-loads hooks/hooks.json by convention');
 });
 
+test('claude plugin.json exposes only supported durable hook preferences', () => {
+  assert.deepStrictEqual(
+    Object.keys(claudePlugin.userConfig || {}).sort(),
+    ['hook_profile', 'hooks_enabled']
+  );
+
+  const hooksEnabled = claudePlugin.userConfig.hooks_enabled;
+  assert.deepStrictEqual(
+    Object.keys(hooksEnabled).sort(),
+    ['default', 'description', 'title', 'type']
+  );
+  assert.strictEqual(hooksEnabled.type, 'boolean');
+  assert.strictEqual(hooksEnabled.default, true);
+  assert.ok(typeof hooksEnabled.title === 'string' && hooksEnabled.title.trim());
+  assert.ok(typeof hooksEnabled.description === 'string' && hooksEnabled.description.trim());
+
+  const hookProfile = claudePlugin.userConfig.hook_profile;
+  assert.deepStrictEqual(
+    Object.keys(hookProfile).sort(),
+    ['default', 'description', 'title', 'type'],
+    'Claude userConfig does not support enum'
+  );
+  assert.strictEqual(hookProfile.type, 'string');
+  assert.strictEqual(hookProfile.default, 'standard');
+  assert.ok(typeof hookProfile.title === 'string' && hookProfile.title.trim());
+  assert.ok(typeof hookProfile.description === 'string' && hookProfile.description.trim());
+});
+
 console.log('\n=== .claude-plugin/marketplace.json ===\n');
 
 test('claude marketplace.json exists', () => {

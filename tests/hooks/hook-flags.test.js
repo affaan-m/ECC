@@ -5,11 +5,18 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
 // Import the module
 const {
   VALID_PROFILES,
   normalizeId,
+  parseBoolean,
+  readManagedHookConfig,
+  areHooksEnabled,
   getHookProfile,
   getDisabledHookIds,
   parseProfiles,
@@ -77,6 +84,122 @@ function runTests() {
     assert.strictEqual(VALID_PROFILES.size, 3);
   })) passed++; else failed++;
 
+  console.log('\nHook preference sources:');
+
+  if (test('hooks default enabled when no preference source exists', () => {
+    withEnv({
+      ECC_HOOKS_ENABLED: undefined,
+      CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: undefined,
+      ECC_HOOK_CONFIG: undefined,
+      CLAUDE_PLUGIN_ROOT: undefined,
+      ECC_PLUGIN_ROOT: undefined,
+    }, () => {
+      assert.strictEqual(areHooksEnabled(), true);
+    });
+  })) passed++; else failed++;
+
+  if (test('Claude plugin options control enabled state and profile', () => {
+    withEnv({
+      ECC_HOOKS_ENABLED: undefined,
+      ECC_HOOK_PROFILE: undefined,
+      CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: 'false',
+      CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: 'minimal',
+      ECC_HOOK_CONFIG: undefined,
+    }, () => {
+      assert.strictEqual(areHooksEnabled(), false);
+      assert.strictEqual(getHookProfile(), 'minimal');
+      assert.strictEqual(
+        isHookEnabled('pre:test', { profiles: 'minimal,standard,strict' }),
+        false
+      );
+    });
+  })) passed++; else failed++;
+
+  if (test('explicit ECC environment overrides Claude plugin options', () => {
+    withEnv({
+      ECC_HOOKS_ENABLED: 'true',
+      ECC_HOOK_PROFILE: 'strict',
+      CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: 'false',
+      CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: 'minimal',
+    }, () => {
+      assert.strictEqual(areHooksEnabled(), true);
+      assert.strictEqual(getHookProfile(), 'strict');
+    });
+  })) passed++; else failed++;
+
+  if (test('managed hook config is used after explicit and plugin preferences', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-'));
+    const configPath = path.join(root, 'ecc', 'setup.json');
+    try {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({
+        hooks: { enabled: false, profile: 'minimal' },
+      }));
+      withEnv({
+        ECC_HOOKS_ENABLED: undefined,
+        ECC_HOOK_PROFILE: undefined,
+        CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: undefined,
+        CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: undefined,
+        ECC_HOOK_CONFIG: configPath,
+      }, () => {
+        assert.deepStrictEqual(readManagedHookConfig(), {
+          enabled: false,
+          profile: 'minimal',
+        });
+        assert.strictEqual(areHooksEnabled(), false);
+        assert.strictEqual(getHookProfile(), 'minimal');
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('boolean parsing recognizes supported values and uses its fallback', () => {
+    for (const value of ['1', 'true', 'yes', 'on']) {
+      assert.strictEqual(parseBoolean(value, false), true);
+    }
+    for (const value of ['0', 'false', 'no', 'off']) {
+      assert.strictEqual(parseBoolean(value, true), false);
+    }
+    assert.strictEqual(parseBoolean('invalid', false), false);
+  })) passed++; else failed++;
+
+  if (test('run-with-flags suppresses wrapper hooks when plugin hooks are off', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-wrapper-'));
+    const markerPath = path.join(root, 'ran.txt');
+    const hookPath = path.join(root, 'marker.js');
+    const runner = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
+    const raw = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write' });
+    try {
+      fs.writeFileSync(
+        hookPath,
+        `'use strict';\nconst fs=require('fs');\nmodule.exports.run=function(raw){fs.writeFileSync(${JSON.stringify(markerPath)},'ran');return raw;};\n`
+      );
+      const env = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: root,
+        CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: 'false',
+      };
+      delete env.ECC_HOOKS_ENABLED;
+      const result = spawnSync(process.execPath, [
+        runner,
+        'pre:test:marker',
+        'marker.js',
+        'minimal,standard,strict',
+      ], {
+        cwd: root,
+        env,
+        input: raw,
+        encoding: 'utf8',
+      });
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(result.stdout, raw);
+      assert.ok(!fs.existsSync(markerPath), 'disabled wrapper hook must not execute');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // normalizeId tests
   console.log('\nnormalizeId:');
 
@@ -116,7 +239,13 @@ function runTests() {
   console.log('\ngetHookProfile:');
 
   if (test('defaults to standard when env var not set', () => {
-    withEnv({ ECC_HOOK_PROFILE: undefined }, () => {
+    withEnv({
+      ECC_HOOK_PROFILE: undefined,
+      CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: undefined,
+      ECC_HOOK_CONFIG: undefined,
+      CLAUDE_PLUGIN_ROOT: undefined,
+      ECC_PLUGIN_ROOT: undefined,
+    }, () => {
       assert.strictEqual(getHookProfile(), 'standard');
     });
   })) passed++; else failed++;

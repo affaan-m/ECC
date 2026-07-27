@@ -123,6 +123,7 @@
     "scripts/orchestrate-codex-worker.sh",
     "scripts/orchestrate-worktrees.js",
     "scripts/repair.js",
+    "scripts/setup.js",
     "scripts/session-inspect.js",
     "scripts/sessions-cli.js",
     "scripts/setup-package-manager.js",
