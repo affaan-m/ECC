@@ -73,14 +73,20 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
 const RATE_TABLE = {
   haiku:  { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
   sonnet: { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
-  opus:   { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
+  opus:   { in: 5.00,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
+  fable:  { in: 10.00, out: 50.0, cacheWrite: 12.50, cacheRead: 1.00 }
 };
 
+// Returns null for a model name matching none of the table above, rather
+// than guessing: a silent Sonnet default previously mispriced every new
+// model (most recently Fable) until someone noticed (#2574).
 function getRates(model) {
   const m = String(model || '').toLowerCase();
-  if (m.includes('haiku')) return RATE_TABLE.haiku;
-  if (m.includes('opus'))  return RATE_TABLE.opus;
-  return RATE_TABLE.sonnet;
+  if (m.includes('haiku'))  return RATE_TABLE.haiku;
+  if (m.includes('fable'))  return RATE_TABLE.fable;
+  if (m.includes('opus'))   return RATE_TABLE.opus;
+  if (m.includes('sonnet')) return RATE_TABLE.sonnet;
+  return null;
 }
 
 function toNumber(v) {
@@ -174,12 +180,15 @@ process.stdin.on('end', () => {
     } = usageTotals || {};
 
     const rates = getRates(model);
-    const transcriptCostUsd = Math.round((
-      (inputTokens      / 1e6) * rates.in +
-      (outputTokens     / 1e6) * rates.out +
-      (cacheWriteTokens / 1e6) * rates.cacheWrite +
-      (cacheReadTokens  / 1e6) * rates.cacheRead
-    ) * 1e6) / 1e6;
+    const rateKnown = rates !== null;
+    const transcriptCostUsd = rateKnown
+      ? Math.round((
+          (inputTokens      / 1e6) * rates.in +
+          (outputTokens     / 1e6) * rates.out +
+          (cacheWriteTokens / 1e6) * rates.cacheWrite +
+          (cacheReadTokens  / 1e6) * rates.cacheRead
+        ) * 1e6) / 1e6
+      : 0;
 
     // Prefer the harness's authoritative `cost.total_cost_usd` when the
     // statusline has written it to the per-session cache (see contract in
@@ -190,6 +199,7 @@ process.stdin.on('end', () => {
     const estimatedCostUsd = harnessCost !== null
       ? Math.round(harnessCost * 1e6) / 1e6
       : transcriptCostUsd;
+    const costEstimated = harnessCost !== null || rateKnown;
 
     const metricsDir = path.join(getClaudeDir(), 'metrics');
     ensureDir(metricsDir);
@@ -203,7 +213,8 @@ process.stdin.on('end', () => {
       output_tokens:      outputTokens,
       cache_write_tokens: cacheWriteTokens,
       cache_read_tokens:  cacheReadTokens,
-      estimated_cost_usd: estimatedCostUsd
+      estimated_cost_usd: estimatedCostUsd,
+      cost_estimated:     costEstimated
     };
 
     appendFile(path.join(metricsDir, 'costs.jsonl'), `${JSON.stringify(row)}\n`);

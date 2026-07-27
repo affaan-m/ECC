@@ -302,6 +302,79 @@ function runTests() {
     }
   }) ? passed++ : failed++);
 
+  // 10. Prices Opus at the current rate, not the stale 3x-too-high figure
+  (test('prices opus at $5/$25 per 1M tokens, not the stale $15/$75', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-4-6',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+    const result = runScript({ transcript_path: transcriptPath }, withTempHome(tmpHome));
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 30, 'Expected 1M in + 1M out at $5/$25, not $15/$75');
+    assert.strictEqual(row.cost_estimated, true, 'Opus is a known model, cost should be marked estimated');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  // 11. Fable gets its own rate instead of silently falling through to Sonnet
+  (test('prices fable at its own rate instead of the Sonnet fallback', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          model: 'claude-fable-5',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+    const result = runScript({ transcript_path: transcriptPath }, withTempHome(tmpHome));
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 60, 'Expected 1M in + 1M out at fable rate $10/$50, not Sonnet $3/$15');
+    assert.strictEqual(row.cost_estimated, true, 'Fable is a known model, cost should be marked estimated');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  // 12. An unrecognized model name is priced as unknown, never guessed at Sonnet rates
+  (test('marks an unrecognized model unestimated instead of guessing Sonnet rates', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          model: 'claude-nova-9',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+    const result = runScript({ transcript_path: transcriptPath }, withTempHome(tmpHome));
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 0, 'Expected no guessed cost for an unrecognized model');
+    assert.strictEqual(row.cost_estimated, false, 'Expected the row to flag the cost as not estimated');
+    assert.strictEqual(row.input_tokens, 1_000_000, 'Token totals should still be recorded');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
