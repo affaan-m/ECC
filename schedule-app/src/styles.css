@@ -269,73 +269,69 @@ textarea {
   height: 100%;
 }
 
-/* Stage 1 — the rise. The clip window sits one full mark-height below the
-   arch and slides up to rest, so the arch is uncovered from the floor
-   upward in one continuous move.
+/* Stage 1 — the build. Both halves of the arch grow from their feet, up
+   the legs and around the curve, meeting at the crown. See the mask in
+   index.html for why the arch has a path to follow at all.
 
    The curve matters more than the duration here. An aggressive ease-out
    (the obvious first choice) puts ~85% of the travel in the first 80ms,
-   which doesn't read as a slide at all — it reads as the arch snapping in
+   which doesn't read as a build at all — it reads as the arch snapping in
    and then a long dead pause. This one leaves gently, does the bulk of the
    move through the middle of its run, and lands soft: about a third of the
-   way up at a quarter of the time, two thirds at 40%, then settling. */
-.splash-arch-clip-rect {
-  transform: translateY(262px);
-  animation: splashArchRise 620ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
+   way at a quarter of the time, two thirds at 40%, then settling. */
+.splash-build {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: splashBuild 620ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
 }
-@keyframes splashArchRise {
+@keyframes splashBuild {
   from {
-    transform: translateY(262px);
+    stroke-dashoffset: 1;
   }
   to {
-    transform: translateY(0);
+    stroke-dashoffset: 0;
   }
 }
 
-/* Stage 2 — the same rise, carried into the last stone. It starts 80ms
-   before the arch finishes, so there is no beat between the two: the
-   upward motion never stops, it just transfers from the arch to the piece
-   that completes it. Coming up from below (rather than dropping in from
-   above, as it used to) is the whole point — the keystone is what the
-   build arrives at, not a separate object landing on top of it.
+/* Stage 2 — the keystone, once the two halves have actually met. The delay
+   is exactly the build's duration, so nothing about it starts while the
+   sides are still climbing: it appears in the gap they just closed.
 
-   The travel is in the viewBox's own 512-unit space, not screen pixels, so
-   it needs to be large here to read at all once scaled down. */
+   It fades in first and then pulses, as two distinct beats rather than one
+   blended move — the fade says the piece is there, the pulse says it
+   locked. `transform-box: fill-box` is load-bearing: without it an SVG
+   element's transform-origin resolves against the *viewBox*, whose centre
+   is ~97 units below the keystone, so `scale()` would sling it downward
+   instead of swelling it in place. */
 .splash-keystone {
   opacity: 0;
-  transform: translateY(46px);
+  transform-box: fill-box;
   transform-origin: center;
-  animation: splashKeystoneSet 360ms linear 540ms forwards;
+  animation: splashKeystonePulse 440ms 620ms forwards;
 }
-/* Per-keyframe easing, for the small recoil of a block being pushed home:
-   it comes up under power, runs through the seat at a constant rate,
-   overshoots by a hair and snaps back down into it.
-
-   Every keyframe declares the transform, including the mid one that exists
-   for the opacity ramp — a keyframe that omits the property is skipped for
-   that property's interpolation, so leaving it off would silently hand the
-   whole travel back to the 0% curve. And the settle leaves the peak at
-   speed rather than easing off it; easing in *and* out around an extreme
-   parks the piece there for ~80ms, which reads as a hitch. */
-@keyframes splashKeystoneSet {
+/* Every keyframe declares both properties it participates in — a keyframe
+   that omits one is skipped for that property's interpolation, so leaving
+   the scale off the fade-in keyframe would quietly stretch the pulse back
+   across the whole fade. */
+@keyframes splashKeystonePulse {
   0% {
     opacity: 0;
-    transform: translateY(46px);
-    animation-timing-function: cubic-bezier(0.3, 0, 0.4, 1);
+    transform: scale(1);
+    animation-timing-function: ease-out;
   }
-  40% {
+  36% {
     opacity: 1;
-    transform: translateY(6px);
-    animation-timing-function: linear;
+    transform: scale(1);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1);
   }
-  64% {
+  70% {
     opacity: 1;
-    transform: translateY(-8px);
-    animation-timing-function: cubic-bezier(0, 0.65, 0.4, 1);
+    transform: scale(1.09);
+    animation-timing-function: cubic-bezier(0.35, 0, 0.3, 1);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -442,9 +438,9 @@ html.boot-reload .splash-mark-wrap {
   height: 132px;
   animation: none;
 }
-html.boot-reload .splash-arch-clip-rect {
+html.boot-reload .splash-build {
   animation: none;
-  transform: none;
+  stroke-dashoffset: 0;
 }
 html.boot-reload .splash-keystone {
   animation: none;
@@ -481,7 +477,9 @@ html.boot-reload .splash-mark {
     width: 132px;
     height: 132px;
   }
-  .splash-arch-clip-rect,
+  .splash-build {
+    stroke-dashoffset: 0;
+  }
   .splash-keystone {
     transform: none;
     opacity: 1;

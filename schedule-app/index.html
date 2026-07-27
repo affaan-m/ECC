@@ -91,11 +91,11 @@
       finished and simply leaves at once.
     -->
     <!--
-      One motion, start to finish: the arch rises out of the floor, that rise
-      carries straight on into the keystone seating at the crown, the landing
-      strikes a flash, and the flash swells into the gold flood the app opens
-      out of. Every element here is a stage of that single upward gesture —
-      see the .splash-* rules in styles.css for the timings that chain them.
+      The launch sequence: both sides of the arch build up out of the floor
+      and around the curve until they meet at the crown, the keystone fades
+      in there and pulses once, and that pulse strikes a flash which swells
+      into the gold flood the app opens out of. See the .splash-* rules in
+      styles.css for the timings that chain them.
     -->
     <div id="boot-splash" class="splash" aria-hidden="true">
       <div class="splash-mark-wrap">
@@ -106,19 +106,42 @@
               <stop offset="1" stop-color="#a9822a" />
             </linearGradient>
             <!--
-              The reveal window for the arch. It starts translated a full
-              height below the mark and slides up to y=0, so the arch is
-              uncovered from the baseline upward — the reveal edge *is* the
-              slide. Deliberately a transform rather than animating the
-              rect's own y/height: Safari does not animate SVG geometry
-              properties from CSS, but it does animate transforms, so this
-              plays everywhere instead of snapping to the finished arch.
+              The reveal for the arch, and the reason it travels the way it
+              does.
+
+              The mark is geometrically a constant-width band: outer radius
+              132, inner 68, so a 64-wide ribbon running along radius 100 —
+              and the legs sit on that same centreline at x=156 and x=356.
+              That means the arch has a *path*, and the build can follow it
+              instead of being wiped by a rectangle. Two mirrored halves,
+              each drawn as a thick stroke from its foot at y=388, up the
+              leg and around the curve, revealed by running
+              stroke-dashoffset to zero. Both halves are the same length, so
+              they climb in step and arrive together.
+
+              They stop at 22° off vertical rather than at the apex, because
+              that is exactly where the keystone's edges are — the wedge
+              spans (230.5,195) to (281.5,195) on the inner radius, which is
+              22.03° either side. Ending there leaves a keystone-shaped void
+              at the crown for the keystone to fade into, instead of filling
+              the crown with the arch's own cream and dropping the gold on
+              top of it. The butt caps land flush along those radial edges,
+              and the keystone's black edge strokes sit over the seam.
+
+              pathLength="1" normalises each path so the dash maths is 1→0
+              regardless of the real arc length. Masked rather than clipped
+              because a clipPath uses a shape's fill area, not its stroke —
+              and via a stroke-dash rather than SVG geometry properties,
+              which Safari will not animate from CSS.
             -->
-            <clipPath id="splashArchClip" clipPathUnits="userSpaceOnUse">
-              <rect class="splash-arch-clip-rect" x="100" width="312" y="126" height="262" />
-            </clipPath>
+            <mask id="splashArchMask" maskUnits="userSpaceOnUse" x="100" y="100" width="312" height="312">
+              <g fill="none" stroke="#fff" stroke-width="76">
+                <path class="splash-build" pathLength="1" d="M156,388 L156,258 A100,100 0 0 1 218.5,165.3" />
+                <path class="splash-build" pathLength="1" d="M356,388 L356,258 A100,100 0 0 0 293.5,165.3" />
+              </g>
+            </mask>
           </defs>
-          <g clip-path="url(#splashArchClip)">
+          <g mask="url(#splashArchMask)">
             <path
               fill="#f2efe7"
               d="M124,388 L124,258 A132,132 0 0 1 388,258 L388,388 L324,388 L324,258 A68,68 0 0 0 188,258 L188,388 Z"
