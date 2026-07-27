@@ -4,12 +4,21 @@
 // splash away to reveal the app underneath (see App.jsx for the timers
 // that drive `fadingOut`, tuned to line up with the CSS animation timings
 // below — .splash-arch-clip-rect, .splash-keystone, .splash-glow).
-export default function SplashScreen({ fadingOut }) {
+export default function SplashScreen({ fadingOut, variant = 'full' }) {
   return (
-    <div className={`splash${fadingOut ? ' splash--out' : ''}`} aria-hidden="true">
+    <div
+      className={`splash splash--${variant}${fadingOut ? ' splash--out' : ''}`}
+      aria-hidden="true"
+    >
       <div className="splash-mark-wrap">
         <span className="splash-glow" />
-        <svg className="splash-mark" viewBox="0 0 512 512" width="120" height="120">
+        {/* Tightly framed on the artwork (x 124..388, y 135.6..388) rather
+            than the full 512 icon canvas, so the mark actually fills its
+            box — at the original viewBox the arch was only ~52% of the
+            width, which made a 65vw splash still look small. All the
+            animation coordinates below are unaffected: the viewBox only
+            changes the visible window, not the coordinate system. */}
+        <svg className="splash-mark" viewBox="116 122 280 280">
           <defs>
             <linearGradient id="splashGold" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor="#e0c15a" />
@@ -59,6 +68,11 @@ export default function SplashScreen({ fadingOut }) {
           </g>
         </svg>
       </div>
+      {/* The gold takeover. Sits above the mark and floods the whole screen
+          as the keystone lands, then the splash's own fade-out carries it
+          away to reveal the app — so the hand-off is gold to app, with no
+          return to black in between. Only on a real launch. */}
+      {variant === 'full' && <span className="splash-flash" />}
     </div>
   );
 }

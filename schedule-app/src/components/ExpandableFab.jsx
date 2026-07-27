@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../data/store.jsx';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
 
@@ -21,7 +22,15 @@ export default function ExpandableFab({ onAction }) {
 
   const toggle = () => setOpen((o) => !o);
 
-  return (
+  // Rendered into <body> rather than inline. The pages that host this FAB
+  // sit inside .page, which runs the page-in animation — and a transformed
+  // ancestor becomes the containing block for its position:fixed
+  // descendants. So for the 0.42s of that animation the FAB was being
+  // positioned against the page's content box instead of the viewport,
+  // appearing partway up the screen and snapping to the bottom when the
+  // transform cleared. A portal takes it out of reach of any ancestor
+  // transform, on every page, permanently.
+  return createPortal(
     <>
       {open && <div className="expandable-fab-backdrop" onClick={() => setOpen(false)} />}
       <div className="expandable-fab">
@@ -56,6 +65,7 @@ export default function ExpandableFab({ onAction }) {
             );
           })}
       </div>
-    </>
+    </>,
+    document.body
   );
 }

@@ -334,18 +334,35 @@ export default function App() {
   // transition (0.4s) has had time to finish.
   const [showSplash, setShowSplash] = useState(true);
   const [splashOut, setSplashOut] = useState(false);
+  // A reload isn't an arrival. Navigation Timing distinguishes the two, so a
+  // pull-to-refresh gets a short fade instead of replaying the whole build —
+  // which would be tiresome several times a day. Computed once: the entry is
+  // fixed for the life of the document.
+  const [splashVariant] = useState(() => {
+    try {
+      const nav = performance.getEntriesByType?.('navigation')?.[0];
+      return nav?.type === 'reload' ? 'simple' : 'full';
+    } catch {
+      return 'full';
+    }
+  });
   // Replay requested from Settings. Held here rather than in MorePage so the
   // first run and a replay go through exactly one code path.
   const [replayTour, setReplayTour] = useState(false);
   useEffect(() => {
+    // Full: 650ms of arch building, 440ms for the keystone to drop, then the
+    // gold flood peaks at ~1340ms and is held — so the fade that starts just
+    // after hands gold straight over to the app.
+    const outAt = splashVariant === 'simple' ? 420 : 1360;
+    const removeAt = outAt + 440;
     const outTimer = setTimeout(() => {
       setSplashOut(true);
       // Release the launch-screen background (see `html.booting`) exactly as
       // the splash starts to fade, so the fade reveals the themed app rather
       // than snapping to it afterwards.
       document.documentElement.classList.remove('booting');
-    }, 1200);
-    const removeTimer = setTimeout(() => setShowSplash(false), 1600);
+    }, outAt);
+    const removeTimer = setTimeout(() => setShowSplash(false), removeAt);
     return () => {
       clearTimeout(outTimer);
       clearTimeout(removeTimer);
@@ -437,7 +454,7 @@ export default function App() {
         </Routes>
       </main>
       <TabBar />
-      {showSplash && <SplashScreen fadingOut={splashOut} />}
+      {showSplash && <SplashScreen fadingOut={splashOut} variant={splashVariant} />}
       {showTour && (
         <Tutorial
           onDone={() => {
