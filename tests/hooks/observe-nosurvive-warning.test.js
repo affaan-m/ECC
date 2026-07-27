@@ -217,6 +217,24 @@ test('observe.sh records non-survival when clearing a live-looking stale PID', (
   );
 });
 
+test('the streak increment runs under the lazy-start lock, never unlocked', () => {
+  const content = fs.readFileSync(observeShPath, 'utf8');
+  // observe.sh fires on every tool call, so an unlocked read-modify-write on
+  // the streak file would lose increments or double-log the warning -- the same
+  // race the signal counter hit in #2296. The increment must therefore live in
+  // _START_OBSERVER_LOGGED, which every call site invokes inside the
+  // flock/lockfile/mkdir lazy-start lock.
+  const starter = content.match(/_START_OBSERVER_LOGGED\(\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(starter, 'observe.sh should still define _START_OBSERVER_LOGGED');
+  assert.ok(
+    starter[0].includes('_NOTE_OBSERVER_NOSURVIVE'),
+    'the streak increment should run inside _START_OBSERVER_LOGGED, under the lazy-start lock'
+  );
+  // Every _START_OBSERVER_LOGGED call site must be inside a lock branch.
+  const callSites = content.split('\n').filter((line) => /^\s+_START_OBSERVER_LOGGED\s*$/.test(line));
+  assert.strictEqual(callSites.length, 3, 'expected the three locked lazy-start call sites');
+});
+
 test('the non-survival warning is threshold-gated, not logged every call', () => {
   const content = fs.readFileSync(observeShPath, 'utf8');
   assert.ok(

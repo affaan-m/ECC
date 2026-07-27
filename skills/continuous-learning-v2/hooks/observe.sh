@@ -375,6 +375,14 @@ _REMOVE_FILE_IF_PRESENT() {
 _START_OBSERVER_LOGGED() {
   local bootstrap_log="${PROJECT_DIR}/observer-start.log"
   mkdir -p "$PROJECT_DIR"
+  # Every call site below sits inside the lazy-start lock (flock / lockfile /
+  # mkdir), so the streak read-modify-write in _NOTE_OBSERVER_NOSURVIVE is
+  # serialized here without a second lock -- concurrent hook invocations cannot
+  # lose an increment or double-log the warning. Counting at the restart (rather
+  # than at detection) also means N racing hooks record one death, not N.
+  if [ "${OBSERVER_DIED:-false}" = "true" ]; then
+    _NOTE_OBSERVER_NOSURVIVE
+  fi
   "${SKILL_ROOT}/agents/start-observer.sh" start >> "$bootstrap_log" 2>&1 || true
 }
 
@@ -481,12 +489,12 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
   if _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
   if _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid"; then OBSERVER_ALIVE=true; fi
 
-  # Count non-survival once per hook invocation, not once per PID file: the
-  # double-check calls below run after the stale files are already gone.
+  # A live observer clears the streak so a later one-off crash does not inherit
+  # an old count. This is an idempotent unlink, not a read-modify-write, so it
+  # needs no lock. The matching increment runs inside the lazy-start lock, in
+  # _START_OBSERVER_LOGGED.
   if [ "$OBSERVER_ALIVE" = "true" ]; then
     _RESET_OBSERVER_NOSURVIVE_STREAK
-  elif [ "$OBSERVER_DIED" = "true" ]; then
-    _NOTE_OBSERVER_NOSURVIVE
   fi
 
   # Check if observer is now running after cleanup
