@@ -4,10 +4,18 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { appendFile } = require('../utils');
+const { ensureDir } = require('../utils');
 
 const VALID_OUTCOMES = new Set(['success', 'failure', 'partial']);
 const VALID_FEEDBACK = new Set(['accepted', 'corrected', 'rejected']);
+
+// Retention bound for the JSONL sink. The dashboard only aggregates recent
+// runs, so an unbounded append-only file is pure cost. Trim from the front
+// once the file grows past the cap.
+const MAX_RUN_RECORDS = 5000;
+// Owner-only. The sink lives under the user's home and is local telemetry;
+// nothing else on the machine needs to read it.
+const RUNS_FILE_MODE = 0o600;
 
 function resolveHomeDir(homeDir) {
   return homeDir ? path.resolve(homeDir) : os.homedir();
@@ -102,6 +110,46 @@ function readJsonl(filePath) {
     }, []);
 }
 
+// Append one record to the JSONL sink with owner-only permissions, then
+// enforce the retention cap. `fs.appendFileSync`'s mode only applies when it
+// creates the file, so an existing world-readable sink is chmod'd on the way
+// past — cheap, and it repairs files written before this bound existed.
+function appendRunRecord(runsFilePath, record, options = {}) {
+  const maxRecords = Number.isInteger(options.maxRecords) && options.maxRecords > 0
+    ? options.maxRecords
+    : MAX_RUN_RECORDS;
+
+  ensureDir(path.dirname(runsFilePath));
+  fs.appendFileSync(runsFilePath, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: RUNS_FILE_MODE });
+
+  try {
+    fs.chmodSync(runsFilePath, RUNS_FILE_MODE);
+  } catch {
+    // Windows and some mounts do not support POSIX modes; the record still lands.
+  }
+
+  pruneRunRecords(runsFilePath, maxRecords);
+}
+
+// Keep only the newest `maxRecords` lines. Rewrites the whole file, which is
+// fine because the file is bounded by this very cap; it only runs on the
+// appends that actually cross the line.
+function pruneRunRecords(runsFilePath, maxRecords) {
+  try {
+    const lines = fs.readFileSync(runsFilePath, 'utf8').split('\n').filter(Boolean);
+    if (lines.length <= maxRecords) {
+      return;
+    }
+    fs.writeFileSync(
+      runsFilePath,
+      `${lines.slice(-maxRecords).join('\n')}\n`,
+      { encoding: 'utf8', mode: RUNS_FILE_MODE }
+    );
+  } catch {
+    // Retention is best-effort; never fail a recorded run over it.
+  }
+}
+
 function recordSkillExecution(input, options = {}) {
   const record = normalizeExecutionRecord(input, options);
 
@@ -119,7 +167,7 @@ function recordSkillExecution(input, options = {}) {
   }
 
   const runsFilePath = getRunsFilePath(options);
-  appendFile(runsFilePath, `${JSON.stringify(record)}\n`);
+  appendRunRecord(runsFilePath, record, options);
 
   return {
     storage: 'jsonl',
@@ -137,6 +185,8 @@ function readSkillExecutionRecords(options = {}) {
 }
 
 module.exports = {
+  MAX_RUN_RECORDS,
+  RUNS_FILE_MODE,
   VALID_FEEDBACK,
   VALID_OUTCOMES,
   getRunsFilePath,
