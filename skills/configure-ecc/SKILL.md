@@ -50,6 +50,21 @@ A fresh non-interactive install requires `--scope`. Repeat setup can detect the
 single existing scope and update it. A request for a different scope must use
 the separate scope-migration workflow; setup does not create duplicates.
 
+To change scope later, make the destination and migration intent explicit:
+
+```bash
+ecc setup \
+  --mode claude-plugin \
+  --scope project \
+  --move-scope \
+  --yes
+```
+
+Migration installs and verifies the destination first, rechecks for concurrent
+changes, and only then removes the source scope. It keeps plugin data and leaves
+marketplace declarations in place. Re-running the command resumes an
+interrupted migration.
+
 ## Explain hook preferences
 
 Hook preferences are personal Claude plugin configuration and do not follow the

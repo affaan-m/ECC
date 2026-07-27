@@ -139,5 +139,16 @@ if (args[0] === 'plugin' && args[1] === 'update' && args[2] === 'ecc@ecc') {
   process.exit(0);
 }
 
+if (args[0] === 'plugin' && args[1] === 'uninstall') {
+  const pluginId = args[2];
+  const scopeIndex = args.indexOf('--scope');
+  const scope = scopeIndex >= 0 ? args[scopeIndex + 1] : 'user';
+  const plugins = (state.plugins || []).filter(plugin => !(
+    plugin.id === pluginId && plugin.scope === scope
+  ));
+  writeState({ ...state, plugins });
+  process.exit(0);
+}
+
 process.stderr.write(`Unsupported fake Claude invocation: ${JSON.stringify(args)}\n`);
 process.exit(2);

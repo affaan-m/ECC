@@ -41,6 +41,7 @@ for (const relativePath of configureEccDocs) {
     assert.ok(content.includes('--mode claude-plugin'));
     assert.ok(content.includes('--scope user'));
     assert.ok(content.includes('--hooks standard'));
+    assert.ok(content.includes('--move-scope'));
     assert.ok(!content.includes('rm -rf /tmp/everything-claude-code'));
     assert.ok(!content.includes('cp -R "$ECC_ROOT'));
   });

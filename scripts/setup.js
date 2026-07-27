@@ -9,6 +9,9 @@ const {
   VALID_SCOPES,
   setupClaudePlugin,
 } = require('./lib/claude-plugin-setup');
+const {
+  migrateClaudePluginScope,
+} = require('./lib/claude-scope-migration');
 
 const MODE = 'claude-plugin';
 
@@ -19,6 +22,7 @@ ECC guided setup
 Usage:
   ecc setup
   ecc setup --mode claude-plugin --scope user|project|local [options]
+  ecc setup --mode claude-plugin --scope project --move-scope [options]
 
 Install scopes:
   user      Global for this user; ECC is available in every project.
@@ -33,13 +37,15 @@ Options:
   --mode claude-plugin
   --scope <scope>
   --hooks <preference>
+  --move-scope            Safely migrate an existing plugin to --scope.
   --yes, -y               Skip the confirmation prompt.
   --dry-run               Inspect and report without changing anything.
   --json                  Emit machine-readable JSON.
   --help, -h              Show this help.
 
 Re-running setup updates an existing ecc@ecc installation at its detected scope.
-Changing scope requires the separate scope-migration operation.
+Changing scope requires explicit --scope and --move-scope.
+Migration installs and verifies the destination before removing the source scope.
 `);
 }
 
@@ -50,6 +56,7 @@ function parseArgs(argv) {
     hooks: undefined,
     json: false,
     mode: undefined,
+    moveScope: false,
     scope: undefined,
     yes: false,
   };
@@ -72,6 +79,8 @@ function parseArgs(argv) {
       options.yes = true;
     } else if (argument === '--dry-run') {
       options.dryRun = true;
+    } else if (argument === '--move-scope') {
+      options.moveScope = true;
     } else if (argument === '--json') {
       options.json = true;
     } else if (argument === '--help' || argument === '-h') {
@@ -89,6 +98,9 @@ function parseArgs(argv) {
   }
   if (options.hooks !== undefined && !VALID_HOOK_MODES.has(options.hooks)) {
     throw new Error(`Invalid --hooks value: ${options.hooks}`);
+  }
+  if (options.moveScope && options.scope === undefined) {
+    throw new Error('--move-scope requires an explicit --scope destination.');
   }
   return options;
 }
@@ -178,8 +190,10 @@ async function confirm(options) {
     output: process.stdout,
   });
   try {
+    const operation = options.moveScope ? 'Migrate' : 'Apply';
+    const scopeLabel = options.scope || 'the detected';
     const answer = await terminal.question(
-      `Apply ${MODE} setup at ${options.scope || 'the detected'} scope`
+      `${operation} ${MODE} setup at ${scopeLabel} scope`
       + ` with hooks=${options.hooks || 'standard'}? [y/N] `
     );
     return /^y(es)?$/i.test(answer.trim());
@@ -194,6 +208,9 @@ function printResult(result, json) {
     return;
   }
   process.stdout.write(`\nECC ${result.action} ${result.pluginId} at ${result.scope} scope.\n`);
+  if (result.sourceScope) {
+    process.stdout.write(`Previous scope: ${result.sourceScope}\n`);
+  }
   process.stdout.write(`Hook preference: ${result.hooks}\n`);
   if (result.restartRequired) {
     process.stdout.write('Restart Claude Code or run /reload-plugins to load the updated plugin.\n');
@@ -253,7 +270,10 @@ async function main(argv = process.argv.slice(2)) {
       }
     }
 
-    const result = setupClaudePlugin({
+    const operation = options.moveScope
+      ? migrateClaudePluginScope
+      : setupClaudePlugin;
+    const result = operation({
       dryRun: options.dryRun,
       hooks: options.hooks,
       scope: options.scope,

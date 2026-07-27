@@ -288,13 +288,20 @@ function hookOptions(hooks) {
   };
 }
 
-function deriveHookMode(settings) {
+function readStoredHookOptions(settings) {
   const options = settings.pluginConfigs?.[CURRENT_PLUGIN_ID]?.options || {};
-  if (options.hooks_enabled === false) return 'off';
-  return VALID_HOOK_MODES.has(options.hook_profile)
-    && options.hook_profile !== 'off'
-    ? options.hook_profile
-    : 'standard';
+  return {
+    hooks_enabled: options.hooks_enabled !== false,
+    hook_profile: VALID_HOOK_MODES.has(options.hook_profile)
+      && options.hook_profile !== 'off'
+      ? options.hook_profile
+      : 'standard',
+  };
+}
+
+function deriveHookMode(settings) {
+  const options = readStoredHookOptions(settings);
+  return options.hooks_enabled ? options.hook_profile : 'off';
 }
 
 function writeClaudePluginOptions(settingsPath, hooks) {
@@ -323,7 +330,7 @@ function currentEccPlugins(plugins) {
   return plugins.filter(plugin => plugin?.id === CURRENT_PLUGIN_ID);
 }
 
-function inspectPluginInventory(plugins, requestedScope) {
+function assertNoConflictingEccPlugins(plugins) {
   const legacy = plugins.find(plugin => (
     LEGACY_PLUGIN_IDS.has(plugin?.id)
     || String(plugin?.id || '').startsWith('everything-claude-code@')
@@ -356,7 +363,10 @@ function inspectPluginInventory(plugins, requestedScope) {
       }
     );
   }
+}
 
+function inspectPluginInventory(plugins, requestedScope) {
+  assertNoConflictingEccPlugins(plugins);
   const installed = currentEccPlugins(plugins);
   const observedScopes = installed.map(plugin => plugin.scope);
   if (installed.length > 1 || new Set(observedScopes).size !== observedScopes.length) {
@@ -385,7 +395,7 @@ function inspectPluginInventory(plugins, requestedScope) {
       {
         observedScopes,
         recovery: [
-          `ecc setup --mode claude-plugin --scope ${installed[0].scope} --yes`,
+          `ecc setup --mode claude-plugin --scope ${scope} --move-scope --yes`,
         ],
       }
     );
@@ -493,7 +503,7 @@ function verifyPluginAtScope(options) {
 
 function ensurePluginAtScope(options) {
   const run = options.run || runClaude;
-  const configuredHooks = hookOptions(options.hooks);
+  const configuredHooks = options.hookConfiguration || hookOptions(options.hooks);
   if (options.installed) {
     run(
       ['plugin', 'update', CURRENT_PLUGIN_ID, '--scope', options.scope],
@@ -605,6 +615,9 @@ module.exports = {
   VALID_HOOK_MODES,
   VALID_SCOPES,
   buildWindowsCommandLine,
+  assertNoConflictingEccPlugins,
+  assertSafeLocalInventory,
+  currentEccPlugins,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
@@ -613,6 +626,7 @@ module.exports = {
   isOfficialMarketplace,
   parseMarketplaceList,
   parsePluginList,
+  readStoredHookOptions,
   readSettings,
   runClaude,
   setupClaudePlugin,
