@@ -1,3 +1,5 @@
+import { useLocation, useNavigate } from 'react-router-dom';
+
 // The Keystone mark — a small inline version of the app icon (an arch of
 // blocks locked together by a gold keystone), used across page headers so
 // the brand shows up consistently. `size` controls its dimensions.
@@ -33,11 +35,33 @@ export default function Logo({ size = 30, className = '' }) {
   );
 }
 
-// A brand row (logo + wordmark) for page headers.
+// A brand row (logo + wordmark) for page headers. The mark doubles as a way
+// home from any page — the wordmark stays plain text, since it names the page
+// you're on rather than the destination.
+//
+// On Home itself it renders as a plain mark: a control that navigates to the
+// page you are already on is an affordance that promises something it can't
+// deliver. The <span> Logo renders is aria-hidden, so the button carries the
+// accessible name.
 export function Brand({ children }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
   return (
     <div className="brand">
-      <Logo size={30} />
+      {pathname === '/' ? (
+        <Logo size={30} />
+      ) : (
+        <button
+          type="button"
+          className="brand-home"
+          onClick={() => navigate('/')}
+          aria-label="Go to Home"
+          title="Home"
+        >
+          <Logo size={30} />
+        </button>
+      )}
       <h1>{children}</h1>
     </div>
   );

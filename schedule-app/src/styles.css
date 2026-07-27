@@ -350,6 +350,25 @@ textarea {
   align-items: center;
   gap: 10px;
 }
+/* The mark as a home button. Stripped back to just the logo — the tap target
+   is padded out to a comfortable size with a negative margin so it stays
+   easy to hit without shifting the header's layout by a pixel. */
+.brand-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  margin: -7px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.13s cubic-bezier(0.2, 0, 0.2, 1), background-color 0.15s ease;
+}
+.brand-home:active {
+  transform: scale(0.9);
+  background: var(--surface-2);
+}
 .logo {
   display: inline-flex;
   flex: none;
