@@ -9,6 +9,7 @@ const repoRoot = path.join(__dirname, '..', '..');
 const fakeClaudeScript = path.join(repoRoot, 'tests', 'fixtures', 'fake-claude-plugin.js');
 const {
   OFFICIAL_MARKETPLACE_URL,
+  buildWindowsCommandLine,
   setupClaudePlugin,
 } = require('../../scripts/lib/claude-plugin-setup');
 
@@ -163,6 +164,20 @@ function writeManagedState(fixture, selectedModules, operations = []) {
 }
 
 console.log('\n=== Claude plugin setup library tests ===\n');
+
+test('Windows command-line fallback preserves spaced paths and JSON arguments', () => {
+  assert.strictEqual(
+    buildWindowsCommandLine(
+      'C:\\Program Files\\Claude\\claude.cmd',
+      ['plugin', 'install', 'ecc@ecc', '--config', '{"hooks_enabled":false}']
+    ),
+    '"C:\\Program Files\\Claude\\claude.cmd" plugin install ecc@ecc --config "{""hooks_enabled"":false}"'
+  );
+  assert.throws(
+    () => buildWindowsCommandLine('claude.cmd', ['plugin', 'install', 'bad&unsafe']),
+    /unsafe/
+  );
+});
 
 test('fresh installs require an explicit scope and perform no mutation', () => {
   withFixture({}, fixture => {

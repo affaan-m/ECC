@@ -127,13 +127,77 @@ function parseMarketplaceList(stdout) {
   return marketplaces;
 }
 
+const UNSAFE_WINDOWS_SHELL_CHARS = /[\r\n&|<>^%!]/;
+
+function quoteWindowsCommandToken(value) {
+  const token = String(value);
+  if (UNSAFE_WINDOWS_SHELL_CHARS.test(token)) {
+    throw new Error('Claude Code command contains characters that are unsafe for cmd.exe');
+  }
+  if (token === '') return '""';
+  if (!/[\s"]/.test(token)) return token;
+  return `"${token.replace(/"/g, '""')}"`;
+}
+
+function buildWindowsCommandLine(command, args) {
+  return [command, ...args].map(quoteWindowsCommandToken).join(' ');
+}
+
+function resolveWindowsCmdShim(command, env) {
+  if (typeof command !== 'string' || command.length === 0) return null;
+  if (/\.(cmd|bat)$/i.test(command)) return command;
+  if (path.extname(command)) return null;
+
+  const isPathLike = path.isAbsolute(command)
+    || command.includes('/')
+    || command.includes('\\');
+  if (isPathLike) {
+    const candidate = `${command}.cmd`;
+    return fs.existsSync(candidate) ? candidate : null;
+  }
+
+  const lookup = spawnSync('where.exe', [`${command}.cmd`], {
+    env,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (lookup.error || lookup.status !== 0) return null;
+  return String(lookup.stdout || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean) || null;
+}
+
 function runClaude(args, options = {}) {
-  const result = spawnSync(options.command || 'claude', args, {
+  const command = options.command || 'claude';
+  const spawnOptions = {
     cwd: options.cwd || process.cwd(),
     env: options.env || process.env,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
-  });
+    windowsHide: true,
+  };
+  let result = spawnSync(command, args, spawnOptions);
+
+  if (process.platform === 'win32' && result.error) {
+    const shim = resolveWindowsCmdShim(command, spawnOptions.env);
+    if (shim) {
+      let commandLine;
+      try {
+        commandLine = buildWindowsCommandLine(shim, args);
+      } catch (error) {
+        fail(
+          'CLAUDE_COMMAND_FAILED',
+          `Could not run Claude Code: ${error.message}`,
+          { phase: options.phase || 'provider' }
+        );
+      }
+      result = spawnSync(commandLine, {
+        ...spawnOptions,
+        shell: true,
+      });
+    }
+  }
 
   if (result.error) {
     if (result.error.code === 'ENOENT') {
@@ -540,6 +604,7 @@ module.exports = {
   OFFICIAL_MARKETPLACE_URL,
   VALID_HOOK_MODES,
   VALID_SCOPES,
+  buildWindowsCommandLine,
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
