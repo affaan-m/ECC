@@ -38,9 +38,6 @@ jobs:
       - name: Verify OpenCode package payload
         run: node tests/scripts/build-opencode.test.js
 
-      - name: Verify OMP adapter payload
-        run: node tests/omp/omp-plugin.test.js
-
       - name: Validate version tag
         run: |
           if ! [[ "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then

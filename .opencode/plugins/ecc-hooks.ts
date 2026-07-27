@@ -512,7 +512,7 @@ export const ECCHooksPlugin: ECCHooksPluginFn = async ({
       const contextBlock = [
         "# ECC Context (preserve across compaction)",
         "",
-        "## Active Plugin: ECC v2.0.0",
+        "## Active Plugin: ECC v2.1.0",
         "- Hooks: file.edited, tool.execute.before/after, session.created/idle/deleted, shell.env, compacting, permission.ask",
         "- Tools: run-tests, check-coverage, security-audit, format-code, lint-check, git-summary, changed-files",
         "- Agents: 13 specialized (planner, architect, tdd-guide, code-reviewer, security-reviewer, build-error-resolver, e2e-runner, refactor-cleaner, doc-updater, go-reviewer, go-build-resolver, database-reviewer, python-reviewer)",
