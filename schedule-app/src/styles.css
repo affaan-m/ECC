@@ -245,6 +245,43 @@ textarea {
   width: 100%;
   height: 100%;
 }
+/* The static copy of the finished mark, stacked over the animated one and
+   dissolved away as the build starts underneath it.
+
+   The point is the hand-off from the OS launch screen. That screen shows the
+   completed logo; the animation begins from nothing. Cutting straight from
+   one to the other read as the logo blinking out and then rebuilding itself.
+   Opening on the same finished mark instead means the first frame is
+   identical to what was already on screen, and the build is revealed *through*
+   it — so the launch screen appears to melt into the animation rather than be
+   replaced by it.
+
+   The hold is timed to the arch's first step (see .splash-arch-clip-rect):
+   the dissolve only begins once there is something behind it to see, so the
+   screen never dips toward empty black on the way. */
+.splash-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  animation: splashGhostOut 560ms ease-out forwards;
+}
+/* A reload never showed a launch screen, so there is nothing to dissolve
+   from. */
+html.boot-reload .splash-ghost {
+  display: none;
+}
+@keyframes splashGhostOut {
+  0% {
+    opacity: 1;
+  }
+  /* 32% of 560ms = 179ms, i.e. the frame the first arch block lands. */
+  32% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
 /* A refresh is not an arrival — replaying the full build every time you pull
    to reload would be tiresome, so that case gets a small mark and a quick
    fade with none of the choreography. */
@@ -281,7 +318,7 @@ html.boot-reload .splash-mark {
 .splash-flash {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   pointer-events: none;
   opacity: 0;
   background: radial-gradient(
@@ -291,7 +328,7 @@ html.boot-reload .splash-mark {
     #c9a13f 68%,
     #a9822a 100%
   );
-  animation: splashFlash 320ms cubic-bezier(0.3, 0, 0.2, 1) 1020ms forwards;
+  animation: splashFlash 320ms cubic-bezier(0.3, 0, 0.2, 1) 1060ms forwards;
 }
 /* A reload gets no flood — it's a short fade, not an arrival. */
 html.boot-reload .splash-flash {
@@ -308,7 +345,7 @@ html.boot-reload .splash-flash {
 /* Reveals bottom-up in 4 discrete jumps rather than a smooth wipe, so the
    arch reads as blocks stacking into place instead of liquid filling. */
 .splash-arch-clip-rect {
-  animation: splashArchBuild 650ms steps(4, jump-end) forwards;
+  animation: splashArchBuild 700ms steps(4, jump-end) forwards;
 }
 @keyframes splashArchBuild {
   from {
@@ -320,7 +357,7 @@ html.boot-reload .splash-flash {
     height: 262px;
   }
 }
-/* Drops in once the sides finish (delay matches splashArchBuild's 650ms),
+/* Drops in once the sides finish (delay matches splashArchBuild's 700ms),
    overshooting slightly past its resting spot before settling — a keystone
    dropped into place, not just faded in. */
 .splash-keystone {
@@ -331,7 +368,7 @@ html.boot-reload .splash-flash {
      fall once scaled down, not just a subtle nudge. */
   transform: translateY(-240px);
   transform-origin: center;
-  animation: splashKeystoneDrop 440ms linear 650ms forwards;
+  animation: splashKeystoneDrop 420ms linear 700ms forwards;
 }
 /* Per-keyframe easing so the fall actually reads as a fall rather than a
    pop: opacity ramps in fast while it's still high up (so it's visible for
@@ -378,7 +415,7 @@ html.boot-reload .splash-flash {
   filter: blur(2px);
   opacity: 0;
   transform: scale(0.4);
-  animation: splashGlow 650ms ease-out 980ms forwards;
+  animation: splashGlow 650ms ease-out 1040ms forwards;
   pointer-events: none;
 }
 @keyframes splashGlow {

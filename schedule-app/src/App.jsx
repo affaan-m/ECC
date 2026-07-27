@@ -340,7 +340,7 @@ export default function App() {
     const el = document.getElementById('boot-splash');
     if (!el) return undefined;
     const simple = document.documentElement.classList.contains('boot-reload');
-    const outAt = simple ? 420 : 1360;
+    const outAt = simple ? 420 : 1400;
     const removeAt = outAt + 440;
     const elapsed = performance.now();
     const outTimer = setTimeout(() => {
