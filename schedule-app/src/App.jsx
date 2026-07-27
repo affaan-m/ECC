@@ -327,11 +327,18 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [splashOut, setSplashOut] = useState(false);
   useEffect(() => {
-    const outTimer = setTimeout(() => setSplashOut(true), 1200);
+    const outTimer = setTimeout(() => {
+      setSplashOut(true);
+      // Release the launch-screen background (see `html.booting`) exactly as
+      // the splash starts to fade, so the fade reveals the themed app rather
+      // than snapping to it afterwards.
+      document.documentElement.classList.remove('booting');
+    }, 1200);
     const removeTimer = setTimeout(() => setShowSplash(false), 1600);
     return () => {
       clearTimeout(outTimer);
       clearTimeout(removeTimer);
+      document.documentElement.classList.remove('booting');
     };
   }, []);
 
@@ -344,6 +351,10 @@ export default function App() {
         (theme === 'system' &&
           window.matchMedia('(prefers-color-scheme: dark)').matches);
       root.dataset.theme = dark ? 'dark' : 'light';
+      // Matches the pre-paint boot script in index.html, which sets this for
+      // the first frame; this keeps it right when the theme changes later.
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', dark ? '#0f141a' : '#eef1f4');
     };
     apply();
     if (theme === 'system') {

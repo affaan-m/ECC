@@ -14,6 +14,53 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <title>Keystone - Daily Planner</title>
+    <!--
+      Resolve the theme before the first paint.
+
+      React applies `data-theme` from a useEffect, which by definition runs
+      after the page has already painted once — so a dark-theme user got a
+      frame or two of the light palette on every launch, and (because the
+      theme crossfade transition applied to that initial switch) then watched
+      it fade from white to black over a quarter second. Reading the stored
+      preference here, synchronously in <head>, means the very first paint is
+      already the right colour. App.jsx still owns the theme afterwards; this
+      only front-runs it.
+
+      Deliberately defensive: any failure here must fall through to the
+      light default rather than block the bundle from loading.
+    -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var theme = 'system';
+        try {
+          var raw = localStorage.getItem('compass.data.v1');
+          if (raw) theme = JSON.parse(raw).settings?.theme || 'system';
+        } catch (e) {
+          /* unreadable storage — fall through to the system preference */
+        }
+        var dark =
+          theme === 'dark' ||
+          (theme === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        root.dataset.theme = dark ? 'dark' : 'light';
+        // Hold the page at the launch-screen colour until the splash fades
+        // (App.jsx clears this); see `html.booting` in styles.css.
+        root.classList.add('booting');
+        // Keep the browser/OS chrome in step with the app on the first paint
+        // too, rather than being pinned to the dark value in the tag above.
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0f141a' : '#eef1f4');
+        // Arm the theme crossfade only once the correct theme is already
+        // painted, so it animates real theme *changes* and never the boot.
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            root.classList.add('theme-ready');
+          });
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
