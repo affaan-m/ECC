@@ -52,6 +52,15 @@
         // too, rather than being pinned to the dark value in the tag above.
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute('content', dark ? '#0f141a' : '#eef1f4');
+        // A reload isn't an arrival, so it gets the short version of the
+        // launch animation. Decided here because the markup below has to
+        // carry the right class from its very first paint.
+        try {
+          var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+          if (nav && nav.type === 'reload') root.classList.add('boot-reload');
+        } catch (e) {
+          /* no Navigation Timing — treat it as a launch */
+        }
         // Arm the theme crossfade only once the correct theme is already
         // painted, so it animates real theme *changes* and never the boot.
         requestAnimationFrame(function () {
@@ -63,6 +72,63 @@
     </script>
   </head>
   <body>
+    <!--
+      The launch animation lives here, in the document, rather than in a React
+      component.
+
+      It used to be rendered by App.jsx, which meant it could only begin once
+      the bundle had downloaded, parsed and mounted — so the real sequence was
+      the OS launch screen's static icon, then a stretch of flat colour while
+      the JS loaded, and only then the animation. Three phases to show one
+      logo.
+
+      Inline, it paints with the first frame and plays *while* the bundle
+      loads, so the animation is the loading screen rather than something that
+      happens after it. The stylesheet is render-blocking and the module
+      script is deferred, so the markup and its CSS are both ready before any
+      JS runs. App.jsx only decides when to take it away (see #boot-splash in
+      App.jsx), and if the bundle took longer than the animation it is already
+      finished and simply leaves at once.
+    -->
+    <div id="boot-splash" class="splash" aria-hidden="true">
+      <div class="splash-mark-wrap">
+        <span class="splash-glow"></span>
+        <svg class="splash-mark" viewBox="116 122 280 280">
+          <defs>
+            <linearGradient id="splashGold" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#e0c15a" />
+              <stop offset="1" stop-color="#a9822a" />
+            </linearGradient>
+            <clipPath id="splashArchClip" clipPathUnits="userSpaceOnUse">
+              <rect class="splash-arch-clip-rect" x="100" width="312" y="126" height="262" />
+            </clipPath>
+          </defs>
+          <g clip-path="url(#splashArchClip)">
+            <path
+              fill="#f2efe7"
+              d="M124,388 L124,258 A132,132 0 0 1 388,258 L388,388 L324,388 L324,258 A68,68 0 0 0 188,258 L188,388 Z"
+            />
+            <g stroke="#111113" stroke-width="7" stroke-linecap="round">
+              <line x1="200.3" y1="219.0" x2="147.9" y2="182.3" />
+              <line x1="311.7" y1="219.0" x2="364.1" y2="182.3" />
+              <line x1="124" y1="324" x2="188" y2="324" />
+              <line x1="324" y1="324" x2="388" y2="324" />
+            </g>
+          </g>
+          <g class="splash-keystone">
+            <path
+              fill="url(#splashGold)"
+              d="M206.5,135.6 A132,132 0 0 1 305.5,135.6 L281.5,195.0 A68,68 0 0 0 230.5,195.0 Z"
+            />
+            <g stroke="#111113" stroke-width="7" stroke-linecap="round">
+              <line x1="230.5" y1="195.0" x2="206.5" y2="135.6" />
+              <line x1="281.5" y1="195.0" x2="305.5" y2="135.6" />
+            </g>
+          </g>
+        </svg>
+      </div>
+      <span class="splash-flash"></span>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <!--

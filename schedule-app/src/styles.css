@@ -248,20 +248,20 @@ textarea {
 /* A refresh is not an arrival — replaying the full build every time you pull
    to reload would be tiresome, so that case gets a small mark and a quick
    fade with none of the choreography. */
-.splash--simple .splash-mark-wrap {
+html.boot-reload .splash-mark-wrap {
   width: 132px;
   height: 132px;
 }
-.splash--simple .splash-arch-clip-rect,
-.splash--simple .splash-glow {
+html.boot-reload .splash-arch-clip-rect,
+html.boot-reload .splash-glow {
   animation: none;
 }
-.splash--simple .splash-keystone {
+html.boot-reload .splash-keystone {
   animation: none;
   opacity: 1;
   transform: none;
 }
-.splash--simple .splash-mark {
+html.boot-reload .splash-mark {
   animation: splashSimpleIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
 @keyframes splashSimpleIn {
@@ -292,6 +292,10 @@ textarea {
     #a9822a 100%
   );
   animation: splashFlash 320ms cubic-bezier(0.3, 0, 0.2, 1) 1020ms forwards;
+}
+/* A reload gets no flood — it's a short fade, not an arrival. */
+html.boot-reload .splash-flash {
+  display: none;
 }
 @keyframes splashFlash {
   from {

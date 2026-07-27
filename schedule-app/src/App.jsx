@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
-import SplashScreen from './components/SplashScreen.jsx';
 import Tutorial from './components/Tutorial.jsx';
 import { runReminderScan, notify, notificationPermission } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick, selectTick, successTick } from './data/haptics.js';
@@ -326,43 +325,35 @@ export default function App() {
     };
   }, [location.pathname]);
 
-  // Launch splash: the mark builds itself (see SplashScreen.jsx/styles.css
-  // for the choreography — arch blocks rise for 650ms, the keystone drops
-  // in over the next 380ms, then its glow bursts) before the whole overlay
-  // fades away. These timers just need to start that fade once the glow
-  // has had a moment to peak, and unmount after the .splash opacity
-  // transition (0.4s) has had time to finish.
-  const [showSplash, setShowSplash] = useState(true);
-  const [splashOut, setSplashOut] = useState(false);
-  // A reload isn't an arrival. Navigation Timing distinguishes the two, so a
-  // pull-to-refresh gets a short fade instead of replaying the whole build —
-  // which would be tiresome several times a day. Computed once: the entry is
-  // fixed for the life of the document.
-  const [splashVariant] = useState(() => {
-    try {
-      const nav = performance.getEntriesByType?.('navigation')?.[0];
-      return nav?.type === 'reload' ? 'simple' : 'full';
-    } catch {
-      return 'full';
-    }
-  });
+  // The launch animation is in index.html and has been running since the
+  // first paint (see the comment there). All that's left is deciding when to
+  // take it away — and since it started at page load rather than at mount,
+  // the remaining time is measured against performance.now(). If the bundle
+  // took longer than the animation those come out negative, so a slow load
+  // simply finds the animation already over and clears it immediately
+  // instead of adding its duration on top.
+  const [splashDone, setSplashDone] = useState(() => !document.getElementById('boot-splash'));
   // Replay requested from Settings. Held here rather than in MorePage so the
   // first run and a replay go through exactly one code path.
   const [replayTour, setReplayTour] = useState(false);
   useEffect(() => {
-    // Full: 650ms of arch building, 440ms for the keystone to drop, then the
-    // gold flood peaks at ~1340ms and is held — so the fade that starts just
-    // after hands gold straight over to the app.
-    const outAt = splashVariant === 'simple' ? 420 : 1360;
+    const el = document.getElementById('boot-splash');
+    if (!el) return undefined;
+    const simple = document.documentElement.classList.contains('boot-reload');
+    const outAt = simple ? 420 : 1360;
     const removeAt = outAt + 440;
+    const elapsed = performance.now();
     const outTimer = setTimeout(() => {
-      setSplashOut(true);
+      el.classList.add('splash--out');
       // Release the launch-screen background (see `html.booting`) exactly as
       // the splash starts to fade, so the fade reveals the themed app rather
       // than snapping to it afterwards.
       document.documentElement.classList.remove('booting');
-    }, outAt);
-    const removeTimer = setTimeout(() => setShowSplash(false), removeAt);
+    }, Math.max(0, outAt - elapsed));
+    const removeTimer = setTimeout(() => {
+      el.remove();
+      setSplashDone(true);
+    }, Math.max(0, removeAt - elapsed));
     return () => {
       clearTimeout(outTimer);
       clearTimeout(removeTimer);
@@ -373,7 +364,7 @@ export default function App() {
   // The tour narrates the Home screen, so both the first run and a replay
   // from Settings put you there before it starts — otherwise it plays over
   // whichever page you happened to be on and describes something else.
-  const showTour = !showSplash && (replayTour || !state.settings?.tutorialSeen);
+  const showTour = splashDone && (replayTour || !state.settings?.tutorialSeen);
   useEffect(() => {
     if (location.state?.replayTour) {
       setReplayTour(true);
@@ -454,7 +445,6 @@ export default function App() {
         </Routes>
       </main>
       <TabBar />
-      {showSplash && <SplashScreen fadingOut={splashOut} variant={splashVariant} />}
       {showTour && (
         <Tutorial
           onDone={() => {
