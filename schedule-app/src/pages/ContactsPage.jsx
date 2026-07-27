@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
+import AddressField from '../components/AddressField.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import Modal from '../components/Modal.jsx';
@@ -453,9 +454,16 @@ export default function ContactsPage() {
             </div>
             <label className="field">
               <span>Address</span>
-              <input
+              <AddressField
                 value={adding.address}
-                onChange={(e) => setAdding({ ...adding, address: e.target.value })}
+                onChange={(address, coords) =>
+                  setAdding({
+                    ...adding,
+                    address,
+                    addressLat: coords ? coords.lat : null,
+                    addressLng: coords ? coords.lng : null,
+                  })
+                }
                 placeholder="Optional — drops a map pin automatically"
               />
             </label>

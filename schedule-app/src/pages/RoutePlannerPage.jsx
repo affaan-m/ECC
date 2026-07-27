@@ -4,6 +4,7 @@ import { useStore } from '../data/store.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { optimizeRoute, formatDistance, buildGoogleMapsUrl } from '../data/routePlanner.js';
 import { mapsLinkProps, webTarget } from '../data/maps.js';
+import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
 
 export default function RoutePlannerPage() {
   const { state } = useStore();
@@ -15,11 +16,38 @@ export default function RoutePlannerPage() {
     if (!isPro) navigate('/pricing', { replace: true });
   }, [isPro, navigate]);
 
-  const pins = state.pins || [];
   const contactById = useMemo(
     () => Object.fromEntries(state.contacts.map((c) => [c.id, c])),
     [state.contacts]
   );
+
+  // Today's events that have a location of their own become stops too. Half
+  // the reason to plan a route is the things already on the calendar, and
+  // those were invisible here — you could only route between saved pins, so
+  // an event at an address you'd picked on the map simply didn't count.
+  //
+  // Shaped like a pin so everything downstream (selection, optimiser, the
+  // Google Maps link) treats them identically, with a synthetic id that
+  // can't collide with a real pin's.
+  const eventStops = useMemo(() => {
+    const iso = todayISO();
+    return state.events
+      .flatMap((e) => expandEventOnDay(e, iso))
+      .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
+      .map((o) => ({
+        id: `event:${o.id}:${o.recDate || iso}`,
+        label: o.title || 'Event',
+        emoji: '📅',
+        lat: o.locLat,
+        lng: o.locLng,
+        contactId: o.contactId || '',
+        isEvent: true,
+        start: o.start,
+      }))
+      .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  }, [state.events]);
+
+  const pins = useMemo(() => [...(state.pins || []), ...eventStops], [state.pins, eventStops]);
 
   const [selected, setSelected] = useState(() => {
     const initial = new Set();
@@ -86,12 +114,15 @@ export default function RoutePlannerPage() {
         <h1>🧭 Plan my day</h1>
         <p className="muted small">
           Pick who/where you want to visit today — overdue people are pre-selected — then get the
-          shortest visiting order, worked out straight-line (not real road distance).
+          shortest visiting order, worked out straight-line (not real road distance). Today's
+          events with a location are listed too.
         </p>
       </header>
 
       {pins.length === 0 ? (
-        <p className="muted center-pad">Drop some pins on the Map first, then come back here.</p>
+        <p className="muted center-pad">
+          Nothing to route yet — drop some pins on the Map, or give today's events a location.
+        </p>
       ) : (
         <>
           <section className="detail-section">
@@ -111,6 +142,9 @@ export default function RoutePlannerPage() {
                       <span className="place-label">
                         {p.label || 'Dropped pin'}
                         {c && ` · ${c.name}`}
+                        {p.isEvent && p.start && (
+                          <span className="muted small"> · {formatTime(p.start)}</span>
+                        )}
                         {over && <span className="overdue-tag">Reconnect</span>}
                       </span>
                     </button>

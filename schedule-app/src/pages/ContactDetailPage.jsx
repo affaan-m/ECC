@@ -8,6 +8,7 @@ import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
+import AddressField from '../components/AddressField.jsx';
 import { addressTarget, mapsLinkProps } from '../data/maps.js';
 import {
   todayISO,
@@ -85,20 +86,25 @@ export default function ContactDetailPage() {
   const editDirty = editing ? JSON.stringify(editing) !== initialEditJsonRef.current : false;
 
   const saveEdit = () => {
-    const name = editing.name.trim();
+    // Defensive on every field: a contact that arrived by vCard import (or
+    // from an older save) can be missing keys entirely, and a bare
+    // `.trim()` on one of those threw and made the person uneditable.
+    const name = (editing.name || '').trim();
     if (!name) return;
-    const address = editing.address.trim();
+    const address = (editing.address || '').trim();
     const updated = {
       ...contact,
       name,
-      phone: editing.phone.trim(),
-      email: editing.email.trim(),
+      phone: (editing.phone || '').trim(),
+      email: (editing.email || '').trim(),
       address,
+      addressLat: editing.addressLat ?? null,
+      addressLng: editing.addressLng ?? null,
       photo: editing.photo || '',
       statusId: editing.statusId,
-      notes: editing.notes.trim(),
+      notes: (editing.notes || '').trim(),
       cadenceDays: Number(editing.cadenceText) || 0,
-      tags: editing.tagsText
+      tags: (editing.tagsText || '')
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean),
@@ -328,7 +334,7 @@ export default function ContactDetailPage() {
             />
             <label className="field">
               <span>Name</span>
-              <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              <input value={editing.name || ''} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </label>
             {isPro && (
               <label className="field">
@@ -343,21 +349,33 @@ export default function ContactDetailPage() {
             <div className="field-row">
               <label className="field">
                 <span>Phone</span>
-                <input type="tel" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
+                <input type="tel" value={editing.phone || ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
               </label>
               <label className="field">
                 <span>Email</span>
-                <input type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
+                <input type="email" value={editing.email || ''} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
               </label>
             </div>
             <label className="field">
               <span>Address</span>
-              <input value={editing.address} onChange={(e) => setEditing({ ...editing, address: e.target.value })} />
+              <AddressField
+                value={editing.address || ''}
+                onChange={(address, coords) =>
+                  setEditing({
+                    ...editing,
+                    address,
+                    // Only set when picked from a suggestion; typing by hand
+                    // clears them so save falls back to geocoding the text.
+                    addressLat: coords ? coords.lat : null,
+                    addressLng: coords ? coords.lng : null,
+                  })
+                }
+              />
             </label>
             <label className="field">
               <span>Tags</span>
               <input
-                value={editing.tagsText}
+                value={editing.tagsText || ''}
                 onChange={(e) => setEditing({ ...editing, tagsText: e.target.value })}
                 placeholder="comma separated"
               />
@@ -368,7 +386,7 @@ export default function ContactDetailPage() {
                 <input
                   type="number"
                   min="0"
-                  value={editing.cadenceText}
+                  value={editing.cadenceText || ''}
                   onChange={(e) => setEditing({ ...editing, cadenceText: e.target.value })}
                   placeholder={String(reconnectDays)}
                 />
@@ -377,7 +395,7 @@ export default function ContactDetailPage() {
             </label>
             <label className="field">
               <span>Notes</span>
-              <textarea rows="3" value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
+              <textarea rows="3" value={editing.notes || ''} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
             </label>
           </div>
         )}

@@ -4278,6 +4278,56 @@ body.is-scrolled .page-head::before {
   animation: chipSelect 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* --- Address autocomplete ------------------------------------------------ */
+.address-field {
+  position: relative;
+}
+.address-field input {
+  width: 100%;
+}
+.address-field-hint {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+/* Floated above whatever follows in the form rather than pushing it down —
+   the sheet is short and a list that shoves the next field around while you
+   type is worse than one that covers it. */
+.address-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 232px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.address-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.address-suggestion:active {
+  background: var(--surface-2);
+}
+
 /* --- Schedule conflicts --------------------------------------------------
    Advice, not errors: warn-coloured rather than danger-coloured, and always
    dismissible, because a straight-line travel estimate can be wrong and the

@@ -62,6 +62,13 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
+  // Only our own origin. Third-party calls (the Nominatim address lookup, map
+  // tiles) gain nothing from this cache — a cross-origin response can't be
+  // stored by the `type === 'basic'` rule below anyway — and routing them
+  // through here only adds a hop and hides their real failures behind the
+  // worker. Let the page talk to them directly.
+  if (new URL(request.url).origin !== self.location.origin) return;
+
   // Network-first for navigations so fresh deploys are picked up; fall back to
   // the cached shell when offline, and to an explanatory page when even that
   // is missing.
