@@ -23,6 +23,34 @@ router.post('/', raw({ type: 'application/json' }), async (req, res) => {
   try {
     const obj = event.data.object;
     switch (event.type) {
+      // The one-time Pro purchase. This is what grants access now.
+      case 'checkout.session.completed': {
+        // Subscription checkouts are handled by the subscription events
+        // below; only act on the one-time payment mode here.
+        if (obj.mode !== 'payment') break;
+        if (obj.payment_status !== 'paid') break;
+
+        // Prefer the id we attached at checkout; fall back to the customer.
+        const where = obj.client_reference_id
+          ? { id: obj.client_reference_id }
+          : { stripeCustomerId: obj.customer };
+
+        // Stripe retries webhooks, and a retry must not look like a second
+        // purchase. Writing the session id under a unique constraint makes
+        // the grant idempotent: re-delivering the same session is a no-op,
+        // and `updateMany` with the guard below simply matches zero rows.
+        await prisma.user.updateMany({
+          where: { ...where, lifetimePurchasedAt: null },
+          data: {
+            lifetimePurchasedAt: new Date(),
+            lifetimeSessionId: obj.id,
+          },
+        });
+        break;
+      }
+
+      // Legacy subscriptions, from before Pro became a one-time purchase.
+      // Kept so existing subscribers keep working until they cancel.
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         await prisma.user.updateMany({

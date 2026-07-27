@@ -61,18 +61,21 @@ what keeps emails in sync and cleans up on account deletion.)
 
 1. Create/use a [Stripe](https://dashboard.stripe.com) account. Use
    **test mode** until you're ready to charge real cards.
-2. **Product catalog** → create a "Keystone Pro" product with a monthly
-   price and an annual price. Copy each Price ID into `STRIPE_PRICE_ID_MONTHLY`
-   / `STRIPE_PRICE_ID_ANNUAL` (or just set `STRIPE_PRICE_ID` if you only
-   want one billing interval to start).
+2. **Product catalog** → create a "Keystone Pro" product with a **one-time**
+   price (Stripe calls this "One off" / non-recurring). Copy its Price ID
+   into `STRIPE_PRICE_ID_LIFETIME`. It must not be a recurring price —
+   checkout runs in `payment` mode and Stripe rejects recurring prices there.
 3. **Developers → API keys** → copy the Secret key into `STRIPE_SECRET_KEY`.
 4. **Developers → Webhooks** → add an endpoint at
    `https://<your-backend-domain>/api/webhooks/stripe`. Subscribe to
+   `checkout.session.completed` — that is what grants Pro. If you have
+   subscribers from before the switch, also keep
    `customer.subscription.created`, `customer.subscription.updated`, and
-   `customer.subscription.deleted`. Copy the **Signing secret** into
-   `STRIPE_WEBHOOK_SECRET`.
-5. **Customer portal** (Settings → Billing → Customer portal) → turn it on
-   so `POST /api/billing/portal` has something to link to.
+   `customer.subscription.deleted` so their access stays accurate. Copy the
+   **Signing secret** into `STRIPE_WEBHOOK_SECRET`.
+5. **Customer portal** (Settings → Billing → Customer portal) → only needed
+   if you have pre-switch subscribers; it is how they cancel. New buyers
+   never see it, since a one-time purchase has nothing to manage.
 
 Test the whole loop with Stripe's test card `4242 4242 4242 4242`, any
 future expiry, any CVC.
@@ -123,6 +126,19 @@ Authenticated routes expect `Authorization: Bearer <clerk session token>` —
 the frontend gets this from Clerk's `useAuth().getToken()`.
 
 ## Known gaps / next steps
+
+- **The lifetime-purchase migration hasn't been run.** Pro switched from a
+  subscription to a one-time purchase;
+  `prisma/migrations/20260727010000_lifetime_purchase` adds the
+  `lifetimePurchasedAt` / `lifetimeSessionId` columns that grant it. Until
+  it's applied, `/api/me` will error on the missing columns. Run
+  `npm run db:migrate` locally or `npm run db:deploy` in production. The
+  migration is additive and leaves the old subscription columns alone, so
+  anyone who subscribed before the switch keeps working — `isPro` is true
+  for a lifetime purchase *or* an still-active legacy subscription, and the
+  pricing page offers those users a "Manage billing" link to cancel. Don't
+  forget to swap the Stripe price (see §3) — the old recurring price will be
+  rejected in `payment` mode.
 
 - **Shared calendars are scaffolded but not migrated.** The
   `SharedCalendar` / `SharedCalendarMember` / `SharedCalendarInvite` /

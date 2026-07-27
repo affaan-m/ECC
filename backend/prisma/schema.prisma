@@ -6,14 +6,25 @@ datasource db {
   provider = "postgresql"
 }
 
-// One row per Clerk-authenticated person. Subscription fields mirror Stripe
-// so `isPro` can be derived without calling Stripe on every request.
+// One row per Clerk-authenticated person. Billing fields mirror Stripe so
+// `isPro` can be derived without calling Stripe on every request.
+//
+// Pro is a one-time lifetime purchase: `lifetimePurchasedAt` being set is
+// what grants it, permanently. The subscription columns below are retained
+// for anyone who bought before the switch — their access keeps working and
+// they can still cancel — but nothing new writes to them.
 model User {
   id                   String    @id @default(cuid())
   clerkId              String    @unique
   email                String    @unique
 
   stripeCustomerId     String?   @unique
+
+  // Lifetime purchase (current model).
+  lifetimePurchasedAt  DateTime?
+  lifetimeSessionId    String?   @unique // Stripe Checkout Session, for idempotency
+
+  // Legacy subscription (pre-lifetime buyers only).
   stripeSubscriptionId String?   @unique
   subscriptionStatus   String? // active | trialing | past_due | canceled | incomplete | unpaid
   subscriptionPriceId  String?

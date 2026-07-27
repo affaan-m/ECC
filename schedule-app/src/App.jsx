@@ -39,7 +39,14 @@ function SubscriptionSync() {
     let cancelled = false;
     fetchMe(getToken)
       .then((me) => {
-        if (!cancelled) actions.setSettings({ isPro: me.isPro, subscriptionStatus: me.subscriptionStatus });
+        if (!cancelled)
+          actions.setSettings({
+            isPro: me.isPro,
+            isLifetime: !!me.isLifetime,
+            // Only pre-switch subscribers have one; drives whether the
+            // "manage billing" escape hatch is offered.
+            subscriptionStatus: me.subscriptionStatus,
+          });
       })
       .catch((err) => console.warn('Failed to sync subscription status:', err.message));
     return () => {

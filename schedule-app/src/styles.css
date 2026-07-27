@@ -3612,6 +3612,36 @@ textarea {
   text-align: center;
   margin: 6px 0 0;
 }
+/* The one-time price. Replaces the old monthly/annual toggle — with a single
+   price there is nothing to choose, so the page states it plainly and gives
+   the number the weight the decision deserves. */
+.pricing-onetime {
+  text-align: center;
+  padding: 14px 16px 16px;
+  margin: 10px 0 4px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.pricing-amount {
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--text);
+}
+.pricing-once {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.pricing-onetime p {
+  margin: 10px 0 0;
+}
 .pricing-table {
   width: 100%;
   border-collapse: collapse;

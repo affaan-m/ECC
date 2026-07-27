@@ -22,8 +22,10 @@ async function request(path, { getToken, method = 'GET', body } = {}) {
 }
 
 export const fetchMe = (getToken) => request('/api/me', { getToken });
-export const startCheckout = (getToken, plan) =>
-  request('/api/billing/checkout', { getToken, method: 'POST', body: { plan } });
+// Pro is a single one-time purchase, so there's no plan to choose — the
+// server holds the only price.
+export const startCheckout = (getToken) =>
+  request('/api/billing/checkout', { getToken, method: 'POST' });
 export const openBillingPortal = (getToken) => request('/api/billing/portal', { getToken, method: 'POST' });
 
 // Whole-app-data sync: mirrors the same object shape kept in localStorage.

@@ -6,12 +6,10 @@ import { prisma } from '../db.js';
 const router = Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Client sends a plan name, never a raw Stripe price ID — keeps checkout
-// from being pointed at an arbitrary price in the account.
-const PLAN_PRICE_IDS = {
-  monthly: process.env.STRIPE_PRICE_ID_MONTHLY || process.env.STRIPE_PRICE_ID,
-  annual: process.env.STRIPE_PRICE_ID_ANNUAL || process.env.STRIPE_PRICE_ID,
-};
+// Pro is a single one-time purchase, so there is exactly one price and the
+// client never sends a price ID — checkout can't be pointed at an arbitrary
+// price in the account.
+const LIFETIME_PRICE_ID = process.env.STRIPE_PRICE_ID_LIFETIME || process.env.STRIPE_PRICE_ID;
 
 async function ensureStripeCustomer(user) {
   if (user.stripeCustomerId) return user.stripeCustomerId;
@@ -26,18 +24,29 @@ async function ensureStripeCustomer(user) {
   return customer.id;
 }
 
-// Starts a subscription purchase — redirect the browser to the returned URL.
+// Starts the one-time Pro purchase — redirect the browser to the returned URL.
 router.post('/checkout', requireUser, async (req, res, next) => {
   try {
-    const plan = req.body?.plan === 'monthly' ? 'monthly' : 'annual';
-    const priceId = PLAN_PRICE_IDS[plan];
-    if (!priceId) return res.status(400).json({ error: `No Stripe price configured for "${plan}"` });
+    if (!LIFETIME_PRICE_ID) {
+      return res.status(400).json({ error: 'No Stripe price configured for Pro' });
+    }
+    // Already bought — don't let a double-tap or a stale tab charge twice.
+    if (req.dbUser.lifetimePurchasedAt) {
+      return res.status(400).json({ error: 'You already own Keystone Pro.' });
+    }
 
     const customerId = await ensureStripeCustomer(req.dbUser);
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
+      mode: 'payment',
+      line_items: [{ price: LIFETIME_PRICE_ID, quantity: 1 }],
+      // So the webhook can identify the buyer even if the customer lookup
+      // ever fails to match.
+      client_reference_id: req.dbUser.id,
+      metadata: { userId: req.dbUser.id, clerkId: req.dbUser.clerkId, kind: 'lifetime' },
+      // One-time payments don't get an automatic invoice; ask for one so the
+      // buyer has a receipt they can find later.
+      invoice_creation: { enabled: true },
       success_url: `${process.env.FRONTEND_URL}/#/more?checkout=success`,
       cancel_url: `${process.env.FRONTEND_URL}/#/pricing?checkout=cancelled`,
     });
@@ -47,11 +56,13 @@ router.post('/checkout', requireUser, async (req, res, next) => {
   }
 });
 
-// Opens Stripe's hosted "manage my subscription" page.
+// Opens Stripe's hosted billing page. Only meaningful for people who
+// subscribed before Pro became a one-time purchase — it's how they cancel.
+// New buyers have nothing recurring to manage and never see this.
 router.post('/portal', requireUser, async (req, res, next) => {
   try {
     if (!req.dbUser.stripeCustomerId) {
-      return res.status(400).json({ error: 'No billing account yet — subscribe first.' });
+      return res.status(400).json({ error: 'No billing account yet.' });
     }
     const session = await stripe.billingPortal.sessions.create({
       customer: req.dbUser.stripeCustomerId,

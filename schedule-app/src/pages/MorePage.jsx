@@ -227,15 +227,21 @@ export default function MorePage() {
           <span className="pro-bubble-lg-crown">👑</span>
           <div>
             <strong>Keystone Pro</strong>
-            <p className="muted small">You have Pro (demo mode) active.</p>
+            <p className="muted small">
+              {CLERK_ENABLED && backendConfigured()
+                ? 'Unlocked for good — thanks for buying.'
+                : 'You have Pro (demo mode) active.'}
+            </p>
           </div>
         </section>
       ) : (
         <button className="pro-bubble-lg" onClick={() => navigate('/pricing')}>
           <span className="pro-bubble-lg-crown">👑</span>
           <div>
-            <strong>Upgrade to Keystone Pro</strong>
-            <p className="muted small">Contact timelines, sharing, sync, themes, and more.</p>
+            <strong>Unlock Keystone Pro</strong>
+            <p className="muted small">
+              One payment, yours for good — timelines, sharing, sync, themes, and more.
+            </p>
           </div>
           <span className="pro-bubble-lg-arrow">›</span>
         </button>
@@ -1044,13 +1050,13 @@ function AccountSection() {
           <UserButton afterSignOutUrl="/" />
           <div>
             <strong>{user?.primaryEmailAddress?.emailAddress || 'Signed in'}</strong>
-            <p className="muted small">Your subscription is tied to this account.</p>
+            <p className="muted small">Your Pro purchase is tied to this account.</p>
           </div>
         </div>
       ) : (
         <>
           <p className="muted small">
-            Sign in to subscribe to Pro, sync your data, and keep your subscription across devices.
+            Sign in to buy Pro, sync your data, and keep your purchase across devices.
           </p>
           <button className="btn btn-ghost full" onClick={() => clerk.openSignIn()}>
             Sign in
