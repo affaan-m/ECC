@@ -277,10 +277,15 @@ async function main() {
           const parsed = JSON.parse(result)
           assert.strictEqual(parsed.changed, true)
           assert.ok(
-            parsed.files.some((f) => f.path === "src/example.ts" && f.changeType === "modified")
+            parsed.files.some(
+              (f) =>
+                f.path === path.normalize("src/example.ts") && f.changeType === "modified"
+            )
           )
           assert.ok(
-            parsed.files.some((f) => f.path === "src/new-file.ts" && f.changeType === "added")
+            parsed.files.some(
+              (f) => f.path === path.normalize("src/new-file.ts") && f.changeType === "added"
+            )
           )
         } finally {
           store.clearChanges()

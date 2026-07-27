@@ -148,13 +148,21 @@ async function main() {
 
         await hooks["file.edited"]({ path: "src/example.ts" })
         assert.ok(
-          store.getChangedPaths().some((entry) => entry.path === "src/example.ts" && entry.changeType === "modified"),
+          store
+            .getChangedPaths()
+            .some(
+              (entry) =>
+                entry.path === path.normalize("src/example.ts") &&
+                entry.changeType === "modified"
+            ),
           "Expected file.edited to record a change via the plugin hook"
         )
 
         await hooks["tool.execute.after"]({ tool: "edit", args: { path: "src/other.ts" } }, {})
         assert.ok(
-          store.getChangedPaths().some((entry) => entry.path === "src/other.ts"),
+          store
+            .getChangedPaths()
+            .some((entry) => entry.path === path.normalize("src/other.ts")),
           "Expected tool.execute.after to record a change for the edit tool"
         )
 
