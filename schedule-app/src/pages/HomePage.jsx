@@ -26,6 +26,7 @@ import { computeNudges } from '../data/nudges.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
 import { useToast } from '../data/toast.jsx';
 import { useCountUp } from '../data/useCountUp.js';
+import { useSmartAdd } from '../data/useSmartAdd.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
 
 const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
@@ -90,42 +91,9 @@ export default function HomePage() {
       actions.updateTask({ ...t, done: true, completedDates });
     }
   };
+  const smartAdd = useSmartAdd(todayISO());
   const createFromSmartAdd = (kind, parsed) => {
-    if (kind === 'event') {
-      const start = parsed.time || '09:00';
-      const [h, m] = start.split(':').map(Number);
-      const endMins = Math.min(23 * 60 + 59, h * 60 + m + 60);
-      const end = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
-      actions.addEvent({
-        title: parsed.title,
-        date: parsed.date || todayISO(),
-        start,
-        end,
-        contactId: '',
-        location: '',
-        locLat: null,
-        locLng: null,
-        notes: '',
-        done: false,
-        repeat: 'none',
-        repeatUntil: '',
-        repeatDays: [],
-        typeId: '',
-        color: '',
-        reminder: 0,
-      });
-      showToast(`"${parsed.title}" added to your calendar`);
-    } else {
-      actions.addTask({
-        title: parsed.title,
-        notes: '',
-        location: '',
-        dueDate: parsed.date || '',
-        dueTime: parsed.time || '',
-        reminderOffsets: [],
-      });
-      showToast(`"${parsed.title}" added to your tasks`);
-    }
+    smartAdd(kind, parsed);
     setSmartAddOpen(false);
   };
   const deleteNoteWithUndo = (n) => {

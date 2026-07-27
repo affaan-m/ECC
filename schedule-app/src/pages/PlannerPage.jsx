@@ -42,6 +42,8 @@ import {
 import { useEdgeFade } from '../data/useEdgeFade.js';
 import { findDayConflicts } from '../data/conflicts.js';
 import { directionsTarget, mapsLinkProps } from '../data/maps.js';
+import SmartQuickAdd from '../components/SmartQuickAdd.jsx';
+import { useSmartAdd } from '../data/useSmartAdd.js';
 import Modal from '../components/Modal.jsx';
 import {
   captureDay,
@@ -118,6 +120,7 @@ export default function PlannerPage() {
   const [editing, setEditing] = useState(null); // draft being edited
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(() => new Set()); // "id:recDate"
+  const [smartAddOpen, setSmartAddOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [dismissedConflicts, setDismissedConflicts] = useState(() => new Set());
@@ -452,6 +455,7 @@ export default function PlannerPage() {
     setDismissedConflicts((prev) => new Set(prev).add(id));
 
   const isPro = !!state.settings?.isPro;
+  const smartAdd = useSmartAdd(cursor);
   const templates = state.templates || [];
   const templateKind = mode === 'week' ? 'week' : 'day';
   // Guarded here as well as at the button, so the only way in stays the only
@@ -618,6 +622,9 @@ export default function PlannerPage() {
             else if (id === 'contact') navigate('/contacts', { state: { quickNewContact: true } });
             else if (id === 'task') navigate('/', { state: { quickNewTask: true } });
             else if (id === 'note') navigate('/', { state: { quickNewNote: true } });
+            // Was missing entirely: the FAB offered "Smart add" here and the
+            // tap did nothing at all.
+            else if (id === 'smart') (isPro ? setSmartAddOpen(true) : navigate('/pricing'));
           }}
         />
       )}
@@ -638,6 +645,26 @@ export default function PlannerPage() {
           </div>
         </div>
       )}
+
+      {/* Smart add. `cursor` rather than today as the fallback date, so text
+          with no date of its own ("gym 6pm") lands on the day being looked
+          at — which is the whole reason to reach for this from the calendar
+          rather than from Home. */}
+      <SmartQuickAdd
+        open={smartAddOpen && isPro}
+        onClose={() => setSmartAddOpen(false)}
+        onCreate={(kind, parsed) => {
+          smartAdd(kind, parsed);
+          setSmartAddOpen(false);
+          // An event created for another day is invisible from here unless
+          // we follow it.
+          if (kind === 'event') {
+            const landed = parsed.date || cursor;
+            if (landed !== cursor) setCursor(landed);
+            if (mode === 'month') setMode('day');
+          }
+        }}
+      />
 
       {/* Templates. Applying always targets the day (or week) currently on
           screen, which is why the button is only offered in day/week mode —
