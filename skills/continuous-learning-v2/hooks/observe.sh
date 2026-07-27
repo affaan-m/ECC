@@ -424,27 +424,47 @@ _NOTE_OBSERVER_NOSURVIVE() {
   local warn_after="${ECC_OBSERVER_NOSURVIVE_WARN_AFTER:-3}"
   local streak
   streak=$(cat "$streak_file" 2>/dev/null || echo 0)
-  case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
-  case "$warn_after" in ''|*[!0-9]*|0) warn_after=3 ;; esac
+  # Force base 10 after the digit check: a stray leading zero would otherwise
+  # make bash read the value as octal, and `08` is an arithmetic error that
+  # would abort the whole hook under `set -e`.
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; *) streak=$((10#$streak)) ;; esac
+  # Reject every all-zero spelling, not just the literal `0`: `00` passes a
+  # digits-only check but compares as zero, and since the streak only grows the
+  # threshold could never be reached -- silently disabling the diagnostic.
+  case "$warn_after" in ''|*[!0-9]*) warn_after=3 ;; *) warn_after=$((10#$warn_after)) ;; esac
+  if [ "$warn_after" -lt 1 ]; then warn_after=3; fi
   streak=$((streak + 1))
+  # Never fail the hook on a write error: observe.sh runs on every tool call and
+  # the repo rule is that hooks exit 0 on non-critical errors. A stalled counter
+  # only delays this diagnostic; it cannot corrupt state.
   printf '%s\n' "$streak" > "$streak_file" 2>/dev/null || true
 
   # Fire on equality, not >=, so a persistent failure logs once per streak
   # instead of once per tool call.
   if [ "$streak" -eq "$warn_after" ]; then
-    {
-      printf '[observe] Observer did not survive to the next hook invocation %s times in a row.\n' "$streak"
-      printf '[observe] Startup reports success, but the process is gone by the following tool call, so no analysis ever runs.\n'
-      case "$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')" in
-        *mingw*|*msys*|*cygwin*)
-          printf '[observe] On native Windows (Git Bash/MSYS2) this is expected: the background launch does not detach the observer from the hook process Job Object, so it is killed when the hook exits. Run under WSL2, Linux or macOS. See issue #2489.\n'
-          ;;
-        *)
-          printf '[observe] Check %s for the reason the observer exited.\n' "${PROJECT_DIR}/observer.log"
-          ;;
-      esac
-      printf '[observe] Set ECC_OBSERVER_NOSURVIVE_WARN_AFTER to change this threshold (currently %s).\n' "$warn_after"
-    } >> "$log_file" 2>/dev/null || true
+    local platform_hint
+    local uname_lower
+    uname_lower=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    case "$uname_lower" in
+      *mingw*|*msys*|*cygwin*)
+        platform_hint='[observe] On native Windows (Git Bash/MSYS2) this is expected: the background launch does not detach the observer from the hook process Job Object, so it is killed when the hook exits. Run under WSL2, Linux or macOS. See issue #2489.'
+        ;;
+      *)
+        platform_hint="[observe] Check ${PROJECT_DIR}/observer.log for the reason the observer exited."
+        ;;
+    esac
+
+    local message
+    printf -v message '%s\n%s\n%s\n%s' \
+      "[observe] Observer did not survive to the next hook invocation ${streak} times in a row." \
+      "[observe] Startup reports success, but the process is gone by the following tool call, so no analysis ever runs." \
+      "$platform_hint" \
+      "[observe] Set ECC_OBSERVER_NOSURVIVE_WARN_AFTER to change this threshold (currently ${warn_after})."
+    # An unwritable log must not silently swallow the diagnostic, so fall back
+    # to stderr. Safe from spam: this block runs once per streak, not per call.
+    if ! printf '%s\n' "$message" >> "$log_file" 2>/dev/null; then
+      printf '%s\n' "$message" >&2 2>/dev/null || true
+    fi
   fi
   return 0
 }

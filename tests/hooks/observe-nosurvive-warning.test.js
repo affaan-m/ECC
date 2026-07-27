@@ -298,17 +298,47 @@ async function runSilentBelowThreshold() {
   }
 }
 
+// An all-zero threshold ("00" passes a digits-only check but compares as zero)
+// must fall back to the default. Otherwise the streak, which only grows, could
+// never equal it and the diagnostic would be silently disabled.
+async function runRejectsZeroThreshold() {
+  const { testDir, projectDir, testObserve } = buildSandbox();
+  try {
+    for (let i = 0; i < 3; i++) {
+      fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${deadPid()}\n`);
+      await runObserve(testObserve, projectDir, { ECC_OBSERVER_NOSURVIVE_WARN_AFTER: '00' });
+    }
+    assert.strictEqual(readStreak(projectDir), 3, 'streak should still advance with a bogus threshold');
+    const log = readStartLog(projectDir);
+    assert.ok(
+      log.includes(WARN_MARKER),
+      '"00" should fall back to the default threshold of 3 and warn, not disable the diagnostic'
+    );
+    assert.ok(
+      log.includes('(currently 3)'),
+      'the warning should report the normalized threshold, not the raw "00"'
+    );
+  } finally {
+    cleanupDir(testDir);
+  }
+}
+
 // A healthy observer clears the streak, so an unrelated one-off crash later on
 // does not inherit an old count and warn spuriously.
 async function runResetWhenAlive() {
   const { testDir, projectDir, testObserve } = buildSandbox();
+  let live = null;
   try {
     fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${deadPid()}\n`);
     await runObserve(testObserve, projectDir, { ECC_OBSERVER_NOSURVIVE_WARN_AFTER: '3' });
     assert.strictEqual(readStreak(projectDir), 1, 'streak should be seeded by the dead observer');
 
-    // The test runner itself is a PID that is certainly alive.
-    fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${process.pid}\n`);
+    // A live PID > 1. process.pid is unusable here: in a container Node can be
+    // PID 1, which _CHECK_OBSERVER_RUNNING deliberately rejects, so the streak
+    // would never reset and this test would fail for the wrong reason.
+    live = spawn('sleep', ['30'], { stdio: 'ignore' });
+    assert.ok(live.pid > 1, 'expected a live child PID greater than 1');
+    fs.writeFileSync(path.join(projectDir, '.observer.pid'), `${live.pid}\n`);
     await runObserve(testObserve, projectDir, { ECC_OBSERVER_NOSURVIVE_WARN_AFTER: '3' });
 
     assert.strictEqual(
@@ -317,6 +347,9 @@ async function runResetWhenAlive() {
       'finding the observer alive should clear the non-survival streak'
     );
   } finally {
+    if (live) {
+      live.kill('SIGKILL');
+    }
     cleanupDir(testDir);
   }
 }
@@ -325,6 +358,7 @@ async function runResetWhenAlive() {
   if (!isWindows && hasPython) {
     await asyncTest('warns in observer-start.log once the streak reaches the threshold', runWarnsAtThreshold);
     await asyncTest('stays silent while the streak is below the threshold', runSilentBelowThreshold);
+    await asyncTest('an all-zero threshold falls back to the default instead of disabling the warning', runRejectsZeroThreshold);
     await asyncTest('a live observer resets the non-survival streak', runResetWhenAlive);
   } else {
     console.log('  - skipping shell-execution tests (requires non-Windows + python3)');
