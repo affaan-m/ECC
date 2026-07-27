@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore, useActions } from '../data/store.jsx';
+import { useToast } from '../data/toast.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
+import Modal from '../components/Modal.jsx';
 import { todayISO } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { geocodeAddress } from '../data/geocode.js';
@@ -22,6 +24,7 @@ const escapeHtml = (s = '') =>
 export default function MapPage() {
   const { state } = useStore();
   const actions = useActions();
+  const showToast = useToast();
   const isPro = !!state.settings?.isPro;
   const showContactPins = state.settings?.mapShowContactPins ?? true;
   const showCustomPins = state.settings?.mapShowCustomPins ?? true;
@@ -55,6 +58,7 @@ export default function MapPage() {
     wasEditingRef.current = false;
   }
   const [tempPin, setTempPin] = useState(null); // { lat, lng, x, y } from a long-press
+  const [confirmDeletePin, setConfirmDeletePin] = useState(null); // pin pending deletion
 
   // "Select location" picking flow, entered from the event editor.
   const [pickMode, setPickMode] = useState(false);
@@ -529,16 +533,51 @@ export default function MapPage() {
             </button>
             <button
               className="btn btn-danger-ghost btn-sm"
-              onClick={() => {
-                actions.deletePin(selected.id);
-                setSelectedId(null);
-              }}
+              onClick={() => setConfirmDeletePin(selected)}
             >
               Delete
             </button>
           </div>
         </div>
       )}
+
+      {/* Deleting a pin is destructive and easy to hit by accident next to
+          Directions and Edit, so it asks first — and then still leaves an
+          Undo, since a confirmed tap can be a mistaken one. Undo re-adds the
+          same record, id included, so anything referring to it still lines
+          up. */}
+      <Modal
+        open={!!confirmDeletePin}
+        title="Delete this pin?"
+        onClose={() => setConfirmDeletePin(null)}
+        footer={
+          <div className="modal-actions">
+            <button className="btn btn-ghost" onClick={() => setConfirmDeletePin(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => {
+                const pin = confirmDeletePin;
+                setConfirmDeletePin(null);
+                setSelectedId(null);
+                actions.deletePin(pin.id);
+                showToast(
+                  `"${pin.label || 'Dropped pin'}" deleted`,
+                  'Undo',
+                  () => actions.addPin(pin)
+                );
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        }
+      >
+        <p>
+          Remove <strong>{confirmDeletePin?.label || 'this dropped pin'}</strong> from the map?
+        </p>
+      </Modal>
 
       {/* Pin editor */}
       <EditorSheet

@@ -628,7 +628,11 @@ textarea {
   border-radius: 12px;
   padding: 12px 14px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  z-index: 200;
+  /* Above .map-fab (500), which has to outrank Leaflet's own panes — at the
+     old 200 the FAB sat on top of the toast's right-hand end and swallowed
+     taps on Undo, so a deleted pin couldn't be undone from the map at all.
+     Still below the modal layer (1000+), so a sheet covers it as before. */
+  z-index: 700;
   animation: toastIn 0.22s ease;
   transition: opacity 0.22s ease, transform 0.22s ease;
 }

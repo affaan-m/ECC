@@ -29,7 +29,24 @@ import { useCountUp } from '../data/useCountUp.js';
 import { useSmartAdd } from '../data/useSmartAdd.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
 
-const NOTE_COLORS = ['', '#fdf2c9', '#e1f3ee', '#e6e6fa', '#ffe1e6', '#dceeff'];
+// Fixed pale tints rather than theme colours — a tinted note forces dark
+// text (see .note-card--tinted), so every swatch has to stay light enough to
+// read against in either theme.
+const NOTE_COLORS = [
+  '',
+  '#fdf2c9', // butter
+  '#ffe3cc', // apricot
+  '#ffd6d6', // coral
+  '#ffe1e6', // pink
+  '#f3e0ff', // violet
+  '#e6e6fa', // lavender
+  '#dceeff', // sky
+  '#cfeef5', // cyan
+  '#e1f3ee', // mint
+  '#e4f7d4', // sage
+  '#f0e9d8', // sand
+  '#e6eaf0', // stone
+];
 const TASK_REMINDER_OFFSETS = [
   { mins: 15, label: '15 min before' },
   { mins: 30, label: '30 min before' },

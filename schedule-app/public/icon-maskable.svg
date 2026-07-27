@@ -8,7 +8,13 @@
 
   <rect width="512" height="512" fill="#111113" />
 
-  <g transform="translate(256,256) scale(0.92) translate(-256,-243)">
+    <!-- The mark spans y 135.6..388, so its own centre is y=261.8, not 256.
+       Translating by that value (rather than an eyeballed 243) is what
+       actually centres it; the old value left it 17 units low, which is
+       what you see as an off-centre icon on an installed home screen.
+       At 0.92 scale the mark's corners sit 168 from centre, well inside
+       the maskable safe-zone radius of 204.8. -->
+  <g transform="translate(256,256) scale(0.92) translate(-256,-261.8)">
     <path
       fill="#f2efe7"
       d="M124,388 L124,258 A132,132 0 0 1 388,258 L388,388 L324,388 L324,258 A68,68 0 0 0 188,258 L188,388 Z"

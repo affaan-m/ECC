@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
@@ -186,6 +186,7 @@ export default function App() {
   const actions = useActions();
   const theme = state.settings?.theme || 'system';
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Best-effort reminder scanner: check due goal/event reminders every 30s
   // while the app is open, plus whenever it returns to the foreground.
@@ -333,6 +334,9 @@ export default function App() {
   // transition (0.4s) has had time to finish.
   const [showSplash, setShowSplash] = useState(true);
   const [splashOut, setSplashOut] = useState(false);
+  // Replay requested from Settings. Held here rather than in MorePage so the
+  // first run and a replay go through exactly one code path.
+  const [replayTour, setReplayTour] = useState(false);
   useEffect(() => {
     const outTimer = setTimeout(() => {
       setSplashOut(true);
@@ -348,6 +352,20 @@ export default function App() {
       document.documentElement.classList.remove('booting');
     };
   }, []);
+
+  // The tour narrates the Home screen, so both the first run and a replay
+  // from Settings put you there before it starts — otherwise it plays over
+  // whichever page you happened to be on and describes something else.
+  const showTour = !showSplash && (replayTour || !state.settings?.tutorialSeen);
+  useEffect(() => {
+    if (location.state?.replayTour) {
+      setReplayTour(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location]);
+  useEffect(() => {
+    if (showTour && location.pathname !== '/') navigate('/', { replace: true });
+  }, [showTour, location.pathname, navigate]);
 
   // Apply the selected theme to the document root.
   useEffect(() => {
@@ -420,8 +438,13 @@ export default function App() {
       </main>
       <TabBar />
       {showSplash && <SplashScreen fadingOut={splashOut} />}
-      {!showSplash && !state.settings?.tutorialSeen && (
-        <Tutorial onDone={() => actions.setSettings({ tutorialSeen: true })} />
+      {showTour && (
+        <Tutorial
+          onDone={() => {
+            setReplayTour(false);
+            actions.setSettings({ tutorialSeen: true });
+          }}
+        />
       )}
     </div>
   );

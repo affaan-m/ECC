@@ -8,6 +8,9 @@
 
   <rect width="512" height="512" rx="112" fill="#111113" />
 
+  <!-- Mark centred: its own vertical centre is y=261.8, so nudge up 5.8. -->
+  <g transform="translate(0,-5.8)">
+
   <!-- Arch body (the blocks/voussoirs), white/ivory -->
   <path
     fill="#f2efe7"
@@ -28,5 +31,6 @@
     <line x1="311.7" y1="219.0" x2="364.1" y2="182.3" />
     <line x1="124" y1="324" x2="188" y2="324" />
     <line x1="324" y1="324" x2="388" y2="324" />
+  </g>
   </g>
 </svg>

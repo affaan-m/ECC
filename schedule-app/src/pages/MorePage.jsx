@@ -6,7 +6,6 @@ import Modal from '../components/Modal.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
-import Tutorial from '../components/Tutorial.jsx';
 import { selectTick } from '../data/haptics.js';
 import {
   notificationsSupported,
@@ -100,7 +99,6 @@ export default function MorePage() {
   const [editingType, setEditingType] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | 'donate' | null
   const [feedback, setFeedback] = useState(null); // string | null
-  const [showTutorial, setShowTutorial] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
   const fileRef = useRef(null);
@@ -809,7 +807,13 @@ export default function MorePage() {
           <button className="btn btn-ghost full" onClick={() => setFeedback('')}>
             💡 Send feedback / suggest a feature
           </button>
-          <button className="btn btn-ghost full" onClick={() => setShowTutorial(true)}>
+          {/* The tour narrates the Home screen, so it goes there rather
+              than playing on top of Settings. App.jsx owns the Tutorial for
+              both the first run and this replay, so there's one code path. */}
+          <button
+            className="btn btn-ghost full"
+            onClick={() => navigate('/', { state: { replayTour: true } })}
+          >
             🏛️ Replay the tour
           </button>
         </div>
@@ -1076,7 +1080,6 @@ export default function MorePage() {
         )}
       </Modal>
 
-      {showTutorial && <Tutorial onDone={() => setShowTutorial(false)} />}
     </div>
   );
 }

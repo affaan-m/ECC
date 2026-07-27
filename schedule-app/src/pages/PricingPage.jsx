@@ -10,7 +10,7 @@ import { startCheckout, openBillingPortal, backendConfigured } from '../data/api
 // on the client — it's display text, and Stripe's price (set by
 // STRIPE_PRICE_ID_LIFETIME on the backend) is the one that actually charges.
 // Change both together.
-const PRO_PRICE = '$39';
+const PRO_PRICE = '$40';
 
 const FEATURES = [
   { label: 'Goals, Planner, Map, People', free: true, pro: true },

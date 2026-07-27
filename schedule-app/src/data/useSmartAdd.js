@@ -19,7 +19,10 @@ export function useSmartAdd(fallbackDate) {
     if (kind === 'event') {
       const start = parsed.time || '09:00';
       const [h, m] = start.split(':').map(Number);
-      const endMins = Math.min(23 * 60 + 59, h * 60 + m + 60);
+      // An explicit end ("2-4pm") wins; otherwise fall back to an hour long.
+      const endMins = parsed.endTime
+        ? Number(parsed.endTime.slice(0, 2)) * 60 + Number(parsed.endTime.slice(3))
+        : Math.min(23 * 60 + 59, h * 60 + m + 60);
       const end = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
       actions.addEvent({
         title: parsed.title,

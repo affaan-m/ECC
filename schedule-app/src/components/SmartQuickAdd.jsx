@@ -64,6 +64,7 @@ export default function SmartQuickAdd({ open, onClose, onCreate }) {
               <span className="muted small">
                 {parsed.date ? formatShortDate(parsed.date) : 'No date'}
                 {parsed.time ? ` · ${formatTime(parsed.time)}` : ''}
+                {parsed.endTime ? `–${formatTime(parsed.endTime)}` : ''}
               </span>
             </div>
             <div className="seg seg--full">
