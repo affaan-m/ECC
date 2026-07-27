@@ -38,7 +38,8 @@ const {
   resolveContextThreshold,
   resolveContextInterval,
   computeContextBucket,
-  formatWindowLabel
+  formatWindowLabel,
+  isContextWindowInferred
 } = require('../lib/transcript-context');
 
 const COUNTER_FILE_PREFIX = 'claude-tool-count-';
@@ -185,8 +186,13 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     writeFile(bucketFile, String(bucket));
 
     const approxTokens = `${Math.round(usage.tokens / 1000)}k`;
-    const percent = Math.round((usage.tokens / windowTokens) * 100);
-    return `[StrategicCompact] Context ~${approxTokens} tokens (${percent}% of ${formatWindowLabel(windowTokens)} window) - consider /compact at the next logical boundary`;
+    // Only quote a percentage when the window size was actually detected.
+    // Against an assumed 200k default the denominator is a guess, and a
+    // "97% of 200k window" line on a 1M session triggers needless compaction.
+    const scale = isContextWindowInferred(usage.tokens, usage.model)
+      ? ''
+      : ` (${Math.round((usage.tokens / windowTokens) * 100)}% of ${formatWindowLabel(windowTokens)} window)`;
+    return `[StrategicCompact] Context ~${approxTokens} tokens${scale} - consider /compact at the next logical boundary`;
   } catch (err) {
     log(`[StrategicCompact] Context signal skipped: ${err.message}`);
     return null;
