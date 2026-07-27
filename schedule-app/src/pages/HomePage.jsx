@@ -435,7 +435,15 @@ export default function HomePage() {
                       >
                         <div className="task-row">
                           <button
-                            className={`task-check${t.done || justCompletedIds.has(t.id) ? ' task-check--on' : ''}${(t.done || justCompletedIds.has(t.id)) && taskCompleteAnim ? ' task-check--pop' : ''}`}
+                            // --on tracks the persistent done state; --pop is
+                            // only ever the transient just-completed flash.
+                            // Keying --pop off t.done as well meant a CSS
+                            // animation sat on every already-done task, and
+                            // those replay whenever the element mounts — so
+                            // the whole list celebrated again on every visit
+                            // to Home. flashCompleted() runs for plain and
+                            // repeating tasks alike, so this loses nothing.
+                            className={`task-check${t.done || justCompletedIds.has(t.id) ? ' task-check--on' : ''}${justCompletedIds.has(t.id) && taskCompleteAnim ? ' task-check--pop' : ''}`}
                             data-haptic={t.done ? 'tap' : 'confirm'}
                             onClick={() => toggleTaskDone(t)}
                             aria-label={t.done ? 'Mark not done' : 'Mark done'}
