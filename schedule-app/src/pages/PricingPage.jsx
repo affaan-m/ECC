@@ -17,7 +17,7 @@ const FEATURES = [
   { label: 'Contact history timeline', free: false, pro: true },
   { label: 'People status groups', free: false, pro: true },
   { label: 'Day & week templates', free: false, pro: true },
-  { label: 'Color themes (8 schemes)', free: false, pro: true },
+  { label: 'Color themes (14, incl. pastels)', free: false, pro: true },
   { label: 'Shared / collaborative events', free: false, pro: true },
   { label: 'Google account sync', free: false, pro: true },
   { label: 'Import/export to other calendars', free: false, pro: true },

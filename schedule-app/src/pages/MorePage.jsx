@@ -48,6 +48,10 @@ const DESTRUCTIVE_ACTIONS = {
   },
 };
 
+// Swatches are each scheme's own light-mode accent, so the dot is literally
+// the colour you get. Split into two rows because fifteen unlabelled dots in
+// one grid gives no clue which are the soft ones (see styles.css for why the
+// pastels are muted rather than pale).
 const COLOR_SCHEMES = [
   { value: 'default', label: 'Gold', swatch: '#a9822a' },
   { value: 'emerald', label: 'Emerald', swatch: '#0f8f72' },
@@ -58,6 +62,15 @@ const COLOR_SCHEMES = [
   { value: 'forest', label: 'Forest', swatch: '#2f7d3a' },
   { value: 'slate', label: 'Slate', swatch: '#46586b' },
   { value: 'berry', label: 'Berry', swatch: '#a3306f' },
+];
+
+const PASTEL_SCHEMES = [
+  { value: 'lavender', label: 'Lavender', swatch: '#7a68b8' },
+  { value: 'blush', label: 'Blush', swatch: '#c06b83' },
+  { value: 'sage', label: 'Sage', swatch: '#5f8a63' },
+  { value: 'sky', label: 'Sky', swatch: '#4f8bb5' },
+  { value: 'apricot', label: 'Apricot', swatch: '#b8703c' },
+  { value: 'seafoam', label: 'Seafoam', swatch: '#4e938c' },
 ];
 
 const PRESET_COLORS = [
@@ -339,24 +352,19 @@ export default function MorePage() {
           ))}
         </div>
         <p className="muted small color-scheme-label">Color theme {!isPro && '· Pro'}</p>
-        <div className="scheme-grid">
-          {COLOR_SCHEMES.map((s) => {
-            const locked = !isPro && s.value !== 'default';
-            const on = (state.settings?.colorScheme || 'default') === s.value;
-            return (
-              <button
-                key={s.value}
-                className={`scheme-dot${on ? ' scheme-dot--on' : ''}${locked ? ' scheme-dot--locked' : ''}`}
-                style={{ background: s.swatch }}
-                onClick={() => requirePro(() => actions.setSettings({ colorScheme: s.value }))}
-                title={s.label}
-                aria-label={s.label}
-              >
-                {locked && <LockIcon />}
-              </button>
-            );
-          })}
-        </div>
+        <SchemeRow
+          schemes={COLOR_SCHEMES}
+          isPro={isPro}
+          current={state.settings?.colorScheme || 'default'}
+          onPick={(v) => requirePro(() => actions.setSettings({ colorScheme: v }))}
+        />
+        <p className="muted small color-scheme-label">Pastel</p>
+        <SchemeRow
+          schemes={PASTEL_SCHEMES}
+          isPro={isPro}
+          current={state.settings?.colorScheme || 'default'}
+          onPick={(v) => requirePro(() => actions.setSettings({ colorScheme: v }))}
+        />
 
         <p className="muted small">Contact icon size</p>
         <div className="seg seg--full">
@@ -1076,6 +1084,31 @@ function CloudSyncStatus({ cloudSyncOn }) {
     return <p className="muted small">Sign in above to start syncing your data to your account.</p>;
   }
   return <p className="muted small">Your data syncs automatically to your account.</p>;
+}
+
+// One row of colour-scheme swatches. Shared by the standard and pastel rows
+// so the lock/selection behaviour can't drift between them.
+function SchemeRow({ schemes, isPro, current, onPick }) {
+  return (
+    <div className="scheme-grid">
+      {schemes.map((s) => {
+        const locked = !isPro && s.value !== 'default';
+        const on = current === s.value;
+        return (
+          <button
+            key={s.value}
+            className={`scheme-dot${on ? ' scheme-dot--on' : ''}${locked ? ' scheme-dot--locked' : ''}`}
+            style={{ background: s.swatch }}
+            onClick={() => onPick(s.value)}
+            title={s.label}
+            aria-label={s.label}
+          >
+            {locked && <LockIcon />}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function LockIcon() {

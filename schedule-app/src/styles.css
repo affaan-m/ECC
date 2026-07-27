@@ -70,6 +70,35 @@
 :root[data-theme='light'][data-scheme='berry'] { --accent: #a3306f; --accent-soft: #f6e2ec; }
 :root[data-theme='dark'][data-scheme='berry']  { --accent: #d9679f; --accent-soft: #35202b; }
 
+/* --- Pastels -------------------------------------------------------------
+   Softer, dustier hues than the set above. Note these are muted rather than
+   pale: --accent is used as a *text* colour in about thirty places, so a
+   true pastel light enough to look washed on a button would be unreadable
+   as type on white. The pastel character therefore comes from low
+   saturation plus a genuinely pale --accent-soft tint, while --accent stays
+   deep enough to read. Every one of these clears the contrast the existing
+   schemes already set (the default gold is the floor at 3.55:1 on white).
+   Dark mode is where they get to be properly airy — the ink on an accent
+   background is near-black there, so a light accent is both prettier and
+   higher contrast. */
+:root[data-theme='light'][data-scheme='lavender'] { --accent: #7a68b8; --accent-soft: #eceafa; }
+:root[data-theme='dark'][data-scheme='lavender']  { --accent: #c3b4ef; --accent-soft: #272041; }
+
+:root[data-theme='light'][data-scheme='blush'] { --accent: #c06b83; --accent-soft: #fbe7ec; }
+:root[data-theme='dark'][data-scheme='blush']  { --accent: #f0a8bb; --accent-soft: #3a2029; }
+
+:root[data-theme='light'][data-scheme='sage'] { --accent: #5f8a63; --accent-soft: #e6f0e6; }
+:root[data-theme='dark'][data-scheme='sage']  { --accent: #a7c9a4; --accent-soft: #1e2c20; }
+
+:root[data-theme='light'][data-scheme='sky'] { --accent: #4f8bb5; --accent-soft: #e5eff7; }
+:root[data-theme='dark'][data-scheme='sky']  { --accent: #94c6e6; --accent-soft: #182b39; }
+
+:root[data-theme='light'][data-scheme='apricot'] { --accent: #b8703c; --accent-soft: #fbeade; }
+:root[data-theme='dark'][data-scheme='apricot']  { --accent: #f2b585; --accent-soft: #38271a; }
+
+:root[data-theme='light'][data-scheme='seafoam'] { --accent: #4e938c; --accent-soft: #e2f1ee; }
+:root[data-theme='dark'][data-scheme='seafoam']  { --accent: #8fd0c6; --accent-soft: #173230; }
+
 * {
   box-sizing: border-box;
   /* Kill the browser's own tap-highlight rectangle everywhere — every
