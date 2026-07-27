@@ -284,6 +284,7 @@ async function readStdinJson(options = {}) {
   return new Promise((resolve) => {
     let data = '';
     let settled = false;
+    let overflowed = false;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -293,7 +294,12 @@ async function readStdinJson(options = {}) {
         process.stdin.removeAllListeners('end');
         process.stdin.removeAllListeners('error');
         if (process.stdin.unref) process.stdin.unref();
-        // Resolve with whatever we have so far rather than hanging
+        // Oversized input is always rejected. Otherwise, resolve with whatever
+        // arrived before the timeout rather than hanging.
+        if (overflowed) {
+          resolve({});
+          return;
+        }
         try {
           resolve(data.trim() ? JSON.parse(data) : {});
         } catch {
@@ -305,33 +311,33 @@ async function readStdinJson(options = {}) {
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
       if (settled) return;
-      // Oversized input: treat as empty and settle IMMEDIATELY rather than
-      // waiting for `end`/timeout (which would parse whatever partial prefix
-      // is already buffered, or stall a long stream until the timeout). A
-      // large-but-valid payload was previously truncated into invalid JSON and
-      // parsed as `{}`; surface the overflow on stderr so it is observable.
+      if (overflowed) return;
+      // Mark oversized input as rejected and discard the buffered prefix.
+      // Continue consuming the stream without retaining later chunks so a
+      // finite parent can finish writing without EPIPE. Resolution happens at
+      // EOF or the existing timeout, which also bounds never-closing writers.
       if (data.length + chunk.length > maxSize) {
-        settled = true;
-        clearTimeout(timer);
+        overflowed = true;
         data = '';
-        process.stdin.removeAllListeners('data');
-        process.stdin.removeAllListeners('end');
-        process.stdin.removeAllListeners('error');
-        if (process.stdin.pause) process.stdin.pause();
-        if (process.stdin.unref) process.stdin.unref();
         process.stderr.write(
           `[readStdinJson] stdin exceeded ${maxSize} bytes; input truncated and treated as empty\n`
         );
-        resolve({});
         return;
       }
       data += chunk;
     });
 
     process.stdin.on('end', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
+      if (overflowed) {
+        resolve({});
+        return;
+      }
       try {
         resolve(data.trim() ? JSON.parse(data) : {});
       } catch {
@@ -342,7 +348,10 @@ async function readStdinJson(options = {}) {
     });
 
     process.stdin.on('error', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       // Resolve with empty object so hooks don't crash on stdin errors
