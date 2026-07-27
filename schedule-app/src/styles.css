@@ -2501,6 +2501,14 @@ textarea {
 .expandable-fab-pill-icon {
   font-size: 17px;
 }
+/* Sits after the label, smaller and set back, so it reads as a note about
+   the action rather than part of its name. The gap is tightened because the
+   pill's own 8px gap is tuned for the leading icon. */
+.expandable-fab-pill-lock {
+  font-size: 11px;
+  margin-left: -3px;
+  opacity: 0.75;
+}
 @keyframes fab-pill-in {
   from {
     opacity: 0;

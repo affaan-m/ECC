@@ -1,11 +1,14 @@
 // The floating "+" button's expandable quick-add menu (Pro: reorder + hide
 // individual actions).
+// `pro` marks an action that's gated. The pill still shows for everyone —
+// tapping it routes to pricing, same as every other Pro entry point — but it
+// carries a lock so the gate is visible before the tap rather than after.
 export const QUICK_ADD_TYPES = [
   { id: 'event', label: 'Event', icon: '📅' },
   { id: 'task', label: 'Task', icon: '✅' },
   { id: 'contact', label: 'Contact', icon: '👤' },
   { id: 'note', label: 'Note', icon: '📝' },
-  { id: 'smart', label: 'Smart add', icon: '✨' },
+  { id: 'smart', label: 'Smart add', icon: '✨', pro: true },
 ];
 
 export const DEFAULT_QUICK_ADD = QUICK_ADD_TYPES.map((t) => ({ id: t.id, enabled: true }));

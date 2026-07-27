@@ -13,6 +13,7 @@ export default function ExpandableFab({ onAction }) {
   const { state } = useStore();
   const [open, setOpen] = useState(false);
   const items = normalizeQuickAdd(state.settings?.quickAdd).filter((i) => i.enabled);
+  const isPro = !!state.settings?.isPro;
 
   if (items.length === 0) {
     return null;
@@ -35,12 +36,14 @@ export default function ExpandableFab({ onAction }) {
         {open &&
           items.map((it, i) => {
             const type = QUICK_ADD_TYPES.find((t) => t.id === it.id);
+            const locked = !!type?.pro && !isPro;
             return (
               <button
                 key={it.id}
                 type="button"
                 className="expandable-fab-pill"
                 style={{ animationDelay: `${i * 30}ms` }}
+                aria-label={locked ? `${type?.label} — Pro` : undefined}
                 onClick={() => {
                   setOpen(false);
                   onAction(it.id);
@@ -48,6 +51,7 @@ export default function ExpandableFab({ onAction }) {
               >
                 <span className="expandable-fab-pill-icon">{type?.icon}</span>
                 {type?.label}
+                {locked && <span className="expandable-fab-pill-lock">🔒</span>}
               </button>
             );
           })}
