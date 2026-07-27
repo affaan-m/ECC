@@ -339,8 +339,15 @@ export default function App() {
   useEffect(() => {
     const el = document.getElementById('boot-splash');
     if (!el) return undefined;
-    const simple = document.documentElement.classList.contains('boot-reload');
-    const outAt = simple ? 420 : 1400;
+    // A reload, or a reduce-motion preference, both get the short mark-only
+    // splash rather than the full rise → keystone → flash → flood sequence,
+    // so both have to be retired early too — holding the long version's
+    // timing over an animation that never plays is just a stall.
+    const simple =
+      document.documentElement.classList.contains('boot-reload') ||
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // Lines up with the flood settling at 1370ms (see .splash-flood).
+    const outAt = simple ? 420 : 1420;
     const removeAt = outAt + 440;
     const elapsed = performance.now();
     const outTimer = setTimeout(() => {

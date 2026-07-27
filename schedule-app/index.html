@@ -90,48 +90,30 @@
       App.jsx), and if the bundle took longer than the animation it is already
       finished and simply leaves at once.
     -->
+    <!--
+      One motion, start to finish: the arch rises out of the floor, that rise
+      carries straight on into the keystone seating at the crown, the landing
+      strikes a flash, and the flash swells into the gold flood the app opens
+      out of. Every element here is a stage of that single upward gesture —
+      see the .splash-* rules in styles.css for the timings that chain them.
+    -->
     <div id="boot-splash" class="splash" aria-hidden="true">
       <div class="splash-mark-wrap">
-        <span class="splash-glow"></span>
-        <!--
-          The finished mark, held for the first frames and dissolved away as
-          the build starts underneath it. The OS launch screen shows this
-          exact artwork, so opening on it means the hand-off has nothing to
-          cut between: the static logo you were already looking at simply
-          resolves into the animation instead of vanishing and rebuilding
-          from an empty screen. Its own gradient id, since duplicate ids in
-          one document would collide with the animated copy's.
-        -->
-        <svg class="splash-mark splash-ghost" viewBox="116 122 280 280">
-          <defs>
-            <linearGradient id="splashGhostGold" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#e0c15a" />
-              <stop offset="1" stop-color="#a9822a" />
-            </linearGradient>
-          </defs>
-          <path
-            fill="#f2efe7"
-            d="M124,388 L124,258 A132,132 0 0 1 388,258 L388,388 L324,388 L324,258 A68,68 0 0 0 188,258 L188,388 Z"
-          />
-          <path
-            fill="url(#splashGhostGold)"
-            d="M206.5,135.6 A132,132 0 0 1 305.5,135.6 L281.5,195.0 A68,68 0 0 0 230.5,195.0 Z"
-          />
-          <g stroke="#111113" stroke-width="7" stroke-linecap="round">
-            <line x1="230.5" y1="195.0" x2="206.5" y2="135.6" />
-            <line x1="281.5" y1="195.0" x2="305.5" y2="135.6" />
-            <line x1="200.3" y1="219.0" x2="147.9" y2="182.3" />
-            <line x1="311.7" y1="219.0" x2="364.1" y2="182.3" />
-            <line x1="124" y1="324" x2="188" y2="324" />
-            <line x1="324" y1="324" x2="388" y2="324" />
-          </g>
-        </svg>
         <svg class="splash-mark" viewBox="116 122 280 280">
           <defs>
             <linearGradient id="splashGold" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stop-color="#e0c15a" />
               <stop offset="1" stop-color="#a9822a" />
             </linearGradient>
+            <!--
+              The reveal window for the arch. It starts translated a full
+              height below the mark and slides up to y=0, so the arch is
+              uncovered from the baseline upward — the reveal edge *is* the
+              slide. Deliberately a transform rather than animating the
+              rect's own y/height: Safari does not animate SVG geometry
+              properties from CSS, but it does animate transforms, so this
+              plays everywhere instead of snapping to the finished arch.
+            -->
             <clipPath id="splashArchClip" clipPathUnits="userSpaceOnUse">
               <rect class="splash-arch-clip-rect" x="100" width="312" y="126" height="262" />
             </clipPath>
@@ -159,8 +141,16 @@
             </g>
           </g>
         </svg>
+        <!--
+          Flash and flood are concentric circles pinned to the keystone, so
+          the flood grows out of exactly the point the flash struck and the
+          two read as one event rather than two effects that happen to
+          overlap. Inside the mark wrapper so they track the mark's size and
+          position on any screen without hard-coded viewport maths.
+        -->
+        <span class="splash-flash"></span>
+        <span class="splash-flood"></span>
       </div>
-      <span class="splash-flash"></span>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>

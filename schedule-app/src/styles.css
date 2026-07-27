@@ -231,13 +231,36 @@ textarea {
 }
 /* The mark carries the launch, so it takes ~65% of the screen rather than
    sitting as a small badge in the middle of a lot of black. Capped so it
-   doesn't become absurd on a tablet or a desktop window. */
+   doesn't become absurd on a tablet or a desktop window.
+
+   The wrapper also carries a slow lift of its own underneath the build.
+   Without it the arch rises inside a mark that is itself nailed down, and
+   the whole thing reads as a wipe playing over a static logo; with it the
+   mark is travelling too, and the reveal becomes something arriving rather
+   than something being uncovered. `backwards` (never `forwards`/`both`) so
+   the end state hands back to the normal declarations instead of being
+   pinned by the animation. */
 .splash-mark-wrap {
   position: relative;
   width: min(68vw, 68vh);
   height: min(68vw, 68vh);
   max-width: 460px;
   max-height: 460px;
+  /* Pins the blend group for the flash (see .splash-flash's screen mode).
+     The lift animation below would create a stacking context for as long as
+     it runs and then drop it at 940ms — mid-flash — which would visibly
+     change what the flash blends against halfway through. Isolating makes
+     the group unconditional, so the transform coming and going is invisible. */
+  isolation: isolate;
+  animation: splashMarkRise 940ms cubic-bezier(0.33, 0, 0.2, 1) backwards;
+}
+@keyframes splashMarkRise {
+  from {
+    transform: translateY(26px);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 .splash-mark {
   position: relative;
@@ -245,58 +268,192 @@ textarea {
   width: 100%;
   height: 100%;
 }
-/* The static copy of the finished mark, stacked over the animated one and
-   dissolved away as the build starts underneath it.
 
-   The point is the hand-off from the OS launch screen. That screen shows the
-   completed logo; the animation begins from nothing. Cutting straight from
-   one to the other read as the logo blinking out and then rebuilding itself.
-   Opening on the same finished mark instead means the first frame is
-   identical to what was already on screen, and the build is revealed *through*
-   it — so the launch screen appears to melt into the animation rather than be
-   replaced by it.
+/* Stage 1 — the rise. The clip window sits one full mark-height below the
+   arch and slides up to rest, so the arch is uncovered from the floor
+   upward in one continuous move.
 
-   The hold is timed to the arch's first step (see .splash-arch-clip-rect):
-   the dissolve only begins once there is something behind it to see, so the
-   screen never dips toward empty black on the way. */
-.splash-ghost {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  animation: splashGhostOut 560ms ease-out forwards;
+   The curve matters more than the duration here. An aggressive ease-out
+   (the obvious first choice) puts ~85% of the travel in the first 80ms,
+   which doesn't read as a slide at all — it reads as the arch snapping in
+   and then a long dead pause. This one leaves gently, does the bulk of the
+   move through the middle of its run, and lands soft: about a third of the
+   way up at a quarter of the time, two thirds at 40%, then settling. */
+.splash-arch-clip-rect {
+  transform: translateY(262px);
+  animation: splashArchRise 620ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
 }
-/* A reload never showed a launch screen, so there is nothing to dissolve
-   from. */
-html.boot-reload .splash-ghost {
-  display: none;
-}
-@keyframes splashGhostOut {
-  0% {
-    opacity: 1;
+@keyframes splashArchRise {
+  from {
+    transform: translateY(262px);
   }
-  /* 32% of 560ms = 179ms, i.e. the frame the first arch block lands. */
-  32% {
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Stage 2 — the same rise, carried into the last stone. It starts 80ms
+   before the arch finishes, so there is no beat between the two: the
+   upward motion never stops, it just transfers from the arch to the piece
+   that completes it. Coming up from below (rather than dropping in from
+   above, as it used to) is the whole point — the keystone is what the
+   build arrives at, not a separate object landing on top of it.
+
+   The travel is in the viewBox's own 512-unit space, not screen pixels, so
+   it needs to be large here to read at all once scaled down. */
+.splash-keystone {
+  opacity: 0;
+  transform: translateY(46px);
+  transform-origin: center;
+  animation: splashKeystoneSet 360ms linear 540ms forwards;
+}
+/* Per-keyframe easing, for the small recoil of a block being pushed home:
+   it comes up under power, runs through the seat at a constant rate,
+   overshoots by a hair and snaps back down into it.
+
+   Every keyframe declares the transform, including the mid one that exists
+   for the opacity ramp — a keyframe that omits the property is skipped for
+   that property's interpolation, so leaving it off would silently hand the
+   whole travel back to the 0% curve. And the settle leaves the peak at
+   speed rather than easing off it; easing in *and* out around an extreme
+   parks the piece there for ~80ms, which reads as a hitch. */
+@keyframes splashKeystoneSet {
+  0% {
+    opacity: 0;
+    transform: translateY(46px);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.4, 1);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(6px);
+    animation-timing-function: linear;
+  }
+  64% {
+    opacity: 1;
+    transform: translateY(-8px);
+    animation-timing-function: cubic-bezier(0, 0.65, 0.4, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stage 3 — the strike. A hot point centred on the keystone the instant it
+   seats, growing and softening as it goes. Positioned as a share of the
+   mark wrapper so it stays on the keystone at every screen size: the
+   crown sits at 14% of the way down the wrapper's box. */
+.splash-flash {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  width: 46%;
+  height: 46%;
+  margin: -23% 0 0 -23%;
+  border-radius: 50%;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.2);
+  /* Light adds, it doesn't cover. Composited normally, the semi-transparent
+     mid of the gradient sits *over* the cream arch and darkens it — the
+     flash ends up dulling the very thing it is supposed to be lighting.
+     Screening makes it strictly brighten whatever it falls on: the crown
+     blows out, and over the black background it renders as-is. */
+  mix-blend-mode: screen;
+  /* A long, smooth alpha tail all the way out to the edge. Reaching zero
+     early (or holding a high alpha into the mid stops) leaves a visible
+     rim where the gold meets the black, and the flash stops looking like
+     light and starts looking like a gold ball sitting on the crown. */
+  background: radial-gradient(
+    circle,
+    rgba(255, 251, 240, 1) 0%,
+    rgba(250, 238, 190, 0.92) 14%,
+    rgba(236, 212, 130, 0.6) 30%,
+    rgba(226, 196, 96, 0.28) 48%,
+    rgba(224, 193, 90, 0.09) 68%,
+    rgba(224, 193, 90, 0) 100%
+  );
+  animation: splashFlash 240ms ease-out 880ms forwards;
+}
+@keyframes splashFlash {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(2.1);
+  }
+}
+
+/* Stage 4 — the flood. Concentric with the flash and starting while the
+   flash is still expanding, so it is legible as that same burst continuing
+   to swell rather than a second effect fading up over the top. Ends
+   holding (`forwards`) at full gold covering the screen — if it eased back
+   out we'd go gold, black, app, and the splash's own fade would have
+   nothing to hand over to. Scaled well past coverage so the far corner of
+   a tall screen is still inside the circle. */
+.splash-flood {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  width: 100%;
+  height: 100%;
+  margin: -50% 0 0 -50%;
+  border-radius: 50%;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.18);
+  background: radial-gradient(
+    circle,
+    #f4e3a6 0%,
+    #e0c15a 38%,
+    #c9a13f 70%,
+    #a9822a 100%
+  );
+  animation: splashFlood 400ms cubic-bezier(0.32, 0, 0.2, 1) 970ms forwards;
+}
+@keyframes splashFlood {
+  0% {
+    opacity: 0;
+    transform: scale(0.18);
+  }
+  26% {
     opacity: 1;
   }
   100% {
-    opacity: 0;
+    opacity: 1;
+    transform: scale(7);
   }
 }
-/* A refresh is not an arrival — replaying the full build every time you pull
-   to reload would be tiresome, so that case gets a small mark and a quick
-   fade with none of the choreography. */
+
+/* A refresh is not an arrival — replaying the whole build every time you
+   pull to reload would be tiresome, so that case gets a small mark and a
+   quick fade with none of the choreography. App.jsx retires it early to
+   match (see the `simple` branch there). */
 html.boot-reload .splash-mark-wrap {
   width: 132px;
   height: 132px;
-}
-html.boot-reload .splash-arch-clip-rect,
-html.boot-reload .splash-glow {
   animation: none;
+}
+html.boot-reload .splash-arch-clip-rect {
+  animation: none;
+  transform: none;
 }
 html.boot-reload .splash-keystone {
   animation: none;
   opacity: 1;
   transform: none;
+}
+html.boot-reload .splash-flash,
+html.boot-reload .splash-flood {
+  display: none;
 }
 html.boot-reload .splash-mark {
   animation: splashSimpleIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
@@ -312,124 +469,26 @@ html.boot-reload .splash-mark {
   }
 }
 
-/* The gold takeover: floods the screen as the keystone lands and then holds,
-   so the splash's own fade-out hands straight over to the app. `forwards`
-   matters — if it faded back out on its own we'd go gold, black, app. */
-.splash-flash {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  opacity: 0;
-  background: radial-gradient(
-    circle at 50% 44%,
-    #f4e3a6 0%,
-    #e0c15a 34%,
-    #c9a13f 68%,
-    #a9822a 100%
-  );
-  animation: splashFlash 320ms cubic-bezier(0.3, 0, 0.2, 1) 1060ms forwards;
-}
-/* A reload gets no flood — it's a short fade, not an arrival. */
-html.boot-reload .splash-flash {
-  display: none;
-}
-@keyframes splashFlash {
-  from {
-    opacity: 0;
+/* Reduce-motion users get the reload treatment on every launch: the mark,
+   whole and still, and then the app. The global reduce-motion rule further
+   down already collapses every duration to nothing, but on its own that
+   would leave the gold flood filling the screen from the first frame and
+   sitting there — the end state of an animation nobody saw. Suppressing
+   the flood and the build outright gives them the logo instead, and
+   App.jsx shortens the hold to match. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-mark-wrap {
+    width: 132px;
+    height: 132px;
   }
-  to {
+  .splash-arch-clip-rect,
+  .splash-keystone {
+    transform: none;
     opacity: 1;
   }
-}
-/* Reveals bottom-up in 4 discrete jumps rather than a smooth wipe, so the
-   arch reads as blocks stacking into place instead of liquid filling. */
-.splash-arch-clip-rect {
-  animation: splashArchBuild 700ms steps(4, jump-end) forwards;
-}
-@keyframes splashArchBuild {
-  from {
-    y: 388px;
-    height: 0px;
-  }
-  to {
-    y: 126px;
-    height: 262px;
-  }
-}
-/* Drops in once the sides finish (delay matches splashArchBuild's 700ms),
-   overshooting slightly past its resting spot before settling — a keystone
-   dropped into place, not just faded in. */
-.splash-keystone {
-  opacity: 0;
-  /* This transform lives inside the viewBox's own 512-unit coordinate
-     space (scaled down to the icon's small rendered size), not screen
-     pixels — needs to be large here for the fall to actually read as a
-     fall once scaled down, not just a subtle nudge. */
-  transform: translateY(-240px);
-  transform-origin: center;
-  animation: splashKeystoneDrop 420ms linear 700ms forwards;
-}
-/* Per-keyframe easing so the fall actually reads as a fall rather than a
-   pop: opacity ramps in fast while it's still high up (so it's visible for
-   the part that matters), the middle stretch accelerates like a real drop
-   (ease-in), then it settles with a small overshoot (ease-out). */
-@keyframes splashKeystoneDrop {
-  0% {
-    opacity: 0;
-    transform: translateY(-240px);
-    animation-timing-function: ease-out;
-  }
-  20% {
-    opacity: 1;
-    transform: translateY(-200px);
-    animation-timing-function: ease-in;
-  }
-  70% {
-    opacity: 1;
-    transform: translateY(4px);
-    animation-timing-function: ease-out;
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-/* The gold burst as the keystone lands (delay lines up with the drop
-   above), expanding and fading — the "glow into the app" the splash
-   overlay's own opacity fade (see .splash--out) picks up from. */
-.splash-glow {
-  position: absolute;
-  top: 32%;
-  left: 50%;
-  width: 60px;
-  height: 60px;
-  margin: -30px 0 0 -30px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(224, 193, 90, 0.9) 0%,
-    rgba(169, 130, 42, 0.5) 40%,
-    rgba(169, 130, 42, 0) 75%
-  );
-  filter: blur(2px);
-  opacity: 0;
-  transform: scale(0.4);
-  animation: splashGlow 650ms ease-out 1040ms forwards;
-  pointer-events: none;
-}
-@keyframes splashGlow {
-  0% {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  30% {
-    opacity: 0.9;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(3.2);
+  .splash-flash,
+  .splash-flood {
+    display: none;
   }
 }
 
