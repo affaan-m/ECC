@@ -8,6 +8,7 @@ import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { isOverdue } from './ContactsPage.jsx';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
+import { addressSearchUrl, externalLinkProps } from '../data/maps.js';
 import {
   todayISO,
   toISODate,
@@ -163,7 +164,15 @@ export default function ContactDetailPage() {
       <section className="detail-section">
         {contact.phone && <Field label="Phone" value={contact.phone} href={`tel:${contact.phone}`} />}
         {contact.email && <Field label="Email" value={contact.email} href={`mailto:${contact.email}`} />}
-        {contact.address && <Field label="Address" value={contact.address} />}
+        {contact.address && (
+          <Field
+            label="Address"
+            value={contact.address}
+            // Was plain text — an address you can see but not act on. Opens
+            // it in Maps, the same way Phone and Email already act.
+            linkProps={externalLinkProps(addressSearchUrl(contact.address))}
+          />
+        )}
         {(contact.tags || []).length > 0 && (
           <div className="detail-field">
             <span className="detail-label">Tags</span>
@@ -497,12 +506,16 @@ function followUpLabel(iso) {
   return `Due ${formatShortDate(fromISODate(iso))}`;
 }
 
-function Field({ label, value, href }) {
+// `href` covers the simple tel:/mailto: cases; `linkProps` is for links that
+// need more than an href (the address, which has to open Maps correctly from
+// an installed PWA — see data/maps.js).
+function Field({ label, value, href, linkProps }) {
+  const link = linkProps || (href ? { href } : null);
   return (
     <div className="detail-field">
       <span className="detail-label">{label}</span>
-      {href ? (
-        <a className="detail-value link" href={href}>
+      {link ? (
+        <a className="detail-value link" {...link}>
           {value}
         </a>
       ) : (

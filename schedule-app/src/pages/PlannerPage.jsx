@@ -41,6 +41,7 @@ import {
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
 import { findDayConflicts } from '../data/conflicts.js';
+import { directionsUrl, externalLinkProps } from '../data/maps.js';
 import Modal from '../components/Modal.jsx';
 import {
   captureDay,
@@ -1768,8 +1769,7 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
   const linkedGoal = occ.linkKind === 'goal' ? goals.find((g) => g.id === occ.linkId) : null;
   const linkedTask = occ.linkKind === 'task' ? tasks.find((t) => t.id === occ.linkId) : null;
 
-  const directionsUrl =
-    occ.locLat != null ? `https://www.google.com/maps/dir/?api=1&destination=${occ.locLat},${occ.locLng}` : null;
+  const mapsHref = occ.locLat != null ? directionsUrl(occ.locLat, occ.locLng) : null;
 
   const shareEvent = () => {
     if (!isPro) {
@@ -1888,7 +1888,7 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
         {occ.locLat != null && (
           <section className="detail-section">
             <MiniMapPicker lat={occ.locLat} lng={occ.locLng} onPick={() => {}} />
-            <a className="btn btn-primary full" style={{ marginTop: 10 }} href={directionsUrl} target="_blank" rel="noopener">
+            <a className="btn btn-primary full" style={{ marginTop: 10 }} {...externalLinkProps(mapsHref)}>
               ➤ Directions
             </a>
           </section>
