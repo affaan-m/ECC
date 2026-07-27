@@ -18,5 +18,51 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!--
+      Boot watchdog. Installed standalone, the app has no browser chrome: if
+      the bundle 404s, fails to parse, or throws before React mounts, the
+      window just stays on the manifest's black background_color with no
+      error, no address bar, and no way to reload. That is indistinguishable
+      from a hang, and the only user-visible fix is deleting the app.
+
+      So: if #root is still empty well after load, say so and offer a repair.
+      The repair clears the service worker and its caches — the parts that
+      can serve a stale or broken shell — and deliberately does NOT touch
+      localStorage, which is where every goal, contact, event and note lives.
+    -->
+    <script>
+      (function () {
+        var BOOT_TIMEOUT = 8000;
+        function booted() {
+          var root = document.getElementById('root');
+          return root && root.children.length > 0;
+        }
+        function repair() {
+          var done = function () { location.reload(); };
+          if (!('serviceWorker' in navigator)) return done();
+          navigator.serviceWorker.getRegistrations()
+            .then(function (regs) {
+              return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            })
+            .then(function () {
+              return window.caches ? caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              }) : null;
+            })
+            .then(done, done);
+        }
+        setTimeout(function () {
+          if (booted()) return;
+          var el = document.createElement('div');
+          el.setAttribute('style', 'position:fixed;inset:0;z-index:99999;display:grid;place-items:center;padding:24px;text-align:center;background:#111113;color:#f2efe7;font:16px/1.5 system-ui,-apple-system,sans-serif');
+          el.innerHTML =
+            '<div><p style="font-size:19px;font-weight:600;margin:0 0 8px">Keystone didn\'t finish loading</p>' +
+            '<p style="color:#93a0ad;margin:0 0 20px">Your data is safe on this device. Repairing clears the offline copy only.</p>' +
+            '<button id="ks-repair" style="font:inherit;font-weight:600;padding:12px 22px;border:0;border-radius:12px;background:#a9822a;color:#fff">Repair and reload</button></div>';
+          document.body.appendChild(el);
+          document.getElementById('ks-repair').addEventListener('click', repair);
+        }, BOOT_TIMEOUT);
+      })();
+    </script>
   </body>
 </html>

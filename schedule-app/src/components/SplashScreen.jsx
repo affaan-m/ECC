@@ -18,9 +18,17 @@ export default function SplashScreen({ fadingOut }) {
             {/* Reveals the arch bottom-up: the rect's y/height are animated
                 in CSS (steps() easing so it reads as blocks stacking, not a
                 smooth wipe) while x/width stay fixed, covering the arch's
-                full horizontal extent (x 124–388). */}
+                full horizontal extent (x 124–388).
+
+                y/height are also set statically here, to the animation's
+                *end* state. Animating SVG geometry properties from CSS is
+                not supported in Safari, and without a static value the rect
+                would default to height 0 there — clipping the arch away
+                entirely and leaving the launch screen black. With these, an
+                engine that can't run the animation simply shows the finished
+                arch instead of building it. */}
             <clipPath id="splashArchClip" clipPathUnits="userSpaceOnUse">
-              <rect className="splash-arch-clip-rect" x="100" width="312" />
+              <rect className="splash-arch-clip-rect" x="100" width="312" y="126" height="262" />
             </clipPath>
           </defs>
           <rect width="512" height="512" rx="112" fill="#111113" />
