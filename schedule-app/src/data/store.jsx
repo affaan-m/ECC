@@ -32,6 +32,7 @@ function loadState() {
       })),
       notes: parsed.notes || [],
       interactions: parsed.interactions || [],
+      templates: parsed.templates || [],
       settings: {
         theme: 'system',
         reconnectDays: 30,
@@ -128,6 +129,8 @@ function reducer(state, action) {
         notes: (state.notes || []).map((n) =>
           n.contactId === action.id ? { ...n, contactId: '' } : n
         ),
+        // "Follow up with <name>" is meaningless once <name> is gone.
+        tasks: (state.tasks || []).filter((t) => t.followUpContactId !== action.id),
       };
     case 'CLEAR_CONTACTS':
       return {
@@ -139,6 +142,7 @@ function reducer(state, action) {
           .map((p) => (p.contactId ? { ...p, contactId: '' } : p)),
         interactions: [],
         notes: (state.notes || []).map((n) => (n.contactId ? { ...n, contactId: '' } : n)),
+        tasks: (state.tasks || []).filter((t) => !t.followUpContactId),
       };
 
     // Map pins
@@ -164,10 +168,85 @@ function reducer(state, action) {
     // Tasks (checkable, with an optional reminder)
     case 'ADD_TASK':
       return { ...state, tasks: [...(state.tasks || []), action.task] };
-    case 'UPDATE_TASK':
-      return { ...state, tasks: upsert(state.tasks || [], action.task) };
-    case 'DELETE_TASK':
-      return { ...state, tasks: (state.tasks || []).filter((t) => t.id !== action.id) };
+    case 'UPDATE_TASK': {
+      const tasks = upsert(state.tasks || [], action.task);
+      // A follow-up commitment and the task standing in for it are one thing
+      // wearing two hats, so ticking the task has to clear the commitment.
+      // Doing it here rather than at the call site means it holds no matter
+      // where the task got completed from — Home, Planner, the task list.
+      const done = tasks.find((t) => t.id === action.task.id);
+      if (done?.followUpContactId && done.done) {
+        return {
+          ...state,
+          tasks,
+          contacts: state.contacts.map((c) =>
+            c.id === done.followUpContactId ? { ...c, followUp: null } : c
+          ),
+        };
+      }
+      return { ...state, tasks };
+    }
+    case 'DELETE_TASK': {
+      const removed = (state.tasks || []).find((t) => t.id === action.id);
+      const tasks = (state.tasks || []).filter((t) => t.id !== action.id);
+      if (removed?.followUpContactId) {
+        return {
+          ...state,
+          tasks,
+          contacts: state.contacts.map((c) =>
+            c.id === removed.followUpContactId ? { ...c, followUp: null } : c
+          ),
+        };
+      }
+      return { ...state, tasks };
+    }
+
+    // Follow-up commitments ("I said I'd call them Tuesday"). The commitment
+    // lives on the contact and is mirrored by a real task so it shows up
+    // wherever the user already looks for things they owe someone. Both
+    // sides move together in one action so they can never disagree.
+    case 'SET_FOLLOW_UP': {
+      const { contactId, followUp } = action;
+      const contact = state.contacts.find((c) => c.id === contactId);
+      if (!contact) return state;
+      const others = (state.tasks || []).filter((t) => t.followUpContactId !== contactId);
+      const contacts = state.contacts.map((c) =>
+        c.id === contactId ? { ...c, followUp: followUp || null } : c
+      );
+      if (!followUp) return { ...state, contacts, tasks: others };
+      const existing = (state.tasks || []).find((t) => t.followUpContactId === contactId);
+      const task = {
+        dueTime: '',
+        reminderOffsets: [],
+        repeat: 'none',
+        completedDates: [],
+        location: '',
+        // Keep whatever the user already customised on the task (reminders,
+        // a time), then let the commitment win on the fields it owns.
+        ...existing,
+        id: existing?.id || uid('t'),
+        title: `Follow up with ${contact.name}`,
+        notes: followUp.note || '',
+        dueDate: followUp.date,
+        followUpContactId: contactId,
+        // Re-committing to a date after ticking the old one off should give
+        // an open task again, not a pre-completed one.
+        done: false,
+      };
+      return { ...state, contacts, tasks: [...others, task] };
+    }
+
+    // Day / week templates
+    case 'ADD_TEMPLATE':
+      return { ...state, templates: [...(state.templates || []), action.template] };
+    case 'UPDATE_TEMPLATE':
+      return { ...state, templates: upsert(state.templates || [], action.template) };
+    case 'DELETE_TEMPLATE':
+      return { ...state, templates: (state.templates || []).filter((t) => t.id !== action.id) };
+    case 'APPLY_TEMPLATE':
+      // One dispatch for the whole stamp, so applying a 12-block week is a
+      // single undoable state change rather than 12 separate renders.
+      return { ...state, events: [...state.events, ...action.events] };
 
     // Notes (Keep-style: free text or a checklist)
     case 'ADD_NOTE':
@@ -216,6 +295,7 @@ function reducer(state, action) {
         tasks: [],
         notes: [],
         interactions: [],
+        templates: [],
         statuses: state.statuses,
         eventTypes: state.eventTypes,
         settings: state.settings,
@@ -306,6 +386,13 @@ export function useActions() {
       dispatch({ type: 'ADD_INTERACTION', interaction: { id: uid('ix'), ...data } }),
     updateInteraction: (interaction) => dispatch({ type: 'UPDATE_INTERACTION', interaction }),
     deleteInteraction: (id) => dispatch({ type: 'DELETE_INTERACTION', id }),
+
+    setFollowUp: (contactId, followUp) => dispatch({ type: 'SET_FOLLOW_UP', contactId, followUp }),
+
+    addTemplate: (template) => dispatch({ type: 'ADD_TEMPLATE', template }),
+    updateTemplate: (template) => dispatch({ type: 'UPDATE_TEMPLATE', template }),
+    deleteTemplate: (id) => dispatch({ type: 'DELETE_TEMPLATE', id }),
+    applyTemplate: (events) => dispatch({ type: 'APPLY_TEMPLATE', events }),
 
     addStatus: (data) => dispatch({ type: 'ADD_STATUS', status: { id: uid('st'), ...data } }),
     updateStatus: (status) => dispatch({ type: 'UPDATE_STATUS', status }),

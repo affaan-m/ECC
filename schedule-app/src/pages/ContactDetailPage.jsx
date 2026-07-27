@@ -11,6 +11,7 @@ import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
 import {
   todayISO,
   toISODate,
+  fromISODate,
   addDays,
   daysAgoLabel,
   formatShortDate,
@@ -26,6 +27,7 @@ export default function ContactDetailPage() {
   const deleteContactWithUndo = useDeleteContactWithUndo();
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [followUpDraft, setFollowUpDraft] = useState(null); // { date, note } | null
 
   const contact = state.contacts.find((c) => c.id === id);
   const status = state.statuses.find((s) => s.id === contact?.statusId);
@@ -173,6 +175,54 @@ export default function ContactDetailPage() {
               ))}
             </span>
           </div>
+        )}
+      </section>
+
+      {/* Follow-up commitment. Distinct from "last connected", which drifts
+          on its own — this is something the user actively promised, so it
+          gets a date, shows how overdue it is, and mirrors itself into the
+          task list (handled by the store, see SET_FOLLOW_UP). */}
+      <section className="detail-section">
+        <div className="section-head">
+          <span className="detail-label">Follow-up</span>
+          {contact.followUp ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setFollowUpDraft({ ...contact.followUp })}
+            >
+              Change
+            </button>
+          ) : (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setFollowUpDraft({ date: toISODate(addDays(new Date(), 7)), note: '' })
+              }
+            >
+              + Add
+            </button>
+          )}
+        </div>
+        {contact.followUp ? (
+          <div className={`followup-card${contact.followUp.date <= todayISO() ? ' followup-card--due' : ''}`}>
+            <div className="followup-main">
+              <span className="followup-when">{followUpLabel(contact.followUp.date)}</span>
+              {contact.followUp.note && <span className="followup-note">{contact.followUp.note}</span>}
+            </div>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                actions.setFollowUp(contact.id, null);
+                actions.updateContact({ ...contact, lastContacted: todayISO() });
+              }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <p className="muted small">
+            Nothing promised. Add one when you tell {contact.name.split(' ')[0]} you'll be in touch.
+          </p>
         )}
       </section>
 
@@ -324,6 +374,86 @@ export default function ContactDetailPage() {
         )}
       </EditorSheet>
 
+      {/* Follow-up editor */}
+      <Modal
+        open={!!followUpDraft}
+        title="Follow up with"
+        onClose={() => setFollowUpDraft(null)}
+        footer={
+          <div className="modal-actions">
+            {contact.followUp && (
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  actions.setFollowUp(contact.id, null);
+                  setFollowUpDraft(null);
+                }}
+              >
+                Remove
+              </button>
+            )}
+            <button
+              className="btn btn-primary"
+              disabled={!followUpDraft?.date}
+              onClick={() => {
+                actions.setFollowUp(contact.id, {
+                  date: followUpDraft.date,
+                  note: followUpDraft.note.trim(),
+                });
+                setFollowUpDraft(null);
+              }}
+            >
+              Save
+            </button>
+          </div>
+        }
+      >
+        {followUpDraft && (
+          <div className="form">
+            <label className="field">
+              <span>By when</span>
+              <input
+                type="date"
+                value={followUpDraft.date}
+                onChange={(e) => setFollowUpDraft({ ...followUpDraft, date: e.target.value })}
+              />
+            </label>
+            <div className="chips">
+              {[
+                ['Tomorrow', 1],
+                ['In 3 days', 3],
+                ['Next week', 7],
+                ['In 2 weeks', 14],
+              ].map(([label, days]) => {
+                const iso = toISODate(addDays(new Date(), days));
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`chip${followUpDraft.date === iso ? ' chip--on' : ''}`}
+                    onClick={() => setFollowUpDraft({ ...followUpDraft, date: iso })}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="field">
+              <span>What did you promise?</span>
+              <textarea
+                rows="2"
+                value={followUpDraft.note}
+                onChange={(e) => setFollowUpDraft({ ...followUpDraft, note: e.target.value })}
+                placeholder="Send them the address"
+              />
+            </label>
+            <p className="muted small">
+              This also shows up as a task, so it's in front of you on the days that matter.
+            </p>
+          </div>
+        )}
+      </Modal>
+
       {/* Delete confirm */}
       <Modal
         open={confirmDelete}
@@ -352,6 +482,19 @@ export default function ContactDetailPage() {
       </Modal>
     </div>
   );
+}
+
+// Relative where it helps ("Overdue by 3 days" is the fact that matters) and
+// absolute where it doesn't ("Fri, Aug 8" beats "in 12 days").
+function followUpLabel(iso) {
+  const today = todayISO();
+  if (iso < today) {
+    const late = Math.round((fromISODate(today) - fromISODate(iso)) / 86400000);
+    return `Overdue by ${late} day${late === 1 ? '' : 's'}`;
+  }
+  if (iso === today) return 'Due today';
+  if (iso === toISODate(addDays(new Date(), 1))) return 'Due tomorrow';
+  return `Due ${formatShortDate(fromISODate(iso))}`;
 }
 
 function Field({ label, value, href }) {

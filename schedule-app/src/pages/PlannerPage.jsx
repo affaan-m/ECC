@@ -40,6 +40,15 @@ import {
   goalKey,
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
+import { findDayConflicts } from '../data/conflicts.js';
+import Modal from '../components/Modal.jsx';
+import {
+  captureDay,
+  captureWeek,
+  instantiate,
+  makeTemplate,
+  templateSummary,
+} from '../data/templates.js';
 
 const DAY_START = 6;
 const DAY_END = 23;
@@ -108,6 +117,9 @@ export default function PlannerPage() {
   const [editing, setEditing] = useState(null); // draft being edited
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(() => new Set()); // "id:recDate"
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [dismissedConflicts, setDismissedConflicts] = useState(() => new Set());
 
   const dayStartHour = state.settings?.timelineStartHour ?? DAY_START;
   const dayEndHour = state.settings?.timelineEndHour ?? DAY_END;
@@ -423,6 +435,47 @@ export default function PlannerPage() {
     setMode('day');
   };
 
+  // Only computed for the day being looked at — a conflict on some other day
+  // isn't actionable from here, and scanning the whole calendar on every
+  // render would cost far more than it's worth.
+  const conflicts = useMemo(
+    () => (mode === 'day' ? findDayConflicts(occurrencesFor(state.events, cursor), state) : []),
+    [mode, state, cursor]
+  );
+  const shownConflicts = conflicts.filter((c) => !dismissedConflicts.has(c.id));
+
+  // Dismissals are per-conflict and deliberately not persisted: they last
+  // for this visit so a warning you've consciously accepted stops shouting,
+  // but tomorrow's identical clash is worth mentioning again.
+  const dismissConflict = (id) =>
+    setDismissedConflicts((prev) => new Set(prev).add(id));
+
+  const templates = state.templates || [];
+  const templateKind = mode === 'week' ? 'week' : 'day';
+  const saveTemplate = () => {
+    const blocks =
+      templateKind === 'week' ? captureWeek(state.events, weekStart) : captureDay(state.events, cursor);
+    if (blocks.length === 0) {
+      showToast(`Nothing on this ${templateKind} to save.`);
+      return;
+    }
+    actions.addTemplate(makeTemplate({ name: templateName, kind: templateKind, blocks }));
+    setTemplateName('');
+    confirmTick();
+    showToast(`Saved ${blocks.length} block${blocks.length === 1 ? '' : 's'} as a template.`);
+  };
+  const applyTemplate = (t) => {
+    const events = instantiate(t, cursor);
+    actions.applyTemplate(events);
+    setTemplatesOpen(false);
+    confirmTick();
+    showToast(
+      `Added ${events.length} event${events.length === 1 ? '' : 's'} from "${t.name}".`,
+      'Undo',
+      () => events.forEach((e) => actions.deleteEvent(e.id))
+    );
+  };
+
   return (
     <div className="page">
       <header className="page-head">
@@ -463,11 +516,42 @@ export default function PlannerPage() {
             {selectMode ? 'Cancel select' : 'Select'}
           </button>
           {selectMode && <span className="muted small">{selected.size} selected</span>}
+          {mode !== 'month' && (
+            <button className="btn btn-sm btn-ghost" onClick={() => setTemplatesOpen(true)}>
+              Templates
+            </button>
+          )}
           <button className="today-btn" onClick={() => setCursor(todayISO())} aria-label="Jump to today" title="Jump to today">
             <TodayIcon />
           </button>
         </div>
       </header>
+
+      {/* Conflicts for the day on screen. Sits above the timeline rather than
+          on the blocks themselves so a clash is visible without hunting for
+          the two events involved — and so it reads as advice, not an error. */}
+      {shownConflicts.length > 0 && (
+        <ul className="conflict-list">
+          {shownConflicts.map((c) => (
+            <li key={c.id} className={`conflict conflict--${c.kind}`}>
+              <span className="conflict-icon" aria-hidden="true">
+                {c.kind === 'overlap' ? '⚠️' : '🚗'}
+              </span>
+              <span className="conflict-body">
+                <span className="conflict-text">{c.text}</span>
+                <span className="conflict-detail">{c.detail}</span>
+              </span>
+              <button
+                className="conflict-dismiss"
+                onClick={() => dismissConflict(c.id)}
+                aria-label="Dismiss this warning"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {mode === 'day' && (
         <DayView
@@ -545,6 +629,79 @@ export default function PlannerPage() {
           </div>
         </div>
       )}
+
+      {/* Templates. Applying always targets the day (or week) currently on
+          screen, which is why the button is only offered in day/week mode —
+          "apply to a month" has no sensible meaning. */}
+      <Modal
+        open={templatesOpen}
+        title={templateKind === 'week' ? 'Week templates' : 'Day templates'}
+        onClose={() => setTemplatesOpen(false)}
+      >
+        <div className="form">
+          <div className="field">
+            <span>Save this {templateKind}</span>
+            <div className="template-save-row">
+              <input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder={templateKind === 'week' ? 'Standard week' : 'Standard weekday'}
+              />
+              <button className="btn btn-sm btn-primary" onClick={saveTemplate}>
+                Save
+              </button>
+            </div>
+          </div>
+          {/* Outside the .field above on purpose — `.field > span` is styled
+              as the field's label, which would render this hint bold. */}
+          <p className="muted small template-hint">
+            Captures what's on{' '}
+            {templateKind === 'week' ? formatWeekRange(weekStart) : formatDayLabel(cursor)} as
+            reusable blocks. The originals stay exactly as they are.
+          </p>
+
+          {templates.length === 0 ? (
+            <p className="muted small">
+              No templates yet. Save a {templateKind} you'd want to repeat, then stamp it onto any
+              other {templateKind}.
+            </p>
+          ) : (
+            <ul className="template-list">
+              {templates.map((t) => (
+                <li key={t.id}>
+                  <div className="template-row">
+                    <span className="template-info">
+                      <span className="template-name">{t.name}</span>
+                      <span className="muted small">
+                        {t.kind === 'week' ? 'Week' : 'Day'} · {templateSummary(t)}
+                      </span>
+                    </span>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={t.kind !== templateKind}
+                      title={
+                        t.kind !== templateKind
+                          ? `Switch to ${t.kind} view to apply this one`
+                          : undefined
+                      }
+                      onClick={() => applyTemplate(t)}
+                    >
+                      Apply
+                    </button>
+                    <button
+                      className="icon-btn"
+                      aria-label={`Delete template ${t.name}`}
+                      onClick={() => actions.deleteTemplate(t.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Modal>
 
       {viewing && (
         <EventDetailView

@@ -38,6 +38,33 @@ export function computeNudges(state) {
     });
   }
 
+  // Follow-ups you promised, due today or already missed. These outrank the
+  // "haven't spoken in a while" nudge below on purpose: not having called
+  // someone lately is a drift, but not calling when you said you would is a
+  // broken commitment, and the app knows the difference.
+  let dueFollowUp = null;
+  let dueFollowUpDate = null;
+  for (const c of state.contacts || []) {
+    const date = c.followUp?.date;
+    if (!date || date > today) continue;
+    if (!dueFollowUpDate || date < dueFollowUpDate) {
+      dueFollowUp = c;
+      dueFollowUpDate = date;
+    }
+  }
+  if (dueFollowUp) {
+    const late = daysSince(dueFollowUpDate);
+    nudges.push({
+      id: `followup:${dueFollowUp.id}`,
+      icon: '🤝',
+      text:
+        late > 0
+          ? `You said you'd follow up with ${dueFollowUp.name} ${late} day${late === 1 ? '' : 's'} ago.`
+          : `You said you'd follow up with ${dueFollowUp.name} today.`,
+      to: `/contacts/${dueFollowUp.id}`,
+    });
+  }
+
   // Most overdue contact.
   let mostOverdue = null;
   let mostOverdueDays = 0;

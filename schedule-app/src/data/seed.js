@@ -273,6 +273,7 @@ export function makeSeed() {
     tasks,
     notes,
     interactions: [],
+    templates: [],
     statuses,
     eventTypes,
     settings: { theme: 'system', reconnectDays: 30, notifications: false },

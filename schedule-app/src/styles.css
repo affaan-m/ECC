@@ -4065,6 +4065,140 @@ body.is-scrolled .page-head::before {
   animation: chipSelect 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* --- Schedule conflicts --------------------------------------------------
+   Advice, not errors: warn-coloured rather than danger-coloured, and always
+   dismissible, because a straight-line travel estimate can be wrong and the
+   user may simply know better. */
+.conflict-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.conflict {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+}
+.conflict-icon {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.conflict-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.conflict-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.conflict-detail {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.conflict-dismiss {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+.conflict-dismiss:active {
+  background: var(--surface-2);
+}
+
+/* --- Day / week templates ------------------------------------------------ */
+.template-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.template-save-row input {
+  flex: 1;
+  min-width: 0;
+}
+.template-save-row .btn {
+  flex: none;
+}
+.template-hint {
+  margin: -4px 0 4px;
+}
+.template-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.template-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.template-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Follow-up commitments ----------------------------------------------- */
+.followup-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+}
+/* Due or overdue earns the accent — it's a promise with a clock on it now. */
+.followup-card--due {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.followup-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.followup-when {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.followup-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
