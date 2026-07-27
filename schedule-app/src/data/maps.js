@@ -23,9 +23,19 @@
 // (iOS, desktop) the https URL is a universal link that opens the Google Maps
 // app when installed, so it just needs to be opened in a *separate* context.
 //
-// A `geo:` handoff that nothing claims is silent rather than an error, so it
-// gets a timer-based fallback to the web URL: if we're still on screen a
-// beat later, the handoff didn't happen and we open the web map instead.
+// The remaining wrinkle is that not every home-screen app is a real PWA.
+// Third-party "PWA installer" tools wrap a site in a bare Android WebView,
+// which resolves no custom scheme whatsoever — `geo:` fails there the same
+// way `intent:` did. So the scheme attempt goes through a hidden iframe
+// (see tryNativeScheme), which contains that failure instead of letting it
+// take over the window, and a timer falls back to the web URL if nothing
+// claimed the handoff.
+//
+// Worth knowing when reading this: those wrappers also tend not to support
+// opening a second browsing context, so the web fallback can end up doing
+// nothing there. That is a limit of the container, not something this module
+// can route around — installing via Chrome's own "Add to home screen"
+// produces a WebAPK where all of this works.
 
 const FALLBACK_MS = 1200;
 
@@ -58,6 +68,30 @@ function openInNewContext(url) {
   a.remove();
 }
 
+// Attempts a non-http scheme from a hidden iframe rather than by navigating
+// this window.
+//
+// This matters for home-screen apps built by third-party "PWA installer"
+// wrappers, which are a plain Android WebView rather than Chrome. A WebView
+// resolves no custom scheme at all unless the host app implements it — so a
+// top-level navigation to `geo:` there fails exactly the way `intent:` did,
+// replacing the app with a net::ERR_UNKNOWN_URL_SCHEME page. An iframe
+// confines that failure: the frame errors, the app stays put, and the
+// fallback below picks it up. Where the scheme *is* handled the OS takes
+// over exactly as it would from a top-level navigation.
+function tryNativeScheme(url) {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(frame);
+  try {
+    frame.contentWindow.location.href = url;
+  } catch {
+    frame.src = url;
+  }
+  setTimeout(() => frame.remove(), 600);
+}
+
 // Hands off to a native scheme, falling back to the web URL if nothing
 // claims it. A successful handoff backgrounds the page, so any of
 // hide/pagehide/blur means it worked and cancels the fallback.
@@ -83,7 +117,7 @@ function openWithNativeFallback(nativeUrl, webUrl) {
   window.addEventListener('blur', cancel);
   document.addEventListener('visibilitychange', onVisibility);
 
-  window.location.href = nativeUrl;
+  tryNativeScheme(nativeUrl);
 }
 
 // --- Targets --------------------------------------------------------------
