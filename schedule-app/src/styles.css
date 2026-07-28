@@ -5121,13 +5121,21 @@ button.timeline-item {
 /* --- Map: basemap switcher ------------------------------------------------
    Mirrors the right-hand control stack on the left, so the two clusters
    read as one control layer rather than one cluster and one stray button. */
+/* Leaflet puts its own zoom control top-left and doesn't know about the
+   notch, so give it the inset before anything is stacked under it. */
+.leaflet-top.leaflet-left {
+  margin-top: env(safe-area-inset-top, 0px);
+}
+/* Below the zoom control, not on top of it. Leaflet's stack is its own 10px
+   margin plus two 30px buttons = 70px tall, so this clears it with a gap. */
 .map-corner--left {
   right: auto;
   left: 12px;
+  top: calc(env(safe-area-inset-top, 0px) + 80px);
 }
 .map-layers {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px);
+  top: calc(env(safe-area-inset-top, 0px) + 80px + 46px + 10px);
   left: 12px;
   z-index: 500;
   width: 178px;
