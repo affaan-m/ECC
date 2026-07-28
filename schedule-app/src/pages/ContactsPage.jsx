@@ -26,6 +26,7 @@ import {
   DEFAULT_CONTACT_SWIPE_RIGHT,
 } from '../data/contactSwipe.js';
 import Icon from '../components/Icon.jsx';
+import GroupPicker from '../components/GroupPicker.jsx';
 
 export default function ContactsPage() {
   const { state } = useStore();
@@ -273,7 +274,7 @@ export default function ContactsPage() {
           ) : (
             state.statuses.length > 0 && (
               <button className="chip" onClick={() => navigate('/pricing')}>
-                <Icon name="lock" size={15} /> Statuses · Pro
+                <Icon name="lock" size={15} /> Groups · Pro
               </button>
             )
           )}
@@ -325,7 +326,7 @@ export default function ContactsPage() {
           <h2>Add the people who matter</h2>
           <p className="muted">
             Keep track of friends, family, and anyone you want to stay close to —
-            with statuses you define and a nudge when it's been a while.
+            with groups you define and a nudge when it's been a while.
           </p>
           <button className="btn btn-primary" onClick={startAdd}>
             + Add someone
@@ -437,12 +438,8 @@ export default function ContactsPage() {
             </label>
             {isPro && (
               <label className="field">
-                <span>Status</span>
-                <Select
-                  value={adding.statusId}
-                  onChange={(v) => setAdding({ ...adding, statusId: v })}
-                  options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
-                />
+                <span>Group</span>
+                <GroupPicker value={adding.statusId} onChange={(v) => setAdding({ ...adding, statusId: v })} />
               </label>
             )}
             <div className="field-row">

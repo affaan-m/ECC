@@ -51,14 +51,12 @@ export function AvatarPicker({ name, photo, color, onChange }) {
           Remove photo
         </button>
       )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={handleFile}
-      />
+      {/* No `capture` attribute. With it, mobile browsers jump straight to
+          the camera and never offer the photo library — so adding a picture
+          of someone meant taking a new one on the spot, which for a contact
+          is almost never what you want. Without it the OS shows its normal
+          picker: Photo Library, Take Photo, or Browse. */}
+      <input ref={inputRef} type="file" accept="image/*" hidden onChange={handleFile} />
     </div>
   );
 }

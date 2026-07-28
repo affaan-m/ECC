@@ -3207,9 +3207,18 @@ textarea {
   border: 1px solid var(--border);
   padding: 8px 8px 8px 14px;
 }
+/* Now a wrapper around AddressField rather than the input itself, so the
+   suggestion list has something to anchor to. The input inside keeps the
+   borderless look it had when it was the input. */
 .map-pick-search {
   flex: 1;
   min-width: 0;
+}
+.map-pick-search .address-field {
+  width: 100%;
+}
+.map-pick-search input {
+  width: 100%;
   border: none;
   background: transparent;
   color: var(--text);
@@ -3217,7 +3226,7 @@ textarea {
   font-weight: 500;
   padding: 6px 0;
 }
-.map-pick-search:focus {
+.map-pick-search input:focus {
   outline: none;
 }
 .map-pick-search-btn {

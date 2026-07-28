@@ -27,7 +27,7 @@ const STEPS = [
   {
     icon: 'users',
     title: 'People',
-    body: 'Keep track of the people in your life — statuses, reconnect reminders, and notes. Pro unlocks status groups and a full contact timeline.',
+    body: 'Keep track of the people in your life — groups, reconnect reminders, and notes. Pro unlocks groups and a full contact timeline.',
   },
   {
     icon: 'pin',

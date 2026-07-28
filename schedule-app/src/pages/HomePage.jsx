@@ -29,6 +29,7 @@ import { useCountUp } from '../data/useCountUp.js';
 import { useSmartAdd } from '../data/useSmartAdd.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
 import Icon from '../components/Icon.jsx';
+import AddressField from '../components/AddressField.jsx';
 
 // Fixed pale tints rather than theme colours — a tinted note forces dark
 // text (see .note-card--tinted), so every swatch has to stay light enough to
@@ -832,14 +833,14 @@ export default function HomePage() {
                 + Add subtask
               </button>
             </div>
-            <label className="field">
+            <div className="field">
               <span>Location</span>
-              <input
+              <AddressField
                 value={editingTask.location}
-                onChange={(e) => setEditingTask({ ...editingTask, location: e.target.value })}
                 placeholder="Optional"
+                onChange={(text) => setEditingTask({ ...editingTask, location: text })}
               />
-            </label>
+            </div>
             <div className="field-row">
               <label className="field">
                 <span>Due date</span>

@@ -24,6 +24,7 @@ import {
 } from '../data/helpers.js';
 import { nextAnnualOccurrence, yearsBetween } from '../data/contactDates.js';
 import Icon from '../components/Icon.jsx';
+import GroupPicker from '../components/GroupPicker.jsx';
 
 export default function ContactDetailPage() {
   const { id } = useParams();
@@ -383,12 +384,8 @@ export default function ContactDetailPage() {
             </label>
             {isPro && (
               <label className="field">
-                <span>Status</span>
-                <Select
-                  value={editing.statusId}
-                  onChange={(v) => setEditing({ ...editing, statusId: v })}
-                  options={state.statuses.map((s) => ({ value: s.id, label: s.label, color: s.color }))}
-                />
+                <span>Group</span>
+                <GroupPicker value={editing.statusId} onChange={(v) => setEditing({ ...editing, statusId: v })} />
               </label>
             )}
             <div className="field-row">

@@ -18,7 +18,7 @@ import Icon from './Icon.jsx';
 // doesn't queue up a burst of them.
 const DEBOUNCE_MS = 550;
 
-export default function AddressField({ value, onChange, placeholder, autoFocus }) {
+export default function AddressField({ value, onChange, placeholder, autoFocus, onSubmit }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -72,6 +72,12 @@ export default function AddressField({ value, onChange, placeholder, autoFocus }
         // A blur that lands on a suggestion must not close the list before
         // the tap registers, so closing waits a beat.
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onSubmit) {
+            setOpen(false);
+            onSubmit();
+          }
+        }}
         autoComplete="off"
       />
       {loading && <span className="address-field-hint muted small">Looking up…</span>}

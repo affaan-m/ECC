@@ -41,7 +41,7 @@ const DESTRUCTIVE_ACTIONS = {
   },
   clear: {
     title: 'Clear everything?',
-    body: 'This permanently removes all goals, events, and people. Your custom statuses are kept.',
+    body: 'This permanently removes all goals, events, and people. Your custom groups are kept.',
     cta: 'Clear',
   },
   clearCache: {
@@ -139,7 +139,7 @@ const SETTINGS_INDEX = [
   {
     label: 'People',
     groups: [
-      { id: 'g14', title: 'People statuses', keywords: 'contacts label category colour color' },
+      { id: 'g14', title: 'People groups', keywords: 'contacts status label category colour color' },
       { id: 'gswipe', title: 'People swipe actions', keywords: 'contacts gesture log schedule call text delete' },
       { id: 'g13', title: 'Birthdays & anniversaries', keywords: 'contacts dates special yearly' },
     ],
@@ -805,7 +805,7 @@ export default function MorePage() {
       <SettingsSection label="People" hidden={!sectionShown('People')} />
       <SettingsGroup {...grp('g14')}>
         <div className="section-head">
-          <span className="detail-label">People statuses {!isPro && '· Pro'}</span>
+          <span className="detail-label">People groups {!isPro && '· Pro'}</span>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => requirePro(() => setEditingStatus({ label: '', color: PRESET_COLORS[0] }))}
@@ -813,7 +813,7 @@ export default function MorePage() {
             + Add
           </button>
         </div>
-        <p className="muted small">Custom labels you assign to people on the People tab.</p>
+        <p className="muted small">Groups you sort people into on the People tab.</p>
         <ul className="status-list">
           {state.statuses.map((s) => (
             <li key={s.id}>
@@ -1059,10 +1059,10 @@ export default function MorePage() {
 
       {!searching && <p className="muted small center-pad">Keystone · works offline · v0.2</p>}
 
-      {/* Status editor */}
+      {/* Group editor */}
       <Modal
         open={!!editingStatus}
-        title={editingStatus?.id ? 'Edit status' : 'New status'}
+        title={editingStatus?.id ? 'Edit group' : 'New group'}
         onClose={() => setEditingStatus(null)}
         fullPage
         footer={

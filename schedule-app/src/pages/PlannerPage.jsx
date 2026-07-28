@@ -43,6 +43,7 @@ import {
   makeContactColor,
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
+import AddressField from '../components/AddressField.jsx';
 import Icon from '../components/Icon.jsx';
 import { findDayConflicts } from '../data/conflicts.js';
 import { contactDatesOn, contactDatesInMonth, contactDateLabel } from '../data/contactDates.js';
@@ -965,6 +966,13 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 2.2;
 
 const EDGE_ZONE_PX = 30; // how close to the timeline's edge before a drag pages a day
+// Dragging an event to a time that's off-screen used to be impossible: the
+// block follows your finger, your finger hits the edge of the phone, and the
+// page doesn't move — so 8am was unreachable from 6pm without dropping the
+// event, scrolling, and picking it up again. These drive an auto-scroll while
+// a drag is armed and held near the top or bottom of the visible timeline.
+const AUTO_SCROLL_ZONE_PX = 78; // how close to an edge before the page starts moving
+const AUTO_SCROLL_MAX_PX = 15; // per frame at the very edge (~900px/s)
 const SWIPE_THRESHOLD_PX = 60; // horizontal drag distance to swipe-navigate a day/month
 
 // Which edge (if any) of `rect` a pointer at `clientX` has reached. Used to
@@ -1170,6 +1178,7 @@ function DayView({
 
   const clearGesture = () => {
     if (gestureRef.current?.timer) clearTimeout(gestureRef.current.timer);
+    if (gestureRef.current?.autoRaf) cancelAnimationFrame(gestureRef.current.autoRaf);
     gestureRef.current = null;
     setArmedKey(null);
     setDragDy(0);
@@ -1204,6 +1213,72 @@ function DayView({
     momentumRef.current = requestAnimationFrame(step);
   };
 
+  // How far the block has travelled, in page terms: the finger's own
+  // movement plus anything the page scrolled underneath it.
+  const applyArmedDelta = (g) => {
+    const dy = g.lastClientY - g.startClientY + (window.scrollY - g.startScrollY);
+    setDragDy(dy);
+    setDragDx(g.lastClientX - g.startClientX);
+    const snap = Math.round(dy / pxPerMin / 15) * 15;
+    if (snap !== g.lastSnap) {
+      g.lastSnap = snap;
+      selectTick();
+    }
+  };
+
+  // Auto-scroll while a drag is held near the top or bottom of the visible
+  // timeline. Speed ramps with how far into the zone the pointer is, so
+  // easing toward the edge creeps and pinning against it moves quickly —
+  // a single fixed speed is either too slow to be useful or too fast to
+  // aim with.
+  //
+  // The bounds are the sticky header's bottom and the tab bar's top, not the
+  // raw viewport: scrolling only when the pointer is under a bar the user
+  // can't see the timeline through would feel like a dead zone.
+  const updateAutoScroll = (g, clientY) => {
+    const headBottom = document.querySelector('.page-head')?.getBoundingClientRect().bottom ?? 0;
+    const barTop = document.querySelector('.tabbar')?.getBoundingClientRect().top ?? window.innerHeight;
+    let speed = 0;
+    if (clientY < headBottom + AUTO_SCROLL_ZONE_PX) {
+      const depth = Math.min(1, (headBottom + AUTO_SCROLL_ZONE_PX - clientY) / AUTO_SCROLL_ZONE_PX);
+      speed = -depth * AUTO_SCROLL_MAX_PX;
+    } else if (clientY > barTop - AUTO_SCROLL_ZONE_PX) {
+      const depth = Math.min(1, (clientY - (barTop - AUTO_SCROLL_ZONE_PX)) / AUTO_SCROLL_ZONE_PX);
+      speed = depth * AUTO_SCROLL_MAX_PX;
+    }
+    g.autoSpeed = speed;
+    if (speed === 0) {
+      stopAutoScroll(g);
+      return;
+    }
+    if (g.autoRaf) return;
+    const step = () => {
+      if (!gestureRef.current || gestureRef.current !== g || g.phase !== 'armed' || !g.autoSpeed) {
+        g.autoRaf = 0;
+        return;
+      }
+      const before = window.scrollY;
+      window.scrollBy(0, g.autoSpeed);
+      // Hitting the top or bottom of the document is the natural stop —
+      // otherwise this would keep burning frames scrolling nothing.
+      if (window.scrollY === before) {
+        g.autoRaf = 0;
+        return;
+      }
+      applyArmedDelta(g);
+      g.autoRaf = requestAnimationFrame(step);
+    };
+    g.autoRaf = requestAnimationFrame(step);
+  };
+
+  const stopAutoScroll = (g) => {
+    if (g?.autoRaf) cancelAnimationFrame(g.autoRaf);
+    if (g) {
+      g.autoRaf = 0;
+      g.autoSpeed = 0;
+    }
+  };
+
   const onDown = (e, occ) => {
     e.stopPropagation();
     if (selectMode) return;
@@ -1216,7 +1291,14 @@ function DayView({
       phase: 'pending', // pending -> armed (long-press held) | swiping (horizontal, evaluated on release) | scrolling (vertical, forwarded live)
       startClientY: e.clientY,
       startClientX: e.clientX,
+      // Where the page was when the drag began. `clientY` is
+      // viewport-relative, so without this an auto-scroll would slide the
+      // timeline out from under a block that stayed put on screen.
+      startScrollY: window.scrollY,
       lastClientY: e.clientY,
+      lastClientX: e.clientX,
+      autoRaf: 0,
+      autoSpeed: 0,
       lastMoveTime: performance.now(),
       velocity: 0,
       timer: null,
@@ -1281,13 +1363,10 @@ function DayView({
       return;
     }
     if (g.phase === 'armed') {
-      setDragDy(dy);
-      setDragDx(dx);
-      const snap = Math.round(dy / pxPerMin / 15) * 15;
-      if (snap !== g.lastSnap) {
-        g.lastSnap = snap;
-        selectTick();
-      }
+      g.lastClientY = e.clientY;
+      g.lastClientX = e.clientX;
+      applyArmedDelta(g);
+      updateAutoScroll(g, e.clientY);
       // Page the visible day one at a time, only once the pointer reaches
       // the very edge of the timeline — dragging back toward center re-arms
       // the edge so paging again needs a deliberate return-and-reapproach,
@@ -1309,6 +1388,7 @@ function DayView({
     const g = gestureRef.current;
     if (!g) return;
     clearTimeout(g.timer);
+    stopAutoScroll(g);
     // Fallback for a held-perfectly-still long-press: if it armed but no
     // pointermove ever followed to fire the pending arm tick, this pointerup
     // is itself a real event to fire it from instead of losing it.
@@ -2638,10 +2718,20 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         <div className="field">
           <span>Location</span>
           <div className="location-row">
-            <input
+            {/* Suggesting rather than plain text: picking a result carries
+                its coordinates straight onto the event, so the map pin and
+                the travel-time estimate use the address the user actually
+                meant instead of a later one-shot geocode's first guess. */}
+            <AddressField
               value={draft.location}
-              onChange={(e) => setDraft({ ...draft, location: e.target.value })}
               placeholder="Optional"
+              onChange={(text, picked) =>
+                setDraft(
+                  picked
+                    ? { ...draft, location: text, locLat: picked.lat, locLng: picked.lng }
+                    : { ...draft, location: text }
+                )
+              }
             />
           </div>
           <div className="location-pick-row">

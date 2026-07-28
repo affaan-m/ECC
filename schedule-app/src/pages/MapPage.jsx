@@ -14,6 +14,7 @@ import { directionsTarget, openMaps } from '../data/maps.js';
 import { resolveMapStyle, MAP_STYLE_OPTIONS } from '../data/mapStyles.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
 import Icon from '../components/Icon.jsx';
+import AddressField from '../components/AddressField.jsx';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -562,13 +563,24 @@ export default function MapPage() {
       {pickMode && (
         <>
           <div className="map-banner map-pick-banner">
-            <input
-              className="map-pick-search"
-              value={pickQuery}
-              onChange={(e) => setPickQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && searchPickLocation()}
-              placeholder="Search for an address…"
-            />
+            {/* Suggests as you type. Pressing Enter still does the old
+                one-shot lookup, so someone who knows the address and just
+                wants to commit isn't made to wait for a list. */}
+            <div className="map-pick-search">
+              <AddressField
+                value={pickQuery}
+                placeholder="Search for an address…"
+                onChange={(text, picked) => {
+                  setPickQuery(text);
+                  if (picked) {
+                    setPickLatLng({ lat: picked.lat, lng: picked.lng });
+                    mapRef.current?.setView([picked.lat, picked.lng], 16);
+                    selectTick();
+                  }
+                }}
+                onSubmit={searchPickLocation}
+              />
+            </div>
             <button
               className="map-round map-pick-search-btn"
               onClick={searchPickLocation}
