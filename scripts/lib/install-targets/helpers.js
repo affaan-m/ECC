@@ -15,6 +15,7 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.codebuddy': 'codebuddy',
   '.qwen': 'qwen',
   '.zed': 'zed',
+  '.adal': 'adal',
 });
 
 function normalizeRelativePath(relativePath) {

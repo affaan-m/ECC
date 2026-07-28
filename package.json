@@ -40,6 +40,7 @@
     "url": "https://github.com/affaan-m/ECC/issues"
   },
   "files": [
+    ".adal/",
     ".agents/",
     ".claude-plugin/",
     ".codex/",

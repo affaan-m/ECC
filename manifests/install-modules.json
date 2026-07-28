@@ -19,7 +19,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -47,7 +48,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -75,7 +77,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -120,7 +123,8 @@
         "scripts/setup-package-manager.js",
         ".hermes",
         ".openclaw",
-        ".kimi"
+        ".kimi",
+        ".adal"
       ],
       "targets": [
         "claude",
@@ -136,7 +140,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -293,7 +298,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -364,7 +370,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "skill-unified-memory"
@@ -623,7 +630,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"

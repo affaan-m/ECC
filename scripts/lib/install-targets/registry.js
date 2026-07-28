@@ -1,3 +1,4 @@
+const adalProject = require('./adal-project');
 const antigravityProject = require('./antigravity-project');
 const claudeHome = require('./claude-home');
 const claudeProject = require('./claude-project');
@@ -28,6 +29,7 @@ const ADAPTERS = Object.freeze([
   kimiProject,
   qwenHome,
   zedProject,
+  adalProject,
 ]);
 
 function listInstallTargetAdapters() {

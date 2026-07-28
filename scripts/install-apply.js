@@ -46,6 +46,7 @@ Targets:
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install shared rules/skills/commands into ./.kimi/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
+  adal         - Install shared rules/skills/commands into ./.adal/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
