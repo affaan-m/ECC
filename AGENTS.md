@@ -47,6 +47,42 @@ This is a **production-ready AI coding plugin** providing 67 specialized agents,
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
+| react-reviewer | React/JSX code review | React component and hook changes |
+| react-build-resolver | React/Vite/Next.js/webpack build errors | React build failures |
+| vue-reviewer | Vue.js Composition API and reactivity review | Vue component, Pinia, and Nuxt changes |
+| swift-reviewer | Swift/iOS code review | Swift code changes |
+| swift-build-resolver | Swift/Xcode/SPM build errors | Swift build failures |
+| flutter-reviewer | Flutter/Dart widget and state review | Flutter app changes |
+| dart-build-resolver | Dart/Flutter build and pub dependency errors | Flutter compilation failures |
+| csharp-reviewer | C#/.NET async patterns, nullability, security | All C# code changes |
+| fastapi-reviewer | FastAPI async correctness, Pydantic, OpenAPI | FastAPI endpoint and schema changes |
+| php-reviewer | PHP/PSR-12, Eloquent, security review | PHP code changes |
+| harmonyos-app-resolver | HarmonyOS/ArkTS build and API errors | HarmonyOS project failures |
+| healthcare-reviewer | Clinical safety, PHI compliance, CDSS accuracy | Healthcare, EMR/EHR application code |
+| a11y-architect | WCAG 2.2 accessibility architecture | Designing UI components, accessibility audits |
+| code-architect | Feature architecture blueprints from codebase patterns | New features needing implementation design |
+| network-architect | Enterprise multi-site network architecture | Complex network design decisions |
+| homelab-architect | Home/small-lab network design | Home infrastructure planning |
+| network-config-reviewer | Router/switch config security and correctness | Network configuration changes |
+| network-troubleshooter | OSI-layer connectivity and routing diagnosis | Network connectivity and routing issues |
+| performance-optimizer | Bottleneck detection, bundle size, memory leaks | Slow code or high resource usage |
+| silent-failure-hunter | Swallowed errors and missing propagation | Code reliability audits |
+| type-design-analyzer | Type encapsulation and invariant design | TypeScript type system reviews |
+| pr-test-analyzer | PR test coverage quality and completeness | Before merging pull requests |
+| code-explorer | Execution path tracing and architecture mapping | Understanding unfamiliar code paths |
+| code-simplifier | Clarity-focused code refinement without behavior change | Post-implementation cleanup |
+| comment-analyzer | Comment accuracy, freshness, and rot risk | Code comment audits |
+| agent-evaluator | 5-axis quality scoring for agent output | Evaluating task completion quality |
+| chief-of-staff | Multi-channel communication triage and drafting | Managing email/Slack communication workflows |
+| conversation-analyzer | Extract hook behaviors from session transcripts | Creating hooks from observed patterns |
+| marketing-agent | Campaign planning, copy creation, content calendars | Product launches, marketing campaigns |
+| seo-specialist | Technical SEO audit, structured data, Core Web Vitals | Site audits, meta tag and schema issues |
+| opensource-forker | Fork projects and strip secrets for open-sourcing | Starting an open-source release |
+| opensource-sanitizer | Verify sanitized fork is release-ready | Before any public release |
+| opensource-packager | Generate OSS packaging boilerplate (README, LICENSE, etc.) | Finalizing an open-source release |
+| gan-planner | Expand a prompt into a full product specification | Starting a GAN harness session |
+| gan-generator | Implement features per spec, iterate on evaluator feedback | GAN harness implementation phase |
+| gan-evaluator | Test running application via Playwright and score it | GAN harness evaluation phase |
 
 ## Agent Orchestration
 
@@ -59,6 +95,17 @@ Use agents proactively without user prompt:
 - Brownfield project onboarding → **spec-miner**
 - Autonomous loops / loop monitoring → **loop-operator**
 - Harness config reliability and cost → **harness-optimizer**
+- Performance bottleneck or slow code → **performance-optimizer**
+- React/JSX changes → **react-reviewer**
+- Vue changes → **vue-reviewer**
+- Swift changes → **swift-reviewer**
+- C# changes → **csharp-reviewer**
+- PHP changes → **php-reviewer**
+- Flutter/Dart changes → **flutter-reviewer**
+- Healthcare/clinical code → **healthcare-reviewer**
+- UI component design → **a11y-architect**
+- Open-source release prep → **opensource-forker** → **opensource-sanitizer** → **opensource-packager**
+- Agent output quality check → **agent-evaluator**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
