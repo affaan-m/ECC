@@ -22,6 +22,8 @@ import {
   computeGoalStreak,
   goalFreezesLeft,
   WEEKDAY_LETTERS,
+  weeklyPace,
+  paceCumulative,
 } from '../data/helpers.js';
 import {
   requestNotificationPermission,
@@ -377,6 +379,15 @@ export default function GoalsPage() {
                       </button>
                     </div>
                   </div>
+                  {!isDaily && g.target > 0 && (
+                    <WeekPace
+                      goal={g}
+                      value={value}
+                      weekStart={weekStart}
+                      atCurrent={atCurrent}
+                      onSetTo={(n) => actions.setGoalProgress(g.id, key, n)}
+                    />
+                  )}
                   {canFreeze && (
                     <button
                       className="freeze-row"
@@ -534,6 +545,74 @@ export default function GoalsPage() {
           </div>
         )}
       </EditorSheet>
+    </div>
+  );
+}
+
+// Breaks a weekly goal into a day-by-day pace.
+//
+// "Read 10 chapters this week" is a number you look at on Sunday and panic
+// about. Split across the week it becomes "2 today", which is a thing you
+// can actually do — and it turns a single end-of-week pass/fail into seven
+// small checkpoints that show you're drifting while there's still time to
+// fix it.
+//
+// Deliberately derived, not stored: the weekly total remains the one source
+// of truth (streaks and the rest of the app already read it), and the day
+// cells are filled from it. Nothing here claims to know *which* day you
+// actually did the work — it shows how far through the week's worth you
+// are, which is the honest thing the data supports.
+function WeekPace({ goal, value, weekStart, atCurrent, onSetTo }) {
+  const pace = weeklyPace(goal.target);
+  const cumulative = paceCumulative(goal.target);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // Which day column "today" is, or -1 when looking at another week.
+  const todayIdx = days.findIndex((d) => isToday(toISODate(d)));
+  // What you should have done by the end of today to be on pace.
+  const expected = todayIdx >= 0 ? cumulative[todayIdx] : null;
+  const behind = expected != null && value < expected;
+
+  return (
+    <div className="week-pace">
+      <div className="week-pace-row">
+        {days.map((d, i) => {
+          const filled = value >= cumulative[i];
+          const isTodayCell = i === todayIdx;
+          // A cell with no share of the target (target smaller than 7) is a
+          // rest day — nothing to do, so nothing to tap.
+          const rest = pace[i] === 0;
+          return (
+            <button
+              key={i}
+              className={`pace-cell${filled ? ' pace-cell--filled' : ''}${
+                isTodayCell ? ' pace-cell--today' : ''
+              }${rest ? ' pace-cell--rest' : ''}`}
+              disabled={rest}
+              // Tapping a day logs everything up to and including it — the
+              // common case is catching up several days at once, and seven
+              // taps to do that would be worse than the stepper it replaces.
+              // Tapping an already-filled day rewinds to just before it.
+              onClick={() => {
+                selectTick();
+                onSetTo(filled ? cumulative[i] - pace[i] : cumulative[i]);
+              }}
+              aria-label={`${WEEKDAY_LETTERS[d.getDay()]} — ${pace[i]} ${goal.unit || ''}`.trim()}
+            >
+              <span className="pace-cell-day">{WEEKDAY_LETTERS[d.getDay()]}</span>
+              <span className="pace-cell-n">{pace[i] || '–'}</span>
+            </button>
+          );
+        })}
+      </div>
+      <span className={`week-pace-note${behind ? ' week-pace-note--behind' : ''}`}>
+        {!atCurrent
+          ? `${Math.max(...pace)} a day to finish the week`
+          : behind
+          ? `${expected - value} behind pace · ${expected} due by tonight`
+          : value >= goal.target
+          ? 'Week complete'
+          : `On pace · ${Math.max(0, goal.target - value)} left this week`}
+      </span>
     </div>
   );
 }

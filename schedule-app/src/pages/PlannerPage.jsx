@@ -39,6 +39,8 @@ import {
   WEEKDAY_LETTERS,
   goalKey,
   uid,
+  eventColor,
+  makeContactColor,
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
 import { findDayConflicts } from '../data/conflicts.js';
@@ -69,6 +71,33 @@ const REMINDER_OPTIONS = [
   { v: 60, l: '1 hour before' },
 ];
 const COLOR_SWATCHES = ['#1f5f8b', '#8a5cd1', '#2e9e6b', '#e08a1e', '#d1495b', '#3a9188', '#c2547a', '#5b7fb0'];
+
+// Minutes since midnight, re-read once a minute. A "now" line that only
+// updates on re-render would sit at whatever time the page happened to load
+// and quietly drift wrong — which is worse than not having one, since it
+// looks authoritative. Aligned to the next real minute boundary rather than
+// ticking every 60s from mount, so it moves when the clock does.
+function useMinuteOfDay() {
+  const [mins, setMins] = useState(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  });
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      const d = new Date();
+      const msToNextMinute = (60 - d.getSeconds()) * 1000 - d.getMilliseconds();
+      timer = setTimeout(() => {
+        const n = new Date();
+        setMins(n.getHours() * 60 + n.getMinutes());
+        schedule();
+      }, msToNextMinute);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
+  return mins;
+}
 
 function occurrencesFor(events, iso) {
   return events
@@ -139,6 +168,38 @@ export default function PlannerPage() {
 
   const openView = (occ) => setViewing(occ);
   const openContact = (id) => navigate(`/contacts/${id}`);
+
+  // "Today" means today *and now*. Landing on the right date but scrolled to
+  // 6am when it's 3pm still leaves you scrolling to find where you are, so
+  // every route into today — the header label, the today button, and tapping
+  // the already-active Planner tab — also brings the current hour into view.
+  // Bumped through state rather than called directly because the scroll has
+  // to happen after the day has rendered (see the effect on scrollNowNonce).
+  const [scrollNowNonce, setScrollNowNonce] = useState(0);
+  const jumpToNow = () => {
+    setCursor(todayISO());
+    setMode('day');
+    setScrollNowNonce((n) => n + 1);
+  };
+  useEffect(() => {
+    if (scrollNowNonce === 0) return;
+    const id = requestAnimationFrame(() => {
+      const el = document.querySelector('.now-line');
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [scrollNowNonce]);
+
+  // Tapping the Planner tab while already on Planner re-fires this route's
+  // navigation with a fresh key; App.jsx flags it so it can mean "take me
+  // back to now" instead of doing nothing at all.
+  useEffect(() => {
+    if (location.state?.jumpToNow) {
+      jumpToNow();
+      window.history.replaceState({}, '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
   const openEditFromView = () => {
     setEditing(occToDraft(viewing));
     setViewing(null);
@@ -361,7 +422,18 @@ export default function PlannerPage() {
   // Multi-select: shift every selected occurrence by a fixed day and/or
   // minute offset (used by both the quick-move bar and the timeline drag).
   const moveSelected = ({ dayOffset = 0, minOffset = 0 } = {}) => {
-    for (const occ of resolveSelectedOccurrences()) {
+    const occs = resolveSelectedOccurrences();
+    // Snapshot every master this touches *before* changing anything, so undo
+    // is a plain restore rather than an attempt to compute the inverse move.
+    // Inverting is not reliable here: the clamp to the day's bounds below is
+    // lossy, and a recurring event's override may or may not have existed
+    // before — putting the original object back sidesteps both.
+    const before = new Map();
+    for (const occ of occs) {
+      const master = state.events.find((e) => e.id === occ.id);
+      if (master && !before.has(master.id)) before.set(master.id, master);
+    }
+    for (const occ of occs) {
       const master = state.events.find((e) => e.id === occ.id);
       if (!master) continue;
       const dur = occ.e2 - occ.s;
@@ -389,6 +461,16 @@ export default function PlannerPage() {
     confirmTick();
     setSelected(new Set());
     setSelectMode(false);
+    if (before.size > 0) {
+      const n = occs.length;
+      const where =
+        dayOffset === 0
+          ? 'Moved'
+          : `Moved to ${dayOffset > 0 ? '+' : '−'}${Math.abs(dayOffset)} day${Math.abs(dayOffset) === 1 ? '' : 's'}`;
+      showToast(`${where} · ${n} event${n === 1 ? '' : 's'}`, 'Undo', () => {
+        for (const master of before.values()) actions.updateEvent(master);
+      });
+    }
   };
 
   // Multi-select is confined to one day. Moving a set of events keeps their
@@ -559,7 +641,7 @@ export default function PlannerPage() {
           <button className="icon-btn" onClick={() => step(-1)} aria-label="Previous">
             <Chevron dir="left" />
           </button>
-          <button className="week-label" onClick={() => setCursor(todayISO())} title="Jump to today">
+          <button className="week-label" onClick={jumpToNow} title="Jump to now">
             {headerLabel}
             <span className="week-sub">{headerSub}</span>
           </button>
@@ -579,7 +661,7 @@ export default function PlannerPage() {
             {selectMode ? 'Cancel select' : 'Select'}
           </button>
           {selectMode && <span className="muted small">{selected.size} selected</span>}
-          {mode !== 'month' && (
+          {mode !== 'month' && state.settings?.showDayTemplates !== false && (
             <button
               className="btn btn-sm btn-ghost"
               onClick={() => (isPro ? setTemplatesOpen(true) : navigate('/pricing'))}
@@ -587,7 +669,7 @@ export default function PlannerPage() {
               Templates {!isPro && '🔒'}
             </button>
           )}
-          <button className="today-btn" onClick={() => setCursor(todayISO())} aria-label="Jump to today" title="Jump to today">
+          <button className="today-btn" onClick={jumpToNow} aria-label="Jump to now" title="Jump to now">
             <TodayIcon />
           </button>
         </div>
@@ -629,6 +711,7 @@ export default function PlannerPage() {
           date={cursor}
           events={state.events}
           contacts={state.contacts}
+          statuses={state.statuses}
           eventTypes={state.eventTypes || []}
           onAddAt={(start) => openNew(cursor, start)}
           onOpen={openView}
@@ -654,6 +737,8 @@ export default function PlannerPage() {
         <WeekView
           weekStart={weekStart}
           events={state.events}
+          contacts={state.contacts}
+          statuses={state.statuses}
           eventTypes={state.eventTypes || []}
           onOpenDay={openDay}
           onOpen={openView}
@@ -673,6 +758,7 @@ export default function PlannerPage() {
       )}
       {mode === 'month' && (
         <MonthView
+          statuses={state.statuses}
           monthStart={monthStart}
           events={state.events}
           eventTypes={state.eventTypes || []}
@@ -869,6 +955,7 @@ function DayView({
   date,
   events,
   contacts,
+  statuses,
   eventTypes,
   onAddAt,
   onOpen,
@@ -911,7 +998,10 @@ function DayView({
   const dayEvents = useMemo(() => occurrencesFor(events, date).filter((e) => e.e2 > e.s), [events, date]);
   const laid = useMemo(() => layout(dayEvents), [dayEvents]);
   const contactName = (id) => contacts.find((c) => c.id === id)?.name;
-  const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
+  const contactColor = useMemo(() => makeContactColor(contacts, statuses), [contacts, statuses]);
+
+  const nowMins = useMinuteOfDay();
+  const showNowLine = isToday(date) && nowMins >= dayStart * 60 && nowMins <= (dayEnd + 1) * 60;
 
   // Resolved against each occurrence's OWN recDate (not whatever `date` is
   // currently on screen) so the group-drag ghost below stays correct across
@@ -1465,6 +1555,20 @@ function DayView({
             </div>
           ))}
 
+          {/* The current time, but only on today and only while it's inside
+              the visible hour range — a "now" line on next Tuesday, or
+              pinned to the top edge at 4am when the day starts at 6, would
+              be pointing at nothing. */}
+          {showNowLine && (
+            <div
+              className="now-line"
+              style={{ top: (nowMins - dayStart * 60) * pxPerMin }}
+              aria-hidden="true"
+            >
+              <span className="now-line-dot" />
+            </div>
+          )}
+
           <div className="event-layer">
             {laid.map((ev) => {
             const key = `${ev.id}:${ev.recDate}`;
@@ -1480,7 +1584,7 @@ function DayView({
             const short = ev.e2 - ev.s < 55;
             const who = contactName(ev.contactId);
             const recurring = ev.repeat && ev.repeat !== 'none';
-            const color = ev.color || typeColor(ev.typeId);
+            const color = eventColor(ev, eventTypes, contactColor, '');
             const displayStartMin = ev.s;
             return (
               <button
@@ -1588,7 +1692,7 @@ function DayView({
             const short = occ.e2 - occ.s < 55;
             const who = contactName(occ.contactId);
             const recurring = occ.repeat && occ.repeat !== 'none';
-            const color = occ.color || typeColor(occ.typeId);
+            const color = eventColor(occ, eventTypes, contactColor, '');
             const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
             const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
             return (
@@ -1638,7 +1742,7 @@ function DayView({
               const short = occ.e2 - occ.s < 55;
               const who = contactName(occ.contactId);
               const recurring = occ.repeat && occ.repeat !== 'none';
-              const color = occ.color || typeColor(occ.typeId);
+              const color = eventColor(occ, eventTypes, contactColor, '');
               const rubberX = Math.max(-18, Math.min(18, groupDrag.dx * 0.2));
               const displayStartMin = clampStart(occ, groupDrag.dy, pxPerMin, dayStart, dayEnd);
               return (
@@ -1707,6 +1811,8 @@ function clampStart(ev, dy, pxPerMin, dayStart, dayEnd) {
 function WeekView({
   weekStart,
   events,
+  contacts,
+  statuses,
   eventTypes,
   onOpenDay,
   onOpen,
@@ -1717,7 +1823,7 @@ function WeekView({
   onMoveToDay,
 }) {
   const days = weekDays(weekStart);
-  const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
+  const contactColor = useMemo(() => makeContactColor(contacts, statuses), [contacts, statuses]);
 
   // Same long-press-to-arm gesture the day timeline uses, so dragging an
   // event means the same thing in both views. Holding is what distinguishes
@@ -1858,7 +1964,7 @@ function WeekView({
                         dragging ? ' agenda-chip--dragging' : ''
                       }${rejectedKey === selKey ? ' agenda-chip--refused' : ''}`}
                       style={{
-                        '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)',
+                        '--ev': eventColor(ev, eventTypes, contactColor),
                         ...(dragging ? { transform: `translateY(${drag.y - drag.startY}px)` } : null),
                       }}
                       onPointerDown={onChipDown(ev, selKey)}
@@ -1891,13 +1997,13 @@ function WeekView({
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe, contacts, birthdaysEnabled = true }) {
+function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe, contacts, statuses, birthdaysEnabled = true }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
   const year = monthStart.getFullYear();
   const swipeRef = useRef(null);
   const suppressClickRef = useRef(false);
-  const typeColor = (id) => eventTypes?.find((t) => t.id === id)?.color;
+  const contactColor = useMemo(() => makeContactColor(contacts, statuses), [contacts, statuses]);
 
   // Which cells carry a birthday/anniversary this month — a plain Set of
   // ISO dates is all a cell needs to know to show its badge.
@@ -1988,7 +2094,11 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                 )}
                 <span className="month-dots">
                   {dayEvents.slice(0, 3).map((ev, i) => (
-                    <span key={i} className="month-dot" style={{ background: ev.color || 'var(--accent)' }} />
+                    <span
+                      key={i}
+                      className="month-dot"
+                      style={{ background: eventColor(ev, eventTypes, contactColor) }}
+                    />
                   ))}
                   {dayEvents.length > 3 && <span className="month-more">+{dayEvents.length - 3}</span>}
                 </span>
@@ -2008,7 +2118,7 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                 <button
                   key={`${ev.id}:${ev.recDate}`}
                   className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
-                  style={{ '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)' }}
+                  style={{ '--ev': eventColor(ev, eventTypes, contactColor) }}
                   onClick={() => onOpen(ev)}
                 >
                   <span className="chip-time chip-time--wide">

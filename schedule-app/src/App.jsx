@@ -346,8 +346,8 @@ export default function App() {
     const simple =
       document.documentElement.classList.contains('boot-reload') ||
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // Lines up with the flood settling at 1370ms (see .splash-flood).
-    const outAt = simple ? 420 : 1420;
+    // Lines up with the flood settling at 960ms (see .splash-flood).
+    const outAt = simple ? 420 : 980;
     const removeAt = outAt + 440;
     const elapsed = performance.now();
     const outTimer = setTimeout(() => {

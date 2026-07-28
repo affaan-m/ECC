@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -7,10 +7,11 @@ import { useToast } from '../data/toast.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import Modal from '../components/Modal.jsx';
-import { todayISO } from '../data/helpers.js';
+import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { geocodeAddress } from '../data/geocode.js';
 import { directionsTarget, openMaps } from '../data/maps.js';
+import { resolveMapStyle } from '../data/mapStyles.js';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -26,18 +27,71 @@ export default function MapPage() {
   const actions = useActions();
   const showToast = useToast();
   const isPro = !!state.settings?.isPro;
-  const showContactPins = state.settings?.mapShowContactPins ?? true;
-  const showCustomPins = state.settings?.mapShowCustomPins ?? true;
   const emojiSizePct = state.settings?.mapEmojiSize ?? 100;
-  const pins = (state.pins || []).filter((p) =>
-    p.contactId ? showContactPins : showCustomPins
-  );
+  const mapStyleSetting = state.settings?.mapStyle || 'auto';
+  // Whether the app is painting its dark palette right now — App.jsx has
+  // already resolved system-vs-explicit onto the root element, so read that
+  // rather than re-deriving it here and risking the two disagreeing.
+  const isDarkTheme = document.documentElement.dataset.theme === 'dark';
+
+  // Which pin kinds are showing. Seeded from the long-standing map settings
+  // so an existing preference still applies, but now switchable from the map
+  // itself — needing to leave the map, open Settings, and come back to stop
+  // seeing contact pins was a silly round trip for something you toggle
+  // while looking at the thing.
+  const [filters, setFilters] = useState(() => ({
+    contacts: state.settings?.mapShowContactPins ?? true,
+    custom: state.settings?.mapShowCustomPins ?? true,
+    events: true,
+  }));
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const toggleFilter = (k) => {
+    selectTick();
+    setFilters((f) => {
+      const next = { ...f, [k]: !f[k] };
+      // Mirror the two that have a persisted settings equivalent, so the
+      // map and Settings never disagree about what's showing.
+      if (k === 'contacts') actions.setSettings({ mapShowContactPins: next.contacts });
+      if (k === 'custom') actions.setSettings({ mapShowCustomPins: next.custom });
+      return next;
+    });
+  };
+
+  // Today's events that have a location, shown as temporary pins that are
+  // simply gone tomorrow. They're derived from the calendar rather than
+  // saved to state.pins — an event's location is already recorded on the
+  // event, and writing a second copy into the pin list would mean cleaning
+  // it up again at midnight and reconciling every edit in between.
+  const eventPins = useMemo(() => {
+    const iso = todayISO();
+    return state.events
+      .flatMap((e) => expandEventOnDay(e, iso))
+      .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
+      .map((o) => ({
+        id: `event:${o.id}:${o.recDate || iso}`,
+        label: o.title || 'Event',
+        emoji: '📅',
+        lat: o.locLat,
+        lng: o.locLng,
+        contactId: o.contactId || '',
+        isEvent: true,
+        start: o.start,
+      }));
+  }, [state.events]);
+
+  const pins = useMemo(() => {
+    const saved = (state.pins || []).filter((p) =>
+      p.contactId ? filters.contacts : filters.custom
+    );
+    return filters.events ? [...saved, ...eventPins] : saved;
+  }, [state.pins, filters, eventPins]);
 
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
   const tempLayerRef = useRef(null);
   const pickLayerRef = useRef(null);
+  const baseLayerRef = useRef(null);
   const pinsRef = useRef(pins);
   const handlersRef = useRef({});
   const pressRef = useRef(null); // { timer, startPoint, latlng, fired }
@@ -195,10 +249,9 @@ export default function MapPage() {
   // Initialise the Leaflet map once.
   useEffect(() => {
     const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+    // The basemap is swapped in its own effect below rather than created
+    // here, so changing the style doesn't tear down and rebuild the map
+    // (which would lose the current pan/zoom).
 
     const initial = pinsRef.current;
     if (initial.length === 1) {
@@ -242,6 +295,28 @@ export default function MapPage() {
     };
   }, []);
 
+  // Basemap. Kept in its own layer ref so switching style is a swap rather
+  // than a rebuild — the map keeps its position, and the pin layers on top
+  // are untouched.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const style = resolveMapStyle(mapStyleSetting, isDarkTheme);
+    const layer = L.tileLayer(style.url, {
+      maxZoom: style.maxZoom,
+      attribution: style.attribution,
+    });
+    layer.addTo(map);
+    // Behind the pin layers, which were added first and would otherwise end
+    // up underneath a tile layer added later.
+    layer.bringToBack();
+    baseLayerRef.current = layer;
+    return () => {
+      map.removeLayer(layer);
+      baseLayerRef.current = null;
+    };
+  }, [mapStyleSetting, isDarkTheme]);
+
   // Render / re-render pin markers whenever pins or the selection change.
   useEffect(() => {
     const layer = layerRef.current;
@@ -250,12 +325,13 @@ export default function MapPage() {
     const grow = emojiSizePct / 100;
     for (const p of pins) {
       const sel = p.id === selectedId;
+      const caption = p.isEvent && p.start ? `${formatTime(p.start)} · ${p.label}` : p.label;
       const icon = L.divIcon({
-        className: `pin-icon${sel ? ' pin-icon--sel' : ''}`,
+        className: `pin-icon${sel ? ' pin-icon--sel' : ''}${p.isEvent ? ' pin-icon--event' : ''}`,
         html:
           `<div style="--emoji-size:${emojiSizePct}">` +
-          `<div class="pin-bubble"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
-          (p.label ? `<div class="pin-caption">${escapeHtml(p.label)}</div>` : '') +
+          `<div class="pin-bubble${p.isEvent ? ' pin-bubble--event' : ''}"><span>${escapeHtml(p.emoji || '📍')}</span></div>` +
+          (caption ? `<div class="pin-caption">${escapeHtml(caption)}</div>` : '') +
           `</div>`,
         iconSize: [40 * grow, 46 * grow],
         iconAnchor: [20 * grow, 46 * grow],
@@ -370,6 +446,20 @@ export default function MapPage() {
       {/* Corner controls (top-right) */}
       {!pickMode && (
         <div className="map-corner">
+          <button
+            className={`map-round${filtersOpen ? ' map-round--on' : ''}`}
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-label="Filter pins"
+            aria-expanded={filtersOpen}
+            title="Filter pins"
+          >
+            <FilterIcon />
+            {/* A dot when something is hidden, so a filtered map never looks
+                like an empty one. */}
+            {(!filters.contacts || !filters.custom || !filters.events) && (
+              <span className="map-round-dot" aria-hidden="true" />
+            )}
+          </button>
           <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
             <LocateIcon />
           </button>
@@ -391,6 +481,32 @@ export default function MapPage() {
               <NavIcon />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Pin filters, hung under the corner controls */}
+      {!pickMode && filtersOpen && (
+        <div className="map-filters" role="group" aria-label="Pin filters">
+          {[
+            { k: 'contacts', icon: '👤', label: 'People', n: (state.pins || []).filter((p) => p.contactId).length },
+            { k: 'custom', icon: '📍', label: 'Places', n: (state.pins || []).filter((p) => !p.contactId).length },
+            { k: 'events', icon: '📅', label: "Today's events", n: eventPins.length },
+          ].map(({ k, icon, label, n }) => (
+            <button
+              key={k}
+              className={`map-filter-row${filters[k] ? ' map-filter-row--on' : ''}`}
+              role="switch"
+              aria-checked={filters[k]}
+              onClick={() => toggleFilter(k)}
+            >
+              <span className="map-filter-icon" aria-hidden="true">
+                {icon}
+              </span>
+              <span className="map-filter-label">{label}</span>
+              <span className="map-filter-count muted small">{n}</span>
+              <span className={`map-filter-check${filters[k] ? ' map-filter-check--on' : ''}`} aria-hidden="true" />
+            </button>
+          ))}
         </div>
       )}
 
@@ -521,22 +637,36 @@ export default function MapPage() {
             </button>
           </div>
           {selected.notes && <p className="pin-card-notes">{selected.notes}</p>}
+          {selected.isEvent && selected.start && (
+            <p className="pin-card-notes muted">Today at {formatTime(selected.start)}</p>
+          )}
           <div className="pin-card-actions">
             <button className="btn btn-primary btn-sm" onClick={() => directionsTo(selected)}>
               ➤ Directions
             </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setEditing({ ...selected })}
-            >
-              Edit
-            </button>
-            <button
-              className="btn btn-danger-ghost btn-sm"
-              onClick={() => setConfirmDeletePin(selected)}
-            >
-              Delete
-            </button>
+            {/* An event pin isn't a saved pin — it's today's calendar drawn
+                on the map. Editing or deleting it here would have to mean
+                editing the event, which belongs in the Planner. */}
+            {selected.isEvent ? (
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/planner')}>
+                Open in Planner
+              </button>
+            ) : (
+              <>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setEditing({ ...selected })}
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn btn-danger-ghost btn-sm"
+                  onClick={() => setConfirmDeletePin(selected)}
+                >
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -672,6 +802,20 @@ function SearchIcon() {
     </svg>
   );
 }
+function FilterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path
+        d="M4 6h16l-6 7v5l-4 2v-7z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function LocateIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

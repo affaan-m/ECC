@@ -5,9 +5,11 @@ import Modal from '../components/Modal.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import Select from '../components/Select.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
-import { isOverdue } from './ContactsPage.jsx';
+import { makeOverdueCheck } from '../data/reconnect.js';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
+import { useToast } from '../data/toast.jsx';
+import { confirmTick } from '../data/haptics.js';
 import AddressField from '../components/AddressField.jsx';
 import { addressTarget, mapsLinkProps } from '../data/maps.js';
 import {
@@ -28,6 +30,7 @@ export default function ContactDetailPage() {
   const { state } = useStore();
   const actions = useActions();
   const deleteContactWithUndo = useDeleteContactWithUndo();
+  const showToast = useToast();
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [followUpDraft, setFollowUpDraft] = useState(null); // { date, note } | null
@@ -35,7 +38,7 @@ export default function ContactDetailPage() {
   const contact = state.contacts.find((c) => c.id === id);
   const status = state.statuses.find((s) => s.id === contact?.statusId);
   const reconnectDays = state.settings?.reconnectDays ?? 30;
-  const over = contact ? isOverdue(contact, reconnectDays) : false;
+  const over = useMemo(() => makeOverdueCheck(state), [state])(contact);
 
   const linkedPins = useMemo(
     () => (state.pins || []).filter((p) => p.contactId === id),
@@ -170,6 +173,10 @@ export default function ContactDetailPage() {
         </button>
       </div>
 
+      {/* Every field here is optional, so for a contact that's just a name
+          this whole section had nothing in it — and still rendered as an
+          empty white card taking up space above the follow-up. */}
+      {(contact.phone || contact.email || contact.address || (contact.tags || []).length > 0) && (
       <section className="detail-section">
         {contact.phone && <Field label="Phone" value={contact.phone} href={`tel:${contact.phone}`} />}
         {contact.email && <Field label="Email" value={contact.email} href={`mailto:${contact.email}`} />}
@@ -195,6 +202,7 @@ export default function ContactDetailPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Optional — most contacts won't have either. Each is shown as the
           date it next comes around plus how old that makes it, computed on
@@ -243,11 +251,14 @@ export default function ContactDetailPage() {
               <span className="followup-when">{followUpLabel(contact.followUp.date)}</span>
               {contact.followUp.note && <span className="followup-note">{contact.followUp.note}</span>}
             </div>
+            {/* One action, not two dispatches — see COMPLETE_FOLLOW_UP in the
+                store for why splitting it silently undid itself. */}
             <button
-              className="btn btn-sm btn-primary"
+              className="btn btn-sm btn-primary followup-done"
               onClick={() => {
-                actions.setFollowUp(contact.id, null);
-                actions.updateContact({ ...contact, lastContacted: todayISO() });
+                actions.completeFollowUp(contact.id);
+                confirmTick();
+                showToast(`Marked as followed up with ${contact.name.split(' ')[0]}.`);
               }}
             >
               Done

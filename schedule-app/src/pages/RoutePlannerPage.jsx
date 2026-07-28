@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
-import { isOverdue } from './ContactsPage.jsx';
+import { makeOverdueCheck } from '../data/reconnect.js';
 import { optimizeRoute, formatDistance, buildGoogleMapsUrl } from '../data/routePlanner.js';
 import { mapsLinkProps, webTarget } from '../data/maps.js';
 import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
@@ -10,7 +10,6 @@ export default function RoutePlannerPage() {
   const { state } = useStore();
   const navigate = useNavigate();
   const isPro = !!state.settings?.isPro;
-  const reconnectDays = state.settings?.reconnectDays ?? 30;
 
   useEffect(() => {
     if (!isPro) navigate('/pricing', { replace: true });
@@ -20,6 +19,7 @@ export default function RoutePlannerPage() {
     () => Object.fromEntries(state.contacts.map((c) => [c.id, c])),
     [state.contacts]
   );
+  const overdueCheck = useMemo(() => makeOverdueCheck(state), [state]);
 
   // Today's events that have a location of their own become stops too. Half
   // the reason to plan a route is the things already on the calendar, and
@@ -53,7 +53,7 @@ export default function RoutePlannerPage() {
     const initial = new Set();
     for (const p of pins) {
       const c = p.contactId && contactById[p.contactId];
-      if (c && isOverdue(c, reconnectDays)) initial.add(p.id);
+      if (c && overdueCheck(c)) initial.add(p.id);
     }
     return initial;
   });
@@ -115,7 +115,8 @@ export default function RoutePlannerPage() {
         <p className="muted small">
           Pick who/where you want to visit today — overdue people are pre-selected — then get the
           shortest visiting order, worked out straight-line (not real road distance). Today's
-          events with a location are listed too.
+          events with a location are listed too — those keep their booked time and everything
+          else is fitted around them, with a "leave by" for each stop.
         </p>
       </header>
 
@@ -130,7 +131,7 @@ export default function RoutePlannerPage() {
             <ul className="place-list">
               {pins.map((p) => {
                 const c = p.contactId && contactById[p.contactId];
-                const over = c && isOverdue(c, reconnectDays);
+                const over = c && overdueCheck(c);
                 return (
                   <li key={p.id}>
                     <button
@@ -181,10 +182,14 @@ export default function RoutePlannerPage() {
                   </li>
                 )}
                 {route.stops.map((s, i) => (
-                  <li key={s.id} className="route-stop">
+                  <li key={s.id} className={`route-stop${s.late ? ' route-stop--late' : ''}`}>
                     <span className="route-stop-num">{i + 1}</span>
                     <span className="route-stop-label">
                       {s.emoji || '📍'} {s.label || 'Dropped pin'}
+                      <span className="route-stop-times muted small">
+                        Leave {formatTime(s.leaveAt)} · arrive {formatTime(s.arriveAt)}
+                        {s.start && ` · booked ${formatTime(s.start)}`}
+                      </span>
                     </span>
                     <span className="muted small">+{formatDistance(s.legMeters)}</span>
                   </li>

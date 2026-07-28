@@ -15,17 +15,11 @@ import { useDeleteContactWithUndo } from '../data/useDeleteContact.js';
 import { useToast } from '../data/toast.jsx';
 import { useEdgeFade } from '../data/useEdgeFade.js';
 
-// A contact is "overdue" when the time since last contact (or since they were
-// added, if never contacted) meets or exceeds their reconnect cadence.
-export function reconnectDaysOf(contact, defaultDays) {
-  const days = Number(contact.cadenceDays) || defaultDays;
-  return days > 0 ? days : 0;
-}
-export function isOverdue(contact, defaultDays) {
-  const days = reconnectDaysOf(contact, defaultDays);
-  if (!days) return false;
-  return daysSince(contact.lastContacted || contact.createdAt) >= days;
-}
+// Overdue logic lives in data/reconnect.js now — it needs the interaction
+// list and a settings flag, not just a day count. Re-exported here so the
+// pages that already imported it from this module keep working.
+import { reconnectDaysOf, makeOverdueCheck } from '../data/reconnect.js';
+export { reconnectDaysOf, makeOverdueCheck };
 
 export default function ContactsPage() {
   const { state } = useStore();
@@ -84,7 +78,6 @@ export default function ContactsPage() {
     exitSelectMode();
   };
 
-  const reconnectDays = state.settings?.reconnectDays ?? 30;
   const iconSize = state.settings?.contactIconSize || 'md';
   const chipsRef = useRef(null);
 
@@ -93,15 +86,16 @@ export default function ContactsPage() {
     [state.statuses]
   );
 
+  // Closes over the settings flag and the interaction list (see
+  // data/reconnect.js), so the call sites below stay a plain isOverdue(c).
+  const isOverdue = useMemo(() => makeOverdueCheck(state), [state]);
+
   const overdue = useMemo(
     () =>
       state.contacts
-        .filter((c) => isOverdue(c, reconnectDays))
-        .sort(
-          (a, b) =>
-            daysSince(b.lastContacted || b.createdAt) - daysSince(a.lastContacted || a.createdAt)
-        ),
-    [state.contacts, reconnectDays]
+        .filter(isOverdue)
+        .sort((a, b) => daysSince(b.lastContacted) - daysSince(a.lastContacted)),
+    [state.contacts, isOverdue]
   );
 
   const filtered = useMemo(() => {
@@ -109,7 +103,7 @@ export default function ContactsPage() {
     return state.contacts
       .filter((c) =>
         filter === '__overdue'
-          ? isOverdue(c, reconnectDays)
+          ? isOverdue(c)
           : filter
           ? c.statusId === filter
           : true
@@ -122,7 +116,7 @@ export default function ContactsPage() {
           : true
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [state.contacts, query, filter, reconnectDays]);
+  }, [state.contacts, query, filter, isOverdue]);
 
   const showBanner = !query.trim() && filter === '' && overdue.length > 0;
 
@@ -329,7 +323,7 @@ export default function ContactsPage() {
         <ul className="contact-list">
           {filtered.map((c) => {
             const st = statusById[c.statusId];
-            const over = isOverdue(c, reconnectDays);
+            const over = isOverdue(c);
             const isSel = selected.has(c.id);
             return (
               <li key={c.id}>

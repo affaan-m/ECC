@@ -252,7 +252,7 @@ textarea {
      change what the flash blends against halfway through. Isolating makes
      the group unconditional, so the transform coming and going is invisible. */
   isolation: isolate;
-  animation: splashMarkRise 940ms cubic-bezier(0.33, 0, 0.2, 1) backwards;
+  animation: splashMarkRise 650ms cubic-bezier(0.33, 0, 0.2, 1) backwards;
 }
 @keyframes splashMarkRise {
   from {
@@ -282,7 +282,7 @@ textarea {
 .splash-build {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: splashBuild 620ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
+  animation: splashBuild 430ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
 }
 @keyframes splashBuild {
   from {
@@ -307,7 +307,7 @@ textarea {
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
-  animation: splashKeystonePulse 440ms 620ms forwards;
+  animation: splashKeystonePulse 320ms 430ms forwards;
 }
 /* Every keyframe declares both properties it participates in — a keyframe
    that omits one is skipped for that property's interpolation, so leaving
@@ -370,7 +370,7 @@ textarea {
     rgba(224, 193, 90, 0.09) 68%,
     rgba(224, 193, 90, 0) 100%
   );
-  animation: splashFlash 240ms ease-out 880ms forwards;
+  animation: splashFlash 180ms ease-out 620ms forwards;
 }
 @keyframes splashFlash {
   0% {
@@ -413,7 +413,7 @@ textarea {
     #c9a13f 70%,
     #a9822a 100%
   );
-  animation: splashFlood 400ms cubic-bezier(0.32, 0, 0.2, 1) 970ms forwards;
+  animation: splashFlood 260ms cubic-bezier(0.32, 0, 0.2, 1) 700ms forwards;
 }
 @keyframes splashFlood {
   0% {
@@ -661,16 +661,22 @@ html.boot-reload .splash-mark {
 .today-btn {
   margin-left: auto;
   flex: none;
-  width: 30px;
-  height: 30px;
+  /* 30px was under the 44px comfortable-tap floor and read as an
+     afterthought next to the segmented control it sits beside. */
+  width: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 11px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: #e0a020;
   cursor: pointer;
+}
+.today-btn svg {
+  width: 22px;
+  height: 22px;
 }
 .today-btn:active {
   transform: scale(0.92);
@@ -1059,6 +1065,67 @@ html.boot-reload .splash-mark {
 .streak-badge--frozen {
   color: var(--accent);
 }
+/* --- Weekly goal daily pace ---------------------------------------------- */
+.week-pace {
+  margin: -4px 4px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.week-pace-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.pace-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 0 6px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease, color 0.12s ease;
+}
+.pace-cell:active {
+  transform: scale(0.93);
+}
+.pace-cell--filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.pace-cell--today {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+.pace-cell--rest {
+  opacity: 0.45;
+  cursor: default;
+}
+.pace-cell-day {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pace-cell-n {
+  font-size: 13px;
+  font-weight: 700;
+}
+.week-pace-note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.week-pace-note--behind {
+  color: var(--warn);
+}
+
 .freeze-row {
   display: block;
   width: 100%;
@@ -1399,7 +1466,25 @@ html.boot-reload .splash-mark {
 }
 .route-stop-label {
   flex: 1;
+  min-width: 0;
   font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.route-stop-times {
+  font-weight: 500;
+}
+/* A booked appointment the plan can't physically reach in time. Worth
+   shouting about — the whole point of the times is to catch this before
+   you're already out. */
+.route-stop--late {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.route-stop--late .route-stop-times {
+  color: var(--warn);
+  font-weight: 700;
 }
 .place-go {
   font-size: 13px;
@@ -2169,6 +2254,29 @@ textarea {
   background: var(--accent-soft);
   transform: scale(0.96);
 }
+/* The current-time line. Above the hour grid and the event blocks so it
+   reads as an overlay on the day rather than another thing scheduled in it,
+   but pointer-events off so it never intercepts a tap-to-create on the
+   empty space it happens to cross. */
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--danger, #d1495b);
+  z-index: 4;
+  pointer-events: none;
+}
+.now-line-dot {
+  position: absolute;
+  left: -1px;
+  top: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger, #d1495b);
+}
+
 .timeline-body {
   position: relative;
   cursor: pointer;
@@ -2989,6 +3097,58 @@ textarea {
   justify-content: space-between;
   min-height: 30px;
 }
+
+/* --- Collapsible settings cards ------------------------------------------ */
+/* Padding moves off the card and onto the head/body, so a collapsed card is
+   exactly its heading with no leftover dead space underneath. */
+.settings-group {
+  padding: 0;
+}
+.settings-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.settings-group-head:active {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.settings-group-title {
+  flex: 1;
+  min-width: 0;
+}
+/* The heading's own .section-head already lays itself out as a row; it just
+   needs to fill the space left beside the chevron. */
+.settings-group-title > .section-head {
+  margin-top: 0;
+}
+.settings-group-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.settings-group--open .settings-group-chevron {
+  transform: rotate(180deg);
+}
+.settings-group-body {
+  padding: 0 16px 14px;
+  animation: settingsGroupIn 0.18s ease backwards;
+}
+@keyframes settingsGroupIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+/* First child of an expanded body shouldn't inherit the extra top margin a
+   .section-head normally gets from a preceding sibling — the heading is in
+   its own row above now. */
+.settings-group-body > .section-head:first-child {
+  margin-top: 0;
+}
 /* Whatever precedes it — a label, a segmented control, another row — needs
    the same breathing room a .section-head gets from a sibling .section-head.
    :not(:first-child) so a .section-head that opens its own card (e.g.
@@ -3138,6 +3298,114 @@ textarea {
 .map-round:active {
   transform: scale(0.94);
 }
+.map-round--on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+/* Marks the filter button when something is being hidden, so a filtered map
+   is never mistaken for an empty one. */
+.map-round-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+
+/* --- Map pin filters ------------------------------------------------------ */
+.map-filters {
+  position: absolute;
+  /* Below the corner stack: 3 buttons (46px) + gaps, plus a little air. */
+  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px);
+  right: 12px;
+  z-index: 500;
+  width: 218px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0, 0, 0, 0.24));
+  overflow: hidden;
+  animation: mapFiltersIn 0.16s ease backwards;
+}
+@keyframes mapFiltersIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+.map-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.map-filter-row:last-child {
+  border-bottom: none;
+}
+.map-filter-row:active {
+  background: var(--surface-2);
+}
+.map-filter-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.map-filter-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+/* Off rows dim their label rather than vanishing — you still need to see
+   what you've hidden in order to bring it back. */
+.map-filter-row:not(.map-filter-row--on) .map-filter-label,
+.map-filter-row:not(.map-filter-row--on) .map-filter-icon {
+  opacity: 0.5;
+}
+.map-filter-count {
+  flex: none;
+}
+.map-filter-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  position: relative;
+}
+.map-filter-check--on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.map-filter-check--on::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Today's calendar drawn on the map — dashed, to read as "here for today"
+   rather than a place you saved. */
+.pin-bubble--event {
+  border-style: dashed;
+}
+
 .map-round--go {
   background: var(--accent);
   color: var(--accent-ink);
@@ -4583,13 +4851,43 @@ body.is-scrolled .page-head::before {
    Advice, not errors: warn-coloured rather than danger-coloured, and always
    dismissible, because a straight-line travel estimate can be wrong and the
    user may simply know better. */
+/* Warnings float over the timeline instead of scrolling away with it.
+   Inline, they sat above the day and were gone the moment you scrolled to
+   the events they were about — exactly when you'd want to still see them.
+   Pinned to the bottom (above the tab bar) rather than the top, since the
+   top is already occupied by the sticky page header. */
 .conflict-list {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: fixed;
+  left: 12px;
+  /* Clear of the FAB, which sits bottom-right at the same height. */
+  right: 78px;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  /* Above the FAB (500) so a warning is never half-hidden behind it, below
+     the toast (700) so an Undo is always reachable. */
+  z-index: 560;
+  max-height: 46vh;
+  overflow-y: auto;
+  animation: conflictIn 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+@keyframes conflictIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.conflict-list .conflict {
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.22));
+  /* Opaque: it's floating over live content now, so the translucent
+     colour-mix background it uses inline would let the timeline show
+     through and make the text hard to read. */
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  backdrop-filter: blur(6px);
 }
 .conflict {
   display: flex;
@@ -4708,6 +5006,15 @@ body.is-scrolled .page-head::before {
   border-radius: 12px;
   background: var(--surface-2);
   border: 1px solid transparent;
+  /* The card sits under a .section-head, which has no bottom margin of its
+     own — without this it butts straight against the "Follow-up / Change"
+     row with no gap at all, and the two read as one squashed block. */
+  margin-top: 10px;
+}
+/* Never let the label wrap to two lines or get squeezed to nothing by a
+   long note sitting next to it. */
+.followup-done {
+  flex: none;
 }
 /* Due or overdue earns the accent — it's a promise with a clock on it now. */
 .followup-card--due {

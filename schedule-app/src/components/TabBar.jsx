@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 
@@ -13,6 +13,8 @@ const ICONS = {
 
 export default function TabBar() {
   const { state } = useStore();
+  const location = useLocation();
+  const navigate = useNavigate();
   // Reordering/hiding tabs is Pro-gated — a lapsed subscriber just falls
   // back to the full default set rather than being left with a broken bar.
   const isPro = !!state.settings?.isPro;
@@ -31,6 +33,16 @@ export default function TabBar() {
             aria-label={label}
             title={label}
             className={({ isActive }) => `tab${isActive ? ' tab--active' : ''}`}
+            onClick={(e) => {
+              // Tapping the Planner tab when Planner is already showing is
+              // otherwise a no-op — React Router sees the same path and
+              // doesn't re-render. Treat it as "take me back to now",
+              // matching what every other calendar app does.
+              if (id === 'planner' && location.pathname === to) {
+                e.preventDefault();
+                navigate(to, { state: { jumpToNow: true } });
+              }
+            }}
           >
             <Icon />
           </NavLink>

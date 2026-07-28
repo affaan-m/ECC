@@ -286,6 +286,27 @@ export function computeGoalStreak(goal) {
   return count;
 }
 
+// Splits a weekly target into a per-day pace — "read 10 chapters this week"
+// is far more actionable as "1 or 2 a day" than as one number you look at on
+// Sunday and panic about.
+//
+// The remainder is spread across the earliest days rather than dumped on the
+// last one: a target of 10 becomes 2,2,2,1,1,1,1 (front-loaded), not
+// 1,1,1,1,1,1,4. Being slightly ahead early is the useful failure mode.
+export function weeklyPace(target) {
+  const t = Math.max(0, Math.round(target || 0));
+  const base = Math.floor(t / 7);
+  const extra = t % 7;
+  return Array.from({ length: 7 }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+// Running total after each day, so day i is "done" once weekly progress
+// reaches cumulative[i].
+export function paceCumulative(target) {
+  let run = 0;
+  return weeklyPace(target).map((n) => (run += n));
+}
+
 // Streak freezes reset monthly rather than being a lifetime pool — Pro gets
 // a bigger monthly allowance ("streak insurance") as one of the perks of the
 // subscription. Usage is derived from the dates already recorded in
@@ -298,6 +319,35 @@ export function goalFreezesLeft(goal, isPro) {
   const thisMonth = todayISO().slice(0, 7); // 'YYYY-MM'
   const used = (goal.frozenKeys || []).filter((k) => k.slice(0, 7) === thisMonth).length;
   return Math.max(0, quota - used);
+}
+
+// The colour an event should be drawn in, in priority order: a colour set
+// on the event itself, then its event type's, then the status colour of the
+// person it's with, then the theme accent.
+//
+// One function because the four views used to each spell this out inline and
+// had already drifted — Month view checked only `event.color`, so an event
+// coloured by its *type* rendered a plain gold dot there while showing its
+// real colour everywhere else.
+// `contactColor` is an optional (id) => color|undefined lookup — pages that
+// have the contact and status lists build it once with makeContactColor().
+export function eventColor(event, eventTypes, contactColor, fallback = 'var(--accent)') {
+  if (event?.color) return event.color;
+  const type = (eventTypes || []).find((t) => t.id === event?.typeId);
+  if (type?.color) return type.color;
+  if (event?.contactId && contactColor) {
+    const c = contactColor(event.contactId);
+    if (c) return c;
+  }
+  return fallback;
+}
+
+// A contact's colour is its status's colour — statuses are where colour is
+// actually assigned to people (see People → statuses).
+export function makeContactColor(contacts, statuses) {
+  const statusColor = Object.fromEntries((statuses || []).map((s) => [s.id, s.color]));
+  const byId = Object.fromEntries((contacts || []).map((c) => [c.id, statusColor[c.statusId]]));
+  return (id) => byId[id];
 }
 
 // --- Recurring events ------------------------------------------------------

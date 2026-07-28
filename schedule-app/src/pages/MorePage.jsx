@@ -15,10 +15,12 @@ import {
 import { downloadICS, parseICS } from '../data/ics.js';
 import { formatTime } from '../data/helpers.js';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
+import SettingsGroup from '../components/SettingsGroup.jsx';
 import { HOME_BLOCK_TYPES, normalizeHomeBlocks } from '../data/homeBlocks.js';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
+import { MAP_STYLE_OPTIONS } from '../data/mapStyles.js';
 import { backendConfigured } from '../data/api.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
@@ -101,6 +103,19 @@ export default function MorePage() {
   const [feedback, setFeedback] = useState(null); // string | null
   const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
+  // Which settings cards are expanded. All collapsed on arrival, so the page
+  // opens as a scannable index rather than one long scroll; kept in component
+  // state rather than persisted, since "where I left the accordion" isn't a
+  // preference worth remembering across launches.
+  const [openGroups, setOpenGroups] = useState(() => new Set());
+  const isOpen = (id) => openGroups.has(id);
+  const toggleGroup = (id) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const fileRef = useRef(null);
   const icsFileRef = useRef(null);
 
@@ -272,7 +287,7 @@ export default function MorePage() {
 
       {CLERK_ENABLED && <AccountSection />}
 
-      <section className="detail-section">
+      <SettingsGroup id="g0" open={isOpen("g0")} onToggle={() => toggleGroup("g0")}>
         <div className="section-head">
           <span className="detail-label">Profile</span>
           <button className="btn btn-ghost btn-sm" onClick={() => setEditingProfile({ name: profileName, photo: profilePhoto })}>
@@ -286,9 +301,9 @@ export default function MorePage() {
             <p className="muted small">Stored only on this device.</p>
           </div>
         </div>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g1" open={isOpen("g1")} onToggle={() => toggleGroup("g1")}>
         <span className="detail-label">Account & sync</span>
         <div className="section-head">
           <span>Cloud sync</span>
@@ -317,9 +332,9 @@ export default function MorePage() {
           A personal Keystone login (no Google needed) is free and always available — this is
           only for connecting a Google account for calendar sync.
         </p>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g2" open={isOpen("g2")} onToggle={() => toggleGroup("g2")}>
         <span className="detail-label">Shared calendars</span>
         <p className="muted small">Invite someone to see or add events with you on a calendar you both share.</p>
         <button
@@ -328,9 +343,9 @@ export default function MorePage() {
         >
           👥 Manage shared calendars {!isPro && '· Pro'}
         </button>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g3" open={isOpen("g3")} onToggle={() => toggleGroup("g3")}>
         <span className="detail-label">Calendar import / export</span>
         <p className="muted small">Move events to or from other calendar apps using the .ics format.</p>
         <div className="stack-btns">
@@ -342,9 +357,9 @@ export default function MorePage() {
           </button>
           <input ref={icsFileRef} type="file" accept=".ics,text/calendar" hidden onChange={importICS} />
         </div>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g4" open={isOpen("g4")} onToggle={() => toggleGroup("g4")}>
         <span className="detail-label">Appearance</span>
         <div className="seg seg--full">
           {['system', 'light', 'dark'].map((t) => (
@@ -372,7 +387,9 @@ export default function MorePage() {
           onPick={(v) => requirePro(() => actions.setSettings({ colorScheme: v }))}
         />
 
-        <p className="muted small">Contact icon size</p>
+        {/* Was just "Contact icon size", which didn't say icon of what, or
+            where. It's the photo/initials circle on the People list. */}
+        <p className="muted small">Photo size on the People list</p>
         <div className="seg seg--full">
           {[
             { value: 'sm', label: 'Small' },
@@ -412,9 +429,9 @@ export default function MorePage() {
             <span className="toggle-knob" />
           </button>
         </div>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g5" open={isOpen("g5")} onToggle={() => toggleGroup("g5")}>
         <span className="detail-label">Customize home screen {!isPro && '· Pro'}</span>
         <p className="muted small">
           Choose which blocks show on Home, and drag to reorder them — or edit this right from the Home page itself
@@ -441,9 +458,9 @@ export default function MorePage() {
             </span>
           </button>
         )}
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g6" open={isOpen("g6")} onToggle={() => toggleGroup("g6")}>
         <span className="detail-label">Customize quick-add menu {!isPro && '· Pro'}</span>
         <p className="muted small">Choose which actions the floating + button offers, and drag to reorder them.</p>
         {isPro ? (
@@ -467,9 +484,9 @@ export default function MorePage() {
             </span>
           </button>
         )}
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g7" open={isOpen("g7")} onToggle={() => toggleGroup("g7")}>
         <span className="detail-label">Customize navigation tabs {!isPro && '· Pro'}</span>
         <p className="muted small">Choose which tabs show in the bar, and drag to reorder them. More always stays on.</p>
         {isPro ? (
@@ -493,9 +510,9 @@ export default function MorePage() {
             </span>
           </button>
         )}
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g8" open={isOpen("g8")} onToggle={() => toggleGroup("g8")}>
         <span className="detail-label">Calendar settings</span>
 
         <div className="section-head">
@@ -545,6 +562,18 @@ export default function MorePage() {
             role="switch"
             aria-checked={s.warnOverlaps !== false}
             onClick={() => actions.setSettings({ warnOverlaps: s.warnOverlaps === false })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="section-head">
+          <span>Day & week templates</span>
+          <button
+            className={`toggle${s.showDayTemplates !== false ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.showDayTemplates !== false}
+            onClick={() => actions.setSettings({ showDayTemplates: s.showDayTemplates === false })}
           >
             <span className="toggle-knob" />
           </button>
@@ -632,10 +661,20 @@ export default function MorePage() {
             disabled={!isPro}
           />
         </div>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g9" open={isOpen("g9")} onToggle={() => toggleGroup("g9")}>
         <span className="detail-label">Map settings</span>
+        <p className="muted small">Map style</p>
+        <Select
+          value={s.mapStyle || 'auto'}
+          onChange={(v) => actions.setSettings({ mapStyle: v })}
+          options={MAP_STYLE_OPTIONS}
+        />
+        <p className="muted small">
+          "Match app theme" uses a light or dark basemap to match whichever the app is showing —
+          a bright white map inside a dark app is the thing most worth avoiding here.
+        </p>
         <div className="section-head">
           <span>Show contact places</span>
           <button
@@ -671,9 +710,9 @@ export default function MorePage() {
           }}
           className="range-slider"
         />
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g10" open={isOpen("g10")} onToggle={() => toggleGroup("g10")}>
         <div className="section-head">
           <span className="detail-label">Notifications</span>
           <button
@@ -691,9 +730,9 @@ export default function MorePage() {
             ? 'Get reminders for goals and events while Keystone is open. (A web app can’t alert you once it’s fully closed.)'
             : 'This browser doesn’t support notifications.'}
         </p>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g11" open={isOpen("g11")} onToggle={() => toggleGroup("g11")}>
         <div className="section-head">
           <span className="detail-label">Arrival reminders</span>
           <button
@@ -713,14 +752,29 @@ export default function MorePage() {
             ? 'Get notified when you’re near a place you’ve pinned on the Map with a reminder radius set. Only works while Keystone is open — a web app can’t track your location in the background.'
             : 'This browser doesn’t support location.'}
         </p>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
-        <span className="detail-label">Reconnect reminders</span>
+      <SettingsGroup id="g12" open={isOpen("g12")} onToggle={() => toggleGroup("g12")}>
+        <div className="section-head">
+          <span className="detail-label">Reconnect reminders</span>
+          <button
+            className={`toggle${s.reconnectRemindersEnabled === true ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.reconnectRemindersEnabled === true}
+            onClick={() =>
+              actions.setSettings({ reconnectRemindersEnabled: s.reconnectRemindersEnabled !== true })
+            }
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
         <p className="muted small">
           Flag people on the People tab when you haven't been in touch for this long.
-          You can override it per person.
+          Only applies to people you've actually logged contact with — someone you've
+          added but never spoken to has no lapse to report. You can override the
+          interval per person.
         </p>
+        {s.reconnectRemindersEnabled === true && (
         <div className="cadence-setting">
           <button
             className="step-btn"
@@ -744,9 +798,10 @@ export default function MorePage() {
             +
           </button>
         </div>
-      </section>
+        )}
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g13" open={isOpen("g13")} onToggle={() => toggleGroup("g13")}>
         <div className="section-head">
           <span>Birthdays & anniversaries</span>
           <button
@@ -762,9 +817,9 @@ export default function MorePage() {
           Surface a person's birthday or anniversary on Home and the calendar. Each is still
           optional per person — set them from a contact's Edit sheet.
         </p>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g14" open={isOpen("g14")} onToggle={() => toggleGroup("g14")}>
         <div className="section-head">
           <span className="detail-label">People statuses {!isPro && '· Pro'}</span>
           <button
@@ -789,9 +844,9 @@ export default function MorePage() {
           ))}
           {state.statuses.length === 0 && <li className="muted small">No statuses yet.</li>}
         </ul>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g15" open={isOpen("g15")} onToggle={() => toggleGroup("g15")}>
         <div className="section-head">
           <span className="detail-label">Event types</span>
           <button
@@ -816,9 +871,9 @@ export default function MorePage() {
           ))}
           {(state.eventTypes || []).length === 0 && <li className="muted small">No types yet.</li>}
         </ul>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g16" open={isOpen("g16")} onToggle={() => toggleGroup("g16")}>
         <span className="detail-label">Feedback</span>
         <p className="muted small">Have an idea or found a bug? I'd love to hear it.</p>
         <div className="stack-btns">
@@ -835,9 +890,9 @@ export default function MorePage() {
             🏛️ Replay the tour
           </button>
         </div>
-      </section>
+      </SettingsGroup>
 
-      <section className="detail-section">
+      <SettingsGroup id="g17" open={isOpen("g17")} onToggle={() => toggleGroup("g17")}>
         <span className="detail-label">Your data</span>
         <p className="muted small">
           Everything is stored privately on this device. {counts.goals} goals · {counts.events} events ·{' '}
@@ -864,7 +919,7 @@ export default function MorePage() {
             Clear everything
           </button>
         </div>
-      </section>
+      </SettingsGroup>
 
       <p className="muted small center-pad">Keystone · works offline · v0.2</p>
 

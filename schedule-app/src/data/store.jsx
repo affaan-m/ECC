@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useReducer } from 'react';
 import { makeSeed } from './seed.js';
-import { uid } from './helpers.js';
+import { uid, todayISO } from './helpers.js';
 import { DEFAULT_HOME_BLOCKS } from './homeBlocks.js';
 
 const STORAGE_KEY = 'compass.data.v1';
@@ -67,6 +67,14 @@ function loadState() {
         // themselves stay optional on every contact either way, so there's
         // nothing to migrate when someone flips it back on.
         contactBirthdaysEnabled: true,
+        // Off unless asked for — see data/reconnect.js. Read as `=== true`
+        // everywhere so an older saved settings object (which has no such
+        // key) also starts off rather than inheriting the old always-on
+        // behaviour.
+        reconnectRemindersEnabled: false,
+        // Day/week templates are a Pro power-user feature; hiding the entry
+        // point keeps the Planner header uncluttered for everyone else.
+        showDayTemplates: true,
         taskCompleteAnim: true,
         hapticsEnabled: true,
         homeBlocks: DEFAULT_HOME_BLOCKS,
@@ -247,6 +255,23 @@ function reducer(state, action) {
       return { ...state, contacts, tasks: [...others, task] };
     }
 
+    // Marking a follow-up done is three edits that have to land together:
+    // clear the commitment, drop the task mirroring it, and stamp the
+    // contact as freshly contacted. Doing it as two dispatches from the UI
+    // was the bug — the second one spread a `contact` object captured
+    // before the first ran, so it carried the old `followUp` straight back
+    // in and the button looked like it did nothing at all.
+    case 'COMPLETE_FOLLOW_UP': {
+      const { contactId, date } = action;
+      return {
+        ...state,
+        contacts: state.contacts.map((c) =>
+          c.id === contactId ? { ...c, followUp: null, lastContacted: date } : c
+        ),
+        tasks: (state.tasks || []).filter((t) => t.followUpContactId !== contactId),
+      };
+    }
+
     // Day / week templates
     case 'ADD_TEMPLATE':
       return { ...state, templates: [...(state.templates || []), action.template] };
@@ -408,6 +433,8 @@ export function useActions() {
     deleteInteraction: (id) => dispatch({ type: 'DELETE_INTERACTION', id }),
 
     setFollowUp: (contactId, followUp) => dispatch({ type: 'SET_FOLLOW_UP', contactId, followUp }),
+    completeFollowUp: (contactId) =>
+      dispatch({ type: 'COMPLETE_FOLLOW_UP', contactId, date: todayISO() }),
 
     addTemplate: (template) => dispatch({ type: 'ADD_TEMPLATE', template }),
     updateTemplate: (template) => dispatch({ type: 'UPDATE_TEMPLATE', template }),
