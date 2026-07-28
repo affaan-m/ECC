@@ -139,6 +139,16 @@ export default function HomePage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Home starts at the top, every time you come back to it. The window is
+  // the scroller and React Router doesn't reset it, so returning from
+  // anywhere put you back at whatever offset you happened to leave on —
+  // halfway down the notes grid, with the day's goals off-screen above.
+  // Keyed on location.key so tapping the Home tab while already on Home
+  // counts too, not just a fresh mount.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [location.key]);
+
   const today = todayISO();
   const dailyKey = goalKey('daily', new Date());
   const weeklyKey = goalKey('weekly', new Date());

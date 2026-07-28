@@ -192,6 +192,120 @@ export function makeSeed() {
       repeat: 'weekly',
       typeId: 'et_personal',
     },
+    // --- History ----------------------------------------------------------
+    // A person's timeline is a record of what has already happened, and with
+    // only today's and tomorrow's events seeded it opened empty for everyone
+    // — the feature that most needs explaining had nothing to show. These
+    // are dated backwards from today so the sample timeline reads like one
+    // that's been kept for a couple of months.
+    {
+      ...baseEvent,
+      id: uid('e'),
+      title: 'Lunch with Maria',
+      date: toISODate(addDays(today, -9)),
+      start: '12:00',
+      end: '13:00',
+      contactId: contacts[0].id,
+      location: 'Toca Madera',
+      notes: 'She mentioned wanting to do the coastal trail in spring.',
+      typeId: 'et_social',
+    },
+    {
+      ...baseEvent,
+      id: uid('e'),
+      title: 'Helped Maria move',
+      date: toISODate(addDays(today, -31)),
+      start: '09:00',
+      end: '15:00',
+      contactId: contacts[0].id,
+      location: '',
+      notes: '',
+      typeId: 'et_personal',
+    },
+    {
+      ...baseEvent,
+      id: uid('e'),
+      title: '10k with James',
+      date: toISODate(addDays(today, -16)),
+      start: '07:30',
+      end: '09:00',
+      contactId: contacts[1].id,
+      location: 'Riverside trail',
+      notes: 'Beat his PB by two minutes.',
+      typeId: 'et_health',
+    },
+    {
+      ...baseEvent,
+      id: uid('e'),
+      title: "James's birthday dinner",
+      date: toISODate(addDays(today, -44)),
+      start: '19:00',
+      end: '21:30',
+      contactId: contacts[1].id,
+      location: '',
+      notes: '',
+      typeId: 'et_social',
+    },
+    {
+      ...baseEvent,
+      id: uid('e'),
+      title: 'Sunday visit',
+      date: toISODate(addDays(today, -21)),
+      start: '14:00',
+      end: '16:00',
+      contactId: contacts[2].id,
+      location: '',
+      notes: '',
+      typeId: 'et_personal',
+    },
+  ];
+
+  // Logged contact — the quick "we spoke" entries the timeline mixes in
+  // between calendar events. Seeded for the same reason as the past events:
+  // without them, "Log a contact" is a button whose output you've never seen.
+  const interactions = [
+    {
+      id: uid('ix'),
+      contactId: contacts[0].id,
+      date: toISODate(addDays(today, -2)),
+      text: 'Texted about the trail day — she is in for the 14th.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[0].id,
+      date: toISODate(addDays(today, -19)),
+      text: 'Quick call, caught up about work.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[1].id,
+      date: toISODate(addDays(today, -9)),
+      text: 'Ran into him at the gym.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[1].id,
+      date: toISODate(addDays(today, -37)),
+      text: 'Called about the fall 10k sign-up.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[2].id,
+      date: toISODate(addDays(today, -6)),
+      text: 'Sunday phone call.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[2].id,
+      date: toISODate(addDays(today, -13)),
+      text: 'Sunday phone call.',
+    },
+    {
+      id: uid('ix'),
+      contactId: contacts[2].id,
+      date: toISODate(addDays(today, -20)),
+      text: 'Sunday phone call.',
+    },
   ];
 
   // Sample pins around downtown San Francisco so the map opens with something
@@ -272,7 +386,7 @@ export function makeSeed() {
     pins,
     tasks,
     notes,
-    interactions: [],
+    interactions,
     templates: [],
     statuses,
     eventTypes,

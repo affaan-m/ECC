@@ -157,6 +157,30 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+  /* Text in an installed app is interface, not a document. Left selectable,
+     every tap that lands slightly long on a word puts the OS selection
+     handles and a "Search Google for…" bar on screen — over a contact's
+     name, an event title, a tab label. Native apps don't do that, and this
+     is one of the clearest tells that a PWA isn't one.
+
+     Suppressed here rather than on the handful of gesture surfaces that
+     already did it individually, because the problem was never specific to
+     those. Re-enabled below for the places where selecting text is the
+     point: fields you type in, and anything opted in with `.selectable`. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Typing, editing and copying your own content all still work normally. */
+input,
+textarea,
+[contenteditable],
+.selectable,
+.selectable * {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Crossfade the theme/color-scheme switch instead of an instant snap.
@@ -5083,4 +5107,36 @@ button.timeline-item {
 .settings-search .icon-btn {
   flex: none;
   padding: 4px;
+}
+
+/* --- Map: basemap switcher ------------------------------------------------
+   Mirrors the right-hand control stack on the left, so the two clusters
+   read as one control layer rather than one cluster and one stray button. */
+.map-corner--left {
+  right: auto;
+  left: 12px;
+}
+.map-layers {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px);
+  left: 12px;
+  z-index: 500;
+  width: 178px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0, 0, 0, 0.24));
+  overflow: hidden;
+  animation: mapFiltersIn 0.16s ease backwards;
+}
+.map-layers .map-filter-row {
+  justify-content: space-between;
+  color: var(--text);
+}
+.map-filter-row--on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
 }

@@ -11,7 +11,7 @@ import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
 import { confirmTick, selectTick } from '../data/haptics.js';
 import { geocodeAddress } from '../data/geocode.js';
 import { directionsTarget, openMaps } from '../data/maps.js';
-import { resolveMapStyle } from '../data/mapStyles.js';
+import { resolveMapStyle, MAP_STYLE_OPTIONS } from '../data/mapStyles.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
 import Icon from '../components/Icon.jsx';
 
@@ -47,6 +47,7 @@ export default function MapPage() {
     events: true,
   }));
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const toggleFilter = (k) => {
     selectTick();
     setFilters((f) => {
@@ -156,6 +157,7 @@ export default function MapPage() {
     } else {
       setSelectedId(null);
       setTempPin(null);
+      setLayersOpen(false);
     }
   };
 
@@ -489,6 +491,44 @@ export default function MapPage() {
               <NavIcon />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Basemap switcher (top-left). The style lived only in Settings, which
+          is a long way to go to answer "what does this look like as
+          satellite" — a question you ask while looking at the map. Left side
+          so it doesn't crowd the existing right-hand stack, and it writes to
+          the same `mapStyle` setting, so the two never disagree. */}
+      {!pickMode && (
+        <div className="map-corner map-corner--left">
+          <button
+            className={`map-round${layersOpen ? ' map-round--on' : ''}`}
+            onClick={() => setLayersOpen((v) => !v)}
+            aria-label="Map style"
+            aria-expanded={layersOpen}
+            title="Map style"
+          >
+            <LayersIcon />
+          </button>
+        </div>
+      )}
+
+      {!pickMode && layersOpen && (
+        <div className="map-layers" role="group" aria-label="Map style">
+          {MAP_STYLE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={`map-filter-row${mapStyleSetting === o.value ? ' map-filter-row--on' : ''}`}
+              onClick={() => {
+                selectTick();
+                actions.setSettings({ mapStyle: o.value });
+                setLayersOpen(false);
+              }}
+            >
+              <span className="map-filter-label">{o.label}</span>
+              {mapStyleSetting === o.value && <Icon name="check" size={16} />}
+            </button>
+          ))}
         </div>
       )}
 
@@ -836,6 +876,17 @@ function NavIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
       <path d="M3 11l18-8-8 18-2-8-8-2z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function LayersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3.5l9 4.8-9 4.8-9-4.8z" />
+      <path d="M3.5 12.4l8.5 4.5 8.5-4.5" />
+      <path d="M3.5 16.8l8.5 4.5 8.5-4.5" />
     </svg>
   );
 }
