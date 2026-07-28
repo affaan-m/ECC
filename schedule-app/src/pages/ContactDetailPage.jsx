@@ -23,6 +23,7 @@ import {
   expandEventOnDay,
 } from '../data/helpers.js';
 import { nextAnnualOccurrence, yearsBetween } from '../data/contactDates.js';
+import Icon from '../components/Icon.jsx';
 
 export default function ContactDetailPage() {
   const { id } = useParams();
@@ -156,7 +157,7 @@ export default function ContactDetailPage() {
           </span>
         )}
         <p className="muted last-line">Last connected: {daysAgoLabel(contact.lastContacted)}</p>
-        {over && <span className="reconnect-chip">🔔 Time to reconnect</span>}
+        {over && <span className="reconnect-chip"><Icon name="bell" size={14} /> Time to reconnect</span>}
       </div>
 
       <div className="quick-actions">
@@ -183,7 +184,7 @@ export default function ContactDetailPage() {
           onClick={() => (isPro ? navigate(`/contacts/${contact.id}/timeline`) : navigate('/pricing'))}
         >
           <QAIcon kind="timeline" />
-          <span>Timeline {!isPro && '🔒'}</span>
+          <span>Timeline {!isPro && <Icon name="lock" size={14} />}</span>
         </button>
       </div>
 
@@ -226,10 +227,10 @@ export default function ContactDetailPage() {
         <section className="detail-section">
           <span className="detail-label">Special dates</span>
           {contact.birthday && (
-            <SpecialDateField icon="🎂" label="Birthday" iso={contact.birthday} ageNoun="turns" />
+            <SpecialDateField icon="cake" label="Birthday" iso={contact.birthday} ageNoun="turns" />
           )}
           {contact.anniversary && (
-            <SpecialDateField icon="💍" label="Anniversary" iso={contact.anniversary} ageNoun="years" />
+            <SpecialDateField icon="ring" label="Anniversary" iso={contact.anniversary} ageNoun="years" />
           )}
         </section>
       )}
@@ -337,7 +338,7 @@ export default function ContactDetailPage() {
                 <span className="mini-title">
                   {e.title}
                   {e.repeat && e.repeat !== 'none' && (
-                    <span className="repeat-glyph"> {e.isException ? '✎' : '↻'}</span>
+                    <span className="repeat-glyph"> <Icon name={e.isException ? 'pencil' : 'repeat'} size={13} /></span>
                   )}
                 </span>
               </li>
@@ -611,7 +612,7 @@ function SpecialDateField({ icon, label, iso, ageNoun }) {
   return (
     <div className="detail-field">
       <span className="detail-label">
-        {icon} {label}
+        <Icon name={icon} size={15} /> {label}
       </span>
       <span className="detail-value">
         {formatShortDate(next)}

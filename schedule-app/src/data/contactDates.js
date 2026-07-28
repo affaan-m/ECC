@@ -48,8 +48,8 @@ export function yearsBetween(iso, onISO) {
 }
 
 const KINDS = [
-  { field: 'birthday', kind: 'birthday', icon: '🎂', verb: "'s birthday" },
-  { field: 'anniversary', kind: 'anniversary', icon: '💍', verb: "'s anniversary" },
+  { field: 'birthday', kind: 'birthday', icon: 'cake', verb: "'s birthday" },
+  { field: 'anniversary', kind: 'anniversary', icon: 'ring', verb: "'s anniversary" },
 ];
 
 // Every tracked date across all contacts, each resolved to its next real

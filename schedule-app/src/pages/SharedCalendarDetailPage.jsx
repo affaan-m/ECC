@@ -15,6 +15,7 @@ import {
   deleteSharedEvent,
 } from '../data/api.js';
 import { formatShortDate, formatTime } from '../data/helpers.js';
+import Icon from '../components/Icon.jsx';
 
 export default function SharedCalendarDetailPage() {
   const { state } = useStore();
@@ -157,13 +158,15 @@ function SharedCalendarDetailInner() {
           {info.members.map((m) => (
             <li key={m.id}>
               <div className="place-row">
-                <span className="place-emoji">{m.role === 'owner' ? '👑' : '👤'}</span>
+                <span className="place-emoji">
+                  <Icon name={m.role === 'owner' ? 'crown' : 'person'} size={20} />
+                </span>
                 <span className="place-label">
                   {m.email} <span className="muted small">· {m.role}</span>
                 </span>
                 {info.role === 'owner' && m.role !== 'owner' && (
                   <button className="icon-btn" onClick={() => removeMember(m.id)} aria-label="Remove person">
-                    ✕
+                    <Icon name="close" size={16} />
                   </button>
                 )}
               </div>
@@ -252,7 +255,6 @@ function SharedCalendarDetailInner() {
             <label className="field">
               <span>Title</span>
               <input
-                autoFocus
                 value={editingEvent.title}
                 onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
               />

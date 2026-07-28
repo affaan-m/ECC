@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { warnTick, confirmTick } from '../data/haptics.js';
+import Icon from './Icon.jsx';
 
 const ARM_THRESHOLD_PX = 90;
 const MAX_SWIPE_PX = 120;
@@ -131,7 +132,9 @@ const SwipeRow = forwardRef(function SwipeRow(
           style={{ background: active.tone }}
           aria-hidden="true"
         >
-          <span className="swipe-row-icon">{active.icon}</span>
+          <span className="swipe-row-icon">
+            {typeof active.icon === 'string' ? <Icon name={active.icon} size={22} /> : active.icon}
+          </span>
           {active.label && <span className="swipe-row-label">{active.label}</span>}
         </div>
       )}

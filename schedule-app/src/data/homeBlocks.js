@@ -3,12 +3,12 @@
 // content — the goal rings, the whole reminders list, the whole task list,
 // the whole notes grid — never a shrunk-down counter/stat tile.
 export const HOME_BLOCK_TYPES = [
-  { id: 'goals', label: 'Goals', icon: '🎯' },
-  { id: 'nudges', label: 'Nudges', icon: '💡' },
-  { id: 'reminders', label: 'Important reminders', icon: '🔔' },
-  { id: 'recap', label: 'Weekly recap', icon: '📊' },
-  { id: 'tasks', label: 'Tasks', icon: '✅' },
-  { id: 'notes', label: 'Notes', icon: '📝' },
+  { id: 'goals', label: 'Goals', icon: 'target' },
+  { id: 'nudges', label: 'Nudges', icon: 'lightbulb' },
+  { id: 'reminders', label: 'Important reminders', icon: 'bell' },
+  { id: 'recap', label: 'Weekly recap', icon: 'chart' },
+  { id: 'tasks', label: 'Tasks', icon: 'check' },
+  { id: 'notes', label: 'Notes', icon: 'note' },
 ];
 
 export const DEFAULT_HOME_BLOCKS = HOME_BLOCK_TYPES.map((b) => ({ id: b.id, enabled: true }));

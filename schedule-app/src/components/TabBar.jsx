@@ -1,14 +1,18 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
 import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
+import Icon from './Icon.jsx';
 
+// These grew up here, and the rest of the app's icons were later drawn to
+// match them. Now that there's a shared set, the tab bar uses it too rather
+// than keeping a second copy of the same six drawings.
 const ICONS = {
-  home: HomeIcon,
-  goals: TargetIcon,
-  planner: CalendarIcon,
-  contacts: PeopleIcon,
-  map: MapIcon,
-  more: MoreIcon,
+  home: 'home',
+  goals: 'target',
+  planner: 'calendar',
+  contacts: 'users',
+  map: 'pin',
+  more: 'more',
 };
 
 export default function TabBar() {
@@ -24,7 +28,7 @@ export default function TabBar() {
   return (
     <nav className="tabbar" aria-label="Primary">
       {visible.map(({ id, to, label }) => {
-        const Icon = ICONS[id];
+        const iconName = ICONS[id];
         return (
           <NavLink
             key={to}
@@ -44,62 +48,10 @@ export default function TabBar() {
               }
             }}
           >
-            <Icon />
+            <Icon name={iconName} size={24} />
           </NavLink>
         );
       })}
     </nav>
-  );
-}
-
-/* Inline SVG icons keep the app fully self-contained (no icon dependency). */
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function TargetIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
-      <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" strokeWidth="2" />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-    </svg>
-  );
-}
-function CalendarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <rect x="3" y="4.5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M3 9h18M8 3v3M16 3v3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function PeopleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M16 6.2A3 3 0 0 1 16 12M17 14.2c2.4.5 4 2.4 4 4.8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function MapIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <path d="M12 21s6.5-5.2 6.5-10.2A6.5 6.5 0 0 0 5.5 10.8C5.5 15.8 12 21 12 21z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <circle cx="12" cy="10.6" r="2.4" fill="none" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="19" cy="12" r="1.8" fill="currentColor" />
-    </svg>
   );
 }

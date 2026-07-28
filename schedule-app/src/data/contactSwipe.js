@@ -20,7 +20,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   log: {
     label: 'Log contact',
-    icon: '✓',
+    icon: 'check',
     tone: 'var(--good)',
     run: ({ contact, actions, showToast }) => {
       const today = todayISO();
@@ -31,7 +31,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   schedule: {
     label: 'Schedule',
-    icon: '📅',
+    icon: 'calendar',
     tone: 'var(--accent)',
     run: ({ contact, navigate }) => {
       navigate('/planner', { state: { newEventContact: contact.id } });
@@ -39,7 +39,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   followUp: {
     label: 'Follow up',
-    icon: '🤝',
+    icon: 'personCheck',
     tone: '#8a5cd1',
     run: ({ contact, navigate }) => {
       navigate(`/contacts/${contact.id}`, { state: { openFollowUp: true } });
@@ -47,7 +47,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   call: {
     label: 'Call',
-    icon: '📞',
+    icon: 'phone',
     tone: '#2e9e6b',
     // Nothing to call is not an error worth a toast — the action just
     // doesn't apply to this person, same as a disabled button.
@@ -57,7 +57,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   text: {
     label: 'Text',
-    icon: '💬',
+    icon: 'message',
     tone: '#1f5f8b',
     run: ({ contact }) => {
       if (contact.phone) window.location.href = `sms:${contact.phone}`;
@@ -65,7 +65,7 @@ export const CONTACT_SWIPE_ACTIONS = {
   },
   delete: {
     label: 'Delete',
-    icon: '🗑',
+    icon: 'trash',
     tone: 'var(--danger)',
     destructive: true,
     run: ({ contact, deleteContactWithUndo }) => deleteContactWithUndo(contact),

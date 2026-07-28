@@ -25,6 +25,7 @@ import {
   DEFAULT_CONTACT_SWIPE_LEFT,
   DEFAULT_CONTACT_SWIPE_RIGHT,
 } from '../data/contactSwipe.js';
+import Icon from '../components/Icon.jsx';
 
 export default function ContactsPage() {
   const { state } = useStore();
@@ -272,7 +273,7 @@ export default function ContactsPage() {
           ) : (
             state.statuses.length > 0 && (
               <button className="chip" onClick={() => navigate('/pricing')}>
-                🔒 Statuses · Pro
+                <Icon name="lock" size={15} /> Statuses · Pro
               </button>
             )
           )}
@@ -293,7 +294,7 @@ export default function ContactsPage() {
       {showBanner && (
         <section className="reconnect">
           <div className="reconnect-head">
-            <span>🔔 Time to reconnect</span>
+            <span><Icon name="bell" size={15} /> Time to reconnect</span>
           </div>
           <div className="reconnect-scroll">
             {overdue.slice(0, 12).map((c) => {
@@ -309,7 +310,7 @@ export default function ContactsPage() {
                     className="btn btn-ghost btn-sm reconnect-log"
                     onClick={() => actions.updateContact({ ...c, lastContacted: todayISO() })}
                   >
-                    ✓ Log
+                    <Icon name="check" size={15} /> Log
                   </button>
                 </div>
               );
@@ -320,7 +321,7 @@ export default function ContactsPage() {
 
       {state.contacts.length === 0 ? (
         <div className="empty">
-          <div className="empty-icon">👋</div>
+          <div className="empty-icon"><Icon name="personPlus" size={48} /></div>
           <h2>Add the people who matter</h2>
           <p className="muted">
             Keep track of friends, family, and anyone you want to stay close to —
@@ -429,7 +430,6 @@ export default function ContactsPage() {
             <label className="field">
               <span>Name</span>
               <input
-                autoFocus
                 value={adding.name}
                 onChange={(e) => setAdding({ ...adding, name: e.target.value })}
                 placeholder="Full name"

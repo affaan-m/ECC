@@ -4,11 +4,11 @@
 // tapping it routes to pricing, same as every other Pro entry point — but it
 // carries a lock so the gate is visible before the tap rather than after.
 export const QUICK_ADD_TYPES = [
-  { id: 'event', label: 'Event', icon: '📅' },
-  { id: 'task', label: 'Task', icon: '✅' },
-  { id: 'contact', label: 'Contact', icon: '👤' },
-  { id: 'note', label: 'Note', icon: '📝' },
-  { id: 'smart', label: 'Smart add', icon: '✨', pro: true },
+  { id: 'event', label: 'Event', icon: 'calendar' },
+  { id: 'task', label: 'Task', icon: 'check' },
+  { id: 'contact', label: 'Contact', icon: 'person' },
+  { id: 'note', label: 'Note', icon: 'note' },
+  { id: 'smart', label: 'Smart add', icon: 'sparkle', pro: true },
 ];
 
 export const DEFAULT_QUICK_ADD = QUICK_ADD_TYPES.map((t) => ({ id: t.id, enabled: true }));

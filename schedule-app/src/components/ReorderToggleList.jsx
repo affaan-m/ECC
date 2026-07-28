@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { confirmTick, selectTick } from '../data/haptics.js';
+import Icon from './Icon.jsx';
 
 // Shared drag-to-reorder + enable toggle list, used anywhere the app lets a
 // user reorder/hide a fixed set of named items — Settings' bubble/tab lists,
@@ -127,7 +128,11 @@ export default function ReorderToggleList({ items, types, onChange, lockedIds = 
             >
               <DragHandleIcon />
             </button>
-            {type?.icon && <span className="bubble-reorder-icon">{type.icon}</span>}
+            {type?.icon && (
+              <span className="bubble-reorder-icon">
+                <Icon name={type.icon} size={20} />
+              </span>
+            )}
             <span className="bubble-reorder-label">{type?.label}</span>
             {locked ? (
               <span className="muted small">Always shown</span>

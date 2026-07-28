@@ -6,6 +6,7 @@ import Modal from '../components/Modal.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Avatar } from '../components/Avatar.jsx';
 import { todayISO, toISODate, addDays, formatShortDate, formatTime, expandEventOnDay } from '../data/helpers.js';
+import Icon from '../components/Icon.jsx';
 
 const WINDOW_DAYS = 180; // how far past/future the feed reaches
 
@@ -156,7 +157,7 @@ export default function ContactTimelinePage() {
           </button>
         </header>
         <div className="empty upgrade-empty">
-          <div className="empty-icon">👑</div>
+          <div className="empty-icon"><Icon name="crown" size={48} /></div>
           <h2>Timeline is a Pro feature</h2>
           <p className="muted">
             See a full history of events and logged contact with {contact.name.split(' ')[0]}, plus
@@ -219,7 +220,7 @@ export default function ContactTimelinePage() {
               className={`contact-note${n.pinned ? ' contact-note--pinned' : ''}`}
               onClick={() => setEditingNote({ ...n })}
             >
-              {n.pinned && <span className="pinned-note-pin">📌</span>}
+              {n.pinned && <span className="pinned-note-pin"><Icon name="bookmark" size={14} /></span>}
               <span className="pinned-note-body">
                 {n.title && <strong>{n.title}</strong>}
                 {n.body && <span className="pinned-note-text">{n.body}</span>}
@@ -274,7 +275,7 @@ export default function ContactTimelinePage() {
               setEditingInteraction({ date: today, text: '' });
             }}
           >
-            🤝 Log a contact
+            <Icon name="personCheck" /> Log a contact
           </button>
           <button
             className="btn btn-ghost full"
@@ -283,7 +284,7 @@ export default function ContactTimelinePage() {
               navigate('/planner', { state: { newEventContact: contact.id } });
             }}
           >
-            📅 Add an event
+            <Icon name="calendar" /> Add an event
           </button>
           <button
             className="btn btn-ghost full"
@@ -292,7 +293,7 @@ export default function ContactTimelinePage() {
               setEditingNote({ title: '', body: '', pinned: false });
             }}
           >
-            📝 Write a note
+            <Icon name="note" /> Write a note
           </button>
         </div>
       </Modal>
@@ -329,7 +330,6 @@ export default function ContactTimelinePage() {
             <label className="field">
               <span>Notes</span>
               <textarea
-                autoFocus
                 rows="3"
                 value={editingInteraction.text}
                 onChange={(e) => setEditingInteraction({ ...editingInteraction, text: e.target.value })}
@@ -364,7 +364,6 @@ export default function ContactTimelinePage() {
             <label className="field">
               <span>Title</span>
               <input
-                autoFocus
                 value={editingNote.title}
                 onChange={(e) => setEditingNote({ ...editingNote, title: e.target.value })}
               />
@@ -383,7 +382,7 @@ export default function ContactTimelinePage() {
                 onChange={(e) => setEditingNote({ ...editingNote, pinned: e.target.checked })}
                 ariaLabel="Pin to top of timeline"
               />
-              <span>📌 Pin to top of timeline</span>
+              <span><Icon name="bookmark" size={15} /> Pin to top of timeline</span>
             </label>
           </div>
         )}
@@ -429,7 +428,7 @@ function TimelineEntry({ entry, onEditInteraction }) {
         </span>
         <span className="timeline-item-body">
           <strong>{occ.title || 'Untitled event'}</strong>
-          {occ.repeat && occ.repeat !== 'none' && <span className="repeat-glyph"> ↻</span>}
+          {occ.repeat && occ.repeat !== 'none' && <span className="repeat-glyph"> <Icon name="repeat" size={13} /></span>}
         </span>
       </div>
     );
@@ -439,7 +438,7 @@ function TimelineEntry({ entry, onEditInteraction }) {
     <button className="timeline-item timeline-item--interaction" onClick={() => onEditInteraction(ix)}>
       <span className="timeline-item-date">{formatShortDate(entry.date)}</span>
       <span className="timeline-item-body">
-        <strong>🤝 Contact logged</strong>
+        <strong><Icon name="personCheck" size={15} /> Contact logged</strong>
         {ix.text && <span className="timeline-item-text">{ix.text}</span>}
       </span>
     </button>

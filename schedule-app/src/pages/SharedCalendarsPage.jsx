@@ -5,6 +5,7 @@ import { useStore } from '../data/store.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { backendConfigured, fetchCalendars, createCalendar } from '../data/api.js';
+import Icon from '../components/Icon.jsx';
 
 // Pro + backend feature: invite someone to see/add simple events with you
 // on a calendar separate from your own private one (see backend/README.md
@@ -27,7 +28,7 @@ export default function SharedCalendarsPage() {
           <button className="back-btn" onClick={() => navigate('/more')}>
             ‹ More
           </button>
-          <h1>👥 Shared calendars</h1>
+          <h1><Icon name="users" size={24} /> Shared calendars</h1>
         </header>
         <p className="muted center-pad">
           Shared calendars need Keystone's account system connected to a live server, which this
@@ -91,12 +92,12 @@ function SharedCalendarsInner() {
             </button>
           )}
         </div>
-        <h1>👥 Shared calendars</h1>
+        <h1><Icon name="users" size={24} /> Shared calendars</h1>
       </header>
 
       {!isSignedIn ? (
         <div className="empty">
-          <div className="empty-icon">👥</div>
+          <div className="empty-icon"><Icon name="users" size={48} /></div>
           <h2>Sign in to get started</h2>
           <p className="muted">Create a calendar and invite someone to see or add events together.</p>
           <button className="btn btn-primary" onClick={() => clerk.openSignIn()}>
@@ -110,7 +111,7 @@ function SharedCalendarsInner() {
             <p className="muted center-pad">Loading…</p>
           ) : calendars.length === 0 ? (
             <div className="empty">
-              <div className="empty-icon">👥</div>
+              <div className="empty-icon"><Icon name="users" size={48} /></div>
               <h2>Share a calendar</h2>
               <p className="muted">Create one and invite someone to see or add events together.</p>
               <button className="btn btn-primary" onClick={() => setAdding({ name: '' })}>
@@ -122,7 +123,7 @@ function SharedCalendarsInner() {
               {calendars.map((c) => (
                 <li key={c.id}>
                   <button className="contact-row" onClick={() => navigate(`/shared-calendars/${c.id}`)}>
-                    <span className="place-emoji">📅</span>
+                    <span className="place-emoji"><Icon name="calendar" size={20} /></span>
                     <span className="contact-main">
                       <span className="contact-name">{c.name}</span>
                       <span className="contact-sub muted">
@@ -150,7 +151,6 @@ function SharedCalendarsInner() {
           <label className="field">
             <span>Name</span>
             <input
-              autoFocus
               value={adding.name}
               onChange={(e) => setAdding({ name: e.target.value })}
               placeholder="e.g. Family calendar"

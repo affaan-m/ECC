@@ -65,7 +65,7 @@ export function computeNudges(state) {
   if (atRisk) {
     nudges.push({
       id: `streak:${atRisk.id}`,
-      icon: '🔥',
+      icon: 'flame',
       text: `Don't lose your ${atRiskStreak}-day streak on "${atRisk.title}" — log it before today ends.`,
       to: '/goals',
     });
@@ -89,7 +89,7 @@ export function computeNudges(state) {
     const late = daysSince(dueFollowUpDate);
     nudges.push({
       id: `followup:${dueFollowUp.id}`,
-      icon: '🤝',
+      icon: 'personCheck',
       text:
         late > 0
           ? `You said you'd follow up with ${dueFollowUp.name} ${late} day${late === 1 ? '' : 's'} ago.`
@@ -113,7 +113,7 @@ export function computeNudges(state) {
   if (mostOverdue) {
     nudges.push({
       id: `contact:${mostOverdue.id}`,
-      icon: '👋',
+      icon: 'personCheck',
       text: `${mostOverdue.name} hasn't heard from you in ${mostOverdueDays} days.`,
       to: `/contacts/${mostOverdue.id}`,
     });
@@ -128,7 +128,7 @@ export function computeNudges(state) {
     if (next) {
       nudges.push({
         id: `milestone:${g.id}`,
-        icon: '🏆',
+        icon: 'trophy',
         text: `One more day and "${g.title}" hits a ${next}-day streak!`,
         to: '/goals',
       });

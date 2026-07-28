@@ -5268,3 +5268,44 @@ button.timeline-item {
   display: flex;
   gap: 10px;
 }
+
+/* --- Icons ---------------------------------------------------------------
+   Inline SVG replacing the emoji the app used to render. They inherit the
+   colour of whatever text they sit beside, which is the whole point: an
+   emoji bell is always the same yellow, this one is gold on the dark theme
+   and ink on the light one without anybody having to ask. */
+.icon {
+  display: inline-block;
+  vertical-align: -0.16em;
+  flex: none;
+}
+/* Icons that sit inline with a run of text need a little air after them;
+   an emoji carried its own. */
+.icon + * {
+  margin-left: 0;
+}
+.detail-label .icon,
+.section-head .icon {
+  margin-right: 6px;
+}
+.empty-icon .icon {
+  opacity: 0.55;
+}
+.smart-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.smart-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}

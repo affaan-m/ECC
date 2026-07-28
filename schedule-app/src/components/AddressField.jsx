@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { suggestAddresses } from '../data/geocode.js';
+import Icon from './Icon.jsx';
 
 // Address input with lookup suggestions.
 //
@@ -79,7 +80,7 @@ export default function AddressField({ value, onChange, placeholder, autoFocus }
           {suggestions.map((s) => (
             <li key={`${s.lat},${s.lng}`}>
               <button type="button" className="address-suggestion" onMouseDown={() => pick(s)}>
-                📍 {s.label}
+                <Icon name="pin" size={15} /> {s.label}
               </button>
             </li>
           ))}

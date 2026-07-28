@@ -18,43 +18,48 @@ export function useSmartAdd(fallbackDate) {
     const date = parsed.date || fallbackDate || todayISO();
     if (kind === 'event') {
       const start = parsed.time || '09:00';
-      const [h, m] = start.split(':').map(Number);
-      // An explicit end ("2-4pm") wins; otherwise fall back to an hour long.
-      const endMins = parsed.endTime
-        ? Number(parsed.endTime.slice(0, 2)) * 60 + Number(parsed.endTime.slice(3))
-        : Math.min(23 * 60 + 59, h * 60 + m + 60);
-      const end = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
+      const end = parsed.endTime || plusMinutes(start, parsed.durationMinutes || 60);
       actions.addEvent({
         title: parsed.title,
         date,
         start,
         end,
-        contactId: '',
-        location: '',
+        contactId: parsed.contactId || '',
+        location: parsed.location || '',
         locLat: null,
         locLng: null,
         notes: '',
         done: false,
-        repeat: 'none',
+        repeat: parsed.repeat || 'none',
         repeatUntil: '',
-        repeatDays: [],
+        repeatDays: parsed.repeatDays || [],
         typeId: '',
         color: '',
-        reminder: 0,
+        reminder: parsed.reminderMinutes || 0,
       });
       showToast(`"${parsed.title}" added to your calendar`);
     } else {
       actions.addTask({
         title: parsed.title,
         notes: '',
-        location: '',
+        location: parsed.location || '',
         // A task with no date stays undated — unlike an event, which has to
         // land somewhere, a task without a due date is a legitimate state.
         dueDate: parsed.date || '',
         dueTime: parsed.time || '',
-        reminderOffsets: [],
+        // A lead time is only meaningful against a moment, so it's dropped
+        // for an undated task rather than silently stored against nothing.
+        reminderOffsets:
+          parsed.reminderMinutes && parsed.date ? [parsed.reminderMinutes] : [],
+        repeat: parsed.repeat || 'none',
       });
       showToast(`"${parsed.title}" added to your tasks`);
     }
   };
+}
+
+function plusMinutes(hhmm, mins) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = Math.min(23 * 60 + 59, h * 60 + m + mins);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }

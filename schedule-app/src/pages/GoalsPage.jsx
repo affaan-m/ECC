@@ -29,6 +29,7 @@ import {
   requestNotificationPermission,
   notificationsSupported,
 } from '../data/notifications.js';
+import Icon from '../components/Icon.jsx';
 
 const emptyGoal = (period) => ({
   title: '',
@@ -319,16 +320,16 @@ export default function GoalsPage() {
                             single completion doesn't need a badge. */}
                         {streak >= 2 && (
                           <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
-                            🔥 <AnimatedNumber value={streak} />
+                            <Icon name="flame" size={16} /> <AnimatedNumber value={streak} />
                           </span>
                         )}
                         {frozenHere && (
                           <span className="streak-badge streak-badge--frozen" title="This period is protected by a streak freeze">
-                            ❄️ Protected
+                            <Icon name="snowflake" size={14} /> Protected
                           </span>
                         )}
-                        {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}>🔔</span>}
-                        {done && <span className="check-badge" aria-label="Goal met">✓</span>}
+                        {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}><Icon name="bell" size={14} /></span>}
+                        {done && <span className="check-badge" aria-label="Goal met"><Icon name="check" size={15} /></span>}
                       </div>
                       <div className="progress-track">
                         <div className="progress-fill" style={{ width: `${pct}%` }} />
@@ -394,12 +395,12 @@ export default function GoalsPage() {
                       data-haptic="select"
                       onClick={() => useFreeze(g, key)}
                     >
-                      ❄️ Use a streak freeze to protect {isDaily ? 'today' : 'this week'} ({freezesLeft} left this month)
+                      <Icon name="snowflake" size={15} /> Use a streak freeze to protect {isDaily ? 'today' : 'this week'} ({freezesLeft} left this month)
                     </button>
                   )}
                   {outOfFreezes && (
                     <button className="freeze-row" data-haptic="select" onClick={() => navigate('/pricing')}>
-                      🔒 Out of freezes this month — get 5/mo with Pro
+                      <Icon name="lock" size={15} /> Out of freezes this month — get 5/mo with Pro
                     </button>
                   )}
                 </div>
@@ -436,7 +437,6 @@ export default function GoalsPage() {
             <label className="field">
               <span>Goal</span>
               <input
-                autoFocus
                 value={editing.title}
                 onChange={(e) => setEditing({ ...editing, title: e.target.value })}
                 placeholder="e.g. Drink water"
@@ -448,7 +448,7 @@ export default function GoalsPage() {
                 className="btn btn-ghost btn-sm history-link"
                 onClick={() => (isPro ? navigate(`/goals/${editing.id}/history`) : navigate('/pricing'))}
               >
-                📈 View history {!isPro && '🔒'}
+                <Icon name="trending" /> View history {!isPro && <Icon name="lock" size={14} />}
               </button>
             )}
             <div className="field">
@@ -620,7 +620,7 @@ function WeekPace({ goal, value, weekStart, atCurrent, onSetTo }) {
 function EmptyState({ isDaily, onAdd }) {
   return (
     <div className="empty">
-      <div className="empty-icon">🎯</div>
+      <div className="empty-icon"><Icon name="target" size={48} /></div>
       <h2>{isDaily ? 'Set a daily goal' : 'Set a weekly goal'}</h2>
       <p className="muted">
         {isDaily

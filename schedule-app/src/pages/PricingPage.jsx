@@ -5,6 +5,7 @@ import { useStore, useActions } from '../data/store.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { startCheckout, openBillingPortal, backendConfigured } from '../data/api.js';
+import Icon from '../components/Icon.jsx';
 
 // Pro is a one-time purchase. This is the only place the price is written
 // on the client — it's display text, and Stripe's price (set by
@@ -41,7 +42,7 @@ export default function PricingPage() {
       </header>
 
       <section className="pricing-hero">
-        <div className="pricing-crown">👑</div>
+        <div className="pricing-crown"><Icon name="crown" size={40} /></div>
         <h1>Keystone Pro</h1>
         <p className="muted">Unlock contact timelines, status groups, sharing, sync, and more.</p>
       </section>
@@ -68,8 +69,8 @@ export default function PricingPage() {
             {FEATURES.map((f) => (
               <tr key={f.label}>
                 <td>{f.label}</td>
-                <td>{f.free ? '✓' : '—'}</td>
-                <td className="pricing-pro-col">{f.pro ? '✓' : '—'}</td>
+                <td>{f.free ? <Icon name="check" size={16} /> : '—'}</td>
+                <td className="pricing-pro-col">{f.pro ? <Icon name="check" size={16} /> : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -128,7 +129,7 @@ function RealPricingCTA({ isPro, settings }) {
     <>
       {isPro ? (
         <div className="detail-section pricing-active">
-          <span>✓ You own Keystone Pro</span>
+          <span><Icon name="check" size={16} /> You own Keystone Pro</span>
           {hasLegacySubscription && (
             <>
               <p className="muted small">
@@ -159,7 +160,7 @@ function DemoPricingCTA({ isPro }) {
     <>
       {isPro ? (
         <div className="detail-section pricing-active">
-          <span>✓ You own Keystone Pro (demo mode)</span>
+          <span><Icon name="check" size={16} /> You own Keystone Pro (demo mode)</span>
           <button className="btn btn-ghost full" onClick={() => actions.setSettings({ isPro: false })}>
             Turn off demo Pro
           </button>

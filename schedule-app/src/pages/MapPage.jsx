@@ -13,6 +13,7 @@ import { geocodeAddress } from '../data/geocode.js';
 import { directionsTarget, openMaps } from '../data/maps.js';
 import { resolveMapStyle } from '../data/mapStyles.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
+import Icon from '../components/Icon.jsx';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -471,7 +472,12 @@ export default function MapPage() {
             aria-label="Plan my day"
             title="Plan my day"
           >
-            🧭{!isPro && <span className="map-round-lock">🔒</span>}
+            <Icon name="compass" size={22} />
+            {!isPro && (
+              <span className="map-round-lock">
+                <Icon name="lock" size={12} />
+              </span>
+            )}
           </button>
           {selected && (
             <button
@@ -490,9 +496,9 @@ export default function MapPage() {
       {!pickMode && filtersOpen && (
         <div className="map-filters" role="group" aria-label="Pin filters">
           {[
-            { k: 'contacts', icon: '👤', label: 'People', n: (state.pins || []).filter((p) => p.contactId).length },
-            { k: 'custom', icon: '📍', label: 'Places', n: (state.pins || []).filter((p) => !p.contactId).length },
-            { k: 'events', icon: '📅', label: "Today's events", n: eventPins.length },
+            { k: 'contacts', icon: 'person', label: 'People', n: (state.pins || []).filter((p) => p.contactId).length },
+            { k: 'custom', icon: 'pin', label: 'Places', n: (state.pins || []).filter((p) => !p.contactId).length },
+            { k: 'events', icon: 'calendar', label: "Today's events", n: eventPins.length },
           ].map(({ k, icon, label, n }) => (
             <button
               key={k}
@@ -502,7 +508,7 @@ export default function MapPage() {
               onClick={() => toggleFilter(k)}
             >
               <span className="map-filter-icon" aria-hidden="true">
-                {icon}
+                <Icon name={icon} size={18} />
               </span>
               <span className="map-filter-label">{label}</span>
               <span className="map-filter-count muted small">{n}</span>
@@ -533,7 +539,7 @@ export default function MapPage() {
               <SearchIcon />
             </button>
             <button className="banner-x" onClick={cancelPick} aria-label="Cancel">
-              ✕
+              <Icon name="close" size={16} />
             </button>
           </div>
           <div className="map-pick-footer">
@@ -561,7 +567,7 @@ export default function MapPage() {
             }}
             aria-label="Cancel"
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
       )}
@@ -599,7 +605,7 @@ export default function MapPage() {
             aria-label="Save as pin"
             title="Save as pin"
           >
-            📌
+            <Icon name="pin" size={20} />
           </button>
           <button
             className="temp-pin-action temp-pin-action--x"
@@ -607,7 +613,7 @@ export default function MapPage() {
             onClick={() => setTempPin(null)}
             aria-label="Dismiss"
           >
-            ✕
+            <Icon name="close" size={18} />
           </button>
         </div>
       )}
@@ -644,7 +650,7 @@ export default function MapPage() {
           )}
           <div className="pin-card-actions">
             <button className="btn btn-primary btn-sm" onClick={() => directionsTo(selected)}>
-              ➤ Directions
+              <Icon name="send" /> Directions
             </button>
             {/* An event pin isn't a saved pin — it's today's calendar drawn
                 on the map. Editing or deleting it here would have to mean

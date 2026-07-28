@@ -43,6 +43,7 @@ import {
   makeContactColor,
 } from '../data/helpers.js';
 import { useEdgeFade } from '../data/useEdgeFade.js';
+import Icon from '../components/Icon.jsx';
 import { findDayConflicts } from '../data/conflicts.js';
 import { contactDatesOn, contactDatesInMonth, contactDateLabel } from '../data/contactDates.js';
 import { directionsTarget, mapsLinkProps } from '../data/maps.js';
@@ -77,11 +78,13 @@ const COLOR_SWATCHES = ['#1f5f8b', '#8a5cd1', '#2e9e6b', '#e08a1e', '#d1495b', '
 // and quietly drift wrong — which is worse than not having one, since it
 // looks authoritative. Aligned to the next real minute boundary rather than
 // ticking every 60s from mount, so it moves when the clock does.
+function nowMinuteOfDay() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
 function useMinuteOfDay() {
-  const [mins, setMins] = useState(() => {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
-  });
+  const [mins, setMins] = useState(nowMinuteOfDay);
   useEffect(() => {
     let timer;
     const schedule = () => {
@@ -185,10 +188,24 @@ export default function PlannerPage() {
     if (scrollNowNonce === 0) return;
     const id = requestAnimationFrame(() => {
       const el = document.querySelector('.now-line');
-      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      // No now-line means the clock is outside the timeline's hour range
+      // (4am on a day that starts at 6). There's no "now" to centre on, but
+      // leaving the page parked wherever it was last is worse than showing
+      // the nearer end of the day.
+      const body = document.querySelector('.timeline-body');
+      if (!body) return;
+      const past = nowMinuteOfDay() >= dayEndHour * 60;
+      (past ? body : document.body).scrollIntoView({
+        block: past ? 'end' : 'start',
+        behavior: 'smooth',
+      });
     });
     return () => cancelAnimationFrame(id);
-  }, [scrollNowNonce]);
+  }, [scrollNowNonce, dayEndHour]);
 
   // Tapping the Planner tab while already on Planner re-fires this route's
   // navigation with a fresh key; App.jsx flags it so it can mean "take me
@@ -244,8 +261,16 @@ export default function PlannerPage() {
       } catch {
         // ignore malformed stash
       }
+      window.history.replaceState({}, '');
+      return;
     }
     window.history.replaceState({}, '');
+    // Nothing asked for a particular day, so this is a plain visit to the
+    // calendar. The window is the scroller and React Router doesn't reset it,
+    // so without this you come back to whatever hour you happened to leave
+    // on — 6am on a Tuesday evening — and have to scroll to find yourself
+    // again. Coming back to the calendar should mean coming back to now.
+    jumpToNow();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stash the in-progress event draft and hand off to the full map page to
@@ -576,7 +601,7 @@ export default function PlannerPage() {
     const end = minutesToTime(c.a.e2 + c.needed);
     actions.addEvent({
       id,
-      title: `🚗 Travel to ${c.b.title || 'next event'}`,
+      title: `Travel to ${c.b.title || 'next event'}`,
       date: c.b.recDate || c.b.occDate || cursor,
       start,
       end,
@@ -666,7 +691,7 @@ export default function PlannerPage() {
               className="btn btn-sm btn-ghost"
               onClick={() => (isPro ? setTemplatesOpen(true) : navigate('/pricing'))}
             >
-              Templates {!isPro && '🔒'}
+              Templates {!isPro && <Icon name="lock" size={14} />}
             </button>
           )}
           <button className="today-btn" onClick={jumpToNow} aria-label="Jump to now" title="Jump to now">
@@ -683,7 +708,7 @@ export default function PlannerPage() {
           {shownConflicts.map((c) => (
             <li key={c.id} className={`conflict conflict--${c.kind}`}>
               <span className="conflict-icon" aria-hidden="true">
-                {c.kind === 'overlap' ? '⚠️' : '🚗'}
+                <Icon name={c.kind === 'overlap' ? 'warning' : 'car'} size={16} />
               </span>
               <span className="conflict-body">
                 <span className="conflict-text">{c.text}</span>
@@ -1640,14 +1665,14 @@ function DayView({
                   <span className="event-title">
                     <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
                     {ev.title || 'Untitled'}
-                    {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
+                    {recurring && <span className="repeat-glyph"> <Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                   </span>
                 ) : (
                   <>
                     <span className="event-time">
                       {formatTime(minutesToTime(displayStartMin))}
-                      {recurring && <span className="repeat-glyph"> {ev.isException ? '✎' : '↻'}</span>}
-                      {ev.reminder > 0 && <span className="repeat-glyph"> 🔔</span>}
+                      {recurring && <span className="repeat-glyph"> <Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
+                      {ev.reminder > 0 && <span className="repeat-glyph"> <Icon name="bell" size={13} /></span>}
                     </span>
                     <span className="event-title">{ev.title || 'Untitled'}</span>
                     {who && <span className="event-who">{who}</span>}
@@ -1714,14 +1739,14 @@ function DayView({
                     <span className="event-title">
                       <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
                       {occ.title || 'Untitled'}
-                      {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                      {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                     </span>
                   ) : (
                     <>
                       <span className="event-time">
                         {formatTime(minutesToTime(displayStartMin))}
-                        {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
-                        {occ.reminder > 0 && <span className="repeat-glyph"> 🔔</span>}
+                        {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
+                        {occ.reminder > 0 && <span className="repeat-glyph"> <Icon name="bell" size={13} /></span>}
                       </span>
                       <span className="event-title">{occ.title || 'Untitled'}</span>
                       {who && <span className="event-who">{who}</span>}
@@ -1764,13 +1789,13 @@ function DayView({
                     <span className="event-title">
                       <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
                       {occ.title || 'Untitled'}
-                      {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                      {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                     </span>
                   ) : (
                     <>
                       <span className="event-time">
                         {formatTime(minutesToTime(displayStartMin))}
-                        {recurring && <span className="repeat-glyph"> {occ.isException ? '✎' : '↻'}</span>}
+                        {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                       </span>
                       <span className="event-title">{occ.title || 'Untitled'}</span>
                       {who && <span className="event-who">{who}</span>}
@@ -1976,8 +2001,8 @@ function WeekView({
                       {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                       <span className="chip-time">{formatTime(ev.start)}</span>
                       <span className="chip-title">{ev.title || 'Untitled'}</span>
-                      {ev.reminder > 0 && <span className="repeat-glyph">🔔</span>}
-                      {recurring && <span className="repeat-glyph">{ev.isException ? '✎' : '↻'}</span>}
+                      {ev.reminder > 0 && <span className="repeat-glyph"><Icon name="bell" size={13} /></span>}
+                      {recurring && <span className="repeat-glyph"><Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                     </button>
                   );
                 })
@@ -2089,7 +2114,7 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                 <span className="month-daynum">{d.getDate()}</span>
                 {markedDates.has(iso) && (
                   <span className="month-birthday" aria-hidden="true">
-                    🎂
+                    <Icon name="cake" size={12} />
                   </span>
                 )}
                 <span className="month-dots">
@@ -2125,8 +2150,8 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                     {formatShortDate(ev.iso)} · {formatTime(ev.start)}
                   </span>
                   <span className="chip-title">{ev.title || 'Untitled'}</span>
-                  {ev.reminder > 0 && <span className="repeat-glyph">🔔</span>}
-                  {recurring && <span className="repeat-glyph">{ev.isException ? '✎' : '↻'}</span>}
+                  {ev.reminder > 0 && <span className="repeat-glyph"><Icon name="bell" size={13} /></span>}
+                  {recurring && <span className="repeat-glyph"><Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                 </button>
               );
             })}
@@ -2262,7 +2287,15 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
           {(linkedGoal || linkedTask) && (
             <div className="detail-field">
               <span className="detail-label">Linked to</span>
-              <span className="detail-value">{linkedGoal ? `🎯 ${linkedGoal.title}` : `✅ ${linkedTask.title}`}</span>
+              <span className="detail-value">{linkedGoal ? (
+                  <>
+                    <Icon name="target" size={15} /> {linkedGoal.title}
+                  </>
+                ) : (
+                  <>
+                    <Icon name="check" size={15} /> {linkedTask.title}
+                  </>
+                )}</span>
             </div>
           )}
         </section>
@@ -2271,7 +2304,7 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
           <section className="detail-section">
             <MiniMapPicker lat={occ.locLat} lng={occ.locLng} onPick={() => {}} />
             <a className="btn btn-primary full" style={{ marginTop: 10 }} {...mapsLinkProps(mapsTarget)}>
-              ➤ Directions
+              <Icon name="send" /> Directions
             </a>
           </section>
         )}
@@ -2284,7 +2317,7 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
         )}
 
         <button className="btn btn-ghost full share-event-btn" onClick={shareEvent}>
-          👥 Share event {!isPro && '· Pro'}
+          <Icon name="users" /> Share event {!isPro && '· Pro'}
         </button>
       </div>
     </div>
@@ -2458,7 +2491,6 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         <label className="field">
           <span>Title</span>
           <input
-            autoFocus
             value={draft.title}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             placeholder="e.g. Coffee with Sam"
@@ -2501,7 +2533,7 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
               onClick={() => setDraft({ ...draft, color: '' })}
               title="Use type color"
             >
-              ✕
+              <Icon name="close" size={15} />
             </button>
             {COLOR_SWATCHES.map((c) => (
               <button
@@ -2530,7 +2562,7 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
           </label>
         </div>
         <button type="button" className="btn btn-ghost full" onClick={() => setScheduling(true)}>
-          📅 Schedule from calendar
+          <Icon name="calendar" /> Schedule from calendar
         </button>
 
         {!thisScope && (
@@ -2618,7 +2650,7 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
               className="btn btn-ghost btn-sm"
               onClick={() => onSelectLocation(draft)}
             >
-              📍 {draft.locLat != null ? 'Change location' : 'Select location'}
+              <Icon name="pin" /> {draft.locLat != null ? 'Change location' : 'Select location'}
             </button>
             {draft.locLat != null && (
               <>
@@ -2654,8 +2686,22 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
             placeholder="Not linked"
             options={[
               { value: '', label: 'None' },
-              ...goals.map((g) => ({ value: `goal:${g.id}`, label: `🎯 ${g.title}` })),
-              ...tasks.map((t) => ({ value: `task:${t.id}`, label: `✅ ${t.title}` })),
+              ...goals.map((g) => ({
+                value: `goal:${g.id}`,
+                label: (
+                  <>
+                    <Icon name="target" size={14} /> {g.title}
+                  </>
+                ),
+              })),
+              ...tasks.map((t) => ({
+                value: `task:${t.id}`,
+                label: (
+                  <>
+                    <Icon name="check" size={14} /> {t.title}
+                  </>
+                ),
+              })),
             ]}
           />
           {draft.link && (

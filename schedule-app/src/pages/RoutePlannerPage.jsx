@@ -11,6 +11,7 @@ import {
 import { mapsLinkProps, webTarget } from '../data/maps.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
 import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
+import Icon from '../components/Icon.jsx';
 
 export default function RoutePlannerPage() {
   const { state } = useStore();
@@ -124,7 +125,7 @@ export default function RoutePlannerPage() {
         <button className="back-btn" onClick={() => navigate('/map')}>
           ‹ Map
         </button>
-        <h1>🧭 Plan my day</h1>
+        <h1><Icon name="compass" size={24} /> Plan my day</h1>
         <p className="muted small">
           Pick who/where you want to visit today — overdue people are pre-selected — then get the
           shortest visiting order. Today's events with a location are listed too: those keep their
@@ -190,7 +191,7 @@ export default function RoutePlannerPage() {
               <ul className="route-list">
                 {route.startedFromStop && (
                   <li className="route-stop">
-                    <span className="route-stop-num">•</span>
+                    <span className="route-stop-num"><Icon name="dot" size={12} /></span>
                     <span className="route-stop-label">
                       {route.startedFromStop.emoji || '📍'} {route.startedFromStop.label || 'Dropped pin'}
                     </span>
@@ -224,7 +225,7 @@ export default function RoutePlannerPage() {
                 className="btn btn-primary full"
                 {...mapsLinkProps(webTarget(buildGoogleMapsUrl(route.start, route.stops)))}
               >
-                ➤ Open full route in Google Maps
+                <Icon name="send" /> Open full route in Google Maps
               </a>
             </section>
           )}

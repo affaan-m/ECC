@@ -28,6 +28,7 @@ import { useToast } from '../data/toast.jsx';
 import { useCountUp } from '../data/useCountUp.js';
 import { useSmartAdd } from '../data/useSmartAdd.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
+import Icon from '../components/Icon.jsx';
 
 // Fixed pale tints rather than theme colours — a tinted note forces dark
 // text (see .note-card--tinted), so every swatch has to stay light enough to
@@ -373,10 +374,10 @@ export default function HomePage() {
             return (
               <button key="goals" className="detail-section home-block-goals" onClick={() => navigate('/goals')}>
                 <div className="goals-block-head">
-                  <span className="detail-label">🎯 Goals</span>
+                  <span className="detail-label"><Icon name="target" /> Goals</span>
                   {bestStreak >= 2 && (
                     <span className="streak-badge">
-                      🔥 <AnimatedNumber value={bestStreak} />
+                      <Icon name="flame" size={16} /> <AnimatedNumber value={bestStreak} />
                     </span>
                   )}
                 </div>
@@ -391,12 +392,12 @@ export default function HomePage() {
             if (nudges.length === 0) return null;
             return (
               <section className="detail-section" key="nudges">
-                <span className="detail-label">💡 Nudges</span>
+                <span className="detail-label"><Icon name="lightbulb" /> Nudges</span>
                 <ul className="nudge-list">
                   {nudges.map((n) => (
                     <li key={n.id}>
                       <button className="nudge-row" onClick={() => navigate(n.to)}>
-                        <span className="nudge-icon" aria-hidden="true">{n.icon}</span>
+                        <span className="nudge-icon" aria-hidden="true"><Icon name={n.icon} size={18} /></span>
                         <span className="nudge-text">{n.text}</span>
                       </button>
                     </li>
@@ -411,7 +412,7 @@ export default function HomePage() {
             if (nothingYet) return null;
             return (
               <section className="detail-section recap-block" key="recap">
-                <span className="detail-label">📊 This week</span>
+                <span className="detail-label"><Icon name="chart" /> This week</span>
                 <div className="recap-stats">
                   <div className="recap-stat">
                     <strong>
@@ -440,7 +441,7 @@ export default function HomePage() {
             if (reminders.length === 0) return null;
             return (
               <section className="detail-section" key="reminders">
-                <span className="detail-label">🔔 Important reminders</span>
+                <span className="detail-label"><Icon name="bell" /> Important reminders</span>
                 <ul className="reminder-list">
                   {reminders.map((r) => (
                     <li key={`${r.kind}:${r.id}`}>
@@ -498,7 +499,7 @@ export default function HomePage() {
                           <button className="task-title-btn" onClick={() => openEditTask(t)}>
                             <span className={`task-title${t.done ? ' task-title--done' : ''}`}>
                               {t.title}
-                              {t.repeat && t.repeat !== 'none' && <span className="repeat-glyph"> ↻</span>}
+                              {t.repeat && t.repeat !== 'none' && <span className="repeat-glyph"> <Icon name="repeat" size={13} /></span>}
                             </span>
                             {(t.location || t.dueDate) && !t.done && (
                               <span className="task-meta muted small">
@@ -521,7 +522,7 @@ export default function HomePage() {
                             onClick={() => taskSwipeRefs.current.get(t.id)?.remove()}
                             aria-label="Delete task"
                           >
-                            ✕
+                            <Icon name="close" size={16} />
                           </button>
                         </div>
                       </SwipeToDelete>
@@ -568,7 +569,7 @@ export default function HomePage() {
             return (
               <section className="detail-section" key="notes">
                 <div className="section-head">
-                  <span className="detail-label">📝 Notes</span>
+                  <span className="detail-label"><Icon name="note" /> Notes</span>
                   <button className="btn btn-ghost btn-sm" onClick={openNewNote}>
                     + Add
                   </button>
@@ -584,14 +585,14 @@ export default function HomePage() {
                         style={n.color ? { background: n.color } : undefined}
                         onClick={() => openEditNote(n)}
                       >
-                        {n.pinned && <span className="note-pin">📌</span>}
+                        {n.pinned && <span className="note-pin"><Icon name="bookmark" size={14} /></span>}
                         {n.title && <strong className="note-title">{n.title}</strong>}
                         {n.checklist ? (
                           <ul className="note-checklist">
                             {n.checklist.slice(0, 5).map((item, i) => (
                               <li key={i} className={item.done ? 'note-check--done' : ''}>
                                 <span className={`note-check-box${item.done ? ' note-check-box--on' : ''}`}>
-                                  {item.done ? '✓' : ''}
+                                  {item.done ? <Icon name="check" size={12} /> : null}
                                 </span>
                                 {item.text || 'Item'}
                               </li>
@@ -644,7 +645,6 @@ export default function HomePage() {
             <label className="field">
               <span>Title</span>
               <input
-                autoFocus
                 value={editingNote.title}
                 onChange={(e) => setEditingNote({ ...editingNote, title: e.target.value })}
                 placeholder="Optional"
@@ -705,7 +705,7 @@ export default function HomePage() {
                       }}
                       aria-label="Remove item"
                     >
-                      ✕
+                      <Icon name="close" size={16} />
                     </button>
                   </div>
                 ))}
@@ -736,7 +736,7 @@ export default function HomePage() {
                     style={c ? { background: c } : undefined}
                     onClick={() => setEditingNote({ ...editingNote, color: c })}
                   >
-                    {!c && '✕'}
+                    {!c && <Icon name="close" size={15} />}
                   </button>
                 ))}
               </div>
@@ -771,7 +771,6 @@ export default function HomePage() {
             <label className="field">
               <span>Task</span>
               <input
-                autoFocus
                 value={editingTask.title}
                 onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
                 placeholder="What needs doing?"
@@ -815,7 +814,7 @@ export default function HomePage() {
                     }}
                     aria-label="Remove subtask"
                   >
-                    ✕
+                    <Icon name="close" size={16} />
                   </button>
                 </div>
               ))}

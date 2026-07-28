@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import Icon from './Icon.jsx';
 
 const PIECE_COUNT = 16;
 const PIECES = Array.from({ length: PIECE_COUNT }, (_, i) => i);
@@ -47,7 +48,9 @@ export default function MilestoneCelebration({ celebrate, onDone }) {
         })}
       </div>
       <div className="milestone-card">
-        <span className="milestone-fire" aria-hidden="true">🔥</span>
+        <span className="milestone-fire" aria-hidden="true">
+          <Icon name="flame" size={30} />
+        </span>
         <strong>
           {celebrate.milestone}-{celebrate.periodLabel} streak!
         </strong>

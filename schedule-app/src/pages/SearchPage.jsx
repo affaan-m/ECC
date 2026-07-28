@@ -13,6 +13,7 @@ import {
 } from '../data/helpers.js';
 import { parseSearchQuery } from '../data/nlSearch.js';
 import { contactDatesInRange, contactDatesWithin, contactDateLabel } from '../data/contactDates.js';
+import Icon from '../components/Icon.jsx';
 
 // How far ahead a bare "birthdays" query (no date phrase of its own) looks —
 // far enough to be useful, not so far it lists literally everyone tracked.
@@ -157,7 +158,7 @@ export default function SearchPage() {
         <p className="muted center-pad">No matches for "{query.trim()}".</p>
       ) : (
         <>
-          <ResultGroup label="Birthdays & anniversaries" icon="🎂" items={results.birthdays} onOpen={openBirthday}>
+          <ResultGroup label="Birthdays & anniversaries" icon="cake" items={results.birthdays} onOpen={openBirthday}>
             {(d) => {
               const { text, detail } = contactDateLabel(d);
               return (
@@ -170,7 +171,7 @@ export default function SearchPage() {
               );
             }}
           </ResultGroup>
-          <ResultGroup label="Events" icon="📅" items={results.events} onOpen={openEvent}>
+          <ResultGroup label="Events" icon="calendar" items={results.events} onOpen={openEvent}>
             {(ev) => (
               <>
                 <span className="search-result-title">{ev.title || 'Untitled'}</span>
@@ -182,7 +183,7 @@ export default function SearchPage() {
               </>
             )}
           </ResultGroup>
-          <ResultGroup label="Tasks" icon="✓" items={results.tasks} onOpen={openTask}>
+          <ResultGroup label="Tasks" icon="check" items={results.tasks} onOpen={openTask}>
             {(t) => (
               <>
                 <span className="search-result-title">{t.title}</span>
@@ -194,7 +195,7 @@ export default function SearchPage() {
               </>
             )}
           </ResultGroup>
-          <ResultGroup label="Goals" icon="🎯" items={results.goals} onOpen={openGoal}>
+          <ResultGroup label="Goals" icon="target" items={results.goals} onOpen={openGoal}>
             {(g) => (
               <>
                 <span className="search-result-title">{g.title}</span>
@@ -202,7 +203,7 @@ export default function SearchPage() {
               </>
             )}
           </ResultGroup>
-          <ResultGroup label="People" icon="👤" items={results.contacts} onOpen={openContact}>
+          <ResultGroup label="People" icon="person" items={results.contacts} onOpen={openContact}>
             {(c) => (
               <>
                 <span className="search-result-title">{c.name}</span>
@@ -212,7 +213,7 @@ export default function SearchPage() {
               </>
             )}
           </ResultGroup>
-          <ResultGroup label="Notes" icon="📝" items={results.notes} onOpen={openNote}>
+          <ResultGroup label="Notes" icon="note" items={results.notes} onOpen={openNote}>
             {(n) => (
               <>
                 <span className="search-result-title">{n.title || 'Untitled note'}</span>
@@ -238,7 +239,7 @@ function ResultGroup({ label, icon, items, onOpen, children }) {
         {shown.map((item) => (
           <button key={item.id} className="search-result-row" onClick={() => onOpen(item)}>
             <span className="search-result-icon" aria-hidden="true">
-              {icon}
+              <Icon name={icon} size={16} />
             </span>
             <span className="search-result-body">{children(item)}</span>
             <ChevronIcon />

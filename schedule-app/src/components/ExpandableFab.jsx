@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../data/store.jsx';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
+import Icon from './Icon.jsx';
 
 // Floating "+" that expands into a stack of labeled pills (one per enabled
 // quick-add action, in the user's configured order) instead of jumping
@@ -58,9 +59,11 @@ export default function ExpandableFab({ onAction }) {
                   onAction(it.id);
                 }}
               >
-                <span className="expandable-fab-pill-icon">{type?.icon}</span>
+                <span className="expandable-fab-pill-icon"><Icon name={type?.icon} size={18} /></span>
                 {type?.label}
-                {locked && <span className="expandable-fab-pill-lock">🔒</span>}
+                {locked && <span className="expandable-fab-pill-lock">
+                    <Icon name="lock" size={13} />
+                  </span>}
               </button>
             );
           })}

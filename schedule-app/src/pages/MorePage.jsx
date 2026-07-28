@@ -27,6 +27,7 @@ import {
   DEFAULT_CONTACT_SWIPE_RIGHT,
 } from '../data/contactSwipe.js';
 import { backendConfigured } from '../data/api.js';
+import Icon from '../components/Icon.jsx';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
 const HOURS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: formatHour(h) }));
@@ -263,7 +264,7 @@ export default function MorePage() {
 
       {isPro ? (
         <section className="pro-bubble-lg pro-bubble-lg--active">
-          <span className="pro-bubble-lg-crown">👑</span>
+          <span className="pro-bubble-lg-crown"><Icon name="crown" size={22} /></span>
           <div>
             <strong>Keystone Pro</strong>
             <p className="muted small">
@@ -275,7 +276,7 @@ export default function MorePage() {
         </section>
       ) : (
         <button className="pro-bubble-lg" onClick={() => navigate('/pricing')}>
-          <span className="pro-bubble-lg-crown">👑</span>
+          <span className="pro-bubble-lg-crown"><Icon name="crown" size={22} /></span>
           <div>
             <strong>Unlock Keystone Pro</strong>
             <p className="muted small">
@@ -342,7 +343,7 @@ export default function MorePage() {
           className="btn btn-ghost full"
           onClick={() => (isPro ? navigate('/shared-calendars') : navigate('/pricing'))}
         >
-          👥 Manage shared calendars {!isPro && '· Pro'}
+          <Icon name="users" /> Manage shared calendars {!isPro && '· Pro'}
         </button>
       </SettingsGroup>
 
@@ -449,7 +450,7 @@ export default function MorePage() {
             <ul className="bubble-reorder-list bubble-reorder-list--preview">
               {HOME_BLOCK_TYPES.map((t) => (
                 <li key={t.id} className="bubble-reorder-row">
-                  <span className="bubble-reorder-icon">{t.icon}</span>
+                  <span className="bubble-reorder-icon"><Icon name={t.icon} size={20} /></span>
                   <span className="bubble-reorder-label">{t.label}</span>
                 </li>
               ))}
@@ -475,7 +476,7 @@ export default function MorePage() {
             <ul className="bubble-reorder-list bubble-reorder-list--preview">
               {QUICK_ADD_TYPES.map((t) => (
                 <li key={t.id} className="bubble-reorder-row">
-                  <span className="bubble-reorder-icon">{t.icon}</span>
+                  <span className="bubble-reorder-icon"><Icon name={t.icon} size={20} /></span>
                   <span className="bubble-reorder-label">{t.label}</span>
                 </li>
               ))}
@@ -899,7 +900,7 @@ export default function MorePage() {
         <p className="muted small">Have an idea or found a bug? I'd love to hear it.</p>
         <div className="stack-btns">
           <button className="btn btn-ghost full" onClick={() => setFeedback('')}>
-            💡 Send feedback / suggest a feature
+            <Icon name="lightbulb" /> Send feedback / suggest a feature
           </button>
           {/* The tour narrates the Home screen, so it goes there rather
               than playing on top of Settings. App.jsx owns the Tutorial for
@@ -908,7 +909,7 @@ export default function MorePage() {
             className="btn btn-ghost full"
             onClick={() => navigate('/', { state: { replayTour: true } })}
           >
-            🏛️ Replay the tour
+            <Icon name="play" /> Replay the tour
           </button>
         </div>
       </SettingsGroup>
