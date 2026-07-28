@@ -325,49 +325,18 @@ export default function App() {
     };
   }, [location.pathname]);
 
-  // The launch splash is in index.html and has been on screen since the
-  // first paint (see the comment there). All that's left is deciding when to
-  // take it away — and since it started at page load rather than at mount,
-  // the remaining time is measured against performance.now(). If the bundle
-  // took longer than the pulse those come out negative, so a slow load
-  // simply finds it already over and clears it immediately instead of
-  // adding its duration on top.
-  const [splashDone, setSplashDone] = useState(() => !document.getElementById('boot-splash'));
+  // There is no launch splash. The app is what you get on the first paint —
+  // the inline boot script in index.html has already resolved the theme, so
+  // there's nothing to cover up while it settles and nothing to wait out.
+  //
   // Replay requested from Settings. Held here rather than in MorePage so the
   // first run and a replay go through exactly one code path.
   const [replayTour, setReplayTour] = useState(false);
-  useEffect(() => {
-    const el = document.getElementById('boot-splash');
-    if (!el) return undefined;
-    // Reduce-motion shows the mark still, with no animation to wait for, so
-    // holding the full beat over it would just be a stall.
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // Lines up with the pulse settling at 620ms (see .splash-mark).
-    const outAt = still ? 300 : 660;
-    const removeAt = outAt + 380;
-    const elapsed = performance.now();
-    const outTimer = setTimeout(() => {
-      el.classList.add('splash--out');
-      // Release the launch-screen background (see `html.booting`) exactly as
-      // the splash starts to fade, so the fade reveals the themed app rather
-      // than snapping to it afterwards.
-      document.documentElement.classList.remove('booting');
-    }, Math.max(0, outAt - elapsed));
-    const removeTimer = setTimeout(() => {
-      el.remove();
-      setSplashDone(true);
-    }, Math.max(0, removeAt - elapsed));
-    return () => {
-      clearTimeout(outTimer);
-      clearTimeout(removeTimer);
-      document.documentElement.classList.remove('booting');
-    };
-  }, []);
 
   // The tour narrates the Home screen, so both the first run and a replay
   // from Settings put you there before it starts — otherwise it plays over
   // whichever page you happened to be on and describes something else.
-  const showTour = splashDone && (replayTour || !state.settings?.tutorialSeen);
+  const showTour = replayTour || !state.settings?.tutorialSeen;
   useEffect(() => {
     if (location.state?.replayTour) {
       setReplayTour(true);

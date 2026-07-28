@@ -150,14 +150,6 @@ html {
 html[data-theme='dark'] {
   color-scheme: dark;
 }
-/* Between the first paint and React mounting the splash there are a few
-   frames where nothing but the page background is on screen. Holding it at
-   the same colour as the OS launch screen and the splash means a light-theme
-   launch has no white frame in it at all. Cleared the moment the splash
-   starts fading, so the fade reveals the properly themed page underneath. */
-html.booting {
-  background: #111113;
-}
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -206,103 +198,6 @@ textarea {
   min-height: 100%;
   background: var(--bg);
   position: relative;
-}
-
-.splash {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: grid;
-  place-items: center;
-  /* Always the brand dark, never var(--bg). The installed PWA's own launch
-     screen is the manifest's background_color (#111113), so a themed splash
-     meant a light-mode user went black → white the instant our splash took
-     over, then white → light-app. Pinning it to the same colour makes the
-     hand-off from the OS launch screen invisible, and the one transition
-     that remains is this element's own fade-out. It also matches the mark,
-     which is drawn on dark. */
-  background: #111113;
-  opacity: 1;
-  transition: opacity 0.4s ease;
-  pointer-events: none;
-}
-.splash--out {
-  opacity: 0;
-}
-/* One appearance of the mark, at one size, on every launch. The old
-   sequence had a full-screen animated build on a cold start and a small
-   still badge on a reload — two logos that read as different marks. This is
-   the middle ground: large enough to be an arrival, small enough not to
-   need choreography to justify itself. */
-.splash-mark-wrap {
-  position: relative;
-  width: min(46vw, 46vh);
-  height: min(46vw, 46vh);
-  max-width: 300px;
-  max-height: 300px;
-}
-.splash-mark {
-  width: 100%;
-  height: 100%;
-  /* Fade up, one gold pulse, settle — as a single animation rather than two
-     stacked ones, because a second animation touching `transform` would win
-     the property outright and silently drop the scale from the first.
-
-     `backwards` (never `forwards`/`both`): the end state hands back to these
-     normal declarations instead of being pinned by the animation, which is
-     what lets the splash's own fade-out take over cleanly.
-
-     The glow is a drop-shadow on the mark itself, so it traces the arch's
-     silhouette rather than sitting behind it as a disc — gold light coming
-     off the logo, not a lamp switched on behind it. */
-  animation: splashMark 620ms linear backwards;
-}
-/* `linear` above, with the shaping done per keyframe instead. One curve
-   across the whole run gets applied to every segment separately, and a
-   front-loaded one (the obvious pick for the fade-in) then made the glow
-   dump 90% of its decay in the first 90ms — the pulse snapped off rather
-   than glowing out. The rise is quick and the fall is slow, which is how
-   light actually behaves.
-
-   Every keyframe declares all three properties: a keyframe that omits one
-   is skipped for that property's interpolation, which would silently
-   stretch the pulse back across the fade-in. */
-@keyframes splashMark {
-  0% {
-    opacity: 0;
-    transform: scale(0.94);
-    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
-    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  30% {
-    opacity: 1;
-    transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
-    animation-timing-function: cubic-bezier(0.3, 0.5, 0.4, 1);
-  }
-  55% {
-    opacity: 1;
-    transform: scale(1.045);
-    filter: drop-shadow(0 0 26px rgba(224, 193, 90, 0.85));
-    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
-  }
-}
-
-/* Reduce-motion gets the mark, whole and still, and then the app. The global
-   reduce-motion rule further down already collapses the duration to nothing;
-   this makes sure what's left is the settled end state rather than the
-   first frame's 0.94-scale transparency. App.jsx shortens the hold to match. */
-@media (prefers-reduced-motion: reduce) {
-  .splash-mark {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .app-main {
@@ -4540,7 +4435,7 @@ body.is-scrolled .page-head::before {
 
 /* --- Chips: press + selection -------------------------------------------
    No overshoot, to stay consistent with the restrained motion signature the
-   splash and the rest of the app already use. */
+   rest of the app already uses. */
 .chip {
   transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease,
     border-color 0.2s ease, color 0.2s ease;
