@@ -1497,7 +1497,7 @@ html.boot-reload .splash-mark {
   background: color-mix(in srgb, var(--warn) 14%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
 }
-.route-stop--late .route-stop-times {
+.route-stop-warn {
   color: var(--warn);
   font-weight: 700;
 }
@@ -4318,19 +4318,6 @@ textarea {
 }
 .pro-bubble-lg--active p {
   color: #c9a962;
-}
-.donate-bubble {
-  width: 100%;
-  display: block;
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  text-align: center;
-  box-shadow: var(--shadow);
 }
 .profile-row {
   display: flex;

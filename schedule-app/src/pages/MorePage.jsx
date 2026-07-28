@@ -104,7 +104,7 @@ export default function MorePage() {
   const navigate = useNavigate();
   const [editingStatus, setEditingStatus] = useState(null);
   const [editingType, setEditingType] = useState(null);
-  const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | 'donate' | null
+  const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | null
   const [feedback, setFeedback] = useState(null); // string | null
   const [editingProfile, setEditingProfile] = useState(null);
   const [, setPermTick] = useState(0); // re-render after permission change
@@ -285,10 +285,6 @@ export default function MorePage() {
           <span className="pro-bubble-lg-arrow">›</span>
         </button>
       )}
-
-      <button className="donate-bubble" onClick={() => setConfirm('donate')}>
-        ❤️ Support Keystone
-      </button>
 
       {CLERK_ENABLED && <AccountSection />}
 
@@ -1116,26 +1112,6 @@ export default function MorePage() {
         }
       >
         <p>{DESTRUCTIVE_ACTIONS[confirm]?.body}</p>
-      </Modal>
-
-      {/* Donate */}
-      <Modal
-        open={confirm === 'donate'}
-        title="Support Keystone"
-        onClose={() => setConfirm(null)}
-        footer={
-          <div className="modal-actions">
-            <button className="btn btn-primary" onClick={() => setConfirm(null)}>
-              Got it
-            </button>
-          </div>
-        }
-      >
-        <p>
-          Thank you for wanting to support the app! A real donation link (Ko-fi, Buy Me a Coffee,
-          GitHub Sponsors, etc.) isn't connected in this build yet — once you have one, it goes
-          right here.
-        </p>
       </Modal>
 
       {/* Profile editor */}

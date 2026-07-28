@@ -1,86 +1,101 @@
 import { distanceMeters, timeToMinutes, minutesToTime } from './helpers.js';
-import { travelMinutes } from './conflicts.js';
+import { travelMinutes, roadMeters } from './conflicts.js';
 
-// Greedy nearest-neighbor route ordering — a lightweight, fully offline
-// heuristic (no routing API, no paid service, no network dependency) that
-// orders a set of stops starting from `start` by always jumping to the
-// closest remaining stop in a straight line. It's not true shortest-path
-// (that needs real road data and is NP-hard to solve exactly anyway), but
-// it's a solid, zero-cost approximation of "what order should I visit these
-// in" — turn-by-turn driving directions for the resulting order still come
-// from Google Maps (see buildGoogleMapsUrl below).
-// Stops that come from a calendar event have a fixed start time — you can't
-// reorder your way out of a 2pm appointment. So those are pinned in clock
-// order and act as anchors; the free stops (saved pins, people to visit) are
-// slotted into the gaps around them by nearest-neighbour. Ordering purely by
-// distance, as this used to, would happily route you to a 5pm event before a
-// 9am one just because it was closer.
-export function optimizeRoute(start, stops) {
-  const timed = stops
-    .filter((s) => s.start)
-    .sort((a, b) => a.start.localeCompare(b.start));
+// How long you're at a stop that doesn't say otherwise. A calendar event
+// knows its own length and uses that instead; this is only the guess for a
+// saved pin or a person you're dropping in on.
+const DEFAULT_VISIT_MINUTES = 20;
+
+// Orders a day's stops and attaches a clock to them.
+//
+// Two kinds of stop, and the difference is the whole design:
+//   - A calendar event has a fixed start (and a real duration). You can't
+//     reorder your way out of a 2pm appointment, so these are pinned in
+//     clock order and act as anchors.
+//   - Everything else — saved pins, people to visit — is free to move, and
+//     gets slotted into the gaps around the anchors by nearest-neighbour.
+//
+// Ordering purely by distance, as the first version did, would happily send
+// you to a 5pm event before a 9am one because it was closer.
+//
+// `departAt` (minutes since midnight) is when you're setting off. It's a
+// parameter rather than a read of the wall clock so the result is a pure
+// function of its inputs — the previous version consulted `new Date()` in
+// two separate places, which made it untestable and meant the packing pass
+// and the scheduling pass could disagree across a minute boundary.
+export function optimizeRoute(start, stops, { departAt = nowMinutes() } = {}) {
+  const timed = stops.filter((s) => s.start).sort((a, b) => a.start.localeCompare(b.start));
   const free = stops.filter((s) => !s.start);
 
   const ordered = [];
   let current = start;
   let totalMeters = 0;
+  // Running clock, advanced as stops are committed. Kept here rather than
+  // recomputed from scratch per candidate (which the old version did, and
+  // which made it O(n²) as well as easy to get out of step).
+  let clock = departAt;
 
   const push = (stop) => {
     const legMeters = distanceMeters(current.lat, current.lng, stop.lat, stop.lng);
     ordered.push({ ...stop, legMeters });
     totalMeters += legMeters;
     current = stop;
+    const arrive = stop.start
+      ? Math.max(clock + travelMinutes(legMeters), timeToMinutes(stop.start))
+      : clock + travelMinutes(legMeters);
+    clock = arrive + visitLength(stop);
   };
 
-  // Nearest remaining free stop to wherever we are now.
   const takeNearestFree = () => {
-    let bestIdx = -1;
-    let bestDist = Infinity;
-    for (let i = 0; i < free.length; i++) {
-      const d = distanceMeters(current.lat, current.lng, free[i].lat, free[i].lng);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-      }
-    }
-    return bestIdx === -1 ? null : free.splice(bestIdx, 1)[0];
+    if (free.length === 0) return null;
+    return free.splice(nearestIdx(current, free), 1)[0];
   };
 
   if (timed.length === 0) {
     let next;
     while ((next = takeNearestFree())) push(next);
-    return withSchedule({ stops: ordered, totalMeters });
+    return withSchedule({ stops: ordered, totalMeters }, departAt);
   }
 
-  // Walk the fixed appointments in order, filling each gap beforehand with
-  // as many free stops as there is room for.
+  // Walk the appointments in order, filling the gap before each with as many
+  // free stops as actually fit.
   for (const anchor of timed) {
-    let budget = timeToMinutes(anchor.start) - clockAt(ordered, start);
-    let next;
     while (free.length > 0) {
       const candidate = free[nearestIdx(current, free)];
       const legMin = travelMinutes(distanceMeters(current.lat, current.lng, candidate.lat, candidate.lng));
-      const onwardMin = travelMinutes(distanceMeters(candidate.lat, candidate.lng, anchor.lat, anchor.lng));
+      const onwardMin = travelMinutes(
+        distanceMeters(candidate.lat, candidate.lng, anchor.lat, anchor.lng)
+      );
       const directMin = travelMinutes(distanceMeters(current.lat, current.lng, anchor.lat, anchor.lng));
-      // Only detour via this stop if doing so still leaves time to reach the
-      // appointment; VISIT_MINUTES covers actually being there.
-      if (legMin + VISIT_MINUTES + onwardMin > budget && directMin <= budget) break;
-      next = takeNearestFree();
-      push(next);
-      budget = timeToMinutes(anchor.start) - clockAt(ordered, start);
+      const due = timeToMinutes(anchor.start);
+      const viaDetour = clock + legMin + visitLength(candidate) + onwardMin;
+      // Take the detour only if it still gets you to the appointment on
+      // time. If you already can't make it directly, one more stop won't
+      // change that, so don't use lateness as licence to add more.
+      if (viaDetour > due) break;
+      if (clock + directMin > due) break;
+      push(takeNearestFree());
     }
     push(anchor);
   }
-  // Anything that didn't fit before an appointment goes after the last one.
+  // Whatever didn't fit before an appointment goes after the last one.
   let next;
   while ((next = takeNearestFree())) push(next);
 
-  return withSchedule({ stops: ordered, totalMeters });
+  return withSchedule({ stops: ordered, totalMeters }, departAt);
 }
 
-// How long you're actually at a stop before moving on. A visit that takes
-// zero time would make every "leave by" wildly optimistic.
-const VISIT_MINUTES = 20;
+// How long a stop takes. An event's real duration matters: treating a
+// 10:00–11:00 appointment as a 20-minute errand made every departure time
+// after it forty minutes optimistic, which is exactly the sort of quietly
+// wrong number that makes a plan worse than no plan.
+function visitLength(stop) {
+  if (stop.start && stop.end) {
+    const mins = timeToMinutes(stop.end) - timeToMinutes(stop.start);
+    if (mins > 0) return mins;
+  }
+  return DEFAULT_VISIT_MINUTES;
+}
 
 function nearestIdx(from, list) {
   let bestIdx = 0;
@@ -95,62 +110,75 @@ function nearestIdx(from, list) {
   return bestIdx;
 }
 
-// Clock time (minutes since midnight) you'd be free again after the stops
-// ordered so far — travel plus a visit at each.
-function clockAt(ordered, start) {
-  let t = start.departAt != null ? start.departAt : nowMinutes();
-  for (const s of ordered) {
-    t += travelMinutes(s.legMeters) + VISIT_MINUTES;
-    // An appointment you arrive early for still doesn't end before it starts.
-    if (s.start) t = Math.max(t, timeToMinutes(s.start) + VISIT_MINUTES);
-  }
-  return t;
-}
-
 function nowMinutes() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
 }
 
-// Walks the ordered route once more to attach, for each stop, the time you'd
-// need to leave the previous one and the time you'd arrive. This is the bit
-// that turns "visit these in this order" into a plan you can actually
-// follow — an order with no clock attached still leaves you guessing when to
-// walk out the door.
-function withSchedule(route) {
-  let t = nowMinutes();
+// Second pass over the committed order, attaching the times you'd actually
+// read off the screen: when to leave, when you'd arrive, and how long you're
+// waiting around if you get somewhere early.
+function withSchedule(route, departAt) {
+  let free = departAt; // when you're next available to set off
   const stops = route.stops.map((s) => {
     const travel = travelMinutes(s.legMeters);
-    const leaveAt = t;
-    let arriveAt = t + travel;
-    // For a fixed appointment, show the latest you can leave and still make
-    // it, not the earliest you could turn up and wait.
+    const earliestArrival = free + travel;
+    let leaveAt = free;
+    let arriveAt = earliestArrival;
+    let waitMinutes = 0;
+
     if (s.start) {
       const due = timeToMinutes(s.start);
-      if (arriveAt < due) {
+      if (earliestArrival <= due) {
+        // You'd get there early. Report the latest you can leave and still
+        // make it — that's the number worth acting on — and call out the
+        // slack separately rather than burying it as a mystery gap.
         arriveAt = due;
-        t = due - travel;
+        leaveAt = due - travel;
+        waitMinutes = leaveAt - free;
       }
     }
+
     const out = {
       ...s,
+      // Ordering is done on straight-line geometry, but the number on screen
+      // should be the distance you'd drive — the same basis the times use.
+      legMeters: roadMeters(s.legMeters),
       travelMinutes: travel,
-      leaveAt: minutesToTime(clamp(Math.round(t), 0, 24 * 60 - 1)),
-      arriveAt: minutesToTime(clamp(Math.round(arriveAt), 0, 24 * 60 - 1)),
-      // True when the plan can't get you there in time no matter what.
-      late: s.start ? leaveAt + travel > timeToMinutes(s.start) : false,
+      visitMinutes: visitLength(s),
+      leaveAt: minutesToTime(clampDay(leaveAt)),
+      arriveAt: minutesToTime(clampDay(arriveAt)),
+      // Free time before you need to set off for this stop.
+      waitMinutes: Math.max(0, Math.round(waitMinutes)),
+      // Can't be reached in time however you drive it.
+      late: s.start ? earliestArrival > timeToMinutes(s.start) : false,
+      lateBy: s.start ? Math.max(0, Math.round(earliestArrival - timeToMinutes(s.start))) : 0,
     };
-    t = arriveAt + VISIT_MINUTES;
+    free = arriveAt + visitLength(s);
     return out;
   });
-  return { ...route, stops };
+  return {
+    ...route,
+    stops,
+    totalMeters: roadMeters(route.totalMeters),
+    departAt,
+    endsAt: minutesToTime(clampDay(free)),
+  };
 }
 
-const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const clampDay = (n) => Math.max(0, Math.min(24 * 60 - 1, Math.round(n)));
 
 export function formatDistance(meters) {
   const miles = meters / 1609.34;
   return miles < 0.1 ? `${Math.round(meters)} m` : `${miles.toFixed(1)} mi`;
+}
+
+export function formatMinutes(mins) {
+  const m = Math.round(mins);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
 }
 
 // A single Google Maps multi-stop directions link covering the whole

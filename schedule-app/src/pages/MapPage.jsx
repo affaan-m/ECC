@@ -12,6 +12,7 @@ import { confirmTick, selectTick } from '../data/haptics.js';
 import { geocodeAddress } from '../data/geocode.js';
 import { directionsTarget, openMaps } from '../data/maps.js';
 import { resolveMapStyle } from '../data/mapStyles.js';
+import { eventPinIdentity } from '../data/pinLabel.js';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_TOLERANCE_PX = 18; // generous — real fingers drift more than a mouse
@@ -64,20 +65,21 @@ export default function MapPage() {
   // it up again at midnight and reconciling every edit in between.
   const eventPins = useMemo(() => {
     const iso = todayISO();
+    const byId = Object.fromEntries(state.contacts.map((c) => [c.id, c]));
+    const typeById = Object.fromEntries((state.eventTypes || []).map((t) => [t.id, t]));
     return state.events
       .flatMap((e) => expandEventOnDay(e, iso))
       .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
       .map((o) => ({
         id: `event:${o.id}:${o.recDate || iso}`,
-        label: o.title || 'Event',
-        emoji: '📅',
+        ...eventPinIdentity(o, { contact: byId[o.contactId], eventType: typeById[o.typeId] }),
         lat: o.locLat,
         lng: o.locLng,
         contactId: o.contactId || '',
         isEvent: true,
         start: o.start,
       }));
-  }, [state.events]);
+  }, [state.events, state.contacts, state.eventTypes]);
 
   const pins = useMemo(() => {
     const saved = (state.pins || []).filter((p) =>

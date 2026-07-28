@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../data/store.jsx';
 import { makeOverdueCheck } from '../data/reconnect.js';
-import { optimizeRoute, formatDistance, buildGoogleMapsUrl } from '../data/routePlanner.js';
+import {
+  optimizeRoute,
+  formatDistance,
+  formatMinutes,
+  buildGoogleMapsUrl,
+} from '../data/routePlanner.js';
 import { mapsLinkProps, webTarget } from '../data/maps.js';
+import { eventPinIdentity } from '../data/pinLabel.js';
 import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
 
 export default function RoutePlannerPage() {
@@ -31,21 +37,28 @@ export default function RoutePlannerPage() {
   // can't collide with a real pin's.
   const eventStops = useMemo(() => {
     const iso = todayISO();
+    const typeById = Object.fromEntries((state.eventTypes || []).map((t) => [t.id, t]));
     return state.events
       .flatMap((e) => expandEventOnDay(e, iso))
       .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
       .map((o) => ({
         id: `event:${o.id}:${o.recDate || iso}`,
-        label: o.title || 'Event',
-        emoji: '📅',
+        ...eventPinIdentity(o, {
+          contact: contactById[o.contactId],
+          eventType: typeById[o.typeId],
+        }),
         lat: o.locLat,
         lng: o.locLng,
         contactId: o.contactId || '',
         isEvent: true,
         start: o.start,
+        // The optimiser needs the real length of an appointment, not a
+        // guess — an hour-long meeting pushes everything after it back by
+        // an hour.
+        end: o.end,
       }))
       .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-  }, [state.events]);
+  }, [state.events, state.eventTypes, contactById]);
 
   const pins = useMemo(() => [...(state.pins || []), ...eventStops], [state.pins, eventStops]);
 
@@ -114,9 +127,9 @@ export default function RoutePlannerPage() {
         <h1>🧭 Plan my day</h1>
         <p className="muted small">
           Pick who/where you want to visit today — overdue people are pre-selected — then get the
-          shortest visiting order, worked out straight-line (not real road distance). Today's
-          events with a location are listed too — those keep their booked time and everything
-          else is fitted around them, with a "leave by" for each stop.
+          shortest visiting order. Today's events with a location are listed too: those keep their
+          booked time and their real length, and everything else is fitted around them. Distances
+          and times are offline estimates from straight-line geometry, not turn-by-turn routing.
         </p>
       </header>
 
@@ -142,7 +155,8 @@ export default function RoutePlannerPage() {
                       <span className="place-emoji">{p.emoji || '📍'}</span>
                       <span className="place-label">
                         {p.label || 'Dropped pin'}
-                        {c && ` · ${c.name}`}
+                        {/* Event pins already name the person in their label. */}
+                        {c && !(p.label || '').includes(c.name) && ` · ${c.name}`}
                         {p.isEvent && p.start && (
                           <span className="muted small"> · {formatTime(p.start)}</span>
                         )}
@@ -163,7 +177,9 @@ export default function RoutePlannerPage() {
             <section className="detail-section">
               <div className="section-head">
                 <span className="detail-label">Suggested order</span>
-                <span className="muted small">{formatDistance(route.totalMeters)} total</span>
+                <span className="muted small">
+                  {formatDistance(route.totalMeters)} · done by {formatTime(route.endsAt)}
+                </span>
               </div>
               {route.startedFromStop ? (
                 <p className="muted small">
@@ -187,9 +203,18 @@ export default function RoutePlannerPage() {
                     <span className="route-stop-label">
                       {s.emoji || '📍'} {s.label || 'Dropped pin'}
                       <span className="route-stop-times muted small">
-                        Leave {formatTime(s.leaveAt)} · arrive {formatTime(s.arriveAt)}
-                        {s.start && ` · booked ${formatTime(s.start)}`}
+                        Leave {formatTime(s.leaveAt)} · arrive {formatTime(s.arriveAt)} ·{' '}
+                        {formatMinutes(s.visitMinutes)} there
                       </span>
+                      {s.late ? (
+                        <span className="route-stop-warn small">
+                          {formatMinutes(s.lateBy)} late for {formatTime(s.start)}
+                        </span>
+                      ) : s.waitMinutes >= 5 ? (
+                        <span className="route-stop-times muted small">
+                          {formatMinutes(s.waitMinutes)} spare first
+                        </span>
+                      ) : null}
                     </span>
                     <span className="muted small">+{formatDistance(s.legMeters)}</span>
                   </li>

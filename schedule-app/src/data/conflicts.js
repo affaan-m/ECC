@@ -25,7 +25,16 @@ const SAME_PLACE_METRES = 150;
 const GRACE_MINUTES = 5;
 
 export function travelMinutes(meters) {
-  return Math.round((meters * DETOUR_FACTOR) / METRES_PER_MINUTE);
+  return Math.round(roadMeters(meters) / METRES_PER_MINUTE);
+}
+
+// Straight-line metres turned into an estimate of the distance you'd
+// actually drive. Anything shown to the user as a distance should go
+// through this, so the mileage on screen and the times next to it come from
+// the same model — a route that reads "3.5 mi" but budgets 4.7 miles' worth
+// of driving is two wrong numbers, not one right one.
+export function roadMeters(meters) {
+  return meters * DETOUR_FACTOR;
 }
 
 // Where an event actually is. Events carry coordinates directly once someone
