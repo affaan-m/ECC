@@ -325,13 +325,13 @@ export default function App() {
     };
   }, [location.pathname]);
 
-  // The launch animation is in index.html and has been running since the
+  // The launch splash is in index.html and has been on screen since the
   // first paint (see the comment there). All that's left is deciding when to
   // take it away — and since it started at page load rather than at mount,
   // the remaining time is measured against performance.now(). If the bundle
-  // took longer than the animation those come out negative, so a slow load
-  // simply finds the animation already over and clears it immediately
-  // instead of adding its duration on top.
+  // took longer than the pulse those come out negative, so a slow load
+  // simply finds it already over and clears it immediately instead of
+  // adding its duration on top.
   const [splashDone, setSplashDone] = useState(() => !document.getElementById('boot-splash'));
   // Replay requested from Settings. Held here rather than in MorePage so the
   // first run and a replay go through exactly one code path.
@@ -339,16 +339,12 @@ export default function App() {
   useEffect(() => {
     const el = document.getElementById('boot-splash');
     if (!el) return undefined;
-    // A reload, or a reduce-motion preference, both get the short mark-only
-    // splash rather than the full rise → keystone → flash → flood sequence,
-    // so both have to be retired early too — holding the long version's
-    // timing over an animation that never plays is just a stall.
-    const simple =
-      document.documentElement.classList.contains('boot-reload') ||
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // Lines up with the flood settling at 960ms (see .splash-flood).
-    const outAt = simple ? 420 : 980;
-    const removeAt = outAt + 440;
+    // Reduce-motion shows the mark still, with no animation to wait for, so
+    // holding the full beat over it would just be a stall.
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // Lines up with the pulse settling at 620ms (see .splash-mark).
+    const outAt = still ? 300 : 660;
+    const removeAt = outAt + 380;
     const elapsed = performance.now();
     const outTimer = setTimeout(() => {
       el.classList.add('splash--out');

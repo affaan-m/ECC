@@ -229,264 +229,79 @@ textarea {
 .splash--out {
   opacity: 0;
 }
-/* The mark carries the launch, so it takes ~65% of the screen rather than
-   sitting as a small badge in the middle of a lot of black. Capped so it
-   doesn't become absurd on a tablet or a desktop window.
-
-   The wrapper also carries a slow lift of its own underneath the build.
-   Without it the arch rises inside a mark that is itself nailed down, and
-   the whole thing reads as a wipe playing over a static logo; with it the
-   mark is travelling too, and the reveal becomes something arriving rather
-   than something being uncovered. `backwards` (never `forwards`/`both`) so
-   the end state hands back to the normal declarations instead of being
-   pinned by the animation. */
+/* One appearance of the mark, at one size, on every launch. The old
+   sequence had a full-screen animated build on a cold start and a small
+   still badge on a reload — two logos that read as different marks. This is
+   the middle ground: large enough to be an arrival, small enough not to
+   need choreography to justify itself. */
 .splash-mark-wrap {
   position: relative;
-  width: min(68vw, 68vh);
-  height: min(68vw, 68vh);
-  max-width: 460px;
-  max-height: 460px;
-  /* Pins the blend group for the flash (see .splash-flash's screen mode).
-     The lift animation below would create a stacking context for as long as
-     it runs and then drop it at 940ms — mid-flash — which would visibly
-     change what the flash blends against halfway through. Isolating makes
-     the group unconditional, so the transform coming and going is invisible. */
-  isolation: isolate;
-  animation: splashMarkRise 650ms cubic-bezier(0.33, 0, 0.2, 1) backwards;
-}
-@keyframes splashMarkRise {
-  from {
-    transform: translateY(26px);
-  }
-  to {
-    transform: translateY(0);
-  }
+  width: min(46vw, 46vh);
+  height: min(46vw, 46vh);
+  max-width: 300px;
+  max-height: 300px;
 }
 .splash-mark {
-  position: relative;
-  z-index: 1;
   width: 100%;
   height: 100%;
-}
+  /* Fade up, one gold pulse, settle — as a single animation rather than two
+     stacked ones, because a second animation touching `transform` would win
+     the property outright and silently drop the scale from the first.
 
-/* Stage 1 — the build. Both halves of the arch grow from their feet, up
-   the legs and around the curve, meeting at the crown. See the mask in
-   index.html for why the arch has a path to follow at all.
+     `backwards` (never `forwards`/`both`): the end state hands back to these
+     normal declarations instead of being pinned by the animation, which is
+     what lets the splash's own fade-out take over cleanly.
 
-   The curve matters more than the duration here. An aggressive ease-out
-   (the obvious first choice) puts ~85% of the travel in the first 80ms,
-   which doesn't read as a build at all — it reads as the arch snapping in
-   and then a long dead pause. This one leaves gently, does the bulk of the
-   move through the middle of its run, and lands soft: about a third of the
-   way at a quarter of the time, two thirds at 40%, then settling. */
-.splash-build {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: splashBuild 430ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
+     The glow is a drop-shadow on the mark itself, so it traces the arch's
+     silhouette rather than sitting behind it as a disc — gold light coming
+     off the logo, not a lamp switched on behind it. */
+  animation: splashMark 620ms linear backwards;
 }
-@keyframes splashBuild {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
+/* `linear` above, with the shaping done per keyframe instead. One curve
+   across the whole run gets applied to every segment separately, and a
+   front-loaded one (the obvious pick for the fade-in) then made the glow
+   dump 90% of its decay in the first 90ms — the pulse snapped off rather
+   than glowing out. The rise is quick and the fall is slow, which is how
+   light actually behaves.
 
-/* Stage 2 — the keystone, once the two halves have actually met. The delay
-   is exactly the build's duration, so nothing about it starts while the
-   sides are still climbing: it appears in the gap they just closed.
-
-   It fades in first and then pulses, as two distinct beats rather than one
-   blended move — the fade says the piece is there, the pulse says it
-   locked. `transform-box: fill-box` is load-bearing: without it an SVG
-   element's transform-origin resolves against the *viewBox*, whose centre
-   is ~97 units below the keystone, so `scale()` would sling it downward
-   instead of swelling it in place. */
-.splash-keystone {
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: splashKeystonePulse 320ms 430ms forwards;
-}
-/* Every keyframe declares both properties it participates in — a keyframe
-   that omits one is skipped for that property's interpolation, so leaving
-   the scale off the fade-in keyframe would quietly stretch the pulse back
-   across the whole fade. */
-@keyframes splashKeystonePulse {
+   Every keyframe declares all three properties: a keyframe that omits one
+   is skipped for that property's interpolation, which would silently
+   stretch the pulse back across the fade-in. */
+@keyframes splashMark {
   0% {
     opacity: 0;
-    transform: scale(1);
-    animation-timing-function: ease-out;
-  }
-  36% {
-    opacity: 1;
-    transform: scale(1);
-    animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1);
-  }
-  70% {
-    opacity: 1;
-    transform: scale(1.09);
-    animation-timing-function: cubic-bezier(0.35, 0, 0.3, 1);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* Stage 3 — the strike. A hot point centred on the keystone the instant it
-   seats, growing and softening as it goes. Positioned as a share of the
-   mark wrapper so it stays on the keystone at every screen size: the
-   crown sits at 14% of the way down the wrapper's box. */
-.splash-flash {
-  position: absolute;
-  left: 50%;
-  top: 14%;
-  width: 46%;
-  height: 46%;
-  margin: -23% 0 0 -23%;
-  border-radius: 50%;
-  z-index: 2;
-  pointer-events: none;
-  opacity: 0;
-  transform: scale(0.2);
-  /* Light adds, it doesn't cover. Composited normally, the semi-transparent
-     mid of the gradient sits *over* the cream arch and darkens it — the
-     flash ends up dulling the very thing it is supposed to be lighting.
-     Screening makes it strictly brighten whatever it falls on: the crown
-     blows out, and over the black background it renders as-is. */
-  mix-blend-mode: screen;
-  /* A long, smooth alpha tail all the way out to the edge. Reaching zero
-     early (or holding a high alpha into the mid stops) leaves a visible
-     rim where the gold meets the black, and the flash stops looking like
-     light and starts looking like a gold ball sitting on the crown. */
-  background: radial-gradient(
-    circle,
-    rgba(255, 251, 240, 1) 0%,
-    rgba(250, 238, 190, 0.92) 14%,
-    rgba(236, 212, 130, 0.6) 30%,
-    rgba(226, 196, 96, 0.28) 48%,
-    rgba(224, 193, 90, 0.09) 68%,
-    rgba(224, 193, 90, 0) 100%
-  );
-  animation: splashFlash 180ms ease-out 620ms forwards;
-}
-@keyframes splashFlash {
-  0% {
-    opacity: 0;
-    transform: scale(0.2);
+    transform: scale(0.94);
+    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   30% {
     opacity: 1;
     transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
+    animation-timing-function: cubic-bezier(0.3, 0.5, 0.4, 1);
   }
-  100% {
-    opacity: 0.5;
-    transform: scale(2.1);
-  }
-}
-
-/* Stage 4 — the flood. Concentric with the flash and starting while the
-   flash is still expanding, so it is legible as that same burst continuing
-   to swell rather than a second effect fading up over the top. Ends
-   holding (`forwards`) at full gold covering the screen — if it eased back
-   out we'd go gold, black, app, and the splash's own fade would have
-   nothing to hand over to. Scaled well past coverage so the far corner of
-   a tall screen is still inside the circle. */
-.splash-flood {
-  position: absolute;
-  left: 50%;
-  top: 14%;
-  width: 100%;
-  height: 100%;
-  margin: -50% 0 0 -50%;
-  border-radius: 50%;
-  z-index: 3;
-  pointer-events: none;
-  opacity: 0;
-  transform: scale(0.18);
-  background: radial-gradient(
-    circle,
-    #f4e3a6 0%,
-    #e0c15a 38%,
-    #c9a13f 70%,
-    #a9822a 100%
-  );
-  animation: splashFlood 260ms cubic-bezier(0.32, 0, 0.2, 1) 700ms forwards;
-}
-@keyframes splashFlood {
-  0% {
-    opacity: 0;
-    transform: scale(0.18);
-  }
-  26% {
+  55% {
     opacity: 1;
+    transform: scale(1.045);
+    filter: drop-shadow(0 0 26px rgba(224, 193, 90, 0.85));
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
   }
   100% {
     opacity: 1;
-    transform: scale(7);
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(224, 193, 90, 0));
   }
 }
 
-/* A refresh is not an arrival — replaying the whole build every time you
-   pull to reload would be tiresome, so that case gets a small mark and a
-   quick fade with none of the choreography. App.jsx retires it early to
-   match (see the `simple` branch there). */
-html.boot-reload .splash-mark-wrap {
-  width: 132px;
-  height: 132px;
-  animation: none;
-}
-html.boot-reload .splash-build {
-  animation: none;
-  stroke-dashoffset: 0;
-}
-html.boot-reload .splash-keystone {
-  animation: none;
-  opacity: 1;
-  transform: none;
-}
-html.boot-reload .splash-flash,
-html.boot-reload .splash-flood {
-  display: none;
-}
-html.boot-reload .splash-mark {
-  animation: splashSimpleIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-}
-@keyframes splashSimpleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* Reduce-motion users get the reload treatment on every launch: the mark,
-   whole and still, and then the app. The global reduce-motion rule further
-   down already collapses every duration to nothing, but on its own that
-   would leave the gold flood filling the screen from the first frame and
-   sitting there — the end state of an animation nobody saw. Suppressing
-   the flood and the build outright gives them the logo instead, and
-   App.jsx shortens the hold to match. */
+/* Reduce-motion gets the mark, whole and still, and then the app. The global
+   reduce-motion rule further down already collapses the duration to nothing;
+   this makes sure what's left is the settled end state rather than the
+   first frame's 0.94-scale transparency. App.jsx shortens the hold to match. */
 @media (prefers-reduced-motion: reduce) {
-  .splash-mark-wrap {
-    width: 132px;
-    height: 132px;
-  }
-  .splash-build {
-    stroke-dashoffset: 0;
-  }
-  .splash-keystone {
-    transform: none;
+  .splash-mark {
+    animation: none;
     opacity: 1;
-  }
-  .splash-flash,
-  .splash-flood {
-    display: none;
+    transform: none;
   }
 }
 
