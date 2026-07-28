@@ -78,6 +78,12 @@ function loadState() {
         // key) also starts off rather than inheriting the old always-on
         // behaviour.
         reconnectRemindersEnabled: false,
+        // The assistant bubble. On by default, but inert unless you're
+        // signed in, Pro, a backend is configured *and* that backend has an
+        // API key — so for most builds this setting decides nothing and the
+        // bubble simply never appears. Read as `!== false` so an older saved
+        // settings object (no such key) is also treated as on.
+        assistantEnabled: true,
         // Which action each swipe direction runs on a People row. See
         // data/contactSwipe.js for the registry and why these are the
         // defaults.

@@ -106,6 +106,7 @@ Both work the same way for this service:
 | `PUT /api/data` | Clerk session | body `{ data: <object> }`, upserts the whole blob, returns `{ updatedAt }` |
 | `POST /api/billing/checkout` | Clerk session | body `{ plan: "monthly" \| "annual" }`, returns `{ url }` — redirect the browser there |
 | `POST /api/billing/portal` | Clerk session | returns `{ url }` for Stripe's hosted subscription-management page |
+| `POST /api/assistant` | Clerk session, Pro | body `{ messages, context? }`, returns one Claude reply as `{ content, stop_reason, usage }` — see below |
 | `POST /api/webhooks/clerk` | Clerk webhook signature | keeps `User.email` in sync |
 | `POST /api/webhooks/stripe` | Stripe webhook signature | keeps subscription status in sync |
 | `GET /api/calendars` | Clerk session | calendars you're a member of, with your role on each |
@@ -124,6 +125,33 @@ Both work the same way for this service:
 
 Authenticated routes expect `Authorization: Bearer <clerk session token>` —
 the frontend gets this from Clerk's `useAuth().getToken()`.
+
+### The assistant (`POST /api/assistant`)
+
+The chat bubble in the app talks to Claude through this route. It exists so
+the `ANTHROPIC_API_KEY` stays on the server: a key in the PWA bundle is a
+public key.
+
+The route holds the system prompt and the tool definitions and relays a
+single turn. It never executes a tool. The user's data lives in their
+browser (this server only ever sees it as an opaque blob), so the agent loop
+runs client-side: the browser posts the conversation, gets back an assistant
+message that may contain `tool_use` blocks, runs those against the app's own
+reducer, appends the results and posts again. That keeps every write on the
+normal undo/sync path and means a dropped connection can't leave a change
+half-applied.
+
+- `messages` is the Anthropic Messages-API array, echoed back verbatim by
+  the client (including `thinking` blocks, which must be preserved across
+  tool-result turns).
+- `context` is a plain-text digest of the user's schedule and contacts,
+  built in the browser and capped at 24k characters.
+- Set `ANTHROPIC_API_KEY` to turn the feature on. Leave it unset and the
+  route answers `503 not_configured`, which the app treats as "hide the
+  bubble" rather than as an error.
+- Requests are throttled to 60 per user per 10 minutes, in memory. That's
+  per process — if you ever run more than one instance, move it to the
+  database or a shared cache.
 
 ## Known gaps / next steps
 

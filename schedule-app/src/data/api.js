@@ -16,7 +16,12 @@ async function request(path, { getToken, method = 'GET', body } = {}) {
   });
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody.error || `Request failed (${res.status})`);
+    const err = new Error(errBody.error || `Request failed (${res.status})`);
+    // Callers that need to tell "this is off" from "this went wrong" — the
+    // assistant hides its bubble on one and shows a message on the other.
+    err.status = res.status;
+    err.code = errBody.code;
+    throw err;
   }
   return res.json();
 }
@@ -32,6 +37,15 @@ export const openBillingPortal = (getToken) => request('/api/billing/portal', { 
 export const fetchSyncedData = (getToken) => request('/api/data', { getToken });
 export const pushSyncedData = (getToken, data) =>
   request('/api/data', { getToken, method: 'PUT', body: { data } });
+
+// The assistant. One turn per call: post the conversation so far (plus a
+// plain-text digest of the user's schedule) and get back one Claude message,
+// which may ask for tools to be run. The tools themselves run in the browser
+// — see data/assistantTools.js — so this stays a single request/response and
+// the API key never leaves the server.
+export const assistantAvailable = (getToken) => request('/api/assistant', { getToken });
+export const askAssistant = (getToken, messages, context) =>
+  request('/api/assistant', { getToken, method: 'POST', body: { messages, context } });
 
 // Shared calendars — invite someone to see/add simple events with you.
 // Backend-only feature (see backend/README.md's "Known gaps" section for

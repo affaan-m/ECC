@@ -4613,6 +4613,8 @@ body.is-scrolled .page-head::before {
   /* Clear of the FAB, which sits bottom-right at the same height. */
   right: 78px;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  /* z-index 560 puts these above the assistant bubble rather than behind
+     it, so the gutter below is what actually keeps them from overlapping. */
   /* Above the FAB (500) so a warning is never half-hidden behind it, below
      the toast (700) so an Undo is always reachable. */
   z-index: 560;
@@ -5232,4 +5234,239 @@ button.timeline-item {
   white-space: pre-wrap;
   line-height: 1.55;
   margin: 0;
+}
+
+/* --- Assistant ---------------------------------------------------------- */
+/* Only while the bubble is actually mounted — it isn't, for most people —
+   do the bottom-left warnings need to make room for it. */
+body[data-assistant='on'] .conflict-list {
+  left: 76px;
+}
+
+/* The shared sheet sizes its body to its content, which is right for a form
+   and wrong for a conversation — with only a message or two the compose bar
+   floated halfway up and left dead space beneath it. Scoped by :has() so
+   every other sheet in the app keeps the form behaviour. */
+.modal-sheet:has(.assistant-log) .modal-body {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 12px;
+}
+
+/* Bottom-left, opposite the FAB. The two are the only fixed controls above
+   the tab bar and they must never fight for the same thumb. */
+.assistant-fab {
+  position: fixed;
+  left: max(16px, calc(50% - var(--maxw) / 2 + 16px));
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px);
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  z-index: 30;
+}
+.assistant-fab:active {
+  transform: scale(0.94);
+}
+
+.assistant-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistant-msg {
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  /* Replies contain lists and times the model laid out with newlines. */
+  white-space: pre-wrap;
+}
+.assistant-msg--me {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-bottom-right-radius: 5px;
+}
+.assistant-msg--them {
+  align-self: flex-start;
+  background: var(--surface-2);
+  color: var(--text);
+  border-bottom-left-radius: 5px;
+}
+
+/* What it actually changed, as a receipt with a way out. */
+.assistant-change {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 10px 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.assistant-change .icon {
+  color: var(--accent);
+  flex: none;
+}
+.assistant-change-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-change--undone {
+  border-color: var(--border);
+  background: var(--surface-2);
+  opacity: 0.7;
+}
+.assistant-change--undone .assistant-change-label {
+  text-decoration: line-through;
+}
+.assistant-undo {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.assistant-status {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.assistant-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.assistant-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: assistant-dot 1.1s ease-in-out infinite;
+}
+.assistant-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.assistant-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes assistant-dot {
+  0%, 60%, 100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.assistant-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--danger);
+  font-size: 13px;
+}
+.assistant-error .icon {
+  flex: none;
+}
+
+.assistant-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.assistant-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.assistant-suggestion {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-suggestion:active {
+  transform: scale(0.97);
+}
+
+.assistant-reset {
+  align-self: center;
+  margin-top: 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.assistant-compose {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.assistant-compose input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+.assistant-compose input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.assistant-send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
 }

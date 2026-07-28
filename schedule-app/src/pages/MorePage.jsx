@@ -162,6 +162,7 @@ const SETTINGS_INDEX = [
   {
     label: 'App',
     groups: [
+      { id: 'gai', title: 'Assistant', keywords: 'claude ai chat bubble ask assistant helper' },
       { id: 'g16', title: 'Feedback', keywords: 'bug idea suggest contact support tour tutorial replay' },
       { id: 'g17', title: 'Your data', keywords: 'backup export import json reset clear cache delete storage' },
     ],
@@ -1009,6 +1010,26 @@ export default function MorePage() {
       </SettingsGroup>
 
       <SettingsSection label="App" hidden={!sectionShown('App')} />
+      <SettingsGroup {...grp('gai')}>
+        <div className="section-head">
+          <span className="detail-label">Assistant</span>
+          <button
+            className={`toggle${s.assistantEnabled !== false ? ' toggle--on' : ''}`}
+            role="switch"
+            aria-checked={s.assistantEnabled !== false}
+            onClick={() => actions.setSettings({ assistantEnabled: s.assistantEnabled === false })}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        <p className="muted small">
+          A chat bubble that can read your calendar, tasks and people, and add things for you —
+          anything it adds can be undone from the chat. Needs Pro and a signed-in account, and it
+          only appears when the server it talks to has been set up for it. What you ask goes to
+          Anthropic's Claude along with a summary of your schedule and the names of your contacts;
+          notes, phone numbers and photos are never sent unless you ask about them.
+        </p>
+      </SettingsGroup>
       <SettingsGroup {...grp('g16')}>
         <span className="detail-label">Feedback</span>
         <p className="muted small">Have an idea or found a bug? I'd love to hear it.</p>

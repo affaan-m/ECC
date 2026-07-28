@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
 import Tutorial from './components/Tutorial.jsx';
+import AssistantBubble from './components/AssistantBubble.jsx';
 import { runReminderScan, notify, notificationPermission } from './data/notifications.js';
 import { tapTick, confirmTick, warnTick, selectTick, successTick } from './data/haptics.js';
 import { setUse24hFormat, setSundayWeekStart, distanceMeters } from './data/helpers.js';
@@ -466,6 +467,9 @@ export default function App() {
         </Routes>
       </main>
       <TabBar />
+      {/* Same guard as the sync components: it calls useAuth(), which needs
+          a ClerkProvider above it. */}
+      {CLERK_ENABLED && <AssistantBubble />}
       {showTour && (
         <Tutorial
           onDone={() => {
