@@ -702,15 +702,30 @@ html.boot-reload .splash-mark {
   overflow: hidden;
   border-radius: 10px;
 }
+/* The strip revealed behind a row. Which edge it hugs follows the drag:
+   pulling the row right uncovers the left edge, so the action sits there. */
 .swipe-row-bg {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding-right: 22px;
+  gap: 8px;
+  padding: 0 22px;
   background: var(--danger);
   color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.swipe-row-bg--end {
+  justify-content: flex-end;
+}
+.swipe-row-bg--start {
+  justify-content: flex-start;
+}
+.swipe-row-icon {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
 }
 .swipe-row-content {
   position: relative;

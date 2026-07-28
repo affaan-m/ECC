@@ -21,6 +21,11 @@ import { TAB_TYPES, normalizeTabOrder } from '../data/tabs.js';
 import { QUICK_ADD_TYPES, normalizeQuickAdd } from '../data/quickAdd.js';
 import { CLERK_ENABLED } from '../data/clerkConfig.js';
 import { MAP_STYLE_OPTIONS } from '../data/mapStyles.js';
+import {
+  CONTACT_SWIPE_OPTIONS,
+  DEFAULT_CONTACT_SWIPE_LEFT,
+  DEFAULT_CONTACT_SWIPE_RIGHT,
+} from '../data/contactSwipe.js';
 import { backendConfigured } from '../data/api.js';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
@@ -799,6 +804,26 @@ export default function MorePage() {
           </button>
         </div>
         )}
+      </SettingsGroup>
+
+      <SettingsGroup id="gswipe" open={isOpen('gswipe')} onToggle={() => toggleGroup('gswipe')}>
+        <span className="detail-label">People swipe actions</span>
+        <p className="muted small">
+          What swiping a row on the People tab does. Deleting someone is still available from
+          their own page and from Select mode, so it doesn't have to live on a swipe.
+        </p>
+        <p className="muted small">Swipe right</p>
+        <Select
+          value={s.contactSwipeRight ?? DEFAULT_CONTACT_SWIPE_RIGHT}
+          onChange={(v) => actions.setSettings({ contactSwipeRight: v })}
+          options={CONTACT_SWIPE_OPTIONS}
+        />
+        <p className="muted small">Swipe left</p>
+        <Select
+          value={s.contactSwipeLeft ?? DEFAULT_CONTACT_SWIPE_LEFT}
+          onChange={(v) => actions.setSettings({ contactSwipeLeft: v })}
+          options={CONTACT_SWIPE_OPTIONS}
+        />
       </SettingsGroup>
 
       <SettingsGroup id="g13" open={isOpen("g13")} onToggle={() => toggleGroup("g13")}>

@@ -72,6 +72,11 @@ function loadState() {
         // key) also starts off rather than inheriting the old always-on
         // behaviour.
         reconnectRemindersEnabled: false,
+        // Which action each swipe direction runs on a People row. See
+        // data/contactSwipe.js for the registry and why these are the
+        // defaults.
+        contactSwipeRight: 'log',
+        contactSwipeLeft: 'schedule',
         // Day/week templates are a Pro power-user feature; hiding the entry
         // point keeps the Planner header uncluttered for everyone else.
         showDayTemplates: true,

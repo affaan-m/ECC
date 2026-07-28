@@ -7,7 +7,7 @@ import Select from '../components/Select.jsx';
 import Modal from '../components/Modal.jsx';
 import { Avatar, AvatarPicker } from '../components/Avatar.jsx';
 import { Brand } from '../components/Logo.jsx';
-import SwipeToDelete from '../components/SwipeToDelete.jsx';
+import SwipeRow from '../components/SwipeRow.jsx';
 import { daysAgoLabel, daysSince, todayISO, uid } from '../data/helpers.js';
 import { syncContactAddressPin } from '../data/geocode.js';
 import { parseVCard, generateVCard } from '../data/vcard.js';
@@ -20,6 +20,11 @@ import { useEdgeFade } from '../data/useEdgeFade.js';
 // pages that already imported it from this module keep working.
 import { reconnectDaysOf, makeOverdueCheck } from '../data/reconnect.js';
 export { reconnectDaysOf, makeOverdueCheck };
+import {
+  resolveContactSwipe,
+  DEFAULT_CONTACT_SWIPE_LEFT,
+  DEFAULT_CONTACT_SWIPE_RIGHT,
+} from '../data/contactSwipe.js';
 
 export default function ContactsPage() {
   const { state } = useStore();
@@ -80,6 +85,14 @@ export default function ContactsPage() {
 
   const iconSize = state.settings?.contactIconSize || 'md';
   const chipsRef = useRef(null);
+
+  // Swipe bindings, both configurable (Settings → People swipe actions).
+  // The context bag is what lets the action registry stay plain data —
+  // navigation, toasts and the undo-aware delete all live out here.
+  const swipeRightKey = state.settings?.contactSwipeRight ?? DEFAULT_CONTACT_SWIPE_RIGHT;
+  const swipeLeftKey = state.settings?.contactSwipeLeft ?? DEFAULT_CONTACT_SWIPE_LEFT;
+  const swipeFor = (key, contact) =>
+    resolveContactSwipe(key, { contact, actions, navigate, showToast, deleteContactWithUndo });
 
   const statusById = useMemo(
     () => Object.fromEntries(state.statuses.map((s) => [s.id, s])),
@@ -327,7 +340,11 @@ export default function ContactsPage() {
             const isSel = selected.has(c.id);
             return (
               <li key={c.id}>
-                <SwipeToDelete disabled={selectMode} onDelete={() => deleteContactWithUndo(c)}>
+                <SwipeRow
+                  disabled={selectMode}
+                  swipeRight={swipeFor(swipeRightKey, c)}
+                  swipeLeft={swipeFor(swipeLeftKey, c)}
+                >
                   <button
                     className="contact-row"
                     onClick={() => (selectMode ? toggleSelected(c.id) : navigate(`/contacts/${c.id}`))}
@@ -350,7 +367,7 @@ export default function ContactsPage() {
                     </span>
                     {!selectMode && <Chevron />}
                   </button>
-                </SwipeToDelete>
+                </SwipeRow>
               </li>
             );
           })}

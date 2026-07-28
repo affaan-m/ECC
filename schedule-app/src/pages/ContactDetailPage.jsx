@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useStore, useActions } from '../data/store.jsx';
 import Modal from '../components/Modal.jsx';
 import EditorSheet from '../components/EditorSheet.jsx';
@@ -37,6 +37,20 @@ export default function ContactDetailPage() {
 
   const contact = state.contacts.find((c) => c.id === id);
   const status = state.statuses.find((s) => s.id === contact?.statusId);
+
+  // Arriving from the People list's "Follow up" swipe — open straight into
+  // the editor rather than dropping the user on the page to find it.
+  const location = useLocation();
+  useEffect(() => {
+    if (!location.state?.openFollowUp || !contact) return;
+    setFollowUpDraft(
+      contact.followUp
+        ? { ...contact.followUp }
+        : { date: toISODate(addDays(new Date(), 7)), note: '' }
+    );
+    window.history.replaceState({}, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, id]);
   const reconnectDays = state.settings?.reconnectDays ?? 30;
   const over = useMemo(() => makeOverdueCheck(state), [state])(contact);
 
