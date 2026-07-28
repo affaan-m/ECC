@@ -118,6 +118,13 @@ function nowMinutes() {
 // Second pass over the committed order, attaching the times you'd actually
 // read off the screen: when to leave, when you'd arrive, and how long you're
 // waiting around if you get somewhere early.
+//
+// Times are carried as raw minutes from midnight and allowed to exceed 1440.
+// They used to be clamped into the day, which meant a plan running past
+// midnight reported "arrive 23:59, leave 23:59, arrive 23:59" — three
+// different stops all showing the same wrong time, and no way to tell the
+// plan had overrun at all. Formatting wraps them and flags the day roll
+// instead, so a late run reads as 12:05 AM (+1d).
 function withSchedule(route, departAt) {
   let free = departAt; // when you're next available to set off
   const stops = route.stops.map((s) => {
@@ -146,8 +153,11 @@ function withSchedule(route, departAt) {
       legMeters: roadMeters(s.legMeters),
       travelMinutes: travel,
       visitMinutes: visitLength(s),
-      leaveAt: minutesToTime(clampDay(leaveAt)),
-      arriveAt: minutesToTime(clampDay(arriveAt)),
+      leaveAt: clockLabel(leaveAt),
+      arriveAt: clockLabel(arriveAt),
+      // True when this stop happens after midnight, so the UI can say so
+      // rather than quietly showing an early-morning time in today's plan.
+      nextDay: arriveAt >= 24 * 60,
       // Free time before you need to set off for this stop.
       waitMinutes: Math.max(0, Math.round(waitMinutes)),
       // Can't be reached in time however you drive it.
@@ -162,11 +172,17 @@ function withSchedule(route, departAt) {
     stops,
     totalMeters: roadMeters(route.totalMeters),
     departAt,
-    endsAt: minutesToTime(clampDay(free)),
+    endsAt: clockLabel(free),
+    endsNextDay: free >= 24 * 60,
   };
 }
 
-const clampDay = (n) => Math.max(0, Math.min(24 * 60 - 1, Math.round(n)));
+// Minutes from midnight to an "HH:MM" label, wrapping rather than clamping so
+// 25:05 reads as 00:05 rather than being pinned to the end of the day.
+function clockLabel(mins) {
+  const m = ((Math.round(mins) % (24 * 60)) + 24 * 60) % (24 * 60);
+  return minutesToTime(m);
+}
 
 export function formatDistance(meters) {
   const miles = meters / 1609.34;

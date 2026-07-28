@@ -73,6 +73,7 @@ export default function RoutePlannerPage() {
   });
   const [myLocation, setMyLocation] = useState(null); // { lat, lng } | 'denied' | null
   const [route, setRoute] = useState(null); // { stops, totalMeters } | null
+  const [planning, setPlanning] = useState(false);
 
   const toggleSelected = (id) => {
     setRoute(null);
@@ -84,37 +85,65 @@ export default function RoutePlannerPage() {
     });
   };
 
+  // How long to wait for a location fix before planning without one.
+  const LOCATE_TIMEOUT_MS = 8000;
+
   const findStart = () =>
     new Promise((resolve) => {
       if (!navigator.geolocation) return resolve(null);
+      // Raced against our own timer rather than trusting getCurrentPosition's
+      // `timeout` option. That option only starts counting *after* the
+      // permission prompt is answered — dismiss the prompt (or leave it
+      // sitting there) and neither callback ever fires, so this promise never
+      // settled and "Optimize route" did nothing at all, with no error and
+      // nothing on screen. A button that silently does nothing is worse than
+      // one that plans from a guessed starting point.
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true;
+        resolve(v);
+      };
+      const timer = setTimeout(() => finish(null), LOCATE_TIMEOUT_MS);
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: false, timeout: 8000 }
+        (pos) => {
+          clearTimeout(timer);
+          finish({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () => {
+          clearTimeout(timer);
+          finish(null);
+        },
+        { enableHighAccuracy: false, timeout: LOCATE_TIMEOUT_MS }
       );
     });
 
   const planRoute = async () => {
     const stops = pins.filter((p) => selected.has(p.id));
-    if (stops.length === 0) return;
+    if (stops.length === 0 || planning) return;
+    setPlanning(true);
     const geo = myLocation && typeof myLocation === 'object' ? myLocation : await findStart();
     let start;
-    let toVisit;
     let startedFromStop = null;
     if (geo) {
       setMyLocation(geo);
       start = geo;
-      toVisit = stops;
     } else {
-      // Without a known starting point, treat the first selected stop as
-      // the start itself rather than routing "to" it with a nonsense 0m
-      // leg — the order among the rest is still useful.
+      // Without a known starting point, measure the first leg from the
+      // earliest stop instead — but keep that stop *in* the plan. It used
+      // to be sliced out of the list and used only as an origin, which
+      // silently dropped its visit time and, when it was an appointment,
+      // its booked time too: everything after it was then scheduled from
+      // "now" as though the appointment didn't exist. That was the single
+      // biggest source of wrong times on this page.
       setMyLocation('denied');
-      startedFromStop = stops[0];
+      startedFromStop =
+        stops.find((x) => x.start) && stops.filter((x) => x.start).sort((a, b) => a.start.localeCompare(b.start))[0];
+      startedFromStop = startedFromStop || stops[0];
       start = startedFromStop;
-      toVisit = stops.slice(1);
     }
-    setRoute({ ...optimizeRoute(start, toVisit), start, startedFromStop });
+    setRoute({ ...optimizeRoute(start, stops), start, startedFromStop });
+    setPlanning(false);
   };
 
   if (!isPro) return null;
@@ -170,8 +199,12 @@ export default function RoutePlannerPage() {
             </ul>
           </section>
 
-          <button className="btn btn-primary full" onClick={planRoute} disabled={selected.size === 0}>
-            Optimize route
+          <button
+            className="btn btn-primary full"
+            onClick={planRoute}
+            disabled={selected.size === 0 || planning}
+          >
+            {planning ? 'Finding your location…' : 'Optimize route'}
           </button>
 
           {route && (
@@ -180,32 +213,24 @@ export default function RoutePlannerPage() {
                 <span className="detail-label">Suggested order</span>
                 <span className="muted small">
                   {formatDistance(route.totalMeters)} · done by {formatTime(route.endsAt)}
+                  {route.endsNextDay && ' (+1d)'}
                 </span>
               </div>
-              {route.startedFromStop ? (
+                            {route.startedFromStop ? (
                 <p className="muted small">
-                  Couldn't get your location — starting from {route.startedFromStop.emoji || '📍'}{' '}
-                  {route.startedFromStop.label || 'Dropped pin'} instead.
+                  Couldn't get your location — timing this from{' '}
+                  {route.startedFromStop.label || 'your first stop'} instead.
                 </p>
               ) : null}
               <ul className="route-list">
-                {route.startedFromStop && (
-                  <li className="route-stop">
-                    <span className="route-stop-num"><Icon name="dot" size={12} /></span>
-                    <span className="route-stop-label">
-                      {route.startedFromStop.emoji || '📍'} {route.startedFromStop.label || 'Dropped pin'}
-                    </span>
-                    <span className="muted small">start</span>
-                  </li>
-                )}
                 {route.stops.map((s, i) => (
                   <li key={s.id} className={`route-stop${s.late ? ' route-stop--late' : ''}`}>
                     <span className="route-stop-num">{i + 1}</span>
                     <span className="route-stop-label">
                       {s.emoji || '📍'} {s.label || 'Dropped pin'}
                       <span className="route-stop-times muted small">
-                        Leave {formatTime(s.leaveAt)} · arrive {formatTime(s.arriveAt)} ·{' '}
-                        {formatMinutes(s.visitMinutes)} there
+                        Leave {formatTime(s.leaveAt)} · arrive {formatTime(s.arriveAt)}
+                        {s.nextDay && ' (+1d)'} · {formatMinutes(s.visitMinutes)} there
                       </span>
                       {s.late ? (
                         <span className="route-stop-warn small">
