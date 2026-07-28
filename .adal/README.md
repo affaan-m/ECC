@@ -4,8 +4,8 @@ This directory contains the ECC (Everything Claude Code) configuration for the A
 
 ## What is installed
 
-- `rules/ecc/` — shared coding rules and guidelines
-- `skills/ecc/` — reusable skills
+- `rules/` — shared coding rules and guidelines
+- `skills/` — reusable skills
 - `commands/` — slash commands
 - `AGENTS.md` — agent instructions
 
