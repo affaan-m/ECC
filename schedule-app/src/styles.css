@@ -5019,3 +5019,68 @@ button.timeline-item {
   border: 1px solid var(--border);
   color: var(--text);
 }
+
+/* --- Settings: sections and search --------------------------------------
+   The page was nineteen equal-weight cards in one flat scroll. These give
+   it an outline — seven named runs of cards — plus a search box, which is
+   the difference between remembering where a setting lives and just typing
+   what it does. */
+/* Deliberately NOT small-caps. The cards' own titles are uppercase, muted
+   and letterspaced, so a section heading in that same treatment read as
+   just another card — two levels of hierarchy rendered identically is no
+   hierarchy at all. Full text colour, larger, sentence case, with a rule
+   running out to the right: unmistakably the level above. */
+.settings-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 26px 4px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.settings-section::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+/* The first heading follows the Pro card, which already carries its own
+   bottom margin — a full gap on top of that reads as a break in the page. */
+.settings-section:first-of-type {
+  margin-top: 10px;
+}
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 2px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.settings-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  padding: 11px 0;
+  font-size: 15px;
+}
+/* Safari renders a second clear affordance of its own inside type=search,
+   which would sit next to ours. */
+.settings-search input::-webkit-search-decoration,
+.settings-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.settings-search .icon-btn {
+  flex: none;
+  padding: 4px;
+}

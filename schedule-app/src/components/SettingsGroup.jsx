@@ -1,11 +1,13 @@
 import { Children } from 'react';
 import { selectTick } from '../data/haptics.js';
+import Icon from './Icon.jsx';
 
 // A settings card that collapses to just its heading.
 //
-// The Settings page is one long scroll of nineteen cards; finding the one
-// you want means scrolling past everything else. Collapsed by default, it
-// becomes a scannable index instead.
+// The Settings page is nineteen cards; finding the one you want means
+// scrolling past everything else. Collapsed by default, it becomes a
+// scannable index instead — grouped under section headings, and filtered
+// by the page's search box via `hidden`.
 //
 // The heading isn't a prop — it's whatever the section's *first child*
 // already was. That matters because the existing cards lead with two
@@ -14,9 +16,11 @@ import { selectTick } from '../data/haptics.js';
 // Taking the first child verbatim means both keep working untouched, and
 // a toggle that lives in a heading stays reachable while collapsed —
 // flipping notifications off shouldn't require expanding anything.
-export default function SettingsGroup({ id, open, onToggle, children }) {
+export default function SettingsGroup({ id, open, onToggle, hidden, children }) {
   const kids = Children.toArray(children);
   const [head, ...body] = kids;
+
+  if (hidden) return null;
 
   return (
     <section className={`detail-section settings-group${open ? ' settings-group--open' : ''}`}>
@@ -55,16 +59,5 @@ export default function SettingsGroup({ id, open, onToggle, children }) {
 }
 
 function ChevronIcon() {
-  return (
-    <svg className="settings-group-chevron" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path
-        d="M6 9l6 6 6-6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <Icon name="chevronDown" size={18} className="settings-group-chevron" />;
 }
