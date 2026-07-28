@@ -1,0 +1,67 @@
+schema = "ecc.feature-fleet.v1"
+id = "feature-fleet-runtime"
+title = "Feature Fleet runtime foundations"
+base_branch = "main"
+default_agent = "codex"
+
+[[features]]
+id = "fleet-ownership"
+title = "Fleet-owned sessions"
+task = """
+Add explicit fleet ownership to sessions and exclude fleet-managed sessions from
+legacy merge, prune, merge-queue, and daemon lifecycle automation.
+"""
+owns = ["ecc2/src/session/**"]
+contracts = ["session:fleet-controller-v1"]
+
+[[features.checks]]
+id = "session-tests"
+program = "cargo"
+args = ["test", "--no-default-features", "session"]
+working_directory = "ecc2"
+timeout_seconds = 1200
+environment_allowlist = ["CARGO_HOME", "RUSTUP_HOME"]
+max_output_bytes = 10485760
+requires_repository_trust = true
+
+[[features]]
+id = "pinned-worktrees"
+title = "Pinned-OID worktrees"
+task = """
+Create fleet worktrees from an explicit commit OID under a repository-scoped
+Git mutation lease, with identity-checked cleanup.
+"""
+owns = ["ecc2/src/worktree/**"]
+contracts = ["git:pinned-worktree-v1", "git:mutation-lease-v1"]
+
+[[features.checks]]
+id = "worktree-tests"
+program = "cargo"
+args = ["test", "--no-default-features", "worktree"]
+working_directory = "ecc2"
+timeout_seconds = 1200
+environment_allowlist = ["CARGO_HOME", "RUSTUP_HOME"]
+max_output_bytes = 10485760
+requires_repository_trust = true
+
+[[features]]
+id = "attempt-admission"
+title = "Revisioned attempt admission"
+task = """
+Reserve attempts atomically by fleet revision and idempotency key, compose
+verified dependency heads into the dispatch base, and recover interrupted
+provisioning without duplicate launches.
+"""
+depends_on = ["fleet-ownership", "pinned-worktrees"]
+owns = ["ecc2/src/feature_fleet/**"]
+contracts = ["fleet:attempt-admission-v1"]
+
+[[features.checks]]
+id = "fleet-tests"
+program = "cargo"
+args = ["test", "--no-default-features", "feature_fleet"]
+working_directory = "ecc2"
+timeout_seconds = 1200
+environment_allowlist = ["CARGO_HOME", "RUSTUP_HOME"]
+max_output_bytes = 10485760
+requires_repository_trust = true

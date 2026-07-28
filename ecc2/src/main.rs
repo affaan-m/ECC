@@ -1,5 +1,6 @@
 mod comms;
 mod config;
+mod feature_fleet;
 mod notifications;
 mod observability;
 mod session;
@@ -110,6 +111,11 @@ impl OptionalWorktreePolicyArgs {
 enum Commands {
     /// Launch the TUI dashboard
     Dashboard,
+    /// Experimental multi-feature planning and durable fleet state
+    Fleet {
+        #[command(subcommand)]
+        command: feature_fleet::cli::FleetCommand,
+    },
     /// Start a new agent session
     Start {
         /// Task description for the agent
@@ -1359,6 +1365,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Dashboard) | None => {
             tui::app::run(db, cfg).await?;
+        }
+        Some(Commands::Fleet { command }) => {
+            feature_fleet::cli::execute(command, &db)?;
         }
         Some(Commands::Start {
             task,
