@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, useUser, useClerk, UserButton } from '@clerk/clerk-react';
 import { useStore, useActions } from '../data/store.jsx';
@@ -28,6 +28,7 @@ import {
   DEFAULT_CONTACT_SWIPE_RIGHT,
 } from '../data/contactSwipe.js';
 import { backendConfigured } from '../data/api.js';
+import { useSyncStatus, describeSyncedAt } from '../data/syncStatus.js';
 import Icon from '../components/Icon.jsx';
 
 const formatHour = (h) => formatTime(`${String(h).padStart(2, '0')}:00`);
@@ -229,7 +230,10 @@ export default function MorePage() {
   const isPro = !!state.settings?.isPro;
   const profileName = state.settings?.profileName || '';
   const profilePhoto = state.settings?.profilePhoto || '';
-  const cloudSyncOn = !!state.settings?.cloudSync;
+  // `!== false` rather than a truthiness check, matching DataSync: an
+  // existing user whose stored settings predate this flag has it undefined,
+  // and the toggle must show the same "on" that the sync is acting on.
+  const cloudSyncOn = state.settings?.cloudSync !== false;
 
   const requirePro = (fn) => (isPro ? fn() : navigate('/pricing'));
 
@@ -1303,15 +1307,40 @@ function AccountSection() {
   );
 }
 
+// Says what the sync is actually doing, rather than asserting that it works.
+// "Your data syncs automatically" is a claim; "Last synced 2 min ago" is
+// evidence, and when something is wrong it's the difference between noticing
+// and not.
 function CloudSyncStatus({ cloudSyncOn }) {
   const { isSignedIn } = useAuth();
+  const status = useSyncStatus();
+  // Re-render on a slow tick so "3 min ago" doesn't sit there saying "just
+  // now" for the rest of the session.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   if (!cloudSyncOn) {
     return <p className="muted small">Keep your data synced across devices.</p>;
   }
   if (!isSignedIn) {
     return <p className="muted small">Sign in above to start syncing your data to your account.</p>;
   }
-  return <p className="muted small">Your data syncs automatically to your account.</p>;
+  if (status.phase === 'error') {
+    return (
+      <p className="muted small">
+        Couldn't reach the server — changes are saved on this device and will sync when it's back.
+      </p>
+    );
+  }
+  return (
+    <p className="muted small">
+      {status.phase === 'syncing' ? 'Syncing…' : `Last synced ${describeSyncedAt(status.at)}`} · every
+      device you're signed in on stays in step.
+    </p>
+  );
 }
 
 // One row of colour-scheme swatches. Shared by the standard and pastel rows

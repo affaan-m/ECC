@@ -67,6 +67,12 @@ function loadState() {
         // themselves stay optional on every contact either way, so there's
         // nothing to migrate when someone flips it back on.
         contactBirthdaysEnabled: true,
+        // On by default: sync you have to go and find and switch on is sync
+        // most people never get. Inert unless signed in, Pro, and a backend
+        // is configured, so this costs nothing when it can't do anything —
+        // see DataSync in App.jsx. Read as `!== false` everywhere so an
+        // older saved settings object (no such key) is also treated as on.
+        cloudSync: true,
         // Off unless asked for — see data/reconnect.js. Read as `=== true`
         // everywhere so an older saved settings object (which has no such
         // key) also starts off rather than inheriting the old always-on

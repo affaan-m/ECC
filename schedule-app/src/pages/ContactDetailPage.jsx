@@ -43,6 +43,15 @@ export default function ContactDetailPage() {
   // Arriving from the People list's "Follow up" swipe — open straight into
   // the editor rather than dropping the user on the page to find it.
   const location = useLocation();
+  // Tapping the person at the top of their timeline comes here asking for
+  // the editor, not the read view — the point of the tap was to change
+  // something.
+  useEffect(() => {
+    if (!location.state?.edit || !contact) return;
+    startEdit();
+    window.history.replaceState({}, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, id]);
   useEffect(() => {
     if (!location.state?.openFollowUp || !contact) return;
     setFollowUpDraft(

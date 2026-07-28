@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@clerk/clerk-react';
 import TabBar from './components/TabBar.jsx';
@@ -9,6 +9,7 @@ import { setUse24hFormat, setSundayWeekStart, distanceMeters } from './data/help
 import { setHapticsEnabled } from './data/haptics.js';
 import { fetchMe, backendConfigured, fetchSyncedData, pushSyncedData } from './data/api.js';
 import { CLERK_ENABLED } from './data/clerkConfig.js';
+import { setSyncStatus } from './data/syncStatus.js';
 import { useToast } from './data/toast.jsx';
 import HomePage from './pages/HomePage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
@@ -55,67 +56,115 @@ function SubscriptionSync() {
   return null;
 }
 
-// Syncs the whole app data blob (goals, events, contacts, notes, ...) to the
-// backend when signed in and the user has Cloud sync turned on (More →
-// Account & sync). Policy: on activating, pull whatever's saved on the
-// server and replace local state with it (the cloud is treated as
-// authoritative once something's already up there); if nothing's saved yet,
-// push the current local data to seed it. After that, any local change is
-// pushed on a short debounce. This is intentionally simple last-write-wins
-// sync for one person's own devices, not a conflict-resolving multi-editor
-// sync. Only ever mounted when CLERK_ENABLED, so useAuth() always has a
-// provider.
+// Keeps the whole app data blob (goals, events, contacts, notes, ...) in step
+// with the backend on every device you're signed in on.
+//
+// It used to pull once, when sync was switched on, and then only ever push.
+// That meant a change made on your phone never reached your laptop until the
+// laptop was reloaded or the toggle was flipped off and on — which is not
+// really sync, it's a backup with extra steps. It now also pulls on a timer,
+// whenever the tab becomes visible again, and whenever the network comes
+// back, which between them cover every way you'd actually notice staleness:
+// picking the other device up, or coming back to this one.
+//
+// The server's `updatedAt` is the guard against pointless churn: a pull that
+// returns something we already have is dropped rather than re-imported, so a
+// poll every minute doesn't cause a re-render every minute.
+//
+// Still deliberately last-write-wins for one person's own devices — not a
+// conflict-resolving multi-editor sync. Only ever mounted when CLERK_ENABLED,
+// so useAuth() always has a provider.
+const PULL_INTERVAL_MS = 60000;
+const PUSH_DEBOUNCE_MS = 2500;
+
 function DataSync() {
   const { state } = useStore();
   const actions = useActions();
   const { isSignedIn, getToken } = useAuth();
-  const cloudSyncOn = !!state.settings?.cloudSync;
+  const cloudSyncOn = state.settings?.cloudSync !== false;
   const isPro = !!state.settings?.isPro;
   const active = isSignedIn && cloudSyncOn && isPro && backendConfigured();
 
-  const pulledRef = useRef(false);
   const skipNextPushRef = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // The server timestamp of the version we already hold, so a pull can tell
+  // "nothing new" from "someone else changed something".
+  const seenAtRef = useRef(null);
+  const busyRef = useRef(false);
 
-  // Initial pull, once per activation (sign-in + toggle-on + Pro all true).
-  useEffect(() => {
-    if (!active) {
-      pulledRef.current = false;
-      return;
-    }
-    if (pulledRef.current) return;
-    pulledRef.current = true;
-    let cancelled = false;
-    fetchSyncedData(getToken)
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (data) {
+  const pull = useCallback(
+    async ({ initial = false } = {}) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setSyncStatus({ phase: 'syncing', error: null });
+      try {
+        const { data, updatedAt } = await fetchSyncedData(getToken);
+        if (!data) {
+          // Nothing up there yet — seed it from this device.
+          const res = await pushSyncedData(getToken, stateRef.current);
+          seenAtRef.current = res?.updatedAt ?? null;
+        } else if (initial || !seenAtRef.current || updatedAt > seenAtRef.current) {
+          seenAtRef.current = updatedAt ?? null;
           skipNextPushRef.current = true;
           actions.importData(data);
-        } else {
-          return pushSyncedData(getToken, stateRef.current);
         }
-      })
-      .catch((err) => console.warn('Cloud sync: initial sync failed:', err.message));
+        setSyncStatus({ phase: 'idle', at: Date.now(), error: null });
+      } catch (err) {
+        setSyncStatus({ phase: 'error', error: err.message });
+        console.warn('Cloud sync: pull failed:', err.message);
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getToken]
+  );
+
+  // Initial pull, plus every way of noticing the other device changed
+  // something: a timer, coming back to the tab, and regaining the network.
+  useEffect(() => {
+    if (!active) {
+      seenAtRef.current = null;
+      setSyncStatus({ phase: 'off', error: null });
+      return undefined;
+    }
+    pull({ initial: true });
+    const timer = setInterval(pull, PULL_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', pull);
     return () => {
-      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', pull);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   // Debounced push whenever local data changes while sync is active.
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
     if (skipNextPushRef.current) {
       skipNextPushRef.current = false;
-      return;
+      return undefined;
     }
     const timer = setTimeout(() => {
-      pushSyncedData(getToken, state).catch((err) =>
-        console.warn('Cloud sync: push failed:', err.message)
-      );
-    }, 2500);
+      setSyncStatus({ phase: 'syncing', error: null });
+      pushSyncedData(getToken, state)
+        .then((res) => {
+          // Remember our own write, so the next poll doesn't mistake it for
+          // a change from somewhere else and re-import what we just sent.
+          seenAtRef.current = res?.updatedAt ?? seenAtRef.current;
+          setSyncStatus({ phase: 'idle', at: Date.now(), error: null });
+        })
+        .catch((err) => {
+          setSyncStatus({ phase: 'error', error: err.message });
+          console.warn('Cloud sync: push failed:', err.message);
+        });
+    }, PUSH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, active]);

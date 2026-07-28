@@ -6,6 +6,7 @@ import Modal from '../components/Modal.jsx';
 import Checkbox from '../components/Checkbox.jsx';
 import { Avatar } from '../components/Avatar.jsx';
 import { todayISO, toISODate, addDays, formatShortDate, formatTime, expandEventOnDay } from '../data/helpers.js';
+import { contactInsights } from '../data/contactInsights.js';
 import Icon from '../components/Icon.jsx';
 
 const WINDOW_DAYS = 180; // how far past/future the feed reaches
@@ -21,15 +22,16 @@ export default function ContactTimelinePage() {
 
   const scrollRef = useRef(null);
   const anchorRef = useRef(null);
-  const didLandRef = useRef(false);
-  const headerRef = useRef(null);
-  const notesRef = useRef(null);
-  const [notesTop, setNotesTop] = useState(56);
-  const [fadeTop, setFadeTop] = useState(56);
 
+  // Collapsed by default: the three next things and the three most recent,
+  // with everything else behind "Show full timeline". A relationship of any
+  // length produced hundreds of rows, and the two that matter — what's
+  // coming and what just happened — were buried in the middle of them.
+  const [expanded, setExpanded] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [editingInteraction, setEditingInteraction] = useState(null);
   const [editingNote, setEditingNote] = useState(null);
+  const [viewingNote, setViewingNote] = useState(null); // read view before edit
   const [confirmDelete, setConfirmDelete] = useState(null); // { kind: 'interaction'|'note', id }
 
   const today = todayISO();
@@ -74,65 +76,20 @@ export default function ContactTimelinePage() {
     [state.notes, contact?.id]
   );
 
-  // Future events beyond the first few fade at the top of the timeline
-  // until the user actually scrolls up to reveal them. The fade's opacity
-  // tracks scroll position directly (instead of a hard on/off toggle) so it
-  // eases in and out smoothly as you scroll, rather than snapping.
-  const futureCount = useMemo(() => entries.filter((e) => e.type === 'event' && e.date > today).length, [entries, today]);
-  const FADE_SCROLL_RANGE = 40; // px of scroll over which the fade eases in
-  const [scrollY, setScrollY] = useState(0);
-  useEffect(() => {
-    const onScroll = () => setScrollY(window.scrollY);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-  const fadeOpacity = Math.max(0, Math.min(1, scrollY / FADE_SCROLL_RANGE));
+  const insights = useMemo(() => contactInsights(entries, {}), [entries]);
 
-  // Dock the notes bar right below the sticky header, and the fade right
-  // below the (also sticky) notes bar — so the notes stay reachable at any
-  // scroll position instead of being landed-past on open, and the fade only
-  // ever covers the actual event list, never the notes themselves.
-  useEffect(() => {
-    const measure = () => {
-      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 56;
-      setNotesTop(headerBottom);
-      const notesHeight = notesRef.current?.getBoundingClientRect().height ?? 0;
-      setFadeTop(headerBottom + notesHeight);
-    };
-    measure();
-    // The page's mount-in animation (see .page's page-in keyframes) can
-    // still be settling when this first runs, giving a slightly-off
-    // reading — one more pass after it finishes catches the resting layout.
-    const settleTimer = setTimeout(measure, 450);
-    window.addEventListener('resize', measure);
-    return () => {
-      clearTimeout(settleTimer);
-      window.removeEventListener('resize', measure);
-    };
-  }, [contactNotes.length]);
-
-  // Index of the first entry that's today-or-earlier: everything above it in
-  // the (descending) list is future, this is the "now" anchor to land on.
-  const anchorIndex = useMemo(() => {
-    const idx = entries.findIndex((e) => e.date <= today);
-    return idx === -1 ? entries.length : idx;
-  }, [entries, today]);
-
-  // Land on "today" the moment the page opens — instant, not an animated
-  // scroll the user didn't ask for. A later "Jump to today" tap (if added)
-  // can use smooth scrolling instead.
-  useEffect(() => {
-    didLandRef.current = false;
-  }, [contact?.id]);
-  useEffect(() => {
-    if (didLandRef.current || !anchorRef.current) return;
-    anchorRef.current.scrollIntoView({ block: 'start' });
-    didLandRef.current = true;
-  }, [entries, anchorIndex]);
+  // `entries` runs newest-first, so future is the head and past is the tail.
+  const futureAll = useMemo(() => entries.filter((e) => e.date > today), [entries, today]);
+  const pastAll = useMemo(() => entries.filter((e) => e.date <= today), [entries, today]);
+  const SHOWN = 3;
+  // The nearest three ahead are the *last* three of the future block, since
+  // that block is sorted furthest-first.
+  const future = expanded ? futureAll : futureAll.slice(-SHOWN);
+  const past = expanded ? pastAll : pastAll.slice(0, SHOWN);
+  const hiddenCount = futureAll.length - future.length + (pastAll.length - past.length);
 
   const jumpToToday = () => {
-    anchorRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    anchorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
 
   if (!contact) {
@@ -196,7 +153,7 @@ export default function ContactTimelinePage() {
 
   return (
     <div className="page timeline-page">
-      <header className="page-head" ref={headerRef}>
+      <header className="page-head">
         <div className="page-head-row">
           <button className="back-btn" onClick={() => navigate(`/contacts/${id}`)}>
             ‹ {contact.name}
@@ -207,18 +164,42 @@ export default function ContactTimelinePage() {
         </div>
       </header>
 
-      <div className="detail-hero detail-hero--compact">
+      {/* The person, tappable — you're looking straight at them and their
+          details are one back-tap plus one Edit away, which is two taps too
+          many for "actually, her number changed". */}
+      <button
+        className="detail-hero detail-hero--compact timeline-hero"
+        onClick={() => navigate(`/contacts/${id}`, { state: { edit: true } })}
+      >
         <Avatar name={contact.name} photo={contact.photo} color={status?.color} size="md" />
         <h1>{contact.name}'s timeline</h1>
-      </div>
+        <span className="timeline-hero-edit">
+          <Icon name="pencil" size={16} />
+        </span>
+      </button>
 
+      {insights.length > 0 && (
+        <section className="timeline-insights">
+          {insights.map((i) => (
+            <span key={i.id} className="timeline-insight">
+              <Icon name={i.icon} size={14} /> {i.text}
+            </span>
+          ))}
+        </section>
+      )}
+
+      {/* Notes sit in the normal flow now. They used to be sticky with their
+          own internal scroll, which meant the first one was docked flush
+          under a header that fades to transparent and clipped by its own
+          overflow — so a pinned note read as faded and cut off at the top.
+          Nothing overlays them any more. */}
       {contactNotes.length > 0 && (
-        <section className="contact-notes" ref={notesRef} style={{ top: notesTop }}>
+        <section className="contact-notes">
           {contactNotes.map((n) => (
             <button
               key={n.id}
               className={`contact-note${n.pinned ? ' contact-note--pinned' : ''}`}
-              onClick={() => setEditingNote({ ...n })}
+              onClick={() => setViewingNote(n)}
             >
               {n.pinned && <span className="pinned-note-pin"><Icon name="bookmark" size={14} /></span>}
               <span className="pinned-note-body">
@@ -230,34 +211,45 @@ export default function ContactTimelinePage() {
         </section>
       )}
 
-      {futureCount > 3 && (
-        <div className="timeline-fade-top" style={{ top: fadeTop, opacity: fadeOpacity }} />
-      )}
-
       <div className="timeline-scroll" ref={scrollRef}>
         {entries.length === 0 && (
           <p className="muted center-pad">
             Nothing here yet. Log a contact, add an event, or write a note below.
           </p>
         )}
-        {entries.map((entry, i) => (
-          <div key={entry.key}>
-            {i === anchorIndex && (
-              <div ref={anchorRef} className="timeline-today-marker">
-                <span>Today</span>
-              </div>
-            )}
-            <TimelineEntry
-              entry={entry}
-              onEditInteraction={(ix) => setEditingInteraction({ ...ix })}
-              onDeleteInteraction={(ixId) => setConfirmDelete({ kind: 'interaction', id: ixId })}
-            />
-          </div>
+
+        {future.map((entry) => (
+          <TimelineEntry
+            key={entry.key}
+            entry={entry}
+            onEditInteraction={(ix) => setEditingInteraction({ ...ix })}
+          />
         ))}
-        {anchorIndex >= entries.length && (
+
+        {entries.length > 0 && (
           <div ref={anchorRef} className="timeline-today-marker">
             <span>Today</span>
           </div>
+        )}
+
+        {past.map((entry) => (
+          <TimelineEntry
+            key={entry.key}
+            entry={entry}
+            onEditInteraction={(ix) => setEditingInteraction({ ...ix })}
+          />
+        ))}
+
+        {hiddenCount > 0 && !expanded && (
+          <button className="timeline-more" onClick={() => setExpanded(true)}>
+            Show full timeline
+            <span className="muted small"> · {hiddenCount} more</span>
+          </button>
+        )}
+        {expanded && (
+          <button className="timeline-more" onClick={() => setExpanded(false)}>
+            Show less
+          </button>
         )}
       </div>
 
@@ -389,6 +381,42 @@ export default function ContactTimelinePage() {
       </EditorSheet>
 
       {/* Delete confirm */}
+      {/* Reading a note, before editing it. A note only ever showed one
+          ellipsised line in the list, and tapping it dropped you straight
+          into a textarea — fine for changing it, wrong for the far more
+          common case of just wanting to read the thing. */}
+      <Modal
+        open={!!viewingNote}
+        title={viewingNote?.title || 'Note'}
+        onClose={() => setViewingNote(null)}
+        footer={
+          <div className="modal-actions">
+            <button className="btn btn-ghost" onClick={() => setViewingNote(null)}>
+              Close
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setEditingNote({ ...viewingNote });
+                setViewingNote(null);
+              }}
+            >
+              Edit
+            </button>
+          </div>
+        }
+      >
+        {viewingNote && (
+          <div className="note-reader selectable">
+            {viewingNote.body ? (
+              <p>{viewingNote.body}</p>
+            ) : (
+              <p className="muted">This note is empty.</p>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <Modal
         open={!!confirmDelete}
         title={confirmDelete?.kind === 'note' ? 'Delete note?' : 'Delete logged contact?'}

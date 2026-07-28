@@ -5149,3 +5149,79 @@ button.timeline-item {
   color: var(--accent);
   font-weight: 700;
 }
+
+/* --- Contact timeline: collapsed view, insights, note reader -------------- */
+/* Notes are in normal flow now (they used to be sticky with their own
+   overflow, which clipped the first one under the header). */
+.contact-notes {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  margin-bottom: 14px;
+}
+/* Two lines rather than one ellipsised line: enough to tell two notes apart
+   without turning the list into the notes themselves. The full text is a tap
+   away in the reader. */
+.pinned-note-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+.timeline-hero {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  text-align: center;
+}
+.timeline-hero-edit {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--muted);
+}
+.timeline-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  margin-bottom: 14px;
+}
+.timeline-insight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.timeline-insight .icon {
+  color: var(--accent);
+}
+.timeline-more {
+  align-self: center;
+  margin-top: 12px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.timeline-more:active {
+  transform: scale(0.97);
+}
+.note-reader p {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  margin: 0;
+}
