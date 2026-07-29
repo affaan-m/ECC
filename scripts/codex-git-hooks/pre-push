@@ -62,6 +62,8 @@ has_node_script() {
 
 run_pnpm() {
   if command -v corepack >/dev/null 2>&1; then
+    # Corepack may download the pinned pnpm version on a cache miss. Set
+    # COREPACK_ENABLE_NETWORK=0 to make an offline cache miss fail immediately.
     corepack pnpm "$@"
   elif command -v pnpm >/dev/null 2>&1; then
     pnpm "$@"

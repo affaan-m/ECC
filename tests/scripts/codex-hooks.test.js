@@ -43,7 +43,10 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
-function runBash(scriptPath, args = [], env = {}, cwd = repoRoot, input = undefined, preservePath = true) {
+function runBash(
+  scriptPath,
+  { args = [], env = {}, cwd = repoRoot, input = undefined, preservePath = true } = {},
+) {
   const bash = process.platform === 'win32' && fs.existsSync('C:\\Program Files\\Git\\bin\\bash.exe')
     ? 'C:\\Program Files\\Git\\bin\\bash.exe'
     : fs.existsSync('/bin/bash')
@@ -129,11 +132,6 @@ const cacheManifestWithLocalRefs = {
 let passed = 0;
 let failed = 0;
 
-function makeExecutable(filePath, content) {
-  fs.writeFileSync(filePath, content, { mode: 0o755 });
-  fs.chmodSync(filePath, 0o755);
-}
-
 function runHermeticPrePush({ failScript = null, includeCorepack = true, includePnpm = false } = {}) {
   const tempDir = createTempDir('codex-pre-push-');
   const binDir = path.join(tempDir, 'bin');
@@ -163,10 +161,8 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
     packageManager: 'pnpm@11.9.0',
     scripts: { lint: 'x', typecheck: 'x', test: 'x', build: 'x' },
   });
-  const result = runBash(
-    prePushHook,
-    [],
-    {
+  const result = runBash(prePushHook, {
+    env: {
       PATH: toBashPath(binDir),
       BASH_ENV: toBashPath(bashEnv),
       ECC_PREPUSH_AUDIT: '0',
@@ -174,10 +170,10 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
       ECC_SKIP_PREPUSH: '0',
       MSYS_NO_PATHCONV: '1',
     },
-    projectDir,
-    Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
-    false,
-  );
+    cwd: projectDir,
+    input: Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
+    preservePath: false,
+  });
   const calls = fs.existsSync(callsPath)
     ? fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/)
     : [];
@@ -389,9 +385,11 @@ if (os.platform() === 'win32') {
     const weirdHooksDir = path.join(homeDir, 'git-hooks "quoted"');
 
     try {
-      const result = runBash(installScript, [], {
-        HOME: homeDir,
-        ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+      const result = runBash(installScript, {
+        env: {
+          HOME: homeDir,
+          ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+        },
       });
 
       assert.strictEqual(result.status, 0, result.stderr || result.stdout);
@@ -786,7 +784,10 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        args: ['--update-mcp'],
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
@@ -847,7 +848,9 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const parsedConfig = TOML.parse(fs.readFileSync(configPath, 'utf8'));
