@@ -44,11 +44,43 @@ const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
-// SQL-keyword + dd patterns stay as a single regex — they are stable
-// phrases without shell-flag ordering concerns. Quoted strings are
-// stripped before this regex runs so a commit message mentioning
-// "drop table" no longer triggers a false positive.
-const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+// SQL phrases stay as a single regex — they are stable phrases without
+// shell-flag ordering concerns. Quoted strings are stripped before this
+// regex runs so a commit message mentioning "drop table" no longer
+// triggers a false positive.
+//
+// Two members used to live here and no longer do:
+//
+//   `truncate` was matched bare, so every mention of the word was
+//   destructive — the Jinja/Django filter, a branch name, a filename, a
+//   line of prose in a commit body. SQL truncation always names a table,
+//   so require the pair; the coreutils binary is caught in command
+//   position by `isDestructiveSimpleCommand`.
+//
+//   `dd\s+if=` could never fire on a real invocation. The trailing `\b`
+//   needs a word character after `=`, but every real use continues with
+//   a path: `dd if=/dev/zero of=/dev/sda` did NOT match, while the inert
+//   `dd if=x` did. `of=` — the operand that actually writes — was never
+//   matched at all. `dd` now has a command-position rule.
+const DESTRUCTIVE_SQL = /\b(drop\s+table|delete\s+from|truncate\s+table)\b/i;
+
+// Paths whose removal costs nothing: agent scratch space, build caches,
+// virtualenvs, test artefacts. Bare `/tmp` is deliberately absent — only
+// clearly-derived directories qualify, so `rm -rf /tmp/junk` still gets
+// challenged.
+const DISPOSABLE_PATH = /(^|\/)(scratchpad|node_modules|__pycache__|\.venv|\.cache|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.vite|\.turbo|test-results|playwright-report|\.playwright-mcp|\.superpowers\/sdd)(\/|$)/;
+
+// Stands for a value that came from `$(mktemp ...)` — a directory the
+// shell itself just created, so deleting it is disposable by definition.
+const MKTEMP_SENTINEL = '\u0000mktemp\u0000';
+
+// Quoted text is replaced by `\u0001<n>\u0001` placeholders so a quoted
+// argument stays ONE opaque token — keeping `git commit -m '(rm -rf x)'`
+// harmless — while its literal content stays recoverable for target
+// analysis. Blanking quotes to `''` threw the content away, which made
+// `rm -rf "$SCRATCH/build"` unjudgeable.
+const QUOTE_SLOT = '\u0001';
+const QUOTE_SLOT_RE = new RegExp(`${QUOTE_SLOT}(\\d+)${QUOTE_SLOT}`, 'g');
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -147,8 +179,31 @@ function isRoutineBashGateDisabled() {
  * @param {string} input
  * @returns {string}
  */
-function stripQuotedStrings(input) {
-  return input.replace(/'(?:[^'\\]|\\.)*'/g, "''").replace(/"(?:[^"\\]|\\.)*"/g, '""');
+function stripQuotedStrings(input, slots) {
+  return String(input).replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, match => {
+    if (!slots) return match[0] === "'" ? "''" : '""';
+    slots.push(match.slice(1, -1));
+    return `${QUOTE_SLOT}${slots.length - 1}${QUOTE_SLOT}`;
+  });
+}
+
+/**
+ * Replace quote placeholders with the literal text they stood for. Used
+ * only on already-tokenized operands, never before command detection —
+ * so quoted text can inform a target check but can never become a
+ * command.
+ *
+ * @param {string} token
+ * @param {string[]} slots
+ * @returns {string}
+ */
+function resolveSlots(token, slots) {
+  if (!slots || slots.length === 0) return String(token);
+  QUOTE_SLOT_RE.lastIndex = 0;
+  return String(token).replace(QUOTE_SLOT_RE, (whole, index) => {
+    const i = Number(index);
+    return Number.isInteger(i) && i >= 0 && i < slots.length ? slots[i] : '';
+  });
 }
 
 /**
@@ -182,8 +237,8 @@ function explodeSubshells(input) {
  * @param {string} input
  * @returns {string[]}
  */
-function splitCommandSegments(input) {
-  const stripped = explodeSubshells(stripQuotedStrings(input));
+function splitCommandSegments(input, slots) {
+  const stripped = explodeSubshells(stripQuotedStrings(input, slots));
   return stripped
     .split(/[;|&]+/)
     .map(segment => segment.replace(/(^|\s)#.*/, '$1').trim())
@@ -344,11 +399,19 @@ const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
   if (depth > 4) return false;
+  // `quoteAwareSegments` already unquotes, so there are no slot
+  // placeholders to resolve here — but the assignment map still has to
+  // be threaded through, or a target like `$SCRATCH/build` reaches
+  // `isDisposableTarget` unresolved and every disposable-path decision
+  // made in the main pass is silently reversed by this one.
+  const ctx = { assignments: collectAssignments(raw), slots: null };
   for (const tokens of quoteAwareSegments(raw)) {
     if (tokens.length === 0) continue;
-    if (isDestructiveRm(tokens)) return true;
+    if (isDestructiveRm(tokens, ctx)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
+    if (isDestructiveFindDelete(tokens)) return true;
+    if (isDestructiveSimpleCommand(tokens, ctx)) return true;
     const base = commandBasename(tokens[0]);
     if (SHELL_WRAPPERS.has(base)) {
       const ci = tokens.indexOf('-c');
@@ -376,31 +439,159 @@ function commandBasename(token) {
 }
 
 /**
- * Detect `rm` invocations that recursively force-delete files. Handles
- * combined (`-rf`, `-fr`, `-Rf`) and split (`-r -f`) flag forms.
+ * Collect `NAME=value` assignments from a raw command line so a delete
+ * target written as `$SCRATCH/build` can be judged at all. Scripts
+ * almost always define the scratch root in the very command that deletes
+ * from it; without this the disposable-path check sees an opaque `$VAR`
+ * and has nothing to go on.
+ *
+ * Values are read from the RAW line because quote stripping runs later.
+ *
+ * @param {string} raw
+ * @returns {Map<string, string>}
+ */
+function collectAssignments(raw) {
+  const assignments = new Map();
+  const re = /(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|'([^']*)'|[^\s;&|)]*)/g;
+  let match;
+  while ((match = re.exec(String(raw || ''))) !== null) {
+    const name = match[1];
+    let value = match[3] !== undefined ? match[3] : match[4] !== undefined ? match[4] : match[2];
+    if (!value) continue;
+    if (/\$\(\s*mktemp\b/.test(value)) value = MKTEMP_SENTINEL;
+    assignments.set(name, value);
+  }
+  return assignments;
+}
+
+/**
+ * Substitute `$NAME` / `${NAME}` from the assignment map. Unknown names
+ * are left untouched on purpose: the caller treats a still-unresolved
+ * target as opaque, and therefore as NOT disposable.
+ *
+ * @param {string} target
+ * @param {Map<string, string>} assignments
+ * @returns {string}
+ */
+function expandAssignments(target, assignments) {
+  let out = String(target || '');
+  for (let i = 0; i < 4; i += 1) {
+    const before = out;
+    out = out.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, braced, bare) => {
+      const key = braced || bare;
+      return assignments.has(key) ? assignments.get(key) : whole;
+    });
+    if (out === before) break;
+  }
+  return out;
+}
+
+/**
+ * A delete target is disposable when it resolves to agent scratch space,
+ * a build cache, a virtualenv or a test-artefact directory.
+ *
+ * Conservative in three ways: a target still carrying an unresolved
+ * `$VAR` is never disposable, a bare root or home directory is never
+ * disposable even if a later path component would match, and the caller
+ * requires EVERY operand to qualify before staying silent.
+ *
+ * @param {string} target
+ * @param {Map<string, string>} assignments
+ * @returns {boolean}
+ */
+function isDisposableTarget(target, assignments) {
+  const expanded = expandAssignments(target, assignments || new Map());
+  if (!expanded) return false;
+  if (expanded.includes(MKTEMP_SENTINEL)) return true;
+  if (/\$/.test(expanded)) return false;
+  const normalized = expanded.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!normalized || normalized === '~' || normalized === '.' || normalized === '..') return false;
+  if (/^\/(usr|etc|var|bin|sbin|lib|opt|home|Users|System|Library|boot|dev|proc)?$/.test(normalized)) return false;
+  return DISPOSABLE_PATH.test(normalized);
+}
+
+/**
+ * Split an argument list into flags and operands, resolving quote
+ * placeholders on the operands so `"$SCRATCH/build"` is judgeable.
+ *
+ * @param {string[]} args
+ * @param {string[]} slots
+ * @returns {{ flags: string[], targets: string[] }}
+ */
+function partitionArgs(args, slots) {
+  const flags = [];
+  const targets = [];
+  let endOfFlags = false;
+  for (const arg of args) {
+    if (!endOfFlags && arg === '--') {
+      endOfFlags = true;
+      continue;
+    }
+    if (!endOfFlags && arg.startsWith('-') && arg.length > 1) {
+      flags.push(arg);
+      continue;
+    }
+    targets.push(resolveSlots(arg, slots));
+  }
+  return { flags, targets };
+}
+
+function isDestructiveRm(tokens, ctx) {
+  if (tokens.length === 0 || commandBasename(tokens[0]) !== 'rm') return false;
+  const { flags, targets } = partitionArgs(tokens.slice(1), ctx && ctx.slots);
+  let hasR = false;
+  for (const flag of flags) {
+    if (flag === '--recursive') {
+      hasR = true;
+      continue;
+    }
+    if (flag.startsWith('--')) continue;
+    if (/[rR]/.test(flag.slice(1))) hasR = true;
+  }
+  if (!hasR) return false;
+  if (targets.length === 0) return true;
+  return !targets.every(target => isDisposableTarget(target, ctx && ctx.assignments));
+}
+
+/**
+ * `find ... -delete` removes without ever naming a command, so neither
+ * the `rm` rule nor `isDestructiveFindExec` sees it.
  *
  * @param {string[]} tokens
  * @returns {boolean}
  */
-function isDestructiveRm(tokens) {
-  if (tokens.length === 0 || commandBasename(tokens[0]) !== 'rm') return false;
-  let hasR = false;
-  let hasF = false;
-  for (const t of tokens.slice(1)) {
-    if (t === '--recursive') {
-      hasR = true;
-      continue;
-    }
-    if (t === '--force') {
-      hasF = true;
-      continue;
-    }
-    if (!t.startsWith('-') || t.startsWith('--')) continue;
-    const body = t.slice(1);
-    if (/[rR]/.test(body)) hasR = true;
-    if (/f/.test(body)) hasF = true;
+function isDestructiveFindDelete(tokens) {
+  if (tokens.length === 0 || commandBasename(tokens[0]) !== 'find') return false;
+  return tokens.slice(1).includes('-delete');
+}
+
+/**
+ * Single-purpose destroyers with no flag subtleties: `shred` (overwrite
+ * then unlink), a standalone `unlink` (previously only caught inside
+ * `find -exec`), the coreutils `truncate` (shrinks a file in place —
+ * the real hazard the bare word-match was reaching for), and `dd`
+ * writing to or reading from a device.
+ *
+ * @param {string[]} tokens
+ * @param {{ assignments: Map<string, string>, slots: string[] }} ctx
+ * @returns {boolean}
+ */
+function isDestructiveSimpleCommand(tokens, ctx) {
+  if (tokens.length === 0) return false;
+  const command = commandBasename(tokens[0]);
+  const args = tokens.slice(1);
+
+  if (command === 'dd') {
+    return args.some(arg => /^(if|of)=/i.test(arg));
   }
-  return hasR && hasF;
+
+  if (command === 'shred' || command === 'unlink' || command === 'truncate') {
+    const { targets } = partitionArgs(args, ctx && ctx.slots);
+    if (targets.length === 0) return true;
+    return !targets.every(target => isDisposableTarget(target, ctx && ctx.assignments));
+  }
+
+  return false;
 }
 
 /**
@@ -672,8 +863,9 @@ function isDestructiveBash(command) {
   // after quoting AND subshell delimiters are normalized so phrases
   // inside `$(...)` or backticks are also caught.
   const raw = String(command || '');
+  const assignments = collectAssignments(raw);
   const flattened = explodeSubshells(stripQuotedStrings(raw));
-  if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
+  if (DESTRUCTIVE_SQL.test(flattened)) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
   // built-in SQL/dd regex: matched against the quote-stripped, subshell-
@@ -697,14 +889,20 @@ function isDestructiveBash(command) {
     }
   }
 
-  const segments = bodies.flatMap(splitCommandSegments);
-  for (const segment of segments) {
-    const stripped = stripQuotedStrings(segment);
-    if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
-    if (extra && extra.test(stripped)) return true;
-    const tokens = tokenize(segment);
-    if (isDestructiveRm(tokens)) return true;
-    if (isDestructiveGit(tokens)) return true;
+  // Each executable body gets its own slot table: placeholder indices
+  // are only meaningful alongside the strip pass that produced them.
+  for (const body of bodies) {
+    const slots = [];
+    const ctx = { assignments, slots };
+    for (const segment of splitCommandSegments(body, slots)) {
+      if (DESTRUCTIVE_SQL.test(segment)) return true;
+      if (extra && extra.test(segment)) return true;
+      const tokens = tokenize(segment);
+      if (isDestructiveRm(tokens, ctx)) return true;
+      if (isDestructiveGit(tokens)) return true;
+      if (isDestructiveFindDelete(tokens)) return true;
+      if (isDestructiveSimpleCommand(tokens, ctx)) return true;
+    }
   }
 
   // Quote-aware pass: closes the quoted-command-word, newline-separator,

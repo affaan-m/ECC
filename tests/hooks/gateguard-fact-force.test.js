@@ -2456,6 +2456,95 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Destructive-detector precision -------------------------------
+  // Coverage gaps: operations that destroy but named no matched pattern.
+
+  if (test('denies rm -r without -f (recursive delete of a source tree)', () => {
+    expectDestructiveDeny('rm -r /srv/app/src', 'rm -r without -f');
+  })) passed++; else failed++;
+
+  if (test('denies rm --recursive without --force', () => {
+    expectDestructiveDeny('rm --recursive /srv/app/src', 'rm --recursive');
+  })) passed++; else failed++;
+
+  if (test('denies find -delete', () => {
+    expectDestructiveDeny('find /srv -name "*.conf" -delete', 'find -delete');
+  })) passed++; else failed++;
+
+  if (test('denies shred', () => {
+    expectDestructiveDeny('shred -u /srv/secrets.env', 'shred');
+  })) passed++; else failed++;
+
+  if (test('denies standalone unlink outside find -exec', () => {
+    expectDestructiveDeny('unlink /srv/app/config.json', 'bare unlink');
+  })) passed++; else failed++;
+
+  if (test('denies coreutils truncate shrinking a file', () => {
+    expectDestructiveDeny('truncate -s 0 /var/log/audit.log', 'truncate -s 0');
+  })) passed++; else failed++;
+
+  // `dd if=/dev/...` never matched the old `\b`-terminated pattern: `=`
+  // and `/` are both non-word, so the boundary could not hold. The inert
+  // `dd if=x` matched instead. `of=` was never matched at all.
+  if (test('denies dd writing to a raw device (old pattern could not match)', () => {
+    expectDestructiveDeny('dd if=/dev/zero of=/dev/sda bs=1m', 'dd if=/dev/... of=/dev/...');
+  })) passed++; else failed++;
+
+  if (test('denies dd with of= before if=', () => {
+    expectDestructiveDeny('dd of=/dev/sda if=/dev/zero', 'dd of= first');
+  })) passed++; else failed++;
+
+  // Precision: the bare word `truncate` is prose far more often than it
+  // is SQL. Require the pair; keep the SQL sense working.
+  if (test('allows the word truncate in unquoted prose', () => {
+    expectAllow('echo applying the truncate filter to the summary', 'truncate as prose');
+  })) passed++; else failed++;
+
+  if (test('allows a branch or file name containing truncate', () => {
+    expectAllow('git switch feature/truncate-jinja-filter', 'truncate in a ref name');
+  })) passed++; else failed++;
+
+  if (test('still denies SQL TRUNCATE TABLE', () => {
+    expectDestructiveDeny('psql -c TRUNCATE TABLE users', 'truncate table');
+  })) passed++; else failed++;
+
+  // Precision: deleting derived directories is not a loss worth gating.
+  if (test('allows rm -rf of a node_modules cache', () => {
+    expectAllow('rm -rf node_modules/.vite', 'disposable: build cache');
+  })) passed++; else failed++;
+
+  if (test('allows rm -rf of a virtualenv', () => {
+    expectAllow('rm -rf collectors/.venv', 'disposable: virtualenv');
+  })) passed++; else failed++;
+
+  if (test('allows rm -rf of a quoted scratch path built from a variable', () => {
+    expectAllow('S=/var/folders/x/scratchpad && rm -rf "$S/mut"', 'disposable: $VAR scratch');
+  })) passed++; else failed++;
+
+  if (test('allows rm -rf of a $(mktemp -d) directory', () => {
+    expectAllow('SANDBOX="$(mktemp -d)" && rm -rf "$SANDBOX"', 'disposable: mktemp');
+  })) passed++; else failed++;
+
+  // ...but only when EVERY operand is disposable, and never when the
+  // gate cannot resolve what it is being pointed at.
+  if (test('denies rm -rf when one operand is not disposable', () => {
+    expectDestructiveDeny('rm -rf node_modules /srv/app/src', 'mixed operands');
+  })) passed++; else failed++;
+
+  if (test('denies rm -rf of an unresolved variable', () => {
+    expectDestructiveDeny('rm -rf "$UNKNOWN_ROOT/data"', 'unresolved $VAR');
+  })) passed++; else failed++;
+
+  if (test('denies rm -rf of a bare /tmp child (not a derived directory)', () => {
+    expectDestructiveDeny('rm -rf /tmp/junk', '/tmp is not disposable');
+  })) passed++; else failed++;
+
+  // Quote slots must inform target checks without ever letting quoted
+  // text be parsed as a command.
+  if (test('still allows a destructive-looking string inside a commit message', () => {
+    expectAllow("git commit -m 'cleanup: drop the rm -rf /tmp/junk workaround'", 'quoted prose stays inert');
+  })) passed++; else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
