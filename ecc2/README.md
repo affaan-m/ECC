@@ -80,13 +80,13 @@ typed blockers kept separate from lifecycle state, durable events, and
 
 ```bash
 # Preview the DAG without creating a fleet record
-cargo run -- fleet plan examples/feature-fleet.toml
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db plan examples/feature-fleet.toml
 
 # Create an idempotent fleet record and pin main's current commit OID
-cargo run -- fleet create examples/feature-fleet.toml
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db create examples/feature-fleet.toml
 
 # Inspect the durable record and event history
-cargo run -- fleet status feature-fleet-runtime
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db status feature-fleet-runtime
 ```
 
 The surface is explicitly experimental. This slice does **not** launch agents,

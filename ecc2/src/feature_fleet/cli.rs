@@ -1,10 +1,19 @@
 use anyhow::Result;
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 use crate::session::store::StateStore;
 
 use super::report::{create_human, plan_human, status_human};
+
+#[derive(Args, Debug)]
+pub struct FleetArgs {
+    /// Fleet state database; overrides the normal ECC database for this command
+    #[arg(long, global = true)]
+    pub state_db: Option<PathBuf>,
+    #[command(subcommand)]
+    pub command: FleetCommand,
+}
 
 #[derive(Subcommand, Debug)]
 pub enum FleetCommand {
@@ -66,13 +75,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::FleetCommand;
+    use super::FleetArgs;
     use clap::Parser;
 
     #[derive(Parser)]
     struct TestCli {
-        #[command(subcommand)]
-        command: FleetCommand,
+        #[command(flatten)]
+        fleet: FleetArgs,
     }
 
     #[test]
@@ -80,19 +89,29 @@ mod tests {
         let plan = TestCli::try_parse_from(["fleet", "plan", "fleet.toml", "--json"])
             .expect("fleet plan parses");
         assert!(matches!(
-            plan.command,
-            FleetCommand::Plan {
+            plan.fleet.command,
+            super::FleetCommand::Plan {
                 manifest,
                 json: true
             } if manifest.as_os_str() == "fleet.toml"
         ));
 
-        let status = TestCli::try_parse_from(["fleet", "status", "onboarding-v2"])
-            .expect("fleet status parses");
+        let status = TestCli::try_parse_from([
+            "fleet",
+            "--state-db",
+            "/tmp/fleet.db",
+            "status",
+            "onboarding-v2",
+        ])
+        .expect("fleet status parses");
         assert!(matches!(
-            status.command,
-            FleetCommand::Status { fleet_id, json: false }
+            status.fleet.command,
+            super::FleetCommand::Status { fleet_id, json: false }
                 if fleet_id == "onboarding-v2"
         ));
+        assert_eq!(
+            status.fleet.state_db.as_deref(),
+            Some(std::path::Path::new("/tmp/fleet.db"))
+        );
     }
 }
