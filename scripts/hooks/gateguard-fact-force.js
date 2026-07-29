@@ -46,8 +46,6 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 
 const MAX_TOTAL_GATES_PER_SESSION = 15;
 
-const TOTAL_GATE_KEY = '__total_gates__';
-
 // SQL-keyword + dd patterns stay as a single regex — they are stable
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
@@ -922,19 +920,6 @@ function getTotalGateCountFromState() {
   return Number(state && state.total_gates) || 0;
 }
 
-function getMaxGatesPerSession() {
-  const raw = Number.parseInt(process.env.GATEGUARD_MAX_TOTAL_GATES || '', 10);
-  if (Number.isInteger(raw) && raw > 0) {
-    return raw;
-  }
-  return MAX_TOTAL_GATES_PER_SESSION;
-}
-
-function incrementGateCount(state) {
-  const current = Number(state && state.total_gates) || 0;
-  state.total_gates = current + 1;
-}
-
 function getDenialCount(state) {
   const n = Number(state && state.fact_force_denials);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -1259,12 +1244,7 @@ function run(rawInput) {
       const totalGates = getTotalGateCountFromState();
       const maxGates = getMaxGatesPerSession();
       if (totalGates >= maxGates) {
-        return denyResult(
-          `[Fact-Forcing Gate] Session gate limit reached (${maxGates} files). ` +
-          'Further edits will be allowed without gating. ' +
-          'Set GATEGUARD_MAX_TOTAL_GATES to adjust.',
-          { includeRecoveryHint: false }
-        );
+        return rawInput; // allow - session gate limit reached, no more gating
       }
 
       const { ok, denials } = markCheckedAndCountDenial(filePath);
@@ -1273,10 +1253,10 @@ function run(rawInput) {
       }
       // Increment total gate count
       const state = loadState();
-      incrementGateCount(state);
+      state.total_gates = (state.total_gates || 0) + 1;
       saveState(state);
       
-if (denials > getFullDenialBudget()) {
+      if (denials > getFullDenialBudget()) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
       }
@@ -1299,12 +1279,7 @@ if (denials > getFullDenialBudget()) {
         const totalGates = getTotalGateCountFromState();
         const maxGates = getMaxGatesPerSession();
         if (totalGates >= maxGates) {
-          return denyResult(
-            `[Fact-Forcing Gate] Session gate limit reached (${maxGates} files). ` +
-            'Further edits will be allowed without gating. ' +
-            'Set GATEGUARD_MAX_TOTAL_GATES to adjust.',
-            { includeRecoveryHint: false }
-          );
+          return rawInput; // allow - session gate limit reached, no more gating
         }
 
         const { ok, denials } = markCheckedAndCountDenial(filePath);
@@ -1313,7 +1288,7 @@ if (denials > getFullDenialBudget()) {
         }
         // Increment total gate count
         const state = loadState();
-        incrementGateCount(state);
+        state.total_gates = (state.total_gates || 0) + 1;
         saveState(state);
         
         if (denials > getFullDenialBudget()) {
