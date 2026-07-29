@@ -1895,6 +1895,18 @@ textarea {
   display: flex;
   gap: 6px;
 }
+/* Five actions don't fit on one line at 360px. */
+.select-bar--wrap {
+  flex-wrap: wrap;
+}
+.select-bar--wrap .select-bar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 1;
+}
+.danger-text {
+  color: var(--danger);
+}
 .select-dot {
   width: 20px;
   height: 20px;
@@ -4936,6 +4948,72 @@ button.timeline-item {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
+}
+/* A quiet pencil rather than a button — the whole row is the target. */
+.timeline-item-edit {
+  flex: none;
+  align-self: center;
+  color: var(--muted);
+  opacity: 0.55;
+}
+/* Already happened. Same information, visibly settled, so which side of the
+   Today line you're on is legible without reading a date. */
+.timeline-item--past {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  border-left-color: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+.timeline-item--past .timeline-item-body strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+.timeline-item--past .timeline-item-edit {
+  opacity: 0.35;
+}
+.timeline-item--selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.timeline-item--selected .timeline-item-body strong {
+  color: var(--text);
+}
+.timeline-item .select-dot {
+  align-self: center;
+}
+/* Names the block above the Today line, so the divider reads as a boundary
+   between two labelled stretches rather than a stray rule. */
+.timeline-band {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 2px 0 8px;
+}
+.timeline-band-empty {
+  margin: 0 0 4px;
+  padding-left: 2px;
+}
+
+.timeline-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.timeline-select-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.timeline-select-btn:active {
+  transform: scale(0.96);
 }
 .timeline-item-text {
   font-size: 13px;
@@ -5189,9 +5267,11 @@ button.timeline-item {
   text-align: center;
 }
 .timeline-hero-edit {
-  position: absolute;
-  top: 2px;
-  right: 2px;
+  /* Beside the name, not in the corner: up there it sat directly beneath
+     the header's own icon button and the two read as one control cluster. */
+  display: inline-flex;
+  vertical-align: baseline;
+  margin-left: 7px;
   color: var(--muted);
 }
 .timeline-insights {

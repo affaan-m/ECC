@@ -223,6 +223,26 @@ export default function PlannerPage() {
     setViewing(null);
   };
 
+  // Where to go once the sheets this visit opened are closed again — see the
+  // openEventId branch below. Armed only after a sheet is actually on screen,
+  // because the effect that sets it and the one that watches for the close
+  // run in the same commit: without the arming step, "nothing is open" would
+  // be true on that first pass and this would navigate straight back before
+  // the sheet ever appeared.
+  const returnToRef = useRef(null);
+  const returnArmedRef = useRef(false);
+  useEffect(() => {
+    if (editing || viewing) {
+      returnArmedRef.current = !!returnToRef.current;
+      return;
+    }
+    if (!returnArmedRef.current) return;
+    returnArmedRef.current = false;
+    const back = returnToRef.current;
+    returnToRef.current = null;
+    if (back) navigate(back);
+  }, [editing, viewing, navigate]);
+
   // Opened from a person's page ("+ add event for this contact"), the Home
   // page's quick-add menu, a search result, or returning from the "select
   // location" full-map picker with a draft that was stashed before
@@ -246,6 +266,11 @@ export default function PlannerPage() {
         setCursor(iso);
         setMode('day');
         setViewing(occ);
+        // Captured before replaceState wipes it. Somewhere else sent us here
+        // to edit one event (a contact's timeline, for instance); closing the
+        // sheet should put the person back where they were rather than
+        // stranding them on a calendar they never asked for.
+        returnToRef.current = location.state.returnTo || null;
       }
       window.history.replaceState({}, '');
       return;
@@ -454,13 +479,25 @@ export default function PlannerPage() {
     // Inverting is not reliable here: the clamp to the day's bounds below is
     // lossy, and a recurring event's override may or may not have existed
     // before — putting the original object back sidesteps both.
+    // `overrides` is spelled out even on an event that has none, because
+    // UPDATE_EVENT merges rather than replaces: a snapshot missing the key
+    // can't undo one being added, so restoring it left the moved occurrence
+    // exactly where the undo was supposed to take it from.
     const before = new Map();
     for (const occ of occs) {
       const master = state.events.find((e) => e.id === occ.id);
-      if (master && !before.has(master.id)) before.set(master.id, master);
+      if (master && !before.has(master.id)) {
+        before.set(master.id, { ...master, overrides: master.overrides || {} });
+      }
     }
+    // Staged on working copies and dispatched once per event at the end.
+    // Reading each master back out of `state` inside the loop returns the
+    // version from before the previous iteration's dispatch, so selecting two
+    // occurrences of the same series and moving them together used to drop
+    // one of the two overrides.
+    const staged = new Map();
     for (const occ of occs) {
-      const master = state.events.find((e) => e.id === occ.id);
+      const master = staged.get(occ.id) || state.events.find((e) => e.id === occ.id);
       if (!master) continue;
       const dur = occ.e2 - occ.s;
       let ns = occ.s + minOffset;
@@ -469,7 +506,7 @@ export default function PlannerPage() {
       const end = minutesToTime(ns + dur);
       const newDate = dayOffset ? toISODate(addDays(occ.occDate, dayOffset)) : occ.occDate;
       if ((master.repeat || 'none') === 'none') {
-        actions.updateEvent({ ...master, date: newDate, start, end });
+        staged.set(occ.id, { ...master, date: newDate, start, end });
       } else {
         const overrides = { ...(master.overrides || {}) };
         overrides[occ.recDate] = {
@@ -481,9 +518,10 @@ export default function PlannerPage() {
           notes: occ.notes,
           ...(newDate !== occ.recDate ? { date: newDate } : {}),
         };
-        actions.updateEvent({ ...master, overrides });
+        staged.set(occ.id, { ...master, overrides });
       }
     }
+    for (const master of staged.values()) actions.updateEvent(master);
     confirmTick();
     setSelected(new Set());
     setSelectMode(false);
