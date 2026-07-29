@@ -230,6 +230,24 @@ textarea {
 
 .page {
   padding: 0 16px 24px;
+}
+/* The transition animates the page's *children*, not the page itself.
+   Anything with a transform becomes the containing block for its
+   position: fixed descendants, so while this ran on .page the floating +
+   button was anchored to the page box rather than the viewport — it hung in
+   mid-screen for the whole 420ms and snapped to the bottom the instant the
+   transform lifted. Worst on a short page, where "the bottom of the page" is
+   the middle of the screen. Moving it one level down leaves .page
+   untransformed throughout; each child still rises and fades together, so
+   the transition looks the same. A transform on the fixed element itself is
+   harmless — only an *ancestor's* transform moves the goalposts.
+
+   Deliberately a bare `.page > *` and not something more specific: several
+   children (.detail-section, .select-bar, .conflict-list) carry their own
+   entrance animations further down this file, and at equal specificity
+   those keep winning on source order. Adding a :not() chain here would
+   raise the specificity enough to silently cancel all of them. */
+.page > * {
   animation: page-in 0.42s cubic-bezier(0.16, 0.8, 0.24, 1);
 }
 
@@ -258,9 +276,25 @@ textarea {
 }
 
 /* The map is its own full-bleed page (no .page wrapper) — give it a matching
-   transition so it doesn't feel like the odd one out. */
-.map-page {
+   transition so it doesn't feel like the odd one out. Same containing-block
+   rule as above: the animation goes on the canvas, never on .map-page, or
+   every fixed control floating over the map moves with it. */
+.map-page > * {
   animation: page-in 0.42s cubic-bezier(0.16, 0.8, 0.24, 1);
+}
+/* The floating buttons sit still. They're anchored to the viewport, not to
+   the page, so sliding them in with the content only re-creates a smaller
+   version of the thing being fixed here — the button is meant to be the one
+   thing that doesn't move between pages.
+
+   A separate reset rather than a :not() chain on the rule above: a :not()
+   would raise that selector's specificity above .detail-section,
+   .select-bar and .conflict-list, silently cancelling the entrance
+   animations they set for themselves further down this file. */
+.page > .fab,
+.page > .expandable-fab,
+.map-page > .fab {
+  animation: none;
 }
 
 /* --- Header ------------------------------------------------------------- */
