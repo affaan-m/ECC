@@ -1,6 +1,6 @@
 ---
 name: continuous-learning
-description: "[DEPRECATED - use continuous-learning-v2] Legacy v1 stop-hook skill extractor. v2 is a strict superset with instinct-based, project-scoped, hook-reliable learning. Do not invoke v1; route continuous learning, session learning, and pattern extraction requests to continuous-learning-v2. Do not invoke directly: when continuous learning, session learning, or pattern extraction is requested, route to continuous-learning-v2 instead."
+description: "[DEPRECATED - use continuous-learning-v2] Legacy v1 stop-hook skill extractor. v2 is a strict superset with instinct-based, project-scoped, hook-reliable learning. Do not invoke v1: when continuous learning, session learning, or pattern extraction is requested, route to continuous-learning-v2 instead."
 metadata:
   origin: ECC
 ---
