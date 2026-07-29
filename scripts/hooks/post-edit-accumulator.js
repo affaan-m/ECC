@@ -22,7 +22,10 @@ const path = require('path');
 const MAX_STDIN = 1024 * 1024;
 
 function getAccumFile() {
+  // Must stay identical to the sibling hook: post-edit-accumulator writes this
+  // file on PostToolUse, stop-format-typecheck reads it on Stop.
   const raw =
+    process.env.CLAUDE_CODE_SESSION_ID ||
     process.env.CLAUDE_SESSION_ID ||
     crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
   // Strip path separators and traversal sequences so the value is safe to embed

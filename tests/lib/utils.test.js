@@ -12,6 +12,13 @@ const { spawnSync } = require('child_process');
 // Import the module
 const utils = require('../../scripts/lib/utils');
 
+// The hooks now prefer CLAUDE_CODE_SESSION_ID, which Claude Code exports into
+// every tool subprocess. These tests pin the session id via CLAUDE_SESSION_ID,
+// so the real one must not leak in and outrank it when the suite is run from
+// inside a Claude Code session. Child envs spread process.env, so clearing it
+// once here covers every spawn in this file.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 // Test helper
 function test(name, fn) {
   try {

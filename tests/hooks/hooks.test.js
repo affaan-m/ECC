@@ -10,6 +10,13 @@ const fs = require('fs');
 const os = require('os');
 const { execFileSync, spawn, spawnSync } = require('child_process');
 
+// The hooks now prefer CLAUDE_CODE_SESSION_ID, which Claude Code exports into
+// every tool subprocess. These tests pin the session id via CLAUDE_SESSION_ID,
+// so the real one must not leak in and outrank it when the suite is run from
+// inside a Claude Code session. Child envs spread process.env, so clearing it
+// once here covers every spawn in this file.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 const SKIP_BASH = process.platform === 'win32';
 
 function toBashPath(filePath) {

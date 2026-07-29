@@ -15,6 +15,13 @@ const path = require('path');
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
 const { parseAccumulator } = require('../../scripts/hooks/stop-format-typecheck');
 
+// The hooks now prefer CLAUDE_CODE_SESSION_ID, which Claude Code exports into
+// every tool subprocess. These tests pin the session id via CLAUDE_SESSION_ID,
+// so the real one must not leak in and outrank it when the suite is run from
+// inside a Claude Code session. Child envs spread process.env, so clearing it
+// once here covers every spawn in this file.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 function test(name, fn) {
   try {
     fn();

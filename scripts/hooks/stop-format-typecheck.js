@@ -38,7 +38,10 @@ function parseAccumulator(raw) {
 }
 
 function getAccumFile() {
+  // Must stay identical to the sibling hook: post-edit-accumulator writes this
+  // file on PostToolUse, stop-format-typecheck reads it on Stop.
   const raw =
+    process.env.CLAUDE_CODE_SESSION_ID ||
     process.env.CLAUDE_SESSION_ID ||
     crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 12);
   const sessionId = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
