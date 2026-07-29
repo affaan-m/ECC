@@ -25,21 +25,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const {
-  getTempDir,
-  writeFile,
-  readStdinJson,
-  log,
-  output
-} = require('../lib/utils');
-const {
-  readLatestContextTokens,
-  resolveContextWindowTokens,
-  resolveContextThreshold,
-  resolveContextInterval,
-  computeContextBucket,
-  formatWindowLabel
-} = require('../lib/transcript-context');
+const { getTempDir, writeFile, readStdinJson, log, output } = require('../lib/utils');
+const { readLatestContextTokens, resolveContextWindowTokens, resolveContextThreshold, resolveContextInterval, computeContextBucket, formatWindowLabel } = require('../lib/transcript-context');
 
 const COUNTER_FILE_PREFIX = 'claude-tool-count-';
 const CONTEXT_BUCKET_FILE_PREFIX = 'claude-context-bucket-';
@@ -127,9 +114,7 @@ function incrementToolCallCount(counterFile) {
         const parsed = parseInt(buf.toString('utf8', 0, bytesRead).trim(), 10);
         // Clamp to reasonable range — corrupted files could contain huge values
         // that pass Number.isFinite() (e.g., parseInt('9'.repeat(30)) => 1e+29)
-        count = (Number.isFinite(parsed) && parsed > 0 && parsed <= 1000000)
-          ? parsed + 1
-          : 1;
+        count = Number.isFinite(parsed) && parsed > 0 && parsed <= 1000000 ? parsed + 1 : 1;
       }
       // Truncate and write new value
       fs.ftruncateSync(fd, 0);
@@ -205,11 +190,9 @@ async function main() {
     input = {};
   }
 
-  const rawSessionId = (input && typeof input.session_id === 'string' && input.session_id)
-    ? input.session_id
-    : (process.env.CLAUDE_SESSION_ID || 'default');
+  const rawSessionId = input && typeof input.session_id === 'string' && input.session_id ? input.session_id : process.env.CLAUDE_SESSION_ID || 'default';
   const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
-  const transcriptPath = (input && typeof input.transcript_path === 'string') ? input.transcript_path : '';
+  const transcriptPath = input && typeof input.transcript_path === 'string' ? input.transcript_path : '';
 
   const tempDir = getTempDir();
   const counterFile = path.join(tempDir, `${COUNTER_FILE_PREFIX}${sessionId}`);
@@ -220,9 +203,7 @@ async function main() {
   cleanupOldCounters(tempDir, getCounterRetentionDays(), [counterFile, bucketFile]);
 
   const rawThreshold = parseInt(process.env.COMPACT_THRESHOLD || '50', 10);
-  const threshold = Number.isFinite(rawThreshold) && rawThreshold > 0 && rawThreshold <= 10000
-    ? rawThreshold
-    : 50;
+  const threshold = Number.isFinite(rawThreshold) && rawThreshold > 0 && rawThreshold <= 10000 ? rawThreshold : 50;
 
   const count = incrementToolCallCount(counterFile);
 
