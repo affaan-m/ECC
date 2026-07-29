@@ -408,7 +408,7 @@ That writes resolved hooks to `~/.claude/hooks/hooks.json` and leaves any existi
 
 If you installed ECC via `/plugin install`, do not copy those hooks into `settings.json`. Claude Code v2.1+ already auto-loads plugin `hooks/hooks.json`, and duplicating them in `settings.json` causes duplicate execution and cross-platform hook conflicts.
 
-On Windows, Claude's config root is `%USERPROFILE%\.claude`; install the hook runtime with:
+On Windows, Claude's config root is `%USERPROFILE%\\.claude`; install the hook runtime with:
 
 ```powershell
 pwsh -File .\install.ps1 --target claude --modules hooks-runtime
@@ -606,6 +606,7 @@ Skills are the canonical workflow surface; maintained slash entries stay availab
 | Develop HarmonyOS apps | *(invoke `harmonyos-app-resolver` directly)* | harmonyos-app-resolver |
 | Audit database queries | *(auto-delegated)* | database-reviewer |
 | Review production ML changes | `mle-workflow` skill + `mle-reviewer` agent | mle-reviewer |
+
 </details>
 
 <details>
@@ -1161,7 +1162,7 @@ python3 ./ecc_dashboard.py
 
 Two ways to generate skills from your repository:
 
-#### Option A: Local Analysis (Built-in)
+### Option A: Local Analysis (Built-in)
 
 Use the `/skill-create` command for local analysis without external services:
 
@@ -1172,7 +1173,7 @@ Use the `/skill-create` command for local analysis without external services:
 
 This analyzes your git history locally and generates SKILL.md files.
 
-#### Option B: GitHub App (Advanced)
+### Option B: GitHub App (Advanced)
 
 For advanced features (10k+ commits, auto-PRs, team sharing):
 
@@ -1448,7 +1449,7 @@ ECC provides Cursor IDE support with hooks, rules, agents, skills, commands, and
 .\install.ps1 --target cursor python golang swift php
 ```
 
-#### What's included
+#### What's included for Cursor
 
 | Component | Count | Details |
 |-----------|-------|---------|
@@ -1541,7 +1542,7 @@ Codex macOS app:
 - The reference `.codex/config.toml` intentionally does not pin `model` or `model_provider`, so Codex uses its own current default unless you override it.
 - Optional: copy `.codex/config.toml` to `~/.codex/config.toml` for global defaults; keep the multi-agent role files project-local unless you also copy `.codex/agents/`.
 
-#### What's included
+#### What's included for Codex
 
 | Component | Count | Details |
 |-----------|-------|---------|
@@ -1574,6 +1575,7 @@ ECC ships three sample role configs:
 | `explorer` | Read-only codebase evidence gathering before edits |
 | `reviewer` | Correctness, security, and missing-test review |
 | `docs_researcher` | Documentation and API verification before release/docs changes |
+
 </details>
 
 <details>
@@ -1660,7 +1662,7 @@ For the full ECC OpenCode setup, either:
 
 ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system. No extra tooling required.
 
-#### What's included
+#### What's included for GitHub Copilot
 
 | Component | File | Purpose |
 |-----------|------|---------|
