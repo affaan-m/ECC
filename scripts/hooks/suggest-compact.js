@@ -243,6 +243,13 @@ async function main() {
     messages.push(`[StrategicCompact] ${count} tool calls - good checkpoint for /compact if context is stale`);
   }
 
+  // LOCAL (thaint): the same counter also signals "this session is carrying a
+  // lot of work" — the condition under which the next task belongs in a
+  // subagent/fork. CLAUDE.md §7. Fires on the union of the two branches above.
+  if (count === threshold || (count > threshold && (count - threshold) % 25 === 0)) {
+    messages.push(`[Delegation] ${count} tool calls - hand the next task to a subagent/fork`);
+  }
+
   // log() writes to stderr (debug log). Per the Claude Code hooks guide,
   // non-blocking PreToolUse stderr (exit 0) is only written to the debug log;
   // it does not reach the model. To inject a user-facing suggestion without

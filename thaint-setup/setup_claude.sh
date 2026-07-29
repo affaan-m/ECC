@@ -281,38 +281,9 @@ patch_ecc_session_id() {
   fi
 }
 
-# ── ECC suggest-compact delegation nudge ────────────────────────────────────
-# install_hooks_runtime copies suggest-compact.js with a bare fs.copyFileSync
-# (ECC's apply.js only merge-treats settings.json), so it wipes the local
-# "[Delegation]" nudge on every run. Re-apply it here, after that copy.
-# A failure is warned, not fatal: the anchor is tied to ECC v1.10.0's shape and
-# WILL stop matching when ECC rewrites the hook — a lost comment must not stop
-# the rest of the install.
-patch_ecc_suggest_compact() {
-  log "ecc-delegation-nudge"
-  local script_dir patcher
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  patcher="${script_dir}/patch-ecc-suggest-compact.sh"
-  if [[ ! -f "$patcher" ]]; then
-    warn "ACTION NEEDED: patch-ecc-suggest-compact.sh not found at $patcher"
-    warn "  the [Delegation] nudge will be absent from suggest-compact.js — fetch it and re-run"
-    return 0
-  fi
-
-  local args=() rc=0
-  (( DRY_RUN )) && args+=(--dry-run)
-  (( VERBOSE )) && args+=(--verbose)
-  # Invoked directly, not through run(): see patch_ecc_session_id above.
-  if (( ${#args[@]} )); then
-    bash "$patcher" "${args[@]}" || rc=$?
-  else
-    bash "$patcher" || rc=$?
-  fi
-  if (( rc != 0 )); then
-    warn "ACTION NEEDED: the [Delegation] nudge was not re-applied to suggest-compact.js"
-    warn "  (see the warnings above; re-author it by hand and fix the patcher's anchor)"
-  fi
-}
+# The [Delegation] nudge is no longer patched in after install: it lives in this
+# repo's scripts/hooks/suggest-compact.js, so install_hooks_runtime copies it
+# along with everything else. patch-ecc-suggest-compact.sh is gone.
 
 install_telegram_hook() {
   log "telegram-hook"
@@ -813,7 +784,6 @@ main() {
   install_all_dirs
   install_hooks_runtime
   patch_ecc_session_id
-  patch_ecc_suggest_compact
   install_telegram_hook
   patch_shell_rc
 
