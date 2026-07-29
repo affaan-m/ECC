@@ -445,6 +445,7 @@
     "discussion:audit": "node scripts/discussion-audit.js",
     "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
     "security:advisory-sources": "node scripts/ci/supply-chain-advisory-sources.js",
+    "test:plugin-setup-platform": "node docker/plugin-setup/run-platform-tests.js",
     "claw": "node scripts/claw.js",
     "orchestrate:status": "node scripts/orchestration-status.js",
     "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",

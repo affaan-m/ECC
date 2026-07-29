@@ -1,21 +1,11 @@
 ---
 name: docker-patterns
-description: Docker and Docker Compose patterns for local development, container security, networking, volume strategies, and multi-service orchestration.
-metadata:
-  origin: ECC
+description: Docker and Docker Compose patterns for local development, hardened CLI installer harnesses, container security, networking, volumes, and multi-service orchestration. Use when creating or reviewing Dockerfiles and Compose services, testing installers across Linux distributions, or planning accurate native macOS and Windows validation.
 ---
 
 # Docker Patterns
 
 Docker and Docker Compose best practices for containerized development.
-
-## When to Activate
-
-- Setting up Docker Compose for local development
-- Designing multi-container architectures
-- Troubleshooting container networking or volume issues
-- Reviewing Dockerfiles for security and size
-- Migrating from local dev to containerized workflow
 
 ## Docker Compose for Local Development
 
@@ -280,6 +270,85 @@ services:
 
 # BAD: Hardcoded in image
 # ENV API_KEY=sk-proj-xxxxx      # NEVER DO THIS
+```
+
+## Hardened CLI Installer Harnesses
+
+Use containers to test installer behavior against disposable project copies without allowing the test to mutate the source checkout.
+
+### Respect the Platform Boundary
+
+- Run real containers for Linux distributions such as Debian and Ubuntu.
+- macOS cannot run as a Docker container because Docker shares a Linux kernel. Run the same shell-free test entry point natively on macOS.
+- Windows containers require a Windows Docker engine. Run platform-independent logic on a native Windows CI runner and reserve Windows containers for a Windows host.
+- Keep a native Ubuntu/macOS/Windows CI matrix for host-specific paths, command shims, quoting, and filesystem behavior.
+
+Do not claim that a Linux container validates macOS or Windows behavior.
+
+### Enforce the Isolation Contract
+
+- Pin base images by immutable digest and pin installed CLI versions.
+- Run as a non-root numeric UID/GID when distro account names differ.
+- Mount the repository and source project read-only.
+- Copy the source project into a writable `tmpfs` workspace before any mutation.
+- Set `read_only: true`, `no-new-privileges:true`, `cap_drop: [ALL]`, and a finite `pids_limit`.
+- Create only the writable temporary paths the tool needs.
+- Do not pass host credentials into the container by default.
+- Default to a dry run and whitelist explicit modes such as `dry-run`, `install`, `migrate`, `plugin`, and `shell`.
+- Use argument arrays or `spawnSync(..., { shell: false })` for cross-platform runners. Never interpolate project paths into a shell command.
+
+### Exercise the ECC Plugin Setup Harness
+
+Use `docker/plugin-setup/compose.yaml` as the reference implementation. It provides:
+
+- `fixture-tests` for the focused setup and migration suite.
+- `real-cli` for the pinned Debian-based generic Linux image.
+- `real-cli-ubuntu` for the pinned Ubuntu image.
+
+Validate the Compose model before building:
+
+```bash
+docker compose -f docker/plugin-setup/compose.yaml config --quiet
+```
+
+Build both real Linux images:
+
+```bash
+docker compose -f docker/plugin-setup/compose.yaml \
+  build real-cli real-cli-ubuntu
+```
+
+Run the safe default flow in each image:
+
+```bash
+docker compose -p ecc-plugin-debian-test \
+  -f docker/plugin-setup/compose.yaml \
+  run --rm -T real-cli dry-run
+
+docker compose -p ecc-plugin-ubuntu-test \
+  -f docker/plugin-setup/compose.yaml \
+  run --rm -T real-cli-ubuntu dry-run
+```
+
+Run the same focused suite natively on the host:
+
+```bash
+npm run test:plugin-setup-platform
+```
+
+Inspect the produced identity and environment before trusting the image:
+
+```bash
+docker image inspect ecc-plugin-setup:debian ecc-plugin-setup:ubuntu
+```
+
+Clean each named test project without deleting unrelated volumes or images:
+
+```bash
+docker compose -p ecc-plugin-debian-test \
+  -f docker/plugin-setup/compose.yaml down --remove-orphans
+docker compose -p ecc-plugin-ubuntu-test \
+  -f docker/plugin-setup/compose.yaml down --remove-orphans
 ```
 
 ## .dockerignore

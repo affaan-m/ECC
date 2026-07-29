@@ -1,0 +1,79 @@
+name: ecc-plugin-setup-test
+
+x-real-cli: &real-cli
+  working_dir: /workspace
+  read_only: true
+  pids_limit: 256
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,exec,size=512m,uid=1000,gid=1000
+    - /workspace:rw,nosuid,nodev,size=1g,uid=1000,gid=1000
+  environment:
+    CLAUDE_CONFIG_DIR: /tmp/ecc-claude-config
+    DISABLE_AUTOUPDATER: "1"
+    HOME: /tmp/ecc-home
+  volumes:
+    - type: bind
+      source: ../..
+      target: /ecc
+      read_only: true
+    - type: bind
+      source: "${TEST_PROJECT:-../../tests/fixtures/docker-plugin-project}"
+      target: /source-project
+      read_only: true
+  stdin_open: true
+  tty: true
+  entrypoint:
+    - /bin/bash
+    - /ecc/docker/plugin-setup/run-real-cli.sh
+  command:
+    - dry-run
+
+services:
+  fixture-tests:
+    image: node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+    working_dir: /ecc
+    network_mode: none
+    read_only: true
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,exec,size=256m
+    volumes:
+      - type: bind
+        source: ../..
+        target: /ecc
+        read_only: true
+    entrypoint:
+      - /bin/bash
+      - /ecc/docker/plugin-setup/run-fixture-tests.sh
+
+  real-cli:
+    <<: *real-cli
+    image: ecc-plugin-setup:debian
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3}
+        OS_IMAGE: ${DEBIAN_IMAGE:-node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3}
+        DISTRO: debian
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
+
+  real-cli-ubuntu:
+    <<: *real-cli
+    image: ecc-plugin-setup:ubuntu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3}
+        OS_IMAGE: ${UBUNTU_IMAGE:-ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90}
+        DISTRO: ubuntu
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
