@@ -44,6 +44,10 @@ const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
+const MAX_TOTAL_GATES_PER_SESSION = 15;
+
+const TOTAL_GATE_KEY = '__total_gates__';
+
 // SQL-keyword + dd patterns stay as a single regex — they are stable
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
@@ -905,6 +909,32 @@ function getFullDenialBudget() {
   return DEFAULT_FULL_DENIALS;
 }
 
+function getMaxGatesPerSession() {
+  const raw = Number.parseInt(process.env.GATEGUARD_MAX_TOTAL_GATES || '', 10);
+  if (Number.isInteger(raw) && raw > 0) {
+    return raw;
+  }
+  return MAX_TOTAL_GATES_PER_SESSION;
+}
+
+function getTotalGateCountFromState() {
+  const state = loadState();
+  return Number(state && state.total_gates) || 0;
+}
+
+function getMaxGatesPerSession() {
+  const raw = Number.parseInt(process.env.GATEGUARD_MAX_TOTAL_GATES || '', 10);
+  if (Number.isInteger(raw) && raw > 0) {
+    return raw;
+  }
+  return MAX_TOTAL_GATES_PER_SESSION;
+}
+
+function incrementGateCount(state) {
+  const current = Number(state && state.total_gates) || 0;
+  state.total_gates = current + 1;
+}
+
 function getDenialCount(state) {
   const n = Number(state && state.fact_force_denials);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -932,6 +962,31 @@ function isChecked(key) {
     saveState(state);
   }
   return found;
+}
+
+// Session-wide total gate count
+function getTotalGateCount(state) {
+  const n = Number(state && state.total_gates);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+function getMaxGatesPerSession() {
+  const raw = Number.parseInt(process.env.GATEGUARD_MAX_TOTAL_GATES || '', 10);
+  if (Number.isInteger(raw) && raw >= 0) {
+    return raw;
+  }
+  return MAX_TOTAL_GATES_PER_SESSION;
+}
+
+function incrementGateCount(state) {
+  const count = getTotalGateCount(state) + 1;
+  state.total_gates = count;
+  return count;
+}
+
+function getTotalGateCountFromState() {
+  const state = loadState();
+  return getTotalGateCount(state);
 }
 
 // Prune stale session files older than 1 hour
@@ -1200,11 +1255,28 @@ function run(rawInput) {
     }
 
     if (!isChecked(filePath)) {
+      // Check session-wide total gate cap
+      const totalGates = getTotalGateCountFromState();
+      const maxGates = getMaxGatesPerSession();
+      if (totalGates >= maxGates) {
+        return denyResult(
+          `[Fact-Forcing Gate] Session gate limit reached (${maxGates} files). ` +
+          'Further edits will be allowed without gating. ' +
+          'Set GATEGUARD_MAX_TOTAL_GATES to adjust.',
+          { includeRecoveryHint: false }
+        );
+      }
+
       const { ok, denials } = markCheckedAndCountDenial(filePath);
       if (!ok) {
         return allowWithStateWarning();
       }
-      if (denials > getFullDenialBudget()) {
+      // Increment total gate count
+      const state = loadState();
+      incrementGateCount(state);
+      saveState(state);
+      
+if (denials > getFullDenialBudget()) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
       }
@@ -1223,10 +1295,27 @@ function run(rawInput) {
     for (const edit of edits) {
       const filePath = edit.file_path || '';
       if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath) && !isChecked(filePath)) {
+        // Check session-wide total gate cap
+        const totalGates = getTotalGateCountFromState();
+        const maxGates = getMaxGatesPerSession();
+        if (totalGates >= maxGates) {
+          return denyResult(
+            `[Fact-Forcing Gate] Session gate limit reached (${maxGates} files). ` +
+            'Further edits will be allowed without gating. ' +
+            'Set GATEGUARD_MAX_TOTAL_GATES to adjust.',
+            { includeRecoveryHint: false }
+          );
+        }
+
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();
         }
+        // Increment total gate count
+        const state = loadState();
+        incrementGateCount(state);
+        saveState(state);
+        
         if (denials > getFullDenialBudget()) {
           return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
         }

@@ -97,7 +97,11 @@ scan_dir_to_json() {
   local i=0
   while IFS= read -r file; do
     local name desc mtime u7 u30 dp
-    name=$(extract_field "$file" "name")
+    # Only process files that have a 'name' frontmatter field (actual skills)
+    local check_name
+    check_name=$(extract_field "$file" "name")
+    [[ -z "$check_name" ]] && continue
+    name="$check_name"
     desc=$(extract_field "$file" "description")
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
     # Use awk exact field match to avoid substring false-positives from grep -F.
@@ -118,7 +122,7 @@ scan_dir_to_json() {
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find "$dir" -name "*.md" -type f 2>/dev/null | sort)
+  done < <(find -L "$dir" -name "*.md" -type f 2>/dev/null | sort)
 
   if [[ $i -eq 0 ]]; then
     echo "[]"

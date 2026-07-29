@@ -74,12 +74,15 @@ const RATE_TABLE = {
   haiku:  { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
   sonnet: { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
   opus:   { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
+  // Fable pricing (per Anthropic API): same as Opus 4
+  // If model contains 'fable', treat as Opus tier
 };
 
 function getRates(model) {
   const m = String(model || '').toLowerCase();
   if (m.includes('haiku')) return RATE_TABLE.haiku;
   if (m.includes('opus'))  return RATE_TABLE.opus;
+  if (m.includes('fable')) return RATE_TABLE.opus;
   return RATE_TABLE.sonnet;
 }
 

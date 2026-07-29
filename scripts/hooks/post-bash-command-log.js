@@ -51,7 +51,7 @@ function run(rawInput, mode = 'audit') {
     // Logging must never block the calling hook.
   }
 
-  return typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput);
+  return ''; // Never echo input back
 }
 
 function main() {
