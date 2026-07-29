@@ -1,6 +1,5 @@
 ---
-description: "Kotlin testing extending common rules"
-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
+description: "Kotlin testing for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # Kotlin Testing

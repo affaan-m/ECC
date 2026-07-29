@@ -1,6 +1,5 @@
 ---
-description: "Swift security extending common rules"
-globs: ["**/*.swift", "**/Package.swift"]
+description: "Swift security for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # Swift Security

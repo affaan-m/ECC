@@ -1,6 +1,5 @@
 ---
-description: "PHP coding style extending common rules"
-globs: ["**/*.php", "**/composer.json"]
+description: "PHP coding style for PHP and Laravel application code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
 alwaysApply: false
 ---
 # PHP Coding Style

@@ -1,6 +1,5 @@
 ---
-description: "TypeScript testing extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "TypeScript testing for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # TypeScript/JavaScript Testing

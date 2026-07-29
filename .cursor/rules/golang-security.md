@@ -1,6 +1,5 @@
 ---
-description: "Go security extending common rules"
-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
+description: "Go security for Go modules, packages, and services. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # Go Security

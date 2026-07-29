@@ -10,6 +10,10 @@ const {
   prepareClaudeSkillMigration,
   removeLegacyClaudeSkillFiles,
 } = require('./claude-skill-migration');
+const {
+  isCursorRuleDestination,
+  transformRuleContentForCursor,
+} = require('../cursor-rule-format');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
 
 function isMarkdownPath(filePath) {
@@ -212,6 +216,20 @@ function applyInstallPlan(plan, dependencies = {}) {
       const sourceConfig = readJsonObject(operation.sourcePath, 'MCP config');
       const filteredConfig = filterMcpConfig(sourceConfig, disabledServers).config;
       fs.writeFileSync(operation.destinationPath, formatJson(filteredConfig), 'utf8');
+      continue;
+    }
+
+    if (
+      operation.kind === 'copy-file'
+      && isCursorRuleDestination(plan, operation.destinationPath)
+    ) {
+      const sourceContent = fs.readFileSync(operation.sourcePath, 'utf8');
+      const basename = path.basename(operation.destinationPath, '.mdc');
+      fs.writeFileSync(
+        operation.destinationPath,
+        transformRuleContentForCursor(sourceContent, basename),
+        'utf8'
+      );
       continue;
     }
 

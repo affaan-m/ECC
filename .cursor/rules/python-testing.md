@@ -1,6 +1,5 @@
 ---
-description: "Python testing extending common rules"
-globs: ["**/*.py", "**/*.pyi"]
+description: "Python testing for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # Python Testing

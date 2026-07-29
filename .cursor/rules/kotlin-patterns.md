@@ -1,6 +1,5 @@
 ---
-description: "Kotlin patterns extending common rules"
-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
+description: "Kotlin architecture and patterns for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # Kotlin Patterns

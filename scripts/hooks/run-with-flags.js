@@ -12,7 +12,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
-const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
+const { isCursorHookRuntime } = require('../lib/agent-data-home');
+const {
+  adaptPreToolUseStdoutForCursor,
+  buildPreToolUseAdditionalContext,
+} = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
 
@@ -51,7 +55,14 @@ function writeStderr(stderr) {
  * the OS pipe buffer, which cut large hook output mid-payload and made the
  * harness treat the hook as failed (#2222).
  */
+function adaptStdoutForHarness(text) {
+  return adaptPreToolUseStdoutForCursor(text, {
+    isCursorRuntime: isCursorHookRuntime(),
+  });
+}
+
 function exitWithStdout(text, exitCode) {
+  const adapted = adaptStdoutForHarness(text);
   process.exitCode = exitCode;
   let pendingWrites = 1;
   const exitWhenFlushed = () => {
@@ -61,9 +72,9 @@ function exitWithStdout(text, exitCode) {
     }
   };
 
-  if (typeof text === 'string' && text.length > 0) {
+  if (typeof adapted === 'string' && adapted.length > 0) {
     pendingWrites += 1;
-    process.stdout.write(text, exitWhenFlushed);
+    process.stdout.write(adapted, exitWhenFlushed);
   }
   process.stderr.write('', exitWhenFlushed);
 }

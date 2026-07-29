@@ -1,6 +1,5 @@
 ---
-description: "Python patterns extending common rules"
-globs: ["**/*.py", "**/*.pyi"]
+description: "Python architecture and patterns for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # Python Patterns

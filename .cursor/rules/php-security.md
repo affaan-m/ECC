@@ -1,6 +1,5 @@
 ---
-description: "PHP security extending common rules"
-globs: ["**/*.php", "**/composer.lock", "**/composer.json"]
+description: "PHP security for PHP and Laravel application code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # PHP Security

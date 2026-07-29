@@ -1,6 +1,5 @@
 ---
-description: "Kotlin hooks extending common rules"
-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
+description: "Kotlin hook usage for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # Kotlin Hooks

@@ -1,6 +1,5 @@
 ---
-description: "PHP testing extending common rules"
-globs: ["**/*.php", "**/phpunit.xml", "**/phpunit.xml.dist", "**/composer.json"]
+description: "PHP testing for PHP and Laravel application code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # PHP Testing

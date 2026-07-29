@@ -1,6 +1,5 @@
 ---
-description: "Go hooks extending common rules"
-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
+description: "Go hook usage for Go modules, packages, and services. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # Go Hooks

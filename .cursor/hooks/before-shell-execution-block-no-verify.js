@@ -20,8 +20,8 @@
 
 'use strict';
 
-const { readStdin, hookEnabled } = require('./adapter');
-const { run } = require('../../scripts/hooks/block-no-verify');
+const { hookEnabled, readStdin, resolveScriptPath } = require('./adapter');
+const { run } = require(resolveScriptPath('scripts', 'hooks', 'block-no-verify'));
 
 readStdin()
   .then(raw => {

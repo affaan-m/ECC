@@ -1,6 +1,5 @@
 ---
-description: "Swift hooks extending common rules"
-globs: ["**/*.swift", "**/Package.swift"]
+description: "Swift hook usage for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # Swift Hooks

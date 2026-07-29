@@ -1,6 +1,5 @@
 ---
-description: "Swift patterns extending common rules"
-globs: ["**/*.swift", "**/Package.swift"]
+description: "Swift architecture and patterns for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # Swift Patterns

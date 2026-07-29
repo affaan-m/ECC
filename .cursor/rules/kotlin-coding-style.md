@@ -1,6 +1,5 @@
 ---
-description: "Kotlin coding style extending common rules"
-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
+description: "Kotlin coding style for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
 alwaysApply: false
 ---
 # Kotlin Coding Style

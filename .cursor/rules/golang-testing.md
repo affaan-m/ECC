@@ -1,6 +1,5 @@
 ---
-description: "Go testing extending common rules"
-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
+description: "Go testing for Go modules, packages, and services. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # Go Testing

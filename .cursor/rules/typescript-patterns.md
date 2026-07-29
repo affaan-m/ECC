@@ -1,6 +1,5 @@
 ---
-description: "TypeScript patterns extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "TypeScript architecture and patterns for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # TypeScript/JavaScript Patterns

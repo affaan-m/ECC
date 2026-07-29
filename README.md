@@ -1503,12 +1503,16 @@ Key hooks:
 
 #### Rules format
 
-Cursor rules use YAML frontmatter with `description`, `globs`, and `alwaysApply`:
+Cursor rules use YAML frontmatter with `description` and `alwaysApply`. ECC installs two rule modes:
+
+- **Common rules** (`common-*`) — `alwaysApply: true` for universal ECC guidance
+- **Language/framework rules** — `alwaysApply: false` with a detailed `description` only (Cursor **Apply Intelligently**; no `globs`)
+
+The installer normalizes flattened `rules/` sources through `scripts/lib/cursor-rule-format.js` so Claude-style `paths:` frontmatter is converted to Cursor-native intelligent rules at install time.
 
 ```yaml
 ---
-description: "TypeScript coding style extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "Rust architecture and patterns for Rust crates, modules, and Cargo projects. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 ```

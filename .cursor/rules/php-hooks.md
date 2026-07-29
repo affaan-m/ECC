@@ -1,6 +1,5 @@
 ---
-description: "PHP hooks extending common rules"
-globs: ["**/*.php", "**/composer.json", "**/phpstan.neon", "**/phpstan.neon.dist", "**/psalm.xml"]
+description: "PHP hook usage for PHP and Laravel application code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # PHP Hooks

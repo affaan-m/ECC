@@ -1,0 +1,1255 @@
+diff --git a/.cursor/hooks/adapter.js b/.cursor/hooks/adapter.js
+index 8ac8d298..cb3cf083 100644
+--- a/.cursor/hooks/adapter.js
++++ b/.cursor/hooks/adapter.js
+@@ -5,19 +5,39 @@
+  * then delegates to existing scripts/hooks/*.js
+  */
+ 
++const fs = require('fs');
+ const { execFileSync } = require('child_process');
+ const path = require('path');
+ 
+ const MAX_STDIN = 1024 * 1024;
++const STDIN_TIMEOUT_MS = 5000;
++
++function readStdin(options = {}) {
++  const timeoutMs = options.timeoutMs || STDIN_TIMEOUT_MS;
+ 
+-function readStdin() {
+   return new Promise((resolve) => {
+     let data = '';
++    let settled = false;
++
++    const finish = (value) => {
++      if (settled) return;
++      settled = true;
++      clearTimeout(timer);
++      process.stdin.removeAllListeners('data');
++      process.stdin.removeAllListeners('end');
++      process.stdin.removeAllListeners('error');
++      if (process.stdin.unref) process.stdin.unref();
++      resolve(value);
++    };
++
++    const timer = setTimeout(() => finish(data), timeoutMs);
++
+     process.stdin.setEncoding('utf8');
+     process.stdin.on('data', chunk => {
+       if (data.length < MAX_STDIN) data += chunk.substring(0, MAX_STDIN - data.length);
+     });
+-    process.stdin.on('end', () => resolve(data));
++    process.stdin.on('end', () => finish(data));
++    process.stdin.on('error', () => finish(data));
+   });
+ }
+ 
+@@ -25,11 +45,59 @@ function getPluginRoot() {
+   return path.resolve(__dirname, '..', '..');
+ }
+ 
++function resolveScriptPath(...segments) {
++  const normalized = [...segments];
++  const last = normalized[normalized.length - 1];
++  if (last && !path.extname(String(last))) {
++    normalized[normalized.length - 1] = `${last}.js`;
++  }
++
++  const candidates = [
++    path.join(__dirname, '..', ...normalized),
++    path.join(getPluginRoot(), ...normalized),
++  ];
++
++  for (const candidate of candidates) {
++    if (fs.existsSync(candidate)) {
++      return candidate;
++    }
++  }
++
++  const resolveModuleCandidates = [
++    path.join(__dirname, '..', 'scripts', 'lib', 'resolve-ecc-root.js'),
++    path.join(getPluginRoot(), 'scripts', 'lib', 'resolve-ecc-root.js'),
++  ];
++
++  for (const resolveModule of resolveModuleCandidates) {
++    if (!fs.existsSync(resolveModule)) continue;
++    try {
++      const { resolveEccRoot } = require(resolveModule);
++      const fallback = path.join(resolveEccRoot(), ...normalized);
++      if (fs.existsSync(fallback)) {
++        return fallback;
++      }
++    } catch {
++      // try next candidate
++    }
++  }
++
++  return candidates[0];
++}
++
++function getCursorFilePath(cursorInput = {}) {
++  return String(
++    cursorInput.path
++    || cursorInput.file
++    || cursorInput.args?.filePath
++    || ''
++  );
++}
++
+ function transformToClaude(cursorInput, overrides = {}) {
+   return {
+     tool_input: {
+       command: cursorInput.command || cursorInput.args?.command || '',
+-      file_path: cursorInput.path || cursorInput.file || cursorInput.args?.filePath || '',
++      file_path: getCursorFilePath(cursorInput),
+       ...overrides.tool_input,
+     },
+     tool_output: {
+@@ -47,7 +115,7 @@ function transformToClaude(cursorInput, overrides = {}) {
+ }
+ 
+ function runExistingHook(scriptName, stdinData) {
+-  const scriptPath = path.join(getPluginRoot(), 'scripts', 'hooks', scriptName);
++  const scriptPath = resolveScriptPath('scripts', 'hooks', scriptName);
+   try {
+     execFileSync('node', [scriptPath], {
+       input: typeof stdinData === 'string' ? stdinData : JSON.stringify(stdinData),
+@@ -78,4 +146,12 @@ function hookEnabled(hookId, allowedProfiles = ['standard', 'strict']) {
+   return allowedProfiles.includes(profile);
+ }
+ 
+-module.exports = { readStdin, getPluginRoot, transformToClaude, runExistingHook, hookEnabled };
++module.exports = {
++  readStdin,
++  getPluginRoot,
++  getCursorFilePath,
++  resolveScriptPath,
++  transformToClaude,
++  runExistingHook,
++  hookEnabled,
++};
+diff --git a/.cursor/hooks/after-file-edit.js b/.cursor/hooks/after-file-edit.js
+index 59643529..c1b26079 100644
+--- a/.cursor/hooks/after-file-edit.js
++++ b/.cursor/hooks/after-file-edit.js
+@@ -3,9 +3,7 @@ const { hookEnabled, readStdin, runExistingHook, transformToClaude } = require('
+ readStdin().then(raw => {
+   try {
+     const input = JSON.parse(raw);
+-    const claudeInput = transformToClaude(input, {
+-      tool_input: { file_path: input.path || input.file || '' }
+-    });
++    const claudeInput = transformToClaude(input);
+     const claudeStr = JSON.stringify(claudeInput);
+ 
+     // Accumulate edited paths for batch format+typecheck at stop time
+diff --git a/.cursor/hooks/after-tab-file-edit.js b/.cursor/hooks/after-tab-file-edit.js
+index 355876c0..8414a78a 100644
+--- a/.cursor/hooks/after-tab-file-edit.js
++++ b/.cursor/hooks/after-tab-file-edit.js
+@@ -3,9 +3,7 @@ const { readStdin, runExistingHook, transformToClaude } = require('./adapter');
+ readStdin().then(raw => {
+   try {
+     const input = JSON.parse(raw);
+-    const claudeInput = transformToClaude(input, {
+-      tool_input: { file_path: input.path || input.file || '' }
+-    });
++    const claudeInput = transformToClaude(input);
+     runExistingHook('post-edit-format.js', JSON.stringify(claudeInput));
+   } catch {}
+   process.stdout.write(raw);
+diff --git a/.cursor/hooks/before-read-file.js b/.cursor/hooks/before-read-file.js
+index e221530c..12cc44f3 100644
+--- a/.cursor/hooks/before-read-file.js
++++ b/.cursor/hooks/before-read-file.js
+@@ -1,9 +1,9 @@
+ #!/usr/bin/env node
+-const { readStdin } = require('./adapter');
++const { getCursorFilePath, readStdin } = require('./adapter');
+ readStdin().then(raw => {
+   try {
+-    const input = JSON.parse(raw);
+-    const filePath = input.path || input.file || '';
++    const input = JSON.parse(raw || '{}');
++    const filePath = getCursorFilePath(input);
+     if (/\.(env|key|pem)$|\.env\.|credentials|secret/i.test(filePath)) {
+       console.error('[ECC] WARNING: Reading sensitive file: ' + filePath);
+       console.error('[ECC] Ensure this data is not exposed in outputs');
+diff --git a/.cursor/hooks/before-shell-execution-block-no-verify.js b/.cursor/hooks/before-shell-execution-block-no-verify.js
+index 4c9e07db..2482fe91 100644
+--- a/.cursor/hooks/before-shell-execution-block-no-verify.js
++++ b/.cursor/hooks/before-shell-execution-block-no-verify.js
+@@ -20,8 +20,8 @@
+ 
+ 'use strict';
+ 
+-const { readStdin, hookEnabled } = require('./adapter');
+-const { run } = require('../../scripts/hooks/block-no-verify');
++const { hookEnabled, readStdin, resolveScriptPath } = require('./adapter');
++const { run } = require(resolveScriptPath('scripts', 'hooks', 'block-no-verify'));
+ 
+ readStdin()
+   .then(raw => {
+diff --git a/.cursor/hooks/before-shell-execution.js b/.cursor/hooks/before-shell-execution.js
+index fbcf8e0a..82489fbe 100644
+--- a/.cursor/hooks/before-shell-execution.js
++++ b/.cursor/hooks/before-shell-execution.js
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env node
+-const { readStdin, hookEnabled } = require('./adapter');
+-const { splitShellSegments } = require('../../scripts/lib/shell-split');
++const { hookEnabled, readStdin, resolveScriptPath } = require('./adapter');
++const { splitShellSegments } = require(resolveScriptPath('scripts', 'lib', 'shell-split'));
+ 
+ readStdin()
+   .then(raw => {
+diff --git a/.cursor/hooks/before-tab-file-read.js b/.cursor/hooks/before-tab-file-read.js
+index f4ea79a4..a9b74382 100644
+--- a/.cursor/hooks/before-tab-file-read.js
++++ b/.cursor/hooks/before-tab-file-read.js
+@@ -1,9 +1,9 @@
+ #!/usr/bin/env node
+-const { readStdin } = require('./adapter');
++const { getCursorFilePath, readStdin } = require('./adapter');
+ readStdin().then(raw => {
+   try {
+-    const input = JSON.parse(raw);
+-    const filePath = input.path || input.file || '';
++    const input = JSON.parse(raw || '{}');
++    const filePath = getCursorFilePath(input);
+     if (/\.(env|key|pem)$|\.env\.|credentials|secret/i.test(filePath)) {
+       console.error('[ECC] BLOCKED: Tab cannot read sensitive file: ' + filePath);
+       process.exit(2);
+diff --git a/.cursor/rules/golang-coding-style.md b/.cursor/rules/golang-coding-style.md
+index 412bb77d..a9648c3e 100644
+--- a/.cursor/rules/golang-coding-style.md
++++ b/.cursor/rules/golang-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Go coding style extending common rules"
+-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
++description: "Go coding style for Go modules, packages, and services. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # Go Coding Style
+diff --git a/.cursor/rules/golang-hooks.md b/.cursor/rules/golang-hooks.md
+index 4edadb8e..47b41f36 100644
+--- a/.cursor/rules/golang-hooks.md
++++ b/.cursor/rules/golang-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Go hooks extending common rules"
+-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
++description: "Go hook usage for Go modules, packages, and services. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # Go Hooks
+diff --git a/.cursor/rules/golang-patterns.md b/.cursor/rules/golang-patterns.md
+index d03fbb97..e165a94e 100644
+--- a/.cursor/rules/golang-patterns.md
++++ b/.cursor/rules/golang-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Go patterns extending common rules"
+-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
++description: "Go architecture and patterns for Go modules, packages, and services. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # Go Patterns
+diff --git a/.cursor/rules/golang-security.md b/.cursor/rules/golang-security.md
+index e2f88942..c413a647 100644
+--- a/.cursor/rules/golang-security.md
++++ b/.cursor/rules/golang-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Go security extending common rules"
+-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
++description: "Go security for Go modules, packages, and services. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # Go Security
+diff --git a/.cursor/rules/golang-testing.md b/.cursor/rules/golang-testing.md
+index 530963a7..67f53cfa 100644
+--- a/.cursor/rules/golang-testing.md
++++ b/.cursor/rules/golang-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Go testing extending common rules"
+-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
++description: "Go testing for Go modules, packages, and services. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # Go Testing
+diff --git a/.cursor/rules/kotlin-coding-style.md b/.cursor/rules/kotlin-coding-style.md
+index ee7cd1f6..257182ed 100644
+--- a/.cursor/rules/kotlin-coding-style.md
++++ b/.cursor/rules/kotlin-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Kotlin coding style extending common rules"
+-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
++description: "Kotlin coding style for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # Kotlin Coding Style
+diff --git a/.cursor/rules/kotlin-hooks.md b/.cursor/rules/kotlin-hooks.md
+index 8ed503d4..c1276d74 100644
+--- a/.cursor/rules/kotlin-hooks.md
++++ b/.cursor/rules/kotlin-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Kotlin hooks extending common rules"
+-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
++description: "Kotlin hook usage for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # Kotlin Hooks
+diff --git a/.cursor/rules/kotlin-patterns.md b/.cursor/rules/kotlin-patterns.md
+index c5958da2..6965e0a4 100644
+--- a/.cursor/rules/kotlin-patterns.md
++++ b/.cursor/rules/kotlin-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Kotlin patterns extending common rules"
+-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
++description: "Kotlin architecture and patterns for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # Kotlin Patterns
+diff --git a/.cursor/rules/kotlin-security.md b/.cursor/rules/kotlin-security.md
+index 43ad7cc5..4ac061cc 100644
+--- a/.cursor/rules/kotlin-security.md
++++ b/.cursor/rules/kotlin-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Kotlin security extending common rules"
+-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
++description: "Kotlin security for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # Kotlin Security
+diff --git a/.cursor/rules/kotlin-testing.md b/.cursor/rules/kotlin-testing.md
+index bf749043..83312c9f 100644
+--- a/.cursor/rules/kotlin-testing.md
++++ b/.cursor/rules/kotlin-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Kotlin testing extending common rules"
+-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
++description: "Kotlin testing for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # Kotlin Testing
+diff --git a/.cursor/rules/php-coding-style.md b/.cursor/rules/php-coding-style.md
+index f4372406..ea4d459c 100644
+--- a/.cursor/rules/php-coding-style.md
++++ b/.cursor/rules/php-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "PHP coding style extending common rules"
+-globs: ["**/*.php", "**/composer.json"]
++description: "PHP coding style for PHP and Laravel application code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # PHP Coding Style
+diff --git a/.cursor/rules/php-hooks.md b/.cursor/rules/php-hooks.md
+index 2aa143bd..3fda9943 100644
+--- a/.cursor/rules/php-hooks.md
++++ b/.cursor/rules/php-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "PHP hooks extending common rules"
+-globs: ["**/*.php", "**/composer.json", "**/phpstan.neon", "**/phpstan.neon.dist", "**/psalm.xml"]
++description: "PHP hook usage for PHP and Laravel application code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # PHP Hooks
+diff --git a/.cursor/rules/php-patterns.md b/.cursor/rules/php-patterns.md
+index a53e9429..2a7016eb 100644
+--- a/.cursor/rules/php-patterns.md
++++ b/.cursor/rules/php-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "PHP patterns extending common rules"
+-globs: ["**/*.php", "**/composer.json"]
++description: "PHP architecture and patterns for PHP and Laravel application code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # PHP Patterns
+diff --git a/.cursor/rules/php-security.md b/.cursor/rules/php-security.md
+index af9dfe89..2cda2ad0 100644
+--- a/.cursor/rules/php-security.md
++++ b/.cursor/rules/php-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "PHP security extending common rules"
+-globs: ["**/*.php", "**/composer.lock", "**/composer.json"]
++description: "PHP security for PHP and Laravel application code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # PHP Security
+diff --git a/.cursor/rules/php-testing.md b/.cursor/rules/php-testing.md
+index 553a3795..53b85468 100644
+--- a/.cursor/rules/php-testing.md
++++ b/.cursor/rules/php-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "PHP testing extending common rules"
+-globs: ["**/*.php", "**/phpunit.xml", "**/phpunit.xml.dist", "**/composer.json"]
++description: "PHP testing for PHP and Laravel application code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # PHP Testing
+diff --git a/.cursor/rules/python-coding-style.md b/.cursor/rules/python-coding-style.md
+index 4537653b..f9568041 100644
+--- a/.cursor/rules/python-coding-style.md
++++ b/.cursor/rules/python-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Python coding style extending common rules"
+-globs: ["**/*.py", "**/*.pyi"]
++description: "Python coding style for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # Python Coding Style
+diff --git a/.cursor/rules/python-hooks.md b/.cursor/rules/python-hooks.md
+index 33165eae..13e2f3ee 100644
+--- a/.cursor/rules/python-hooks.md
++++ b/.cursor/rules/python-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Python hooks extending common rules"
+-globs: ["**/*.py", "**/*.pyi"]
++description: "Python hook usage for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # Python Hooks
+diff --git a/.cursor/rules/python-patterns.md b/.cursor/rules/python-patterns.md
+index f6058bf0..ff28f9f4 100644
+--- a/.cursor/rules/python-patterns.md
++++ b/.cursor/rules/python-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Python patterns extending common rules"
+-globs: ["**/*.py", "**/*.pyi"]
++description: "Python architecture and patterns for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # Python Patterns
+diff --git a/.cursor/rules/python-security.md b/.cursor/rules/python-security.md
+index 5d76b184..3dada533 100644
+--- a/.cursor/rules/python-security.md
++++ b/.cursor/rules/python-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Python security extending common rules"
+-globs: ["**/*.py", "**/*.pyi"]
++description: "Python security for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # Python Security
+diff --git a/.cursor/rules/python-testing.md b/.cursor/rules/python-testing.md
+index c72c612a..770aea7f 100644
+--- a/.cursor/rules/python-testing.md
++++ b/.cursor/rules/python-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Python testing extending common rules"
+-globs: ["**/*.py", "**/*.pyi"]
++description: "Python testing for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # Python Testing
+diff --git a/.cursor/rules/swift-coding-style.md b/.cursor/rules/swift-coding-style.md
+index a1964049..c6d39abe 100644
+--- a/.cursor/rules/swift-coding-style.md
++++ b/.cursor/rules/swift-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Swift coding style extending common rules"
+-globs: ["**/*.swift", "**/Package.swift"]
++description: "Swift coding style for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # Swift Coding Style
+diff --git a/.cursor/rules/swift-hooks.md b/.cursor/rules/swift-hooks.md
+index f9f1b7fe..df77f7c6 100644
+--- a/.cursor/rules/swift-hooks.md
++++ b/.cursor/rules/swift-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Swift hooks extending common rules"
+-globs: ["**/*.swift", "**/Package.swift"]
++description: "Swift hook usage for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # Swift Hooks
+diff --git a/.cursor/rules/swift-patterns.md b/.cursor/rules/swift-patterns.md
+index d65947ca..8c847c8c 100644
+--- a/.cursor/rules/swift-patterns.md
++++ b/.cursor/rules/swift-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Swift patterns extending common rules"
+-globs: ["**/*.swift", "**/Package.swift"]
++description: "Swift architecture and patterns for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # Swift Patterns
+diff --git a/.cursor/rules/swift-security.md b/.cursor/rules/swift-security.md
+index b965f174..073a25c7 100644
+--- a/.cursor/rules/swift-security.md
++++ b/.cursor/rules/swift-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Swift security extending common rules"
+-globs: ["**/*.swift", "**/Package.swift"]
++description: "Swift security for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # Swift Security
+diff --git a/.cursor/rules/swift-testing.md b/.cursor/rules/swift-testing.md
+index 8b65b55b..ec1308f5 100644
+--- a/.cursor/rules/swift-testing.md
++++ b/.cursor/rules/swift-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "Swift testing extending common rules"
+-globs: ["**/*.swift", "**/Package.swift"]
++description: "Swift testing for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # Swift Testing
+diff --git a/.cursor/rules/typescript-coding-style.md b/.cursor/rules/typescript-coding-style.md
+index af5c4f84..050a4239 100644
+--- a/.cursor/rules/typescript-coding-style.md
++++ b/.cursor/rules/typescript-coding-style.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "TypeScript coding style extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "TypeScript coding style for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
+ alwaysApply: false
+ ---
+ # TypeScript/JavaScript Coding Style
+diff --git a/.cursor/rules/typescript-hooks.md b/.cursor/rules/typescript-hooks.md
+index 9032d302..855ff4bb 100644
+--- a/.cursor/rules/typescript-hooks.md
++++ b/.cursor/rules/typescript-hooks.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "TypeScript hooks extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "TypeScript hook usage for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
+ alwaysApply: false
+ ---
+ # TypeScript/JavaScript Hooks
+diff --git a/.cursor/rules/typescript-patterns.md b/.cursor/rules/typescript-patterns.md
+index 0c8a9b80..a89fb809 100644
+--- a/.cursor/rules/typescript-patterns.md
++++ b/.cursor/rules/typescript-patterns.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "TypeScript patterns extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "TypeScript architecture and patterns for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ # TypeScript/JavaScript Patterns
+diff --git a/.cursor/rules/typescript-security.md b/.cursor/rules/typescript-security.md
+index 8aea61f5..a4b092d6 100644
+--- a/.cursor/rules/typescript-security.md
++++ b/.cursor/rules/typescript-security.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "TypeScript security extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "TypeScript security for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
+ alwaysApply: false
+ ---
+ # TypeScript/JavaScript Security
+diff --git a/.cursor/rules/typescript-testing.md b/.cursor/rules/typescript-testing.md
+index 894b9fe9..03a20ff3 100644
+--- a/.cursor/rules/typescript-testing.md
++++ b/.cursor/rules/typescript-testing.md
+@@ -1,6 +1,5 @@
+ ---
+-description: "TypeScript testing extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "TypeScript testing for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
+ alwaysApply: false
+ ---
+ # TypeScript/JavaScript Testing
+diff --git a/README.md b/README.md
+index 455df701..3b8608e6 100644
+--- a/README.md
++++ b/README.md
+@@ -1503,12 +1503,16 @@ Key hooks:
+ 
+ #### Rules format
+ 
+-Cursor rules use YAML frontmatter with `description`, `globs`, and `alwaysApply`:
++Cursor rules use YAML frontmatter with `description` and `alwaysApply`. ECC installs two rule modes:
++
++- **Common rules** (`common-*`) — `alwaysApply: true` for universal ECC guidance
++- **Language/framework rules** — `alwaysApply: false` with a detailed `description` only (Cursor **Apply Intelligently**; no `globs`)
++
++The installer normalizes flattened `rules/` sources through `scripts/lib/cursor-rule-format.js` so Claude-style `paths:` frontmatter is converted to Cursor-native intelligent rules at install time.
+ 
+ ```yaml
+ ---
+-description: "TypeScript coding style extending common rules"
+-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
++description: "Rust architecture and patterns for Rust crates, modules, and Cargo projects. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
+ alwaysApply: false
+ ---
+ ```
+diff --git a/scripts/hooks/pretooluse-visible-output.js b/scripts/hooks/pretooluse-visible-output.js
+index dc481190..4e00206c 100644
+--- a/scripts/hooks/pretooluse-visible-output.js
++++ b/scripts/hooks/pretooluse-visible-output.js
+@@ -34,7 +34,63 @@ function buildPreToolUseAdditionalContext(value) {
+   });
+ }
+ 
++/**
++ * Translate Claude Code PreToolUse stdout into Cursor preToolUse JSON.
++ * Cursor expects { permission, user_message?, agent_message?, updated_input? }.
++ */
++function adaptPreToolUseStdoutForCursor(stdout, options = {}) {
++  if (!options.isCursorRuntime) {
++    return typeof stdout === 'string' ? stdout : '';
++  }
++
++  const text = typeof stdout === 'string' ? stdout.trim() : '';
++  if (!text) {
++    return '';
++  }
++
++  let parsed;
++  try {
++    parsed = JSON.parse(text);
++  } catch {
++    return '';
++  }
++
++  if (parsed && typeof parsed === 'object' && parsed.permission) {
++    return text;
++  }
++
++  const hookOutput = parsed && parsed.hookSpecificOutput;
++  if (hookOutput && typeof hookOutput === 'object') {
++    if (hookOutput.permissionDecision === 'deny') {
++      const reason = String(hookOutput.permissionDecisionReason || 'Blocked by ECC hook');
++      return JSON.stringify({
++        permission: 'deny',
++        user_message: reason,
++        agent_message: reason,
++      });
++    }
++
++    if (hookOutput.additionalContext) {
++      const context = normalizeAdditionalContext(hookOutput.additionalContext);
++      if (!context) {
++        return JSON.stringify({ permission: 'allow' });
++      }
++      return JSON.stringify({
++        permission: 'allow',
++        agent_message: context,
++      });
++    }
++  }
++
++  if (parsed && typeof parsed === 'object' && (parsed.tool_name || parsed.tool)) {
++    return JSON.stringify({ permission: 'allow' });
++  }
++
++  return '';
++}
++
+ module.exports = {
++  adaptPreToolUseStdoutForCursor,
+   buildPreToolUseAdditionalContext,
+   combineAdditionalContext,
+   normalizeAdditionalContext,
+diff --git a/scripts/hooks/run-with-flags.js b/scripts/hooks/run-with-flags.js
+index a49bd4fa..ad9fdf8f 100755
+--- a/scripts/hooks/run-with-flags.js
++++ b/scripts/hooks/run-with-flags.js
+@@ -12,7 +12,11 @@ const fs = require('fs');
+ const path = require('path');
+ const { spawnSync } = require('child_process');
+ const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+-const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
++const { isCursorHookRuntime } = require('../lib/agent-data-home');
++const {
++  adaptPreToolUseStdoutForCursor,
++  buildPreToolUseAdditionalContext,
++} = require('./pretooluse-visible-output');
+ 
+ const MAX_STDIN = 1024 * 1024;
+ 
+@@ -51,7 +55,14 @@ function writeStderr(stderr) {
+  * the OS pipe buffer, which cut large hook output mid-payload and made the
+  * harness treat the hook as failed (#2222).
+  */
++function adaptStdoutForHarness(text) {
++  return adaptPreToolUseStdoutForCursor(text, {
++    isCursorRuntime: isCursorHookRuntime(),
++  });
++}
++
+ function exitWithStdout(text, exitCode) {
++  const adapted = adaptStdoutForHarness(text);
+   process.exitCode = exitCode;
+   let pendingWrites = 1;
+   const exitWhenFlushed = () => {
+@@ -61,9 +72,9 @@ function exitWithStdout(text, exitCode) {
+     }
+   };
+ 
+-  if (typeof text === 'string' && text.length > 0) {
++  if (typeof adapted === 'string' && adapted.length > 0) {
+     pendingWrites += 1;
+-    process.stdout.write(text, exitWhenFlushed);
++    process.stdout.write(adapted, exitWhenFlushed);
+   }
+   process.stderr.write('', exitWhenFlushed);
+ }
+diff --git a/scripts/lib/cursor-rule-format.js b/scripts/lib/cursor-rule-format.js
+new file mode 100644
+index 00000000..cabe6184
+--- /dev/null
++++ b/scripts/lib/cursor-rule-format.js
+@@ -0,0 +1,284 @@
++'use strict';
++
++const COMMON_RULE_METADATA = Object.freeze({
++  'common-agents': {
++    description: 'Agent orchestration: available agents, parallel execution, multi-perspective analysis',
++    alwaysApply: true,
++  },
++  'common-code-review': {
++    description: 'Code review standards, checklist, and merge guidance',
++    alwaysApply: true,
++  },
++  'common-coding-style': {
++    description: 'ECC coding style: immutability, file organization, error handling, validation',
++    alwaysApply: true,
++  },
++  'common-development-workflow': {
++    description: 'Development workflow: plan, TDD, review, commit pipeline',
++    alwaysApply: true,
++  },
++  'common-git-workflow': {
++    description: 'Git workflow: conventional commits, PR process',
++    alwaysApply: true,
++  },
++  'common-hooks': {
++    description: 'Hooks system: types, auto-accept permissions, TodoWrite best practices',
++    alwaysApply: true,
++  },
++  'common-patterns': {
++    description: 'Common patterns: repository, API response, skeleton projects',
++    alwaysApply: true,
++  },
++  'common-performance': {
++    description: 'Performance: model selection, context management, build troubleshooting',
++    alwaysApply: true,
++  },
++  'common-security': {
++    description: 'Security: mandatory checks, secret management, response protocol',
++    alwaysApply: true,
++  },
++  'common-testing': {
++    description: 'Testing requirements: 80% coverage, TDD workflow, test types',
++    alwaysApply: true,
++  },
++});
++
++const LANGUAGE_LABELS = Object.freeze({
++  angular: 'Angular',
++  arkts: 'ArkTS',
++  cpp: 'C++',
++  csharp: 'C#',
++  dart: 'Dart',
++  fsharp: 'F#',
++  golang: 'Go',
++  java: 'Java',
++  kotlin: 'Kotlin',
++  nuxt: 'Nuxt',
++  perl: 'Perl',
++  php: 'PHP',
++  python: 'Python',
++  react: 'React',
++  ruby: 'Ruby',
++  rust: 'Rust',
++  swift: 'Swift',
++  typescript: 'TypeScript',
++  vue: 'Vue',
++  web: 'Web',
++});
++
++const LANGUAGE_CONTEXT = Object.freeze({
++  angular: 'Angular TypeScript applications and templates',
++  arkts: 'HarmonyOS ArkTS and ArkUI code',
++  cpp: 'C and C++ source files and CMake projects',
++  csharp: 'C# and .NET projects',
++  dart: 'Dart and Flutter applications',
++  fsharp: 'F# and .NET functional code',
++  golang: 'Go modules, packages, and services',
++  java: 'Java and JVM application code',
++  kotlin: 'Kotlin, Android, and KMP projects',
++  nuxt: 'Nuxt 4 applications, server routes, and app config',
++  perl: 'Perl scripts, modules, and tests',
++  php: 'PHP and Laravel application code',
++  python: 'Python services, scripts, and FastAPI/Django apps',
++  react: 'React TSX/JSX components and hooks',
++  ruby: 'Ruby and Rails application code',
++  rust: 'Rust crates, modules, and Cargo projects',
++  swift: 'Swift packages and Apple platform code',
++  typescript: 'TypeScript, JavaScript, TSX, and JSX code',
++  vue: 'Vue 3 SFCs, composables, and Pinia stores',
++  web: 'frontend HTML, CSS, and component code',
++});
++
++const TOPIC_LABELS = Object.freeze({
++  'coding-style': 'coding style',
++  'design-quality': 'design quality',
++  fastapi: 'FastAPI patterns',
++  hooks: 'hook usage',
++  patterns: 'architecture and patterns',
++  performance: 'performance',
++  security: 'security',
++  testing: 'testing',
++});
++
++const TOPIC_CONTEXT = Object.freeze({
++  'coding-style': 'formatting, naming, structure, and readability',
++  'design-quality': 'UI quality, layout, spacing, and visual polish',
++  fastapi: 'FastAPI routes, dependencies, schemas, and services',
++  hooks: 'hook permissions, automation boundaries, and guardrails',
++  patterns: 'architecture, APIs, state, and idiomatic structure',
++  performance: 'performance tuning and optimization',
++  security: 'validation, secrets, auth, and vulnerability prevention',
++  testing: 'tests, coverage, fixtures, and verification',
++});
++
++function splitFrontmatter(content) {
++  const match = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
++  if (!match) {
++    return { frontmatter: null, body: String(content || '') };
++  }
++
++  return {
++    frontmatter: match[1],
++    body: content.slice(match[0].length),
++  };
++}
++
++function parseScalarListBlock(frontmatter, key) {
++  if (!frontmatter) {
++    return [];
++  }
++
++  const inlineMatch = frontmatter.match(new RegExp(`^\\s*${key}:\\s*(\\[[^\\n]+\\])\\s*$`, 'm'));
++  if (inlineMatch) {
++    try {
++      const parsed = JSON.parse(inlineMatch[1].replace(/'/g, '"'));
++      if (Array.isArray(parsed)) {
++        return parsed.map(String);
++      }
++    } catch {
++      // fall through to block parsing
++    }
++  }
++
++  const lines = frontmatter.split(/\r?\n/);
++  const values = [];
++  let collecting = false;
++
++  for (const line of lines) {
++    if (new RegExp(`^\\s*${key}:\\s*$`).test(line)) {
++      collecting = true;
++      continue;
++    }
++
++    if (collecting) {
++      const listMatch = line.match(/^\s*-\s+(.+)\s*$/);
++      if (listMatch) {
++        values.push(listMatch[1].replace(/^['"]|['"]$/g, ''));
++        continue;
++      }
++
++      if (/^\S/.test(line)) {
++        collecting = false;
++      }
++    }
++  }
++
++  return values;
++}
++
++function parseFrontmatterFields(frontmatter) {
++  const fields = {
++    description: null,
++    alwaysApply: null,
++    globs: [],
++    paths: [],
++  };
++
++  if (!frontmatter) {
++    return fields;
++  }
++
++  const descriptionMatch = frontmatter.match(/^\s*description:\s*(.+)\s*$/m);
++  if (descriptionMatch) {
++    fields.description = descriptionMatch[1].replace(/^['"]|['"]$/g, '');
++  }
++
++  const alwaysApplyMatch = frontmatter.match(/^\s*alwaysApply:\s*(true|false)\s*$/m);
++  if (alwaysApplyMatch) {
++    fields.alwaysApply = alwaysApplyMatch[1] === 'true';
++  }
++
++  fields.globs = parseScalarListBlock(frontmatter, 'globs');
++  fields.paths = parseScalarListBlock(frontmatter, 'paths');
++
++  return fields;
++}
++
++function parseRuleBasename(basename) {
++  const normalized = String(basename || '').replace(/\.mdc$/i, '');
++
++  if (normalized.startsWith('common-')) {
++    return {
++      scope: 'common',
++      topic: normalized.slice('common-'.length),
++    };
++  }
++
++  const dashIndex = normalized.indexOf('-');
++  if (dashIndex === -1) {
++    return { scope: normalized, topic: 'patterns' };
++  }
++
++  return {
++    scope: normalized.slice(0, dashIndex),
++    topic: normalized.slice(dashIndex + 1),
++  };
++}
++
++function isCommonRule(basename) {
++  return String(basename || '').startsWith('common-');
++}
++
++function buildDescription(basename) {
++  const commonMeta = COMMON_RULE_METADATA[basename];
++  if (commonMeta) {
++    return commonMeta.description;
++  }
++
++  const { scope, topic } = parseRuleBasename(basename);
++  const languageLabel = LANGUAGE_LABELS[scope] || scope.charAt(0).toUpperCase() + scope.slice(1);
++  const topicLabel = TOPIC_LABELS[topic] || topic.replace(/-/g, ' ');
++  const languageContext = LANGUAGE_CONTEXT[scope] || `${languageLabel} code`;
++  const topicContext = TOPIC_CONTEXT[topic] || topicLabel;
++
++  return `${languageLabel} ${topicLabel} for ${languageContext}. Apply when writing, reviewing, or refactoring ${topicContext}.`;
++}
++
++function formatFrontmatter({ description, alwaysApply }) {
++  const lines = ['---', `description: "${description.replace(/"/g, '\\"')}"`];
++
++  if (alwaysApply) {
++    lines.push('alwaysApply: true');
++  } else {
++    lines.push('alwaysApply: false');
++  }
++
++  lines.push('---', '');
++  return lines.join('\n');
++}
++
++function transformRuleContentForCursor(content, basename) {
++  const { frontmatter, body } = splitFrontmatter(content);
++  const fields = parseFrontmatterFields(frontmatter);
++  const description = fields.description || buildDescription(basename);
++
++  if (isCommonRule(basename)) {
++    return `${formatFrontmatter({
++      description,
++      alwaysApply: true,
++    })}${body}`;
++  }
++
++  // Language/framework rules use Cursor "Apply Intelligently": description only.
++  return `${formatFrontmatter({
++    description: buildDescription(basename),
++    alwaysApply: false,
++  })}${body}`;
++}
++
++function isCursorRuleDestination(plan, destinationPath) {
++  if (!plan?.adapter || plan.adapter.target !== 'cursor') {
++    return false;
++  }
++
++  const normalized = String(destinationPath || '').replace(/\\/g, '/');
++  return normalized.includes('/.cursor/rules/') && normalized.endsWith('.mdc');
++}
++
++module.exports = {
++  COMMON_RULE_METADATA,
++  buildDescription,
++  isCommonRule,
++  isCursorRuleDestination,
++  transformRuleContentForCursor,
++};
+diff --git a/scripts/lib/install/apply.js b/scripts/lib/install/apply.js
+index cf1afb18..cbd25db1 100644
+--- a/scripts/lib/install/apply.js
++++ b/scripts/lib/install/apply.js
+@@ -10,6 +10,10 @@ const {
+   prepareClaudeSkillMigration,
+   removeLegacyClaudeSkillFiles,
+ } = require('./claude-skill-migration');
++const {
++  isCursorRuleDestination,
++  transformRuleContentForCursor,
++} = require('../cursor-rule-format');
+ const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
+ 
+ function isMarkdownPath(filePath) {
+@@ -215,6 +219,20 @@ function applyInstallPlan(plan, dependencies = {}) {
+       continue;
+     }
+ 
++    if (
++      operation.kind === 'copy-file'
++      && isCursorRuleDestination(plan, operation.destinationPath)
++    ) {
++      const sourceContent = fs.readFileSync(operation.sourcePath, 'utf8');
++      const basename = path.basename(operation.destinationPath, '.mdc');
++      fs.writeFileSync(
++        operation.destinationPath,
++        transformRuleContentForCursor(sourceContent, basename),
++        'utf8'
++      );
++      continue;
++    }
++
+     // Markdown may reference files whose installed paths move, such as rules
+     // copied under rules/ecc. Rewrite only links that point at installed targets;
+     // untouched links and non-markdown files stay on the byte-for-byte path.
+diff --git a/tests/hooks/cursor-adapter-paths.test.js b/tests/hooks/cursor-adapter-paths.test.js
+new file mode 100644
+index 00000000..ab48caec
+--- /dev/null
++++ b/tests/hooks/cursor-adapter-paths.test.js
+@@ -0,0 +1,123 @@
++'use strict';
++
++const assert = require('assert');
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const { spawnSync } = require('child_process');
++
++const repoRoot = path.join(__dirname, '..', '..');
++const adapterPath = path.join(repoRoot, '.cursor', 'hooks', 'adapter.js');
++
++function samePath(actual, expected) {
++  assert.strictEqual(fs.realpathSync(actual), fs.realpathSync(expected));
++}
++
++function test(name, fn) {
++  try {
++    fn();
++    console.log(`  ✓ ${name}`);
++    return true;
++  } catch (error) {
++    console.log(`  ✗ ${name}`);
++    console.log(`    Error: ${error.message}`);
++    return false;
++  }
++}
++
++function withTempProject(layout, fn) {
++  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cursor-adapter-'));
++  const cursorHooksDir = path.join(tempRoot, '.cursor', 'hooks');
++  const cursorScriptsDir = path.join(tempRoot, '.cursor', 'scripts', 'hooks');
++  fs.mkdirSync(cursorHooksDir, { recursive: true });
++  fs.mkdirSync(cursorScriptsDir, { recursive: true });
++
++  fs.copyFileSync(adapterPath, path.join(cursorHooksDir, 'adapter.js'));
++  fs.writeFileSync(path.join(cursorScriptsDir, 'marker.js'), 'module.exports = { marker: true };\n');
++
++  if (layout === 'repo-root-scripts') {
++    const repoScriptsDir = path.join(tempRoot, 'scripts', 'hooks');
++    fs.mkdirSync(repoScriptsDir, { recursive: true });
++    fs.writeFileSync(path.join(repoScriptsDir, 'marker.js'), 'module.exports = { marker: true };\n');
++  }
++
++  try {
++    fn(tempRoot, path.join(cursorHooksDir, 'adapter.js'));
++  } finally {
++    fs.rmSync(tempRoot, { recursive: true, force: true });
++  }
++}
++
++let passed = 0;
++let failed = 0;
++
++console.log('\ncursor adapter path resolution tests');
++console.log('─'.repeat(50));
++
++if (test('resolveScriptPath prefers installed .cursor/scripts layout', () => {
++  withTempProject('cursor-only', (tempRoot, adapterFile) => {
++    const adapter = require(adapterFile);
++    const resolved = adapter.resolveScriptPath('scripts', 'hooks', 'marker.js');
++    samePath(
++      resolved,
++      path.join(tempRoot, '.cursor', 'scripts', 'hooks', 'marker.js')
++    );
++  });
++})) passed++; else failed++;
++
++if (test('resolveScriptPath falls back to repo-root scripts layout', () => {
++  withTempProject('repo-root-scripts', (tempRoot, adapterFile) => {
++    fs.rmSync(path.join(tempRoot, '.cursor', 'scripts'), { recursive: true, force: true });
++    const adapter = require(adapterFile);
++    const resolved = adapter.resolveScriptPath('scripts', 'hooks', 'marker.js');
++    samePath(
++      resolved,
++      path.join(tempRoot, 'scripts', 'hooks', 'marker.js')
++    );
++  });
++})) passed++; else failed++;
++
++if (test('getCursorFilePath reads args.filePath', () => {
++  const adapter = require(adapterPath);
++  assert.strictEqual(
++    adapter.getCursorFilePath({ args: { filePath: '/tmp/example.m' } }),
++    '/tmp/example.m'
++  );
++})) passed++; else failed++;
++
++if (test('before-shell-execution-block-no-verify loads in installed layout', () => {
++  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-cursor-shell-'));
++  const hooksDir = path.join(tempRoot, '.cursor', 'hooks');
++  const scriptsDir = path.join(tempRoot, '.cursor', 'scripts');
++  fs.mkdirSync(hooksDir, { recursive: true });
++  fs.mkdirSync(path.join(scriptsDir, 'hooks'), { recursive: true });
++  fs.mkdirSync(path.join(scriptsDir, 'lib'), { recursive: true });
++
++  for (const rel of [
++    ['.cursor/hooks/adapter.js', '.cursor/hooks/adapter.js'],
++    ['.cursor/hooks/before-shell-execution-block-no-verify.js', '.cursor/hooks/before-shell-execution-block-no-verify.js'],
++    ['scripts/hooks/block-no-verify.js', '.cursor/scripts/hooks/block-no-verify.js'],
++    ['scripts/lib/shell-split.js', '.cursor/scripts/lib/shell-split.js'],
++  ]) {
++    fs.copyFileSync(path.join(repoRoot, rel[0]), path.join(tempRoot, rel[1]));
++  }
++
++  try {
++    const result = spawnSync(
++      'node',
++      [path.join(hooksDir, 'before-shell-execution-block-no-verify.js')],
++      {
++        input: JSON.stringify({ command: 'git status' }),
++        encoding: 'utf8',
++        cwd: tempRoot,
++        timeout: 10000,
++      }
++    );
++    assert.strictEqual(result.status, 0, result.stderr);
++  } finally {
++    fs.rmSync(tempRoot, { recursive: true, force: true });
++  }
++})) passed++; else failed++;
++
++console.log(`\nResults: ${passed} passed, ${failed} failed`);
++process.exit(failed > 0 ? 1 : 0);
+diff --git a/tests/lib/cursor-rule-format.test.js b/tests/lib/cursor-rule-format.test.js
+new file mode 100644
+index 00000000..b0040bcc
+--- /dev/null
++++ b/tests/lib/cursor-rule-format.test.js
+@@ -0,0 +1,76 @@
++'use strict';
++
++const assert = require('assert');
++const {
++  buildDescription,
++  transformRuleContentForCursor,
++} = require('../../scripts/lib/cursor-rule-format');
++
++function test(name, fn) {
++  try {
++    fn();
++    console.log(`  ok ${name}`);
++    return true;
++  } catch (error) {
++    console.error(`  not ok ${name}`);
++    console.error(`    ${error.message}`);
++    return false;
++  }
++}
++
++let passed = 0;
++let failed = 0;
++
++if (test('language rules use Apply Intelligently without globs', () => {
++  const source = `---
++paths:
++  - "**/*.rs"
++---
++# Rust Patterns
++`;
++  const result = transformRuleContentForCursor(source, 'rust-patterns');
++  assert.match(result, /description: "Rust architecture and patterns for Rust crates, modules, and Cargo projects/);
++  assert.match(result, /alwaysApply: false/);
++  assert.doesNotMatch(result, /globs:/);
++  assert.doesNotMatch(result, /paths:/);
++})) passed++; else failed++;
++
++if (test('common rules stay alwaysApply without globs', () => {
++  const source = '# Code Review Standards\n\nReview everything.\n';
++  const result = transformRuleContentForCursor(source, 'common-code-review');
++  assert.match(result, /description: "Code review standards, checklist, and merge guidance"/);
++  assert.match(result, /alwaysApply: true/);
++  assert.doesNotMatch(result, /globs:/);
++})) passed++; else failed++;
++
++if (test('strips globs from pre-translated language rules', () => {
++  const source = `---
++description: "TypeScript patterns extending common rules"
++globs: ["**/*.ts", "**/*.tsx"]
++alwaysApply: false
++---
++# TypeScript Patterns
++`;
++  const result = transformRuleContentForCursor(source, 'typescript-patterns');
++  assert.match(result, /description: "TypeScript architecture and patterns for TypeScript, JavaScript, TSX, and JSX code/);
++  assert.match(result, /alwaysApply: false/);
++  assert.doesNotMatch(result, /globs:/);
++})) passed++; else failed++;
++
++if (test('web rules use intelligent apply mode', () => {
++  const source = '# Web Patterns\n\nUse composition.\n';
++  const result = transformRuleContentForCursor(source, 'web-patterns');
++  assert.match(result, /description: "Web architecture and patterns for frontend HTML, CSS, and component code/);
++  assert.match(result, /alwaysApply: false/);
++  assert.doesNotMatch(result, /globs:/);
++})) passed++; else failed++;
++
++if (test('buildDescription handles python fastapi rules', () => {
++  assert.match(
++    buildDescription('python-fastapi'),
++    /Python FastAPI patterns for Python services, scripts, and FastAPI\/Django apps/
++  );
++})) passed++; else failed++;
++
++console.log(`\ncursor-rule-format: ${passed} passed, ${failed} failed`);
++process.exit(failed === 0 ? 0 : 1);

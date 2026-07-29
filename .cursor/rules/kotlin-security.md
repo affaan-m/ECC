@@ -1,6 +1,5 @@
 ---
-description: "Kotlin security extending common rules"
-globs: ["**/*.kt", "**/*.kts", "**/build.gradle.kts"]
+description: "Kotlin security for Kotlin, Android, and KMP projects. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # Kotlin Security

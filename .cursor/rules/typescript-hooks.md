@@ -1,6 +1,5 @@
 ---
-description: "TypeScript hooks extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "TypeScript hook usage for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # TypeScript/JavaScript Hooks

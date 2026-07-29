@@ -1,6 +1,5 @@
 ---
-description: "Python security extending common rules"
-globs: ["**/*.py", "**/*.pyi"]
+description: "Python security for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # Python Security

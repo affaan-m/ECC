@@ -1,6 +1,5 @@
 ---
-description: "Swift testing extending common rules"
-globs: ["**/*.swift", "**/Package.swift"]
+description: "Swift testing for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring tests, coverage, fixtures, and verification."
 alwaysApply: false
 ---
 # Swift Testing

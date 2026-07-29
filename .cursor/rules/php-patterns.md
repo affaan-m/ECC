@@ -1,6 +1,5 @@
 ---
-description: "PHP patterns extending common rules"
-globs: ["**/*.php", "**/composer.json"]
+description: "PHP architecture and patterns for PHP and Laravel application code. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # PHP Patterns

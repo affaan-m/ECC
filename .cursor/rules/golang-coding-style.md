@@ -1,6 +1,5 @@
 ---
-description: "Go coding style extending common rules"
-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
+description: "Go coding style for Go modules, packages, and services. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
 alwaysApply: false
 ---
 # Go Coding Style

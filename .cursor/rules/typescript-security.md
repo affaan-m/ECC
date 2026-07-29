@@ -1,6 +1,5 @@
 ---
-description: "TypeScript security extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "TypeScript security for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring validation, secrets, auth, and vulnerability prevention."
 alwaysApply: false
 ---
 # TypeScript/JavaScript Security

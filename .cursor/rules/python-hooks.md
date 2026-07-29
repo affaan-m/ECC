@@ -1,6 +1,5 @@
 ---
-description: "Python hooks extending common rules"
-globs: ["**/*.py", "**/*.pyi"]
+description: "Python hook usage for Python services, scripts, and FastAPI/Django apps. Apply when writing, reviewing, or refactoring hook permissions, automation boundaries, and guardrails."
 alwaysApply: false
 ---
 # Python Hooks

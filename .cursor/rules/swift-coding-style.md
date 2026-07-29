@@ -1,6 +1,5 @@
 ---
-description: "Swift coding style extending common rules"
-globs: ["**/*.swift", "**/Package.swift"]
+description: "Swift coding style for Swift packages and Apple platform code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
 alwaysApply: false
 ---
 # Swift Coding Style

@@ -3,9 +3,7 @@ const { hookEnabled, readStdin, runExistingHook, transformToClaude } = require('
 readStdin().then(raw => {
   try {
     const input = JSON.parse(raw);
-    const claudeInput = transformToClaude(input, {
-      tool_input: { file_path: input.path || input.file || '' }
-    });
+    const claudeInput = transformToClaude(input);
     const claudeStr = JSON.stringify(claudeInput);
 
     // Accumulate edited paths for batch format+typecheck at stop time

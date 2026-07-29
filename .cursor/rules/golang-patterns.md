@@ -1,6 +1,5 @@
 ---
-description: "Go patterns extending common rules"
-globs: ["**/*.go", "**/go.mod", "**/go.sum"]
+description: "Go architecture and patterns for Go modules, packages, and services. Apply when writing, reviewing, or refactoring architecture, APIs, state, and idiomatic structure."
 alwaysApply: false
 ---
 # Go Patterns

@@ -1,6 +1,5 @@
 ---
-description: "TypeScript coding style extending common rules"
-globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+description: "TypeScript coding style for TypeScript, JavaScript, TSX, and JSX code. Apply when writing, reviewing, or refactoring formatting, naming, structure, and readability."
 alwaysApply: false
 ---
 # TypeScript/JavaScript Coding Style
