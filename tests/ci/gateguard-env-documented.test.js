@@ -38,13 +38,12 @@ function test(name, fn) {
 
 function readGateguardEnvNames(source) {
   // process.env.GATEGUARD_X and process.env['GATEGUARD_X']
-  const names = new Set();
-  const dotted = /process\.env\.(GATEGUARD_[A-Z0-9_]+)/g;
-  const bracketed = /process\.env\[\s*['"](GATEGUARD_[A-Z0-9_]+)['"]\s*\]/g;
-  let m;
-  while ((m = dotted.exec(source)) !== null) names.add(m[1]);
-  while ((m = bracketed.exec(source)) !== null) names.add(m[1]);
-  return names;
+  const dotted = source.match(/process\.env\.GATEGUARD_[A-Z0-9_]+/g) || [];
+  const bracketed = source.match(/process\.env\[\s*['"]GATEGUARD_[A-Z0-9_]+['"]\s*\]/g) || [];
+  const names = [...dotted, ...bracketed]
+    .map(hit => (hit.match(/GATEGUARD_[A-Z0-9_]+/) || [])[0])
+    .filter(Boolean);
+  return new Set(names);
 }
 
 console.log('\nGateGuard env-var documentation surface\n');
@@ -73,10 +72,10 @@ if (test('every GATEGUARD_* variable the hook reads is documented', () => {
 
 if (test('the documented knobs are the ones the hook actually reads', () => {
   // Guards the reverse drift: a doc naming a knob the hook no longer reads.
-  const documented = [...new Set(
-    (skillDoc.match(/GATEGUARD_[A-Z0-9_]+/g) || [])
-  )];
-  const stale = documented.filter(name => !hookSource.includes(name)).sort();
+  // Compared against the parsed env reads, not raw source — a name surviving
+  // only in a comment or error string must not satisfy this.
+  const documented = [...new Set(skillDoc.match(/GATEGUARD_[A-Z0-9_]+/g) || [])];
+  const stale = documented.filter(name => !envNames.has(name)).sort();
   assert.deepStrictEqual(stale, [], `documented but unread by the hook: ${stale.join(', ')}`);
 })) passed++; else failed++;
 

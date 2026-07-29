@@ -108,8 +108,9 @@ command after presenting facts never re-triggers the gate.
 
 #### Graduated controls
 
-`ECC_GATEGUARD=off` disables the whole gate. The variables below narrow it
-instead, so the load-bearing destructive-Bash checks keep running:
+`ECC_GATEGUARD=off` (or `GATEGUARD_DISABLED=1`) turns the gate off entirely.
+The variables in this table do **not** — each narrows one behaviour while the
+load-bearing destructive-Bash checks keep running:
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -117,23 +118,39 @@ instead, so the load-bearing destructive-Bash checks keep running:
 | `GATEGUARD_EXEMPT_GLOBS` | unset (no exemptions) | Comma-separated globs; a matching Edit/Write/MultiEdit target skips first-touch fact-forcing. Intended for low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports this / what schema" carries no signal. |
 | `GATEGUARD_FACT_FORCE_FULL_DENIALS` | `3` | How many denials emit the full four-fact block before later ones condense to a single line. `0` condenses from the very first denial. |
 | `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` | unset | Extra destructive-command patterns, as regex source, added to the built-in set. A malformed regex is treated as unset (built-ins still apply) and logged once to stderr. |
-| `GATEGUARD_DISABLED` | unset | `1` disables the gate entirely — equivalent to `ECC_GATEGUARD=off`. |
 | `GATEGUARD_STATE_DIR` | `~/.gateguard` | Where per-session gate state is kept. If state cannot be persisted the gate allows the operation rather than looping, and names this variable in the warning. |
 
 `GATEGUARD_BASH_ROUTINE_DISABLED` accepts `1`, `true`, `on`, `enabled`,
 `enable`, or `yes` (case- and whitespace-insensitive); any other value
-leaves the gate on. `GATEGUARD_DISABLED` recognises `1` only.
+leaves the gate on.
 
-`GATEGUARD_EXEMPT_GLOBS` patterns are matched against the normalized
-(forward-slash, lowercased) file path: `*` matches within a path segment,
-`**` across segments, `?` a single character. Matching is fail-open — a
-malformed pattern is dropped rather than raising.
+#### Turning the gate off completely
+
+| Variable | Effect |
+|---|---|
+| `ECC_GATEGUARD=off` | Disables GateGuard for the session. Accepts `0`, `false`, `off`, `disabled`, or `disable`. |
+| `GATEGUARD_DISABLED=1` | Same effect. Recognises `1` only — the spellings above do **not** apply here. |
+
+For hook-level control, keep using `ECC_DISABLED_HOOKS` with the GateGuard hook ID.
+
+#### Glob semantics for `GATEGUARD_EXEMPT_GLOBS`
+
+Patterns are matched, unanchored, against the target path with backslashes
+normalized to `/` and the whole string lowercased — the path exactly as the
+hook receives it, which for Claude Code tool payloads is absolute. `*` matches
+within a path segment, `**` across segments, `?` a single character. Matching
+is fail-open: a malformed pattern is dropped rather than raising.
+
+Note that a leading `**/` compiles to `.*/`, so it requires at least one
+preceding separator: `**/tests/**` exempts `/repo/tests/foo.js` but would not
+match a bare relative `tests/foo.js`. Add the separator-free form too if you
+pass relative paths:
 
 ```json
 {
   "env": {
     "GATEGUARD_BASH_ROUTINE_DISABLED": "1",
-    "GATEGUARD_EXEMPT_GLOBS": "**/tests/**,**/*.test.*,**/docs/**,**/dist/**"
+    "GATEGUARD_EXEMPT_GLOBS": "**/tests/**,tests/**,**/*.test.*,**/docs/**,**/dist/**"
   }
 }
 ```
