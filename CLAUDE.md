@@ -80,3 +80,18 @@ Use the following skills when working on related files:
 | `*.tsx`, `*.jsx`, `components/**` | `react-patterns`, `react-testing` — for React-specific work invoke `/react-review`, `/react-build`, `/react-test` |
 
 When spawning subagents, always pass conventions from the respective skill into the agent's prompt.
+
+## Fork Maintenance
+
+Fork of `affaan-m/ECC` (`upstream`); `origin` is `thaint2901/everything-claude-code`.
+
+After any change to this fork — an upstream merge or a local commit — re-check
+`thaint-setup/UPSTREAM.md` and update whatever no longer holds. Same for
+`thaint-setup/README.md` if the setup surface changed.
+
+New files go in `thaint-setup/` — additive, never conflicts. Edits to
+upstream-tracked files are the conflict surface. Mark permanent preferences
+`// LOCAL (thaint):`; leave bug fixes unmarked so they can be dropped once
+upstream fixes them.
+
+A formatter rewrites files on edit: check `git diff --stat` before `git add`.
