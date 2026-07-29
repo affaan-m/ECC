@@ -132,7 +132,12 @@ const cacheManifestWithLocalRefs = {
 let passed = 0;
 let failed = 0;
 
-function runHermeticPrePush({ failScript = null, includeCorepack = true, includePnpm = false } = {}) {
+function runHermeticPrePush({
+  failScript = null,
+  includeCorepack = true,
+  includePnpm = false,
+  audit = false,
+} = {}) {
   const tempDir = createTempDir('codex-pre-push-');
   const binDir = path.join(tempDir, 'bin');
   const projectDir = path.join(tempDir, 'project');
@@ -141,6 +146,7 @@ function runHermeticPrePush({ failScript = null, includeCorepack = true, include
   fs.mkdirSync(binDir);
   fs.mkdirSync(projectDir);
   const functionStub = (name, corepack) => `${name}() {
+${corepack ? 'node -e \'const p=require("./package.json"); process.exit(p.packageManager === "pnpm@11.9.0" ? 0 : 1)\' || return 97' : ':'}
 printf '%s\\n' "${corepack ? '' : 'pnpm '}$*" >> "${toBashPath(callsPath)}"
 ${corepack ? 'shift' : ':'}
 shift
@@ -165,7 +171,7 @@ ${includePnpm ? functionStub('pnpm', false) : ''}
     env: {
       PATH: toBashPath(binDir),
       BASH_ENV: toBashPath(bashEnv),
-      ECC_PREPUSH_AUDIT: '0',
+      ECC_PREPUSH_AUDIT: audit ? '1' : '0',
       ECC_SKIP_GIT_HOOKS: '0',
       ECC_SKIP_PREPUSH: '0',
       MSYS_NO_PATHCONV: '1',
@@ -230,6 +236,39 @@ if (
     assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.deepStrictEqual(calls, ['pnpm run lint', 'pnpm run typecheck']);
     assert.match(result.stderr, /typecheck failed/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push runs the production audit through Corepack pnpm', () => {
+    const { result, calls } = runHermeticPrePush({ audit: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push fails closed when the production audit fails', () => {
+    const { result, calls } = runHermeticPrePush({ audit: true, failScript: '--prod' });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+    assert.match(result.stderr, /pnpm audit failed/);
   })
 )
   passed++;
