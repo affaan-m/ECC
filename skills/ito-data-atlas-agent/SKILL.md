@@ -1,6 +1,6 @@
 ---
 name: ito-data-atlas-agent
-description: Design background Data Atlas style agents for Itô basket research, market discovery, parameter drafting, and human-in-the-loop editing. Use for architecture and workflow planning, not live order execution.
+description: Design background Data Atlas style agents for Itô basket research, market discovery, parameter drafting, and human-in-the-loop editing. Use for architecture and workflow planning, not live order execution. Use when designing a background Itô research agent or planning its workflow and human review points.
 metadata:
   origin: ECC
 ---
