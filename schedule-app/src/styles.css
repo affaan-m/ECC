@@ -3653,6 +3653,61 @@ textarea {
   align-items: center;
   gap: 10px;
 }
+/* The second beat of checking a task off: it has been held in place long
+   enough for the tick to land, and now it leaves for the Done group. */
+.task-filing {
+  animation: task-file 0.26s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+@keyframes task-file {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-filing {
+    animation-duration: 0.01s;
+  }
+}
+
+/* Everything finished, folded behind a count. */
+.task-done-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  /* Never animate in with the list cascade — it isn't a row of content. */
+  animation: none;
+}
+.task-done-toggle,
+.task-done-clear {
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.task-done-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-done-toggle .icon {
+  transition: transform 0.18s ease;
+}
+.task-done-toggle--open .icon {
+  transform: rotate(180deg);
+}
+.task-done-clear {
+  color: var(--danger);
+}
 .task-check {
   position: relative;
   width: 24px;

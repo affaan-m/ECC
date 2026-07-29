@@ -74,22 +74,63 @@ export default function HomePage() {
     actions.deleteTask(t.id);
     showToast(`"${t.title || 'Task'}" deleted`, 'Undo', () => actions.addTask(t));
   };
-  // A repeating task's checkbox resets to unchecked in the very same update
-  // (see toggleTaskDone below), so without this it would never visibly
-  // render "checked" — the tap would look like it did nothing. Flashing the
-  // checked/pop state locally for a beat gives the same "done!" confirmation
-  // a normal task gets, before the row settles back to its next occurrence.
+  // Checking a task off happens in two beats rather than one.
+  //
+  // It used to be one: the tap set done, the list re-sorted in the same
+  // frame, and the row you had your finger on vanished and reappeared at the
+  // bottom. You never saw the check land — the confirmation animation played
+  // somewhere else on the screen, on a row that had already moved.
+  //
+  // So the row is held where it is while the check and its sparkles play
+  // (POP_MS), then slides away (FILE_MS) and joins the Done group at the
+  // bottom. The two phases are separate sets because they mean different
+  // things to the row: the first says "still here, now ticked", the second
+  // says "leaving".
+  //
+  // This also covers the case the flash was originally written for: a
+  // repeating task resets to unchecked in the very same update (see
+  // toggleTaskDone), so without the pop it would never visibly render
+  // checked at all and the tap would look like it did nothing.
+  const POP_MS = 500;
+  const FILE_MS = 260;
   const [justCompletedIds, setJustCompletedIds] = useState(new Set());
-  const flashCompleted = (id) => {
-    setJustCompletedIds((prev) => new Set(prev).add(id));
-    setTimeout(() => {
-      setJustCompletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, 500);
+  const [filingIds, setFilingIds] = useState(new Set());
+  const completionTimers = useRef(new Map());
+  const withoutId = (id) => (prev) => {
+    if (!prev.has(id)) return prev;
+    const next = new Set(prev);
+    next.delete(id);
+    return next;
   };
+  const cancelCompletion = (id) => {
+    for (const t of completionTimers.current.get(id) || []) clearTimeout(t);
+    completionTimers.current.delete(id);
+    setJustCompletedIds(withoutId(id));
+    setFilingIds(withoutId(id));
+  };
+  const flashCompleted = (id) => {
+    cancelCompletion(id);
+    setJustCompletedIds((prev) => new Set(prev).add(id));
+    completionTimers.current.set(id, [
+      setTimeout(() => {
+        setJustCompletedIds(withoutId(id));
+        setFilingIds((prev) => new Set(prev).add(id));
+      }, POP_MS),
+      setTimeout(() => {
+        setFilingIds(withoutId(id));
+        completionTimers.current.delete(id);
+      }, POP_MS + FILE_MS),
+    ]);
+  };
+  // Leaving the page mid-animation would otherwise fire setState on an
+  // unmounted component and, worse, strand the row's "leaving" class.
+  useEffect(
+    () => () => {
+      for (const timers of completionTimers.current.values()) timers.forEach(clearTimeout);
+      completionTimers.current.clear();
+    },
+    []
+  );
   // Checking off a plain task just marks it done, same as always. Checking
   // off a repeating one instead rolls its due date forward and resets done
   // to false, so it comes back for its next occurrence instead of sitting
@@ -98,6 +139,9 @@ export default function HomePage() {
   // logs anything; it's just undoing a mistaken tap.
   const toggleTaskDone = (t) => {
     if (t.done) {
+      // Pulling one back out of Done: cancel any animation still queued for
+      // it, or the row would arrive in the open list already fading away.
+      cancelCompletion(t.id);
       actions.updateTask({ ...t, done: false });
       return;
     }
@@ -203,10 +247,38 @@ export default function HomePage() {
   const initialTaskJson = useRef('');
   const reminderChipsRef = useRef(null);
   const reminderChipsFade = useEdgeFade(reminderChipsRef, [editingTask?.id]);
-  const tasks = useMemo(
-    () => [...(state.tasks || [])].sort((a, b) => Number(a.done) - Number(b.done)),
-    [state.tasks]
-  );
+  // Two lists, not one sorted list. What's left to do stays at the top in
+  // the order it was added; what's finished collects at the bottom under a
+  // count you can fold away, so a productive week doesn't bury tomorrow's
+  // three tasks under thirty ticked ones.
+  //
+  // A task mid-animation counts as open no matter what `done` says — that's
+  // what holds it under your finger until the check has landed.
+  const [showDone, setShowDone] = useState(false);
+  const { openTasks, doneTasks } = useMemo(() => {
+    const settling = (t) => justCompletedIds.has(t.id) || filingIds.has(t.id);
+    const open = [];
+    const done = [];
+    for (const t of state.tasks || []) (t.done && !settling(t) ? done : open).push(t);
+    // Most recently finished first: the one you're most likely to have
+    // ticked by mistake is the one at the top of the fold-out.
+    done.sort((a, b) => lastCompleted(b).localeCompare(lastCompleted(a)));
+    return { openTasks: open, doneTasks: done };
+  }, [state.tasks, justCompletedIds, filingIds]);
+
+  const clearDoneTasks = () => {
+    const removed = doneTasks;
+    if (removed.length === 0) return;
+    for (const t of removed) actions.deleteTask(t.id);
+    setShowDone(false);
+    showToast(
+      `Cleared ${removed.length} finished task${removed.length === 1 ? '' : 's'}`,
+      'Undo',
+      () => {
+        for (const t of removed) actions.addTask(t);
+      }
+    );
+  };
   const openNewTask = () => {
     const d = {
       title: newTaskText.trim(),
@@ -254,6 +326,88 @@ export default function HomePage() {
     subtasks[i] = { ...subtasks[i], done: !subtasks[i].done };
     actions.updateTask({ ...task, subtasks });
   };
+
+  // One row, rendered into either group — extracted when the list split in
+  // two so the open and Done halves can't drift apart.
+  const renderTaskRow = (t) => (
+    <li key={t.id} className={filingIds.has(t.id) ? 'task-filing' : undefined}>
+      <SwipeToDelete
+        ref={(el) => {
+          if (el) taskSwipeRefs.current.set(t.id, el);
+          else taskSwipeRefs.current.delete(t.id);
+        }}
+        onDelete={() => deleteTaskWithUndo(t)}
+      >
+        <div className="task-row">
+          <button
+            // --on tracks the persistent done state; --pop is only ever the
+            // transient just-completed flash. Keying --pop off t.done as well
+            // meant a CSS animation sat on every already-done task, and those
+            // replay whenever the element mounts — so the whole list
+            // celebrated again on every visit to Home. flashCompleted() runs
+            // for plain and repeating tasks alike, so this loses nothing.
+            className={`task-check${t.done || justCompletedIds.has(t.id) ? ' task-check--on' : ''}${justCompletedIds.has(t.id) && taskCompleteAnim ? ' task-check--pop' : ''}`}
+            data-haptic={t.done ? 'tap' : 'confirm'}
+            onClick={() => toggleTaskDone(t)}
+            aria-label={t.done ? 'Mark not done' : 'Mark done'}
+          >
+            {(t.done || justCompletedIds.has(t.id)) && <CheckIcon />}
+            <span className="task-check-sparkles" aria-hidden="true">
+              <i /><i /><i /><i /><i /><i />
+            </span>
+          </button>
+          <button className="task-title-btn" onClick={() => openEditTask(t)}>
+            <span className={`task-title${t.done ? ' task-title--done' : ''}`}>
+              {t.title}
+              {t.repeat && t.repeat !== 'none' && <span className="repeat-glyph"> <Icon name="repeat" size={13} /></span>}
+            </span>
+            {(t.location || t.dueDate) && !t.done && (
+              <span className="task-meta muted small">
+                {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </button>
+          {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
+          {(t.subtasks || []).length > 0 && (
+            <button
+              className={`subtask-badge${expandedTaskIds.has(t.id) ? ' subtask-badge--open' : ''}`}
+              onClick={() => toggleTaskExpanded(t.id)}
+              aria-label={expandedTaskIds.has(t.id) ? 'Hide subtasks' : 'Show subtasks'}
+            >
+              {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}
+            </button>
+          )}
+          <button
+            className="icon-btn task-del"
+            onClick={() => taskSwipeRefs.current.get(t.id)?.remove()}
+            aria-label="Delete task"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      </SwipeToDelete>
+      {/* Quick-check without opening the full editor — outside SwipeToDelete
+          so its own swipe-gesture measurement of the row above is never
+          affected by this being open or closed. */}
+      {(t.subtasks || []).length > 0 && expandedTaskIds.has(t.id) && (
+        <ul className="subtask-list">
+          {t.subtasks.map((s, i) => (
+            <li key={i} className="subtask-row">
+              <button
+                className={`task-check task-check--sm${s.done ? ' task-check--on' : ''}`}
+                data-haptic={s.done ? 'tap' : 'confirm'}
+                onClick={() => toggleSubtaskDone(t, i)}
+                aria-label={s.done ? 'Mark not done' : 'Mark done'}
+              >
+                {s.done && <CheckIcon />}
+              </button>
+              <span className={`subtask-text${s.done ? ' subtask-text--done' : ''}`}>{s.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
   const taskDirty = editingTask ? JSON.stringify(editingTask) !== initialTaskJson.current : false;
   const toggleTaskReminderOffset = (mins) => {
     setEditingTask((t) => ({
@@ -478,89 +632,33 @@ export default function HomePage() {
               <section className="detail-section" key="tasks">
                 <span className="detail-label">Tasks</span>
                 <ul className="task-list">
-                  {tasks.map((t) => (
-                    <li key={t.id}>
-                      <SwipeToDelete
-                        ref={(el) => {
-                          if (el) taskSwipeRefs.current.set(t.id, el);
-                          else taskSwipeRefs.current.delete(t.id);
-                        }}
-                        onDelete={() => deleteTaskWithUndo(t)}
+                  {openTasks.map(renderTaskRow)}
+                  {openTasks.length === 0 && doneTasks.length === 0 && (
+                    <li className="muted small">No tasks yet.</li>
+                  )}
+                  {openTasks.length === 0 && doneTasks.length > 0 && (
+                    <li className="muted small">All done.</li>
+                  )}
+                  {/* Finished work, folded away. Kept in the same list rather
+                      than a separate section so unfolding it reads as the
+                      list continuing, and a mis-tick is one tap from being
+                      undone. */}
+                  {doneTasks.length > 0 && (
+                    <li className="task-done-head">
+                      <button
+                        className={`task-done-toggle${showDone ? ' task-done-toggle--open' : ''}`}
+                        onClick={() => setShowDone((v) => !v)}
+                        aria-expanded={showDone}
                       >
-                        <div className="task-row">
-                          <button
-                            // --on tracks the persistent done state; --pop is
-                            // only ever the transient just-completed flash.
-                            // Keying --pop off t.done as well meant a CSS
-                            // animation sat on every already-done task, and
-                            // those replay whenever the element mounts — so
-                            // the whole list celebrated again on every visit
-                            // to Home. flashCompleted() runs for plain and
-                            // repeating tasks alike, so this loses nothing.
-                            className={`task-check${t.done || justCompletedIds.has(t.id) ? ' task-check--on' : ''}${justCompletedIds.has(t.id) && taskCompleteAnim ? ' task-check--pop' : ''}`}
-                            data-haptic={t.done ? 'tap' : 'confirm'}
-                            onClick={() => toggleTaskDone(t)}
-                            aria-label={t.done ? 'Mark not done' : 'Mark done'}
-                          >
-                            {(t.done || justCompletedIds.has(t.id)) && <CheckIcon />}
-                            <span className="task-check-sparkles" aria-hidden="true">
-                              <i /><i /><i /><i /><i /><i />
-                            </span>
-                          </button>
-                          <button className="task-title-btn" onClick={() => openEditTask(t)}>
-                            <span className={`task-title${t.done ? ' task-title--done' : ''}`}>
-                              {t.title}
-                              {t.repeat && t.repeat !== 'none' && <span className="repeat-glyph"> <Icon name="repeat" size={13} /></span>}
-                            </span>
-                            {(t.location || t.dueDate) && !t.done && (
-                              <span className="task-meta muted small">
-                                {[t.location, t.dueDate && formatShortDate(t.dueDate)].filter(Boolean).join(' · ')}
-                              </span>
-                            )}
-                          </button>
-                          {t.dueTime && !t.done && <span className="reminder-time">{formatTime(t.dueTime)}</span>}
-                          {(t.subtasks || []).length > 0 && (
-                            <button
-                              className={`subtask-badge${expandedTaskIds.has(t.id) ? ' subtask-badge--open' : ''}`}
-                              onClick={() => toggleTaskExpanded(t.id)}
-                              aria-label={expandedTaskIds.has(t.id) ? 'Hide subtasks' : 'Show subtasks'}
-                            >
-                              {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}
-                            </button>
-                          )}
-                          <button
-                            className="icon-btn task-del"
-                            onClick={() => taskSwipeRefs.current.get(t.id)?.remove()}
-                            aria-label="Delete task"
-                          >
-                            <Icon name="close" size={16} />
-                          </button>
-                        </div>
-                      </SwipeToDelete>
-                      {/* Quick-check without opening the full editor — outside
-                          SwipeToDelete so its own swipe-gesture measurement
-                          of the row above is never affected by this being
-                          open or closed. */}
-                      {(t.subtasks || []).length > 0 && expandedTaskIds.has(t.id) && (
-                        <ul className="subtask-list">
-                          {t.subtasks.map((s, i) => (
-                            <li key={i} className="subtask-row">
-                              <button
-                                className={`task-check task-check--sm${s.done ? ' task-check--on' : ''}`}
-                                data-haptic={s.done ? 'tap' : 'confirm'}
-                                onClick={() => toggleSubtaskDone(t, i)}
-                                aria-label={s.done ? 'Mark not done' : 'Mark done'}
-                              >
-                                {s.done && <CheckIcon />}
-                              </button>
-                              <span className={`subtask-text${s.done ? ' subtask-text--done' : ''}`}>{s.text}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                        <Icon name="chevronDown" size={15} />
+                        Done · {doneTasks.length}
+                      </button>
+                      <button className="task-done-clear" onClick={clearDoneTasks}>
+                        Clear
+                      </button>
                     </li>
-                  ))}
-                  {tasks.length === 0 && <li className="muted small">No tasks yet.</li>}
+                  )}
+                  {showDone && doneTasks.map(renderTaskRow)}
                 </ul>
                 <div className="task-add-row">
                   <input
@@ -925,6 +1023,14 @@ export default function HomePage() {
       </EditorSheet>
     </div>
   );
+}
+
+// When a task was last ticked off. `completedDates` is appended to in order,
+// so the last entry is the most recent; a task finished before the field
+// existed sorts to the bottom, which is where the oldest belong anyway.
+function lastCompleted(t) {
+  const dates = t.completedDates || [];
+  return dates.length ? dates[dates.length - 1] : '';
 }
 
 function MiniRing({ pct, label }) {
