@@ -605,7 +605,7 @@ async function main() {
     });
     log(`[SessionStart] Registered observer lease for ${observerSessionId}`);
   } else {
-    log('[SessionStart] No CLAUDE_SESSION_ID available; skipping observer lease registration');
+    log('[SessionStart] No session id (CLAUDE_CODE_SESSION_ID) available; skipping observer lease registration');
   }
 
   if (explicitContextDisabled) {

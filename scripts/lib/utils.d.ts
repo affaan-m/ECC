@@ -67,7 +67,8 @@ export function getDateTimeString(): string;
 export function sanitizeSessionId(raw: string | null | undefined): string | null;
 
 /**
- * Get short session ID from CLAUDE_SESSION_ID environment variable.
+ * Get short session ID from CLAUDE_CODE_SESSION_ID, falling back to the legacy
+ * CLAUDE_SESSION_ID.
  * Returns last 8 characters, falls back to a sanitized project name then the provided fallback.
  */
 export function getSessionIdShort(fallback?: string): string;
