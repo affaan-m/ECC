@@ -33,6 +33,32 @@ Docs/CI: README restructured for 2.1 (#2579), badges for non-existent
 Deps: cargo minor/patch group (#2593), pyyaml ≥6.0.3 (#2455), pytest-mock
 ≥3.15.1 (#2454).
 
+## Where this fork deliberately diverges
+
+`setup_claude.sh` wires `hooks/hooks.json` into `~/.claude/settings.json`
+(`install_hook_graph`). Upstream declines to: the installer copies the hook
+scripts and writes the same graph to `~/.claude/hooks/hooks.json`, then leaves
+`settings.json` untouched by design, because the supported live path is
+`/plugin install`, where Claude Code auto-loads the plugin's graph. Verified that
+Claude Code reads hooks *only* from `settings.json` — a hook placed in
+`~/.claude/hooks/hooks.json` alone never fires — so a `--target claude` install
+otherwise ships 50 hook scripts that nothing triggers.
+
+Two consequences to watch on upgrade:
+
+- If ECC is ever installed here as a plugin, the wiring must go, or every hook
+  runs twice. `install_hook_graph` already skips itself when `claude plugin list`
+  reports `everything-claude-code`.
+- If upstream starts writing `settings.json` from the installer, drop
+  `install_hook_graph` rather than merging both.
+
+Two upstream doc claims are wrong as of `v2.1.0` and worth re-checking after any
+merge: `README.md` (Install hooks) says raw-copying `hooks/hooks.json` is
+unsupported because the installer rewrites command paths — the two files are
+byte-identical, and resolution happens at runtime inside each `node -e` command;
+`docs/TROUBLESHOOTING.md` says `settings.json` hook changes need a session
+restart — they take effect immediately.
+
 Overlaps our changes in 5 files — `scripts/hooks/cost-tracker.js`,
 `scripts/lib/utils.js`, `tests/hooks/cost-tracker.test.js`,
 `tests/hooks/hooks.test.js`, `tests/lib/utils.test.js`. Merge is clean today, but

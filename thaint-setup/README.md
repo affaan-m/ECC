@@ -43,10 +43,20 @@ In the order `main()` runs them:
    Copying overwrites but never deletes, so files the source no longer has (a
    command removed upstream, or one you wrote yourself) are listed per directory
    as this step runs. Pass `--prune` to delete them.
-8. **Installs hooks-runtime** — runs the ECC `install.sh` for hook support
-9. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`, which shows model, in-progress task, session cost/tool/file counts, working directory, and a context bar. Runs after step 8 because that step installs the script. A `statusLine` you set by hand is kept as-is; delete the field to hand it back to this script.
-10. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
-11. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
+8. **Installs hooks-runtime** — runs the ECC `install.sh` for hook support. This
+   copies the hook scripts; it does not wire them to any event.
+9. **Wires the hook graph** — merges `hooks/hooks.json` into `.hooks` of
+   `settings.json`, the only place Claude Code reads hooks from. ECC's installer
+   deliberately leaves `settings.json` alone because its supported live path is
+   `/plugin install`, so without this step the 50 installed hook scripts sit
+   inert. Skipped when ECC itself is installed as a plugin — Claude Code
+   auto-loads a plugin's graph, and wiring it here too runs every hook twice.
+   Entries pointing at hooks the graph does not carry (your own hooks, and the
+   opt-in `insaits-security` monitor) are kept; entries the graph supersedes are
+   replaced, and any that disappear are named in the log.
+10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`, which shows model, in-progress task, session cost/tool/file counts, working directory, and a context bar. Runs after step 8 because that step installs the script. A `statusLine` you set by hand is kept as-is; delete the field to hand it back to this script.
+11. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
+12. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
    ```bash
    alias clauded='claude --dangerously-skip-permissions'
    export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
