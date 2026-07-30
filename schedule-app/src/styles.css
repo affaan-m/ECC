@@ -754,6 +754,11 @@ textarea {
   box-shadow: var(--shadow);
 }
 .summary-ring {
+  /* Scoped here rather than added to :root's own theme blocks — it only
+     exists to feed the conic-gradient below, and computing it from --accent
+     means it can't drift out of sync with a color scheme the way a second
+     hand-picked value in both theme blocks eventually would. */
+  --ring-hi: color-mix(in srgb, var(--accent) 55%, var(--accent-soft));
   position: relative;
   width: 66px;
   height: 66px;
@@ -761,6 +766,9 @@ textarea {
   display: grid;
   place-items: center;
   flex: none;
+  /* A soft cast of the ring's own color beneath it — the same cue a raised,
+     lit dial gives, rather than a flat disc sitting on the card. */
+  filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--accent) 28%, transparent));
 }
 .summary-ring::after {
   content: '';
@@ -808,7 +816,21 @@ textarea {
   box-shadow: var(--shadow);
 }
 .goal-card--done {
+  /* A ring that expands out from the card and fades — the same trick the
+     progress bar's sheen further down this file already uses to fire once
+     per completion rather than looping: `animation` only starts playing
+     when a rule actually begins applying to an element, so this plays
+     exactly when the class lands, not on every re-render while it's done. */
+  animation: goalCompletePulse 0.55s ease-out;
   border-color: color-mix(in srgb, var(--good) 45%, var(--border));
+}
+@keyframes goalCompletePulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent), var(--shadow);
+  }
+  to {
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--good) 0%, transparent), var(--shadow);
+  }
 }
 .goal-info {
   flex: 1;
@@ -976,17 +998,24 @@ textarea {
   display: grid;
   place-items: center;
   line-height: 1;
+  /* Flat otherwise — the only two buttons on the page you tap dozens of
+     times a day were sitting perfectly level with the card behind them. */
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .step-btn:active {
   transform: scale(0.92);
+  box-shadow: none;
 }
 .step-btn:disabled {
   opacity: 0.4;
+  box-shadow: none;
 }
 .step-btn--plus {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .history-link {
   align-self: flex-start;

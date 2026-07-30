@@ -710,8 +710,17 @@ function EmptyState({ isDaily, onAdd }) {
   );
 }
 
+// A single flat conic-gradient reads as a progress bar bent into a circle —
+// functional, but flat in a way most of the ring's real-world references
+// (Activity, Fitness) aren't. Starting the fill a shade lighter than where
+// it ends gives it a direction, the way a physical dial catches more light
+// at one edge. `--ring-hi` is computed once in CSS from --accent, so this
+// stays a single extra color-stop rather than a second variable to keep in
+// sync with the theme.
 function ringStyle(pct) {
-  return { background: `conic-gradient(var(--accent) ${pct * 3.6}deg, var(--track) 0deg)` };
+  return {
+    background: `conic-gradient(from -90deg, var(--ring-hi) 0deg, var(--accent) ${pct * 3.6}deg, var(--track) ${pct * 3.6}deg)`,
+  };
 }
 
 function Chevron({ dir }) {
