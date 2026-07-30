@@ -971,8 +971,8 @@ function runTests() {
     assert.strictEqual(adapter.id, 'opencode-home');
     assert.strictEqual(adapter.target, 'opencode');
     assert.strictEqual(adapter.kind, 'home');
-    assert.strictEqual(root, path.join(homeDir, '.opencode'));
-    assert.strictEqual(statePath, path.join(homeDir, '.opencode', 'ecc-install-state.json'));
+    assert.strictEqual(root, path.join(homeDir, '.config', 'opencode'));
+    assert.strictEqual(statePath, path.join(homeDir, '.config', 'opencode', 'ecc-install-state.json'));
   })) passed++; else failed++;
 
   if (test('opencode adapter validate reports an error when compiled plugin is missing', () => {

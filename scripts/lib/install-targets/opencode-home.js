@@ -83,7 +83,7 @@ module.exports = createInstallTargetAdapter({
   id: 'opencode-home',
   target: 'opencode',
   kind: 'home',
-  rootSegments: ['.opencode'],
+  rootSegments: ['.config', 'opencode'],
   installStatePathSegments: ['ecc-install-state.json'],
   nativeRootRelativePath: '.opencode',
   validate: defaultValidateOpencodeHome,
