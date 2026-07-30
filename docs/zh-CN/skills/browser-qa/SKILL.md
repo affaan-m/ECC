@@ -1,6 +1,6 @@
 ---
 name: browser-qa
-description: Automate visual testing and UI interaction verification using browser automation after deployment.
+description: 使用浏览器自动化，在功能部署后执行视觉测试与 UI 交互验证。
 metadata:
   origin: ECC
 ---

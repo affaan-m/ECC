@@ -1,6 +1,6 @@
 ---
 name: project-guidelines-example
-description: Project-specific skill template covering architecture, patterns, testing, and deployment guidance.
+description: 專案特定技能的範例。使用此作為你自己專案的範本。
 metadata:
   origin: ECC
 ---
