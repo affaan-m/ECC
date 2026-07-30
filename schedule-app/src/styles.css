@@ -866,9 +866,15 @@ textarea {
   background: var(--accent-soft);
   border-radius: 99px;
   padding: 3px 7px;
+  /* Matches the small lift every other tappable/notable surface on this
+     page picked up in the last pass — it was the one badge still sitting
+     perfectly flush, which read as unfinished next to the ring and the
+     stepper now both having some depth. */
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--warn) 25%, transparent);
 }
 .streak-badge--frozen {
   color: var(--accent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 /* --- Weekly goal daily pace ---------------------------------------------- */
 .week-pace {
@@ -947,18 +953,39 @@ textarea {
 .week-pace-chevron--open {
   transform: rotate(180deg);
 }
+/* A chip, not a bare line of text — everything else under a goal card now
+   has some weight to it (the card itself, the badges, the stepper), and a
+   plain link floating directly beneath them read as unfinished by
+   comparison, like a row that hadn't been styled yet. */
 .freeze-row {
-  display: block;
-  width: 100%;
+  /* inline-flex rather than a fixed-width flex box: its container is a
+     plain block div, not a flex parent, so a block-level flex box fills
+     100% of it exactly like any other block element would — inline-flex
+     shrink-wraps to its content the same way inline-block does. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
-  background: none;
+  background: var(--accent-soft);
   border: none;
+  border-radius: 999px;
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
-  padding: 0 4px;
-  margin: -6px 0 10px;
+  padding: 7px 12px 7px 10px;
+  margin: -2px 0 10px 2px;
   cursor: pointer;
+  /* Press feedback (scale + dim) is already handled by the shared
+     .freeze-row:active rule further down this file — nothing to add here. */
+}
+/* The locked variant is an upsell, not an action available right now —
+   muted rather than accent-colored, so it doesn't compete with the chip
+   next to it (canFreeze/outOfFreezes never both show, but the same visual
+   weight as an actionable chip would still overstate what tapping it does
+   today). */
+.freeze-row--locked {
+  background: var(--surface-2);
+  color: var(--muted);
 }
 .progress-track {
   height: 8px;
@@ -1928,11 +1955,22 @@ textarea {
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
+  /* Same small lift as the goal stepper's buttons — a row of seven of these
+     side by side is the densest cluster of buttons in either editor, and
+     the flatness was more noticeable for it than anywhere a button appears
+     alone. */
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.weekday-btn:active {
+  transform: scale(0.93);
+  box-shadow: none;
 }
 .weekday-btn--on {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* --- Segmented control -------------------------------------------------- */

@@ -373,7 +373,7 @@ export default function GoalsPage() {
                         <div className="progress-fill" style={{ width: `${pct}%` }} />
                       </div>
                       <span className="goal-count">
-                        {value} / {g.target} {g.unit}
+                        <AnimatedNumber value={value} /> / {g.target} {g.unit}
                       </span>
                     </button>
                     <div className="stepper">
@@ -439,7 +439,7 @@ export default function GoalsPage() {
                     </button>
                   )}
                   {outOfFreezes && (
-                    <button className="freeze-row" data-haptic="select" onClick={() => navigate('/pricing')}>
+                    <button className="freeze-row freeze-row--locked" data-haptic="select" onClick={() => navigate('/pricing')}>
                       <Icon name="lock" size={15} /> Out of freezes this month — get 5/mo with Pro
                     </button>
                   )}
