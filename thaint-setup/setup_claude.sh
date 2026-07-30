@@ -26,6 +26,7 @@ TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 SOURCE="$REPO_ROOT"
 DRY_RUN=0
 VERBOSE=0
+PRUNE=0
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { printf '[%s] %s\n' "$TAG" "$*"; }
@@ -81,6 +82,9 @@ To install a different version, check out that ref and re-run.
 
 Options:
   --dry-run         Print actions without executing
+  --prune           Delete files in the destination that no longer exist in the
+                    source (off by default: agents/ and commands/ also hold your
+                    own files). Without it, such files are only listed.
   --verbose, -v     Log every command
   -h, --help        Show this help
 
@@ -94,6 +98,7 @@ parse_args() {
   while (( $# )); do
     case "$1" in
       --dry-run)    DRY_RUN=1; shift ;;
+      --prune)      PRUNE=1; shift ;;
       --verbose|-v) VERBOSE=1; shift ;;
       -h|--help)    usage; exit 0 ;;
       *)            die "unknown arg: $1 (try --help)" ;;
@@ -186,6 +191,38 @@ copy_dir() {
   [[ -d "$src" ]] || { warn "missing $src — skipped"; return; }
   run mkdir -p "$dst"
   run cp -rf "$src/." "$dst/"
+  report_foreign "$src" "$dst"
+}
+
+# cp -rf overwrites but never deletes, so a file upstream removed keeps working
+# forever from a stale install. These directories are a shared namespace though —
+# your own agents and commands live there too — so deletion stays opt-in.
+report_foreign() {
+  local src="$1" dst="$2" rel
+  local -a foreign=()
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    [[ -e "$src/$rel" ]] || foreign+=("$rel")
+  done < <(cd "$dst" && find . -type f -printf '%P\n' 2>/dev/null | sort)
+
+  (( ${#foreign[@]} )) || return 0
+
+  if (( PRUNE )); then
+    for rel in "${foreign[@]}"; do
+      if (( DRY_RUN )); then
+        printf '[dry-run] rm %s\n' "$dst/$rel"
+      else
+        run rm -f "$dst/$rel"
+      fi
+    done
+    log "pruned ${#foreign[@]} file(s) absent from $src"
+  else
+    warn "${#foreign[@]} file(s) in $dst are absent from the source — pass --prune to delete:"
+    for rel in "${foreign[@]}"; do
+      warn "  $rel"
+    done
+  fi
 }
 
 # ── Installers ───────────────────────────────────────────────────────────────
