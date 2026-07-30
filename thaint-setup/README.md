@@ -62,8 +62,9 @@ In the order `main()` runs them:
 
     Model, the in-progress task when there is one, remaining budget, session
     tool and file counts with elapsed time, working directory, and a context bar
-    whose percentage discounts the 16.5% auto-compact reserve — so it reads as
-    "how much of the context you can still use is gone", not raw tokens.
+    showing the same percentage Claude Code reports — the payload's
+    `used_percentage`, which is also what its auto-compaction threshold is
+    measured against.
 
     Budget is the 5-hour rate-limit window with a countdown to reset, which is
     what a Claude.ai subscription actually runs out of. On an API key there is no

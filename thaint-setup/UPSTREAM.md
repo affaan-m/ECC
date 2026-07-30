@@ -64,6 +64,18 @@ because the hook was already near the 200-line budget in `.claude/rules/node.md`
 Expect a conflict here if upstream touches the metrics block; the fallback chain
 is the part to preserve.
 
+`buildContextBar` in the same file drops a 16.5-point auto-compact reserve that
+upstream subtracts before rescaling. Left **unmarked**, not tagged LOCAL: this is
+a fix to carry until upstream makes it, so drop it the moment they do. On a
+captured payload reporting `used_percentage` 44 the old formula drew 53, and the
+gap widens as context fills. The reserve is real but token-denominated — Claude
+Code compacts a 1M window near 967K, so 33K held back is 16.5% of a 200K window
+and 3.3% of a 1M one — and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` makes the window
+configurable from 100K to 1M, so no fixed percentage works. The constant arrived
+in `940135ea` salvaged from a stale PR, uncommented and untested. Worth an
+upstream issue; the evidence is a captured statusLine payload plus the env-vars
+and model-config docs.
+
 `tests/lib/dry-run.test.js` fails on this branch and does so upstream too:
 `scripts/ecc.js --dry-run --json typescript` emits ~1.1 MB, past the 1 MiB
 default `maxBuffer` of the test's `spawnSync`, so the child is SIGTERMed and
