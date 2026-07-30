@@ -205,7 +205,10 @@ report_foreign() {
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     [[ -e "$src/$rel" ]] || foreign+=("$rel")
-  done < <(cd "$dst" && find . -type f -printf '%P\n' 2>/dev/null | sort)
+  # `find -printf` is GNU-only; on BSD/macOS it fails, and inside a process
+  # substitution that failure never reaches `set -e` — the whole report would
+  # silently produce nothing. Strip the leading ./ with sed instead.
+  done < <(cd "$dst" && find . -type f 2>/dev/null | sed 's|^\./||' | sort)
 
   (( ${#foreign[@]} )) || return 0
 
@@ -386,10 +389,20 @@ install_hook_graph() {
 
   [[ -f "$graph" ]] || { warn "hook graph missing at $graph — skipped"; return; }
 
-  if command -v claude >/dev/null 2>&1 \
-    && claude plugin list 2>/dev/null | grep -Fq "everything-claude-code"; then
-    warn "ECC is installed as a plugin — Claude Code auto-loads its hooks; leaving .hooks alone so they do not run twice"
-    return
+  # Distinguish "no plugin" from "could not ask". Piping straight into grep
+  # would collapse an auth or network failure into the same silent "not
+  # installed" answer, and wiring the graph while ECC is in fact a plugin runs
+  # every hook twice.
+  local plugin_list
+  if command -v claude >/dev/null 2>&1; then
+    if plugin_list="$(claude plugin list 2>/dev/null)"; then
+      if printf '%s' "$plugin_list" | grep -Fq "everything-claude-code"; then
+        warn "ECC is installed as a plugin — Claude Code auto-loads its hooks; leaving .hooks alone so they do not run twice"
+        return
+      fi
+    else
+      warn "could not read the plugin list — wiring the graph anyway; if ECC is installed as a plugin, remove .hooks or every hook runs twice"
+    fi
   fi
 
   if (( DRY_RUN )); then
@@ -403,8 +416,21 @@ install_hook_graph() {
   # invokes rather than by how it was written: the old install wired hooks
   # individually and through npx, the graph routes most of them through
   # dispatchers, and matching on names catches both spellings.
-  names="$(find "$SOURCE/scripts/hooks" -maxdepth 1 -name '*.js' -printf '%f\n' \
-    | sed 's/\.js$//' | jq -R . | jq -sc .)"
+  #
+  # Globbed rather than found: `find -printf` is GNU-only, and on BSD/macOS the
+  # failing pipeline would abort the whole installer here with no message —
+  # after the copy steps, before statusline and telegram. Worse, anyone who
+  # silenced that abort would get an empty name list, which classifies nothing
+  # as ECC-owned and so appends the entire graph again on every run.
+  local -a hook_names=()
+  local hook_file
+  for hook_file in "$SOURCE"/scripts/hooks/*.js; do
+    [[ -e "$hook_file" ]] || continue
+    hook_names+=("$(basename "$hook_file" .js)")
+  done
+  (( ${#hook_names[@]} )) \
+    || die "no hook scripts found in $SOURCE/scripts/hooks — refusing to rewrite .hooks with nothing to match against"
+  names="$(printf '%s\n' "${hook_names[@]}" | jq -R . | jq -sc .)"
 
   # An entry naming an ECC hook is the graph's to define — replaced, and logged
   # so nothing disappears quietly. An entry naming none is yours, and survives.
@@ -419,7 +445,10 @@ install_hook_graph() {
   # Only entries that actually disappear are worth a line: on a re-run every
   # graph entry is "replaced" by its identical self, which is not news.
   while IFS= read -r line; do
-    [[ -n "$line" ]] && log "dropping hook entry the graph supersedes — $line"
+    # warn, not log: classification is by hook name, so an entry of your own
+    # that reuses an ECC basename lands here too. It goes to stderr where it is
+    # harder to scroll past.
+    [[ -n "$line" ]] && warn "dropping hook entry the graph supersedes — $line"
   done < <(jq -r --slurpfile g "$graph" --argjson names "$names" --argjson exempt "$GRAPH_EXEMPT" \
     "${filter}"' (.hooks // {}) | to_entries[] | .key as $ev | .value[]
      | select(ecc_owned($names; $exempt))
