@@ -242,44 +242,9 @@ install_hooks_runtime() {
   fi
 }
 
-# ── ECC session-id env var fix ──────────────────────────────────────────────
-# Upstream ECC (every release through v2.1.0) reads CLAUDE_SESSION_ID, but
-# Claude Code exports CLAUDE_CODE_SESSION_ID into hook subprocesses — so every
-# hook that keys state by session id collapses onto 'default' and shares one
-# bucket across all sessions. Patches the installed copies under $CLAUDE_HOME
-# only, leaving this repo's tracked files untouched so the tree stays clean for
-# `git merge upstream/main`. (Superseded once the fix lands as a commit here.)
-# A failure is warned, not fatal: the patcher exits non-zero on any file it
-# could not rewrite, and one unhandled hook must not skip install_telegram_hook
-# and patch_shell_rc, which both run after this.
-patch_ecc_session_id() {
-  log "ecc-session-id-fix"
-  local script_dir patcher
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  patcher="${script_dir}/patch-ecc-session-id.sh"
-  if [[ ! -f "$patcher" ]]; then
-    warn "ACTION NEEDED: patch-ecc-session-id.sh not found at $patcher"
-    warn "  the ECC hooks will keep reading the unset CLAUDE_SESSION_ID and share one"
-    warn "  'default' state bucket across every session — fetch the file and re-run"
-    return 0
-  fi
-
-  local args=() rc=0
-  (( DRY_RUN )) && args+=(--dry-run)
-  (( VERBOSE )) && args+=(--verbose)
-  # Invoked directly, not through run(): run() short-circuits under DRY_RUN, so
-  # the patcher would never execute and --dry-run would say nothing about whether
-  # its substitutions still match. Given --dry-run the patcher writes nothing.
-  if (( ${#args[@]} )); then
-    bash "$patcher" "${args[@]}" || rc=$?
-  else
-    bash "$patcher" || rc=$?
-  fi
-  if (( rc != 0 )); then
-    warn "ACTION NEEDED: the session-id fix did not complete (exit $rc)"
-    warn "  (see the warnings above — some hooks may still read CLAUDE_SESSION_ID)"
-  fi
-}
+# The session-id fix is no longer patched in after install either: the hooks in
+# this repo read CLAUDE_CODE_SESSION_ID directly, so install_hooks_runtime copies
+# already-correct files. patch-ecc-session-id.sh is gone.
 
 # The [Delegation] nudge is no longer patched in after install: it lives in this
 # repo's scripts/hooks/suggest-compact.js, so install_hooks_runtime copies it
@@ -783,7 +748,6 @@ main() {
   install_global_claude_md
   install_all_dirs
   install_hooks_runtime
-  patch_ecc_session_id
   install_telegram_hook
   patch_shell_rc
 

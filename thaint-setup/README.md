@@ -39,8 +39,7 @@ Swap the `--branch` ref for whichever tag you want to install.
 7. **Patches `settings.json`** — adds statusline (context progress bar + model name)
 8. **Installs MCP server catalog** — all 28 ECC MCP servers with env-var placeholders. Servers without required env vars stay disabled; set the env var to auto-enable. See [MCP servers](#mcp-servers) below.
 9. **Installs global CLAUDE.md** — copies `thaint-setup/CLAUDE.base.md` to `~/.claude/CLAUDE.md` (applies across all projects)
-10. **Applies the session-id patch** — see [Local modifications](#local-modifications) below
-11. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
+10. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
    ```bash
    alias clauded='claude --dangerously-skip-permissions'
    export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
@@ -73,43 +72,6 @@ git checkout v2.1.0 && bash thaint-setup/setup_claude.sh
 TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=123 bash thaint-setup/setup_claude.sh
 ```
 
-## Local modifications
-
-### `[Delegation]` nudge — in-tree
-
-`scripts/hooks/suggest-compact.js` carries a local `messages.push(...)` that
-fires on the same tool-call thresholds as ECC's own `[StrategicCompact]`
-signals, nudging the session to hand the next task to a subagent/fork
-(CLAUDE.md §7). It rides upstream's existing `additionalContext` payload, so no
-plumbing of its own.
-
-This is the one edit to an upstream-tracked file, so it is the one place
-`git merge upstream/main` can conflict. It replaces the old
-`patch-ecc-suggest-compact.sh`, whose v1.10.0 anchor stopped matching when
-v2.1.0 rewrote the hook.
-
-### `patch-ecc-session-id.sh` — still a post-install patch
-
-Rewrites the **installed** copies under `~/.claude` only, never this repo's
-tracked files.
-
-ECC reads `CLAUDE_SESSION_ID`; Claude Code exports `CLAUDE_CODE_SESSION_ID`.
-The patcher rewrites those reads, keeping the old name as a fallback: 14
-occurrences across 11 files at v2.1.0.
-
-Note that v2.1.0 already fixed 5 of those 11 files by preferring the JSON
-payload's `session_id` (`cost-tracker`, `ecc-context-monitor`,
-`ecc-metrics-bridge`, `gateguard-fact-force`, `suggest-compact`) — the patch
-touches them harmlessly but redundantly. The genuinely broken reads are in
-`utils.js`, `observer-sessions.js` (×4), `post-edit-accumulator.js`,
-`stop-format-typecheck.js`, `session-activity-tracker.js` and
-`session-bridge.js`. Their fallbacks are the project name or a `sha1(cwd)`
-hash rather than a shared `'default'`, so the effect is wrong *granularity*
-rather than one global bucket; `observer-sessions` bails out entirely, leaving
-lease registration silently disabled.
-
-Not yet converted to an in-tree commit — pending review.
-
 ## Environment Variables
 
 | Variable | Description |
@@ -119,15 +81,6 @@ Not yet converted to an in-tree commit — pending review.
 | `CLAUDE_MARKETPLACE_SOURCE` | Override the marketplace source |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token for notification hook |
 | `TELEGRAM_CHAT_ID` | Telegram chat ID for notification hook |
-
-## Idempotency
-
-The script is safe to run multiple times:
-
-- Settings patches are idempotent (`grep -qF` checks before appending)
-- `settings.json` is backed up before any mutation
-- Plugins and marketplace entries are skipped if already present
-- Existing directories are overwritten with fresh copies
 
 ## MCP Servers
 
