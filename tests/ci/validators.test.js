@@ -213,13 +213,19 @@ function runCatalogValidator(overrides = {}) {
 // Captures stderr on both success and failure (the shared
 // runSourceViaTempFile helper only surfaces stderr when the child
 // exits non-zero, which hides WARN lines in the default mode).
-function runSkillsValidator(testDir, argv = [], envOverrides = {}) {
+function runSkillsValidator(testDir, argv = [], envOverrides = {}, docsDir) {
   const validatorPath = path.join(validatorsDir, 'validate-skills.js');
   let source = fs.readFileSync(validatorPath, 'utf8');
   source = stripShebang(source);
   source = source.replace(
     /const SKILLS_DIR = .*?;/,
     `const SKILLS_DIR = ${JSON.stringify(testDir)};`,
+  );
+  // Default to a nonexistent docs root so tests exercising only
+  // SKILLS_DIR aren't polluted by this repo's real docs/*/skills/ tree.
+  source = source.replace(
+    /const DOCS_DIR = .*?;/,
+    `const DOCS_DIR = ${JSON.stringify(docsDir || '/nonexistent-docs-dir-for-tests')};`,
   );
   if (argv.length > 0) {
     const argvPreamble = argv
@@ -2802,6 +2808,95 @@ function runTests() {
     assert.strictEqual(result.code, 1, 'Should reject empty SKILL.md');
     assert.ok(result.stderr.includes('Empty file'),
       `Should report "Empty file", got: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  // ── Round 84: validate-skills docs/{locale}/skills/ mirror scan (#2630) ──
+
+  console.log('\nRound 84: validate-skills.js (docs/{locale}/skills/ frontmatter, #2630):');
+
+  if (test('flags a glued key onto description as invalid YAML', () => {
+    const testDir = createTestDir();
+    const docsDir = path.join(testDir, 'docs-root');
+    const skillDir = path.join(docsDir, 'ja-JP', 'skills', 'example');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: example\ndescription: some text.license: Apache-2.0\nversion: 1.0.0\n---\n# Example');
+
+    const result = runSkillsValidator('/nonexistent/skills-dir', ['--strict'], {}, docsDir);
+    assert.strictEqual(result.code, 1, 'Should fail on glued key');
+    assert.ok(result.stderr.includes("unquoted value contains ': '"),
+      `Should report the glued-key defect, got: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('flags a dropped-quote description containing a colon as invalid YAML', () => {
+    const testDir = createTestDir();
+    const docsDir = path.join(testDir, 'docs-root');
+    const skillDir = path.join(docsDir, 'ja-JP', 'skills', 'example');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: example\ndescription: Verification loop: migrations, linting\n---\n# Example');
+
+    const result = runSkillsValidator('/nonexistent/skills-dir', ['--strict'], {}, docsDir);
+    assert.strictEqual(result.code, 1, 'Should fail on unquoted colon in description');
+    assert.ok(result.stderr.includes("unquoted value contains ': '"),
+      `Should report the dropped-quote defect, got: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('flags a description starting with the reserved @ indicator', () => {
+    const testDir = createTestDir();
+    const docsDir = path.join(testDir, 'docs-root');
+    const skillDir = path.join(docsDir, 'ja-JP', 'skills', 'example');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: example\ndescription: @Observable state management\n---\n# Example');
+
+    const result = runSkillsValidator('/nonexistent/skills-dir', ['--strict'], {}, docsDir);
+    assert.strictEqual(result.code, 1, 'Should fail on leading @');
+    assert.ok(result.stderr.includes("reserved character '@'"),
+      `Should report the reserved-indicator defect, got: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('flags a docs mirror SKILL.md with no frontmatter block at all', () => {
+    const testDir = createTestDir();
+    const docsDir = path.join(testDir, 'docs-root');
+    const skillDir = path.join(docsDir, 'ja-JP', 'skills', 'example');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Example\n\nNo frontmatter here.');
+
+    const result = runSkillsValidator('/nonexistent/skills-dir', ['--strict'], {}, docsDir);
+    assert.strictEqual(result.code, 1, 'Should fail when docs mirror has no frontmatter');
+    assert.ok(result.stderr.includes('no frontmatter block found'),
+      `Should report the missing-frontmatter defect, got: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('curated skills/ still tolerates a SKILL.md with no frontmatter (unchanged)', () => {
+    const testDir = createTestDir();
+    const skillDir = path.join(testDir, 'no-frontmatter-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Example\n\nNo frontmatter here.');
+
+    const result = runSkillsValidator(testDir, ['--strict']);
+    assert.strictEqual(result.code, 0,
+      `Curated skills/ must not require frontmatter, got stderr: ${result.stderr}`);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('passes on a valid docs/{locale}/skills/ mirror', () => {
+    const testDir = createTestDir();
+    const docsDir = path.join(testDir, 'docs-root');
+    const skillDir = path.join(docsDir, 'zh-CN', 'skills', 'example');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),
+      '---\nname: example\ndescription: "Well-formed: quoted value"\n---\n# Example');
+
+    const result = runSkillsValidator('/nonexistent/skills-dir', ['--strict'], {}, docsDir);
+    assert.strictEqual(result.code, 0, `Should pass on well-formed mirror, got: ${result.stderr}`);
+    assert.ok(result.stdout.includes('Validated 1'), 'Should count the one docs skill file');
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
