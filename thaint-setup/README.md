@@ -41,8 +41,8 @@ In the order `main()` runs them:
    - `skills/strategic-compact`
 
    Copying overwrites but never deletes, so files the source no longer has (a
-   command removed upstream, or one you wrote yourself) are listed at the end of
-   the run. Pass `--prune` to delete them.
+   command removed upstream, or one you wrote yourself) are listed per directory
+   as this step runs. Pass `--prune` to delete them.
 8. **Installs hooks-runtime** — runs the ECC `install.sh` for hook support
 9. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`, which shows model, in-progress task, session cost/tool/file counts, working directory, and a context bar. Runs after step 8 because that step installs the script. A `statusLine` you set by hand is kept as-is; delete the field to hand it back to this script.
 10. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
