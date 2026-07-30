@@ -4159,8 +4159,21 @@ textarea {
   text-align: center;
   padding: 12px 0 4px;
 }
+/* The same gold this app already uses to mean "Pro" everywhere else — the
+   Settings upsell bubble (.pro-bubble-lg) has worn this exact gradient for
+   a while. The one page whose entire job is selling the purchase was
+   instead a plain icon in the page's ordinary ink color, which undersold
+   it relative to its own teaser. */
 .pricing-crown {
-  font-size: 40px;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f7d98a, #e0a020);
+  color: #4a3300;
+  box-shadow: 0 8px 22px rgba(200, 150, 20, 0.35);
 }
 .pricing-hero h1 {
   margin: 6px 0 2px;
@@ -4178,7 +4191,13 @@ textarea {
   margin: 10px 0 4px;
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  /* A warm cast rather than the app's generic neutral card shadow — this
+     is the one number on the page a purchase decision hangs on, so it gets
+     to look like it's meant to stand out, not like an ordinary settings
+     row. Text itself stays plain high-contrast ink; only the frame is
+     gold-tinted, so the price stays perfectly legible. */
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow);
 }
 .pricing-amount {
   font-size: 42px;
