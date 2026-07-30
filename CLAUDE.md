@@ -95,3 +95,12 @@ upstream-tracked files are the conflict surface. Mark permanent preferences
 upstream fixes them.
 
 A formatter rewrites files on edit: check `git diff --stat` before `git add`.
+
+## Local Gotchas
+
+- `node tests/run-all.js` scrubs `CLAUDE_CODE_SESSION_ID`, so a hook that newly reads it passes the suite while failing `node <file>.test.js` alone — run touched test files standalone too, and give tests that pin the legacy `CLAUDE_SESSION_ID` a `delete process.env.CLAUDE_CODE_SESSION_ID` at load.
+- Before trusting a new test, revert the fix it covers and confirm it goes red.
+- `thaint-setup` is both a branch and a directory — use `git switch <branch>` and `refs/heads/<branch>`.
+- Heredoc commit messages trip the `block-no-verify` hook — write the message to a file, `git commit -F`.
+- The formatter fires on Edit/Write but not on shell writes — script surgical edits in python/bash.
+- Review agents can write to the working tree even when asked only to read — check `git status` after running them, before committing.
