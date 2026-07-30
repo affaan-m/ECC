@@ -72,7 +72,8 @@ Usage: $0 [--dry-run] [--verbose] [-h]
 End-to-end Claude Code setup. Installs (always overwrites) into ${CLAUDE_HOME}:
   claude-code CLI (if missing), skip-onboarding flag in ~/.claude.json,
   marketplace + plugin ${CLAUDE_PLUGIN} (if missing),
-  agents, commands, hooks-runtime, configure-ecc, strategic-compact, telegram-hook
+  agents, commands, hooks-runtime, configure-ecc, strategic-compact, telegram-hook,
+  ECC statusline (.statusLine; a hand-edited value is kept as-is)
 Shell rc patch (.zshrc or .bashrc):
   alias clauded='claude --dangerously-skip-permissions'
   export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
@@ -364,25 +365,32 @@ patch_settings_telegram() {
   log "patched settings.json (telegram entry in Notification)"
 }
 
-# Idempotent jq patch: always overwrites .statusLine so config matches exactly.
+# Installs ECC's statusline, which shows more than the inline bash bar it
+# replaced: model, the in-progress task, session cost/tool/file counts (once
+# ecc-metrics-bridge runs), the working directory, and the context bar.
+# Overwrites only a value this script wrote — see the ownership check below.
 patch_settings_statusline() {
   local settings="${CLAUDE_HOME}/settings.json"
-  local tmp
+  local tmp existing
+  local statusline_cmd="node \"${CLAUDE_HOME}/scripts/hooks/ecc-statusline.js\""
 
   if (( DRY_RUN )); then
     printf '[dry-run] patch %s (.statusLine)\n' "$settings"
     return
   fi
 
-  # Build the command from a heredoc to avoid quoting hell with nested single quotes.
-  # shellcheck disable=SC2016
-  local statusline_cmd
-  statusline_cmd="$(cat <<'CMD'
-input=$(cat); model=$(echo "$input" | jq -r '.model.display_name // empty'); [ -z "$model" ] && exit 0; used=$(echo "$input" | jq -r '.context_window.used_percentage // empty'); bar_total=30; bar_out=""; if [ -n "$used" ] && [ "$used" != "null" ]; then used_int=$(printf "%.0f" "$used"); [ "$used_int" -lt 0 ] && used_int=0; [ "$used_int" -gt 100 ] && used_int=100; filled=$(( used_int * bar_total / 100 )); empty=$(( bar_total - filled )); if [ "$used_int" -lt 60 ]; then color_fill="\033[32m"; color_empty="\033[90m"; elif [ "$used_int" -lt 80 ]; then color_fill="\033[33m"; color_empty="\033[90m"; else color_fill="\033[31m"; color_empty="\033[90m"; fi; bar_filled=$(printf '%0.s#' $(seq 1 "$filled" 2>/dev/null)); bar_empty=$(printf '%0.s-' $(seq 1 "$empty" 2>/dev/null)); bar_out=$(printf "${color_fill}%s${color_empty}%s\033[0m" "$bar_filled" "$bar_empty"); bar_out="$bar_out $(printf '%3d%%' "$used_int")"; fi; printf "%s  \033[1m%s\033[0m" "$bar_out" "$model"
-CMD
-)"
-
   [[ -f "$settings" ]] || printf '{}\n' > "$settings"
+
+  # `ecc-statusline.js` is what this script writes now; `bar_total=30` is the
+  # inline bash bar earlier versions wrote. Anything else was chosen by hand, so
+  # keep it rather than silently reverting that choice on every run.
+  existing="$(jq -r '.statusLine.command // ""' "$settings")"
+  if [[ -n "$existing" \
+        && "$existing" != *ecc-statusline.js* \
+        && "$existing" != *bar_total=30* ]]; then
+    warn "statusLine is hand-edited — keeping it (remove .statusLine to hand it back to this script)"
+    return
+  fi
 
   tmp="$(mktemp)"
   jq --arg cmd "$statusline_cmd" \
@@ -390,7 +398,7 @@ CMD
     "$settings" > "$tmp" \
     || die "jq failed to patch statusLine in $settings"
   mv "$tmp" "$settings"
-  log "patched settings.json (.statusLine)"
+  log "patched settings.json (.statusLine -> ecc-statusline.js)"
 }
 
 # ── MCP catalog patch ───────────────────────────────────────────────────────
@@ -770,11 +778,12 @@ main() {
   fi
 
   backup_settings
-  patch_settings_statusline
   patch_mcp_catalog
   install_global_claude_md
   install_all_dirs
   install_hooks_runtime
+  # After install_hooks_runtime: statusLine points at a file that step copies.
+  patch_settings_statusline
   install_telegram_hook
   patch_shell_rc
 
