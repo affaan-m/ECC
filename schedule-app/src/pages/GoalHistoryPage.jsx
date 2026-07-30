@@ -23,7 +23,16 @@ export default function GoalHistoryPage() {
   }, [isPro, navigate]);
 
   const isDaily = (goal?.period || 'weekly') === 'daily';
+  // A goal restricted to specific weekdays only has history on those days —
+  // buildGoalHistory counts back through DAILY_WINDOW *scheduled* occurrences
+  // for one of these, not raw calendar days, so "Last 84 days" would read as
+  // a much longer, unstated span. "Last 84 visits" says what's actually
+  // being shown instead of a number that doesn't match the calendar.
+  const restricted = isDaily && (goal?.repeatDays?.length ?? 0) > 0;
   const windowSize = isDaily ? DAILY_WINDOW : WEEKLY_WINDOW;
+  const windowLabel = isDaily
+    ? `Last ${DAILY_WINDOW} ${restricted ? 'visits' : 'days'}`
+    : `Last ${WEEKLY_WINDOW} weeks`;
   const history = useMemo(() => (goal ? buildGoalHistory(goal, windowSize) : []), [goal, windowSize]);
   const longest = useMemo(() => (goal ? longestGoalStreak(goal) : 0), [goal]);
 
@@ -68,12 +77,12 @@ export default function GoalHistoryPage() {
         </div>
         <div className="history-stat">
           <strong>{rate}%</strong>
-          <span className="muted small">Last {WEEKLY_WINDOW} weeks</span>
+          <span className="muted small">{windowLabel}</span>
         </div>
       </section>
 
       <section className="detail-section">
-        <span className="detail-label">{isDaily ? `Last ${DAILY_WINDOW} days` : `Last ${WEEKLY_WINDOW} weeks`}</span>
+        <span className="detail-label">{windowLabel}</span>
         {isDaily ? (
           <div className="history-heatmap">
             {history.map((h) => (

@@ -264,6 +264,18 @@ export function goalKey(period, date) {
 // yesterday/last week instead when the current one isn't done yet. A period
 // listed in goal.frozenKeys counts as met even if its target wasn't hit —
 // that's a manually-spent streak freeze protecting a missed day.
+//
+// A daily goal can be restricted to specific weekdays (the "Repeat on"
+// picker in the editor). Those calendar days it *isn't* scheduled on aren't
+// missed — the goal was never due — so they must not count as a broken
+// streak. Walking every calendar day regardless used to do exactly that:
+// for a goal scheduled on two adjacent weekdays (Mon/Tue is a common one —
+// "gym", say), the very next calendar day is always unscheduled, so the
+// streak could never read higher than 1 or 2 no matter how many weeks in a
+// row every scheduled day was actually completed. `isScheduled` is a no-op
+// (always true) for weekly goals and for daily goals with no restriction,
+// so their behavior is unchanged — this only changes anything for a
+// restricted daily goal.
 export function computeGoalStreak(goal) {
   const target = goal.target || 0;
   if (target <= 0) return 0;
@@ -271,17 +283,30 @@ export function computeGoalStreak(goal) {
   const frozen = goal.frozenKeys || [];
   const period = goal.period || 'weekly';
   const step = period === 'daily' ? 1 : 7;
+  const repeatDays = period === 'daily' ? goal.repeatDays || [] : [];
+  const isScheduled = (d) => repeatDays.length === 0 || repeatDays.includes(d.getDay());
   const met = (d) => {
     const key = goalKey(period, d);
     return (progress[key] || 0) >= target || frozen.includes(key);
   };
+  // Steps back to the previous *scheduled* period: `step` days/weeks when
+  // every period is scheduled (weekly, or an unrestricted daily goal —
+  // identical to the walk this always did), or day-by-day skipping any
+  // unscheduled day when the goal is restricted to specific weekdays.
+  const back = (d) => {
+    if (repeatDays.length === 0) return addDays(d, -step);
+    let next = addDays(d, -1);
+    while (!isScheduled(next)) next = addDays(next, -1);
+    return next;
+  };
 
   let cursor = new Date();
-  if (!met(cursor)) cursor = addDays(cursor, -step);
+  while (!isScheduled(cursor)) cursor = addDays(cursor, -1);
+  if (!met(cursor)) cursor = back(cursor);
   let count = 0;
   while (met(cursor)) {
     count++;
-    cursor = addDays(cursor, -step);
+    cursor = back(cursor);
   }
   return count;
 }
