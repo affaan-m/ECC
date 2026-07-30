@@ -207,7 +207,7 @@ async function main() {
 
   const rawSessionId = (input && typeof input.session_id === 'string' && input.session_id)
     ? input.session_id
-    : (process.env.CLAUDE_SESSION_ID || 'default');
+    : (process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || 'default');
   const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
   const transcriptPath = (input && typeof input.transcript_path === 'string') ? input.transcript_path : '';
 
@@ -241,6 +241,13 @@ async function main() {
     messages.push(`[StrategicCompact] ${threshold} tool calls reached - consider /compact if transitioning phases`);
   } else if (count > threshold && (count - threshold) % 25 === 0) {
     messages.push(`[StrategicCompact] ${count} tool calls - good checkpoint for /compact if context is stale`);
+  }
+
+  // LOCAL (thaint): the same counter also signals "this session is carrying a
+  // lot of work" — the condition under which the next task belongs in a
+  // subagent/fork. CLAUDE.md §7. Fires on the union of the two branches above.
+  if (count === threshold || (count > threshold && (count - threshold) % 25 === 0)) {
+    messages.push(`[Delegation] ${count} tool calls - hand the next task to a subagent/fork`);
   }
 
   // log() writes to stderr (debug log). Per the Claude Code hooks guide,

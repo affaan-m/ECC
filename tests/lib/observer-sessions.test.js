@@ -8,6 +8,11 @@ const {
   getHomunculusDir,
   normalizeRemoteUrl,
   resolveProjectContext,
+  resolveSessionId,
+  writeSessionLease,
+  removeSessionLease,
+  getSessionLeaseDir,
+  listSessionLeases,
 } = require('../../scripts/lib/observer-sessions');
 
 let passed = 0;
@@ -123,6 +128,57 @@ test('resolveProjectContext gives SSH and HTTPS clones the same project id', () 
       const httpsContext = resolveProjectContext(httpsRepo);
       assert.strictEqual(sshContext.projectId, httpsContext.projectId);
       assert.strictEqual(sshContext.projectDir, httpsContext.projectDir);
+    });
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('resolveSessionId prefers CLAUDE_CODE_SESSION_ID, keeps the legacy name as fallback', () => {
+  withEnv({ CLAUDE_CODE_SESSION_ID: 'real-session', CLAUDE_SESSION_ID: 'legacy-session' }, () => {
+    assert.strictEqual(resolveSessionId(), 'real-session');
+  });
+  withEnv({ CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: 'legacy-session' }, () => {
+    assert.strictEqual(resolveSessionId(), 'legacy-session');
+  });
+  withEnv({ CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: undefined }, () => {
+    assert.strictEqual(resolveSessionId(), '');
+  });
+});
+
+// Regression guard: reading only CLAUDE_SESSION_ID left resolveSessionId() at ''
+// so writeSessionLease() bailed and lease registration was a silent no-op. This
+// asserts the lease is actually written, not merely that some count is 1.
+test('writeSessionLease registers a lease keyed off the env session id', () => {
+  const root = createTempDir();
+  try {
+    const context = { projectDir: root };
+    withEnv({ CLAUDE_CODE_SESSION_ID: 'lease-session-1', CLAUDE_SESSION_ID: undefined }, () => {
+      const leaseFile = writeSessionLease(context);
+      assert.strictEqual(path.basename(leaseFile), 'lease-session-1.json');
+      assert.ok(fs.existsSync(leaseFile), 'lease file should exist on disk');
+      assert.strictEqual(path.dirname(leaseFile), getSessionLeaseDir(context));
+
+      const payload = JSON.parse(fs.readFileSync(leaseFile, 'utf8'));
+      assert.strictEqual(payload.sessionId, 'lease-session-1');
+
+      assert.deepStrictEqual(listSessionLeases(context), [leaseFile]);
+      assert.strictEqual(removeSessionLease(context), true);
+      assert.ok(!fs.existsSync(leaseFile), 'lease file should be gone after removal');
+      assert.deepStrictEqual(listSessionLeases(context), []);
+    });
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('writeSessionLease is a no-op when no session id is resolvable', () => {
+  const root = createTempDir();
+  try {
+    const context = { projectDir: root };
+    withEnv({ CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: undefined }, () => {
+      assert.strictEqual(writeSessionLease(context), '');
+      assert.ok(!fs.existsSync(getSessionLeaseDir(context)), 'no lease dir should be created');
     });
   } finally {
     cleanup(root);

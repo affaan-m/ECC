@@ -15,6 +15,10 @@ const path = require('path');
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
 const { parseAccumulator } = require('../../scripts/hooks/stop-format-typecheck');
 
+// These tests pin the session id via the legacy CLAUDE_SESSION_ID; run-all.js
+// scrubs the real one for suite runs, this covers standalone runs.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 function test(name, fn) {
   try {
     fn();
@@ -231,6 +235,49 @@ if (test('stop hook passes stdin through unchanged', () => {
     timeout: 10000
   });
   assert.strictEqual(result.toString(), input);
+})) passed++; else failed++;
+
+// Enforces the invariant both hooks' comments assert: post-edit-accumulator
+// writes the accumulator and stop-format-typecheck reads the same path. The path
+// is discovered from the accumulator's own behaviour instead of being recomputed
+// here, so this cannot become a third copy of the derivation that silently drifts.
+if (test('both hooks derive the same path', () => {
+  const origCode = process.env.CLAUDE_CODE_SESSION_ID;
+  // Requires sanitizing, and differs from the legacy id pinned above, so this
+  // also proves both hooks prefer CLAUDE_CODE_SESSION_ID over the legacy name.
+  process.env.CLAUDE_CODE_SESSION_ID = `agree/../${TEST_SESSION_ID}`;
+
+  const listAccum = () => new Set(
+    fs.readdirSync(os.tmpdir()).filter(n => n.startsWith('ecc-edited-') && n.endsWith('.txt'))
+  );
+
+  let createdFile = null;
+  try {
+    const before = listAccum();
+    accumulator.run(JSON.stringify({ tool_input: { file_path: '/nonexistent/agree.ts' } }));
+    const created = [...listAccum()].filter(n => !before.has(n));
+    assert.strictEqual(created.length, 1, `expected one new accumulator, got ${created.length}`);
+    createdFile = path.join(os.tmpdir(), created[0]);
+
+    const { execFileSync } = require('child_process');
+    const stopScript = path.resolve(__dirname, '../../scripts/hooks/stop-format-typecheck.js');
+    try {
+      execFileSync('node', [stopScript], {
+        input: '{}',
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000
+      });
+    } catch { /* formatter/tsc may fail on the nonexistent path */ }
+
+    assert.ok(!fs.existsSync(createdFile),
+      `stop hook left ${created[0]} behind — the two hooks disagree on the path`);
+    createdFile = null;
+  } finally {
+    if (origCode !== undefined) process.env.CLAUDE_CODE_SESSION_ID = origCode;
+    else delete process.env.CLAUDE_CODE_SESSION_ID;
+    if (createdFile) { try { fs.unlinkSync(createdFile); } catch { /* already gone */ } }
+  }
 })) passed++; else failed++;
 
 // Restore env

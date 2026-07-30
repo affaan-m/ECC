@@ -80,3 +80,30 @@ Use the following skills when working on related files:
 | `*.tsx`, `*.jsx`, `components/**` | `react-patterns`, `react-testing` — for React-specific work invoke `/react-review`, `/react-build`, `/react-test` |
 
 When spawning subagents, always pass conventions from the respective skill into the agent's prompt.
+
+## Fork Maintenance
+
+Fork of `affaan-m/ECC` (`upstream`); `origin` is `thaint2901/everything-claude-code`.
+
+After any change to this fork — an upstream merge or a local commit — re-check
+`thaint-setup/UPSTREAM.md` and update whatever no longer holds. Same for
+`thaint-setup/README.md` if the setup surface changed.
+
+New files go in `thaint-setup/` — additive, never conflicts. Edits to
+upstream-tracked files are the conflict surface. Mark permanent preferences
+`// LOCAL (thaint):`; leave bug fixes unmarked so they can be dropped once
+upstream fixes them.
+
+Merge PRs here with a merge commit, never a squash: one commit per fix is what
+makes `git revert <sha>` viable when upstream lands its own.
+
+A formatter rewrites files on edit: check `git diff --stat` before `git add`.
+
+## Local Gotchas
+
+- `node tests/run-all.js` scrubs `CLAUDE_CODE_SESSION_ID`, so a hook that newly reads it passes the suite while failing `node <file>.test.js` alone — run touched test files standalone too, and give tests that pin the legacy `CLAUDE_SESSION_ID` a `delete process.env.CLAUDE_CODE_SESSION_ID` at load.
+- Before trusting a new test, revert the fix it covers and confirm it goes red.
+- `thaint-setup` is both a branch and a directory — use `git switch <branch>` and `refs/heads/<branch>`.
+- Heredoc commit messages trip the `block-no-verify` hook — write the message to a file, `git commit -F`.
+- The formatter fires on Edit/Write but not on shell writes — script surgical edits in python/bash.
+- Review agents can write to the working tree even when asked only to read — check `git status` after running them, before committing.

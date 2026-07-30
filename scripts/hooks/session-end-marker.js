@@ -23,7 +23,7 @@ function run(rawInput) {
   const sessionId = resolveSessionId();
 
   if (!sessionId) {
-    log('No CLAUDE_SESSION_ID available; skipping observer cleanup');
+    log('No session id (CLAUDE_CODE_SESSION_ID) available; skipping observer cleanup');
     return output;
   }
 

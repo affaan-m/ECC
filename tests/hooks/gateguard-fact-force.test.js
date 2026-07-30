@@ -9,6 +9,10 @@ const { spawnSync } = require('child_process');
 
 const runner = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
 const hookScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'gateguard-fact-force.js');
+
+// These tests pin the session id via the legacy CLAUDE_SESSION_ID; run-all.js
+// scrubs the real one for suite runs, this covers standalone runs.
+delete process.env.CLAUDE_CODE_SESSION_ID;
 const externalStateDir = process.env.GATEGUARD_STATE_DIR;
 const tmpRoot = process.env.TMPDIR || process.env.TEMP || process.env.TMP || '/tmp';
 const baseStateDir = externalStateDir || tmpRoot;

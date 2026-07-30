@@ -124,17 +124,25 @@ function getSessionLeaseDir(context) {
   return path.join(context.projectDir, '.observer-sessions');
 }
 
-function resolveSessionId(rawSessionId = process.env.CLAUDE_SESSION_ID) {
+// Claude Code exports CLAUDE_CODE_SESSION_ID; CLAUDE_SESSION_ID is kept as a
+// fallback because ecc2's launcher sets it. Reading only the latter left every
+// helper below with an undefined id, so resolveSessionId returned '' and lease
+// registration silently did nothing.
+function envSessionId() {
+  return process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID;
+}
+
+function resolveSessionId(rawSessionId = envSessionId()) {
   return sanitizeSessionId(rawSessionId || '') || '';
 }
 
-function getSessionLeaseFile(context, rawSessionId = process.env.CLAUDE_SESSION_ID) {
+function getSessionLeaseFile(context, rawSessionId = envSessionId()) {
   const sessionId = resolveSessionId(rawSessionId);
   if (!sessionId) return '';
   return path.join(getSessionLeaseDir(context), `${sessionId}.json`);
 }
 
-function writeSessionLease(context, rawSessionId = process.env.CLAUDE_SESSION_ID, extra = {}) {
+function writeSessionLease(context, rawSessionId = envSessionId(), extra = {}) {
   const leaseFile = getSessionLeaseFile(context, rawSessionId);
   if (!leaseFile) return '';
 
@@ -150,7 +158,7 @@ function writeSessionLease(context, rawSessionId = process.env.CLAUDE_SESSION_ID
   return leaseFile;
 }
 
-function removeSessionLease(context, rawSessionId = process.env.CLAUDE_SESSION_ID) {
+function removeSessionLease(context, rawSessionId = envSessionId()) {
   const leaseFile = getSessionLeaseFile(context, rawSessionId);
   if (!leaseFile) return false;
   try {

@@ -180,11 +180,17 @@ function sanitizeSessionId(raw) {
 }
 
 /**
- * Get short session ID from CLAUDE_SESSION_ID environment variable
- * Returns last 8 characters, falls back to a sanitized project name then 'default'.
+ * Get short session ID from the session-id environment variable.
+ *
+ * Claude Code exports CLAUDE_CODE_SESSION_ID into hook subprocesses. The older
+ * CLAUDE_SESSION_ID is kept as a fallback: ECC's own launcher sets it (see
+ * ecc2/src/session/manager.rs).
+ *
+ * Returns last 8 characters, falls back to a sanitized project name, then the
+ * provided fallback, then 'default'.
  */
 function getSessionIdShort(fallback = 'default') {
-  const sessionId = process.env.CLAUDE_SESSION_ID;
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID;
   if (sessionId && sessionId.length > 0) {
     const sanitized = sanitizeSessionId(sessionId.slice(-8));
     if (sanitized) return sanitized;

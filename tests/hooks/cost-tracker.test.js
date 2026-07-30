@@ -67,7 +67,7 @@ function runTests() {
       usage: { input_tokens: 100, output_tokens: 50 },
     };
     const inputStr = JSON.stringify(input);
-    const result = runScript(input);
+    const result = runScript(input, withTempHome(makeTempDir()));
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
     assert.strictEqual(result.stdout, inputStr, 'Expected stdout to match original input');
   }) ? passed++ : failed++);

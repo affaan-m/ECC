@@ -133,7 +133,9 @@ function renameWithRetry(tmp, target) {
  * @returns {string|null} Sanitized session ID or null
  */
 function resolveSessionId() {
-  const raw = process.env.ECC_SESSION_ID || process.env.CLAUDE_SESSION_ID || '';
+  // ECC_SESSION_ID stays first (ecc2 sets it deliberately); CLAUDE_CODE_SESSION_ID
+  // is what Claude Code exports; the legacy name stays last as a fallback.
+  const raw = process.env.ECC_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || '';
   return sanitizeSessionId(raw);
 }
 

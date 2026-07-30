@@ -15,6 +15,10 @@ const { spawnSync } = require('child_process');
 
 const compactScript = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'suggest-compact.js');
 
+// These tests pin the session id via the legacy CLAUDE_SESSION_ID; run-all.js
+// scrubs the real one for suite runs, this covers standalone runs.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 // Test helpers
 function test(name, fn) {
   try {
