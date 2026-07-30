@@ -365,6 +365,88 @@ patch_settings_telegram() {
   log "patched settings.json (telegram entry in Notification)"
 }
 
+# ECC hooks the shipped graph deliberately leaves out. Kept if already wired,
+# never added: insaits-security is opt-in, telegram-notify belongs to
+# install_telegram_hook.
+readonly GRAPH_EXEMPT='["insaits-security","telegram-notify"]'
+
+# Wires hooks/hooks.json into settings.json, the only place Claude Code reads
+# hooks from. The ECC installer copies the hook scripts and writes the same graph
+# to ~/.claude/hooks/hooks.json, but deliberately leaves settings.json alone
+# (README, "Install hooks") — and Claude Code never reads that file, verified by
+# putting a hook there and nowhere else: it never fired. Without this step a
+# --target claude install ships 50 hook scripts that no event ever triggers.
+#
+# Skipped when ECC is loaded as a plugin: Claude Code v2.1+ auto-loads a plugin's
+# hooks/hooks.json, so wiring the same graph here would run every hook twice.
+install_hook_graph() {
+  local settings="${CLAUDE_HOME}/settings.json"
+  local graph="${SOURCE}/hooks/hooks.json"
+  local tmp names filter line
+
+  [[ -f "$graph" ]] || { warn "hook graph missing at $graph — skipped"; return; }
+
+  if command -v claude >/dev/null 2>&1 \
+    && claude plugin list 2>/dev/null | grep -Fq "everything-claude-code"; then
+    warn "ECC is installed as a plugin — Claude Code auto-loads its hooks; leaving .hooks alone so they do not run twice"
+    return
+  fi
+
+  if (( DRY_RUN )); then
+    printf '[dry-run] patch %s (.hooks from %s)\n' "$settings" "$graph"
+    return
+  fi
+
+  [[ -f "$settings" ]] || printf '{}\n' > "$settings"
+
+  # Every ECC hook basename, so an existing entry is classified by what it
+  # invokes rather than by how it was written: the old install wired hooks
+  # individually and through npx, the graph routes most of them through
+  # dispatchers, and matching on names catches both spellings.
+  names="$(find "$SOURCE/scripts/hooks" -maxdepth 1 -name '*.js' -printf '%f\n' \
+    | sed 's/\.js$//' | jq -R . | jq -sc .)"
+
+  # An entry naming an ECC hook is the graph's to define — replaced, and logged
+  # so nothing disappears quietly. An entry naming none is yours, and survives.
+  filter='
+    def cmds: [.. | strings] | join(" ");
+    def ecc_owned($names; $exempt):
+      cmds as $c
+      | any($names[];  . as $n | $c | contains($n))
+        and (any($exempt[]; . as $n | $c | contains($n)) | not);
+  '
+
+  # Only entries that actually disappear are worth a line: on a re-run every
+  # graph entry is "replaced" by its identical self, which is not news.
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && log "dropping hook entry the graph supersedes — $line"
+  done < <(jq -r --slurpfile g "$graph" --argjson names "$names" --argjson exempt "$GRAPH_EXEMPT" \
+    "${filter}"' (.hooks // {}) | to_entries[] | .key as $ev | .value[]
+     | select(ecc_owned($names; $exempt))
+     | select(. as $e | ($g[0].hooks[$ev] // []) | index($e) | not)
+     | ([cmds | scan("scripts/hooks/[A-Za-z0-9._-]+")] | last) as $s
+     | $ev + ": " + ($s // ((.hooks[0].command // "") | .[0:60]))' "$settings")
+
+  tmp="$(mktemp)"
+  jq --slurpfile g "$graph" --argjson names "$names" --argjson exempt "$GRAPH_EXEMPT" \
+    "${filter}"'
+    ($g[0].hooks) as $new
+    | (.hooks // {}) as $old
+    | .hooks = (
+        reduce ((($new | keys_unsorted) + ($old | keys_unsorted)) | unique)[] as $ev
+          ({};
+            .[$ev] = (
+              ($new[$ev] // [])
+              + (($old[$ev] // []) | map(select(ecc_owned($names; $exempt) | not)))
+            )
+          )
+      )
+  ' "$settings" > "$tmp" \
+    || die "jq failed to wire the hook graph into $settings"
+  mv "$tmp" "$settings"
+  log "wired hook graph ($(jq '[.hooks[][].hooks[]] | length' "$settings") entries in settings.json)"
+}
+
 # Installs ECC's statusline, which shows more than the inline bash bar it
 # replaced: model, the in-progress task, session cost/tool/file counts (once
 # ecc-metrics-bridge runs), the working directory, and the context bar.
@@ -782,7 +864,8 @@ main() {
   install_global_claude_md
   install_all_dirs
   install_hooks_runtime
-  # After install_hooks_runtime: statusLine points at a file that step copies.
+  # Both need install_hooks_runtime to have copied the scripts they point at.
+  install_hook_graph
   patch_settings_statusline
   install_telegram_hook
   patch_shell_rc
