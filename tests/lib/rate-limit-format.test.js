@@ -90,10 +90,7 @@ function runTests() {
 
   if (
     test('renders percentage and countdown', () => {
-      const out = buildRateLimitSegment(
-        { five_hour: { used_percentage: 23.5, resets_at: NOW_SEC + 4320 } },
-        NOW_MS
-      );
+      const out = buildRateLimitSegment({ five_hour: { used_percentage: 23.5, resets_at: NOW_SEC + 4320 } }, NOW_MS);
       assert.strictEqual(strip(out), '5h 24% ↻1h12m');
     })
   )
@@ -113,10 +110,7 @@ function runTests() {
 
   if (
     test('null used_percentage returns empty string rather than NaN%', () => {
-      assert.strictEqual(
-        buildRateLimitSegment({ five_hour: { used_percentage: null, resets_at: NOW_SEC + 60 } }, NOW_MS),
-        ''
-      );
+      assert.strictEqual(buildRateLimitSegment({ five_hour: { used_percentage: null, resets_at: NOW_SEC + 60 } }, NOW_MS), '');
     })
   )
     passed++;
@@ -154,10 +148,7 @@ function runTests() {
 
   if (
     test('countdown is dim, so the reset time does not read as urgent', () => {
-      const out = buildRateLimitSegment(
-        { five_hour: { used_percentage: 90, resets_at: NOW_SEC + 60 } },
-        NOW_MS
-      );
+      const out = buildRateLimitSegment({ five_hour: { used_percentage: 90, resets_at: NOW_SEC + 60 } }, NOW_MS);
       assert.ok(out.includes('\x1b[2m↻'), 'countdown should open with the dim code');
     })
   )
@@ -166,10 +157,7 @@ function runTests() {
 
   if (
     test('every escape sequence it emits is closed', () => {
-      const out = buildRateLimitSegment(
-        { five_hour: { used_percentage: 85, resets_at: NOW_SEC + 4320 } },
-        NOW_MS
-      );
+      const out = buildRateLimitSegment({ five_hour: { used_percentage: 85, resets_at: NOW_SEC + 4320 } }, NOW_MS);
       // eslint-disable-next-line no-control-regex -- counting ANSI escapes is the point
       const opens = (out.match(/\x1b\[(?!0m)[0-9;]*m/g) || []).length;
       // eslint-disable-next-line no-control-regex -- counting ANSI escapes is the point

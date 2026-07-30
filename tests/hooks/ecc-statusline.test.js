@@ -9,12 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const {
-  formatDuration,
-  buildContextBar,
-  readCurrentTask,
-  buildMetricsSegment,
-} = require('../../scripts/hooks/ecc-statusline');
+const { formatDuration, buildContextBar, readCurrentTask, buildMetricsSegment } = require('../../scripts/hooks/ecc-statusline');
 
 // Test helper
 function test(name, fn) {
@@ -191,11 +186,7 @@ function runTests() {
         process.env.CLAUDE_CONFIG_DIR = tmpConfig;
         const todosDir = path.join(tmpConfig, 'todos');
         fs.mkdirSync(todosDir, { recursive: true });
-        fs.writeFileSync(
-          path.join(todosDir, 'safe-session-agent-main.json'),
-          JSON.stringify([{ status: 'in_progress', activeForm: 'Fix auth flow' }]),
-          'utf8'
-        );
+        fs.writeFileSync(path.join(todosDir, 'safe-session-agent-main.json'), JSON.stringify([{ status: 'in_progress', activeForm: 'Fix auth flow' }]), 'utf8');
 
         assert.strictEqual(readCurrentTask('safe-session'), 'Fix auth flow');
         assert.strictEqual(readCurrentTask('../safe-session'), '');
@@ -219,11 +210,7 @@ function runTests() {
 
   if (
     test('rate limit replaces the dollar figure when present', () => {
-      const out = buildMetricsSegment(
-        { rate_limits: { five_hour: { used_percentage: 24, resets_at: NOW_MS / 1000 + 4320 } } },
-        BRIDGE,
-        NOW_MS
-      );
+      const out = buildMetricsSegment({ rate_limits: { five_hour: { used_percentage: 24, resets_at: NOW_MS / 1000 + 4320 } } }, BRIDGE, NOW_MS);
       assert.strictEqual(stripAnsi(out), '5h 24% ↻1h12m 52t 7f');
       assert.ok(!out.includes('$'), 'cost must not appear alongside the rate limit');
     })
@@ -260,11 +247,7 @@ function runTests() {
 
   if (
     test('rate limit renders with no bridge file at all', () => {
-      const out = buildMetricsSegment(
-        { rate_limits: { five_hour: { used_percentage: 5 } } },
-        null,
-        NOW_MS
-      );
+      const out = buildMetricsSegment({ rate_limits: { five_hour: { used_percentage: 5 } } }, null, NOW_MS);
       assert.strictEqual(stripAnsi(out), '5h 5%');
     })
   )
