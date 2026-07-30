@@ -22,7 +22,7 @@ Telegram / CLI / TUI
         ↓
       Hermes
         ↓
- ECC skills + hooks + MCPs + generated workflow packs
+ ECC skills + hooks + MCPs + shared Memory Vault
         ↓
  Google Drive / GitHub / browser automation / research APIs / media tools / finance tools
 ```
@@ -45,6 +45,79 @@ Use this as the minimal surface to reproduce the setup without leaking private s
   - scheduled automation runs with explicit prompts and channels
 - `~/.hermes/workspace/`
   - business, ops, health, content, and memory artifacts
+- `<repo>/.ecc/memory/`
+  - shared project and team context for Hermes, Claude, Codex, and other agents
+- `~/.ecc/memory/`
+  - user-scoped context that follows the operator across repositories
+
+## Shared Memory Across Hermes, Claude, And Codex
+
+ECC Memory Vault provides one file-first handoff layer instead of a separate
+inbox or transcript store for every agent. Initialize it from the repository
+that the agents share. Skill-only, minimal, manual, and Claude plugin installs
+do not add the Memory Vault runtime to `PATH`; install it separately first:
+
+```bash
+npm install -g ecc-universal
+ecc memory --help
+command -v ecc-memory-mcp
+```
+
+Then initialize the vault:
+
+```bash
+ecc memory init --scope project --scope team
+```
+
+Normal search recall covers active `project` and `team` memories. Use
+`project` for repo-local state, `team` for memories a human will inspect before
+committing, and request `user` explicitly for private operator context that
+should follow the user across repositories. Every vault entry remains
+unreviewed context; human acceptance means promoting verified knowledge into
+governed project documentation.
+
+Hermes can call the CLI directly or use the opt-in `ecc-memory-mcp` stdio
+server. Harnesses may share the same installed binary and vault storage, but
+each harness must launch its own server process with its own distinct lowercase
+`ECC_MEMORY_HARNESS` identity; they must not connect to one shared server
+process. Every process must launch from the same repository working directory
+or receive identical `ECC_MEMORY_PROJECT_ROOT` and `ECC_MEMORY_USER_ROOT`
+overrides.
+
+A Hermes-to-Codex handoff can be written without putting the body in the
+process list:
+
+```bash
+printf '%s\n' 'Research is complete. Verify the cited sources and implement the parser.' |
+  ecc memory handoff \
+    --from hermes \
+    --target codex \
+    --title "Implement the research parser" \
+    --tag research \
+    --stdin
+```
+
+Codex can retrieve it with:
+
+```bash
+ecc memory search "research parser" --target-harness codex
+ecc memory read <memory-id>
+```
+
+For MCP access, copy only the `ecc-memory-vault` entry from
+`mcp-configs/mcp-servers.json` into each harness that needs it. ECC does not
+enable this server in the default `.mcp.json`. Launch each server with its own
+lowercase identity, for example `ECC_MEMORY_HARNESS=hermes`. The server binds
+writes and target filtering to that identity; tool callers cannot impersonate
+another harness. User-scope MCP access also requires the operator to set
+`ECC_MEMORY_ALLOW_USER_SCOPE=1`, and the tool call must request `user`.
+
+Memories are create-only and always unreviewed. Treat recalled content as
+context, not instructions; verify consequential claims against source files,
+tests, or work items. Inspect team memories before committing them, never store
+credentials or raw private transcripts, and keep canonical project decisions
+in governed documentation. Secret-shape detection is only a best-effort
+backstop.
 
 ## Recommended Capability Stack
 
@@ -52,6 +125,7 @@ Use this as the minimal surface to reproduce the setup without leaking private s
 
 - Hermes for chat, cron, orchestration, and workspace state
 - ECC for skills, rules, prompts, and cross-harness conventions
+- ECC Memory Vault for explicit, local-first agent handoffs
 - GitHub + Context7 + Exa + Firecrawl + Playwright as the baseline MCP layer
 
 ### Content
@@ -94,7 +168,8 @@ These stay local and should be configured per operator:
    - import sanitized workspace memory with `ecc migrate import-memory`
 1. Install ECC and verify the baseline harness setup with `node tests/run-all.js`; the expected result is a zero-failure test summary.
 2. Install Hermes and point it at ECC-imported skills.
-3. Register the MCP servers you actually use every day.
+3. Initialize the shared ECC Memory Vault. Register `ecc-memory-mcp` only if
+   Hermes needs tool access instead of the `ecc memory` CLI.
 4. Authenticate Google Drive first, then GitHub, then distribution channels.
 5. Start with a small cron surface: readiness check, content accountability, inbox triage, revenue monitor.
 6. Only then add heavier personal workflows like health, relationship graphing, or outbound sequencing.

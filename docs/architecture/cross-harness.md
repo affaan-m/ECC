@@ -10,6 +10,7 @@ The goal is to keep the durable parts of agentic work in one repo:
 - MCP configuration
 - install manifests
 - session and orchestration patterns
+- durable, harness-neutral memory documents
 
 Claude Code, Codex, OpenCode, Cursor, Gemini, and future harnesses should adapt those assets at the edge instead of requiring a new workflow model for every tool.
 
@@ -27,6 +28,7 @@ For the full-stack platform framing and product-integration loop, see
 | Hooks | `hooks/hooks.json`, `scripts/hooks/` | Claude native hooks, OpenCode plugin events, Cursor hook adapter | Hook-backed in Claude/OpenCode/Cursor; instruction-backed in Codex |
 | MCPs | `.mcp.json`, `mcp-configs/` | Native MCP config import per harness | Supported where the harness exposes MCP |
 | Commands | `commands/`, CLI scripts | Claude slash commands, compatibility shims, CLI entrypoints | Supported, but command semantics vary |
+| Memory | `.ecc/memory/`, `~/.ecc/memory/` | `ecc memory` CLI or opt-in `ecc-memory-mcp` stdio server | Supported with explicit recall and unreviewed writes |
 | Sessions | `ecc2/`, session adapters, orchestration scripts | TUI/daemon, tmux/worktree orchestration, harness-specific runners | Alpha |
 
 ## What Travels Unchanged
@@ -54,6 +56,50 @@ Each harness has different loading and enforcement behavior:
 - Gemini support is install/instruction oriented and should be treated as a compatibility surface, not as full hook parity.
 
 Adapters should stay thin. The shared behavior belongs in `skills/`, `rules/`, `hooks/`, `scripts/`, and `mcp-configs/`.
+
+## Shared Memory Contract
+
+ECC Memory Vault is the common knowledge-transfer surface for Claude, Codex,
+Hermes, Cursor, OpenCode, and other agents. It stores portable
+`ecc.memory.v1` Markdown documents in three scopes:
+
+- project: `<repo>/.ecc/memory/project/`
+- team: `<repo>/.ecc/memory/team/`
+- user: `~/.ecc/memory/`
+
+Every harness must use the same repository working directory or the same
+`ECC_MEMORY_PROJECT_ROOT` and `ECC_MEMORY_USER_ROOT` overrides. The deterministic
+`ecc memory` CLI is the baseline interface. Harnesses with MCP support may
+instead launch `ecc-memory-mcp` and use `memory_save`, `memory_search`,
+`memory_read`, and `memory_doctor`. Normal search recall is active-only across
+`project` and `team`; a direct ID read can inspect a non-active entry, and
+`user` must be requested explicitly. The CLI target flag is a caller-selected
+routing filter, not an authorization boundary.
+
+The MCP server is opt-in. Its reference entry lives in
+`mcp-configs/mcp-servers.json`; it is intentionally absent from the default
+`.mcp.json` so installations do not silently gain a writable context surface
+or pay its tool-schema cost. Each MCP process requires a lowercase
+`ECC_MEMORY_HARNESS`; this server-bound identity supplies the source harness
+and target filter, so a tool caller cannot select another identity. User-scope
+MCP access remains blocked unless the operator launches the process with
+`ECC_MEMORY_ALLOW_USER_SCOPE=1`.
+
+The trust boundary is consistent across every adapter:
+
+- all first-release vault entries are create-only and always `unreviewed`;
+- recalled memory is data, not executable instruction;
+- known secret-shaped writes are rejected as a best-effort backstop, and
+  readers do not follow symlinks;
+- project-scope writes stop if the vault's protective `.gitignore` is altered;
+- human acceptance promotes knowledge into a governed repository artifact; it
+  never turns memory frontmatter into a self-asserted approval;
+- active execution state remains in GitHub or Linear, not only in memory.
+
+`skills/unified-memory/SKILL.md` owns this workflow. Codex and Cursor receive
+behavior-identical packaging copies under `.agents/skills/` and
+`.cursor/skills/`; Hermes can import the canonical skill. No harness owns a
+separate authoritative memory store.
 
 ## Hermes Boundary
 
@@ -111,6 +157,7 @@ Supported today:
 - Codex plugin metadata and MCP reference config
 - OpenCode package/plugin surface
 - Cursor-adapted rules, hooks, and skills
+- file-first cross-harness memory through the CLI and opt-in MCP adapter
 - `ecc2/` as an alpha Rust control plane
 
 Still maturing:
@@ -119,7 +166,7 @@ Still maturing:
 - automated skill sync into Hermes
 - release packaging for `ecc2/`
 - cross-harness session resume semantics
-- deeper memory and operator planning layers
+- optional semantic reranking and governed memory-promotion workflows
 - the full platform loop where external products contribute skill packs,
   gated APIs, evals, and case studies back into ECC
 

@@ -1,17 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-let Ajv = null;
-try {
-  // Prefer schema-backed validation when dependencies are installed.
-  // The fallback validator below keeps source checkouts usable in bare environments.
-  const ajvModule = require('ajv');
-  Ajv = ajvModule.default || ajvModule;
-} catch (_error) {
-  Ajv = null;
-}
-
-const SCHEMA_PATH = path.join(__dirname, '..', '..', 'schemas', 'install-state.schema.json');
+// Dependency-free, self-contained validation. The installer closure must not
+// require any non-builtin package (enterprise supply-chain vetting: the vetted
+// bytes must be the installed bytes). install-state is validated by the
+// hand-rolled validator below, which enforces the same constraints as
+// schemas/install-state.schema.json (ecc.install.v1).
 
 let cachedValidator = null;
 
@@ -33,13 +27,6 @@ function readJson(filePath, label) {
 
 function getValidator() {
   if (cachedValidator) {
-    return cachedValidator;
-  }
-
-  if (Ajv) {
-    const schema = readJson(SCHEMA_PATH, 'install-state schema');
-    const ajv = new Ajv({ allErrors: true });
-    cachedValidator = ajv.compile(schema);
     return cachedValidator;
   }
 

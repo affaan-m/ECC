@@ -1,6 +1,6 @@
 spec_version: "0.1.0"
 name: ecc
-version: 2.0.0
+version: 2.1.0
 description: "Initial gitagent export surface for ECC's shared skill catalog, governance, and identity. Native agents, commands, and hooks remain authoritative in the repository while manifest coverage expands."
 author: affaan-m
 license: MIT
@@ -37,6 +37,7 @@ skills:
   - coding-standards
   - compose-multiplatform-patterns
   - configure-ecc
+  - contract-first
   - content-engine
   - content-hash-cache-pattern
   - context-budget
@@ -151,6 +152,7 @@ skills:
   - tdd-workflow
   - team-builder
   - token-budget-advisor
+  - unified-memory
   - verification-loop
   - video-editing
   - videodb

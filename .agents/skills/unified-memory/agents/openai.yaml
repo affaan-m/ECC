@@ -1,0 +1,7 @@
+interface:
+  display_name: "Unified Memory"
+  short_description: "Cross-harness context and handoff vault"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $unified-memory to save, find, or hand off durable context across agent harnesses."
+policy:
+  allow_implicit_invocation: true
