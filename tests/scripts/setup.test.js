@@ -194,9 +194,59 @@ test('dry-run JSON emits JSON only and reads inventory without mutation', () => 
   });
 });
 
-test('--move-scope is explicit, requires a destination, and migrates through the CLI', () => {
+test('setup automatically migrates an existing install to the selected scope and hooks', () => {
   withFixture({
-    plugins: [{ id: 'ecc@ecc', scope: 'user', enabled: true, version: '1.9.0' }],
+    plugins: [{ id: 'ecc@ecc', scope: 'local', enabled: true, version: '1.9.0' }],
+    marketplaces: [{
+      name: 'ecc',
+      source: 'github',
+      repo: 'affaan-m/ECC',
+      scope: 'local',
+    }],
+  }, fixture => {
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'user',
+      '--hooks', 'minimal',
+      '--yes',
+      '--json',
+    ]);
+    assert.strictEqual(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.strictEqual(payload.action, 'migrated');
+    assert.strictEqual(payload.sourceScope, 'local');
+    assert.strictEqual(payload.scope, 'user');
+    assert.strictEqual(payload.hooks, 'minimal');
+    const calls = readCalls(fixture);
+    assert.ok(calls.some(argv => (
+      argv.join(' ') === 'plugin install ecc@ecc --scope user'
+        + ' --config hooks_enabled=true --config hook_profile=minimal'
+    )));
+    assert.ok(calls.some(argv => (
+      argv.join(' ') === 'plugin uninstall ecc@ecc --scope local --keep-data'
+    )));
+    assert.ok(!calls.flat().includes('--prune'));
+    const state = JSON.parse(fs.readFileSync(fixture.statePath, 'utf8'));
+    assert.deepStrictEqual(state.plugins, [{
+      id: 'ecc@ecc',
+      scope: 'user',
+      enabled: true,
+      version: '2.0.0',
+    }]);
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(fixture.configDir, 'settings.json'), 'utf8')
+    );
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hooks_enabled, true);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'minimal');
+  });
+});
+
+test('setup resumes a safe two-scope migration without requiring --move-scope', () => {
+  withFixture({
+    plugins: [
+      { id: 'ecc@ecc', scope: 'local', enabled: true, version: '1.9.0' },
+      { id: 'ecc@ecc', scope: 'user', enabled: true, version: '2.0.0' },
+    ],
     marketplaces: [{
       name: 'ecc',
       source: 'github',
@@ -204,43 +254,37 @@ test('--move-scope is explicit, requires a destination, and migrates through the
       scope: 'user',
     }],
   }, fixture => {
-    const missingDestination = runSetup(fixture, [
-      '--mode', 'claude-plugin',
-      '--move-scope',
-      '--yes',
-      '--json',
-    ]);
-    assert.strictEqual(missingDestination.status, 1);
-    assert.match(missingDestination.stderr, /scope/i);
-    assert.strictEqual(hasMutation(fixture), false);
-
-    const missingMoveFlag = runSetup(fixture, [
-      '--mode', 'claude-plugin',
-      '--scope', 'project',
-      '--yes',
-      '--json',
-    ]);
-    assert.strictEqual(missingMoveFlag.status, 1);
-    assert.match(missingMoveFlag.stderr, /migration|move.scope/i);
-    assert.strictEqual(hasMutation(fixture), false);
-
     const result = runSetup(fixture, [
       '--mode', 'claude-plugin',
-      '--scope', 'project',
-      '--move-scope',
+      '--scope', 'user',
+      '--hooks', 'minimal',
       '--yes',
       '--json',
     ]);
     assert.strictEqual(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
-    assert.strictEqual(payload.action, 'migrated');
-    assert.strictEqual(payload.sourceScope, 'user');
-    assert.strictEqual(payload.scope, 'project');
-    const calls = readCalls(fixture);
-    assert.ok(calls.some(argv => (
-      argv.join(' ') === 'plugin uninstall ecc@ecc --scope user --keep-data'
+    assert.strictEqual(payload.action, 'resumed');
+    assert.strictEqual(payload.sourceScope, 'local');
+    assert.strictEqual(payload.scope, 'user');
+    assert.ok(readCalls(fixture).some(argv => (
+      argv.join(' ') === 'plugin uninstall ecc@ecc --scope local --keep-data'
     )));
-    assert.ok(!calls.flat().includes('--prune'));
+  });
+});
+
+test('--move-scope remains explicit about its destination', () => {
+  withFixture({
+    plugins: [{ id: 'ecc@ecc', scope: 'user', enabled: true, version: '1.9.0' }],
+  }, fixture => {
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--move-scope',
+      '--yes',
+      '--json',
+    ]);
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /scope/i);
+    assert.strictEqual(hasMutation(fixture), false);
   });
 });
 
@@ -300,7 +344,6 @@ test('migration dry-run JSON exposes ordered actions without mutation', () => {
     const result = runSetup(fixture, [
       '--mode', 'claude-plugin',
       '--scope', 'project',
-      '--move-scope',
       '--dry-run',
       '--json',
     ]);

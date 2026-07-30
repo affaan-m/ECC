@@ -14,6 +14,10 @@ const {
 } = require('./lib/claude-scope-migration');
 
 const MODE = 'claude-plugin';
+const AUTO_MIGRATION_CODES = new Set([
+  'MULTIPLE_PLUGIN_SCOPES',
+  'SCOPE_MOVE_REQUIRED',
+]);
 
 function showHelp() {
   process.stdout.write(`
@@ -37,14 +41,14 @@ Options:
   --mode claude-plugin
   --scope <scope>
   --hooks <preference>
-  --move-scope            Safely migrate an existing plugin to --scope.
+  --move-scope            Explicitly request migration (normally auto-detected).
   --yes, -y               Skip the confirmation prompt.
   --dry-run               Inspect and report without changing anything.
   --json                  Emit machine-readable JSON.
   --help, -h              Show this help.
 
 Re-running setup updates an existing ecc@ecc installation at its detected scope.
-Changing scope requires explicit --scope and --move-scope.
+Choosing another scope automatically migrates the existing installation.
 Migration installs and verifies the destination before removing the source scope.
 `);
 }
@@ -236,6 +240,29 @@ function printError(error, json) {
   process.stderr.write(`Error: ${error.message}\n`);
 }
 
+function reconcileClaudePlugin(options) {
+  const setupOptions = {
+    dryRun: options.dryRun,
+    hooks: options.hooks,
+    scope: options.scope,
+  };
+  if (options.moveScope) {
+    return migrateClaudePluginScope(setupOptions);
+  }
+
+  try {
+    return setupClaudePlugin(setupOptions);
+  } catch (error) {
+    const canAutoMigrate = (
+      error instanceof ClaudeSetupError
+      && AUTO_MIGRATION_CODES.has(error.code)
+      && options.scope !== undefined
+    );
+    if (!canAutoMigrate) throw error;
+    return migrateClaudePluginScope(setupOptions);
+  }
+}
+
 async function main(argv = process.argv.slice(2)) {
   let options;
   try {
@@ -270,14 +297,7 @@ async function main(argv = process.argv.slice(2)) {
       }
     }
 
-    const operation = options.moveScope
-      ? migrateClaudePluginScope
-      : setupClaudePlugin;
-    const result = operation({
-      dryRun: options.dryRun,
-      hooks: options.hooks,
-      scope: options.scope,
-    });
+    const result = reconcileClaudePlugin(options);
     printResult(result, options.json);
   } catch (error) {
     printError(error, options?.json);
@@ -295,5 +315,6 @@ module.exports = {
   parseArgs,
   printError,
   printResult,
+  reconcileClaudePlugin,
   showHelp,
 };
