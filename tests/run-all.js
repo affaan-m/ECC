@@ -82,6 +82,11 @@ for (const testFile of testFiles) {
     delete childEnv[key];
   }
 
+  // Tests that pin a session id via the legacy CLAUDE_SESSION_ID must not be
+  // outranked by the real CLAUDE_CODE_SESSION_ID that Claude Code exports when
+  // the suite happens to run inside a Claude Code session.
+  delete childEnv.CLAUDE_CODE_SESSION_ID;
+
   const result = spawnSync('node', [testPath], {
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
