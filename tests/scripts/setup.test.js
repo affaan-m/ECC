@@ -77,6 +77,53 @@ function runSetup(fixture, args) {
   });
 }
 
+function quoteShellArgument(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runInteractiveEccSetup(fixture) {
+  if (process.platform === 'win32') {
+    return null;
+  }
+
+  const command = [
+    process.execPath,
+    eccScript,
+    'setup',
+    '--dry-run',
+  ];
+  const scriptArgs = process.platform === 'darwin'
+    ? ['-q', '-e', '/dev/null', ...command]
+    : [
+      '-q',
+      '-e',
+      '-c',
+      command.map(quoteShellArgument).join(' '),
+      '/dev/null',
+    ];
+  const pseudoTerminalCommand = ['script', ...scriptArgs]
+    .map(quoteShellArgument)
+    .join(' ');
+
+  return spawnSync('sh', [
+    '-c',
+    `(sleep 0.1; printf '3\\n'; sleep 0.1; printf '3\\n'; sleep 0.1) | ${pseudoTerminalCommand}`,
+  ], {
+    cwd: fixture.projectRoot,
+    env: {
+      ...process.env,
+      HOME: fixture.homeDir,
+      USERPROFILE: fixture.homeDir,
+      CLAUDE_CONFIG_DIR: fixture.configDir,
+      PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+      ECC_TEST_CLAUDE_STATE: fixture.statePath,
+      ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
+    },
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+}
+
 function readCalls(fixture) {
   if (!fs.existsSync(fixture.callsPath)) return [];
   return fs.readFileSync(fixture.callsPath, 'utf8')
@@ -215,6 +262,21 @@ test('ecc setup delegates to the focused setup command', () => {
   assert.strictEqual(result.status, 0, result.stderr);
   assert.match(result.stdout, /ECC (guided )?setup/i);
   assert.match(result.stdout, /claude-plugin/);
+});
+
+test('ecc setup preserves a real terminal for the interactive wizard', () => {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  withFixture({}, fixture => {
+    const result = runInteractiveEccSetup(fixture);
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /Where should Claude enable ecc@ecc\?/);
+    assert.match(result.stdout, /How should ECC hooks run\?/);
+    assert.doesNotMatch(result.stdout, /Interactive setup requires a terminal/);
+  });
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

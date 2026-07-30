@@ -254,9 +254,11 @@ function runCommand(commandName, args) {
           }),
         }
         : process.env,
-      stdio: commandName === 'memory'
-        ? ['inherit', 'pipe', 'pipe']
-        : ['pipe', 'pipe', 'pipe'],
+      stdio: commandName === 'setup'
+        ? 'inherit'
+        : commandName === 'memory'
+          ? ['inherit', 'pipe', 'pipe']
+          : ['pipe', 'pipe', 'pipe'],
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
     }
