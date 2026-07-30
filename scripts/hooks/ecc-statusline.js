@@ -16,7 +16,6 @@ const path = require('path');
 const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
 const { buildRateLimitSegment } = require('../lib/rate-limit-format');
 
-const AUTO_COMPACT_BUFFER_PCT = 16.5;
 const MAX_STDIN = 1024 * 1024;
 
 /**
@@ -38,14 +37,20 @@ function formatDuration(isoTimestamp) {
 
 /**
  * Build context progress bar with ANSI colors.
+ *
+ * Reports the same figure Claude Code does: `100 - remaining_percentage`, which
+ * equals the payload's `used_percentage`. It used to subtract a fixed 16.5-point
+ * auto-compact reserve and rescale, which reads 9 points high on a 1M window —
+ * that reserve is 33K tokens, i.e. 16.5% of a 200K window but 3.3% of a 1M one,
+ * and Claude Code couples its compaction threshold to `used_percentage` anyway.
+ *
  * @param {number} remaining - Raw remaining percentage from Claude Code
  * @returns {string} Colored bar string
  */
 function buildContextBar(remaining) {
   if (remaining === null || remaining === undefined) return '';
 
-  const usableRemaining = Math.max(0, ((remaining - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100);
-  const used = Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
+  const used = Math.max(0, Math.min(100, Math.round(100 - remaining)));
 
   const filled = Math.floor(used / 10);
   const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);

@@ -157,6 +157,35 @@ function runTests() {
     passed++;
   else failed++;
 
+  // The colour assertions above pass under any monotonic formula, which is how
+  // a 16.5-point reserve subtraction survived unnoticed. These pin the number.
+  // 56 is a real captured payload: context_window_size 1000000,
+  // total_input_tokens 437731, used_percentage 44, remaining_percentage 56.
+  if (
+    test('reports the same percentage Claude Code does (remaining 56 -> 44%)', () => {
+      const bar = buildContextBar(56);
+      assert.ok(bar.includes('44%'), `Expected 44% (100 - remaining), got: ${JSON.stringify(bar)}`);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('a full window reads 0%', () => {
+      assert.ok(buildContextBar(100).includes('0%'), 'Expected 0% at 100 remaining');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('an exhausted window reads 100%', () => {
+      assert.ok(buildContextBar(0).includes('100%'), 'Expected 100% at 0 remaining');
+    })
+  )
+    passed++;
+  else failed++;
+
   // readCurrentTask tests
   console.log('\nreadCurrentTask:');
 
