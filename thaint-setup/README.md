@@ -54,7 +54,25 @@ In the order `main()` runs them:
    Entries pointing at hooks the graph does not carry (your own hooks, and the
    opt-in `insaits-security` monitor) are kept; entries the graph supersedes are
    replaced, and any that disappear are named in the log.
-10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`, which shows model, in-progress task, session cost/tool/file counts, working directory, and a context bar. Runs after step 8 because that step installs the script. A `statusLine` you set by hand is kept as-is; delete the field to hand it back to this script.
+10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`:
+
+    ```text
+    Opus 5 (1M context) │ 5h 24% ↻1h11m 96t 11f 1h39m │ my-worktree ████░░░░░░ 46%
+    ```
+
+    Model, the in-progress task when there is one, remaining budget, session
+    tool and file counts with elapsed time, working directory, and a context bar
+    whose percentage discounts the 16.5% auto-compact reserve — so it reads as
+    "how much of the context you can still use is gone", not raw tokens.
+
+    Budget is the 5-hour rate-limit window with a countdown to reset, which is
+    what a Claude.ai subscription actually runs out of. On an API key there is no
+    rate-limit data, so it falls back to session cost. Counts and elapsed time
+    come from `ecc-metrics-bridge`, which step 9 wires — without it those parts
+    are simply absent.
+
+    Runs after step 8 because that step installs the script. A `statusLine` you
+    set by hand is kept as-is; delete the field to hand it back to this script.
 11. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
 12. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
    ```bash
