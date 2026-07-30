@@ -26,24 +26,6 @@ TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 SOURCE="$REPO_ROOT"
 DRY_RUN=0
 VERBOSE=0
-TMP_FILES=()
-
-# ── Cleanup ──────────────────────────────────────────────────────────────────
-cleanup() {
-  (( ${#TMP_FILES[@]} == 0 )) && return 0
-  local f
-  for f in "${TMP_FILES[@]}"; do
-    [[ -n "$f" && -e "$f" ]] && rm -f "$f"
-  done
-}
-trap cleanup EXIT
-
-new_tmp() {
-  local f
-  f="$(mktemp)"
-  TMP_FILES+=("$f")
-  printf '%s' "$f"
-}
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { printf '[%s] %s\n' "$TAG" "$*"; }
@@ -84,7 +66,7 @@ require_cmd() {
 # ── Usage / args ─────────────────────────────────────────────────────────────
 usage() {
   cat <<EOF
-Usage: $0 [--version <ref>] [--source <path>] [--dry-run] [--verbose]
+Usage: $0 [--dry-run] [--verbose] [-h]
 
 End-to-end Claude Code setup. Installs (always overwrites) into ${CLAUDE_HOME}:
   claude-code CLI (if missing), skip-onboarding flag in ~/.claude.json,
@@ -106,10 +88,6 @@ Env overrides:
   CLAUDE_INSTALL_URL, CLAUDE_PLUGIN, CLAUDE_MARKETPLACE_SOURCE
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 EOF
-}
-
-require_value() {
-  [[ -n "${2:-}" && "${2:0:2}" != "--" ]] || die "$1 requires a value (try --help)"
 }
 
 parse_args() {
@@ -155,7 +133,7 @@ ensure_onboarding() {
 
   [[ -f "$config" ]] || printf '{}\n' > "$config"
   local tmp
-  tmp="$(new_tmp)"
+  tmp="$(mktemp)"
   jq '.hasCompletedOnboarding = true' "$config" > "$tmp" \
     || die "jq failed to patch $config"
   mv "$tmp" "$config"
@@ -242,14 +220,6 @@ install_hooks_runtime() {
   fi
 }
 
-# The session-id fix is no longer patched in after install either: the hooks in
-# this repo read CLAUDE_CODE_SESSION_ID directly, so install_hooks_runtime copies
-# already-correct files. patch-ecc-session-id.sh is gone.
-
-# The [Delegation] nudge is no longer patched in after install: it lives in this
-# repo's scripts/hooks/suggest-compact.js, so install_hooks_runtime copies it
-# along with everything else. patch-ecc-suggest-compact.sh is gone.
-
 install_telegram_hook() {
   log "telegram-hook"
   require_cmd node
@@ -315,7 +285,7 @@ patch_settings_env() {
 
   [[ -f "$settings" ]] || printf '{}\n' > "$settings"
   local tmp
-  tmp="$(new_tmp)"
+  tmp="$(mktemp)"
   jq \
     --arg token "$token" \
     --arg chat  "$chat" \
@@ -336,7 +306,7 @@ patch_settings_telegram() {
   [[ -f "$settings" ]] || printf '{}\n' > "$settings"
 
   local tmp
-  tmp="$(new_tmp)"
+  tmp="$(mktemp)"
   jq \
     --arg cmd "node $hook_js" \
     --arg marker "telegram-notify.js" \
@@ -377,7 +347,7 @@ CMD
 
   [[ -f "$settings" ]] || printf '{}\n' > "$settings"
 
-  tmp="$(new_tmp)"
+  tmp="$(mktemp)"
   jq --arg cmd "$statusline_cmd" \
     '.statusLine = { "type": "command", "command": $cmd }' \
     "$settings" > "$tmp" \
@@ -409,7 +379,7 @@ patch_mcp_catalog() {
   # 2. Replace filesystem path placeholder with a safe default.
   # 3. Strip description fields and _comments (not valid in .claude.json).
   local mcp_processed
-  mcp_processed="$(new_tmp)"
+  mcp_processed="$(mktemp)"
   sed \
     -e 's|/path/to/your/projects|${MCP_FILESYSTEM_PATH:-$HOME}|g' \
     "$mcp_src" \
@@ -455,6 +425,12 @@ patch_mcp_catalog() {
             "YOUR_CONFLUENCE_TOKEN_HERE";   "${CONFLUENCE_API_TOKEN}"
           ) | gsub(
             "YOUR_OPENAI_API_KEY_HERE";     "${OPENAI_API_KEY}"
+          ) | gsub(
+            "YOUR_CS_ACCESS_TOKEN_HERE";    "${CS_ACCESS_TOKEN}"
+          ) | gsub(
+            "YOUR_MEMXUS_API_KEY_HERE";     "${MEMXUS_API_KEY}"
+          ) | gsub(
+            "YOUR_LOWERCASE_HARNESS_SLUG_HERE"; "${ECC_MEMORY_HARNESS}"
           )
         else .
         end;
@@ -464,9 +440,16 @@ patch_mcp_catalog() {
     ' > "$mcp_processed" \
     || die "jq failed to process MCP catalog from $mcp_src"
 
+  # Any placeholder still present would be written to ~/.claude.json literally,
+  # making the server look configured instead of staying disabled. Fail loudly
+  # so a newly added upstream server can't slip through unmapped.
+  local unmapped
+  unmapped="$(grep -oE 'YOUR_[A-Z0-9_]*_HERE' "$mcp_processed" | sort -u | tr '\n' ' ')"
+  [[ -z "$unmapped" ]] || die "unmapped MCP placeholders (add to fix_placeholders): $unmapped"
+
   [[ -f "$config" ]] || printf '{}\n' > "$config"
 
-  tmp="$(new_tmp)"
+  tmp="$(mktemp)"
   jq --slurpfile mcp "$mcp_processed" \
     '.mcpServers = $mcp[0].mcpServers' \
     "$config" > "$tmp" \
@@ -474,6 +457,7 @@ patch_mcp_catalog() {
   local count
   count="$(jq '.mcpServers | length' "$tmp")"
   mv "$tmp" "$config"
+  rm -f "$mcp_processed"
   log "patched .claude.json ($count MCP servers cataloged)"
 }
 
@@ -692,16 +676,23 @@ patch_shell_rc() {
 }
 
 # ── Settings: backup then patch ─────────────────────────────────────────────
-# Snapshot settings.json once, before any mutation. Patches run after.
-backup_settings() {
-  local settings="${CLAUDE_HOME}/settings.json"
-  [[ -f "$settings" ]] || return 0
+# Snapshot the files we overwrite, before any mutation. Patches run after.
+# ~/.claude.json matters as much as settings.json: patch_mcp_catalog replaces
+# .mcpServers wholesale, which drops any server the user configured by hand.
+backup_one() {
+  local src="$1" name="$2"
+  [[ -f "$src" ]] || return 0
   local dir="${CLAUDE_HOME}/backups"
   local out
-  out="${dir}/settings.json.bak-$(date +%Y%m%d-%H%M%S)-$$"
+  out="${dir}/${name}.bak-$(date +%Y%m%d-%H%M%S)-$$"
   run mkdir -p "$dir"
-  run cp "$settings" "$out"
+  run cp "$src" "$out"
   log "backup: ${out#${CLAUDE_HOME}/}"
+}
+
+backup_settings() {
+  backup_one "${CLAUDE_HOME}/settings.json" 'settings.json'
+  backup_one "${HOME}/.claude.json" 'claude.json'
 }
 
 # ── Global CLAUDE.md ────────────────────────────────────────────────────────
@@ -709,10 +700,7 @@ backup_settings() {
 # This applies across all projects as behavioral guidelines.
 install_global_claude_md() {
   local dest="${CLAUDE_HOME}/CLAUDE.md"
-  # Resolve the script's own directory to find CLAUDE.base.md.
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local src="${script_dir}/CLAUDE.base.md"
+  local src="${SCRIPT_DIR}/CLAUDE.base.md"
 
   if (( DRY_RUN )); then
     printf '[dry-run] copy %s -> %s (global CLAUDE.md)\n' "$src" "$dest"
