@@ -859,6 +859,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+  margin-top: 6px;
 }
 .pace-cell {
   display: flex;
@@ -900,15 +901,30 @@ textarea {
   font-weight: 700;
 }
 .week-pace-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font: inherit;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--muted);
-  padding: 0 2px;
+  padding: 2px;
+  cursor: pointer;
 }
 .week-pace-note--behind {
   color: var(--warn);
 }
-
+.week-pace-chevron {
+  flex: none;
+  transition: transform 0.18s ease;
+}
+.week-pace-chevron--open {
+  transform: rotate(180deg);
+}
 .freeze-row {
   display: block;
   width: 100%;
@@ -1480,6 +1496,38 @@ textarea {
 .field-row {
   display: flex;
   gap: 12px;
+}
+/* Advanced goal fields (repeat days, category, reminder) — collapsed by
+   default behind this so creating "Drink water" is name, target, done,
+   rather than a five-field form up front. `.form`'s own 14px gap already
+   spaces this from what's above and below it, so nothing extra is needed
+   here beyond the row itself. */
+.goal-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: -4px 0 0;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+}
+.goal-advanced-toggle svg {
+  transition: transform 0.18s ease;
+}
+.goal-advanced-toggle--open svg {
+  transform: rotate(180deg);
+}
+.goal-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: settingsGroupIn 0.18s ease backwards;
 }
 .field-row .field {
   flex: 1;

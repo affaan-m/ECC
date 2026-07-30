@@ -52,6 +52,20 @@ export default function GoalsPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [editing, setEditing] = useState(null);
   const [celebrate, setCelebrate] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Which weekly goals have their day-by-day breakdown open. Collapsed by
+  // default — a grid of seven cells per goal was the single biggest thing on
+  // the screen, for a feature most checks-ins don't need: the note line
+  // above it already says "on pace" or "3 behind", which is the answer to
+  // the question people are actually asking when they open this page.
+  const [expandedPace, setExpandedPace] = useState(() => new Set());
+  const togglePace = (goalId) =>
+    setExpandedPace((prev) => {
+      const next = new Set(prev);
+      if (next.has(goalId)) next.delete(goalId);
+      else next.add(goalId);
+      return next;
+    });
   const streakSeenRef = useRef(null); // goalId -> last-seen streak, seeded silently on first sight
 
   // Fire a one-time celebration the moment a goal's streak crosses a
@@ -193,11 +207,16 @@ export default function GoalsPage() {
     };
     setEditing(d);
     initialJsonRef.current = JSON.stringify(d);
+    // Open already-expanded when a goal actually uses one of these — hiding
+    // a setting the goal was already relying on would look like it had been
+    // quietly turned off.
+    setShowAdvanced(d.repeatDays.length > 0 || !!d.category || d.reminderOn);
   };
   const openNew = () => {
     const d = emptyGoal(period);
     setEditing(d);
     initialJsonRef.current = JSON.stringify(d);
+    setShowAdvanced(false);
   };
   const dirty = editing ? JSON.stringify(editing) !== initialJsonRef.current : false;
 
@@ -265,7 +284,13 @@ export default function GoalsPage() {
               : atCurrent
               ? 'This week'
               : formatWeekRange(weekStart)}
-            <span className="week-sub">{isDaily ? formatDayLabel(day) : formatWeekRange(weekStart)}</span>
+            {/* The sub-label exists to answer "which date is 'Today'?" — a
+                question that only exists when the main label says "Today"
+                or "This week" in the first place. On any other date the two
+                lines were identical text stacked on top of itself. */}
+            {atCurrent && (
+              <span className="week-sub">{isDaily ? formatDayLabel(day) : formatWeekRange(weekStart)}</span>
+            )}
           </button>
           <button
             className="icon-btn"
@@ -298,7 +323,12 @@ export default function GoalsPage() {
       ) : (
         groups.map(([category, list]) => (
           <section key={category} className="goal-group">
-            <h3 className="group-title">{category}</h3>
+            {/* Skipped when everything falls into the one default bucket —
+                most people never set a category, and a lone "General"
+                heading over every goal on the page was a label with nothing
+                to distinguish. It appears the moment a second category
+                does, when it starts actually meaning something. */}
+            {groups.length > 1 && <h3 className="group-title">{category}</h3>}
             {list.map((g) => {
               const value = progressOf(g);
               const pct = g.target ? Math.min(100, Math.round((value / g.target) * 100)) : 0;
@@ -316,19 +346,27 @@ export default function GoalsPage() {
                     <button className="goal-info" onClick={() => openEdit(g)}>
                       <div className="goal-title-row">
                         <span className="goal-title">{g.title}</span>
-                        {/* Only worth flagging once it's actually a streak — a
-                            single completion doesn't need a badge. */}
-                        {streak >= 2 && (
-                          <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
-                            <Icon name="flame" size={16} /> <AnimatedNumber value={streak} />
-                          </span>
-                        )}
-                        {frozenHere && (
+                        {/* One status badge, not up to three. Frozen implies
+                            "there is a streak and it's protected", so it now
+                            carries the streak count itself rather than
+                            sitting next to a separate flame badge saying the
+                            same number — the two together were redundant
+                            every time a freeze was active. The reminder bell
+                            moved out entirely: it describes something that
+                            might happen later today, not the progress this
+                            card exists to show, and it's still visible and
+                            editable from the edit sheet. */}
+                        {frozenHere ? (
                           <span className="streak-badge streak-badge--frozen" title="This period is protected by a streak freeze">
-                            <Icon name="snowflake" size={14} /> Protected
+                            <Icon name="snowflake" size={14} /> <AnimatedNumber value={streak} />
                           </span>
+                        ) : (
+                          streak >= 2 && (
+                            <span className="streak-badge" title={`${streak} ${g.period === 'daily' ? 'days' : 'weeks'} in a row`}>
+                              <Icon name="flame" size={16} /> <AnimatedNumber value={streak} />
+                            </span>
+                          )
                         )}
-                        {g.reminder && <span className="bell-badge" title={`Reminder at ${g.reminder.time}`}><Icon name="bell" size={14} /></span>}
                         {done && <span className="check-badge" aria-label="Goal met"><Icon name="check" size={15} /></span>}
                       </div>
                       <div className="progress-track">
@@ -386,6 +424,8 @@ export default function GoalsPage() {
                       value={value}
                       weekStart={weekStart}
                       atCurrent={atCurrent}
+                      expanded={expandedPace.has(g.id)}
+                      onToggle={() => togglePace(g.id)}
                       onSetTo={(n) => actions.setGoalProgress(g.id, key, n)}
                     />
                   )}
@@ -468,38 +508,12 @@ export default function GoalsPage() {
                 </button>
               </div>
             </div>
-            {editing.period === 'daily' && (
-              <div className="field">
-                <span>Repeat on</span>
-                <div className="weekday-picker">
-                  {WEEKDAY_LETTERS.map((l, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className={`weekday-btn${(editing.repeatDays || []).includes(i) ? ' weekday-btn--on' : ''}`}
-                      onClick={() => toggleWeekday(i)}
-                    >
-                      {l}
-                    </button>
-                  ))}
-                </div>
-                <p className="muted small">Leave all days off to repeat every day.</p>
-              </div>
-            )}
-            <label className="field">
-              <span>Category</span>
-              <input
-                value={editing.category}
-                onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                placeholder="e.g. Health"
-                list="goal-categories"
-              />
-              <datalist id="goal-categories">
-                {[...new Set(state.goals.map((g) => g.category).filter(Boolean))].map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </label>
+            {/* Name, repeats, target: the three things a goal can't exist
+                without. Which days it runs on, what it's filed under, and
+                whether it nags you are all real settings, just not ones a
+                new goal needs an opinion on immediately — every one of them
+                already has a sensible default (every day, no category, no
+                reminder). */}
             <div className="field-row">
               <label className="field">
                 <span>{editing.period === 'daily' ? 'Daily' : 'Weekly'} target</span>
@@ -520,28 +534,74 @@ export default function GoalsPage() {
               </label>
             </div>
 
-            <div className="field">
-              <label className="check-row">
-                <Checkbox
-                  checked={editing.reminderOn}
-                  onChange={(e) => setEditing({ ...editing, reminderOn: e.target.checked })}
-                  ariaLabel="Remind me"
-                />
-                <span>Remind me</span>
-              </label>
-              {editing.reminderOn && (
-                <>
+            <button
+              type="button"
+              className={`goal-advanced-toggle${showAdvanced ? ' goal-advanced-toggle--open' : ''}`}
+              onClick={() => setShowAdvanced((v) => !v)}
+              aria-expanded={showAdvanced}
+            >
+              <Icon name="chevronDown" size={14} />
+              {showAdvanced ? 'Fewer options' : 'More options'}
+            </button>
+
+            {showAdvanced && (
+              <div className="goal-advanced-body">
+                {editing.period === 'daily' && (
+                  <div className="field">
+                    <span>Repeat on</span>
+                    <div className="weekday-picker">
+                      {WEEKDAY_LETTERS.map((l, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className={`weekday-btn${(editing.repeatDays || []).includes(i) ? ' weekday-btn--on' : ''}`}
+                          onClick={() => toggleWeekday(i)}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="muted small">Leave all days off to repeat every day.</p>
+                  </div>
+                )}
+                <label className="field">
+                  <span>Category</span>
                   <input
-                    type="time"
-                    value={editing.reminderTime}
-                    onChange={(e) => setEditing({ ...editing, reminderTime: e.target.value })}
+                    value={editing.category}
+                    onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+                    placeholder="e.g. Health"
+                    list="goal-categories"
                   />
-                  {!notificationsSupported() && (
-                    <span className="muted small">This browser can't show notifications.</span>
+                  <datalist id="goal-categories">
+                    {[...new Set(state.goals.map((g) => g.category).filter(Boolean))].map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </label>
+                <div className="field">
+                  <label className="check-row">
+                    <Checkbox
+                      checked={editing.reminderOn}
+                      onChange={(e) => setEditing({ ...editing, reminderOn: e.target.checked })}
+                      ariaLabel="Remind me"
+                    />
+                    <span>Remind me</span>
+                  </label>
+                  {editing.reminderOn && (
+                    <>
+                      <input
+                        type="time"
+                        value={editing.reminderTime}
+                        onChange={(e) => setEditing({ ...editing, reminderTime: e.target.value })}
+                      />
+                      {!notificationsSupported() && (
+                        <span className="muted small">This browser can't show notifications.</span>
+                      )}
+                    </>
                   )}
-                </>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </EditorSheet>
@@ -562,7 +622,7 @@ export default function GoalsPage() {
 // cells are filled from it. Nothing here claims to know *which* day you
 // actually did the work — it shows how far through the week's worth you
 // are, which is the honest thing the data supports.
-function WeekPace({ goal, value, weekStart, atCurrent, onSetTo }) {
+function WeekPace({ goal, value, weekStart, atCurrent, expanded, onToggle, onSetTo }) {
   const pace = weeklyPace(goal.target);
   const cumulative = paceCumulative(goal.target);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -574,37 +634,21 @@ function WeekPace({ goal, value, weekStart, atCurrent, onSetTo }) {
 
   return (
     <div className="week-pace">
-      <div className="week-pace-row">
-        {days.map((d, i) => {
-          const filled = value >= cumulative[i];
-          const isTodayCell = i === todayIdx;
-          // A cell with no share of the target (target smaller than 7) is a
-          // rest day — nothing to do, so nothing to tap.
-          const rest = pace[i] === 0;
-          return (
-            <button
-              key={i}
-              className={`pace-cell${filled ? ' pace-cell--filled' : ''}${
-                isTodayCell ? ' pace-cell--today' : ''
-              }${rest ? ' pace-cell--rest' : ''}`}
-              disabled={rest}
-              // Tapping a day logs everything up to and including it — the
-              // common case is catching up several days at once, and seven
-              // taps to do that would be worse than the stepper it replaces.
-              // Tapping an already-filled day rewinds to just before it.
-              onClick={() => {
-                selectTick();
-                onSetTo(filled ? cumulative[i] - pace[i] : cumulative[i]);
-              }}
-              aria-label={`${WEEKDAY_LETTERS[d.getDay()]} — ${pace[i]} ${goal.unit || ''}`.trim()}
-            >
-              <span className="pace-cell-day">{WEEKDAY_LETTERS[d.getDay()]}</span>
-              <span className="pace-cell-n">{pace[i] || '–'}</span>
-            </button>
-          );
-        })}
-      </div>
-      <span className={`week-pace-note${behind ? ' week-pace-note--behind' : ''}`}>
+      {/* Collapsed to this one line by default. It already answers the
+          question a glance at this needs to answer — on pace, behind, or
+          done — so the day-by-day grid is a tap away for whoever wants to
+          log a specific day or see the shape of the week, not a fixture on
+          every weekly goal. */}
+      <button
+        type="button"
+        className={`week-pace-note${behind ? ' week-pace-note--behind' : ''}`}
+        onClick={() => {
+          selectTick();
+          onToggle();
+        }}
+        aria-expanded={expanded}
+      >
+        <Icon name="chevronDown" size={13} className={`week-pace-chevron${expanded ? ' week-pace-chevron--open' : ''}`} />
         {!atCurrent
           ? `${Math.max(...pace)} a day to finish the week`
           : behind
@@ -612,7 +656,39 @@ function WeekPace({ goal, value, weekStart, atCurrent, onSetTo }) {
           : value >= goal.target
           ? 'Week complete'
           : `On pace · ${Math.max(0, goal.target - value)} left this week`}
-      </span>
+      </button>
+      {expanded && (
+        <div className="week-pace-row">
+          {days.map((d, i) => {
+            const filled = value >= cumulative[i];
+            const isTodayCell = i === todayIdx;
+            // A cell with no share of the target (target smaller than 7) is a
+            // rest day — nothing to do, so nothing to tap.
+            const rest = pace[i] === 0;
+            return (
+              <button
+                key={i}
+                className={`pace-cell${filled ? ' pace-cell--filled' : ''}${
+                  isTodayCell ? ' pace-cell--today' : ''
+                }${rest ? ' pace-cell--rest' : ''}`}
+                disabled={rest}
+                // Tapping a day logs everything up to and including it — the
+                // common case is catching up several days at once, and seven
+                // taps to do that would be worse than the stepper it replaces.
+                // Tapping an already-filled day rewinds to just before it.
+                onClick={() => {
+                  selectTick();
+                  onSetTo(filled ? cumulative[i] - pace[i] : cumulative[i]);
+                }}
+                aria-label={`${WEEKDAY_LETTERS[d.getDay()]} — ${pace[i]} ${goal.unit || ''}`.trim()}
+              >
+                <span className="pace-cell-day">{WEEKDAY_LETTERS[d.getDay()]}</span>
+                <span className="pace-cell-n">{pace[i] || '–'}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
