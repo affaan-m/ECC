@@ -9,7 +9,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { formatDuration, buildContextBar, readCurrentTask } = require('../../scripts/hooks/ecc-statusline');
+const {
+  formatDuration,
+  buildContextBar,
+  readCurrentTask,
+  buildMetricsSegment,
+} = require('../../scripts/hooks/ecc-statusline');
 
 // Test helper
 function test(name, fn) {
@@ -199,6 +204,77 @@ function runTests() {
         else process.env.CLAUDE_CONFIG_DIR = originalConfig;
         fs.rmSync(tmpConfig, { recursive: true, force: true });
       }
+    })
+  )
+    passed++;
+  else failed++;
+
+  // buildMetricsSegment
+  console.log('\nbuildMetricsSegment()\n');
+
+  const NOW_MS = 1738425600000;
+  // eslint-disable-next-line no-control-regex -- ANSI escapes are what these tests assert on
+  const stripAnsi = s => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const BRIDGE = { total_cost_usd: 368.03, tool_count: 52, files_modified_count: 7 };
+
+  if (
+    test('rate limit replaces the dollar figure when present', () => {
+      const out = buildMetricsSegment(
+        { rate_limits: { five_hour: { used_percentage: 24, resets_at: NOW_MS / 1000 + 4320 } } },
+        BRIDGE,
+        NOW_MS
+      );
+      assert.strictEqual(stripAnsi(out), '5h 24% ↻1h12m 52t 7f');
+      assert.ok(!out.includes('$'), 'cost must not appear alongside the rate limit');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('without rate limits it falls back to the native stdin cost', () => {
+      const out = buildMetricsSegment({ cost: { total_cost_usd: 1.5 } }, BRIDGE, NOW_MS);
+      assert.strictEqual(stripAnsi(out), '$1.50 52t 7f');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('with neither, it falls back to the bridge cost', () => {
+      const out = buildMetricsSegment({}, BRIDGE, NOW_MS);
+      assert.strictEqual(stripAnsi(out), '$368.03 52t 7f');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('a null five_hour window falls through to cost rather than blanking', () => {
+      const out = buildMetricsSegment({ rate_limits: { five_hour: null } }, BRIDGE, NOW_MS);
+      assert.strictEqual(stripAnsi(out), '$368.03 52t 7f');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('rate limit renders with no bridge file at all', () => {
+      const out = buildMetricsSegment(
+        { rate_limits: { five_hour: { used_percentage: 5 } } },
+        null,
+        NOW_MS
+      );
+      assert.strictEqual(stripAnsi(out), '5h 5%');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('no data at all yields an empty segment', () => {
+      assert.strictEqual(buildMetricsSegment({}, null, NOW_MS), '');
+      assert.strictEqual(buildMetricsSegment(undefined, undefined, NOW_MS), '');
     })
   )
     passed++;
