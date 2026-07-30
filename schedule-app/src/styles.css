@@ -3672,6 +3672,9 @@ textarea {
   gap: 4px;
 }
 .mini-ring {
+  /* Same variable, same reasoning as .summary-ring on the Goals page — this
+     is the smaller version of that exact widget. */
+  --ring-hi: color-mix(in srgb, var(--accent) 55%, var(--accent-soft));
   position: relative;
   width: 46px;
   height: 46px;
@@ -3680,6 +3683,7 @@ textarea {
   place-items: center;
   font-size: 11px;
   font-weight: 800;
+  filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--accent) 25%, transparent));
 }
 .mini-ring::after {
   content: '';

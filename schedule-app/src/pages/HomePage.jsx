@@ -1035,9 +1035,18 @@ function lastCompleted(t) {
 
 function MiniRing({ pct, label }) {
   const shown = useCountUp(pct);
+  // Same two-stop sweep as the big ring on the Goals page (see ringStyle
+  // there) — this is the smaller version of the identical widget, and a
+  // flat single-color arc here while the other one has depth would read as
+  // an oversight rather than a deliberate smaller variant.
   return (
     <div className="mini-ring-wrap">
-      <div className="mini-ring" style={{ background: `conic-gradient(var(--accent) ${shown * 3.6}deg, var(--track) 0deg)` }}>
+      <div
+        className="mini-ring"
+        style={{
+          background: `conic-gradient(from -90deg, var(--ring-hi) 0deg, var(--accent) ${shown * 3.6}deg, var(--track) ${shown * 3.6}deg)`,
+        }}
+      >
         <span>{shown}%</span>
       </div>
       <span className="mini-ring-label">{label}</span>
