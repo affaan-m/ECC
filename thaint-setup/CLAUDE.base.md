@@ -71,7 +71,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 6. Implementation Notes & Decisions Log
 
-When implementing a `<SPEC>`, you must maintain a running log of your implementation details. 
+When implementing a `<SPEC>`, you must maintain a running log of your implementation details.
 - If the user specifies an external file (e.g., `implementation-notes.md`), update that file.
 - If no external file is specified, append your notes directly to a `[DRAFT_NOTES]` section or a standalone `IMPLEMENTATION_NOTES.md`.
 
