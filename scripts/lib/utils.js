@@ -186,7 +186,8 @@ function sanitizeSessionId(raw) {
  * CLAUDE_SESSION_ID is kept as a fallback: ECC's own launcher sets it (see
  * ecc2/src/session/manager.rs).
  *
- * Returns last 8 characters, falls back to a sanitized project name then 'default'.
+ * Returns last 8 characters, falls back to a sanitized project name, then the
+ * provided fallback, then 'default'.
  */
 function getSessionIdShort(fallback = 'default') {
   const sessionId = process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID;

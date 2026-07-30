@@ -38,8 +38,9 @@ function parseAccumulator(raw) {
 }
 
 function getAccumFile() {
-  // Must stay identical to the sibling hook: post-edit-accumulator writes this
-  // file on PostToolUse, stop-format-typecheck reads it on Stop.
+  // Must compute the same path as the sibling hook: post-edit-accumulator writes
+  // this file on PostToolUse, stop-format-typecheck reads it on Stop. Enforced by
+  // tests/hooks/stop-format-typecheck.test.js ('both hooks derive the same path').
   const raw =
     process.env.CLAUDE_CODE_SESSION_ID ||
     process.env.CLAUDE_SESSION_ID ||
