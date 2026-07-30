@@ -190,7 +190,7 @@ async function main() {
     input = {};
   }
 
-  const rawSessionId = input && typeof input.session_id === 'string' && input.session_id ? input.session_id : process.env.CLAUDE_SESSION_ID || 'default';
+  const rawSessionId = input && typeof input.session_id === 'string' && input.session_id ? input.session_id : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID || 'default';
   const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '') || 'default';
   const transcriptPath = input && typeof input.transcript_path === 'string' ? input.transcript_path : '';
 

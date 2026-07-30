@@ -14,6 +14,10 @@ const os = require('os');
 const { spawn } = require('child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
+// These tests pin the session id via the legacy CLAUDE_SESSION_ID; run-all.js
+// scrubs the real one for suite runs, this covers standalone runs.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+
 // Test helper
 function _test(name, fn) {
   try {

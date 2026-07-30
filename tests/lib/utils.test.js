@@ -363,6 +363,35 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('getSessionIdShort resolves session-id precedence', () => {
+    const origCode = process.env.CLAUDE_CODE_SESSION_ID;
+    const origLegacy = process.env.CLAUDE_SESSION_ID;
+    const cases = [
+      { code: 'real-session-aaaaaaaa', legacy: 'legacy-session-bbbbbbbb', expect: 'aaaaaaaa', why: 'real var wins over legacy' },
+      { code: undefined, legacy: 'legacy-session-bbbbbbbb', expect: 'bbbbbbbb', why: 'legacy still honoured (ecc2 launcher sets it)' },
+      { code: 'real-session-aaaaaaaa', legacy: undefined, expect: 'aaaaaaaa', why: 'real var alone is enough' }
+    ];
+    try {
+      for (const c of cases) {
+        if (c.code === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+        else process.env.CLAUDE_CODE_SESSION_ID = c.code;
+        if (c.legacy === undefined) delete process.env.CLAUDE_SESSION_ID;
+        else process.env.CLAUDE_SESSION_ID = c.legacy;
+        assert.strictEqual(utils.getSessionIdShort(), c.expect, c.why);
+      }
+
+      // Neither set: neither name may leak in, so the project-name fallback runs.
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      delete process.env.CLAUDE_SESSION_ID;
+      assert.strictEqual(utils.getSessionIdShort(), utils.sanitizeSessionId(utils.getProjectName()), 'no env id falls back to project name');
+    } finally {
+      if (origCode !== undefined) process.env.CLAUDE_CODE_SESSION_ID = origCode;
+      else delete process.env.CLAUDE_CODE_SESSION_ID;
+      if (origLegacy !== undefined) process.env.CLAUDE_SESSION_ID = origLegacy;
+      else delete process.env.CLAUDE_SESSION_ID;
+    }
+  })) passed++; else failed++;
+
   if (test('getSessionIdShort sanitizes explicit fallback parameter', () => {
     if (process.platform === 'win32') {
       console.log('    (skipped — root CWD differs on Windows)');
