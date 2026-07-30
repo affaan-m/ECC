@@ -444,7 +444,9 @@ patch_mcp_catalog() {
   # making the server look configured instead of staying disabled. Fail loudly
   # so a newly added upstream server can't slip through unmapped.
   local unmapped
-  unmapped="$(grep -oE 'YOUR_[A-Z0-9_]*_HERE' "$mcp_processed" | sort -u | tr '\n' ' ')"
+  # grep exits 1 when it finds nothing — the healthy case — and `set -e` treats
+  # that as a failure, aborting the install right before anything is copied.
+  unmapped="$(grep -oE 'YOUR_[A-Z0-9_]*_HERE' "$mcp_processed" | sort -u | tr '\n' ' ')" || unmapped=''
   [[ -z "$unmapped" ]] || die "unmapped MCP placeholders (add to fix_placeholders): $unmapped"
 
   [[ -f "$config" ]] || printf '{}\n' > "$config"
