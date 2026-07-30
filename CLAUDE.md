@@ -94,6 +94,9 @@ upstream-tracked files are the conflict surface. Mark permanent preferences
 `// LOCAL (thaint):`; leave bug fixes unmarked so they can be dropped once
 upstream fixes them.
 
+Merge PRs here with a merge commit, never a squash: one commit per fix is what
+makes `git revert <sha>` viable when upstream lands its own.
+
 A formatter rewrites files on edit: check `git diff --stat` before `git add`.
 
 ## Local Gotchas
