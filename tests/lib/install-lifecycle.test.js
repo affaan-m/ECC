@@ -20,6 +20,15 @@ const {
   readInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  HOOK_AUTHORIZATION_GROUP_IDS,
+} = require('../../scripts/lib/install/hook-authorizations');
+
+function allowedHookAuthorizations() {
+  return Object.fromEntries(
+    HOOK_AUTHORIZATION_GROUP_IDS.map(id => [id, 'allow'])
+  );
+}
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CURRENT_PACKAGE_VERSION = JSON.parse(
@@ -1000,14 +1009,15 @@ function runTests() {
         writeOpencodeState(homeDir, {
           request: {
             profile: null,
-            modules: ['commands-core'],
+            modules: ['commands-core', 'hooks-runtime'],
+            hookAuthorizations: allowedHookAuthorizations(),
             includeComponents: [],
             excludeComponents: [],
             legacyLanguages: [],
             legacyMode: false,
           },
           resolution: {
-            selectedModules: ['commands-core'],
+            selectedModules: ['commands-core', 'hooks-runtime'],
             skippedModules: [],
           },
           operations: [],
@@ -1077,14 +1087,15 @@ function runTests() {
         writeOpencodeState(homeDir, {
           request: {
             profile: null,
-            modules: ['commands-core'],
+            modules: ['commands-core', 'hooks-runtime'],
+            hookAuthorizations: allowedHookAuthorizations(),
             includeComponents: [],
             excludeComponents: [],
             legacyLanguages: [],
             legacyMode: false,
           },
           resolution: {
-            selectedModules: ['commands-core'],
+            selectedModules: ['commands-core', 'hooks-runtime'],
             skippedModules: [],
           },
           operations: [],
@@ -1149,14 +1160,15 @@ function runTests() {
         writeOpencodeState(homeDir, {
           request: {
             profile: null,
-            modules: ['commands-core'],
+            modules: ['commands-core', 'hooks-runtime'],
+            hookAuthorizations: allowedHookAuthorizations(),
             includeComponents: [],
             excludeComponents: [],
             legacyLanguages: [],
             legacyMode: false,
           },
           resolution: {
-            selectedModules: ['commands-core'],
+            selectedModules: ['commands-core', 'hooks-runtime'],
             skippedModules: [],
           },
           operations: [],
@@ -1507,6 +1519,51 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('doctor holds and repair refuses hook-bearing states without grouped decisions', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      writeCursorState(projectRoot, {
+        request: {
+          profile: null,
+          modules: ['hooks-runtime'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['hooks-runtime'],
+          skippedModules: [],
+        },
+        operations: [],
+      });
+
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+      assert.ok(doctor.results[0].issues.some(issue => (
+        issue.code === 'hook-authorization-held'
+      )));
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.ok(repair.results[0].error.includes('Hook authorization REVIEW / HELD'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('repair restores render-template outputs from recorded rendered content', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -1525,6 +1582,7 @@ function runTests() {
         request: {
           profile: null,
           modules: [],
+          hookAuthorizations: allowedHookAuthorizations(),
           legacyLanguages: ['typescript'],
           legacyMode: true,
         },
@@ -1589,6 +1647,7 @@ function runTests() {
         request: {
           profile: null,
           modules: [],
+          hookAuthorizations: allowedHookAuthorizations(),
           legacyLanguages: ['typescript'],
           legacyMode: true,
         },

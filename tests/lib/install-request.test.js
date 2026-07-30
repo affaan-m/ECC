@@ -63,6 +63,57 @@ function runTests() {
     assert.deepStrictEqual(parsed.languages, []);
   })) passed++; else failed++;
 
+  if (test('parses repeatable grouped hook authorization decisions', () => {
+    const parsed = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--profile', 'full',
+      '--hook-authorization', 'automatic-source-writes=allow',
+      '--hook-authorization', 'transcript-derived-llm-egress=decline',
+    ]);
+
+    assert.deepStrictEqual(parsed.hookAuthorizations, {
+      'automatic-source-writes': 'allow',
+      'transcript-derived-llm-egress': 'decline',
+    });
+  })) passed++; else failed++;
+
+  if (test('rejects malformed, unknown, and conflicting hook authorization decisions', () => {
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--hook-authorization', 'automatic-source-writes',
+      ]),
+      /Expected <group>=allow\|decline/
+    );
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--hook-authorization', 'automatic-source-writes=yes',
+      ]),
+      /allow or decline/
+    );
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--hook-authorization', 'unknown-group=allow',
+      ]),
+      /Unknown hook authorization group/
+    );
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--hook-authorization', 'automatic-source-writes=allow',
+        '--hook-authorization', 'automatic-source-writes=decline',
+      ]),
+      /Conflicting hook authorization decision/
+    );
+  })) passed++; else failed++;
+
   if (test('requires a --locale value', () => {
     assert.throws(
       () => parseInstallArgs([
@@ -187,6 +238,12 @@ function runTests() {
         moduleIds: ['workflow-quality'],
         includeComponentIds: ['lang:typescript'],
         excludeComponentIds: ['capability:orchestration'],
+        hookAuthorizations: {
+          'automatic-source-writes': 'allow',
+        },
+      },
+      hookAuthorizations: {
+        'transcript-derived-llm-egress': 'decline',
       },
     });
 
@@ -196,7 +253,33 @@ function runTests() {
     assert.deepStrictEqual(request.moduleIds, ['workflow-quality', 'platform-configs']);
     assert.deepStrictEqual(request.includeComponentIds, ['lang:typescript', 'framework:nextjs']);
     assert.deepStrictEqual(request.excludeComponentIds, ['capability:orchestration', 'capability:media']);
+    assert.deepStrictEqual(request.hookAuthorizations, {
+      'automatic-source-writes': 'allow',
+      'transcript-derived-llm-egress': 'decline',
+    });
     assert.strictEqual(request.configPath, '/workspace/app/ecc-install.json');
+  })) passed++; else failed++;
+
+  if (test('rejects conflicting config and CLI hook authorization decisions', () => {
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: 'full',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+        hookAuthorizations: {
+          'automatic-source-writes': 'decline',
+        },
+        config: {
+          hookAuthorizations: {
+            'automatic-source-writes': 'allow',
+          },
+        },
+      }),
+      /Conflicting hook authorization decision/
+    );
   })) passed++; else failed++;
 
   if (test('validates explicit module IDs against the manifest catalog', () => {

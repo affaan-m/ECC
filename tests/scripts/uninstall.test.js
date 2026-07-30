@@ -22,6 +22,16 @@ const {
   createInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  HOOK_AUTHORIZATION_GROUP_IDS,
+} = require('../../scripts/lib/install/hook-authorizations');
+
+function allowedHookAuthorizationArgs() {
+  return HOOK_AUTHORIZATION_GROUP_IDS.flatMap(id => [
+    '--hook-authorization',
+    `${id}=allow`,
+  ]);
+}
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -85,7 +95,13 @@ function runTests() {
     const projectRoot = createTempDir('uninstall-project-');
 
     try {
-      const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript'], {
+      const installStdout = execFileSync('node', [
+        INSTALL_SCRIPT,
+        '--target',
+        'cursor',
+        'typescript',
+        ...allowedHookAuthorizationArgs(),
+      ], {
         cwd: projectRoot,
         env: {
           ...process.env,
@@ -112,6 +128,87 @@ function runTests() {
       assert.ok(!fs.existsSync(managedPath));
       assert.ok(!fs.existsSync(statePath));
       assert.ok(fs.existsSync(unrelatedPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('removes an empty target root created by install', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.claude');
+      assert.ok(!fs.existsSync(targetRoot));
+      execFileSync('node', [
+        INSTALL_SCRIPT,
+        '--target',
+        'claude-project',
+        '--profile',
+        'core',
+      ], {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          HOME: homeDir,
+        },
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: CLI_TIMEOUT_MS,
+      });
+      const state = JSON.parse(
+        fs.readFileSync(path.join(targetRoot, 'ecc', 'install-state.json'), 'utf8')
+      );
+      assert.strictEqual(state.target.rootExistedBeforeInstall, false);
+
+      const uninstallResult = run(['--target', 'claude-project'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(!fs.existsSync(targetRoot));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('preserves a pre-existing empty target root', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.claude');
+      fs.mkdirSync(targetRoot);
+      execFileSync('node', [
+        INSTALL_SCRIPT,
+        '--target',
+        'claude-project',
+        '--profile',
+        'core',
+      ], {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          HOME: homeDir,
+        },
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: CLI_TIMEOUT_MS,
+      });
+      const state = JSON.parse(
+        fs.readFileSync(path.join(targetRoot, 'ecc', 'install-state.json'), 'utf8')
+      );
+      assert.strictEqual(state.target.rootExistedBeforeInstall, true);
+
+      const uninstallResult = run(['--target', 'claude-project'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(fs.existsSync(targetRoot));
+      assert.deepStrictEqual(fs.readdirSync(targetRoot), []);
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

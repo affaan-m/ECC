@@ -88,6 +88,10 @@ function runTests() {
         modules: ['platform-configs', 'platform-configs'],
         include: ['lang:typescript', 'framework:nextjs', 'lang:typescript'],
         exclude: ['capability:media'],
+        hookAuthorizations: {
+          'automatic-source-writes': 'allow',
+          'transcript-derived-llm-egress': 'decline',
+        },
         options: {
           includeExamples: false,
         },
@@ -100,7 +104,43 @@ function runTests() {
       assert.deepStrictEqual(config.moduleIds, ['platform-configs']);
       assert.deepStrictEqual(config.includeComponentIds, ['lang:typescript', 'framework:nextjs']);
       assert.deepStrictEqual(config.excludeComponentIds, ['capability:media']);
+      assert.deepStrictEqual(config.hookAuthorizations, {
+        'automatic-source-writes': 'allow',
+        'transcript-derived-llm-egress': 'decline',
+      });
       assert.deepStrictEqual(config.options, { includeExamples: false });
+    } finally {
+      cleanup(cwd);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects unknown hook authorization groups and unsupported decisions', () => {
+    const cwd = createTempDir('install-config-');
+
+    try {
+      writeJson(path.join(cwd, 'ecc-install.json'), {
+        version: 1,
+        profile: 'full',
+        hookAuthorizations: {
+          'unknown-hook-group': 'allow',
+        },
+      });
+      assert.throws(
+        () => loadInstallConfig('ecc-install.json', { cwd }),
+        /Invalid install config/
+      );
+
+      writeJson(path.join(cwd, 'ecc-install.json'), {
+        version: 1,
+        profile: 'full',
+        hookAuthorizations: {
+          'automatic-source-writes': 'yes',
+        },
+      });
+      assert.throws(
+        () => loadInstallConfig('ecc-install.json', { cwd }),
+        /Invalid install config/
+      );
     } finally {
       cleanup(cwd);
     }

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "anthropic/claude-haiku-4-5",
+  "default_agent": "build",
+  "instructions": [
+    "instructions/INSTRUCTIONS.md",
+    "skills/tdd-workflow/SKILL.md",
+    "skills/verification-loop/SKILL.md",
+    "skills/strategic-compact/SKILL.md"
+  ],
+  "skills": {
+    "paths": [
+      "skills"
+    ]
+  },
+  "permission": {
+    "mcp_*": "ask"
+  }
+}

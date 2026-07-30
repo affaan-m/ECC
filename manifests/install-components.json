@@ -36,9 +36,25 @@
     {
       "id": "baseline:platform",
       "family": "baseline",
-      "description": "Platform configs, package-manager setup, and MCP catalog defaults.",
+      "description": "Platform configs and package-manager setup.",
       "modules": [
         "platform-configs"
+      ]
+    },
+    {
+      "id": "baseline:mcp-catalog",
+      "family": "baseline",
+      "description": "Opt-in MCP server catalog, including remote service declarations.",
+      "modules": [
+        "mcp-catalog"
+      ]
+    },
+    {
+      "id": "baseline:workflow-core",
+      "family": "baseline",
+      "description": "Focused TDD, verification, and context-compaction guidance used by the Core profile.",
+      "modules": [
+        "workflow-core"
       ]
     },
     {

@@ -115,7 +115,21 @@ function isGeneratedRuntimeSourcePath(sourceRelativePath) {
 
 function createStatePreview(options) {
   const { createInstallState } = require('./install-state');
-  return createInstallState(options);
+  let rootExistedBeforeInstall = fs.existsSync(options.targetRoot);
+  if (fs.existsSync(options.installStatePath)) {
+    try {
+      const priorState = JSON.parse(fs.readFileSync(options.installStatePath, 'utf8'));
+      if (typeof priorState?.target?.rootExistedBeforeInstall === 'boolean') {
+        rootExistedBeforeInstall = priorState.target.rootExistedBeforeInstall;
+      }
+    } catch (_error) {
+      // Invalid prior state cannot grant root-removal ownership.
+    }
+  }
+  return createInstallState({
+    ...options,
+    rootExistedBeforeInstall,
+  });
 }
 
 function applyInstallPlan(plan) {
@@ -611,6 +625,9 @@ function createLegacyCompatInstallPlan(options = {}) {
   const target = options.target || 'claude';
   const includeComponentIds = Array.isArray(options.includeComponentIds) ? [...options.includeComponentIds] : [];
   const excludeComponentIds = Array.isArray(options.excludeComponentIds) ? [...options.excludeComponentIds] : [];
+  const hookAuthorizations = options.hookAuthorizations && typeof options.hookAuthorizations === 'object'
+    ? { ...options.hookAuthorizations }
+    : {};
 
   validateLegacyTarget(target);
 
@@ -619,24 +636,38 @@ function createLegacyCompatInstallPlan(options = {}) {
     target,
     legacyLanguages: options.legacyLanguages || []
   });
+  const hasHookDecisions = Object.keys(hookAuthorizations).length > 0;
+  const selectedModuleIds = hasHookDecisions
+    ? selection.moduleIds
+    : selection.moduleIds.filter(id => id !== 'hooks-runtime');
 
-  return createManifestInstallPlan({
+  const plan = createManifestInstallPlan({
     sourceRoot,
     projectRoot,
     homeDir: options.homeDir,
     target,
     profileId: null,
-    moduleIds: selection.moduleIds,
+    moduleIds: selectedModuleIds,
     includeComponentIds,
     excludeComponentIds,
+    hookAuthorizations,
     legacyLanguages: selection.legacyLanguages,
     legacyMode: true,
     requestProfileId: null,
     requestModuleIds: [],
     requestIncludeComponentIds: includeComponentIds,
     requestExcludeComponentIds: excludeComponentIds,
+    requestHookAuthorizations: hookAuthorizations,
     mode: 'legacy-compat'
   });
+  if (!hasHookDecisions && selection.moduleIds.includes('hooks-runtime')) {
+    plan.warnings = [
+      'Legacy language compatibility defaults to no automatic hooks. Supply all '
+        + 'six --hook-authorization decisions to opt into hooks-runtime.',
+      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+    ];
+  }
+  return plan;
 }
 
 function materializeScaffoldOperation(sourceRoot, operation) {
@@ -657,7 +688,7 @@ function materializeScaffoldOperation(sourceRoot, operation) {
 
   const sourcePath = path.join(sourceRoot, operation.sourceRelativePath);
   if (!fs.existsSync(sourcePath)) {
-    return [];
+    throw new Error(`Missing install source: ${operation.sourceRelativePath}`);
   }
 
   if (isGeneratedRuntimeSourcePath(operation.sourceRelativePath)) {
@@ -736,6 +767,11 @@ function createManifestInstallPlan(options = {}) {
     : Array.isArray(options.excludeComponentIds)
       ? [...options.excludeComponentIds]
       : [];
+  const suppliedRequestHookAuthorizations = Object.hasOwn(options, 'requestHookAuthorizations')
+    ? { ...options.requestHookAuthorizations }
+    : options.hookAuthorizations && typeof options.hookAuthorizations === 'object'
+      ? { ...options.hookAuthorizations }
+      : {};
   const plan = resolveInstallPlan({
     repoRoot: sourceRoot,
     projectRoot,
@@ -744,9 +780,19 @@ function createManifestInstallPlan(options = {}) {
     moduleIds: options.moduleIds || [],
     includeComponentIds: options.includeComponentIds || [],
     excludeComponentIds: options.excludeComponentIds || [],
+    hookAuthorizations: options.hookAuthorizations || {},
     target,
     exemptValidationCodes: options.exemptValidationCodes || [],
   });
+  const requestHookAuthorizations = { ...plan.hookAuthorization.decisions };
+  if (
+    JSON.stringify(Object.entries(suppliedRequestHookAuthorizations).sort())
+    !== JSON.stringify(Object.entries(requestHookAuthorizations).sort())
+  ) {
+    throw new Error(
+      'Persisted hook authorization decisions must match the decisions used for resolution'
+    );
+  }
   const adapter = getInstallTargetAdapter(target);
   const operations = dedupeCopyFileOperations(
     plan.operations.flatMap(operation => materializeScaffoldOperation(sourceRoot, operation))
@@ -765,10 +811,13 @@ function createManifestInstallPlan(options = {}) {
       modules: requestModuleIds,
       includeComponents: requestIncludeComponentIds,
       excludeComponents: requestExcludeComponentIds,
+      hookAuthorizations: requestHookAuthorizations,
       legacyLanguages,
       legacyMode: Boolean(options.legacyMode)
     },
     resolution: {
+      effectiveProfile: plan.effectiveProfileId,
+      selectionKind: plan.selectionKind,
       selectedModules: plan.selectedModuleIds,
       skippedModules: plan.skippedModuleIds
     },
@@ -787,10 +836,15 @@ function createManifestInstallPlan(options = {}) {
     targetRoot: plan.targetRoot,
     installRoot: plan.targetRoot,
     installStatePath: plan.installStatePath,
-    warnings: Array.isArray(options.warnings) ? [...options.warnings] : [],
+    warnings: [
+      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+      ...(Array.isArray(options.warnings) ? options.warnings : []),
+    ],
     languages: legacyLanguages,
     legacyLanguages,
     profileId: plan.profileId,
+    effectiveProfileId: plan.effectiveProfileId,
+    selectionKind: plan.selectionKind,
     requestedModuleIds: plan.requestedModuleIds,
     explicitModuleIds: plan.explicitModuleIds,
     includedComponentIds: plan.includedComponentIds,
@@ -798,6 +852,7 @@ function createManifestInstallPlan(options = {}) {
     selectedModuleIds: plan.selectedModuleIds,
     skippedModuleIds: plan.skippedModuleIds,
     excludedModuleIds: plan.excludedModuleIds,
+    hookAuthorization: plan.hookAuthorization,
     operations,
     statePreview
   };

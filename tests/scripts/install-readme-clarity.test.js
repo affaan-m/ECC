@@ -86,8 +86,8 @@ function runTests() {
       'README should document the npx minimal profile command'
     );
     assert.ok(
-      readme.includes('--profile core --without baseline:hooks --target claude'),
-      'README should document the hook opt-out path for the core profile'
+      readme.includes('--profile core --target claude'),
+      'README should document that the core profile is no-hooks by default'
     );
     assert.ok(
       readme.includes('This profile intentionally excludes `hooks-runtime`.'),

@@ -1,5 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  HOOK_AUTHORIZATION_GROUP_IDS,
+  normalizeHookAuthorizations,
+} = require('./install/hook-authorizations');
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -104,7 +108,11 @@ function createFallbackValidator() {
     if (!target || typeof target !== 'object' || Array.isArray(target)) {
       pushError('/target', 'must be object');
     } else {
-      validateNoAdditionalProperties(target, '/target', ['id', 'target', 'kind', 'root', 'installStatePath']);
+      validateNoAdditionalProperties(
+        target,
+        '/target',
+        ['id', 'target', 'kind', 'root', 'installStatePath', 'rootExistedBeforeInstall']
+      );
       if (!isNonEmptyString(target.id)) {
         pushError('/target/id', 'must be non-empty string');
       }
@@ -118,6 +126,12 @@ function createFallbackValidator() {
       if (!isNonEmptyString(target.installStatePath)) {
         pushError('/target/installStatePath', 'must be non-empty string');
       }
+      if (
+        target.rootExistedBeforeInstall !== undefined
+        && typeof target.rootExistedBeforeInstall !== 'boolean'
+      ) {
+        pushError('/target/rootExistedBeforeInstall', 'must be boolean');
+      }
     }
 
     const request = state.request;
@@ -127,7 +141,7 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
+        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'hookAuthorizations', 'legacyLanguages', 'legacyMode']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
@@ -135,6 +149,24 @@ function createFallbackValidator() {
       validateStringArray(request.modules, '/request/modules');
       validateStringArray(request.includeComponents, '/request/includeComponents');
       validateStringArray(request.excludeComponents, '/request/excludeComponents');
+      if (request.hookAuthorizations !== undefined) {
+        if (
+          !request.hookAuthorizations
+          || typeof request.hookAuthorizations !== 'object'
+          || Array.isArray(request.hookAuthorizations)
+        ) {
+          pushError('/request/hookAuthorizations', 'must be object');
+        } else {
+          for (const [id, decision] of Object.entries(request.hookAuthorizations)) {
+            if (!HOOK_AUTHORIZATION_GROUP_IDS.includes(id)) {
+              pushError(`/request/hookAuthorizations/${id}`, 'must be a known hook authorization group');
+            }
+            if (!['allow', 'decline'].includes(decision)) {
+              pushError(`/request/hookAuthorizations/${id}`, 'must be allow or decline');
+            }
+          }
+        }
+      }
       validateStringArray(request.legacyLanguages, '/request/legacyLanguages');
       if (typeof request.legacyMode !== 'boolean') {
         pushError('/request/legacyMode', 'must be boolean');
@@ -145,7 +177,18 @@ function createFallbackValidator() {
     if (!resolution || typeof resolution !== 'object' || Array.isArray(resolution)) {
       pushError('/resolution', 'must be object');
     } else {
-      validateNoAdditionalProperties(resolution, '/resolution', ['selectedModules', 'skippedModules']);
+      validateNoAdditionalProperties(
+        resolution,
+        '/resolution',
+        ['effectiveProfile', 'selectionKind', 'selectedModules', 'skippedModules']
+      );
+      validateOptionalString(resolution.effectiveProfile, '/resolution/effectiveProfile');
+      if (
+        resolution.selectionKind !== undefined
+        && !['profile', 'custom'].includes(resolution.selectionKind)
+      ) {
+        pushError('/resolution/selectionKind', 'must be profile or custom');
+      }
       validateStringArray(resolution.selectedModules, '/resolution/selectedModules');
       validateStringArray(resolution.skippedModules, '/resolution/skippedModules');
     }
@@ -238,6 +281,9 @@ function createInstallState(options) {
       kind: options.adapter.kind || undefined,
       root: options.targetRoot,
       installStatePath: options.installStatePath,
+      ...(typeof options.rootExistedBeforeInstall === 'boolean'
+        ? { rootExistedBeforeInstall: options.rootExistedBeforeInstall }
+        : {}),
     },
     request: {
       profile: options.request.profile || null,
@@ -254,6 +300,10 @@ function createInstallState(options) {
       legacyMode: Boolean(options.request.legacyMode),
     },
     resolution: {
+      effectiveProfile: options.resolution.effectiveProfile || null,
+      selectionKind: options.resolution.selectionKind || (
+        options.resolution.effectiveProfile ? 'profile' : 'custom'
+      ),
       selectedModules: Array.isArray(options.resolution.selectedModules)
         ? [...options.resolution.selectedModules]
         : [],
@@ -270,6 +320,13 @@ function createInstallState(options) {
       ? options.operations.map(operation => cloneJsonValue(operation))
       : [],
   };
+
+  const hookAuthorizations = normalizeHookAuthorizations(
+    options.request.hookAuthorizations
+  );
+  if (Object.keys(hookAuthorizations).length > 0) {
+    state.request.hookAuthorizations = hookAuthorizations;
+  }
 
   if (options.lastValidatedAt) {
     state.lastValidatedAt = options.lastValidatedAt;

@@ -14,6 +14,10 @@ const {
   loadInstallConfig,
 } = require('./lib/install/config');
 const { normalizeInstallRequest } = require('./lib/install/request');
+const {
+  mergeHookAuthorizations,
+  parseHookAuthorizationArgument,
+} = require('./lib/install/hook-authorizations');
 
 function showHelp() {
   console.log(`
@@ -39,6 +43,8 @@ Options:
   --skills <ids>      Include one or more skill components by directory ID
   --without <component>
                       Exclude a user-facing install component
+  --hook-authorization <group>=allow|decline
+                      Explicitly decide one powerful automatic hook behavior
   --config <path>     Load install intent from ecc-install.json
   --target <target>   Filter plan for a specific target
   --json              Emit machine-readable JSON
@@ -55,6 +61,7 @@ function parseArgs(argv) {
     moduleIds: [],
     includeComponentIds: [],
     excludeComponentIds: [],
+    hookAuthorizations: {},
     configPath: null,
     target: null,
     family: null,
@@ -105,6 +112,12 @@ function parseArgs(argv) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
       index += 1;
+    } else if (arg === '--hook-authorization') {
+      parsed.hookAuthorizations = mergeHookAuthorizations(
+        parsed.hookAuthorizations,
+        parseHookAuthorizationArgument(args[index + 1] || '')
+      );
+      index += 1;
     } else if (arg === '--config') {
       parsed.configPath = args[index + 1] || null;
       index += 1;
@@ -152,11 +165,21 @@ function printPlan(plan) {
   console.log(
     'Note: target filtering and operation output currently reflect scaffold-level adapter planning, not a byte-for-byte mirror of legacy install.sh copy paths.\n'
   );
-  console.log(`Profile: ${plan.profileId || '(custom modules)'}`);
+  console.log(`Requested profile: ${plan.profileId || '(custom modules)'}`);
+  console.log(`Effective profile: ${plan.effectiveProfileId || 'Custom'}`);
+  console.log(`Selection kind: ${plan.selectionKind}`);
   console.log(`Target: ${plan.target || '(all targets)'}`);
   console.log(`Included components: ${plan.includedComponentIds.join(', ') || '(none)'}`);
   console.log(`Excluded components: ${plan.excludedComponentIds.join(', ') || '(none)'}`);
   console.log(`Requested: ${plan.requestedModuleIds.join(', ')}`);
+  console.log(`Hook authorization: ${plan.hookAuthorization.status}`);
+  if (plan.hookAuthorization.requiredGroups.length > 0) {
+    console.log('Hook authorization groups:');
+    for (const group of plan.hookAuthorization.requiredGroups) {
+      const decision = plan.hookAuthorization.decisions[group.id] || 'missing';
+      console.log(`- ${group.id}: ${decision} — ${group.description}`);
+    }
+  }
   if (plan.targetAdapterId) {
     console.log(`Adapter: ${plan.targetAdapterId}`);
     console.log(`Target root: ${plan.targetRoot}`);
@@ -259,6 +282,7 @@ function main() {
       moduleIds: request.moduleIds,
       includeComponentIds: request.includeComponentIds,
       excludeComponentIds: request.excludeComponentIds,
+      hookAuthorizations: request.hookAuthorizations,
       target: request.target,
     });
 

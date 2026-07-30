@@ -31,7 +31,8 @@
       "kind": "agents",
       "description": "Agent definitions and project-level agent guidance.",
       "paths": [
-        ".agents",
+        ".agents/plugins",
+        ".agents/skills/everything-claude-code",
         "agents",
         "AGENTS.md"
       ],
@@ -91,6 +92,14 @@
         "scripts/hooks",
         "scripts/lib"
       ],
+      "hookAuthorizationGroups": [
+        "automatic-source-writes",
+        "command-rewrite-and-process-control",
+        "transcript-derived-llm-egress",
+        "mcp-network-and-process-activity",
+        "automatic-permission-gates",
+        "session-observation-and-cost-records"
+      ],
       "targets": [
         "claude",
         "claude-project",
@@ -106,7 +115,7 @@
     {
       "id": "platform-configs",
       "kind": "platform",
-      "description": "Baseline platform configs, package-manager setup, and MCP catalog.",
+      "description": "Baseline platform configs and package-manager setup.",
       "paths": [
         ".claude-plugin",
         ".codex",
@@ -115,7 +124,6 @@
         ".opencode",
         ".qwen",
         ".zed",
-        "mcp-configs",
         "scripts/auto-update.js",
         "scripts/setup-package-manager.js",
         ".hermes",
@@ -144,6 +152,34 @@
       "stability": "stable"
     },
     {
+      "id": "mcp-catalog",
+      "kind": "platform",
+      "description": "Optional MCP server catalog, including remote service declarations.",
+      "paths": [
+        "mcp-configs"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "framework-language",
       "kind": "skills",
       "description": "Core framework, language, and application-engineering skills.",
@@ -151,8 +187,11 @@
         "skills/android-clean-architecture",
         "skills/angular-developer",
         "skills/api-design",
+        ".agents/skills/api-design",
         "skills/backend-patterns",
+        ".agents/skills/backend-patterns",
         "skills/coding-standards",
+        ".agents/skills/coding-standards",
         "skills/compose-multiplatform-patterns",
         "skills/contract-first",
         "skills/csharp-testing",
@@ -167,7 +206,9 @@
         "skills/fastapi-patterns",
         "skills/frontend-design-direction",
         "skills/frontend-patterns",
+        ".agents/skills/frontend-patterns",
         "skills/frontend-slides",
+        ".agents/skills/frontend-slides",
         "skills/make-interfaces-feel-better",
         "skills/motion-ui",
         "skills/golang-patterns",
@@ -183,6 +224,7 @@
         "skills/laravel-tdd",
         "skills/laravel-verification",
         "skills/mcp-server-patterns",
+        ".agents/skills/mcp-server-patterns",
         "skills/nestjs-patterns",
         "skills/perl-patterns",
         "skills/perl-testing",
@@ -203,6 +245,7 @@
         "skills/vue-patterns",
         "skills/accessibility",
         "skills/bun-runtime",
+        ".agents/skills/bun-runtime",
         "skills/design-system",
         "skills/django-celery",
         "skills/flutter-dart-code-review",
@@ -213,6 +256,7 @@
         "skills/motion-foundations",
         "skills/motion-patterns",
         "skills/nextjs-turbopack",
+        ".agents/skills/nextjs-turbopack",
         "skills/nuxt4-patterns",
         "skills/react-native-patterns",
         "skills/tinystruct-patterns",
@@ -277,7 +321,8 @@
       "kind": "skills",
       "description": "Single-skill unified-memory guidance; requires the separately installed ecc-universal CLI runtime.",
       "paths": [
-        "skills/unified-memory"
+        "skills/unified-memory",
+        ".agents/skills/unified-memory"
       ],
       "targets": [
         "claude",
@@ -303,12 +348,46 @@
       "stability": "stable"
     },
     {
+      "id": "workflow-core",
+      "kind": "skills",
+      "description": "Focused TDD, verification, and context-compaction guidance for the Core profile.",
+      "paths": [
+        "skills/strategic-compact",
+        ".agents/skills/strategic-compact",
+        "skills/tdd-workflow",
+        ".agents/skills/tdd-workflow",
+        "skills/verification-loop",
+        ".agents/skills/verification-loop"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "workflow-quality",
       "kind": "skills",
       "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory skills, including the legacy continuous-learning v1 path. The unified-memory workflow requires the separately installed ecc-universal CLI runtime.",
       "paths": [
         "skills/agent-sort",
+        ".agents/skills/agent-sort",
         "skills/agent-introspection-debugging",
+        ".agents/skills/agent-introspection-debugging",
         "skills/ai-regression-testing",
         "skills/configure-ecc",
         "skills/code-tour",
@@ -316,18 +395,18 @@
         "skills/continuous-learning-v2",
         "skills/council",
         "skills/e2e-testing",
+        ".agents/skills/e2e-testing",
         "skills/error-handling",
         "skills/eval-harness",
+        ".agents/skills/eval-harness",
         "skills/hookify-rules",
         "skills/iterative-retrieval",
         "skills/plan-canvas",
+        ".agents/skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
         "skills/skill-scout",
         "skills/skill-stocktake",
-        "skills/strategic-compact",
-        "skills/tdd-workflow",
-        "skills/verification-loop",
         "skills/windows-desktop-e2e",
         "skills/agent-self-evaluation",
         "skills/architecture-decision-records",
@@ -367,6 +446,7 @@
         "kimi"
       ],
       "dependencies": [
+        "workflow-core",
         "skill-unified-memory"
       ],
       "defaultInstall": true,
@@ -385,7 +465,8 @@
         "skills/recursive-decision-ledger",
         "skills/agent-eval",
         "skills/benchmark",
-        "skills/benchmark-methodology"
+        "skills/benchmark-methodology",
+        ".agents/skills/benchmark-methodology"
       ],
       "targets": [
         "claude",
@@ -422,6 +503,7 @@
         "skills/perl-security",
         "skills/quarkus-security",
         "skills/security-review",
+        ".agents/skills/security-review",
         "skills/security-scan",
         "skills/security-bounty-hunter",
         "skills/springboot-security",
@@ -458,14 +540,17 @@
       "description": "Research and API integration skills for deep investigations and model integrations.",
       "paths": [
         "skills/deep-research",
+        ".agents/skills/deep-research",
         "skills/exa-search",
+        ".agents/skills/exa-search",
         "skills/research-ops",
         "skills/scientific-db-pubmed-database",
         "skills/scientific-db-uspto-database",
         "skills/scientific-pkg-gget",
         "skills/scientific-thinking-literature-review",
         "skills/scientific-thinking-scholar-evaluation",
-        "skills/documentation-lookup"
+        "skills/documentation-lookup",
+        ".agents/skills/documentation-lookup"
       ],
       "targets": [
         "claude",
@@ -492,18 +577,28 @@
       "description": "Business, writing, market, and investor communication skills.",
       "paths": [
         "skills/article-writing",
+        ".agents/skills/article-writing",
         "skills/brand-voice",
+        ".agents/skills/brand-voice",
         "skills/content-engine",
+        ".agents/skills/content-engine",
         "skills/investor-materials",
+        ".agents/skills/investor-materials",
         "skills/investor-outreach",
+        ".agents/skills/investor-outreach",
         "skills/lead-intelligence",
         "skills/product-capability",
+        ".agents/skills/product-capability",
         "skills/social-graph-ranker",
         "skills/seo",
         "skills/market-research",
+        ".agents/skills/market-research",
         "skills/brand-discovery",
+        ".agents/skills/brand-discovery",
         "skills/competitive-platform-analysis",
+        ".agents/skills/competitive-platform-analysis",
         "skills/competitive-report-structure",
+        ".agents/skills/competitive-report-structure",
         "skills/marketing-campaign"
       ],
       "targets": [
@@ -638,7 +733,9 @@
       "description": "Social publishing and distribution skills.",
       "paths": [
         "skills/crosspost",
+        ".agents/skills/crosspost",
         "skills/x-api",
+        ".agents/skills/x-api",
         "skills/social-publisher"
       ],
       "targets": [
@@ -667,10 +764,12 @@
       "paths": [
         "skills/blender-motion-state-inspection",
         "skills/fal-ai-media",
+        ".agents/skills/fal-ai-media",
         "skills/manim-video",
         "skills/remotion-video-creation",
         "skills/ui-demo",
         "skills/video-editing",
+        ".agents/skills/video-editing",
         "skills/videodb",
         "skills/taste"
       ],
@@ -702,7 +801,8 @@
         "scripts/orchestrate-codex-worker.sh",
         "scripts/orchestrate-worktrees.js",
         "scripts/orchestration-status.js",
-        "skills/dmux-workflows"
+        "skills/dmux-workflows",
+        ".agents/skills/dmux-workflows"
       ],
       "targets": [
         "claude",
@@ -858,6 +958,7 @@
       "description": "Production machine-learning engineering workflows for data contracts, reproducible training, evaluation, deployment, monitoring, and rollback.",
       "paths": [
         "skills/mle-workflow",
+        ".agents/skills/mle-workflow",
         "skills/ml-adoption-playbook",
         "skills/pytorch-patterns",
         "skills/recsys-pipeline-architect"

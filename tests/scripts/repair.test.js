@@ -23,6 +23,16 @@ const {
   createInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  HOOK_AUTHORIZATION_GROUP_IDS,
+} = require('../../scripts/lib/install/hook-authorizations');
+
+function allowedHookAuthorizationArgs() {
+  return HOOK_AUTHORIZATION_GROUP_IDS.flatMap(id => [
+    '--hook-authorization',
+    `${id}=allow`,
+  ]);
+}
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -98,7 +108,12 @@ function runTests() {
     const projectRoot = createTempDir('repair-project-');
 
     try {
-      const installResult = runNode(INSTALL_SCRIPT, ['--target', 'cursor', 'typescript'], {
+      const installResult = runNode(INSTALL_SCRIPT, [
+        '--target',
+        'cursor',
+        'typescript',
+        ...allowedHookAuthorizationArgs(),
+      ], {
         cwd: projectRoot,
         homeDir,
       });
@@ -160,6 +175,9 @@ function runTests() {
         request: {
           profile: null,
           modules: ['platform-configs'],
+          hookAuthorizations: Object.fromEntries(
+            HOOK_AUTHORIZATION_GROUP_IDS.map(id => [id, 'allow'])
+          ),
           includeComponents: [],
           excludeComponents: [],
           legacyLanguages: [],

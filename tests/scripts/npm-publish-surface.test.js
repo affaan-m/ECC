@@ -83,6 +83,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "install.sh",
     "install.ps1",
     "schemas",
+    "scaffolds/opencode",
     "agent.yaml",
     ".github/PULL_REQUEST_TEMPLATE.md",
     "COMMANDS-QUICK-REF.md",

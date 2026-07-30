@@ -300,17 +300,31 @@ This profile intentionally excludes `hooks-runtime`.
 
 Claude manual installs place each skill directly under `~/.claude/skills/<skill-name>/` (or `.claude/skills/<skill-name>/` for `claude-project`) so Claude Code can discover it. When upgrading an older ECC manual install, the installer migrates only nested `skills/ecc/` files recorded in ECC install-state. If a flat skill directory is user-owned, ECC preserves it, prints a conflict warning, and keeps any older managed copy tracked for a safe uninstall instead of overwriting user files.
 
-For the normal core profile with hooks disabled:
+The Core profile excludes automatic hooks by default:
 
 ```bash
-./install.sh --profile core --without baseline:hooks --target claude
+./install.sh --profile core --target claude
 ```
 
-Add the hook runtime later only if you want it:
+Add the hook runtime only after explicitly deciding each grouped behavior. Use
+`install-plan.js` to review the six stable group IDs and pass one
+`--hook-authorization <group>=allow|decline` decision for each group:
 
 ```bash
-./install.sh --target claude --modules hooks-runtime
+node scripts/install-plan.js --target claude --modules hooks-runtime
+./install.sh --target claude --modules hooks-runtime \
+  --hook-authorization automatic-source-writes=allow \
+  --hook-authorization command-rewrite-and-process-control=allow \
+  --hook-authorization transcript-derived-llm-egress=allow \
+  --hook-authorization mcp-network-and-process-activity=allow \
+  --hook-authorization automatic-permission-gates=allow \
+  --hook-authorization session-observation-and-cost-records=allow
 ```
+
+Profiles that include `hooks-runtime`, including Developer and Full, remain
+REVIEW / HELD until all six decisions are supplied. Declining any group keeps
+the requested profile visible for audit but installs an effective Custom
+closure without the indivisible hook runtime.
 </details>
 
 <details>
@@ -381,7 +395,13 @@ Use this only when you are intentionally skipping the plugin path:
 ```bash
 git clone https://github.com/affaan-m/ECC.git
 cd ECC
-./install.sh --profile full
+./install.sh --profile full \
+  --hook-authorization automatic-source-writes=allow \
+  --hook-authorization command-rewrite-and-process-control=allow \
+  --hook-authorization transcript-derived-llm-egress=allow \
+  --hook-authorization mcp-network-and-process-activity=allow \
+  --hook-authorization automatic-permission-gates=allow \
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 Windows:
@@ -389,7 +409,13 @@ Windows:
 ```powershell
 git clone https://github.com/affaan-m/ECC.git
 cd ECC
-.\install.ps1 --profile full
+.\install.ps1 --profile full `
+  --hook-authorization automatic-source-writes=allow `
+  --hook-authorization command-rewrite-and-process-control=allow `
+  --hook-authorization transcript-derived-llm-egress=allow `
+  --hook-authorization mcp-network-and-process-activity=allow `
+  --hook-authorization automatic-permission-gates=allow `
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 If you choose this path, stop there. Do not also run `/plugin install`.
@@ -401,7 +427,13 @@ For hand-picked manual installs, Claude discovers skills as direct children of `
 Do not copy the raw repo `hooks/hooks.json` into `~/.claude/settings.json` or `~/.claude/hooks/hooks.json`. That file is plugin/repo-oriented; use the installer so hook command paths are rewritten correctly:
 
 ```bash
-bash ./install.sh --target claude --modules hooks-runtime
+bash ./install.sh --target claude --modules hooks-runtime \
+  --hook-authorization automatic-source-writes=allow \
+  --hook-authorization command-rewrite-and-process-control=allow \
+  --hook-authorization transcript-derived-llm-egress=allow \
+  --hook-authorization mcp-network-and-process-activity=allow \
+  --hook-authorization automatic-permission-gates=allow \
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 That writes resolved hooks to `~/.claude/hooks/hooks.json` and leaves any existing `~/.claude/settings.json` untouched.
@@ -411,7 +443,13 @@ If you installed ECC via `/plugin install`, do not copy those hooks into `settin
 On Windows, Claude's config root is `%USERPROFILE%\\.claude`; install the hook runtime with:
 
 ```powershell
-pwsh -File .\install.ps1 --target claude --modules hooks-runtime
+pwsh -File .\install.ps1 --target claude --modules hooks-runtime `
+  --hook-authorization automatic-source-writes=allow `
+  --hook-authorization command-rewrite-and-process-control=allow `
+  --hook-authorization transcript-derived-llm-egress=allow `
+  --hook-authorization mcp-network-and-process-activity=allow `
+  --hook-authorization automatic-permission-gates=allow `
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 #### Configure MCPs

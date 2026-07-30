@@ -20,14 +20,13 @@
       ]
     },
     "core": {
-      "description": "Minimal harness baseline with commands, hooks, platform configs, and quality workflow support.",
+      "description": "Minimal non-automatic harness baseline with commands, platform configs, and focused TDD and verification support. Powerful hook automation remains available by explicit selection.",
       "modules": [
         "rules-core",
         "agents-core",
         "commands-core",
-        "hooks-runtime",
         "platform-configs",
-        "workflow-quality"
+        "workflow-core"
       ]
     },
     "developer": {
@@ -78,8 +77,10 @@
         "commands-core",
         "hooks-runtime",
         "platform-configs",
+        "mcp-catalog",
         "framework-language",
         "database",
+        "workflow-core",
         "workflow-quality",
         "skill-unified-memory",
         "security",

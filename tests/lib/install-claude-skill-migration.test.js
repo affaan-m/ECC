@@ -433,7 +433,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('tracks a partial migration so retry and uninstall remain safe', () => {
+  if (test('rolls back a partial migration so retry and uninstall remain safe', () => {
     const fixture = createFixture();
     try {
       const legacyOperations = seedLegacyInstall(fixture);
@@ -448,7 +448,7 @@ function runTests() {
 
       assert.throws(() => applyInstallPlan(missingSourcePlan), /ENOENT/);
       assert.ok(legacyOperations.every(operation => fs.existsSync(operation.destinationPath)));
-      assert.ok(fs.existsSync(fixture.operations[0].destinationPath));
+      assert.ok(!fs.existsSync(fixture.operations[0].destinationPath));
       assert.ok(!fs.existsSync(fixture.operations[1].destinationPath));
       const bridgeState = readInstallState(fixture.installStatePath);
       assert.ok(legacyOperations.every(legacyOperation => (
@@ -456,7 +456,7 @@ function runTests() {
           operation.destinationPath === legacyOperation.destinationPath
         ))
       )));
-      assert.ok(fixture.operations.every(flatOperation => (
+      assert.ok(!fixture.operations.some(flatOperation => (
         bridgeState.operations.some(operation => (
           operation.destinationPath === flatOperation.destinationPath
         ))
@@ -475,7 +475,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('tracks a partial first install so retry does not misclassify it as user-owned', () => {
+  if (test('rolls back a partial first install so retry does not misclassify it as user-owned', () => {
     const fixture = createFixture();
     try {
       const missingSourcePlan = {
@@ -488,14 +488,9 @@ function runTests() {
       };
 
       assert.throws(() => applyInstallPlan(missingSourcePlan), /ENOENT/);
-      assert.ok(fs.existsSync(fixture.operations[0].destinationPath));
+      assert.ok(!fs.existsSync(fixture.operations[0].destinationPath));
       assert.ok(!fs.existsSync(fixture.operations[1].destinationPath));
-      const bridgeState = readInstallState(fixture.installStatePath);
-      assert.ok(fixture.operations.every(flatOperation => (
-        bridgeState.operations.some(operation => (
-          operation.destinationPath === flatOperation.destinationPath
-        ))
-      )));
+      assert.ok(!fs.existsSync(fixture.installStatePath));
 
       const retry = applyInstallPlan(fixture.plan);
       assert.deepStrictEqual(retry.skippedOperations, []);
@@ -510,7 +505,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('tracks non-skill files written before a partial flat-skill install fails', () => {
+  if (test('rolls back non-skill files when a flat-skill install fails', () => {
     const fixture = createFixture();
     try {
       const ruleSourceRelativePath = path.join('rules', 'common', 'coding.md');
@@ -552,22 +547,14 @@ function runTests() {
       };
 
       assert.throws(() => applyInstallPlan(partialPlan), /ENOENT/);
-      assert.ok(fs.existsSync(ruleDestinationPath));
-
-      const bridgeState = readInstallState(fixture.installStatePath);
-      assert.ok(bridgeState.operations.some(operation => (
-        operation.destinationPath === ruleDestinationPath
-      )));
-
-      const uninstall = runUninstall(fixture);
-      assert.strictEqual(uninstall.summary.errorCount, 0);
       assert.ok(!fs.existsSync(ruleDestinationPath));
+      assert.ok(!fs.existsSync(fixture.installStatePath));
     } finally {
       cleanup(fixture.tempDir);
     }
   })) passed++; else failed++;
 
-  if (test('tracks partial non-skill writes when every flat skill is user-owned', () => {
+  if (test('rolls back non-skill writes while preserving user-owned flat skills', () => {
     const fixture = createFixture();
     try {
       const userSkillPath = fixture.operations[0].destinationPath;
@@ -614,20 +601,8 @@ function runTests() {
 
       assert.throws(() => applyInstallPlan(partialPlan), /ENOENT/);
       assert.strictEqual(fs.readFileSync(userSkillPath, 'utf8'), '# User skill\n');
-      assert.ok(fs.existsSync(ruleDestinationPath));
-
-      const bridgeState = readInstallState(fixture.installStatePath);
-      assert.ok(!bridgeState.operations.some(operation => (
-        operation.destinationPath === userSkillPath
-      )));
-      assert.ok(bridgeState.operations.some(operation => (
-        operation.destinationPath === ruleDestinationPath
-      )));
-
-      const uninstall = runUninstall(fixture);
-      assert.strictEqual(uninstall.summary.errorCount, 0);
-      assert.strictEqual(fs.readFileSync(userSkillPath, 'utf8'), '# User skill\n');
       assert.ok(!fs.existsSync(ruleDestinationPath));
+      assert.ok(!fs.existsSync(fixture.installStatePath));
     } finally {
       cleanup(fixture.tempDir);
     }
@@ -667,7 +642,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('keeps both layouts represented if the final state write fails', () => {
+  if (test('restores the legacy layout if the final state write fails', () => {
     const fixture = createFixture();
     let stateWriteCount = 0;
     try {
@@ -688,11 +663,11 @@ function runTests() {
         () => applyInstallPlan(fixture.plan, { writeInstallState: failFinalStateWrite }),
         /injected final install-state write failure/
       );
-      assert.ok(fixture.operations.every(operation => fs.existsSync(operation.destinationPath)));
-      assert.ok(legacyOperations.every(operation => !fs.existsSync(operation.destinationPath)));
+      assert.ok(fixture.operations.every(operation => !fs.existsSync(operation.destinationPath)));
+      assert.ok(legacyOperations.every(operation => fs.existsSync(operation.destinationPath)));
 
       const bridgeState = readInstallState(fixture.installStatePath);
-      assert.ok(fixture.operations.every(flatOperation => (
+      assert.ok(!fixture.operations.some(flatOperation => (
         bridgeState.operations.some(operation => (
           operation.destinationPath === flatOperation.destinationPath
         ))

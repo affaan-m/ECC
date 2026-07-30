@@ -56,7 +56,13 @@ function printHuman(records) {
     console.log(`- ${record.adapter.id}`);
     console.log(`  Root: ${state.target.root}`);
     console.log(`  Installed: ${state.installedAt}`);
-    console.log(`  Profile: ${state.request.profile || '(legacy/custom)'}`);
+    console.log(`  Requested profile: ${state.request.profile || '(legacy/custom)'}`);
+    console.log(
+      `  Effective profile: ${
+        state.resolution.effectiveProfile
+        || (state.resolution.selectionKind === 'custom' ? 'Custom' : '(not recorded)')
+      }`
+    );
     console.log(`  Modules: ${(state.resolution.selectedModules || []).join(', ') || '(none)'}`);
     console.log(`  Legacy languages: ${(state.request.legacyLanguages || []).join(', ') || '(none)'}`);
     console.log(`  Source version: ${state.source.repoVersion || '(unknown)'}`);

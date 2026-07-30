@@ -72,6 +72,22 @@
               "pattern": "^[a-z0-9-]+$"
             }
           },
+          "hookAuthorizationGroups": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "automatic-source-writes",
+                "command-rewrite-and-process-control",
+                "transcript-derived-llm-egress",
+                "mcp-network-and-process-activity",
+                "automatic-permission-gates",
+                "session-observation-and-cost-records"
+              ]
+            }
+          },
           "defaultInstall": {
             "type": "boolean"
           },

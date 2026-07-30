@@ -59,6 +59,26 @@
         "pattern": "^(baseline|lang|framework|capability):[a-z0-9-]+$"
       }
     },
+    "hookAuthorizations": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "automatic-source-writes",
+          "command-rewrite-and-process-control",
+          "transcript-derived-llm-egress",
+          "mcp-network-and-process-activity",
+          "automatic-permission-gates",
+          "session-observation-and-cost-records"
+        ]
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "decline"
+        ]
+      }
+    },
     "options": {
       "type": "object",
       "additionalProperties": true

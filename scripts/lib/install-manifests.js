@@ -2,6 +2,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./install-targets/registry');
+const {
+  HOOK_AUTHORIZATION_GROUPS,
+  HOOK_AUTHORIZATION_GROUP_IDS,
+  normalizeHookAuthorizations,
+} = require('./install/hook-authorizations');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
 const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi'];
@@ -249,6 +254,33 @@ function readModuleTargetsOrThrow(module) {
   return normalizedTargets;
 }
 
+function readModuleHookAuthorizationGroupsOrThrow(module) {
+  const moduleId = module && module.id ? module.id : '<unknown>';
+  const groups = module && module.hookAuthorizationGroups;
+  if (groups === undefined) {
+    return [];
+  }
+  if (!Array.isArray(groups) || groups.length === 0) {
+    throw new Error(
+      `Install module ${moduleId} has invalid hookAuthorizationGroups; expected a non-empty array`
+    );
+  }
+
+  const normalized = groups.map(group => (
+    typeof group === 'string' ? group.trim() : ''
+  ));
+  if (normalized.some(group => !HOOK_AUTHORIZATION_GROUP_IDS.includes(group))) {
+    const unknown = normalized.filter(group => !HOOK_AUTHORIZATION_GROUP_IDS.includes(group));
+    throw new Error(
+      `Install module ${moduleId} has unknown hook authorization groups: ${unknown.join(', ')}`
+    );
+  }
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`Install module ${moduleId} contains duplicate hook authorization groups`);
+  }
+  return normalized;
+}
+
 function assertKnownModuleIds(moduleIds, manifests) {
   const unknownModuleIds = dedupeStrings(moduleIds)
     .filter(moduleId => !manifests.modulesById.has(moduleId));
@@ -303,6 +335,7 @@ function loadInstallManifests(options = {}) {
 
   for (const module of modules) {
     readModuleTargetsOrThrow(module);
+    readModuleHookAuthorizationGroupsOrThrow(module);
   }
 
   const modulesById = new Map(modules.map(module => [module.id, module]));
@@ -524,6 +557,7 @@ function resolveInstallPlan(options = {}) {
   const explicitModuleIds = dedupeStrings(options.moduleIds);
   const includedComponentIds = dedupeStrings(options.includeComponentIds);
   const excludedComponentIds = dedupeStrings(options.excludeComponentIds);
+  const hookAuthorizations = normalizeHookAuthorizations(options.hookAuthorizations);
   const requestedModuleIds = [];
   const target = options.target || null;
 
@@ -585,6 +619,45 @@ function resolveInstallPlan(options = {}) {
     : null;
   const targetAdapter = target ? getInstallTargetAdapter(target) : null;
 
+  const requestedAuthorizationModules = dedupeStrings(requestedModuleIds)
+    .filter(moduleId => !excludedModuleOwners.has(moduleId))
+    .map(moduleId => manifests.modulesById.get(moduleId))
+    .filter(Boolean)
+    .filter(module => (
+      readModuleHookAuthorizationGroupsOrThrow(module).length > 0
+      && (!target || readModuleTargetsOrThrow(module).includes(target))
+    ));
+  const requiredGroupSet = new Set(
+    requestedAuthorizationModules.flatMap(module => (
+      readModuleHookAuthorizationGroupsOrThrow(module)
+    ))
+  );
+  const requiredGroupIds = HOOK_AUTHORIZATION_GROUP_IDS.filter(id => requiredGroupSet.has(id));
+  const declinedGroupIds = requiredGroupIds.filter(id => hookAuthorizations[id] === 'decline');
+  const missingGroupIds = requiredGroupIds.filter(id => !hookAuthorizations[id]);
+  const grantedGroupIds = requiredGroupIds.filter(id => hookAuthorizations[id] === 'allow');
+  const unusedDecisionGroupIds = Object.keys(hookAuthorizations)
+    .filter(id => !requiredGroupSet.has(id));
+
+  let hookAuthorizationStatus = 'NOT_REQUIRED';
+  if (requiredGroupIds.length > 0) {
+    if (declinedGroupIds.length > 0) {
+      hookAuthorizationStatus = 'DECLINED';
+    } else if (missingGroupIds.length > 0) {
+      hookAuthorizationStatus = 'HELD';
+    } else {
+      hookAuthorizationStatus = 'AUTHORIZED';
+    }
+  }
+
+  if (hookAuthorizationStatus === 'DECLINED') {
+    for (const module of requestedAuthorizationModules) {
+      const owners = excludedModuleOwners.get(module.id) || [];
+      owners.push(`declined hook authorization: ${declinedGroupIds.join(', ')}`);
+      excludedModuleOwners.set(module.id, owners);
+    }
+  }
+
   const effectiveRequestedIds = dedupeStrings(
     requestedModuleIds.filter(moduleId => !excludedModuleOwners.has(moduleId))
   );
@@ -601,6 +674,9 @@ function resolveInstallPlan(options = {}) {
   const skippedTargetIds = new Set();
   const excludedIds = new Set([
     ...excludedModuleIds,
+    ...(hookAuthorizationStatus === 'DECLINED'
+      ? requestedAuthorizationModules.map(module => module.id)
+      : []),
     ...targetDefaultExclusions.map(exclusion => exclusion.moduleId),
   ]);
   const visitingIds = new Set();
@@ -683,10 +759,33 @@ function resolveInstallPlan(options = {}) {
       exemptValidationCodes: options.exemptValidationCodes || [],
     })
     : null;
+  const hasCustomSelection = explicitModuleIds.length > 0
+    || includedComponentIds.length > 0
+    || excludedComponentIds.length > 0
+    || hookAuthorizationStatus === 'DECLINED';
+  const effectiveProfileId = profileId && !hasCustomSelection ? profileId : null;
+  const authorizationWarnings = [];
+  if (hookAuthorizationStatus === 'HELD') {
+    authorizationWarnings.push(
+      `Hook authorization REVIEW / HELD: decide ${missingGroupIds.join(', ')} before installation`
+    );
+  }
+  if (hookAuthorizationStatus === 'DECLINED') {
+    authorizationWarnings.push(
+      `Hook authorization declined (${declinedGroupIds.join(', ')}); hooks-runtime was excluded and the effective closure is Custom`
+    );
+  }
+  if (unusedDecisionGroupIds.length > 0) {
+    authorizationWarnings.push(
+      `Hook authorization decisions are not required by this closure: ${unusedDecisionGroupIds.join(', ')}`
+    );
+  }
 
   return {
     repoRoot: manifests.repoRoot,
     profileId,
+    effectiveProfileId,
+    selectionKind: effectiveProfileId ? 'profile' : 'custom',
     target,
     requestedModuleIds: effectiveRequestedIds,
     explicitModuleIds,
@@ -694,10 +793,25 @@ function resolveInstallPlan(options = {}) {
     excludedComponentIds,
     targetDefaultProfileId,
     targetDefaultExclusions,
-    warnings: targetDefaultExclusions.map(exclusion => (
-      `${exclusion.moduleId} is intentionally excluded from the OpenCode default. `
-        + `Opt in with: ${exclusion.optInCommand}`
-    )),
+    warnings: [
+      ...targetDefaultExclusions.map(exclusion => (
+        `${exclusion.moduleId} is intentionally excluded from the OpenCode default. `
+          + `Opt in with: ${exclusion.optInCommand}`
+      )),
+      ...authorizationWarnings,
+    ],
+    hookAuthorization: {
+      status: hookAuthorizationStatus,
+      requiredGroups: HOOK_AUTHORIZATION_GROUPS
+        .filter(group => requiredGroupSet.has(group.id))
+        .map(group => ({ ...group })),
+      requiredGroupIds,
+      grantedGroupIds,
+      declinedGroupIds,
+      missingGroupIds,
+      unusedDecisionGroupIds,
+      decisions: { ...hookAuthorizations },
+    },
     selectedModuleIds: selectedModules.map(module => module.id),
     skippedModuleIds: skippedModules.map(module => module.id),
     excludedModuleIds: excludedModules.map(module => module.id),

@@ -5,6 +5,8 @@ const path = require('path');
 const {
   buildValidationIssue,
   createInstallTargetAdapter,
+  createManagedOperation,
+  isForeignPlatformPath,
 } = require('./helpers');
 
 const COMPILED_PLUGIN_DIST_DIR = path.join('.opencode', 'dist');
@@ -47,6 +49,16 @@ function defaultValidateOpencodeHome(input = {}) {
   if (!input.repoRoot) {
     return [];
   }
+  const modules = Array.isArray(input.modules)
+    ? input.modules
+    : (input.module ? [input.module] : []);
+  const hasExplicitModuleSelection = input.modules !== undefined || input.module !== undefined;
+  if (
+    hasExplicitModuleSelection
+    && !modules.some(module => module.id === 'hooks-runtime')
+  ) {
+    return [];
+  }
 
   const missingPaths = REQUIRED_COMPILED_ARTEFACTS
     .map(artefact => ({
@@ -87,4 +99,48 @@ module.exports = createInstallTargetAdapter({
   installStatePathSegments: ['ecc-install-state.json'],
   nativeRootRelativePath: '.opencode',
   validate: defaultValidateOpencodeHome,
+  planOperations(input, adapter) {
+    const modules = Array.isArray(input.modules)
+      ? input.modules
+      : (input.module ? [input.module] : []);
+    const includeHooksRuntime = modules.some(module => module.id === 'hooks-runtime');
+    const targetRoot = adapter.resolveRoot(input);
+
+    return modules.flatMap(module => {
+      const paths = Array.isArray(module.paths) ? module.paths : [];
+      return paths
+        .filter(sourceRelativePath => !isForeignPlatformPath(sourceRelativePath, adapter.target))
+        .flatMap(sourceRelativePath => {
+          if (sourceRelativePath !== '.opencode' || includeHooksRuntime) {
+            return [adapter.createScaffoldOperation(module.id, sourceRelativePath, input)];
+          }
+
+          const safePaths = [
+            '.opencode/commands',
+            '.opencode/instructions',
+            '.opencode/prompts',
+            '.opencode/tools',
+            '.opencode/dist/tools',
+          ];
+          const operations = safePaths
+            .filter(relativePath => fs.existsSync(path.join(input.repoRoot, relativePath)))
+            .map(relativePath => createManagedOperation({
+              moduleId: module.id,
+              sourceRelativePath: relativePath,
+              destinationPath: path.join(
+                targetRoot,
+                path.relative('.opencode', relativePath)
+              ),
+              strategy: 'preserve-relative-path',
+            }));
+          operations.push(createManagedOperation({
+            moduleId: module.id,
+            sourceRelativePath: 'scaffolds/opencode/opencode-core.json',
+            destinationPath: path.join(targetRoot, 'opencode.json'),
+            strategy: 'copy-safe-core-config',
+          }));
+          return operations;
+        });
+    });
+  },
 });

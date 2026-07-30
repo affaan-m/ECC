@@ -10,6 +10,10 @@ const { createManifestInstallPlan } = require('./install-executor');
 const {
   prepareClaudeSkillMigration,
 } = require('./install/claude-skill-migration');
+const {
+  assertHookAuthorizationReady,
+  buildHookMaterializationAuthorization,
+} = require('./install/hook-authorizations');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
 const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
@@ -57,10 +61,14 @@ function hasOpencodeBuildError(issues) {
   return Array.isArray(issues) && issues.some(issue => issue.code === OPENCODE_PLUGIN_NOT_BUILT_CODE);
 }
 
-function getOpencodeBuildValidationIssues(context) {
+function getOpencodeBuildValidationIssues(context, state) {
+  const selectedModuleIds = Array.isArray(state?.resolution?.selectedModules)
+    ? state.resolution.selectedModules
+    : [];
   return getInstallTargetAdapter('opencode').validate({
     homeDir: context.homeDir,
     repoRoot: context.repoRoot,
+    modules: selectedModuleIds.map(id => ({ id })),
   });
 }
 
@@ -80,6 +88,16 @@ function formatBuildErrorMessage(error) {
 
 function getManagedOperations(state) {
   return Array.isArray(state && state.operations) ? state.operations.filter(operation => operation.ownership === 'managed') : [];
+}
+
+function assertRecordedHookAuthorizationReady(state, operations = getManagedOperations(state)) {
+  assertHookAuthorizationReady({
+    selectedModuleIds: state?.resolution?.selectedModules || [],
+    operations,
+    hookAuthorization: buildHookMaterializationAuthorization(
+      state?.request?.hookAuthorizations || {}
+    ),
+  });
 }
 
 function createUnsafeRepairSourceError() {
@@ -1156,6 +1174,11 @@ function analyzeRecord(record, context) {
   }
 
   const managedOperations = getManagedOperations(state);
+  try {
+    assertRecordedHookAuthorizationReady(state, managedOperations);
+  } catch (error) {
+    issues.push(buildIssue('warning', 'hook-authorization-held', error.message));
+  }
   const operationHealth = summarizeManagedOperationHealth(
     context.repoRoot,
     record.targetRoot,
@@ -1233,7 +1256,8 @@ function analyzeRecord(record, context) {
         profileId: state.request.profile || null,
         moduleIds: state.request.modules || [],
         includeComponentIds: state.request.includeComponents || [],
-        excludeComponentIds: state.request.excludeComponents || []
+        excludeComponentIds: state.request.excludeComponents || [],
+        hookAuthorizations: state.request.hookAuthorizations || {}
       });
 
       if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
@@ -1334,6 +1358,7 @@ function createRepairPlanFromRecord(record, context, options = {}) {
     moduleIds: state.request.modules || [],
     includeComponentIds: state.request.includeComponents || [],
     excludeComponentIds: state.request.excludeComponents || [],
+    hookAuthorizations: state.request.hookAuthorizations || {},
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     exemptValidationCodes: options.exemptValidationCodes || [],
@@ -1442,8 +1467,9 @@ function repairInstalledStates(options = {}) {
     }
 
     try {
+      assertRecordedHookAuthorizationReady(record.state);
       const needsOpencodeBuild = record.adapter.target === 'opencode'
-        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
+        && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context, record.state));
       const opencodeBuildRepairPath = path.join(context.repoRoot, OPENCODE_BUILD_ARTIFACT);
 
       if (needsOpencodeBuild && options.dryRun) {
@@ -1684,7 +1710,8 @@ function uninstallInstalledStates(options = {}) {
     const state = record.state;
     const plannedRemovals = Array.from(new Set([
       ...getManagedOperations(state).map(operation => operation.destinationPath),
-      record.installStatePath
+      record.installStatePath,
+      ...(state.target.rootExistedBeforeInstall === false ? [record.targetRoot] : [])
     ]));
 
     if (options.dryRun) {
@@ -1723,12 +1750,29 @@ function uninstallInstalledStates(options = {}) {
       for (const cleanupTarget of cleanupTargets) {
         cleanupEmptyParentDirs(cleanupTarget, record.targetRoot);
       }
+      let removedTargetRoot = false;
+      if (
+        state.target.rootExistedBeforeInstall === false
+        && fs.existsSync(record.targetRoot)
+      ) {
+        const rootStat = fs.lstatSync(record.targetRoot);
+        if (
+          rootStat.isDirectory()
+          && !rootStat.isSymbolicLink()
+          && fs.readdirSync(record.targetRoot).length === 0
+        ) {
+          fs.rmdirSync(record.targetRoot);
+          removedPaths.push(record.targetRoot);
+          removedTargetRoot = true;
+        }
+      }
 
       return {
         adapter: record.adapter,
         status: 'uninstalled',
         installStatePath: record.installStatePath,
         removedPaths,
+        removedTargetRoot,
         plannedRemovals: [],
         error: null
       };

@@ -26,6 +26,16 @@ const {
   listInstallComponents,
   resolveInstallPlan,
 } = require('../../scripts/lib/install-manifests');
+const {
+  HOOK_AUTHORIZATION_GROUP_IDS,
+} = require('../../scripts/lib/install/hook-authorizations');
+
+function allowedHookAuthorizationArgs() {
+  return HOOK_AUTHORIZATION_GROUP_IDS.flatMap(id => [
+    '--hook-authorization',
+    `${id}=allow`,
+  ]);
+}
 
 function normalizePlanPath(value) {
   return String(value || '').replace(/\\/g, '/');
@@ -402,7 +412,7 @@ function runTests() {
           'baseline:commands',
           'baseline:hooks',
           'baseline:platform',
-          'baseline:workflow',
+          'baseline:workflow-core',
         ],
         target: 'claude',
       }),
@@ -510,7 +520,8 @@ function runTests() {
       });
 
       assert.ok(result.includes('Mode: manifest'), 'Should be manifest mode');
-      assert.ok(result.includes('Profile: developer'), 'Should show developer profile');
+      assert.ok(result.includes('Requested profile: developer'), 'Should show requested profile');
+      assert.ok(result.includes('Effective profile: Custom'), 'Component changes should show a custom effective closure');
       assert.ok(result.includes('capability:security'), 'Should show included component');
       assert.ok(result.includes('capability:orchestration'), 'Should show excluded component');
       assert.ok(result.includes('security'), 'Selected modules should include security');
@@ -688,6 +699,7 @@ function runTests() {
         scriptPath,
         '--profile', 'developer',
         '--without', 'capability:orchestration',
+        ...allowedHookAuthorizationArgs(),
       ], {
         cwd: projectDir,
         env: { ...process.env, HOME: homeDir },
@@ -708,6 +720,8 @@ function runTests() {
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.strictEqual(state.request.profile, 'developer');
+      assert.strictEqual(state.resolution.effectiveProfile, null);
+      assert.strictEqual(state.resolution.selectionKind, 'custom');
       assert.deepStrictEqual(state.request.excludeComponents, ['capability:orchestration']);
       assert.ok(!state.resolution.selectedModules.includes('orchestration'));
     } finally {

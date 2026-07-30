@@ -70,6 +70,10 @@ module.exports = createInstallTargetAdapter({
       projectRoot,
       homeDir,
     } = input;
+    const selectedModuleIds = new Set(modules.map(module => module.id));
+    const includeNativeHooks = selectedModuleIds.has('hooks-runtime');
+    const includeMcpCatalog = selectedModuleIds.has('mcp-catalog');
+    const includeLanguageCatalog = selectedModuleIds.has('framework-language');
     const planningInput = {
       repoRoot,
       projectRoot,
@@ -128,12 +132,14 @@ module.exports = createInstallTargetAdapter({
     }
 
     return entries.flatMap(({ module, sourceRelativePath }) => {
-      const cursorMcpOperation = createJsonMergeOperation({
-        moduleId: module.id,
-        repoRoot,
-        sourceRelativePath: '.mcp.json',
-        destinationPath: path.join(targetRoot, 'mcp.json'),
-      });
+      const cursorMcpOperation = includeMcpCatalog
+        ? createJsonMergeOperation({
+          moduleId: 'mcp-catalog',
+          repoRoot,
+          sourceRelativePath: '.mcp.json',
+          destinationPath: path.join(targetRoot, 'mcp.json'),
+        })
+        : null;
 
       if (sourceRelativePath === 'AGENTS.md') {
         // Cursor treats nested AGENTS.md files as directory context; do not
@@ -142,13 +148,18 @@ module.exports = createInstallTargetAdapter({
       }
 
       if (sourceRelativePath === 'rules') {
-        return takeUniqueOperations(createFlatRuleOperations({
+        const operations = createFlatRuleOperations({
           moduleId: module.id,
           repoRoot,
           sourceRelativePath,
           destinationDir: path.join(targetRoot, 'rules'),
           destinationNameTransform: toCursorRuleFileName,
-        }));
+        });
+        return takeUniqueOperations(includeLanguageCatalog ? operations : operations.filter(
+          operation => String(operation.sourceRelativePath || '')
+            .replace(/\\/g, '/')
+            .startsWith('rules/common/')
+        ));
       }
 
       if (sourceRelativePath === 'agents') {
@@ -170,6 +181,11 @@ module.exports = createInstallTargetAdapter({
         const childOperations = fs.readdirSync(cursorRoot, { withFileTypes: true })
           .sort((left, right) => left.name.localeCompare(right.name))
           .filter(entry => entry.name !== 'rules')
+          .filter(entry => entry.name !== 'skills')
+          .filter(entry => (
+            includeNativeHooks
+            || (entry.name !== 'hooks' && entry.name !== 'hooks.json')
+          ))
           .map(entry => createManagedOperation({
             moduleId: module.id,
             sourceRelativePath: path.join('.cursor', entry.name),
@@ -177,13 +193,18 @@ module.exports = createInstallTargetAdapter({
             strategy: 'preserve-relative-path',
           }));
 
-        const ruleOperations = createFlatRuleOperations({
+        const allRuleOperations = createFlatRuleOperations({
           moduleId: module.id,
           repoRoot,
           sourceRelativePath: '.cursor/rules',
           destinationDir: path.join(targetRoot, 'rules'),
           destinationNameTransform: toCursorRuleFileName,
         });
+        const ruleOperations = includeLanguageCatalog
+          ? allRuleOperations
+          : allRuleOperations.filter(operation => (
+            path.basename(operation.sourceRelativePath).startsWith('common-')
+          ));
 
         return takeUniqueOperations([
           ...childOperations,

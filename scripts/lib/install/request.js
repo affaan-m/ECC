@@ -1,6 +1,10 @@
 'use strict';
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
+const {
+  mergeHookAuthorizations,
+  parseHookAuthorizationArgument,
+} = require('./hook-authorizations');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
 
@@ -26,6 +30,7 @@ function parseInstallArgs(argv) {
     moduleIds: [],
     includeComponentIds: [],
     excludeComponentIds: [],
+    hookAuthorizations: {},
     languages: [],
     locale: null,
   };
@@ -60,6 +65,14 @@ function parseInstallArgs(argv) {
       if (componentId.trim()) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
+      index += 1;
+    } else if (arg === '--hook-authorization') {
+      const rawValue = args[index + 1] || '';
+      const parsedDecision = parseHookAuthorizationArgument(rawValue);
+      parsed.hookAuthorizations = mergeHookAuthorizations(
+        parsed.hookAuthorizations,
+        parsedDecision
+      );
       index += 1;
     } else if (arg === '--locale') {
       const locale = args[index + 1] || '';
@@ -115,6 +128,10 @@ function normalizeInstallRequest(options = {}) {
     ...(config?.excludeComponentIds || []),
     ...(options.excludeComponentIds || []),
   ]);
+  const hookAuthorizations = mergeHookAuthorizations(
+    config?.hookAuthorizations,
+    options.hookAuthorizations
+  );
   const legacyLanguages = dedupeStrings(dedupeStrings([
     ...(Array.isArray(options.legacyLanguages) ? options.legacyLanguages : []),
     ...(Array.isArray(options.languages) ? options.languages : []),
@@ -145,6 +162,7 @@ function normalizeInstallRequest(options = {}) {
     moduleIds,
     includeComponentIds,
     excludeComponentIds,
+    hookAuthorizations,
     legacyLanguages,
     configPath: config?.path || options.configPath || null,
   };

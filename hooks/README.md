@@ -26,11 +26,23 @@ For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/
 Use the installer instead so hook commands are rewritten against your actual Claude root:
 
 ```bash
-bash ./install.sh --target claude --modules hooks-runtime
+bash ./install.sh --target claude --modules hooks-runtime \
+  --hook-authorization automatic-source-writes=allow \
+  --hook-authorization command-rewrite-and-process-control=allow \
+  --hook-authorization transcript-derived-llm-egress=allow \
+  --hook-authorization mcp-network-and-process-activity=allow \
+  --hook-authorization automatic-permission-gates=allow \
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 ```powershell
-pwsh -File .\install.ps1 --target claude --modules hooks-runtime
+pwsh -File .\install.ps1 --target claude --modules hooks-runtime `
+  --hook-authorization automatic-source-writes=allow `
+  --hook-authorization command-rewrite-and-process-control=allow `
+  --hook-authorization transcript-derived-llm-egress=allow `
+  --hook-authorization mcp-network-and-process-activity=allow `
+  --hook-authorization automatic-permission-gates=allow `
+  --hook-authorization session-observation-and-cost-records=allow
 ```
 
 That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Claude config root is `%USERPROFILE%\\.claude`.

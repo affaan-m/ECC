@@ -83,7 +83,6 @@ function writeManifestSourceFixture(root) {
           'rules',
           'src',
           'standalone.txt',
-          'missing.txt',
           'skills/demo',
           path.join('runtime', 'ecc', 'install-state.json'),
           '.claude-plugin',
@@ -347,7 +346,6 @@ function runTests() {
       assert.ok(normalizedSources.includes('skills/demo/SKILL.md'));
       assert.ok(normalizedSources.includes('standalone.txt'));
       assert.ok(normalizedSources.includes('.claude-plugin/plugin.json'));
-      assert.ok(!normalizedSources.includes('missing.txt'));
       assert.ok(!normalizedSources.includes('runtime/ecc/install-state.json'));
       assert.ok(!normalizedSources.includes('src/nested/ecc-install-state.json'));
       assert.ok(!normalizedSources.some(source => source.includes('node_modules')));

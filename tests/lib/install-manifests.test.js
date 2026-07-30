@@ -19,6 +19,21 @@ const {
   validateInstallModuleIds,
 } = require('../../scripts/lib/install-manifests');
 
+const HOOK_AUTHORIZATION_GROUP_IDS = [
+  'automatic-source-writes',
+  'command-rewrite-and-process-control',
+  'transcript-derived-llm-egress',
+  'mcp-network-and-process-activity',
+  'automatic-permission-gates',
+  'session-observation-and-cost-records',
+];
+
+function hookAuthorizationDecisions(decision = 'allow', overrides = {}) {
+  return Object.fromEntries(
+    HOOK_AUTHORIZATION_GROUP_IDS.map(id => [id, overrides[id] || decision])
+  );
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -208,7 +223,12 @@ function runTests() {
 
   if (test('resolves a real project profile with target-specific skips', () => {
     const projectRoot = '/workspace/app';
-    const plan = resolveInstallPlan({ profileId: 'developer', target: 'cursor', projectRoot });
+    const plan = resolveInstallPlan({
+      profileId: 'developer',
+      target: 'cursor',
+      projectRoot,
+      hookAuthorizations: hookAuthorizationDecisions(),
+    });
     assert.ok(plan.selectedModuleIds.includes('rules-core'), 'Should keep rules-core');
     assert.ok(plan.selectedModuleIds.includes('commands-core'), 'Should keep commands-core');
     assert.ok(!plan.selectedModuleIds.includes('orchestration'),
@@ -228,13 +248,8 @@ function runTests() {
       'Should preserve non-rule Cursor platform files'
     );
     assert.ok(
-      plan.operations.some(operation => (
-        operation.sourceRelativePath === '.mcp.json'
-        && operation.destinationPath === path.join(projectRoot, '.cursor', 'mcp.json')
-        && operation.kind === 'merge-json'
-        && operation.strategy === 'merge-json'
-      )),
-      'Should materialize Cursor MCP config at the native project path'
+      !plan.operations.some(operation => operation.sourceRelativePath === '.mcp.json'),
+      'Developer should not materialize the opt-in Cursor MCP catalog'
     );
     assert.ok(
       plan.operations.some(operation => (
@@ -257,15 +272,356 @@ function runTests() {
         'agents-core',
         'commands-core',
         'platform-configs',
-        'skill-unified-memory',
-        'workflow-quality'
+        'workflow-core'
       ]
     );
-    assert.ok(plan.skippedModuleIds.includes('hooks-runtime'));
+    assert.ok(!plan.skippedModuleIds.includes('hooks-runtime'));
     assert.ok(!plan.skippedModuleIds.includes('platform-configs'));
-    assert.ok(!plan.skippedModuleIds.includes('workflow-quality'));
+    assert.ok(!plan.skippedModuleIds.includes('workflow-core'));
     assert.strictEqual(plan.targetAdapterId, 'antigravity-project');
     assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.agent'));
+  })) passed++; else failed++;
+
+  if (test('keeps upstream core limited to its declared non-remote development closure', () => {
+    const plan = resolveInstallPlan({
+      profileId: 'core',
+      target: 'claude',
+      homeDir: '/Users/example',
+    });
+    const normalizedSources = plan.operations.map(operation => (
+      String(operation.sourceRelativePath || '').replace(/\\/g, '/')
+    ));
+    const forbiddenPrefixes = [
+      'mcp-configs',
+      '.mcp.json',
+      '.agents/skills/eval-harness',
+      '.agents/skills/fal-ai-media',
+      '.agents/skills/mle-workflow',
+      '.agents/skills/video-editing',
+      '.agents/skills/x-api',
+      'skills/eval-harness',
+      'skills/fal-ai-media',
+      'skills/inherit-legacy-style',
+      'skills/mle-workflow',
+      'skills/video-editing',
+      'skills/x-api',
+      'hooks',
+      'scripts/hooks',
+      'scripts/lib',
+    ];
+
+    assert.deepStrictEqual(
+      plan.selectedModuleIds,
+      [
+        'rules-core',
+        'agents-core',
+        'commands-core',
+        'platform-configs',
+        'workflow-core'
+      ]
+    );
+    assert.ok(
+      normalizedSources.some(source => source === '.agents/plugins'),
+      'Core should retain only the shared .agents plugin scaffold'
+    );
+    assert.ok(
+      normalizedSources.some(source => source === 'skills/tdd-workflow'),
+      'Core should retain TDD guidance'
+    );
+    assert.ok(
+      normalizedSources.some(source => source === 'skills/verification-loop'),
+      'Core should retain verification guidance'
+    );
+    for (const prefix of forbiddenPrefixes) {
+      assert.ok(
+        !normalizedSources.some(source => source === prefix || source.startsWith(`${prefix}/`)),
+        `Core should exclude ${prefix}`
+      );
+    }
+    assert.ok(
+      plan.operations.every(operation => operation.moduleId !== 'hooks-runtime'),
+      'Core must not materialize the automatic hook runtime'
+    );
+    assert.strictEqual(plan.hookAuthorization.status, 'NOT_REQUIRED');
+  })) passed++; else failed++;
+
+  if (test('keeps native Cursor and OpenCode hook registrations outside Core', () => {
+    const cursorPlan = resolveInstallPlan({
+      profileId: 'core',
+      target: 'cursor',
+      projectRoot: '/workspace/app',
+    });
+    const opencodePlan = resolveInstallPlan({
+      profileId: 'core',
+      target: 'opencode',
+      homeDir: '/Users/example',
+    });
+    const codexPlan = resolveInstallPlan({
+      profileId: 'core',
+      target: 'codex',
+      homeDir: '/Users/example',
+    });
+    const cursorSources = cursorPlan.operations.map(operation => (
+      String(operation.sourceRelativePath || '').replace(/\\/g, '/')
+    ));
+    const opencodeSources = opencodePlan.operations.map(operation => (
+      String(operation.sourceRelativePath || '').replace(/\\/g, '/')
+    ));
+    const codexSources = codexPlan.operations.map(operation => (
+      String(operation.sourceRelativePath || '').replace(/\\/g, '/')
+    ));
+
+    assert.ok(!cursorSources.some(source => (
+      source === '.cursor/hooks'
+      || source.startsWith('.cursor/hooks/')
+      || source === '.cursor/hooks.json'
+    )));
+    assert.ok(!cursorSources.includes('.mcp.json'));
+    assert.ok(!cursorSources.some(source => (
+      source === '.cursor/skills' || source.startsWith('.cursor/skills/')
+    )));
+    assert.ok(!cursorSources.some(source => (
+      source.startsWith('.cursor/rules/typescript-')
+      || source.startsWith('rules/typescript/')
+    )));
+    assert.ok(!opencodeSources.some(source => (
+      source === '.opencode/plugins'
+      || source.startsWith('.opencode/plugins/')
+      || source === '.opencode/dist/plugins'
+      || source.startsWith('.opencode/dist/plugins/')
+      || source === '.opencode/opencode.json'
+    )));
+    assert.ok(
+      opencodeSources.includes('scaffolds/opencode/opencode-core.json'),
+      'Core should materialize the non-plugin OpenCode configuration'
+    );
+    assert.ok(!codexSources.some(source => (
+      source === '.codex' || source === '.codex/config.toml'
+    )));
+    assert.strictEqual(cursorPlan.hookAuthorization.status, 'NOT_REQUIRED');
+    assert.strictEqual(opencodePlan.hookAuthorization.status, 'NOT_REQUIRED');
+  })) passed++; else failed++;
+
+  if (test('holds Full until every hooks-runtime authorization group has an explicit decision', () => {
+    const held = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      homeDir: '/Users/example',
+      hookAuthorizations: {},
+    });
+    const partial = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      homeDir: '/Users/example',
+      hookAuthorizations: {
+        'automatic-source-writes': 'allow',
+      },
+    });
+
+    assert.strictEqual(held.profileId, 'full');
+    assert.strictEqual(held.effectiveProfileId, 'full');
+    assert.strictEqual(held.selectionKind, 'profile');
+    assert.ok(held.selectedModuleIds.includes('hooks-runtime'));
+    assert.strictEqual(held.hookAuthorization.status, 'HELD');
+    assert.deepStrictEqual(
+      held.hookAuthorization.requiredGroupIds,
+      HOOK_AUTHORIZATION_GROUP_IDS
+    );
+    assert.deepStrictEqual(
+      held.hookAuthorization.missingGroupIds,
+      HOOK_AUTHORIZATION_GROUP_IDS
+    );
+    assert.deepStrictEqual(
+      partial.hookAuthorization.missingGroupIds,
+      HOOK_AUTHORIZATION_GROUP_IDS.slice(1)
+    );
+  })) passed++; else failed++;
+
+  if (test('keeps the complete Full hook capability when every group is explicitly allowed', () => {
+    const plan = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      homeDir: '/Users/example',
+      hookAuthorizations: hookAuthorizationDecisions(),
+    });
+    const normalizedSources = plan.operations.map(operation => (
+      String(operation.sourceRelativePath || '').replace(/\\/g, '/')
+    ));
+
+    assert.strictEqual(plan.profileId, 'full');
+    assert.strictEqual(plan.effectiveProfileId, 'full');
+    assert.strictEqual(plan.selectionKind, 'profile');
+    assert.strictEqual(plan.hookAuthorization.status, 'AUTHORIZED');
+    assert.deepStrictEqual(plan.hookAuthorization.missingGroupIds, []);
+    assert.ok(plan.selectedModuleIds.includes('hooks-runtime'));
+    assert.ok(normalizedSources.includes('hooks'));
+    assert.ok(normalizedSources.includes('scripts/hooks'));
+    assert.ok(normalizedSources.includes('scripts/lib'));
+  })) passed++; else failed++;
+
+  if (test('makes a declined Full hook decision a Custom closure without neutering Full', () => {
+    const plan = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      homeDir: '/Users/example',
+      hookAuthorizations: hookAuthorizationDecisions('allow', {
+        'automatic-source-writes': 'decline',
+      }),
+    });
+
+    assert.strictEqual(plan.profileId, 'full', 'Requested profile remains auditable');
+    assert.strictEqual(plan.effectiveProfileId, null);
+    assert.strictEqual(plan.selectionKind, 'custom');
+    assert.strictEqual(plan.hookAuthorization.status, 'DECLINED');
+    assert.deepStrictEqual(
+      plan.hookAuthorization.declinedGroupIds,
+      ['automatic-source-writes']
+    );
+    assert.ok(!plan.selectedModuleIds.includes('hooks-runtime'));
+    assert.ok(plan.selectedModuleIds.includes('media-generation'));
+    assert.ok(plan.selectedModuleIds.includes('document-processing'));
+    assert.ok(
+      plan.operations.every(operation => operation.moduleId !== 'hooks-runtime'),
+      'Declining one inseparable hook behavior must omit the monolithic runtime'
+    );
+
+    const authorizedFull = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      homeDir: '/Users/example',
+      hookAuthorizations: hookAuthorizationDecisions(),
+    });
+    assert.ok(
+      authorizedFull.selectedModuleIds.includes('hooks-runtime'),
+      'The declared Full profile must retain the complete hook capability'
+    );
+  })) passed++; else failed++;
+
+  if (test('does not allow direct hooks-runtime selection to bypass grouped authorization', () => {
+    const directModule = resolveInstallPlan({
+      moduleIds: ['hooks-runtime'],
+      target: 'claude',
+      homeDir: '/Users/example',
+    });
+    const directComponent = resolveInstallPlan({
+      includeComponentIds: ['baseline:hooks'],
+      target: 'claude',
+      homeDir: '/Users/example',
+    });
+
+    assert.strictEqual(directModule.hookAuthorization.status, 'HELD');
+    assert.strictEqual(directComponent.hookAuthorization.status, 'HELD');
+    assert.deepStrictEqual(
+      directModule.hookAuthorization.missingGroupIds,
+      HOOK_AUTHORIZATION_GROUP_IDS
+    );
+    assert.deepStrictEqual(
+      directComponent.hookAuthorization.missingGroupIds,
+      HOOK_AUTHORIZATION_GROUP_IDS
+    );
+  })) passed++; else failed++;
+
+  if (test('assigns Codex skill mirrors to their owning modules instead of agents-core', () => {
+    const modules = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'manifests', 'install-modules.json'), 'utf8')
+    ).modules;
+    const moduleById = new Map(modules.map(module => [module.id, module]));
+    const agentsCore = moduleById.get('agents-core');
+
+    assert.ok(agentsCore, 'Should define agents-core');
+    assert.ok(!agentsCore.paths.includes('.agents'), 'agents-core must not absorb all .agents/skills');
+    assert.ok(agentsCore.paths.includes('.agents/plugins'));
+
+    const expectedOwners = new Map([
+      ['.agents/skills/eval-harness', 'workflow-quality'],
+      ['.agents/skills/fal-ai-media', 'media-generation'],
+      ['.agents/skills/mle-workflow', 'machine-learning'],
+      ['.agents/skills/video-editing', 'media-generation'],
+      ['.agents/skills/x-api', 'social-distribution'],
+    ]);
+    for (const [mirrorPath, ownerId] of expectedOwners) {
+      const owner = moduleById.get(ownerId);
+      assert.ok(owner, `Should define ${ownerId}`);
+      assert.ok(owner.paths.includes(mirrorPath), `${ownerId} should own ${mirrorPath}`);
+      assert.ok(!agentsCore.paths.includes(mirrorPath), `agents-core should not own ${mirrorPath}`);
+    }
+
+    const mirrorNames = fs.readdirSync(
+      path.join(__dirname, '..', '..', '.agents', 'skills'),
+      { withFileTypes: true }
+    ).filter(entry => entry.isDirectory()).map(entry => entry.name);
+    for (const mirrorName of mirrorNames) {
+      const mirrorPath = `.agents/skills/${mirrorName}`;
+      const mirrorOwners = modules.filter(module => module.paths.includes(mirrorPath));
+      assert.strictEqual(
+        mirrorOwners.length,
+        1,
+        `${mirrorPath} should have exactly one owning module`
+      );
+
+      if (mirrorName === 'everything-claude-code') {
+        assert.strictEqual(mirrorOwners[0].id, 'agents-core');
+        continue;
+      }
+
+      const canonicalPath = `skills/${mirrorName}`;
+      const canonicalOwners = modules.filter(module => module.paths.includes(canonicalPath));
+      assert.strictEqual(
+        canonicalOwners.length,
+        1,
+        `${canonicalPath} should have exactly one owning module`
+      );
+      assert.strictEqual(
+        mirrorOwners[0].id,
+        canonicalOwners[0].id,
+        `${mirrorPath} should follow its canonical skill owner`
+      );
+    }
+  })) passed++; else failed++;
+
+  if (test('keeps the remote MCP catalog opt-in and package lifecycle inert', () => {
+    const modules = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'manifests', 'install-modules.json'), 'utf8')
+    ).modules;
+    const mcpCatalog = modules.find(module => module.id === 'mcp-catalog');
+    const corePlan = resolveInstallPlan({
+      profileId: 'core',
+      target: 'claude',
+      homeDir: '/Users/example',
+    });
+    const explicitMcpPlan = resolveInstallPlan({
+      includeComponentIds: ['baseline:mcp-catalog'],
+      target: 'claude',
+      homeDir: '/Users/example',
+    });
+    const opencodePackage = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', '.opencode', 'package.json'), 'utf8')
+    );
+
+    assert.ok(mcpCatalog, 'Should define an explicit MCP catalog module');
+    assert.strictEqual(mcpCatalog.defaultInstall, false);
+    assert.deepStrictEqual(mcpCatalog.paths, ['mcp-configs']);
+    assert.ok(!corePlan.selectedModuleIds.includes('mcp-catalog'));
+    assert.ok(explicitMcpPlan.selectedModuleIds.includes('mcp-catalog'));
+    assert.ok(
+      explicitMcpPlan.operations.some(operation => (
+        String(operation.sourceRelativePath).replace(/\\/g, '/') === 'mcp-configs'
+      )),
+      'Explicit MCP selection should materialize the catalog'
+    );
+    assert.strictEqual(
+      opencodePackage.scripts?.prepublishOnly,
+      'npm run build',
+      'The normal package publish hook may remain declarative'
+    );
+    assert.ok(
+      corePlan.operations.every(operation => (
+        operation.kind === 'copy-path'
+        || operation.kind === 'copy-file'
+        || operation.kind === 'merge-json'
+      )),
+      'Core materialization must not contain package lifecycle execution'
+    );
   })) passed++; else failed++;
 
   if (test('resolves minimal profile without the hook runtime', () => {
@@ -283,6 +639,7 @@ function runTests() {
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
+        'workflow-core',
         'workflow-quality'
       ]
     );
@@ -307,6 +664,7 @@ function runTests() {
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
+        'workflow-core',
         'workflow-quality'
       ]
     );
@@ -339,6 +697,7 @@ function runTests() {
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
+        'workflow-core',
         'workflow-quality'
       ]
     );

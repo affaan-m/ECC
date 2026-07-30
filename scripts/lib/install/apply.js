@@ -3,7 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const { writeInstallState } = require('../install-state');
+const { readInstallState, writeInstallState } = require('../install-state');
+const {
+  assertHookAuthorizationReady,
+  isHookRuntimeOperation,
+} = require('./hook-authorizations');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const {
   assertSafeClaudeSkillOperation,
@@ -160,7 +164,69 @@ function previewInstallPlan(plan) {
   };
 }
 
+function assertPlanReadyForMaterialization(plan) {
+  assertHookAuthorizationReady(plan);
+
+  const allowedOperationKinds = new Set(['copy-file', 'merge-json']);
+  const unsupported = (Array.isArray(plan?.operations) ? plan.operations : [])
+    .filter(operation => !allowedOperationKinds.has(operation.kind));
+  if (unsupported.length > 0) {
+    throw new Error(
+      `Unsupported executable install operation kind: ${unsupported[0].kind || '(missing)'}`
+    );
+  }
+}
+
+function isMcpStateOperation(operation) {
+  return (
+    operation?.moduleId === 'mcp-catalog'
+    || isMcpConfigPath(operation?.destinationPath)
+  );
+}
+
+function assertSafeSensitiveClosureTransition(plan) {
+  if (!plan.installStatePath || !fs.existsSync(plan.installStatePath)) {
+    return;
+  }
+
+  const priorState = readInstallState(plan.installStatePath);
+  const priorModules = new Set(priorState.resolution.selectedModules || []);
+  const nextModules = new Set(plan.selectedModuleIds || []);
+  const priorOperations = Array.isArray(priorState.operations) ? priorState.operations : [];
+  const nextOperations = Array.isArray(plan.operations) ? plan.operations : [];
+
+  const dropsHooks = (
+    (
+      priorModules.has('hooks-runtime')
+      || priorOperations.some(isHookRuntimeOperation)
+    )
+    && !nextModules.has('hooks-runtime')
+  );
+  const nextDestinations = new Set(nextOperations.map(operation => operation.destinationPath));
+  const dropsMcp = (
+    (
+      priorModules.has('mcp-catalog')
+      || priorOperations.some(isMcpStateOperation)
+    )
+    && !nextModules.has('mcp-catalog')
+    && priorOperations.some(operation => (
+      isMcpStateOperation(operation)
+      && !nextDestinations.has(operation.destinationPath)
+    ))
+  );
+
+  if (dropsHooks || dropsMcp) {
+    throw new Error(
+      'Refusing to replace an active managed hooks/MCP closure with a narrower '
+        + 'closure in place. Run the managed uninstall first, then install the '
+        + 'new Core or Custom closure so no active behavior becomes untracked.'
+    );
+  }
+}
+
 function applyInstallPlan(plan, dependencies = {}) {
+  assertPlanReadyForMaterialization(plan);
+  assertSafeSensitiveClosureTransition(plan);
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
   const migration = prepareClaudeSkillMigration(plan);
   const appliedPlan = {
@@ -171,6 +237,32 @@ function applyInstallPlan(plan, dependencies = {}) {
   const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
   const linkIndex = buildLinkIndexForPlan(appliedPlan);
   const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
+  const priorStateContent = fs.existsSync(plan.installStatePath)
+    ? fs.readFileSync(plan.installStatePath)
+    : null;
+  const destinationSnapshots = new Map();
+  const snapshotDestination = destinationPath => {
+    if (!destinationSnapshots.has(destinationPath)) {
+      destinationSnapshots.set(
+        destinationPath,
+        fs.existsSync(destinationPath) ? fs.readFileSync(destinationPath) : null
+      );
+    }
+  };
+  const removeEmptyParents = destinationPath => {
+    let current = path.dirname(destinationPath);
+    const root = path.resolve(plan.targetRoot);
+    while (path.resolve(current) !== root && path.resolve(current).startsWith(`${root}${path.sep}`)) {
+      try {
+        fs.rmdirSync(current);
+      } catch {
+        break;
+      }
+      current = path.dirname(current);
+    }
+  };
+
+  try {
 
   if (migration.requiresBridgeState) {
     // Own every operation that may be written during a flat-skill migration
@@ -178,9 +270,15 @@ function applyInstallPlan(plan, dependencies = {}) {
     // clean the entire partial install, including non-skill files. During
     // legacy migration the bridge also retains the prior managed operations.
     persistInstallState(plan.installStatePath, migration.bridgeState);
+  } else {
+    // Record the complete managed closure before the first materialization.
+    // If a later write fails, uninstall/repair still has a recovery ledger for
+    // every file that may already have become active.
+    persistInstallState(plan.installStatePath, migration.finalState);
   }
 
   for (const operation of appliedPlan.operations) {
+    snapshotDestination(operation.destinationPath);
     assertSafeClaudeSkillOperation(appliedPlan, operation);
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
     // Recheck directories that were absent during the first validation. This
@@ -236,6 +334,7 @@ function applyInstallPlan(plan, dependencies = {}) {
   }
 
   if (resolvedClaudeHooksPlan) {
+    snapshotDestination(resolvedClaudeHooksPlan.hooksDestinationPath);
     fs.mkdirSync(path.dirname(resolvedClaudeHooksPlan.hooksDestinationPath), { recursive: true });
     fs.writeFileSync(
       resolvedClaudeHooksPlan.hooksDestinationPath,
@@ -245,9 +344,30 @@ function applyInstallPlan(plan, dependencies = {}) {
   }
 
   if (hasLegacyMigration) {
+    for (const operation of migration.legacyOperationsToRemove) {
+      snapshotDestination(operation.destinationPath);
+    }
     removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
   }
   persistInstallState(plan.installStatePath, migration.finalState);
+  } catch (error) {
+    for (const [destinationPath, previousContent] of [...destinationSnapshots.entries()].reverse()) {
+      if (previousContent === null) {
+        fs.rmSync(destinationPath, { force: true });
+        removeEmptyParents(destinationPath);
+      } else {
+        fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+        fs.writeFileSync(destinationPath, previousContent);
+      }
+    }
+    if (priorStateContent === null) {
+      fs.rmSync(plan.installStatePath, { force: true });
+    } else {
+      fs.mkdirSync(path.dirname(plan.installStatePath), { recursive: true });
+      fs.writeFileSync(plan.installStatePath, priorStateContent);
+    }
+    throw error;
+  }
 
   return {
     ...plan,

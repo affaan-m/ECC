@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const Ajv = require('ajv');
+const { normalizeHookAuthorizations } = require('./hook-authorizations');
 
 const DEFAULT_INSTALL_CONFIG = 'ecc-install.json';
 const CONFIG_SCHEMA_PATH = path.join(__dirname, '..', '..', '..', 'schemas', 'ecc-install-config.schema.json');
@@ -77,6 +78,7 @@ function loadInstallConfig(configPath, options = {}) {
     moduleIds: dedupeStrings(raw.modules),
     includeComponentIds: dedupeStrings(raw.include),
     excludeComponentIds: dedupeStrings(raw.exclude),
+    hookAuthorizations: normalizeHookAuthorizations(raw.hookAuthorizations),
     options: raw.options && typeof raw.options === 'object' ? { ...raw.options } : {},
   };
 }

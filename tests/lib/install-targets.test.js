@@ -85,6 +85,10 @@ function runTests() {
           paths: ['rules'],
         },
         {
+          id: 'framework-language',
+          paths: [],
+        },
+        {
           id: 'workflow-quality',
           paths: ['skills/tdd-workflow'],
         },
@@ -113,7 +117,15 @@ function runTests() {
     const modules = [
       {
         id: 'platform-configs',
-        paths: ['.cursor', 'mcp-configs'],
+        paths: ['.cursor'],
+      },
+      {
+        id: 'hooks-runtime',
+        paths: ['hooks'],
+      },
+      {
+        id: 'mcp-catalog',
+        paths: ['mcp-configs'],
       },
       {
         id: 'rules-core',
@@ -170,6 +182,10 @@ function runTests() {
         {
           id: 'rules-core',
           paths: ['rules'],
+        },
+        {
+          id: 'framework-language',
+          paths: [],
         },
       ],
     });
@@ -306,19 +322,19 @@ function runTests() {
       'Should not preserve .md Cursor platform rule files'
     );
     assert.ok(
-      plan.operations.some(operation => (
+      !plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === '.cursor/hooks.json'
         && operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
       )),
-      'Should preserve non-rule Cursor platform config files'
+      'Should not activate native Cursor hooks from platform-configs alone'
     );
     assert.ok(
-      plan.operations.some(operation => (
+      !plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === '.mcp.json'
         && operation.kind === 'merge-json'
         && operation.destinationPath === path.join(projectRoot, '.cursor', 'mcp.json')
       )),
-      'Should materialize a project-level Cursor MCP config'
+      'Should not materialize MCP configuration from platform-configs alone'
     );
     assert.ok(
       !plan.operations.some(operation => (

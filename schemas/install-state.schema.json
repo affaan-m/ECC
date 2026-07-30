@@ -56,6 +56,9 @@
         "installStatePath": {
           "type": "string",
           "minLength": 1
+        },
+        "rootExistedBeforeInstall": {
+          "type": "boolean"
         }
       }
     },
@@ -98,6 +101,26 @@
             "minLength": 1
           }
         },
+        "hookAuthorizations": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "automatic-source-writes",
+              "command-rewrite-and-process-control",
+              "transcript-derived-llm-egress",
+              "mcp-network-and-process-activity",
+              "automatic-permission-gates",
+              "session-observation-and-cost-records"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "decline"
+            ]
+          }
+        },
         "legacyLanguages": {
           "type": "array",
           "items": {
@@ -118,6 +141,19 @@
         "skippedModules"
       ],
       "properties": {
+        "effectiveProfile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectionKind": {
+          "type": "string",
+          "enum": [
+            "profile",
+            "custom"
+          ]
+        },
         "selectedModules": {
           "type": "array",
           "items": {

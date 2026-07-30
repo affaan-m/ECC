@@ -54,6 +54,8 @@ Options:
   --skills <ids>      Install one or more skill directories by ID, e.g. continuous-learning-v2
   --without <component>
                       Exclude a user-facing install component
+  --hook-authorization <group>=allow|decline
+                      Explicitly decide one powerful automatic hook behavior
   --locale <code>     Install translated docs to ~/.claude/docs/<locale>/ (or ./.claude/docs/<locale>/ for claude-project)
                       (claude or claude-project target only; can be combined with --profile or --with)
   --config <path>     Load install intent from ecc-install.json
@@ -90,11 +92,21 @@ function printHumanPlan(plan, dryRun) {
     if (plan.mode === 'legacy-compat') {
       console.log(`Legacy languages: ${plan.legacyLanguages.join(', ')}`);
     }
-    console.log(`Profile: ${plan.profileId || '(custom modules)'}`);
+    console.log(`Requested profile: ${plan.profileId || '(custom modules)'}`);
+    console.log(`Effective profile: ${plan.effectiveProfileId || 'Custom'}`);
+    console.log(`Selection kind: ${plan.selectionKind}`);
     console.log(`Included components: ${plan.includedComponentIds.join(', ') || '(none)'}`);
     console.log(`Excluded components: ${plan.excludedComponentIds.join(', ') || '(none)'}`);
     console.log(`Requested modules: ${plan.requestedModuleIds.join(', ') || '(none)'}`);
     console.log(`Selected modules: ${plan.selectedModuleIds.join(', ') || '(none)'}`);
+    console.log(`Hook authorization: ${plan.hookAuthorization.status}`);
+    if (plan.hookAuthorization.requiredGroups.length > 0) {
+      console.log('Hook authorization groups:');
+      for (const group of plan.hookAuthorization.requiredGroups) {
+        const decision = plan.hookAuthorization.decisions[group.id] || 'missing';
+        console.log(`- ${group.id}: ${decision} — ${group.description}`);
+      }
+    }
     if (plan.skippedModuleIds.length > 0) {
       console.log(`Skipped modules: ${plan.skippedModuleIds.join(', ')}`);
     }
