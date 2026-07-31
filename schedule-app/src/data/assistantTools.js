@@ -276,7 +276,11 @@ const TOOLS = {
         lng: o.locLng,
         start: o.start,
         end: o.end,
-      }));
+      }))
+      // Chronological, not array/insertion order — the origin below picks
+      // the earliest of these, and an events array is built in whatever
+      // order things were created in, not the order they happen in the day.
+      .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
 
     const isOverdue = makeOverdueCheck(state);
     const pinStops = (state.pins || []).map((p) => ({ ...p, label: p.label || 'Dropped pin' }));
@@ -319,10 +323,16 @@ const TOOLS = {
       );
     }
 
-    // Timed to leave from the first stop, since the browser's location can't
-    // be read from inside a tool call without a permission prompt the user
-    // has no context for.
-    const start = stops[0];
+    // Timed to leave from a stop, since the browser's location can't be read
+    // from inside a tool call without a permission prompt the user has no
+    // context for. That stop has to be the earliest *timed* one when there
+    // is one — picking `stops[0]` (array/insertion order) used to mean an
+    // evening commitment could become the fictitious starting point for an
+    // 8am departure, making an easily-reachable morning meeting look like
+    // it required a 50-mile trip from a place the user isn't at yet, and
+    // reporting it hours late for no real reason.
+    const timedStops = stops.filter((s) => s.start).sort((a, b) => a.start.localeCompare(b.start));
+    const start = timedStops[0] || stops[0];
     const plan = optimizeRoute(start, stops, departAt ? { departAt: timeToMinutes(departAt) } : {});
     const lines = [
       `Starting from ${start.label}, ${formatDistance(plan.totalMeters)} in total, done by ${formatTime(plan.endsAt)}${plan.endsNextDay ? ' the next day' : ''}:`,
