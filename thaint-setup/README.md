@@ -34,46 +34,19 @@ In the order `main()` runs them:
 4. **Backs up** `settings.json` and `~/.claude.json` into `~/.claude/backups/`, before anything overwrites them
 5. **Installs MCP server catalog** — all 35 ECC MCP servers with env-var placeholders. Servers without required env vars stay disabled; set the env var to auto-enable. See [MCP servers](#mcp-servers) below.
 6. **Installs global CLAUDE.md** — copies `thaint-setup/CLAUDE.base.md` to `~/.claude/CLAUDE.md` (applies across all projects)
-7. **Copies directories** into `~/.claude/` (from this repo's checked-out tree):
+7. **Copies directories** into `~/.claude/` (from this repo's checked-out tree), listing but not deleting files the source no longer has:
    - `agents/`
    - `commands/`
    - `skills/configure-ecc`
    - `skills/strategic-compact`
-
-   Copying overwrites but never deletes, so files the source no longer has (a
-   command removed upstream, or one you wrote yourself) are listed per directory
-   as this step runs. Pass `--prune` to delete them.
-8. **Installs hooks-runtime** — runs the ECC `install.sh` for hook support. This
-   copies the hook scripts; it does not wire them to any event.
-9. **Wires the hook graph** — merges `hooks/hooks.json` into `.hooks` of
-   `settings.json`, the only place Claude Code reads hooks from. ECC's installer
-   deliberately leaves `settings.json` alone because its supported live path is
-   `/plugin install`, so without this step the 50 installed hook scripts sit
-   inert. Skipped when ECC itself is installed as a plugin — Claude Code
-   auto-loads a plugin's graph, and wiring it here too runs every hook twice.
-   Entries pointing at hooks the graph does not carry (your own hooks, and the
-   opt-in `insaits-security` monitor) are kept; entries the graph supersedes are
-   replaced, and any that disappear are named in the log.
-10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js`:
+8. **Installs hooks-runtime** — runs the ECC `install.sh`, which copies the hook scripts without wiring them to any event
+9. **Wires the hook graph** — merges `hooks/hooks.json` into `.hooks` of `settings.json`, the only place Claude Code reads hooks from; keeps entries the graph does not carry, and skips itself when ECC is installed as a plugin
+10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js` (model, task, 5-hour budget, session counters, directory, context bar), keeping one you set by hand:
 
     ```text
     Opus 5 (1M context) │ 5h 24% ↻1h11m 96t 11f 1h39m │ my-worktree ████░░░░░░ 46%
     ```
 
-    Model, the in-progress task when there is one, remaining budget, session
-    tool and file counts with elapsed time, working directory, and a context bar
-    showing the same percentage Claude Code reports — the payload's
-    `used_percentage`, which is also what its auto-compaction threshold is
-    measured against.
-
-    Budget is the 5-hour rate-limit window with a countdown to reset, which is
-    what a Claude.ai subscription actually runs out of. On an API key there is no
-    rate-limit data, so it falls back to session cost. Counts and elapsed time
-    come from `ecc-metrics-bridge`, which step 9 wires — without it those parts
-    are simply absent.
-
-    Runs after step 8 because that step installs the script. A `statusLine` you
-    set by hand is kept as-is; delete the field to hand it back to this script.
 11. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
 12. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
    ```bash
@@ -86,7 +59,7 @@ In the order `main()` runs them:
 | Flag | Description |
 |---|---|
 | `--dry-run` | Print actions without executing |
-| `--prune` | Delete files in `~/.claude` that no longer exist in the source. Off by default because `agents/` and `commands/` also hold files you wrote; without it those files are only listed. |
+| `--prune` | Delete files in `~/.claude` the source no longer has (listed only, by default) |
 | `--verbose, -v` | Log every command |
 | `-h, --help` | Show help |
 
