@@ -158,9 +158,12 @@ function runTests() {
   else failed++;
 
   // The colour assertions above pass under any monotonic formula, which is how
-  // a 16.5-point reserve subtraction survived unnoticed. These pin the number.
-  // 56 is a real captured payload: context_window_size 1000000,
+  // a 16.5-point reserve subtraction survived unnoticed. This one pins the
+  // number, and is the only case here that goes red under the old formula: 56
+  // is a real captured payload — context_window_size 1000000,
   // total_input_tokens 437731, used_percentage 44, remaining_percentage 56.
+  // The two boundary cases after it hold under either formula; what they pin
+  // is the clamp at each end of the range, which is worth its own guard.
   if (
     test('reports the same percentage Claude Code does (remaining 56 -> 44%)', () => {
       const bar = buildContextBar(56);

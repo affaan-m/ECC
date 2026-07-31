@@ -110,12 +110,12 @@ function buildMetricsSegment(data, bridge, nowMs) {
   const segments = [];
   const counters = [];
 
-  const rateLimit = buildRateLimitSegment(data && data.rate_limits, nowMs);
+  const rateLimit = buildRateLimitSegment(data?.rate_limits, nowMs);
   if (rateLimit) {
     segments.push(rateLimit);
   } else {
-    const nativeCost = data && data.cost ? data.cost.total_cost_usd : undefined;
-    const bridgeCost = bridge ? bridge.total_cost_usd : undefined;
+    const nativeCost = data?.cost?.total_cost_usd;
+    const bridgeCost = bridge?.total_cost_usd;
     const cost = typeof nativeCost === 'number' && nativeCost > 0 ? nativeCost : bridgeCost;
     if (typeof cost === 'number' && cost > 0) counters.push(`$${cost.toFixed(2)}`);
   }

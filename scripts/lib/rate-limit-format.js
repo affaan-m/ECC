@@ -84,4 +84,4 @@ function buildRateLimitSegment(rateLimits, nowMs) {
   return out;
 }
 
-module.exports = { formatCountdown, buildRateLimitSegment, severityColor };
+module.exports = { formatCountdown, buildRateLimitSegment };
