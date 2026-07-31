@@ -9,7 +9,7 @@ Fork of [affaan-m/ECC](https://github.com/affaan-m/ECC) (renamed from
 | Base tag | `v2.1.0` = `4da6deac` (2026-07-27) |
 | Upstream `main` last checked | `e4e41631` = `v2.1.0-16` (2026-07-29) — merges clean |
 | Tests at base | 3316 / 3316 |
-| Tests on this branch | 3321 / 3322 — see `dry-run.test.js` below |
+| Tests on this branch | 3321 / 3321 — `run-all.js` cannot parse 27 files' tallies, so the real count is higher |
 
 On upgrade: replace the section below with the delta against the new base.
 
@@ -40,7 +40,7 @@ Deps: cargo minor/patch group (#2593), pyyaml ≥6.0.3 (#2455), pytest-mock
 | `setup_claude.sh` wires the hook graph into `settings.json` (`install_hook_graph`) — Claude Code reads hooks nowhere else, and upstream's installer stops at `~/.claude/hooks/hooks.json` | Drop if ECC is installed here as a plugin, or if upstream starts writing `settings.json` itself |
 | `ecc-statusline.js` shows the 5-hour rate-limit window, not dollar cost — `// LOCAL (thaint):` at `buildMetricsSegment`, countdown in the new `scripts/lib/rate-limit-format.js` | Keep; preserve the fallback to cost when `rate_limits` is absent |
 | `buildContextBar` drops upstream's 16.5-point auto-compact reserve — 33K tokens, which no fixed percentage tracks across a 100K–1M window; drew 53 where Claude Code reported 44. Arrived in `940135ea` from a stale PR, uncommented | Unmarked on purpose — drop the moment upstream fixes it, and file the issue |
-| `tests/lib/dry-run.test.js` fails here and upstream — `ecc.js --dry-run --json typescript` emits ~1.1 MB past the test's 1 MiB `maxBuffer` | Nothing; upstream's to fix |
+| `tests/lib/dry-run.test.js` gets a `maxBuffer` — `ecc.js --dry-run --json typescript` emits ~1.1 MB past the 1 MiB default, which reddened CI on every commit, upstream's included | Unmarked — drop when upstream fixes it |
 | `README.md` calls raw-copying `hooks/hooks.json` unsupported (the files are byte-identical); `docs/TROUBLESHOOTING.md` says hook changes need a restart (they do not) | Re-check both claims after a merge |
 
 Overlaps our changes in 5 files — `scripts/hooks/cost-tracker.js`,
