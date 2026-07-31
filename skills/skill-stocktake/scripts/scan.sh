@@ -100,13 +100,15 @@ scan_dir_to_json() {
   # Capture find's exit status and stderr instead of discarding them: with -L,
   # a broken symlink or unreadable directory makes find skip that entry AND
   # exit non-zero, which would otherwise silently under-count skills.
-  if ! find -L "$dir" -name "SKILL.md" -type f >"$find_out" 2>"$find_err"; then
+  # NUL-delimited (-print0 / sort -z / read -d '') so a path containing a
+  # literal newline can't desync record boundaries — paths here are untrusted.
+  if ! find -L "$dir" -name "SKILL.md" -type f -print0 >"$find_out" 2>"$find_err"; then
     echo "Warning: find encountered errors while scanning $dir (broken symlinks or permission issues may cause skills to be missed):" >&2
     cat "$find_err" >&2
   fi
-  sort -o "$find_out" "$find_out"
+  sort -z -o "$find_out" "$find_out"
 
-  while IFS= read -r file; do
+  while IFS= read -r -d '' file; do
     local name desc mtime u7 u30 dp
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
