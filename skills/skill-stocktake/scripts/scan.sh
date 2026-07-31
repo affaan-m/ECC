@@ -95,6 +95,17 @@ scan_dir_to_json() {
   fi
 
   local i=0
+  local find_out="$tmpdir/.find-stdout"
+  local find_err="$tmpdir/.find-stderr"
+  # Capture find's exit status and stderr instead of discarding them: with -L,
+  # a broken symlink or unreadable directory makes find skip that entry AND
+  # exit non-zero, which would otherwise silently under-count skills.
+  if ! find -L "$dir" -name "SKILL.md" -type f >"$find_out" 2>"$find_err"; then
+    echo "Warning: find encountered errors while scanning $dir (broken symlinks or permission issues may cause skills to be missed):" >&2
+    cat "$find_err" >&2
+  fi
+  sort -o "$find_out" "$find_out"
+
   while IFS= read -r file; do
     local name desc mtime u7 u30 dp
     name=$(extract_field "$file" "name")
@@ -118,7 +129,7 @@ scan_dir_to_json() {
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find -L "$dir" -name "SKILL.md" -type f 2>/dev/null | sort)
+  done < "$find_out"
 
   if [[ $i -eq 0 ]]; then
     echo "[]"

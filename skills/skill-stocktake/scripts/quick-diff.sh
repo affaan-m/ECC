@@ -51,6 +51,17 @@ i=0
 
 process_dir() {
   local dir="$1"
+  local find_out="$tmpdir/.find-stdout"
+  local find_err="$tmpdir/.find-stderr"
+  # Capture find's exit status and stderr instead of discarding them: with -L,
+  # a broken symlink or unreadable directory makes find skip that entry AND
+  # exit non-zero, which would otherwise silently under-count skills.
+  if ! find -L "$dir" -name "SKILL.md" -type f >"$find_out" 2>"$find_err"; then
+    echo "Warning: find encountered errors while scanning $dir (broken symlinks or permission issues may cause skills to be missed):" >&2
+    cat "$find_err" >&2
+  fi
+  sort -o "$find_out" "$find_out"
+
   while IFS= read -r file; do
     local mtime dp is_new
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
@@ -74,7 +85,7 @@ process_dir() {
       '{path:$path,mtime:$mtime,is_new:$is_new}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find -L "$dir" -name "SKILL.md" -type f 2>/dev/null | sort)
+  done < "$find_out"
 }
 
 [[ -d "$GLOBAL_DIR" ]] && process_dir "$GLOBAL_DIR"
