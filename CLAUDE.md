@@ -58,6 +58,7 @@ The project is organized into several core components:
 - Skill format: Markdown with clear sections for when to use, how it works, examples
 - Skill placement: Curated in skills/; generated/imported under ~/.claude/skills/. See docs/SKILL-PLACEMENT-POLICY.md
 - Hook format: JSON with matcher conditions and command/notification hooks
+- Undocumented formats: a file's existing content is the spec — read the previous version before rewriting, and keep rationale out of files that hold only facts. Green lint is not conformance.
 
 ## Contributing
 
