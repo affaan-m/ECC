@@ -6,12 +6,13 @@
  *
  * - `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
  *   partition the prompt, so their sum is the true context size of the turn.
- * - The context window is detected from the model id (`[1m]` marker) or from
- *   the observed token count (anything above 200k implies a 1M window even
- *   when logs drop the suffix).
- * - Thresholds are window-scaled and env-overridable; re-reminders fire in
- *   fixed token "buckets" above the threshold so the suggestion only repeats
- *   after real context growth.
+ * - The context window is detected from the model id: the `[1m]` marker, the
+ *   known-family table, then family patterns (`opus-4` is 400k, `sonnet-4` /
+ *   `haiku` / `claude-3` are 200k). An id that matches nothing yields `null`
+ *   (unknown) rather than a guess, so no percentage is ever fabricated.
+ * - Thresholds are a percentage of the detected window (70%) and
+ *   env-overridable; re-reminders fire in token "buckets" above the threshold
+ *   so the suggestion only repeats after real context growth.
  *
  * Only the tail of the transcript is read (latest records live at the end),
  * keeping the PreToolUse hook fast even for very large sessions.
@@ -20,10 +21,21 @@
 const fs = require('fs');
 
 const STANDARD_CONTEXT_WINDOW_TOKENS = 200000;
+const EXTENDED_CONTEXT_WINDOW_TOKENS = 400000;
 const LARGE_CONTEXT_WINDOW_TOKENS = 1000000;
+// Legacy absolute defaults, kept exported for compatibility with anything that
+// imported them; the live default is now a percentage of the detected window.
 const DEFAULT_CONTEXT_THRESHOLD_STANDARD = 160000;
 const DEFAULT_CONTEXT_THRESHOLD_LARGE = 250000;
+// One rule that holds at every window size: 140k on 200k, 280k on 400k, 700k on
+// 1M. The old absolute 250k default meant a 1M-window session was nagged from
+// 25% usage onward, re-firing every interval for the rest of a long session.
+const DEFAULT_CONTEXT_THRESHOLD_PCT = 0.7;
+// Used when the window is unknown: past every standard window, so the nudge is
+// still truthful without inventing a percentage.
+const UNKNOWN_WINDOW_THRESHOLD_TOKENS = 300000;
 const DEFAULT_CONTEXT_INTERVAL_TOKENS = 60000;
+const CONTEXT_INTERVAL_PCT = 0.05;
 const DEFAULT_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MAX_TOKEN_SETTING = 10000000;
 const LARGE_WINDOW_MODEL_MARKER = '[1m]';
@@ -37,6 +49,15 @@ const LARGE_WINDOW_MODEL_MARKER = '[1m]';
 const KNOWN_MODEL_WINDOW_TOKENS = [
   ['claude-fable-5', LARGE_CONTEXT_WINDOW_TOKENS],
   ['claude-mythos-5', LARGE_CONTEXT_WINDOW_TOKENS]
+];
+
+// Family patterns applied after the exact table above. These cover whole model
+// generations rather than single ids, so `opus-4` no longer needs the
+// env-only workaround from #2290 (Opus 4.x is a 400k window, which matches
+// neither the 200k default nor the `[1m]` marker). Checked in order.
+const MODEL_WINDOW_PATTERNS = [
+  [/opus-4/i, EXTENDED_CONTEXT_WINDOW_TOKENS],
+  [/sonnet-4|haiku|claude-3|opus-3/i, STANDARD_CONTEXT_WINDOW_TOKENS]
 ];
 
 /**
@@ -157,11 +178,18 @@ function readLatestContextTokens(transcriptPath, options = {}) {
 }
 
 /**
- * Detect the context window size for a turn.
- * 1M when the model id carries the `[1m]` marker, matches a known large-window
- * model family, or when the observed token count already exceeds the standard
- * 200k window (covers logs that drop the suffix); otherwise the standard 200k
- * window.
+ * Detect the context window size for a turn, in resolution order:
+ *   1. `ECC_CONTEXT_WINDOW_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` override;
+ *   2. the `[1m]` marker on the model id;
+ *   3. the known large-window family table (#2461);
+ *   4. family patterns (`opus-4` 400k, `sonnet-4`/`haiku`/`claude-3` 200k);
+ *   5. no model id at all: 200k, unless the observed token count already
+ *      exceeds it — then the window is provably larger but its size is unknown.
+ *
+ * @returns {number|null} Window size in tokens, or null when the window cannot
+ *   be determined. Callers must treat null as "unknown" and must not derive a
+ *   percentage from it — a wrong window is worse than no number, because it is
+ *   indistinguishable from a real one.
  */
 function resolveContextWindowTokens(tokens, model) {
   // Explicit window override wins: 400k models (e.g. Opus 4.x) match neither the
@@ -179,15 +207,26 @@ function resolveContextWindowTokens(tokens, model) {
 
   // Large-window model families without a [1m] marker fall through the checks
   // above and would be misreported against the 200k default (#2461).
-  if (typeof model === 'string') {
+  if (typeof model === 'string' && model) {
     const known = KNOWN_MODEL_WINDOW_TOKENS.find(([familyId]) => isKnownModelFamilyMatch(model, familyId));
     if (known) {
       return known[1];
     }
+
+    const pattern = MODEL_WINDOW_PATTERNS.find(([regex]) => regex.test(model));
+    if (pattern) {
+      return pattern[1];
+    }
+
+    // A model id we do not recognize. Guessing "over 200k therefore 1M" was
+    // wrong for every 400k model and invented percentages for the rest.
+    return null;
   }
 
+  // No model id in the transcript. Above the standard window the context is
+  // provably larger than 200k, but nothing says how much larger.
   if (Number.isFinite(tokens) && tokens > STANDARD_CONTEXT_WINDOW_TOKENS) {
-    return LARGE_CONTEXT_WINDOW_TOKENS;
+    return null;
   }
 
   return STANDARD_CONTEXT_WINDOW_TOKENS;
@@ -195,8 +234,14 @@ function resolveContextWindowTokens(tokens, model) {
 
 /**
  * Resolve the context-size suggestion threshold (tokens).
- * `COMPACT_CONTEXT_THRESHOLD=0` disables the context signal entirely;
- * other invalid values fall back to the window-scaled default.
+ * Defaults to `DEFAULT_CONTEXT_THRESHOLD_PCT` of the detected window (140k on
+ * 200k, 280k on 400k, 700k on 1M), so the signal means the same thing on every
+ * model. `COMPACT_CONTEXT_THRESHOLD` still sets an absolute token count and
+ * `COMPACT_CONTEXT_THRESHOLD=0` still disables the context signal entirely;
+ * other invalid values fall back to the percentage default.
+ *
+ * @param {object} env - Environment map.
+ * @param {number|null} windowTokens - Detected window, or null when unknown.
  */
 function resolveContextThreshold(env, windowTokens) {
   const raw = env && env.COMPACT_CONTEXT_THRESHOLD;
@@ -210,17 +255,35 @@ function resolveContextThreshold(env, windowTokens) {
     }
   }
 
-  return windowTokens >= LARGE_CONTEXT_WINDOW_TOKENS ? DEFAULT_CONTEXT_THRESHOLD_LARGE : DEFAULT_CONTEXT_THRESHOLD_STANDARD;
+  if (!Number.isFinite(windowTokens) || windowTokens <= 0) {
+    return UNKNOWN_WINDOW_THRESHOLD_TOKENS;
+  }
+
+  return Math.round(windowTokens * DEFAULT_CONTEXT_THRESHOLD_PCT);
 }
 
 /**
- * Resolve the re-reminder step (tokens of additional context growth before
- * the suggestion repeats). Invalid values fall back to the default.
+ * Resolve the re-reminder step (tokens of additional context growth before the
+ * suggestion repeats). Scales with the window when one is known
+ * (`CONTEXT_INTERVAL_PCT`, floored at the 60k default) so a bigger window does
+ * not mean proportionally more reminders. Invalid values fall back to the
+ * default.
+ *
+ * @param {object} env - Environment map.
+ * @param {number|null} [windowTokens] - Detected window, or null when unknown.
  */
-function resolveContextInterval(env) {
+function resolveContextInterval(env, windowTokens) {
   const raw = env && env.COMPACT_CONTEXT_INTERVAL;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= MAX_TOKEN_SETTING ? parsed : DEFAULT_CONTEXT_INTERVAL_TOKENS;
+  if (Number.isInteger(parsed) && parsed > 0 && parsed <= MAX_TOKEN_SETTING) {
+    return parsed;
+  }
+
+  if (Number.isFinite(windowTokens) && windowTokens > 0) {
+    return Math.max(DEFAULT_CONTEXT_INTERVAL_TOKENS, Math.round(windowTokens * CONTEXT_INTERVAL_PCT));
+  }
+
+  return DEFAULT_CONTEXT_INTERVAL_TOKENS;
 }
 
 /**
@@ -239,17 +302,30 @@ function computeContextBucket(tokens, threshold, interval) {
 }
 
 /**
- * Human-readable label for a context window size (e.g. "200k", "1M").
+ * Human-readable label for a context window size (e.g. "200k", "400k", "1M",
+ * "1.5M"). Returns "unknown" when the window could not be determined.
  */
 function formatWindowLabel(windowTokens) {
-  return windowTokens >= LARGE_CONTEXT_WINDOW_TOKENS ? '1M' : `${Math.round(windowTokens / 1000)}k`;
+  if (!Number.isFinite(windowTokens) || windowTokens <= 0) {
+    return 'unknown';
+  }
+
+  if (windowTokens >= LARGE_CONTEXT_WINDOW_TOKENS) {
+    const millions = windowTokens / LARGE_CONTEXT_WINDOW_TOKENS;
+    return `${Number.isInteger(millions) ? millions : Number(millions.toFixed(1))}M`;
+  }
+
+  return `${Math.round(windowTokens / 1000)}k`;
 }
 
 module.exports = {
   STANDARD_CONTEXT_WINDOW_TOKENS,
+  EXTENDED_CONTEXT_WINDOW_TOKENS,
   LARGE_CONTEXT_WINDOW_TOKENS,
   DEFAULT_CONTEXT_THRESHOLD_STANDARD,
   DEFAULT_CONTEXT_THRESHOLD_LARGE,
+  DEFAULT_CONTEXT_THRESHOLD_PCT,
+  UNKNOWN_WINDOW_THRESHOLD_TOKENS,
   DEFAULT_CONTEXT_INTERVAL_TOKENS,
   DEFAULT_TRANSCRIPT_TAIL_BYTES,
   readLatestContextTokens,

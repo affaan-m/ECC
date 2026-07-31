@@ -31,7 +31,7 @@ Strategic compaction at logical boundaries:
 
 The `suggest-compact.js` script runs on PreToolUse (Edit/Write) and combines two signals:
 
-1. **Context size (primary)** — Reads the latest `usage` record from the session transcript (`transcript_path` in the hook payload) and sums `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` (the true context size of the turn). Suggests `/compact` at a window-scaled threshold — 160k tokens on a 200k window, 250k on a 1M window (detected from a `[1m]` model marker, or inferred when observed tokens already exceed 200k) — and re-reminds after every additional 60k tokens of context growth
+1. **Context size (primary)** — Reads the latest `usage` record from the session transcript (`transcript_path` in the hook payload) and sums `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` (the true context size of the turn). Suggests `/compact` at 70% of the detected context window — 140k tokens on a 200k window, 280k on 400k, 700k on 1M (the window is detected from a `[1m]` model marker, the known-model table, or model-family patterns) — and re-reminds after every additional 60k tokens of context growth. When the model's window cannot be determined, the suggestion reports the raw token count past 300k and says the window is unknown instead of printing a percentage of a guessed window
 2. **Tool-call count (secondary)** — Counts tool invocations in session; suggests at a configurable threshold (default: 50 calls), then every 25 calls after
 
 ## Hook Setup
@@ -59,7 +59,7 @@ Add to your `~/.claude/settings.json`:
 
 Environment variables:
 - `COMPACT_THRESHOLD` — Tool calls before first suggestion (default: 50)
-- `COMPACT_CONTEXT_THRESHOLD` — Context tokens before the context-size suggestion (default: 160000 on a 200k window, 250000 on a 1M window; `0` disables the context signal)
+- `COMPACT_CONTEXT_THRESHOLD` — Absolute context tokens before the context-size suggestion, overriding the percentage default (default: 70% of the detected window — 140000 on 200k, 280000 on 400k, 700000 on 1M; 300000 when the window is unknown; `0` disables the context signal)
 - `COMPACT_CONTEXT_INTERVAL` — Additional context tokens before the suggestion repeats (default: 60000)
 - `ECC_CONTEXT_WINDOW_TOKENS` — Explicit context-window size, in tokens, overriding auto-detection. Set this for large-window models whose reported id lacks a `[1m]` marker (e.g. 400k Opus 4.x, or a new 1M-window model family) so the threshold scales to the real window instead of defaulting to 200k and overstating context usage.
 - `CLAUDE_CODE_AUTO_COMPACT_WINDOW` — Claude Code's native window-size override, in tokens; honored as a fallback when `ECC_CONTEXT_WINDOW_TOKENS` is unset.

@@ -173,6 +173,19 @@ test('returns numeric percentage for transcript with usage data', () => {
   assert.ok(pct >= 0 && pct <= 100);
 });
 
+test('returns null when the model window is unknown (no fabricated percentage)', () => {
+  const p = writeTranscript([JSON.stringify({
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      model: 'some-future-model-9',
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 250000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+    }
+  })]);
+  assert.strictEqual(getContextRemainingPct(p), null);
+});
+
 // --- generateSessionSummary ---
 console.log('\ngenerateSessionSummary:');
 

@@ -778,15 +778,19 @@ function runTests() {
   })) passed++;
   else failed++;
 
-  if (test('uses the 250k default threshold for [1m] models', () => {
+  if (test('uses the 70%-of-window default threshold for [1m] models', () => {
     const ctx = createContextContext();
     const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5[1m]');
     try {
       const silent = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
       assert.strictEqual(silent.stdout.trim(), '', `230k on a 1M window must stay silent. Got: "${silent.stdout}"`);
-      writeTranscriptTokens(transcript, 260000, 'claude-opus-4-5[1m]');
+      // The old absolute 250k default nagged from 25% of a 1M window onward.
+      writeTranscriptTokens(transcript, 690000, 'claude-opus-4-5[1m]');
+      const stillSilent = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(stillSilent.stdout.trim(), '', `690k on a 1M window must stay silent. Got: "${stillSilent.stdout}"`);
+      writeTranscriptTokens(transcript, 700000, 'claude-opus-4-5[1m]');
       const fired = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
-      assert.ok(fired.stdout.includes('26% of 1M window'), `260k on a 1M window should fire. Got: "${fired.stdout}"`);
+      assert.ok(fired.stdout.includes('70% of 1M window'), `700k on a 1M window should fire. Got: "${fired.stdout}"`);
     } finally {
       try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
       ctx.cleanup();
@@ -794,14 +798,45 @@ function runTests() {
   })) passed++;
   else failed++;
 
-  if (test('treats >200k observed tokens as a 1M window even without the [1m] marker', () => {
+  if (test('recognizes opus-4 as a 400k window without an env override (#2290)', () => {
     const ctx = createContextContext();
     const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5');
     try {
+      // 230k exceeds the 200k-window threshold but not 70% of 400k (280k).
+      const silent = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(silent.stdout.trim(), '', `Expected 400k-window detection to keep the run silent. Got: "${silent.stdout}"`);
+      writeTranscriptTokens(transcript, 300000, 'claude-opus-4-5');
+      const fired = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.ok(fired.stdout.includes('75% of 400k window'), `300k on a 400k window should fire. Got: "${fired.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('reports an unknown window without inventing a percentage', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(310000, 'some-future-model-9');
+    try {
       const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
-      // 230k would exceed the 160k standard threshold, but the observed size
-      // implies a 1M window whose 250k default threshold is not reached yet.
-      assert.strictEqual(result.stdout.trim(), '', `Expected 1M-window inference to keep run silent. Got: "${result.stdout}"`);
+      assert.ok(result.stdout.includes('Context ~310k tokens'), `Expected the raw token estimate. Got: "${result.stdout}"`);
+      assert.ok(result.stdout.includes('window unknown for some-future-model-9'), `Expected an unknown-window notice. Got: "${result.stdout}"`);
+      assert.ok(result.stdout.includes('ECC_CONTEXT_WINDOW_TOKENS'), `Expected the override hint. Got: "${result.stdout}"`);
+      assert.ok(!/\d+% of/.test(result.stdout), `Must not fabricate a percentage. Got: "${result.stdout}"`);
+    } finally {
+      try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
+      ctx.cleanup();
+    }
+  })) passed++;
+  else failed++;
+
+  if (test('stays silent below the unknown-window threshold', () => {
+    const ctx = createContextContext();
+    const transcript = writeTranscriptFixture(290000, 'some-future-model-9');
+    try {
+      const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
+      assert.strictEqual(result.stdout.trim(), '', `290k with an unknown window must stay silent. Got: "${result.stdout}"`);
     } finally {
       try { fs.unlinkSync(transcript); } catch (_err) { /* ignore */ }
       ctx.cleanup();

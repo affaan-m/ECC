@@ -14,9 +14,10 @@ const os = require('os');
 const path = require('path');
 const {
   STANDARD_CONTEXT_WINDOW_TOKENS,
+  EXTENDED_CONTEXT_WINDOW_TOKENS,
   LARGE_CONTEXT_WINDOW_TOKENS,
-  DEFAULT_CONTEXT_THRESHOLD_STANDARD,
-  DEFAULT_CONTEXT_THRESHOLD_LARGE,
+  DEFAULT_CONTEXT_THRESHOLD_PCT,
+  UNKNOWN_WINDOW_THRESHOLD_TOKENS,
   DEFAULT_CONTEXT_INTERVAL_TOKENS,
   readLatestContextTokens,
   resolveContextWindowTokens,
@@ -176,8 +177,26 @@ test('detects a 1M window from the [1m] model marker', () => {
   assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-5[1m]'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
-test('detects a 1M window when observed tokens exceed 200k (marker dropped)', () => {
-  assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+test('recognizes opus-4 as a 400k window without an env override (#2290)', () => {
+  assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), EXTENDED_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-1-20250805'), EXTENDED_CONTEXT_WINDOW_TOKENS);
+});
+
+test('recognizes 200k families by pattern (sonnet-4 / haiku / claude-3 / opus-3)', () => {
+  for (const model of ['claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-3-5-sonnet-20241022', 'claude-opus-3']) {
+    assert.strictEqual(resolveContextWindowTokens(50000, model), STANDARD_CONTEXT_WINDOW_TOKENS, `Expected 200k for ${model}`);
+  }
+});
+
+test('returns null for an unrecognized model id instead of guessing a window', () => {
+  assert.strictEqual(resolveContextWindowTokens(220000, 'some-future-model-9'), null);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'gpt-nextgen'), null);
+});
+
+test('returns null without a model id once tokens exceed the standard window', () => {
+  // Provably larger than 200k, but nothing says how much larger - so no guess.
+  assert.strictEqual(resolveContextWindowTokens(220000, ''), null);
+  assert.strictEqual(resolveContextWindowTokens(220000, undefined), null);
 });
 
 test('recognizes claude-fable-5 as a 1M window without a [1m] marker or 200k+ tokens (#2461)', () => {
@@ -202,8 +221,10 @@ test('env window override still wins over the known-model table (#2461)', () => 
 });
 
 test('does not match hypothetical smaller tiers sharing a known-family prefix (#2461)', () => {
-  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5-mini'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  // Neither id may inherit the 1M window of its family. `-haiku` is a known
+  // 200k pattern; `-mini` matches nothing at all, so its window is unknown.
   assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5-haiku-20260201'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-fable-5-mini'), null);
 });
 
 test('keeps the 200k default for unknown model ids at low token counts (no false positives, #2461)', () => {
@@ -217,25 +238,47 @@ test('treats an empty model id as standard window', () => {
 // ── resolveContextThreshold ──
 console.log('\nresolveContextThreshold:');
 
-test('defaults to 160k for the 200k window', () => {
-  assert.strictEqual(resolveContextThreshold({}, STANDARD_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_THRESHOLD_STANDARD);
+test('defaults to 70% of the window at every size', () => {
+  assert.strictEqual(resolveContextThreshold({}, STANDARD_CONTEXT_WINDOW_TOKENS), 140000);
+  assert.strictEqual(resolveContextThreshold({}, EXTENDED_CONTEXT_WINDOW_TOKENS), 280000);
+  assert.strictEqual(resolveContextThreshold({}, LARGE_CONTEXT_WINDOW_TOKENS), 700000);
 });
 
-test('defaults to 250k for the 1M window', () => {
-  assert.strictEqual(resolveContextThreshold({}, LARGE_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_THRESHOLD_LARGE);
+test('derives the default from DEFAULT_CONTEXT_THRESHOLD_PCT for any window size', () => {
+  for (const windowTokens of [200000, 400000, 1000000, 2000000]) {
+    assert.strictEqual(
+      resolveContextThreshold({}, windowTokens),
+      Math.round(windowTokens * DEFAULT_CONTEXT_THRESHOLD_PCT),
+      `Expected the percentage default for a ${windowTokens}-token window`
+    );
+  }
+});
+
+test('falls back to a fixed threshold when the window is unknown', () => {
+  // No percentage exists without a window; 300k is past every standard window,
+  // so the nudge is still truthful.
+  assert.strictEqual(resolveContextThreshold({}, null), UNKNOWN_WINDOW_THRESHOLD_TOKENS);
+  assert.strictEqual(resolveContextThreshold({}, undefined), UNKNOWN_WINDOW_THRESHOLD_TOKENS);
+  assert.strictEqual(resolveContextThreshold({}, 0), UNKNOWN_WINDOW_THRESHOLD_TOKENS);
 });
 
 test('honours COMPACT_CONTEXT_THRESHOLD override', () => {
   assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: '1234' }, STANDARD_CONTEXT_WINDOW_TOKENS), 1234);
 });
 
+test('an absolute COMPACT_CONTEXT_THRESHOLD still wins over the percentage default', () => {
+  assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: '250000' }, LARGE_CONTEXT_WINDOW_TOKENS), 250000);
+  assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: '160000' }, null), 160000);
+});
+
 test('COMPACT_CONTEXT_THRESHOLD=0 disables the signal', () => {
   assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: '0' }, STANDARD_CONTEXT_WINDOW_TOKENS), 0);
+  assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: '0' }, null), 0);
 });
 
 test('invalid COMPACT_CONTEXT_THRESHOLD falls back to the default', () => {
   for (const bad of ['-5', 'abc', '99999999999']) {
-    assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: bad }, STANDARD_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_THRESHOLD_STANDARD, `Expected fallback for ${bad}`);
+    assert.strictEqual(resolveContextThreshold({ COMPACT_CONTEXT_THRESHOLD: bad }, STANDARD_CONTEXT_WINDOW_TOKENS), 140000, `Expected fallback for ${bad}`);
   }
 });
 
@@ -254,6 +297,24 @@ test('invalid COMPACT_CONTEXT_INTERVAL falls back to the default', () => {
   for (const bad of ['0', '-1', 'abc']) {
     assert.strictEqual(resolveContextInterval({ COMPACT_CONTEXT_INTERVAL: bad }), DEFAULT_CONTEXT_INTERVAL_TOKENS, `Expected fallback for ${bad}`);
   }
+});
+
+test('keeps the 60k floor for known windows up to 1M', () => {
+  assert.strictEqual(resolveContextInterval({}, STANDARD_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_INTERVAL_TOKENS);
+  assert.strictEqual(resolveContextInterval({}, EXTENDED_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_INTERVAL_TOKENS);
+  assert.strictEqual(resolveContextInterval({}, LARGE_CONTEXT_WINDOW_TOKENS), DEFAULT_CONTEXT_INTERVAL_TOKENS);
+});
+
+test('scales the interval with very large windows (5% of window)', () => {
+  assert.strictEqual(resolveContextInterval({}, 2000000), 100000);
+});
+
+test('an explicit COMPACT_CONTEXT_INTERVAL still wins over window scaling', () => {
+  assert.strictEqual(resolveContextInterval({ COMPACT_CONTEXT_INTERVAL: '5000' }, 2000000), 5000);
+});
+
+test('unknown window keeps the default interval', () => {
+  assert.strictEqual(resolveContextInterval({}, null), DEFAULT_CONTEXT_INTERVAL_TOKENS);
 });
 
 // ── computeContextBucket ──
@@ -287,6 +348,19 @@ console.log('\nformatWindowLabel:');
 test('labels the standard and large windows', () => {
   assert.strictEqual(formatWindowLabel(STANDARD_CONTEXT_WINDOW_TOKENS), '200k');
   assert.strictEqual(formatWindowLabel(LARGE_CONTEXT_WINDOW_TOKENS), '1M');
+});
+
+test('labels the extended and multi-million windows', () => {
+  assert.strictEqual(formatWindowLabel(EXTENDED_CONTEXT_WINDOW_TOKENS), '400k');
+  assert.strictEqual(formatWindowLabel(1500000), '1.5M');
+  assert.strictEqual(formatWindowLabel(2000000), '2M');
+});
+
+test('labels an undetermined window as unknown', () => {
+  assert.strictEqual(formatWindowLabel(null), 'unknown');
+  assert.strictEqual(formatWindowLabel(undefined), 'unknown');
+  assert.strictEqual(formatWindowLabel(0), 'unknown');
+  assert.strictEqual(formatWindowLabel(NaN), 'unknown');
 });
 
 // Cleanup

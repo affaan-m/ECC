@@ -15,12 +15,16 @@
  * Two signals (#2155):
  * - Tool-call count: first at COMPACT_THRESHOLD (default 50), then every 25.
  * - Context size (primary): the latest assistant `usage` record from the
- *   session transcript, compared against a window-scaled token threshold
- *   (COMPACT_CONTEXT_THRESHOLD; default 160k on a 200k window, 250k on 1M),
- *   re-reminding after every COMPACT_CONTEXT_INTERVAL tokens of growth
- *   (default 60k). Tool count is a weak proxy for window pressure — a few
- *   large reads can fill the window in very few calls, and many tiny calls
- *   can cross 50 while the window is barely used.
+ *   session transcript, compared against a percent-of-window token threshold
+ *   (COMPACT_CONTEXT_THRESHOLD overrides it absolutely; the default is 70% of
+ *   the detected window — 140k on 200k, 280k on 400k, 700k on 1M), re-reminding
+ *   after every COMPACT_CONTEXT_INTERVAL tokens of growth (default 60k). Tool
+ *   count is a weak proxy for window pressure — a few large reads can fill the
+ *   window in very few calls, and many tiny calls can cross 50 while the window
+ *   is barely used.
+ *
+ * When the model's window cannot be determined, the suggestion reports the raw
+ * token count and says so instead of printing a percentage of a guessed window.
  */
 
 const fs = require('fs');
@@ -175,7 +179,7 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     const threshold = resolveContextThreshold(env, windowTokens);
     if (threshold <= 0) return null; // COMPACT_CONTEXT_THRESHOLD=0 disables
 
-    const interval = resolveContextInterval(env);
+    const interval = resolveContextInterval(env, windowTokens);
     const bucket = computeContextBucket(usage.tokens, threshold, interval);
     if (bucket < 0) return null;
 
@@ -185,6 +189,12 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     writeFile(bucketFile, String(bucket));
 
     const approxTokens = `${Math.round(usage.tokens / 1000)}k`;
+    if (!Number.isFinite(windowTokens) || windowTokens <= 0) {
+      // Unknown window: report what is measured, never a percentage of a guess.
+      const modelLabel = usage.model || 'unknown model';
+      return `[StrategicCompact] Context ~${approxTokens} tokens (window unknown for ${modelLabel}; set ECC_CONTEXT_WINDOW_TOKENS or extend KNOWN_MODEL_WINDOW_TOKENS) - consider /compact at the next logical boundary`;
+    }
+
     const percent = Math.round((usage.tokens / windowTokens) * 100);
     return `[StrategicCompact] Context ~${approxTokens} tokens (${percent}% of ${formatWindowLabel(windowTokens)} window) - consider /compact at the next logical boundary`;
   } catch (err) {

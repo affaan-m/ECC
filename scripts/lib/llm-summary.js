@@ -99,6 +99,8 @@ function getContextRemainingPct(transcriptPath) {
     const usage = readLatestContextTokens(transcriptPath);
     if (!usage) return null;
     const windowTokens = resolveContextWindowTokens(usage.tokens, usage.model);
+    // Unknown window (unrecognized model id): no honest percentage exists.
+    if (!Number.isFinite(windowTokens) || windowTokens <= 0) return null;
     return Math.round((1 - usage.tokens / windowTokens) * 100);
   } catch {
     return null;
