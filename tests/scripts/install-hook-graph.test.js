@@ -71,13 +71,11 @@ function runGraph(opts = {}) {
   if (opts.existingHooks !== null) settings.hooks = opts.existingHooks || EXISTING;
   fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify(settings, null, 2));
 
-  let pathPrefix = '';
-  if (opts.claudeStub) {
-    const bin = path.join(dir, 'bin');
-    fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, 'claude'), `#!/usr/bin/env bash\n${opts.claudeStub}\n`, { mode: 0o755 });
-    pathPrefix = `export PATH="${bin}:$PATH"\n`;
-  }
+  // A shell function, not a script on PATH: a Windows temp dir starts `C:\`,
+  // and `:` is the PATH separator, so prepending one corrupts PATH instead of
+  // shadowing `claude`. Defining it unconditionally also keeps the no-stub runs
+  // off whatever `claude` happens to be installed on the machine.
+  const claudeStub = `claude() { ${opts.claudeStub || 'echo "no plugins installed"'}\n}\n`;
 
   const body = fs.readFileSync(SCRIPT, 'utf8');
   const fn = body.match(/^install_hook_graph\(\) \{[\s\S]*?^\}/m);
@@ -87,7 +85,7 @@ function runGraph(opts = {}) {
   fs.writeFileSync(
     harness,
     `set -euo pipefail
-${pathPrefix}TAG=test
+${claudeStub}TAG=test
 DRY_RUN=${opts.dryRun ? 1 : 0}
 VERBOSE=0
 PRUNE=0
