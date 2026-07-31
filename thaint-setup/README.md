@@ -32,17 +32,23 @@ In the order `main()` runs them:
 2. **Skips onboarding** — marks `hasCompletedOnboarding=true` in `~/.claude.json`
 3. **Adds marketplace + plugin** — `claude-md-management@claude-plugins-official`
 4. **Backs up** `settings.json` and `~/.claude.json` into `~/.claude/backups/`, before anything overwrites them
-5. **Patches `settings.json`** — adds statusline (context progress bar + model name)
-6. **Installs MCP server catalog** — all 35 ECC MCP servers with env-var placeholders. Servers without required env vars stay disabled; set the env var to auto-enable. See [MCP servers](#mcp-servers) below.
-7. **Installs global CLAUDE.md** — copies `thaint-setup/CLAUDE.base.md` to `~/.claude/CLAUDE.md` (applies across all projects)
-8. **Copies directories** into `~/.claude/` (from this repo's checked-out tree):
+5. **Installs MCP server catalog** — all 35 ECC MCP servers with env-var placeholders. Servers without required env vars stay disabled; set the env var to auto-enable. See [MCP servers](#mcp-servers) below.
+6. **Installs global CLAUDE.md** — copies `thaint-setup/CLAUDE.base.md` to `~/.claude/CLAUDE.md` (applies across all projects)
+7. **Copies directories** into `~/.claude/` (from this repo's checked-out tree), listing but not deleting files the source no longer has:
    - `agents/`
    - `commands/`
    - `skills/configure-ecc`
    - `skills/strategic-compact`
-9. **Installs hooks-runtime** — runs the ECC `install.sh` for hook support
-10. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
-11. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
+8. **Installs hooks-runtime** — runs the ECC `install.sh`, which copies the hook scripts without wiring them to any event
+9. **Wires the hook graph** — merges `hooks/hooks.json` into `.hooks` of `settings.json`, the only place Claude Code reads hooks from; keeps entries the graph does not carry, and skips itself when ECC is installed as a plugin
+10. **Patches `settings.json`** — points `statusLine` at `~/.claude/scripts/hooks/ecc-statusline.js` (model, task, 5-hour budget, session counters, directory, context bar), keeping one you set by hand:
+
+    ```text
+    Opus 5 (1M context) │ 5h 24% ↻1h11m 96t 11f 1h39m │ my-worktree ████░░░░░░ 46%
+    ```
+
+11. **Installs Telegram hook** — writes `~/.claude/scripts/hooks/telegram-notify.js` and patches `settings.json`
+12. **Patches shell rc** (`.zshrc` or `.bashrc`) — adds convenience alias and env var:
    ```bash
    alias clauded='claude --dangerously-skip-permissions'
    export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
@@ -53,6 +59,7 @@ In the order `main()` runs them:
 | Flag | Description |
 |---|---|
 | `--dry-run` | Print actions without executing |
+| `--prune` | Delete files in `~/.claude` the source no longer has (listed only, by default) |
 | `--verbose, -v` | Log every command |
 | `-h, --help` | Show help |
 
@@ -67,6 +74,9 @@ bash thaint-setup/setup_claude.sh
 
 # Dry run — see what would happen
 bash thaint-setup/setup_claude.sh --dry-run
+
+# Also delete files the source no longer has (review the list from a plain run first)
+bash thaint-setup/setup_claude.sh --prune
 
 # Install a different version
 git checkout v2.1.0 && bash thaint-setup/setup_claude.sh

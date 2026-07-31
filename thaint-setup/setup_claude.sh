@@ -26,6 +26,7 @@ TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 SOURCE="$REPO_ROOT"
 DRY_RUN=0
 VERBOSE=0
+PRUNE=0
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log()  { printf '[%s] %s\n' "$TAG" "$*"; }
@@ -71,7 +72,8 @@ Usage: $0 [--dry-run] [--verbose] [-h]
 End-to-end Claude Code setup. Installs (always overwrites) into ${CLAUDE_HOME}:
   claude-code CLI (if missing), skip-onboarding flag in ~/.claude.json,
   marketplace + plugin ${CLAUDE_PLUGIN} (if missing),
-  agents, commands, hooks-runtime, configure-ecc, strategic-compact, telegram-hook
+  agents, commands, hooks-runtime, configure-ecc, strategic-compact, telegram-hook,
+  ECC statusline (.statusLine; a hand-edited value is kept as-is)
 Shell rc patch (.zshrc or .bashrc):
   alias clauded='claude --dangerously-skip-permissions'
   export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
@@ -81,6 +83,9 @@ To install a different version, check out that ref and re-run.
 
 Options:
   --dry-run         Print actions without executing
+  --prune           Delete files in the destination that no longer exist in the
+                    source (off by default: agents/ and commands/ also hold your
+                    own files). Without it, such files are only listed.
   --verbose, -v     Log every command
   -h, --help        Show this help
 
@@ -94,6 +99,7 @@ parse_args() {
   while (( $# )); do
     case "$1" in
       --dry-run)    DRY_RUN=1; shift ;;
+      --prune)      PRUNE=1; shift ;;
       --verbose|-v) VERBOSE=1; shift ;;
       -h|--help)    usage; exit 0 ;;
       *)            die "unknown arg: $1 (try --help)" ;;
@@ -186,6 +192,41 @@ copy_dir() {
   [[ -d "$src" ]] || { warn "missing $src — skipped"; return; }
   run mkdir -p "$dst"
   run cp -rf "$src/." "$dst/"
+  report_foreign "$src" "$dst"
+}
+
+# cp -rf overwrites but never deletes, so a file upstream removed keeps working
+# forever from a stale install. These directories are a shared namespace though —
+# your own agents and commands live there too — so deletion stays opt-in.
+report_foreign() {
+  local src="$1" dst="$2" rel
+  local -a foreign=()
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    [[ -e "$src/$rel" ]] || foreign+=("$rel")
+  # `find -printf` is GNU-only; on BSD/macOS it fails, and inside a process
+  # substitution that failure never reaches `set -e` — the whole report would
+  # silently produce nothing. Strip the leading ./ with sed instead.
+  done < <(cd "$dst" && find . -type f 2>/dev/null | sed 's|^\./||' | sort)
+
+  (( ${#foreign[@]} )) || return 0
+
+  if (( PRUNE )); then
+    for rel in "${foreign[@]}"; do
+      if (( DRY_RUN )); then
+        printf '[dry-run] rm %s\n' "$dst/$rel"
+      else
+        run rm -f "$dst/$rel"
+      fi
+    done
+    log "pruned ${#foreign[@]} file(s) absent from $src"
+  else
+    warn "${#foreign[@]} file(s) in $dst are absent from the source — pass --prune to delete:"
+    for rel in "${foreign[@]}"; do
+      warn "  $rel"
+    done
+  fi
 }
 
 # ── Installers ───────────────────────────────────────────────────────────────
@@ -327,25 +368,141 @@ patch_settings_telegram() {
   log "patched settings.json (telegram entry in Notification)"
 }
 
-# Idempotent jq patch: always overwrites .statusLine so config matches exactly.
+# ECC hooks the shipped graph deliberately leaves out. Kept if already wired,
+# never added: insaits-security is opt-in, telegram-notify belongs to
+# install_telegram_hook.
+readonly GRAPH_EXEMPT='["insaits-security","telegram-notify"]'
+
+# Wires hooks/hooks.json into settings.json, the only place Claude Code reads
+# hooks from. The ECC installer copies the hook scripts and writes the same graph
+# to ~/.claude/hooks/hooks.json, but deliberately leaves settings.json alone
+# (README, "Install hooks") — and Claude Code never reads that file, verified by
+# putting a hook there and nowhere else: it never fired. Without this step a
+# --target claude install ships 50 hook scripts that no event ever triggers.
+#
+# Skipped when ECC is loaded as a plugin: Claude Code v2.1+ auto-loads a plugin's
+# hooks/hooks.json, so wiring the same graph here would run every hook twice.
+install_hook_graph() {
+  local settings="${CLAUDE_HOME}/settings.json"
+  local graph="${SOURCE}/hooks/hooks.json"
+  local tmp names filter line
+
+  [[ -f "$graph" ]] || { warn "hook graph missing at $graph — skipped"; return; }
+
+  # Distinguish "no plugin" from "could not ask". Piping straight into grep
+  # would collapse an auth or network failure into the same silent "not
+  # installed" answer, and wiring the graph while ECC is in fact a plugin runs
+  # every hook twice.
+  local plugin_list
+  if command -v claude >/dev/null 2>&1; then
+    if plugin_list="$(claude plugin list 2>/dev/null)"; then
+      if printf '%s' "$plugin_list" | grep -Fq "everything-claude-code"; then
+        warn "ECC is installed as a plugin — Claude Code auto-loads its hooks; leaving .hooks alone so they do not run twice"
+        return
+      fi
+    else
+      warn "could not read the plugin list — wiring the graph anyway; if ECC is installed as a plugin, remove .hooks or every hook runs twice"
+    fi
+  fi
+
+  if (( DRY_RUN )); then
+    printf '[dry-run] patch %s (.hooks from %s)\n' "$settings" "$graph"
+    return
+  fi
+
+  [[ -f "$settings" ]] || printf '{}\n' > "$settings"
+
+  # Every ECC hook basename, so an existing entry is classified by what it
+  # invokes rather than by how it was written: the old install wired hooks
+  # individually and through npx, the graph routes most of them through
+  # dispatchers, and matching on names catches both spellings.
+  #
+  # Globbed rather than found: `find -printf` is GNU-only, and on BSD/macOS the
+  # failing pipeline would abort the whole installer here — after the copy
+  # steps, before statusline and telegram — leaving nothing behind but find's
+  # own one-line complaint about an unknown primary. Worse, anyone who
+  # silenced that abort would get an empty name list, which classifies nothing
+  # as ECC-owned and so appends the entire graph again on every run.
+  local -a hook_names=()
+  local hook_file
+  for hook_file in "$SOURCE"/scripts/hooks/*.js; do
+    [[ -e "$hook_file" ]] || continue
+    hook_names+=("$(basename "$hook_file" .js)")
+  done
+  (( ${#hook_names[@]} )) \
+    || die "no hook scripts found in $SOURCE/scripts/hooks — refusing to rewrite .hooks with nothing to match against"
+  names="$(printf '%s\n' "${hook_names[@]}" | jq -R . | jq -sc .)"
+
+  # An entry naming an ECC hook is the graph's to define — replaced, and logged
+  # so nothing disappears quietly. An entry naming none is yours, and survives.
+  filter='
+    def cmds: [.. | strings] | join(" ");
+    def ecc_owned($names; $exempt):
+      cmds as $c
+      | any($names[];  . as $n | $c | contains($n))
+        and (any($exempt[]; . as $n | $c | contains($n)) | not);
+  '
+
+  # Only entries that actually disappear are worth a line: on a re-run every
+  # graph entry is "replaced" by its identical self, which is not news.
+  while IFS= read -r line; do
+    # warn, not log: classification is by hook name, so an entry of your own
+    # that reuses an ECC basename lands here too. It goes to stderr where it is
+    # harder to scroll past.
+    [[ -n "$line" ]] && warn "dropping hook entry the graph supersedes — $line"
+  done < <(jq -r --slurpfile g "$graph" --argjson names "$names" --argjson exempt "$GRAPH_EXEMPT" \
+    "${filter}"' (.hooks // {}) | to_entries[] | .key as $ev | .value[]
+     | select(ecc_owned($names; $exempt))
+     | select(. as $e | ($g[0].hooks[$ev] // []) | index($e) | not)
+     | ([cmds | scan("scripts/hooks/[A-Za-z0-9._-]+")] | last) as $s
+     | $ev + ": " + ($s // ((.hooks[0].command // "") | .[0:60]))' "$settings")
+
+  tmp="$(mktemp)"
+  jq --slurpfile g "$graph" --argjson names "$names" --argjson exempt "$GRAPH_EXEMPT" \
+    "${filter}"'
+    ($g[0].hooks) as $new
+    | (.hooks // {}) as $old
+    | .hooks = (
+        reduce ((($new | keys_unsorted) + ($old | keys_unsorted)) | unique)[] as $ev
+          ({};
+            .[$ev] = (
+              ($new[$ev] // [])
+              + (($old[$ev] // []) | map(select(ecc_owned($names; $exempt) | not)))
+            )
+          )
+      )
+  ' "$settings" > "$tmp" \
+    || die "jq failed to wire the hook graph into $settings"
+  mv "$tmp" "$settings"
+  log "wired hook graph ($(jq '[.hooks[][].hooks[]] | length' "$settings") entries in settings.json)"
+}
+
+# Installs ECC's statusline, which shows more than the inline bash bar it
+# replaced: model, the in-progress task, session cost/tool/file counts (once
+# ecc-metrics-bridge runs), the working directory, and the context bar.
+# Overwrites only a value this script wrote — see the ownership check below.
 patch_settings_statusline() {
   local settings="${CLAUDE_HOME}/settings.json"
-  local tmp
+  local tmp existing
+  local statusline_cmd="node \"${CLAUDE_HOME}/scripts/hooks/ecc-statusline.js\""
 
   if (( DRY_RUN )); then
     printf '[dry-run] patch %s (.statusLine)\n' "$settings"
     return
   fi
 
-  # Build the command from a heredoc to avoid quoting hell with nested single quotes.
-  # shellcheck disable=SC2016
-  local statusline_cmd
-  statusline_cmd="$(cat <<'CMD'
-input=$(cat); model=$(echo "$input" | jq -r '.model.display_name // empty'); [ -z "$model" ] && exit 0; used=$(echo "$input" | jq -r '.context_window.used_percentage // empty'); bar_total=30; bar_out=""; if [ -n "$used" ] && [ "$used" != "null" ]; then used_int=$(printf "%.0f" "$used"); [ "$used_int" -lt 0 ] && used_int=0; [ "$used_int" -gt 100 ] && used_int=100; filled=$(( used_int * bar_total / 100 )); empty=$(( bar_total - filled )); if [ "$used_int" -lt 60 ]; then color_fill="\033[32m"; color_empty="\033[90m"; elif [ "$used_int" -lt 80 ]; then color_fill="\033[33m"; color_empty="\033[90m"; else color_fill="\033[31m"; color_empty="\033[90m"; fi; bar_filled=$(printf '%0.s#' $(seq 1 "$filled" 2>/dev/null)); bar_empty=$(printf '%0.s-' $(seq 1 "$empty" 2>/dev/null)); bar_out=$(printf "${color_fill}%s${color_empty}%s\033[0m" "$bar_filled" "$bar_empty"); bar_out="$bar_out $(printf '%3d%%' "$used_int")"; fi; printf "%s  \033[1m%s\033[0m" "$bar_out" "$model"
-CMD
-)"
-
   [[ -f "$settings" ]] || printf '{}\n' > "$settings"
+
+  # `ecc-statusline.js` is what this script writes now; `bar_total=30` is the
+  # inline bash bar earlier versions wrote. Anything else was chosen by hand, so
+  # keep it rather than silently reverting that choice on every run.
+  existing="$(jq -r '.statusLine.command // ""' "$settings")"
+  if [[ -n "$existing" \
+        && "$existing" != *ecc-statusline.js* \
+        && "$existing" != *bar_total=30* ]]; then
+    warn "statusLine is hand-edited — keeping it (remove .statusLine to hand it back to this script)"
+    return
+  fi
 
   tmp="$(mktemp)"
   jq --arg cmd "$statusline_cmd" \
@@ -353,7 +510,7 @@ CMD
     "$settings" > "$tmp" \
     || die "jq failed to patch statusLine in $settings"
   mv "$tmp" "$settings"
-  log "patched settings.json (.statusLine)"
+  log "patched settings.json (.statusLine -> ecc-statusline.js)"
 }
 
 # ── MCP catalog patch ───────────────────────────────────────────────────────
@@ -444,7 +601,9 @@ patch_mcp_catalog() {
   # making the server look configured instead of staying disabled. Fail loudly
   # so a newly added upstream server can't slip through unmapped.
   local unmapped
-  unmapped="$(grep -oE 'YOUR_[A-Z0-9_]*_HERE' "$mcp_processed" | sort -u | tr '\n' ' ')"
+  # grep exits 1 when it finds nothing — the healthy case — and `set -e` treats
+  # that as a failure, aborting the install right before anything is copied.
+  unmapped="$(grep -oE 'YOUR_[A-Z0-9_]*_HERE' "$mcp_processed" | sort -u | tr '\n' ' ')" || unmapped=''
   [[ -z "$unmapped" ]] || die "unmapped MCP placeholders (add to fix_placeholders): $unmapped"
 
   [[ -f "$config" ]] || printf '{}\n' > "$config"
@@ -731,11 +890,13 @@ main() {
   fi
 
   backup_settings
-  patch_settings_statusline
   patch_mcp_catalog
   install_global_claude_md
   install_all_dirs
   install_hooks_runtime
+  # Both need install_hooks_runtime to have copied the scripts they point at.
+  install_hook_graph
+  patch_settings_statusline
   install_telegram_hook
   patch_shell_rc
 

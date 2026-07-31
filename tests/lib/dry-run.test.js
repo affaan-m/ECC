@@ -264,6 +264,10 @@ function runTests() {
     const result = spawnSync(process.execPath, [eccJs, '--dry-run', '--json', 'typescript'], {
       encoding: 'utf8',
       env: { ...process.env },
+      // The plan is ~1.1 MB and grows with the manifest; the 1 MiB default
+      // SIGTERMs the child, which surfaces as status null rather than a size
+      // error. Same allowance the oversized-input case above uses.
+      maxBuffer: 4 * 1024 * 1024,
     });
     assert.strictEqual(result.status, 0, `Expected exit 0, got ${result.status}: ${result.stderr}`);
     const payload = JSON.parse(result.stdout);

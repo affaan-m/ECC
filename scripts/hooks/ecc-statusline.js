@@ -2,7 +2,7 @@
 /**
  * ECC Statusline — statusLine command
  *
- * Displays: model | task | $cost Nt Nf Nm | dir ██░░ N%
+ * Displays: model | task | budget Nt Nf Nm | dir ██░░ N%
  *
  * Registered in settings.json under "statusLine", not in hooks.json.
  * Reads bridge file from ecc-metrics-bridge.js and stdin from Claude Code runtime.
@@ -14,8 +14,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { sanitizeSessionId, readBridge, writeBridgeAtomic } = require('../lib/session-bridge');
+const { buildRateLimitSegment } = require('../lib/rate-limit-format');
 
-const AUTO_COMPACT_BUFFER_PCT = 16.5;
 const MAX_STDIN = 1024 * 1024;
 
 /**
@@ -37,14 +37,20 @@ function formatDuration(isoTimestamp) {
 
 /**
  * Build context progress bar with ANSI colors.
+ *
+ * Reports the same figure Claude Code does: `100 - remaining_percentage`, which
+ * equals the payload's `used_percentage`. It used to subtract a fixed 16.5-point
+ * auto-compact reserve and rescale, which reads 9 points high on a 1M window —
+ * that reserve is 33K tokens, i.e. 16.5% of a 200K window but 3.3% of a 1M one,
+ * and Claude Code couples its compaction threshold to `used_percentage` anyway.
+ *
  * @param {number} remaining - Raw remaining percentage from Claude Code
  * @returns {string} Colored bar string
  */
 function buildContextBar(remaining) {
   if (remaining === null || remaining === undefined) return '';
 
-  const usableRemaining = Math.max(0, ((remaining - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100);
-  const used = Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
+  const used = Math.max(0, Math.min(100, Math.round(100 - remaining)));
 
   const filled = Math.floor(used / 10);
   const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
@@ -85,6 +91,46 @@ function readCurrentTask(sessionId) {
   }
 }
 
+/**
+ * Build the middle segment: remaining budget, then session counters.
+ *
+ * LOCAL (thaint): budget prefers `rate_limits.five_hour` over a dollar figure.
+ * On a Claude.ai subscription nothing is billed per token, so the dollars are
+ * noise while the rolling 5-hour window is the limit actually reached. Cost is
+ * still shown when `rate_limits` is absent (API-key users, or before the first
+ * API response), taking the native stdin `cost` field first so the segment
+ * works even before ecc-metrics-bridge has written a bridge file.
+ *
+ * @param {object} data - Parsed stdin payload
+ * @param {object|null} bridge - Metrics bridge contents, if any
+ * @param {number} [nowMs] - Injectable clock, for tests
+ * @returns {string} Colored segment, or empty string
+ */
+function buildMetricsSegment(data, bridge, nowMs) {
+  const segments = [];
+  const counters = [];
+
+  const rateLimit = buildRateLimitSegment(data?.rate_limits, nowMs);
+  if (rateLimit) {
+    segments.push(rateLimit);
+  } else {
+    const nativeCost = data?.cost?.total_cost_usd;
+    const bridgeCost = bridge?.total_cost_usd;
+    const cost = typeof nativeCost === 'number' && nativeCost > 0 ? nativeCost : bridgeCost;
+    if (typeof cost === 'number' && cost > 0) counters.push(`$${cost.toFixed(2)}`);
+  }
+
+  if (bridge) {
+    if (bridge.tool_count > 0) counters.push(`${bridge.tool_count}t`);
+    if (bridge.files_modified_count > 0) counters.push(`${bridge.files_modified_count}f`);
+    const dur = formatDuration(bridge.first_timestamp);
+    if (dur !== '?') counters.push(dur);
+  }
+
+  if (counters.length > 0) segments.push(`\x1b[38;5;117m${counters.join(' ')}\x1b[0m`);
+  return segments.join(' ');
+}
+
 function runStatusline() {
   let input = '';
   const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -119,27 +165,8 @@ function runStatusline() {
       // Current task
       const task = sessionId ? readCurrentTask(sessionId) : '';
 
-      // Metrics from bridge
-      let metricsStr = '';
-      if (bridge) {
-        const parts = [];
-        if (bridge.total_cost_usd > 0) {
-          parts.push(`$${bridge.total_cost_usd.toFixed(2)}`);
-        }
-        if (bridge.tool_count > 0) {
-          parts.push(`${bridge.tool_count}t`);
-        }
-        if (bridge.files_modified_count > 0) {
-          parts.push(`${bridge.files_modified_count}f`);
-        }
-        const dur = formatDuration(bridge.first_timestamp);
-        if (dur !== '?') {
-          parts.push(dur);
-        }
-        if (parts.length > 0) {
-          metricsStr = `\x1b[38;5;117m${parts.join(' ')}\x1b[0m`;
-        }
-      }
+      // Budget and session counters
+      const metricsStr = buildMetricsSegment(data, bridge);
 
       // Context bar
       const ctx = buildContextBar(remaining);
@@ -157,12 +184,15 @@ function runStatusline() {
       segments.push(`\x1b[2m${dirname}\x1b[0m`);
 
       process.stdout.write(segments.join(' \x1b[2m\u2502\x1b[0m ') + ctx);
-    } catch {
-      // Silent fail
+    } catch (err) {
+      // stdout stays empty so a failed render shows a blank status line rather
+      // than junk, but .claude/rules/node.md wants the reason on stderr —
+      // without it a blank line is undiagnosable.
+      process.stderr.write(`[ECCStatusline] render failed: ${err && err.message}\n`);
     }
   });
 }
 
-module.exports = { formatDuration, buildContextBar, readCurrentTask, MAX_STDIN };
+module.exports = { formatDuration, buildContextBar, readCurrentTask, buildMetricsSegment, MAX_STDIN };
 
 if (require.main === module) runStatusline();
