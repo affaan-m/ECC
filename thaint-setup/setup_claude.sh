@@ -418,8 +418,9 @@ install_hook_graph() {
   # dispatchers, and matching on names catches both spellings.
   #
   # Globbed rather than found: `find -printf` is GNU-only, and on BSD/macOS the
-  # failing pipeline would abort the whole installer here with no message —
-  # after the copy steps, before statusline and telegram. Worse, anyone who
+  # failing pipeline would abort the whole installer here — after the copy
+  # steps, before statusline and telegram — leaving nothing behind but find's
+  # own one-line complaint about an unknown primary. Worse, anyone who
   # silenced that abort would get an empty name list, which classifies nothing
   # as ECC-owned and so appends the entire graph again on every run.
   local -a hook_names=()
