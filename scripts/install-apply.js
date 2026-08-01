@@ -44,7 +44,7 @@ Targets:
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
-  kimi         - Install shared rules/skills/commands into ./.kimi/
+  kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
 
 Options:
@@ -188,4 +188,12 @@ function main() {
   }
 }
 
-main();
+const cliArgs = process.argv.slice(2);
+if (cliArgs.includes('--guided')) {
+  const guidedArgs = cliArgs.filter(argument => argument !== '--guided');
+  require('./install-guided').main(guidedArgs).then(exitCode => {
+    process.exitCode = exitCode;
+  });
+} else {
+  main();
+}

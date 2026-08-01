@@ -9,7 +9,7 @@
       "version": "2.0.0",
       "source": {
         "source": "local",
-        "path": "./plugins/ecc"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",

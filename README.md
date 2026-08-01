@@ -145,7 +145,7 @@ This repo is the raw code only. The guides explain everything.
 
 ## Self-host Kimi with ECC + Itô compute
 
-The Kimi Code harness and the model-serving layer are separate. ECC configures the agent harness; you bring an API endpoint or self-host an open-weight Kimi model on your own GPU capacity.
+The Kimi Code harness and the model-serving layer are separate. ECC configures the agent harness; you bring an API endpoint or self-host an open-weight Kimi model on your own GPU capacity. This adapter is verified against Kimi Code 0.31.x (`@moonshot-ai/kimi-code`).
 
 <table aria-label="Local Kimi model path" width="100%">
 <tr>
@@ -177,11 +177,11 @@ Configure the endpoint using Kimi Code's <a href="https://moonshotai.github.io/k
 
 ```bash
 bash ./install.sh --target kimi --profile minimal
-npx ecc doctor --target kimi
+npx ecc-universal doctor --target kimi
 kimi
 ```
 
-Kimi Code discovers the installed `.kimi/AGENTS.md` instructions and `.kimi/skills/` workflows natively. The installer dry-run and regression suite verify that the Kimi target stays inside the project-local `.kimi/` root.
+Kimi Code discovers the installed `.kimi-code/AGENTS.md` instructions and `.kimi-code/skills/` workflows natively; project-level `.agents/skills/` is also an official discovery location. ECC safely merges project MCP entries into `.kimi-code/mcp.json` and does not change the user-level `~/.kimi-code/config.toml`. Kimi Code supports native hooks, but ECC's current managed-project adapter does not configure them, so this installer does not offer Kimi hook profiles. The installer dry-run and regression suite verify that every managed Kimi write stays inside the project-local `.kimi-code/` root.
 
 Run or self-host any open-source model on owned or rented GPUs. Itô is ECC's preferred compute sponsor; any GPU provider works. The sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, `ecc ito find` invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
 
@@ -353,7 +353,7 @@ Get up and running in under 2 minutes:
 
 Most Claude Code users should use exactly one install path:
 
-- **Recommended default:** install the Claude Code plugin, then copy only the rule folders you actually want.
+- **Recommended default:** run the guided Claude plugin setup, then copy only the rule folders you actually want.
 - **Use the manual installer only if** you want finer-grained control, want to avoid the plugin path entirely, or your Claude Code build has trouble resolving the self-hosted marketplace entry.
 - **Do not stack install methods.** The most common broken setup is: `/plugin install` first, then `install.sh --profile full` or `npx ecc-install --profile full` afterward.
 
@@ -400,7 +400,7 @@ Add hooks later only if you want runtime enforcement:
 If you are not sure which ECC profile or component to install, ask the packaged advisor from any project:
 
 ```bash
-npx ecc consult "security reviews" --target claude
+npx ecc-universal consult "security reviews" --target claude
 ```
 
 It returns matching components, related profiles, and preview/install commands. Use the preview command before installing if you want to inspect the exact file plan.
@@ -408,13 +408,89 @@ It returns matching components, related profiles, and preview/install commands. 
 For production ML/MLOps workflows, keep the install opt-in and component-scoped:
 
 ```bash
-npx ecc consult "mlops training model deployment" --target claude
-npx ecc install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal consult "mlops training model deployment" --target claude
+npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
 ```
 
-### Step 1: Install the Plugin (Recommended)
+### Step 1: Run Guided Plugin Setup (Recommended)
 
-> NOTE: The plugin is convenient, but the OSS installer below is still the most reliable path if your Claude Code build has trouble resolving self-hosted marketplace entries.
+```bash
+npx ecc-universal setup
+```
+
+The same published package works with modern package runners:
+
+| Package runner | Guided setup command |
+|---|---|
+| npm / npx | `npx ecc-universal setup` |
+| pnpm | `pnpm dlx ecc-universal setup` |
+| Yarn 2+ | `yarn dlx ecc-universal setup` |
+| Bun | `bunx ecc-universal setup` |
+
+Yarn Classic 1 does not provide `yarn dlx`; use `npx`, install the package
+globally, or upgrade Yarn for a temporary one-shot run.
+
+The wizard currently configures the Claude Code plugin. It inventories the
+official marketplace and every native install scope before making changes, then
+installs, updates, or safely moves `ecc@ecc` to the scope you choose. Rerun the
+same command whenever you want to update ECC, change scope, or change its hook
+profile.
+
+To configure more than one coding agent in one reviewed flow, use the separate
+multi-harness wizard:
+
+```bash
+npx ecc-universal install --guided
+```
+
+It lets you select any combination of Claude Code, Codex, and Kimi Code, shows
+each install channel and destination, preflights every selection before the
+first write, and asks for one final confirmation. It keeps provider behavior
+honest:
+
+| Harness | Guided install behavior |
+|---|---|
+| Claude Code | Native `ecc@ecc` plugin with one `user`, `project`, or `local` scope and an ECC hook profile |
+| Codex | Native Codex marketplace/plugin lifecycle; hook review and trust remain Codex-owned |
+| Kimi Code | Managed project files under `./.kimi-code`; ECC hooks, model/provider settings, and authentication are not configured |
+
+For automation, make every provider-specific choice explicit:
+
+```bash
+npx ecc-universal install --guided \
+  --harness claude --harness codex --harness kimi \
+  --claude-scope local --claude-hooks standard \
+  --profile core --yes
+```
+
+ECC also ships advanced managed adapters for Cursor, Antigravity, Gemini,
+OpenCode, CodeBuddy, JoyCode, Qwen, Zed, Hermes, and OpenClaw. Those targets
+still use their documented `ecc install --target ...` paths until each adapter
+has passed the guided collision, update, repair, and uninstall lifecycle matrix.
+Neither wizard silently installs into every detected harness.
+
+For example, preview a managed core install before applying it:
+
+```bash
+# Codex (user-level ~/.codex)
+npx ecc-universal install --profile core --target codex --dry-run
+npx ecc-universal install --profile core --target codex
+
+# Kimi Code (project-local ./.kimi-code; ECC hooks are not configured)
+npx ecc-universal install --profile core --target kimi --dry-run
+npx ecc-universal install --profile core --target kimi
+```
+
+The same selective installer supports `cursor`, `gemini`, `opencode`,
+`codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Their target
+adapters intentionally choose different user-level or project-local roots, so
+select targets explicitly instead of treating model support as one global
+install switch.
+
+#### Native Claude slash-command fallback
+
+Use Claude Code's built-in marketplace commands only when you specifically want
+the native path or cannot run the package wizard:
 
 ```bash
 # Add marketplace
@@ -423,6 +499,18 @@ npx ecc install --profile minimal --target claude --with capability:machine-lear
 # Install plugin
 /plugin install ecc@ecc
 ```
+
+Claude Code owns these built-in commands, including their errors when a
+marketplace, plugin, or conflicting scope already exists. ECC cannot intercept
+that parser. If either command reports an existing install or scope conflict,
+run `npx ecc-universal setup`; the ECC-owned flow inspects the current state and
+chooses install, update, or verified scope migration instead of blindly adding a
+duplicate.
+
+After ECC is installed, `/ecc:configure-ecc` is the namespaced in-Claude
+reconfiguration skill. It delegates to the same safe setup flow, but it is
+available only after the plugin is installed and cannot replace Claude Code's
+built-in `/plugin` command during a first install.
 
 ### Naming + Migration Note
 
@@ -1001,9 +1089,17 @@ Duplicate hooks file detected: ./hooks/hooks.json resolves to already-loaded fil
 
 ## Installation
 
-### Option 1: Install as Plugin (Recommended)
+### Option 1: Guided Claude Plugin Setup (Recommended)
 
-The easiest way to use this repo - install as a Claude Code plugin:
+The easiest repeatable way to install, update, or reconfigure the Claude Code
+plugin is:
+
+```bash
+npx ecc-universal setup
+```
+
+If the package runner is unavailable, use Claude Code's provider-owned commands
+as a fallback:
 
 ```bash
 # Add this repo as a marketplace
@@ -1536,21 +1632,30 @@ Codex macOS app:
 - The reference `.codex/config.toml` intentionally does not pin `model` or `model_provider`, so Codex uses its own current default unless you override it.
 - Optional: copy `.codex/config.toml` to `~/.codex/config.toml` for global defaults; keep the multi-agent role files project-local unless you also copy `.codex/agents/`.
 
-### Codex Plugin Marketplace (experimental)
+### Codex Plugin Marketplace
 
-The repo also exposes a Codex repo-scoped marketplace (`.agents/plugins/marketplace.json`) whose entry points at the `plugins/ecc/` plugin folder — Codex does not discover plugins whose local marketplace `source.path` is the repository root (`./`), so the entry must target a concrete plugin subdirectory:
+Current Codex releases can install ECC as a native repo-marketplace plugin. The
+marketplace entry uses the repository root so Codex's cache receives the
+manifest together with all referenced skills, MCP configuration, hook runtime,
+scripts, and assets:
 
 ```bash
 codex plugin marketplace add affaan-m/ECC
-codex plugin list
+codex plugin add ecc@ecc
+codex plugin list --json
 node scripts/codex/check-plugin-cache.js
 ```
 
-`codex plugin list` only confirms marketplace registration. Run
-`node scripts/codex/check-plugin-cache.js` after install to verify that the
-installed cache can resolve the manifest's skills, MCP config, and assets.
+Both add commands are idempotent. To refresh later, run
+`codex plugin marketplace upgrade ecc` followed by `codex plugin add ecc@ecc`.
+Codex stores one enabled plugin state in the active `CODEX_HOME`; it does not
+offer Claude's `user`, `project`, and `local` scopes. Its native hooks require
+an explicit trust decision and do not use Claude's four ECC hook profiles.
+Inside Codex, invoke `$configure-ecc` for the guided provider-aware flow.
 
-**Plugin mode is currently fragile on Codex.** Marketplace discovery and install work with this layout, but runtime skill loading from local/repo marketplaces is still unreliable upstream ([openai/codex#26037](https://github.com/openai/codex/issues/26037)): Codex copies only the plugin folder into its install cache, so plugins that reference shared repo content may not expose skills in a fresh session. If the cache health check reports missing manifest references, treat the plugin path as discovery-only and prefer the manual sync flow above (`scripts/sync-ecc-to-codex.sh`), which is the supported Codex route. See [#2128](https://github.com/affaan-m/ECC/issues/2128) for the full investigation.
+The older `scripts/sync-ecc-to-codex.sh` path remains a separate compatibility
+option for users who intentionally want copied/merged configuration in
+`~/.codex`; it is not required for the native plugin.
 
 ### What's Included
 
@@ -1828,8 +1933,8 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 | **Agents** | 67                    | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 | N/A |
 | **Commands** | 94                    | Shared | Instruction-based | 35 | 5 prompts |
 | **Skills** | 281                   | Shared | 10 (native format) | 37 | Via instructions |
-| **Hook Events** | 8 types               | 15 types | None yet | 11 types | None |
-| **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | N/A | Plugin hooks | N/A |
+| **Hook Events** | 8 types               | 15 types | Native `SessionStart` | 11 types | None |
+| **Hook Scripts** | 20+ scripts           | 16 scripts (DRY adapter) | 1 reviewed native bundle | Plugin hooks | N/A |
 | **Rules** | 34 (common + lang)    | 34 (YAML frontmatter) | Instruction-based | 13 instructions | 1 always-on file |
 | **Custom Tools** | Via hooks             | Via hooks | N/A | 6 native tools | N/A |
 | **MCP Servers** | 14                    | Shared (mcp.json) | 7 (auto-merged via TOML parser) | Full | N/A |
@@ -1843,7 +1948,7 @@ ECC is the **first plugin to maximize every major AI coding tool**. Here's how e
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode — GitHub Copilot uses `.github/copilot-instructions.md` instead)
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
 - **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
-- Codex's lack of hooks is compensated by `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
+- Codex uses native reviewed-and-trusted plugin hooks, but it does not mirror Claude's four ECC hook profiles; `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions remain complementary controls
 
 ---
 

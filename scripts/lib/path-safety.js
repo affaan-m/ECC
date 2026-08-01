@@ -49,7 +49,7 @@ function isWithinRoot(target, root) {
   if (!root) {
     return false;
   }
-  const realRoot = safeRealpath(root);
+  const realRoot = realpathNearestExisting(root);
   const realTarget = realpathNearestExisting(target);
   if (realTarget === realRoot) {
     return true;

@@ -17,6 +17,7 @@ const {
   dedupeCopyFileOperations,
   listAvailableLanguages,
 } = require('../../scripts/lib/install-executor');
+const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -480,6 +481,138 @@ function runTests() {
       ['merge-json:a.json', 'merge-json:b.json', 'copy-file:other/x.md', 'remove:/home/legacy.md'],
       'both merge-json writes and the remove op survive; only the shadowed copy-file is dropped, order preserved'
     );
+  })) passed++; else failed++;
+
+  if (test('applyInstallPlan refuses generic install writes outside the target root', () => {
+    const tempDir = createTempDir('install-executor-safety-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'project', '.kimi-code');
+      const outsidePath = path.join(tempDir, 'outside.txt');
+      const sourcePath = writeFile(sourceRoot, 'skills/demo/SKILL.md', '# Demo\n');
+      const plan = {
+        mode: 'manifest',
+        target: 'kimi',
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'kimi',
+          adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [
+          {
+            kind: 'copy-file',
+            moduleId: 'fixture',
+            sourcePath,
+            sourceRelativePath: 'skills/demo/SKILL.md',
+            destinationPath: outsidePath,
+            strategy: 'preserve-relative-path',
+            ownership: 'managed',
+            scaffoldOnly: false,
+          },
+        ],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState: () => {} }),
+        /outside the install root/
+      );
+      assert.strictEqual(fs.existsSync(outsidePath), false);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude install without hooks-runtime leaves an existing hooks config untouched', () => {
+    const tempDir = createTempDir('install-executor-no-hooks-');
+    try {
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const hooksPath = writeFile(
+        targetRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[{"command":"$CLAUDE_PLUGIN_ROOT/original.js"}]}}\n'
+      );
+      const before = fs.readFileSync(hooksPath, 'utf8');
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot: path.join(tempDir, 'source'),
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [],
+      };
+
+      applyInstallPlanDirect(plan, { writeInstallState() {} });
+      assert.strictEqual(fs.readFileSync(hooksPath, 'utf8'), before);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude hooks install refuses a symlinked hooks destination', () => {
+    const tempDir = createTempDir('install-executor-hooks-symlink-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const outsideRoot = path.join(tempDir, 'outside');
+      const sourcePath = writeFile(
+        sourceRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[]}}\n'
+      );
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.mkdirSync(outsideRoot, { recursive: true });
+      fs.symlinkSync(outsideRoot, path.join(targetRoot, 'hooks'));
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'hooks-runtime',
+          sourcePath,
+          sourceRelativePath: 'hooks/hooks.json',
+          destinationPath: path.join(targetRoot, 'hooks', 'hooks.json'),
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState() {} }),
+        /outside the install root|symlinked path/
+      );
+      assert.strictEqual(fs.existsSync(path.join(outsideRoot, 'hooks.json')), false);
+    } finally {
+      cleanup(tempDir);
+    }
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

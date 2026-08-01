@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path');
 const readline = require('readline/promises');
 
 const {
   ClaudeSetupError,
   VALID_HOOK_MODES,
   VALID_SCOPES,
+  deriveHookMode,
+  readSettings,
   setupClaudePlugin,
 } = require('./lib/claude-plugin-setup');
 const {
   migrateClaudePluginScope,
 } = require('./lib/claude-scope-migration');
+const { resolveClaudePaths } = require('./lib/install/inventory');
+const { startTerminalSpinner } = require('./lib/terminal-spinner');
+const { showTerminalWelcome } = require('./lib/terminal-welcome');
 
 const MODE = 'claude-plugin';
 const AUTO_MIGRATION_CODES = new Set([
@@ -114,68 +120,127 @@ async function askChoice(terminal, prompt, choices, defaultIndex) {
   choices.forEach((choice, index) => {
     process.stdout.write(`  ${index + 1}. ${choice.label} — ${choice.description}\n`);
   });
-  const answer = await terminal.question(`Choose [${defaultIndex + 1}]: `);
-  const index = Number.parseInt(answer.trim() || String(defaultIndex + 1), 10) - 1;
-  if (!Number.isInteger(index) || index < 0 || index >= choices.length) {
-    throw new Error('Invalid setup choice');
+  const choiceNumbers = choices.map((_, index) => String(index + 1));
+  const validChoices = choiceNumbers.length === 1
+    ? choiceNumbers[0]
+    : `${choiceNumbers.slice(0, -1).join(', ')}, or ${choiceNumbers.at(-1)}`;
+
+  while (true) {
+    const hasDefault = Number.isInteger(defaultIndex);
+    const answer = await terminal.question(
+      hasDefault ? `Choose [${defaultIndex + 1}]: ` : 'Choose: '
+    );
+    const normalized = answer.trim().toLowerCase();
+    if (normalized === '' && hasDefault) return choices[defaultIndex].value;
+
+    const namedChoice = choices.find(choice => choice.value === normalized);
+    if (namedChoice) return namedChoice.value;
+
+    if (/^\d+$/.test(normalized)) {
+      const index = Number(normalized) - 1;
+      if (index >= 0 && index < choices.length) return choices[index].value;
+    }
+    process.stdout.write(`Please choose ${validChoices}.\n`);
   }
-  return choices[index].value;
 }
 
-async function collectInteractiveOptions(options) {
-  const terminal = readline.createInterface({
+function resolveInteractiveDefaults() {
+  try {
+    const result = setupClaudePlugin({ dryRun: true });
+    return {
+      hooks: result.hooks,
+      installed: result.action === 'would-update',
+      scope: result.scope,
+    };
+  } catch (error) {
+    if (!(error instanceof ClaudeSetupError)) throw error;
+    if (error.code === 'SCOPE_REQUIRED') {
+      return {
+        hooks: 'standard',
+        installed: false,
+        scope: 'user',
+      };
+    }
+    if (error.code === 'MULTIPLE_PLUGIN_SCOPES') {
+      const paths = resolveClaudePaths();
+      return {
+        hooks: deriveHookMode(readSettings(path.join(paths.configDir, 'settings.json'))),
+        installed: true,
+        multipleScopes: true,
+        scope: undefined,
+      };
+    }
+    throw error;
+  }
+}
+
+async function collectInteractiveOptions(options, defaults = {}, providedTerminal) {
+  const terminal = providedTerminal || readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
+  const ownsTerminal = !providedTerminal;
   try {
+    const scopeChoices = [
+      {
+        value: 'user',
+        label: 'Global user',
+        description: 'Available in every project for this user.',
+      },
+      {
+        value: 'project',
+        label: 'Shared project',
+        description: 'Stored in repository settings for collaborators.',
+      },
+      {
+        value: 'local',
+        label: 'Private project',
+        description: 'Enabled only here without committing the choice.',
+      },
+    ];
+    const detectedScopeDefault = scopeChoices.findIndex(
+      choice => choice.value === defaults.scope
+    );
+    const scopeDefaultIndex = detectedScopeDefault === -1
+      ? undefined
+      : detectedScopeDefault;
     const scope = options.scope || await askChoice(
       terminal,
       'Where should Claude enable ecc@ecc?',
-      [
-        {
-          value: 'user',
-          label: 'Global user',
-          description: 'Available in every project for this user.',
-        },
-        {
-          value: 'project',
-          label: 'Shared project',
-          description: 'Stored in repository settings for collaborators.',
-        },
-        {
-          value: 'local',
-          label: 'Private project',
-          description: 'Enabled only here without committing the choice.',
-        },
-      ],
-      0
+      scopeChoices,
+      scopeDefaultIndex
     );
+    const hookChoices = [
+      {
+        value: 'off',
+        label: 'Off',
+        description: 'Keep skills and commands without local hook automation.',
+      },
+      {
+        value: 'minimal',
+        label: 'Minimal',
+        description: 'Run only the lightest lifecycle and safety automation.',
+      },
+      {
+        value: 'standard',
+        label: 'Standard',
+        description: 'Balanced quality and safety automation.',
+      },
+      {
+        value: 'strict',
+        label: 'Strict',
+        description: 'Use the strongest checks and reminders.',
+      },
+    ];
+    const detectedHookDefault = hookChoices.findIndex(
+      choice => choice.value === defaults.hooks
+    );
+    const hookDefaultIndex = detectedHookDefault === -1 ? 2 : detectedHookDefault;
     const hooks = options.hooks || await askChoice(
       terminal,
       'How should ECC hooks run?',
-      [
-        {
-          value: 'off',
-          label: 'Off',
-          description: 'Keep skills and commands without local hook automation.',
-        },
-        {
-          value: 'minimal',
-          label: 'Minimal',
-          description: 'Run only the lightest lifecycle and safety automation.',
-        },
-        {
-          value: 'standard',
-          label: 'Standard',
-          description: 'Balanced quality and safety automation.',
-        },
-        {
-          value: 'strict',
-          label: 'Strict',
-          description: 'Use the strongest checks and reminders.',
-        },
-      ],
-      2
+      hookChoices,
+      hookDefaultIndex
     );
     return {
       ...options,
@@ -184,17 +249,20 @@ async function collectInteractiveOptions(options) {
       scope,
     };
   } finally {
-    terminal.close();
+    if (ownsTerminal) terminal.close();
   }
 }
 
-async function confirm(options) {
-  const terminal = readline.createInterface({
+async function confirm(options, providedTerminal) {
+  const terminal = providedTerminal || readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
+  const ownsTerminal = !providedTerminal;
   try {
-    const operation = options.moveScope ? 'Migrate' : 'Apply';
+    const operation = options.moveScope
+      ? 'Migrate'
+      : (options.confirmationAction || 'Apply');
     const scopeLabel = options.scope || 'the detected';
     const answer = await terminal.question(
       `${operation} ${MODE} setup at ${scopeLabel} scope`
@@ -202,7 +270,7 @@ async function confirm(options) {
     );
     return /^y(es)?$/i.test(answer.trim());
   } finally {
-    terminal.close();
+    if (ownsTerminal) terminal.close();
   }
 }
 
@@ -240,6 +308,33 @@ function printError(error, json) {
   process.stderr.write(`Error: ${error.message}\n`);
 }
 
+function isInteractiveCancellation(error) {
+  return Boolean(error && (
+    error.code === 'ABORT_ERR'
+    || /aborted with ctrl\+d|readline was closed/i.test(error.message || '')
+  ));
+}
+
+function needsInteractiveChoices(options) {
+  return (
+    options.mode === undefined
+    || options.scope === undefined
+    || options.hooks === undefined
+  );
+}
+
+function validateInteractiveJsonOptions(options, interactive) {
+  if (!interactive || !options.json) return;
+  if (needsInteractiveChoices(options)) {
+    throw new Error(
+      'Interactive --json requires explicit --mode, --scope, and --hooks values.'
+    );
+  }
+  if (!options.yes && !options.dryRun) {
+    throw new Error('Interactive --json mutations require --yes.');
+  }
+}
+
 function reconcileClaudePlugin(options) {
   const setupOptions = {
     dryRun: options.dryRun,
@@ -263,8 +358,20 @@ function reconcileClaudePlugin(options) {
   }
 }
 
+function applyClaudePlugin(options, interactive) {
+  const spinner = interactive && !options.dryRun && !options.json
+    ? startTerminalSpinner('Applying ECC setup...')
+    : undefined;
+  try {
+    return reconcileClaudePlugin(options);
+  } finally {
+    spinner?.stop();
+  }
+}
+
 async function main(argv = process.argv.slice(2)) {
   let options;
+  let terminal;
   try {
     options = parseArgs(argv);
     if (options.help) {
@@ -273,20 +380,56 @@ async function main(argv = process.argv.slice(2)) {
     }
 
     const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
-    if (!options.mode) {
+    validateInteractiveJsonOptions(options, interactive);
+    const shouldCollectInteractiveChoices = needsInteractiveChoices(options);
+    const needsConfirmation = !options.yes && !options.dryRun;
+    const interactiveDefaults = interactive
+      && (shouldCollectInteractiveChoices || needsConfirmation)
+      ? resolveInteractiveDefaults()
+      : undefined;
+    if (interactive && shouldCollectInteractiveChoices) {
+      terminal = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      options = await collectInteractiveOptions(
+        options,
+        interactiveDefaults,
+        terminal
+      );
+    } else if (!options.mode) {
       if (!interactive) {
         throw new Error(
           'Interactive setup requires a terminal. Pass --mode claude-plugin and the required flags.'
         );
       }
-      options = await collectInteractiveOptions(options);
     }
 
-    if (!options.yes && !options.dryRun) {
+    if (interactiveDefaults) {
+      const confirmationAction = interactiveDefaults.multipleScopes
+        ? 'Resume migration'
+        : (
+          interactiveDefaults.installed && interactiveDefaults.scope !== options.scope
+            ? 'Migrate'
+            : 'Apply'
+        );
+      options = {
+        ...options,
+        confirmationAction,
+      };
+    }
+
+    if (needsConfirmation) {
       if (!interactive) {
         throw new Error('Non-interactive setup requires --yes.');
       }
-      if (!await confirm(options)) {
+      if (!terminal) {
+        terminal = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+      }
+      if (!await confirm(options, terminal)) {
         printResult({
           action: 'cancelled',
           hooks: options.hooks || 'standard',
@@ -297,11 +440,23 @@ async function main(argv = process.argv.slice(2)) {
       }
     }
 
-    const result = reconcileClaudePlugin(options);
+    const result = applyClaudePlugin(options, interactive);
     printResult(result, options.json);
+    showTerminalWelcome({
+      action: result.action,
+      dryRun: options.dryRun,
+      interactive,
+      json: options.json,
+    });
   } catch (error) {
+    if (isInteractiveCancellation(error)) {
+      process.stdout.write('\nECC setup cancelled. No changes were made.\n');
+      return;
+    }
     printError(error, options?.json);
     process.exitCode = 1;
+  } finally {
+    terminal?.close();
   }
 }
 
@@ -311,10 +466,14 @@ if (require.main === module) {
 
 module.exports = {
   collectInteractiveOptions,
+  applyClaudePlugin,
   main,
   parseArgs,
   printError,
   printResult,
   reconcileClaudePlugin,
+  resolveInteractiveDefaults,
+  isInteractiveCancellation,
+  validateInteractiveJsonOptions,
   showHelp,
 };

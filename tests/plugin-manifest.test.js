@@ -323,6 +323,71 @@ test('codex plugin.json mcpServers exactly matches "./.mcp.json"', () => {
   assert.ok(fs.existsSync(mcpPath), `mcpServers file missing at plugin root: ${codexPlugin.mcpServers}`);
 });
 
+test('codex plugin.json explicitly declares the supported lifecycle hook bundle', () => {
+  assert.strictEqual(
+    codexPlugin.hooks,
+    './hooks/codex-hooks.json',
+    'Codex supports a top-level hooks path; keep the ECC hook bundle explicit instead of inventing provider-specific settings'
+  );
+  const hooksPath = path.join(repoRoot, codexPlugin.hooks.replace(/^\.\//, ''));
+  assert.ok(fs.existsSync(hooksPath), `Codex hooks file missing at plugin root: ${codexPlugin.hooks}`);
+});
+
+test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', () => {
+  const hooksPath = path.join(repoRoot, 'hooks', 'codex-hooks.json');
+  const config = loadJsonObject(hooksPath, 'hooks/codex-hooks.json');
+  assert.deepStrictEqual(Object.keys(config).sort(), ['description', 'hooks'], 'Codex rejects Claude\'s top-level $schema field');
+
+  const supportedEvents = new Set([
+    'PreToolUse', 'PermissionRequest', 'PostToolUse', 'PreCompact', 'PostCompact',
+    'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop',
+    'UserPromptSubmit', 'Stop'
+  ]);
+  assert.deepStrictEqual(
+    Object.keys(config.hooks || {}),
+    ['SessionStart'],
+    'Only the verified, non-blocking SessionStart hook ships natively; Claude hook profiles are not Codex hook profiles'
+  );
+  assert.deepStrictEqual(
+    config.hooks.SessionStart.map(group => group.id),
+    ['session:start'],
+    'Do not ship Claude handlers that surface hook failures in Codex'
+  );
+
+  for (const [event, groups] of Object.entries(config.hooks || {})) {
+    assert.ok(supportedEvents.has(event), `Unsupported Codex hook event: ${event}`);
+    assert.ok(Array.isArray(groups) && groups.length > 0, `Expected non-empty matcher groups for ${event}`);
+    for (const group of groups) {
+      assert.ok(Array.isArray(group.hooks) && group.hooks.length > 0, `Expected non-empty handlers for ${event}`);
+      for (const handler of group.hooks) {
+        assert.strictEqual(handler.type, 'command', `Codex 0.146 only executes command handlers (${event})`);
+        assert.ok(!Object.prototype.hasOwnProperty.call(handler, 'async'), `Codex 0.146 skips async handlers (${event})`);
+        assert.ok(
+          handler.command.includes('process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT'),
+          `Codex plugin hooks must pin Claude-compatible bootstrap resolution to Codex PLUGIN_ROOT (${event})`
+        );
+        if (event === 'SessionEnd' && Number.isFinite(handler.timeout)) {
+          assert.ok(handler.timeout <= 3, 'Codex clamps SessionEnd timeouts to 3 seconds');
+        }
+      }
+    }
+  }
+
+  const claudeConfig = loadJsonObject(path.join(repoRoot, 'hooks', 'hooks.json'), 'hooks/hooks.json');
+  const sourceSessionStart = claudeConfig.hooks.SessionStart.find(group => group.id === 'session:start');
+  const expectedSessionStart = {
+    ...sourceSessionStart,
+    hooks: sourceSessionStart.hooks.map(handler => ({
+      ...handler,
+      command: handler.command.replace(
+        'node -e "',
+        'node -e "if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
+      )
+    }))
+  };
+  assert.deepStrictEqual(config.hooks.SessionStart[0], expectedSessionStart, 'Codex SessionStart hook must track its canonical implementation with a Codex-root bootstrap');
+});
+
 test('codex plugin.json has interface.displayName', () => {
   assert.ok(codexPlugin.interface && codexPlugin.interface.displayName, 'Expected interface.displayName for plugin directory presentation');
 });
@@ -421,21 +486,30 @@ test('marketplace.json plugin version matches package.json', () => {
   assert.strictEqual(marketplace.plugins[0].version, expectedVersion);
 });
 
-test('marketplace local plugin path resolves to a concrete plugin subdirectory (#2128)', () => {
-  // Codex does not discover plugins whose local marketplace source.path is the
-  // marketplace root itself ("./") — verified against Codex CLI 0.137.0 and
-  // the official docs ($REPO_ROOT/plugins/<name>). The entry must point at a
-  // real plugin folder strictly inside the repo.
+test('marketplace local plugin source is a self-contained native Codex bundle', () => {
+  // Codex 0.146.0 accepts the marketplace root as a plugin source and copies
+  // that source into its install cache. Parent-relative references from a thin
+  // subdirectory are broken after that copy, so every bundled path must remain
+  // inside the selected source root.
   for (const plugin of marketplace.plugins) {
     if (!plugin.source || plugin.source.source !== 'local') {
       continue;
     }
 
     assert.ok(plugin.source.path.startsWith('./'), `Codex marketplace source.path must be ./-prefixed: ${plugin.source.path}`);
-    const resolvedRoot = path.resolve(repoRoot, plugin.source.path);
-    assert.notStrictEqual(resolvedRoot, repoRoot, `Codex never discovers "./" marketplace roots — source.path must target a plugin subdirectory (#2128), got: ${plugin.source.path}`);
-    assert.ok(resolvedRoot.startsWith(repoRoot + path.sep), `Expected local marketplace path to stay inside the repo, got: ${plugin.source.path}`);
-    assert.ok(fs.existsSync(path.join(resolvedRoot, '.codex-plugin', 'plugin.json')), `Codex plugin manifest missing under resolved plugin folder: ${plugin.source.path}`);
+    const sourceRoot = path.resolve(repoRoot, plugin.source.path);
+    assert.strictEqual(sourceRoot, repoRoot, `ECC's native Codex bundle must use the self-contained repository root, got: ${plugin.source.path}`);
+
+    const manifest = loadJsonObject(path.join(sourceRoot, '.codex-plugin', 'plugin.json'), 'marketplace Codex plugin manifest');
+    for (const field of ['skills', 'mcpServers', 'hooks']) {
+      assert.strictEqual(typeof manifest[field], 'string', `Expected Codex manifest ${field} path`);
+      const target = path.resolve(sourceRoot, manifest[field]);
+      assert.ok(target === sourceRoot || target.startsWith(sourceRoot + path.sep), `${field} escapes the installed source root: ${manifest[field]}`);
+      assert.ok(fs.existsSync(target), `${field} target is missing from the installed source root: ${manifest[field]}`);
+    }
+
+    assert.ok(fs.existsSync(path.join(sourceRoot, 'scripts', 'hooks', 'plugin-hook-bootstrap.js')), 'Codex hook runtime must ship inside the installed source root');
+    assert.ok(fs.existsSync(path.join(sourceRoot, 'skills', 'configure-ecc', 'SKILL.md')), 'Codex configure-ecc skill must ship inside the installed source root');
   }
 });
 
@@ -486,13 +560,14 @@ test('plugins/ecc manifest interface assets resolve to root assets', () => {
   }
 });
 
-test('plugins/ecc README documents the upstream Codex fragility', () => {
+test('plugins/ecc README marks the thin folder as a legacy compatibility artifact', () => {
   const readmePath = path.join(repoRoot, 'plugins', 'ecc', 'README.md');
   assert.ok(fs.existsSync(readmePath), 'Expected plugins/ecc/README.md');
   const source = fs.readFileSync(readmePath, 'utf8');
-  assert.ok(source.includes('openai/codex'), 'plugins/ecc README must link the upstream Codex discovery issue');
+  assert.ok(source.includes('legacy compatibility artifact'));
+  assert.ok(source.includes('repository root'));
   assert.ok(source.includes('check-plugin-cache.js'), 'plugins/ecc README must point at the cache health check');
-  assert.ok(source.includes('sync-ecc-to-codex.sh'), 'plugins/ecc README must point at the supported manual sync flow');
+  assert.ok(!source.includes('points at this directory'));
 });
 
 test('.opencode/package.json version matches package.json', () => {
@@ -549,7 +624,12 @@ test('.codex-plugin README uses current marketplace add flow', () => {
   const readme = fs.readFileSync(path.join(repoRoot, '.codex-plugin', 'README.md'), 'utf8');
   assert.ok(readme.includes('codex plugin marketplace add'), 'Expected .codex-plugin README to document codex plugin marketplace add');
   assert.ok(readme.includes('codex plugin marketplace add affaan-m/ECC'), 'Expected .codex-plugin README to document the canonical ECC repo marketplace source');
-  assert.ok(readme.includes('Official Plugin Directory publishing is coming soon'), 'Expected .codex-plugin README to document current official directory status');
+  assert.ok(readme.includes('codex plugin add ecc@ecc'), 'Expected .codex-plugin README to document the current Codex install command');
+  assert.ok(readme.includes('codex plugin list --json'), 'Expected .codex-plugin README to document a machine-checkable verification command');
+  assert.ok(readme.includes('safe to run again'), 'Expected .codex-plugin README to explain idempotent marketplace and plugin registration');
+  assert.ok(/does not\s+use Claude's `user`, `project`, or `local` install scopes/.test(readme), 'Expected .codex-plugin README to distinguish Codex plugin state from Claude scopes');
+  assert.ok(readme.includes('review and trust'), 'Expected .codex-plugin README to explain Codex hook trust');
+  assert.ok(readme.includes('legacy managed sync'), 'Expected .codex-plugin README to distinguish native plugins from the legacy managed sync');
   assert.ok(!/\bcodex plugin install\b/.test(readme), 'codex plugin install is not a current Codex CLI command');
 });
 

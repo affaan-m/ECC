@@ -36,8 +36,8 @@ function runTests() {
       'README should surface a top-level install decision section'
     );
     assert.ok(
-      readme.includes('**Recommended default:** install the Claude Code plugin'),
-      'README should name the recommended default install path'
+      readme.includes('**Recommended default:** run the guided Claude plugin setup'),
+      'README should name guided setup as the recommended default install path'
     );
     assert.ok(
       readme.includes('**Do not stack install methods.**'),
@@ -46,6 +46,43 @@ function runTests() {
     assert.ok(
       readme.includes('If you choose this path, stop there. Do not also run `/plugin install`.'),
       'README should tell manual-install users not to continue layering installs'
+    );
+  })) passed++; else failed++;
+
+  if (test('README leads with the idempotent guided plugin setup path', () => {
+    assert.ok(
+      readme.includes('npx ecc-universal setup'),
+      'README should lead new users to the package-name setup command'
+    );
+    assert.ok(
+      readme.includes('installs, updates, or safely moves `ecc@ecc`'),
+      'README should explain that rerunning guided setup reconciles existing installs'
+    );
+    assert.ok(
+      readme.includes('Claude Code owns these built-in commands'),
+      'README should distinguish provider-owned slash behavior from ECC setup behavior'
+    );
+    assert.ok(
+      readme.includes('`/ecc:configure-ecc`'),
+      'README should document the installed namespaced reconfiguration skill'
+    );
+    assert.ok(
+      readme.includes('available only after the plugin is installed'),
+      'README should not imply the namespaced skill can perform a first install'
+    );
+    assert.ok(
+      readme.includes('currently configures the Claude Code plugin'),
+      'README should not imply that the current setup wizard installs every ECC harness'
+    );
+  })) passed++; else failed++;
+
+  if (test('README documents modern package-runner alternatives', () => {
+    assert.ok(readme.includes('pnpm dlx ecc-universal setup'));
+    assert.ok(readme.includes('yarn dlx ecc-universal setup'));
+    assert.ok(readme.includes('bunx ecc-universal setup'));
+    assert.ok(
+      readme.includes('Yarn Classic 1 does not provide `yarn dlx`'),
+      'README should not advertise the modern Yarn command to Yarn Classic users'
     );
   })) passed++; else failed++;
 
@@ -101,13 +138,32 @@ function runTests() {
       'README should surface component discovery before install steps'
     );
     assert.ok(
-      readme.includes('npx ecc consult "security reviews" --target claude'),
+      readme.includes('npx ecc-universal consult "security reviews" --target claude'),
       'README should document the packaged consult command'
     );
     assert.ok(
       readme.includes('It returns matching components, related profiles, and preview/install commands.'),
       'README should explain what consult returns'
     );
+  })) passed++; else failed++;
+
+  if (test('README never invokes the unrelated ecc npm package', () => {
+    assert.ok(
+      !/\bnpx ecc\s/.test(readme),
+      'README one-shot commands should use the published ecc-universal package name'
+    );
+  })) passed++; else failed++;
+
+  if (test('README gives verified Codex and Kimi package install paths', () => {
+    assert.ok(
+      readme.includes('npx ecc-universal install --profile core --target codex --dry-run')
+    );
+    assert.ok(
+      readme.includes('npx ecc-universal install --profile core --target kimi --dry-run')
+    );
+    for (const target of ['cursor', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw']) {
+      assert.ok(readme.includes(`\`${target}\``), `README should name the ${target} target`);
+    }
   })) passed++; else failed++;
 
   if (test('README documents Cursor agent namespace and loading caveat', () => {
