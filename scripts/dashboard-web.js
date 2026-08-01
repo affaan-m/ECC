@@ -12,7 +12,27 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const {
+  LOOPBACK_HOSTNAMES,
+  buildAllowedHostnames,
+  isAllowedHostHeader,
+  isAllowedOrigin,
+} = require('./lib/loopback-guard');
 const { normalizeAgentTools } = require('./lib/agent-tools');
+
+const DEFAULT_HOST = '127.0.0.1';
+
+function resolveDashboardHost(env = process.env) {
+  const configured = String(env.ECC_DASHBOARD_HOST || '').trim().toLowerCase();
+  if (!configured) return DEFAULT_HOST;
+  if (!LOOPBACK_HOSTNAMES.has(configured)) {
+    throw new Error(
+      '[ECC] ECC_DASHBOARD_HOST must be loopback-only ' +
+      '(127.0.0.1, localhost, or ::1).'
+    );
+  }
+  return configured === '[::1]' ? '::1' : configured;
+}
 
 function parsePort(v) {
   const n = parseInt(String(v), 10);
@@ -20,6 +40,7 @@ function parsePort(v) {
   return n;
 }
 const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456');
+const HOST = resolveDashboardHost();
 const ROOT = path.resolve(__dirname, '..');
 
 function readFrontmatter(p) {
@@ -791,21 +812,140 @@ handleRoute();
   /* eslint-enable no-useless-escape */
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/api/data') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
-  }
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(renderHTML({ agents: loadAgents(), skills: loadSkills(), commands: loadCommands(), rules: loadRules(), mcps: loadMcps(), hooks: loadHooks() }));
-});
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(payload));
+}
 
-if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`\n    ECC Capabilities  →  http://localhost:${PORT}\n`);
-    try { const { spawn } = require('child_process'); const p = process.platform; const c = p === 'darwin' ? 'open' : p === 'win32' ? 'start' : 'xdg-open'; if (c === 'start') spawn('cmd', ['/c', 'start', `http://localhost:${PORT}`], { stdio: 'ignore' }); else spawn(c, [`http://localhost:${PORT}`], { stdio: 'ignore' }); } catch { /* best-effort auto-open */ }
+function sendHtml(res, statusCode, html) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(html);
+}
+
+function loadDashboardData(root) {
+  return {
+    agents: loadAgents(root),
+    skills: loadSkills(root),
+    commands: loadCommands(root),
+    rules: loadRules(root),
+    mcps: loadMcps(root),
+    hooks: loadHooks(root),
+  };
+}
+
+function defaultReportError(message, error) {
+  console.error(message, error);
+}
+
+function reportDashboardFailure(reportError, message, error) {
+  try {
+    reportError(message, error);
+  } catch {
+    // Error reporting must never prevent the generic HTTP response.
+  }
+}
+
+function createDashboardServer({
+  root = ROOT,
+  host = HOST,
+  loadData = loadDashboardData,
+  render = renderHTML,
+  reportError = defaultReportError,
+} = {}) {
+  const resolvedHost = resolveDashboardHost({ ECC_DASHBOARD_HOST: host });
+  const allowedHostnames = buildAllowedHostnames(resolvedHost);
+
+  return http.createServer((req, res) => {
+    if (!isAllowedHostHeader(req.headers.host, allowedHostnames)) {
+      return sendJson(res, 421, { error: 'Misdirected request' });
+    }
+    if (!isAllowedOrigin(req.headers.origin, allowedHostnames)) {
+      return sendJson(res, 403, { error: 'Forbidden origin' });
+    }
+
+    let url;
+    try {
+      url = new URL(req.url, `http://${DEFAULT_HOST}`);
+    } catch {
+      return sendJson(res, 400, { error: 'Bad request' });
+    }
+
+    if (url.pathname === '/api/data') {
+      let data;
+      try {
+        data = loadData(root);
+      } catch (error) {
+        reportDashboardFailure(
+          reportError,
+          '[ECC] Failed to load dashboard data:',
+          error
+        );
+        return sendJson(res, 500, { error: 'Internal server error' });
+      }
+      return sendJson(res, 200, data);
+    }
+
+    let html;
+    try {
+      html = render(loadData(root));
+    } catch (error) {
+      reportDashboardFailure(
+        reportError,
+        '[ECC] Failed to render dashboard:',
+        error
+      );
+      return sendHtml(
+        res,
+        500,
+        '<!DOCTYPE html><p>Dashboard unavailable.</p>'
+      );
+    }
+    return sendHtml(res, 200, html);
   });
 }
 
-module.exports = { parsePort, readFrontmatter, readSkill, loadAgents, loadSkills, loadCommands, loadRules, loadMcps, loadHooks, renderHTML, LANG, LANG_KEYS, server };
+function listenDashboardServer(
+  dashboardServer,
+  { port = PORT, host = HOST, onListening } = {}
+) {
+  const resolvedHost = resolveDashboardHost({ ECC_DASHBOARD_HOST: host });
+  return dashboardServer.listen(port, resolvedHost, onListening);
+}
+
+const server = createDashboardServer();
+
+if (require.main === module) {
+  listenDashboardServer(server, { port: PORT, host: HOST, onListening: () => {
+    const displayHost = HOST.includes(':') ? `[${HOST}]` : HOST;
+    const dashboardUrl = `http://${displayHost}:${PORT}`;
+    console.log(`\n    ECC Capabilities  →  ${dashboardUrl}\n`);
+    try { const { spawn } = require('child_process'); const p = process.platform; const c = p === 'darwin' ? 'open' : p === 'win32' ? 'start' : 'xdg-open'; if (c === 'start') spawn('cmd', ['/c', 'start', dashboardUrl], { stdio: 'ignore' }); else spawn(c, [dashboardUrl], { stdio: 'ignore' }); } catch { /* best-effort auto-open */ }
+  } });
+}
+
+module.exports = {
+  DEFAULT_HOST,
+  HOST,
+  LANG,
+  LANG_KEYS,
+  createDashboardServer,
+  listenDashboardServer,
+  loadAgents,
+  loadCommands,
+  loadHooks,
+  loadMcps,
+  loadRules,
+  loadSkills,
+  parsePort,
+  readFrontmatter,
+  readSkill,
+  renderHTML,
+  resolveDashboardHost,
+  server,
+};

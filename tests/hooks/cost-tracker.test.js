@@ -129,6 +129,42 @@ function runTests() {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
+  // 2b. Dedupes usage by message.id (one API response = many JSONL lines)
+  (test('counts usage once per message.id across multi-line responses', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    const sharedUsage = {
+      input_tokens: 1000,
+      output_tokens: 500,
+      cache_creation_input_tokens: 200,
+      cache_read_input_tokens: 300,
+    };
+    writeTranscript(transcriptPath, [
+      // One API response split into 3 content-block lines, all carrying the
+      // same message.id and the same usage — must be counted exactly once.
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
+      // A second, distinct response.
+      { type: 'assistant', message: { id: 'msg_01BBB', model: 'claude-sonnet-4-20250514', usage: { input_tokens: 25, output_tokens: 5 } } },
+    ]);
+
+    const result = runScript(
+      { session_id: 'dedupe-session', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.input_tokens, 1025, 'Expected msg_01AAA usage counted once, not 3x');
+    assert.strictEqual(row.output_tokens, 505, 'Expected msg_01AAA usage counted once, not 3x');
+    assert.strictEqual(row.cache_write_tokens, 200, 'Expected cache write counted once per message.id');
+    assert.strictEqual(row.cache_read_tokens, 300, 'Expected cache read counted once per message.id');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
   // 3. Handles empty input gracefully
   (test('handles empty input gracefully', () => {
     const tmpHome = makeTempDir();
