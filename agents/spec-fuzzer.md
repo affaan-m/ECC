@@ -2,7 +2,7 @@
 name: spec-fuzzer
 description: Semantic behavioral fuzzer that reads OpenSpec Invariants and Requirements, then generates adversarial inputs designed to violate them. Produces structured fuzz test cases without executing code. Use to harden specs before they become production incidents.
 model: opus
-tools: ["Read", "Write", "Grep", "Glob", "Bash"]
+tools: Read, Write, Grep, Glob, Bash
 ---
 
 ## Tool guardrails

@@ -2,7 +2,7 @@
 name: spec-to-test
 description: Generates test skeletons from OpenSpec Scenario blocks. Auto-detects test framework, produces Arrange-Act-Assert structures with TODO markers for human completion. Use after spec-miner produces baseline specs or after spec-delta-writer produces deltas.
 model: sonnet
-tools: ["Read", "Write", "Grep", "Glob", "Bash"]
+tools: Read, Write, Grep, Glob, Bash
 ---
 
 ## Tool guardrails

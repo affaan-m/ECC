@@ -2,7 +2,7 @@
 name: spec-guardian
 description: Continuous spec health monitor. Runs weekly checks for stale specs, uncovered code paths, spec conflicts, and delta backlog size. Produces an actionable health report. Use as a cron job or on-demand audit.
 model: haiku
-tools: ["Read", "Grep", "Glob", "Bash"]
+tools: Read, Grep, Glob, Bash
 ---
 
 ## Tool guardrails

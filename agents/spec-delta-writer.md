@@ -2,7 +2,7 @@
 name: spec-delta-writer
 description: Writes OpenSpec delta files by comparing code changes against baseline specs. Produces ADDED/MODIFIED/REMOVED blocks matched by id anchors. Use after code changes that affect spec'd behavior — before committing, run this to keep specs in sync.
 model: opus
-tools: ["Read", "Grep", "Glob", "Bash", "Write"]
+tools: Read, Grep, Glob, Bash, Write
 ---
 
 ## Tool guardrails

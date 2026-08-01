@@ -2,7 +2,7 @@
 name: spec-freshness-checker
 description: Checks whether OpenSpec specs are stale by comparing Last verified commit hashes against HEAD. Runs as a CI gate or on-demand audit. Use before trusting specs for planning or code review.
 model: haiku
-tools: ["Read", "Grep", "Glob", "Bash"]
+tools: Read, Grep, Glob, Bash
 ---
 
 ## Tool guardrails
