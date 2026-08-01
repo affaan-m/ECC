@@ -22,7 +22,7 @@ function stripTrailingSlash(value) {
 // `fileMappings` is a list of { sourceRel, destRel } where both are paths
 // relative to the repo root and the install root respectively. The directory
 // map is derived by walking shared ancestors of each source/dest pair, which is
-// exact for prefix-insertion namespacing (e.g. `skills/x` -> `skills/ecc/x`):
+// exact for prefix-insertion namespacing (e.g. `rules/x` -> `rules/ecc/x`):
 // the path suffix below the inserted segment is preserved, so ancestor `k`
 // of the source maps to the dest with the matching number of trailing
 // segments removed.
@@ -94,27 +94,16 @@ function resolveInstalledTarget(target, sourceDir, index) {
   return null;
 }
 
-// True when the plan installs `sourceRel` at a different relative path than the
-// source (i.e. a namespace segment was injected, e.g. skills/x -> skills/ecc/x).
-// Callers use this to keep non-namespaced files on the byte-for-byte copy path.
-function isNamespacedSource(sourceRel, index) {
-  const normalizedSource = toPosix(sourceRel);
-  const installedSource = index && index.byFile.get(normalizedSource);
-  return Boolean(installedSource) && installedSource !== normalizedSource;
-}
-
-// Rewrite relative links in a single namespaced markdown file so they resolve
-// to the file's installed location. Returns the content unchanged when the
-// file itself was not namespaced or when no link needs adjustment. Pure: no IO.
+// Rewrite relative links in a markdown file so they resolve to installed target
+// locations. The source file may itself install at the same relative path; links
+// can still need changes when their targets move, such as rules -> rules/ecc.
+// Pure: no IO.
 function rewriteRelativeLinks(content, options) {
   const { sourceRel, index } = options || {};
   const normalizedSource = toPosix(sourceRel);
   const installedSource = index && index.byFile.get(normalizedSource);
 
-  // Only rewrite when the file's own install path gained/changed a namespace
-  // segment. If it lands at the same relative path, every link recomputes to
-  // itself, so there is nothing to do.
-  if (!installedSource || installedSource === normalizedSource) {
+  if (!installedSource) {
     return content;
   }
 
@@ -174,6 +163,5 @@ function rewriteRelativeLinks(content, options) {
 
 module.exports = {
   buildInstallIndex,
-  isNamespacedSource,
   rewriteRelativeLinks,
 };

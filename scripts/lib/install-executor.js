@@ -123,6 +123,11 @@ function applyInstallPlan(plan) {
   return applyPlan(plan);
 }
 
+function previewInstallPlan(plan) {
+  const { previewInstallPlan: previewPlan } = require('./install/apply');
+  return previewPlan(plan);
+}
+
 function buildCopyFileOperation({ moduleId, sourcePath, sourceRelativePath, destinationPath, strategy }) {
   return {
     kind: 'copy-file',
@@ -802,6 +807,7 @@ module.exports = {
   SUPPORTED_INSTALL_TARGETS,
   LEGACY_INSTALL_TARGETS,
   applyInstallPlan,
+  previewInstallPlan,
   createLegacyCompatInstallPlan,
   createManifestInstallPlan,
   createLegacyInstallPlan,

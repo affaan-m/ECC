@@ -205,7 +205,7 @@ function runTests() {
         'Should install Japanese README under docs/ja-JP'
       );
       assert.ok(
-        !fs.existsSync(path.join(claudeRoot, 'skills', 'ecc', 'configure-ecc', 'SKILL.md')),
+        !fs.existsSync(path.join(claudeRoot, 'skills', 'configure-ecc', 'SKILL.md')),
         'Locale-only install should not install English skills'
       );
 

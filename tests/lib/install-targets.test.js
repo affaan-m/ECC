@@ -71,7 +71,7 @@ function runTests() {
     assert.strictEqual(statePath, path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
   })) passed++; else failed++;
 
-  if (test('plans claude rules and skills under ECC-managed subdirectories', () => {
+  if (test('plans namespaced Claude rules and flat discoverable skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
     const homeDir = '/Users/example';
 
@@ -101,9 +101,9 @@ function runTests() {
     assert.ok(
       plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
-        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'ecc', 'tdd-workflow')
+        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'tdd-workflow')
       )),
-      'Should install bundled Claude skills under skills/ecc'
+      'Should install bundled Claude skills under skills'
     );
   })) passed++; else failed++;
 
@@ -884,7 +884,7 @@ function runTests() {
     assert.ok(byTarget.supports('claude-project'));
   })) passed++; else failed++;
 
-  if (test('plans claude-project rules and skills under project-scope ECC-managed subdirectories', () => {
+  if (test('plans project-scoped namespaced Claude rules and flat skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
     const projectRoot = '/workspace/app';
 
@@ -917,9 +917,9 @@ function runTests() {
     assert.ok(
       plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
-        && operation.destinationPath === path.join(projectRoot, '.claude', 'skills', 'ecc', 'tdd-workflow')
+        && operation.destinationPath === path.join(projectRoot, '.claude', 'skills', 'tdd-workflow')
       )),
-      'Should install bundled skills under project-scope skills/ecc'
+      'Should install bundled skills under project-scope skills'
     );
   })) passed++; else failed++;
 

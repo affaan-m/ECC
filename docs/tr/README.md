@@ -79,7 +79,7 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 
 ## Yenilikler
 
-### v2.0.0 — Ajan Harness İşletim Sistemi (Haz 2026)
+### v2.1.0 — Ajan Harness İşletim Sistemi (Haz 2026)
 
 2.0 hattının kararlı sürümü: 261 skill, control-pane altyapısı, MCP envanteri, worktree yaşam döngüsü servisi ve [Discord topluluğu](https://discord.gg/36yGMHGFbR).
 
