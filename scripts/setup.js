@@ -115,6 +115,28 @@ function parseArgs(argv) {
   return options;
 }
 
+function questionWithCancellation(terminal, prompt) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = callback => value => {
+      if (settled) return;
+      settled = true;
+      terminal.removeListener('close', onClose);
+      callback(value);
+    };
+    const onClose = finish(() => {
+      const error = new Error('Readline was closed before an answer was received.');
+      error.code = 'ABORT_ERR';
+      reject(error);
+    });
+    const resolveAnswer = finish(resolve);
+    const rejectQuestion = finish(reject);
+
+    terminal.once('close', onClose);
+    Promise.resolve(terminal.question(prompt)).then(resolveAnswer, rejectQuestion);
+  });
+}
+
 async function askChoice(terminal, prompt, choices, defaultIndex) {
   process.stdout.write(`\n${prompt}\n`);
   choices.forEach((choice, index) => {
@@ -127,7 +149,8 @@ async function askChoice(terminal, prompt, choices, defaultIndex) {
 
   while (true) {
     const hasDefault = Number.isInteger(defaultIndex);
-    const answer = await terminal.question(
+    const answer = await questionWithCancellation(
+      terminal,
       hasDefault ? `Choose [${defaultIndex + 1}]: ` : 'Choose: '
     );
     const normalized = answer.trim().toLowerCase();
@@ -264,7 +287,8 @@ async function confirm(options, providedTerminal) {
       ? 'Migrate'
       : (options.confirmationAction || 'Apply');
     const scopeLabel = options.scope || 'the detected';
-    const answer = await terminal.question(
+    const answer = await questionWithCancellation(
+      terminal,
       `${operation} ${MODE} setup at ${scopeLabel} scope`
       + ` with hooks=${options.hooks || 'standard'}? [y/N] `
     );
@@ -471,6 +495,7 @@ module.exports = {
   parseArgs,
   printError,
   printResult,
+  questionWithCancellation,
   reconcileClaudePlugin,
   resolveInteractiveDefaults,
   isInteractiveCancellation,
