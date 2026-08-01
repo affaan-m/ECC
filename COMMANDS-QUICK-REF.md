@@ -1,6 +1,6 @@
 # Commands Quick Reference
 
-> 94 slash commands installed globally. Type `/` in any Claude Code session to invoke.
+> 95 slash commands installed globally. Type `/` in any Claude Code session to invoke.
 
 ---
 
@@ -204,6 +204,7 @@ executable instructions or policy.
 |---------|-------------|
 | `/projects` | List known projects and their instinct statistics |
 | `/project-init` | Detect a project's stack and produce a dry-run ECC onboarding plan |
+| `/install-ecc-rules` | Detect a project's stack and install only the matching ECC rule directories (no skills/agents/hooks) |
 | `/harness-audit` | Audit the agent harness configuration for reliability and cost |
 | `/model-route` | Route a task to the right model (Haiku / Sonnet / Opus) |
 | `/pm2` | PM2 process manager initialisation |

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 95,
   "commands": [
     {
       "command": "aside",
@@ -367,6 +367,15 @@
       "allAgents": [],
       "skills": [],
       "path": "commands/hookify.md"
+    },
+    {
+      "command": "install-ecc-rules",
+      "description": "Detect the project's tech stack and install only the matching ECC rule directories into .claude/rules/ecc/ (or ~/.claude/rules/ecc/), using ECC's documented manual-copy method.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/install-ecc-rules.md"
     },
     {
       "command": "instinct-export",
@@ -1034,7 +1043,7 @@
       "planning": 2,
       "refactoring": 1,
       "review": 15,
-      "testing": 53
+      "testing": 54
     },
     "topAgents": [
       {

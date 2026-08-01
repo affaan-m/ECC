@@ -193,6 +193,7 @@ commands:
   - hookify-configure
   - hookify-help
   - hookify-list
+  - install-ecc-rules
   - instinct-export
   - instinct-import
   - instinct-status
