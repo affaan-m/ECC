@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ECC_ROOT=/ecc
 readonly SOURCE_PROJECT=/source-project
 readonly MODE="${1:-dry-run}"
-readonly project_dir="${ECC_PROJECT_DIR:-/workspace/project}"
+readonly requested_project_dir="${ECC_PROJECT_DIR:-/workspace/project}"
 
 NPM_CONFIG_CACHE=/tmp/npm-cache
 export NPM_CONFIG_CACHE
@@ -36,7 +36,7 @@ case "$MODE" in
     ;;
 esac
 
-if [[ ! -f "$ECC_ROOT/scripts/ecc.js" ]]; then
+if [[ ! -f "$ECC_ROOT/package.json" ]]; then
   printf 'ECC checkout is not mounted at %s\n' "$ECC_ROOT" >&2
   exit 2
 fi
@@ -44,10 +44,10 @@ if [[ ! -d "$SOURCE_PROJECT" ]]; then
   printf 'Source project is not mounted at %s\n' "$SOURCE_PROJECT" >&2
   exit 2
 fi
-if [[ "$project_dir" != /workspace/* ]]; then
-  printf 'ECC_PROJECT_DIR must be an absolute child of /workspace\n' >&2
-  exit 2
-fi
+readonly project_dir="$(
+  node "$ECC_ROOT/docker/plugin-setup/resolve-project-dir.js" \
+    "$requested_project_dir"
+)"
 
 mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$NPM_CONFIG_CACHE"
 chmod 0700 "$HOME" "$CLAUDE_CONFIG_DIR" "$NPM_CONFIG_CACHE"
@@ -65,8 +65,26 @@ if [[ ! -d .git ]]; then
   git init --quiet
 fi
 
+packed_cli=''
+if [[ "$MODE" == dry-run || "$MODE" == install ]]; then
+  packed_cli="$(
+    node "$ECC_ROOT/docker/plugin-setup/prepare-packed-cli.js" \
+      "$ECC_ROOT" \
+      /tmp/ecc-packed-cli
+  )"
+fi
+readonly packed_cli
+
+run_ecc() {
+  if [[ ! -x "$packed_cli" ]]; then
+    printf 'Packed ECC public executable is unavailable\n' >&2
+    return 1
+  fi
+  "$packed_cli" "$@"
+}
+
 run_install() {
-  node "$ECC_ROOT/scripts/ecc.js" install \
+  run_ecc install \
     --profile core \
     --target claude-project \
     "$@"
@@ -95,8 +113,8 @@ case "$MODE" in
       exit 1
     fi
     run_install --json
-    node "$ECC_ROOT/scripts/ecc.js" list-installed --json
-    node "$ECC_ROOT/scripts/ecc.js" doctor --target claude-project
+    run_ecc list-installed --json
+    run_ecc doctor --target claude-project
     ;;
   plugin)
     exec claude --plugin-dir "$ECC_ROOT"

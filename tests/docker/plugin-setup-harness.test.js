@@ -3,6 +3,7 @@
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -21,8 +22,10 @@ const files = {
   fixtureRunner: path.join(harnessRoot, 'run-fixture-tests.sh'),
   interactivePlan: path.join(harnessRoot, 'interactive-plan.js'),
   packageJson: path.join(repoRoot, 'package.json'),
+  packedCliPreparer: path.join(harnessRoot, 'prepare-packed-cli.js'),
   platformRunner: path.join(harnessRoot, 'run-platform-tests.js'),
   planValidator: path.join(harnessRoot, 'verify-install-plan.js'),
+  projectDirResolver: path.join(harnessRoot, 'resolve-project-dir.js'),
   realRunner: path.join(harnessRoot, 'run-real-cli.sh'),
 };
 
@@ -89,6 +92,11 @@ test('builds pinned Debian and Ubuntu images as a non-root user', () => {
 test('keeps checkout and source project read-only with hardened defaults', () => {
   const compose = read(files.compose);
   assert.match(compose, /network_mode:\s*none/);
+  assert.match(compose, /x-real-cli:[\s\S]*?network_mode:\s*none[\s\S]*?services:/);
+  assert.match(
+    compose,
+    /real-cli-networked:[\s\S]*?profiles:[\s\S]*?-\s*networked[\s\S]*?network_mode:\s*default/
+  );
   assert.match(compose, /read_only:\s*true/);
   assert.match(compose, /no-new-privileges:true/);
   assert.match(compose, /cap_drop:\s*\n\s*-\s*ALL/);
@@ -116,16 +124,104 @@ test('real runner copies into tmpfs and exposes only explicit safe modes', () =>
   assert.match(runner, /ECC_PROJECT_DIR:-\/workspace\/project/);
   assert.match(runner, /mkdir -p "\$HOME" "\$CLAUDE_CONFIG_DIR" "\$NPM_CONFIG_CACHE"/);
   assert.match(runner, /dry-run\|install\|plugin\|shell/);
-  assert.match(runner, /scripts\/ecc\.js" install/);
   assert.match(runner, /--target claude-project/);
   assert.match(runner, /--dry-run/);
   assert.match(runner, /verify-install-plan\.js.*--dry-run/);
+  assert.match(runner, /resolve-project-dir\.js/);
+  assert.match(runner, /prepare-packed-cli\.js/);
+  assert.match(runner, /run_ecc install/);
+  assert.match(runner, /run_ecc list-installed --json/);
+  assert.match(runner, /run_ecc doctor --target claude-project/);
   assert.match(runner, /\[\[ -e "\$project_dir\/\.claude" \]\]/);
   assert.doesNotMatch(
     runner,
     /scripts\/ecc\.js" setup|--move-scope|\bmigrate\b/
   );
+  assert.doesNotMatch(runner, /scripts\/ecc\.js" install/);
   assert.doesNotMatch(runner, /\beval\b|rm\s+-rf/);
+});
+
+test('prepares a local npm artifact through the confined public bin contract', () => {
+  const preparer = read(files.packedCliPreparer);
+  assert.match(preparer, /spawnSync\(executable, argv/);
+  assert.match(preparer, /run\(['"]npm['"]/);
+  assert.match(preparer, /['"]pack['"]/);
+  assert.match(preparer, /['"]--ignore-scripts['"]/);
+  assert.match(preparer, /npm_config_offline:\s*['"]true['"]/);
+  assert.match(preparer, /run\(['"]tar['"]/);
+  assert.match(preparer, /shell:\s*false/g);
+  assert.doesNotMatch(preparer, /execSync\(|\beval\b/);
+
+  const { validatePackedPackage } = require(files.packedCliPreparer);
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-packed-cli-'));
+
+  function createFixture(name, options = {}) {
+    const packageRoot = path.join(fixtureRoot, name);
+    fs.mkdirSync(path.join(packageRoot, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(packageRoot, 'manifests'), { recursive: true });
+    fs.writeFileSync(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({
+        name: options.packageName || 'ecc-universal',
+        version: '2.1.0',
+        bin: options.bin === undefined ? { ecc: 'scripts/ecc.js' } : options.bin,
+      })
+    );
+    fs.writeFileSync(path.join(packageRoot, 'scripts', 'ecc.js'), '#!/usr/bin/env node\n');
+    fs.chmodSync(path.join(packageRoot, 'scripts', 'ecc.js'), 0o755);
+    for (const manifest of [
+      'install-components.json',
+      'install-modules.json',
+      'install-profiles.json',
+    ]) {
+      if (manifest !== options.omitManifest) {
+        fs.writeFileSync(path.join(packageRoot, 'manifests', manifest), '{}\n');
+      }
+    }
+    return packageRoot;
+  }
+
+  try {
+    const validRoot = createFixture('valid');
+    assert.strictEqual(
+      validatePackedPackage(validRoot),
+      path.join(validRoot, 'scripts', 'ecc.js')
+    );
+
+    for (const [name, options, pattern] of [
+      ['wrong-name', { packageName: 'not-ecc' }, /package name/i],
+      ['missing-bin', { bin: {} }, /bin\.ecc/i],
+      ['escaping-bin', { bin: { ecc: '../escape.js' } }, /bin\.ecc/i],
+      ['missing-manifest', { omitManifest: 'install-profiles.json' }, /missing/i],
+    ]) {
+      assert.throws(() => validatePackedPackage(createFixture(name, options)), pattern);
+    }
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test('normalizes the isolated project path before enforcing workspace containment', () => {
+  const valid = spawnSync(process.execPath, [
+    files.projectDirResolver,
+    '/workspace/nested/../project',
+  ], { encoding: 'utf8' });
+  assert.strictEqual(valid.status, 0, valid.stderr);
+  assert.strictEqual(valid.stdout.trim(), '/workspace/project');
+
+  for (const candidate of [
+    '/workspace',
+    '/workspace/../tmp/project',
+    '/tmp/project',
+    'workspace/project',
+  ]) {
+    const invalid = spawnSync(process.execPath, [
+      files.projectDirResolver,
+      candidate,
+    ], { encoding: 'utf8' });
+    assert.strictEqual(invalid.status, 2, `${candidate}: ${invalid.stderr}`);
+    assert.match(invalid.stderr, /within \/workspace/i);
+  }
 });
 
 test('fixture runner delegates to the cross-platform test entry point', () => {

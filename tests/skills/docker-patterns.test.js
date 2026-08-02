@@ -85,5 +85,13 @@ test('documents the private named-container lifecycle and terminal boundary', ()
   assert.doesNotMatch(skill, /skills\/docker-patterns\/scripts\/open-interactive\.js/);
 });
 
+test('requires the offline smoke to execute the locally packed public bin', () => {
+  assert.match(skill, /npm pack.*--ignore-scripts/is);
+  assert.match(skill, /package\.json.*bin\.ecc/is);
+  assert.match(skill, /locally packed/i);
+  assert.match(skill, /network_mode:\s*none/);
+  assert.match(skill, /does not\s+rely on.*host `node_modules`/is);
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 process.exit(failed > 0 ? 1 : 0);

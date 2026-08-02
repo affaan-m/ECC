@@ -298,6 +298,9 @@ Do not claim that a Linux container validates macOS or Windows behavior.
   with `ECC_TMPFS_SIZE`; `ECC_WORKSPACE_SIZE` separately controls the private
   workspace mount.
 - Set `read_only: true`, `no-new-privileges:true`, `cap_drop: [ALL]`, and a finite `pids_limit`.
+- Keep the default real-CLI services on `network_mode: none`. Add network access
+  only through a visibly named opt-in service for an authenticated provider
+  session; never make it an accidental environment-driven default.
 - Create only the writable temporary paths the tool needs.
 - Do not pass host credentials into the container by default.
 - Default to a dry run and whitelist only the explicit `dry-run`, `install`,
@@ -342,6 +345,15 @@ The dry run executes the current public command contract:
 ```bash
 ecc install --profile core --target claude-project --dry-run --json
 ```
+
+Before that command runs, the container creates a locally packed npm artifact
+from the read-only checkout with `npm pack --ignore-scripts`. It extracts the
+self-created tarball under `/tmp`, validates the `ecc-universal` package name,
+required install manifests, and the confined `package.json` `bin.ecc` mapping,
+then invokes the extracted `ecc` executable. The runtime stays on
+`network_mode: none`, does not execute package lifecycle scripts, and does not
+rely on host `node_modules`; its exact pinned production dependencies are
+already present in the image.
 
 The harness rejects an empty plan, a non-`claude-project` target, any operation
 outside `/workspace/project/.claude`, or any dry run that creates the target
@@ -395,10 +407,14 @@ docker compose -p ecc-plugin-session \
 ```
 
 Host credentials are absent by default and credential directories are never
-mounted. Prefer authenticating inside the disposable session. If a CI run must
+mounted. The default service also has no network access. When an authenticated
+provider session genuinely needs a network, build `real-cli` first and then opt
+in visibly with `docker compose --profile networked run real-cli-networked
+shell`. Prefer authenticating inside that disposable session. If a CI run must
 inherit a host environment credential, make that opt-in at invocation with an
 explicit Compose `--env NAME` flag, understand that the value is inspectable
-for the container lifetime, and remove the named container immediately after.
+and can be exfiltrated for the container lifetime, and remove the exact named
+container immediately after.
 
 Run the same focused suite natively on the host:
 
