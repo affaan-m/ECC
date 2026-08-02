@@ -53,8 +53,16 @@ Look for these pattern types:
 
 ### Step 3: Generate SKILL.md
 
-Set `skill-name` once; it defaults to `{repo-name}-patterns`, and the same value
-must be used for the directory and frontmatter. Write the generated skill to
+Derive the default `skill-name` safely: lowercase the repository name, replace
+runs of spaces, underscores, path separators, or other non-alphanumeric
+characters with one hyphen, trim leading/trailing hyphens, then append
+`-patterns`. For example, `My Repo_API/Client` becomes
+`my-repo-api-client-patterns`. If normalization produces an empty slug, stop
+and request an explicit safe name.
+
+Set `skill-name` once; it defaults to the normalized `{repo-name}-patterns`, and
+the same value must be used for the directory and frontmatter. Validate the
+final `skill-name`, then write the generated skill to
 `<output-dir>/<skill-name>/SKILL.md`. The default project root is
 `.claude/skills/`; a global skill uses `~/.claude/skills/`.
 
@@ -118,8 +126,10 @@ parses as valid YAML, and it has a `name:` matching its directory plus a
 non-empty `description:` beginning with `Use when`. Then confirm the output is
 a configured skill root. For any other custom `--output`, label the artifact
 export-only and do not report it as discoverable. If any structural check
-fails, report the specific failure, repair or remove the invalid file, and
-stop; do not report success.
+fails, report the specific failure, remove or quarantine the invalid file, and
+stop. To repair it, prepare a corrected draft without writing, show the full
+path, obtain fresh explicit approval, then write and rerun validation. Do not
+report success until every check passes.
 
 ### Step 4: Generate Instincts (if --instincts)
 

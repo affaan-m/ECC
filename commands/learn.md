@@ -56,7 +56,6 @@ Before writing, apply these guarded-write requirements:
 ---
 name: pattern-name
 description: "Use when <observable trigger condition> — <one-line summary of the pattern>"
-origin: auto-extracted
 ---
 
 # [Descriptive Pattern Name]
@@ -88,7 +87,10 @@ origin: auto-extracted
    parent directory matches `name:`, the `---`-delimited frontmatter parses as
    valid YAML, and it contains a non-empty `description:` beginning with an
    observable `Use when ...` trigger. If any check fails, report the specific
-   failure, repair or remove the invalid file, and stop; do not report success.
+   failure, remove or quarantine the invalid file, and stop. To repair it,
+   prepare a corrected draft without writing, show the full path, obtain fresh
+   explicit approval, then write and rerun validation. Do not report success
+   until every check passes.
 
 The directory form and frontmatter matter because Claude Code discovers
 personal skills from `<name>/SKILL.md`; a flat `skills/learned/<name>.md` file
