@@ -1,0 +1,273 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const REPO_ROOT = path.join(__dirname, '..', '..');
+const SKILL_ROOT = path.join(REPO_ROOT, 'skills', 'terminal-opener');
+const SCRIPT = path.join(SKILL_ROOT, 'scripts', 'open-terminal.js');
+
+const {
+  buildLaunchPlan,
+  detectTerminalCapability,
+  launch,
+  parseArgs,
+} = require(SCRIPT);
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  \u2713 ${name}`);
+    return true;
+  } catch (error) {
+    console.log(`  \u2717 ${name}`);
+    console.log(`    Error: ${error.message}`);
+    return false;
+  }
+}
+
+function runCli(args, env = {}) {
+  return spawnSync(process.execPath, [SCRIPT, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ECC_TERMINAL: '', ...env },
+  });
+}
+
+function baseOptions(overrides = {}) {
+  return {
+    argv: ['hello world'],
+    cwd: '/tmp/example workspace',
+    dryRun: false,
+    executable: 'printf',
+    help: false,
+    json: false,
+    mode: 'normal',
+    terminal: 'wezterm',
+    detect: false,
+    ...overrides,
+  };
+}
+
+function runTests() {
+  console.log('\n=== Testing terminal-opener skill ===\n');
+
+  let passed = 0;
+  let failed = 0;
+
+  const check = (name, fn) => {
+    if (test(name, fn)) passed += 1;
+    else failed += 1;
+  };
+
+  check('parses an executable and exact argv entries after --', () => {
+    const options = parseArgs(
+      ['--terminal', 'wezterm', '--cwd', '/tmp/demo', '--', 'docker', 'exec', '-it', 'demo', 'bash'],
+      { cwd: '/fallback', env: {} }
+    );
+    assert.strictEqual(options.executable, 'docker');
+    assert.deepStrictEqual(options.argv, ['exec', '-it', 'demo', 'bash']);
+    assert.strictEqual(options.cwd, '/tmp/demo');
+  });
+
+  check('rejects an interpolated shell command string', () => {
+    assert.throws(
+      () => parseArgs(['--', 'printf hello; touch /tmp/pwned'], { cwd: '/tmp', env: {} }),
+      /executable.*argv entry.*shell command string/i
+    );
+  });
+
+  check('preserves shell metacharacters as inert argument entries', () => {
+    const options = parseArgs(
+      ['--', 'printf', '%s', '$(touch /tmp/never)', '; rm -rf /'],
+      { cwd: '/tmp', env: {} }
+    );
+    assert.deepStrictEqual(options.argv, ['%s', '$(touch /tmp/never)', '; rm -rf /']);
+  });
+
+  check('requires the -- argv boundary and an executable', () => {
+    assert.throws(() => parseArgs(['echo', 'hello'], { cwd: '/tmp', env: {} }), /Unknown option.*--/);
+    assert.throws(() => parseArgs(['--'], { cwd: '/tmp', env: {} }), /executable is required/i);
+  });
+
+  check('rejects unsafe values at input boundaries', () => {
+    assert.throws(() => parseArgs(['--cwd', 'relative', '--', 'echo'], { cwd: '/tmp', env: {} }), /absolute/);
+    assert.throws(() => parseArgs(['--terminal', '../wezterm', '--', 'echo'], { cwd: '/tmp', env: {} }), /terminal name/);
+    assert.throws(() => parseArgs(['--', 'echo', 'bad\0arg'], { cwd: '/tmp', env: {} }), /NUL/);
+  });
+
+  check('builds the mux-first WezTerm launch plan without a shell', () => {
+    const plan = buildLaunchPlan(baseOptions());
+    assert.strictEqual(plan.ok, true);
+    assert.strictEqual(plan.launchMode, 'mux');
+    assert.strictEqual(plan.command, 'wezterm');
+    assert.deepStrictEqual(plan.args, [
+      'cli', 'spawn', '--new-window', '--cwd', '/tmp/example workspace', '--', 'printf', 'hello world',
+    ]);
+    assert.deepStrictEqual(plan.fallback.args, [
+      'start', '--cwd', '/tmp/example workspace', '--', 'printf', 'hello world',
+    ]);
+    assert.deepStrictEqual(plan.probe, { command: 'wezterm', args: ['--version'] });
+  });
+
+  check('builds standalone recovery with stock config and a new process', () => {
+    const plan = buildLaunchPlan(baseOptions({ mode: 'recover' }));
+    assert.strictEqual(plan.launchMode, 'recover');
+    assert.deepStrictEqual(plan.args, [
+      '--skip-config', 'start', '--always-new-process', '--cwd', '/tmp/example workspace', '--',
+      'printf', 'hello world',
+    ]);
+    assert.strictEqual(plan.fallback, null);
+  });
+
+  check('returns an actionable plan for an unsupported terminal', () => {
+    const plan = buildLaunchPlan(baseOptions({ terminal: 'alacritty' }));
+    assert.strictEqual(plan.ok, false);
+    assert.strictEqual(plan.reason, 'unsupported-terminal');
+    assert.match(plan.action, /--terminal wezterm/);
+    assert.match(plan.action, /Install WezTerm/);
+    assert.strictEqual(plan.command, null);
+  });
+
+  check('detects an available terminal with shell disabled', () => {
+    const calls = [];
+    const capability = detectTerminalCapability(buildLaunchPlan(baseOptions()), (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: 0, stdout: 'wezterm 20260101\n', stderr: '' };
+    });
+    assert.deepStrictEqual(calls.map(({ command, args }) => ({ command, args })), [
+      { command: 'wezterm', args: ['--version'] },
+    ]);
+    assert.strictEqual(calls[0].options.shell, false);
+    assert.strictEqual(capability.available, true);
+    assert.strictEqual(capability.version, 'wezterm 20260101');
+  });
+
+  check('reports actionable missing and unsupported capabilities', () => {
+    const missing = detectTerminalCapability(buildLaunchPlan(baseOptions()), () => ({
+      error: Object.assign(new Error('spawn wezterm ENOENT'), { code: 'ENOENT' }),
+      status: null,
+    }));
+    assert.strictEqual(missing.supported, true);
+    assert.strictEqual(missing.available, false);
+    assert.match(missing.action, /Install WezTerm/);
+
+    const unsupported = detectTerminalCapability(
+      buildLaunchPlan(baseOptions({ terminal: 'kitty' })),
+      () => { throw new Error('must not probe unsupported adapters'); }
+    );
+    assert.strictEqual(unsupported.supported, false);
+    assert.match(unsupported.action, /--terminal wezterm/);
+  });
+
+  check('uses the WezTerm mux when available', () => {
+    const syncCalls = [];
+    const asyncCalls = [];
+    const result = launch(buildLaunchPlan(baseOptions()), {
+      spawnSync(command, args, options) {
+        syncCalls.push({ command, args, options });
+        return syncCalls.length === 1
+          ? { status: 0, stdout: 'wezterm 1\n', stderr: '' }
+          : { status: 0, stdout: '42\n', stderr: '' };
+      },
+      spawn(...args) { asyncCalls.push(args); },
+    });
+    assert.strictEqual(result.strategy, 'mux');
+    assert.strictEqual(syncCalls.length, 2);
+    assert.strictEqual(syncCalls[1].options.shell, false);
+    assert.strictEqual(asyncCalls.length, 0);
+  });
+
+  check('falls back to a detached process and unreferences it', () => {
+    const spawnCalls = [];
+    let unrefCount = 0;
+    const result = launch(buildLaunchPlan(baseOptions()), {
+      spawnSync(command, args) {
+        if (args[0] === '--version') return { status: 0, stdout: 'wezterm 1\n', stderr: '' };
+        return { status: 1, stdout: '', stderr: 'mux unavailable' };
+      },
+      spawn(command, args, options) {
+        spawnCalls.push({ command, args, options });
+        return { unref() { unrefCount += 1; } };
+      },
+    });
+    assert.strictEqual(result.strategy, 'detached-fallback');
+    assert.strictEqual(spawnCalls[0].options.detached, true);
+    assert.strictEqual(spawnCalls[0].options.shell, false);
+    assert.strictEqual(spawnCalls[0].options.stdio, 'ignore');
+    assert.strictEqual(unrefCount, 1);
+  });
+
+  check('launches recovery directly as a detached process', () => {
+    const syncArgs = [];
+    const spawnCalls = [];
+    const result = launch(buildLaunchPlan(baseOptions({ mode: 'recover' })), {
+      spawnSync(command, args) {
+        syncArgs.push(args);
+        return { status: 0, stdout: 'wezterm 1\n', stderr: '' };
+      },
+      spawn(command, args, options) {
+        spawnCalls.push({ command, args, options });
+        return { unref() {} };
+      },
+    });
+    assert.strictEqual(result.strategy, 'detached-recover');
+    assert.deepStrictEqual(syncArgs, [['--version']]);
+    assert.strictEqual(spawnCalls.length, 1);
+    assert.ok(spawnCalls[0].args.includes('--always-new-process'));
+  });
+
+  check('emits a machine-readable dry-run without launching', () => {
+    const result = runCli([
+      '--dry-run', '--json', '--cwd', '/tmp/demo', '--', 'ssh', '-t', 'example.test', 'echo $HOME; id',
+    ]);
+    assert.strictEqual(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.strictEqual(plan.executable, 'ssh');
+    assert.deepStrictEqual(plan.argv, ['-t', 'example.test', 'echo $HOME; id']);
+    assert.strictEqual(plan.dryRun, true);
+    assert.strictEqual(result.stderr, '');
+  });
+
+  check('supports terminal capability detection without a command', () => {
+    const result = runCli(['--detect', '--terminal', 'unsupported', '--json']);
+    assert.strictEqual(result.status, 1);
+    const capability = JSON.parse(result.stdout);
+    assert.strictEqual(capability.supported, false);
+    assert.match(capability.action, /--terminal wezterm/);
+  });
+
+  check('documents the safe reusable workflow in concise skill metadata', () => {
+    const skill = fs.readFileSync(path.join(SKILL_ROOT, 'SKILL.md'), 'utf8');
+    const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/)[1];
+    const frontmatterKeys = frontmatter
+      .split('\n')
+      .filter(line => /^[a-z][a-z-]*:/.test(line))
+      .map(line => line.split(':')[0]);
+    assert.deepStrictEqual(frontmatterKeys, ['name', 'description']);
+    assert.match(frontmatter, /executable.*argument array/i);
+    assert.match(frontmatter, /visible terminal/i);
+    assert.match(skill, /shell:\s*false/);
+    assert.match(skill, /--skip-config start --always-new-process/);
+    assert.ok(!skill.includes('[TODO'));
+    assert.ok(!fs.existsSync(path.join(SKILL_ROOT, 'README.md')));
+  });
+
+  check('keeps generated OpenAI metadata minimal and valid', () => {
+    const yaml = fs.readFileSync(path.join(SKILL_ROOT, 'agents', 'openai.yaml'), 'utf8');
+    const keys = [...yaml.matchAll(/^\s{2}([a-z_]+):/gm)].map(match => match[1]);
+    const shortDescription = yaml.match(/short_description:\s*"([^"]+)"/)[1];
+    assert.deepStrictEqual(keys, ['display_name', 'short_description', 'default_prompt']);
+    assert.ok(shortDescription.length >= 25 && shortDescription.length <= 64);
+    assert.match(yaml, /default_prompt:.*\$terminal-opener/);
+  });
+
+  console.log(`\nPassed: ${passed}`);
+  console.log(`Failed: ${failed}`);
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+runTests();
