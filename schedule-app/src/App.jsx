@@ -10,6 +10,7 @@ import { setUse24hFormat, setSundayWeekStart, distanceMeters } from './data/help
 import { setHapticsEnabled } from './data/haptics.js';
 import { fetchMe, backendConfigured, fetchSyncedData, pushSyncedData } from './data/api.js';
 import { CLERK_ENABLED } from './data/clerkConfig.js';
+import { AI_ENABLED } from './data/aiConfig.js';
 import { setSyncStatus } from './data/syncStatus.js';
 import { useToast } from './data/toast.jsx';
 import HomePage from './pages/HomePage.jsx';
@@ -467,9 +468,10 @@ export default function App() {
         </Routes>
       </main>
       <TabBar />
-      {/* Same guard as the sync components: it calls useAuth(), which needs
-          a ClerkProvider above it. */}
-      {CLERK_ENABLED && <AssistantBubble />}
+      {/* AI_ENABLED is the real switch — buried for now, see aiConfig.js.
+          CLERK_ENABLED is still required underneath it: AssistantBubble calls
+          useAuth(), which needs a ClerkProvider above it. */}
+      {AI_ENABLED && CLERK_ENABLED && <AssistantBubble />}
       {showTour && (
         <Tutorial
           onDone={() => {
