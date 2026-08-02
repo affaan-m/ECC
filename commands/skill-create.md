@@ -96,9 +96,10 @@ Output format:
 ---
 name: {skill-name}
 description: "Use when working in {repo-name}, especially before editing its common modules, placing tests, naming branches, or writing commits — conventions measured from git history"
-version: 1.0.0
-source: local-git-analysis
-analyzed_commits: {count}
+metadata:
+  version: "1.0.0"
+  source: local-git-analysis
+  analyzed_commits: "{count}"
 ---
 
 # {Repo Name} Patterns

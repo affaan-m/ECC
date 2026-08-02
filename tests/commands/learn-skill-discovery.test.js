@@ -59,6 +59,16 @@ function getWriteInstructionLines(source) {
     .join('\n');
 }
 
+function getTopLevelFrontmatterKeys(template) {
+  const frontmatter = template.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!frontmatter) return [];
+
+  return frontmatter[1]
+    .split(/\r?\n/)
+    .filter(line => /^\S[^:]*:/.test(line))
+    .map(line => line.slice(0, line.indexOf(':')));
+}
+
 console.log('\n=== Testing generated skill discoverability ===\n');
 
 for (const name of commandNames) {
@@ -95,6 +105,10 @@ for (const name of commandNames) {
       `Expected /${name} to generate a description beginning with "Use when"`,
     );
     assert.doesNotMatch(template, /^origin:/m, `Expected /${name} not to emit unsupported origin frontmatter`);
+    const portableKeys = new Set(['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools']);
+    const unsupportedKeys = getTopLevelFrontmatterKeys(template).filter(key => !portableKeys.has(key));
+    assert.deepStrictEqual(unsupportedKeys, [], `Expected /${name} to emit portable Agent Skills frontmatter`);
+    assert.match(template, /^metadata:\r?\n(?: {2}.+\r?\n?)+/m, `Expected /${name} to nest provenance under metadata`);
   });
 
   test(`/${name} verifies discoverability and fails closed`, () => {
@@ -158,6 +172,16 @@ test('/learn-eval treats comparison files as untrusted', () => {
   assert.match(guardedWrite, /MEMORY\.md/);
   assert.match(guardedWrite, /\.claude\/skills/);
   assert.match(guardedWrite, /never follow[^.]*instructions/i);
+});
+
+test('generated templates keep provenance values under metadata', () => {
+  for (const name of ['learn', 'learn-eval']) {
+    const template = extractGeneratedSkillTemplate(readCommand(name));
+    assert.match(template, /^metadata:\r?\n {2}origin: auto-extracted$/m);
+  }
+
+  const skillCreateTemplate = extractGeneratedSkillTemplate(readCommand('skill-create'));
+  assert.match(skillCreateTemplate, /^metadata:\r?\n {2}version: "1\.0\.0"\r?\n {2}source: local-git-analysis\r?\n {2}analyzed_commits: "\{count\}"$/m);
 });
 
 console.log(`\nPassed: ${passed}`);

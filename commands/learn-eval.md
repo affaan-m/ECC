@@ -52,6 +52,8 @@ Look for:
 ---
 name: pattern-name
 description: "Use when <observable trigger condition>, or when <second trigger> — <one-line summary of the pattern>"
+metadata:
+  origin: auto-extracted
 ---
 
 # [Descriptive Pattern Name]
