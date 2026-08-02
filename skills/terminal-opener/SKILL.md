@@ -28,7 +28,8 @@ node skills/terminal-opener/scripts/open-terminal.js \
 
 Run normal mode first. Let WezTerm try its mux with a new window, then let the
 launcher fall back to a detached `wezterm start` process if the mux is not
-available.
+available. When fallback is used, read `muxFailure` from JSON output (or the
+human-readable failure line) to diagnose why the mux path failed.
 
 ## Recover from terminal configuration
 

@@ -25,7 +25,7 @@ Options:
   --detect           Check whether the selected terminal can be launched.
   --launch           Explicitly open the terminal (the default only prints a plan).
   --dry-run          Explicitly print the launch plan without opening a terminal.
-  --json             Emit the plan or capability result as JSON.
+  --json             Emit the plan, capability, or launch result as JSON.
   --help, -h         Show this help.
 
 Always pass the executable and arguments as separate entries after --.
@@ -325,6 +325,17 @@ function printJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+function formatLaunchResult(plan, result, json) {
+  if (json) {
+    return `${JSON.stringify({ ...plan, ...result }, null, 2)}\n`;
+  }
+
+  const summary =
+    `Open ${plan.executable} in ${plan.terminal} using ${plan.launchMode} mode.\n`;
+  if (result.strategy !== 'detached-fallback') return summary;
+  return `${summary}Mux launch failed: ${result.muxFailure}\n`;
+}
+
 function printPlan(plan, json) {
   if (json) return printJson(plan);
   if (!plan.ok) {
@@ -361,9 +372,12 @@ function main() {
       return;
     }
 
-    printPlan(plan, options.json);
-    if (options.dryRun) return;
-    launch(plan);
+    if (options.dryRun) {
+      printPlan(plan, options.json);
+      return;
+    }
+    const result = launch(plan);
+    process.stdout.write(formatLaunchResult(plan, result, options.json));
   } catch (error) {
     process.stderr.write(`Error: ${error.message}\n`);
     process.exitCode = 1;
@@ -375,6 +389,7 @@ if (require.main === module) main();
 module.exports = {
   buildLaunchPlan,
   detectTerminalCapability,
+  formatLaunchResult,
   launch,
   parseArgs,
   usage,
