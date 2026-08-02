@@ -545,6 +545,7 @@
         "skills/knowledge-ops",
         "skills/messages-ops",
         "skills/project-flow-ops",
+        "skills/terminal-opener",
         "skills/terminal-ops",
         "skills/unified-notifications-ops",
         "skills/workspace-surface-audit",
