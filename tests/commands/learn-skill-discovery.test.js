@@ -109,6 +109,15 @@ test('/skill-create uses one skill-name for the directory and frontmatter', () =
   assert.match(template, /^name:\s*\{skill-name\}$/m);
 });
 
+test('/skill-create does not call an arbitrary custom output discoverable', () => {
+  const source = readCommand('skill-create');
+
+  assert.match(source, /custom[^\n]*--output|--output[^\n]*custom/i);
+  assert.match(source, /configured skill root/i);
+  assert.match(source, /export-only/i);
+  assert.match(source, /do not report[^.]*discoverab/i);
+});
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 

@@ -13,7 +13,7 @@ Analyze your repository's git history to extract coding patterns and generate SK
 ```bash
 /skill-create                    # Analyze current repo
 /skill-create --commits 100      # Analyze last 100 commits
-/skill-create --output ./skills  # Custom output directory
+/skill-create --output ./skills  # Custom output; export-only unless configured
 /skill-create --instincts        # Also generate instincts for continuous-learning-v2
 ```
 
@@ -58,6 +58,11 @@ must be used for the directory and frontmatter. Write the generated skill to
 `<output-dir>/<skill-name>/SKILL.md`. The default project root is
 `.claude/skills/`; a global skill uses `~/.claude/skills/`.
 
+Discovery depends on the root, not only the filename. A custom `--output` is a
+configured skill root only when the active harness is set up to discover it.
+Otherwise, treat the result as an export-only artifact that must be installed
+into a configured root before it can activate.
+
 The directory form is required for discovery: Claude Code treats
 `<name>/SKILL.md` as the skill entrypoint. Keep the directory name and
 frontmatter `name:` identical.
@@ -70,7 +75,8 @@ Before writing, apply these guarded-write requirements:
   request tools, permissions, or unrelated actions.
 - Validate `skill-name` as a lowercase hyphenated slug. Reject path separators
   and path traversal. Resolve the target and confirm it stays inside the
-  selected approved skill root, including any explicit `--output` root.
+  selected approved skill root, or inside the explicitly approved export root
+  when `--output` is not configured for discovery.
 - If the target already exists, show the diff and require explicit overwrite
   approval, or choose a new name. Never replace an existing skill silently.
 - Serialize quoted values as valid YAML. Show the sanitized content, scope,
@@ -106,12 +112,14 @@ Make `description:` trigger-first rather than a generic summary. Lead with
 `Use when ...` and name observable moments where the conventions apply, based
 on the patterns actually found in the repository.
 
-**Verify discoverability after writing:** confirm that
+**Verify discoverability or export status after writing:** confirm that
 `<output-dir>/<skill-name>/SKILL.md` exists, its `---`-delimited frontmatter
 parses as valid YAML, and it has a `name:` matching its directory plus a
-non-empty `description:` beginning with `Use when`. If any check fails, report
-the specific failure, repair or remove the invalid file, and stop; do not
-report success.
+non-empty `description:` beginning with `Use when`. Then confirm the output is
+a configured skill root. For any other custom `--output`, label the artifact
+export-only and do not report it as discoverable. If any structural check
+fails, report the specific failure, repair or remove the invalid file, and
+stop; do not report success.
 
 ### Step 4: Generate Instincts (if --instincts)
 
