@@ -121,16 +121,20 @@ Make `description:` trigger-first rather than a generic summary. Lead with
 `Use when ...` and name observable moments where the conventions apply, based
 on the patterns actually found in the repository.
 
-**Verify discoverability or export status after writing:** confirm that
-`<output-dir>/<skill-name>/SKILL.md` exists, its `---`-delimited frontmatter
-parses as valid YAML, and it has a `name:` matching its directory plus a
-non-empty `description:` beginning with `Use when`. Then confirm the output is
-a configured skill root. For any other custom `--output`, label the artifact
-export-only and do not report it as discoverable. If any structural check
-fails, report the specific failure, remove or quarantine the invalid file, and
-stop. To repair it, prepare a corrected draft without writing, show the full
-path, obtain fresh explicit approval, then write and rerun validation. Do not
-report success until every check passes.
+**Verify discoverability or export status before replacing the target:** write
+the approved sanitized draft to a uniquely named temporary sibling beside the
+target. Validate that candidate before it can replace
+`<output-dir>/<skill-name>/SKILL.md`: its `---`-delimited frontmatter must parse
+as valid YAML, its `name:` must match the intended final directory, and its
+non-empty `description:` must begin with `Use when`. Confirm the output is a
+configured skill root; for any other custom `--output`, label the artifact
+export-only and do not report it as discoverable. Only after every structural
+check passes may you atomically replace the target with the validated sibling.
+If a check fails, report the specific failure, remove or quarantine only the
+temporary sibling, leave any existing skill unchanged, and stop. To repair the
+candidate, prepare a corrected draft without writing, show the full path, and
+obtain fresh explicit approval. Do not report success until the temporary-write
+validation and atomic replacement both complete.
 
 ### Step 4: Generate Instincts (if --instincts)
 

@@ -166,6 +166,16 @@ test('/skill-create normalizes repository names before path validation', () => {
   assert.match(source, /validate the\s+final[^.]*skill-name/i);
 });
 
+test('/skill-create validates safely before replacing an existing skill', () => {
+  const source = readCommand('skill-create');
+  const verification = extractVerification(source);
+
+  assert.match(verification, /temporary\s+sibling/i);
+  assert.match(verification, /validate[^.]*before[^.]*replace/is);
+  assert.match(verification, /atomically\s+replace/i);
+  assert.match(verification, /leave[^.]*existing[^.]*unchanged/is);
+});
+
 test('/learn-eval treats comparison files as untrusted', () => {
   const guardedWrite = extractGuardedWrite(readCommand('learn-eval'));
 
