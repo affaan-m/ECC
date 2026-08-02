@@ -79,8 +79,9 @@ before_settle(did, base_url="https://my-aura-mirror.example", timeout=5)
   blocks the action. *Fail-closed.*
 - **`new` verdict** — rejected by default because the agent has no interaction
   history. Onboarding flows can explicitly add `new` to `allow`.
-- **`fail_open=True`** — `unknown` from an unreachable endpoint is allowed
-  through, so AURA can never take your flow down. *Fail-open.*
+- **`fail_open=True`** — `unknown` from a transport failure is allowed through.
+  HTTP errors, malformed JSON, and invalid response shapes remain blocked
+  because the endpoint was reached but did not return a trustworthy verdict.
 
 Removing the adapter leaves your existing allow/deny logic untouched. While
 the gate is enabled, an AURA outage blocks the protected action by default;

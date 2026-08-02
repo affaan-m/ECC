@@ -13,6 +13,8 @@ Coverage:
 
 from __future__ import annotations
 
+import json
+from typing import Any
 import urllib.error
 
 import pytest
@@ -70,13 +72,14 @@ def test_gate_allows_trusted():
     assert v.verdict == "trusted"
 
 
-def test_gate_allows_caution_by_default():
+def test_gate_allows_caution_by_default() -> None:
     assert before_settle("did:aura:caution-bot", _fetch=FETCH).verdict == "caution"
 
 
-def test_gate_rejects_new_by_default():
-    with pytest.raises(AuraUntrusted):
+def test_gate_rejects_new_by_default() -> None:
+    with pytest.raises(AuraUntrusted) as exc_info:
         before_settle("did:aura:fresh-bot", _fetch=FETCH)
+    assert exc_info.value.verdict.verdict == "new"
 
 
 def test_gate_rejects_high_risk():
@@ -90,7 +93,7 @@ def test_gate_rejects_unknown_by_default():
         before_settle("did:aura:ghost-bot", _fetch=FETCH)
 
 
-def test_opt_in_allow_can_include_new():
+def test_opt_in_allow_can_include_new() -> None:
     v = before_settle(
         "did:aura:fresh-bot",
         allow=("trusted", "caution", "new"),
@@ -126,6 +129,49 @@ def test_fail_open_does_not_pass_reachable_unknown():
     # with fail_open — fail_open only excuses transport failures.
     with pytest.raises(AuraUntrusted):
         before_settle("did:aura:ghost-bot", fail_open=True, _fetch=FETCH)
+
+
+def test_fail_open_does_not_pass_malformed_response() -> None:
+    fetch = raising_fetch(json.JSONDecodeError("expecting value", "<html>", 0))
+    with pytest.raises(AuraUntrusted) as exc_info:
+        before_settle(
+            "did:aura:trusted-bot",
+            fail_open=True,
+            _fetch=fetch,
+        )
+    assert exc_info.value.verdict.reachable is True
+
+
+def test_fail_open_does_not_pass_invalid_response_shape() -> None:
+    def invalid_shape_fetch(_url: str, _timeout: float) -> Any:
+        return []
+
+    with pytest.raises(AuraUntrusted) as exc_info:
+        before_settle(
+            "did:aura:trusted-bot",
+            fail_open=True,
+            _fetch=invalid_shape_fetch,
+        )
+    assert exc_info.value.verdict.reachable is True
+
+
+def test_fail_open_does_not_pass_http_error_response() -> None:
+    fetch = raising_fetch(
+        urllib.error.HTTPError(
+            "https://agent.auraopenprotocol.org/check",
+            503,
+            "service unavailable",
+            None,
+            None,
+        )
+    )
+    with pytest.raises(AuraUntrusted) as exc_info:
+        before_settle(
+            "did:aura:trusted-bot",
+            fail_open=True,
+            _fetch=fetch,
+        )
+    assert exc_info.value.verdict.reachable is True
 
 
 def test_reachable_verdict_marked_reachable():

@@ -82,10 +82,10 @@ class AuraVerdict:
     score: Optional[float] = None
     has_history: bool = False
     dimensions: Optional[dict[str, float]] = None
-    # False only when AURA could not be reached (network/parse failure) and the
-    # verdict is a synthetic `unknown`. A reachable AURA that genuinely returns
-    # `unknown` has reachable=True. before_settle's fail_open keys on this, not
-    # on the verdict alone, so it can't wave through unverified counterparties.
+    # False only when AURA could not be reached because of a transport failure.
+    # HTTP errors, malformed JSON, invalid shapes, and genuine `unknown`
+    # verdicts remain reachable=True. before_settle's fail_open keys on this,
+    # not on the verdict alone, so it cannot wave through invalid responses.
     reachable: bool = True
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -121,8 +121,13 @@ class AuraVerdict:
 
     @classmethod
     def unreachable(cls, did: str, reason: str) -> "AuraVerdict":
-        """A synthetic `unknown` verdict for network/parse failures."""
+        """A synthetic `unknown` verdict for transport failures."""
         return cls(did=did, verdict="unknown", reason=reason, reachable=False)
+
+    @classmethod
+    def invalid_response(cls, did: str, reason: str) -> "AuraVerdict":
+        """A reachable endpoint response that could not be trusted."""
+        return cls(did=did, verdict="unknown", reason=reason, reachable=True)
 
 
 # Indirection point so tests can inject canned responses without a network.
@@ -156,13 +161,15 @@ def aura_verdict(
     url = f"{base_url.rstrip('/')}/check?" + urllib.parse.urlencode({"did": did})
     try:
         body = _fetch(url, timeout)
+    except urllib.error.HTTPError as e:
+        return AuraVerdict.invalid_response(did, f"AURA returned HTTP {e.code}: {e.reason}")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return AuraVerdict.unreachable(did, f"AURA unreachable: {e}")
     except (json.JSONDecodeError, ValueError) as e:
-        return AuraVerdict.unreachable(did, f"AURA returned non-JSON: {e}")
+        return AuraVerdict.invalid_response(did, f"AURA returned non-JSON: {e}")
 
     if not isinstance(body, dict):
-        return AuraVerdict.unreachable(did, "AURA returned an unexpected shape")
+        return AuraVerdict.invalid_response(did, "AURA returned an unexpected shape")
     return AuraVerdict.from_payload(did, body)
 
 
