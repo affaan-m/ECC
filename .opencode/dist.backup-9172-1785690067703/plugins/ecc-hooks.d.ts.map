@@ -1,0 +1,1 @@
+{"version":3,"file":"ecc-hooks.d.ts","sourceRoot":"","sources":["../../plugins/ecc-hooks.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;GAaG;AAEH,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,qBAAqB,CAAA;AAmDtD,KAAK,gBAAgB,GAAG,CAAC,KAAK,EAAE,WAAW,KAAK,OAAO,CAAC,MAAM,CAAC,MAAM,EAAE,OAAO,CAAC,CAAC,CAAA;AAEhF,eAAO,MAAM,cAAc,EAAE,gBAyiB5B,CAAA;AAED,eAAe,cAAc,CAAA"}

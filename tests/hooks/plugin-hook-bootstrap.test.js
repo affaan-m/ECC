@@ -204,6 +204,15 @@ process.exit(7);
   })) passed++; else failed++;
 
   if (test('shell mode runs target script through an available shell', () => {
+    // Skip on Windows when no shell is available.
+    if (process.platform === 'win32') {
+      const shellProbe = spawnSync('bash', ['-c', ':'], { stdio: 'ignore', timeout: 3000 });
+      if (shellProbe.error) {
+        console.log('    SKIP: no shell available');
+        return;
+      }
+    }
+
     const root = createTempDir();
     try {
       writeFile(root, path.join('scripts', 'hook.sh'), [

@@ -25,6 +25,20 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+function hasBash() {
+  try {
+    const r = spawnSync('bash', ['--version'], { encoding: 'utf8' });
+    return r && r.status === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+if (process.platform === 'win32' && !hasBash()) {
+  console.log('SKIP observe-entrypoint-allowlist tests: bash not available on Windows');
+  process.exit(0);
+}
+
 const repoRoot = path.resolve(__dirname, '..', '..');
 const observeShPath = path.join(
   repoRoot,

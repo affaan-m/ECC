@@ -12,6 +12,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+const HAS_BASH = (() => {
+  try {
+    const r = spawnSync('bash', ['--version'], { encoding: 'utf8' });
+    return r && r.status === 0;
+  } catch (e) {
+    return false;
+  }
+})();
+
 const repoRoot = path.resolve(__dirname, '..', '..');
 const hooksJsonPath = path.join(repoRoot, 'hooks', 'hooks.json');
 const runWithFlagsPath = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
@@ -155,6 +164,7 @@ function runTests() {
     assert.strictEqual(observeRunner.getPhaseFromHookId('unknown'), null);
   })) passed++; else failed++;
 
+  if (HAS_BASH) {
   if (test('observe-runner invokes observe.sh with phase, stdin, and plugin root', () => {
     withTempPluginRoot(tempRoot => {
       writeFakeObserveScript(tempRoot);
@@ -170,6 +180,9 @@ function runTests() {
       });
     });
   })) passed++; else failed++;
+} else {
+  console.log('  - observe-runner invokes observe.sh (skipped: shell runtime unavailable)');
+}
 
   if (test('observe-runner fails open when no shell runtime is available', () => {
     withTempPluginRoot(tempRoot => {

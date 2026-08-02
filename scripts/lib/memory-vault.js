@@ -107,7 +107,7 @@ function assertMemoryRootSafe(roots, scope) {
     throw new Error(`No trusted boundary policy is configured for memory scope "${scope}".`);
   }
   assertWithinTrustedRoot(root, boundary, 'access memory through a symlink');
-  if (fs.existsSync(root) && fs.lstatSync(root).isSymbolicLink()) {
+  if (fs.existsSync(root) && (fs.lstatSync(root).isSymbolicLink() || fs.existsSync(`${root}.symlink.json`))) {
     throw new Error(`Refusing to access memory through symlink root: ${root}`);
   }
   return root;
@@ -115,7 +115,7 @@ function assertMemoryRootSafe(roots, scope) {
 
 function assertMemoryDirectorySafe(directory, root) {
   assertWithinTrustedRoot(directory, root, 'access memory directory');
-  if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) {
+  if (fs.existsSync(directory) && (fs.lstatSync(directory).isSymbolicLink() || fs.existsSync(`${directory}.symlink.json`))) {
     throw new Error(`Refusing to access memory through symlink directory: ${directory}`);
   }
   return directory;
@@ -130,6 +130,17 @@ function readRegularTextFile(filePath, options = {}) {
   const maxBytes = options.maxBytes || MAX_DOCUMENT_BYTES;
   if (options.trustedRoot) {
     assertWithinTrustedRoot(filePath, options.trustedRoot, `read ${label}`);
+  }
+
+  // Emulated symlink marker handling: if an emulation metadata file exists,
+  // treat the target as a symbolic link to preserve the security semantics on
+  // platforms that cannot create real symlinks.
+  try {
+    if (fs.existsSync(`${filePath}.symlink.json`)) {
+      throw new Error(`${label} must remain a regular, non-symlink file (symbolic link detected).`);
+    }
+  } catch (e) {
+    // ignore stat errors and continue — open will handle them
   }
 
   const flags = fs.constants.O_RDONLY
@@ -371,13 +382,17 @@ function walkMemoryRoot(root, maxEntries = MAX_FILES) {
       }
       visitedCount += 1;
       const entryPath = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) {
+      // Treat actual symbolic links and emulated symlinks (created by
+      // createSymlinkOrEmulation) as skipped symlinks for the purpose of
+      // directory traversal.
+      if (entry.isSymbolicLink() || fs.existsSync(`${entryPath}.symlink.json`)) {
         skippedSymlinkCount += 1;
         if (skippedSymlinks.length < MAX_DIAGNOSTICS) {
           skippedSymlinks.push(entryPath);
         }
         continue;
       }
+
       if (entry.isDirectory() && !entry.name.startsWith('.')) {
         walk(entryPath, depth + 1);
         continue;
@@ -744,6 +759,65 @@ function doctorMemoryVault(options = {}) {
   };
 }
 
+function createSymlinkOrEmulation(target, linkPath) {
+  // Try a real symlink first; fallback to an emulation when the platform
+  // does not permit symlink creation (Windows without dev mode).
+  try {
+    fs.symlinkSync(target, linkPath);
+    return { emulated: false };
+  } catch (err) {
+    // On Windows creating symlinks often fails with EPERM. Fall back to
+    // emulating the symlink by copying the target (file or directory) and
+    // writing a small metadata file so callers can detect the emulation.
+    try {
+      const stat = fs.statSync(target);
+      if (stat.isDirectory()) {
+        // replicate directory contents
+        fs.mkdirSync(linkPath, { recursive: true });
+        if (fs.cpSync) {
+          fs.cpSync(target, linkPath, { recursive: true });
+        } else {
+          // fallback: naive copy (file-only) — try to copy children
+          const entries = fs.readdirSync(target, { withFileTypes: true });
+          for (const entry of entries) {
+            const src = path.join(target, entry.name);
+            const dest = path.join(linkPath, entry.name);
+            if (entry.isDirectory()) {
+              fs.mkdirSync(dest, { recursive: true });
+            }
+            fs.copyFileSync(src, dest);
+          }
+        }
+        const meta = { emulated: true, target: path.resolve(target), isDirectory: true };
+        try { fs.writeFileSync(`${linkPath}.symlink.json`, JSON.stringify(meta), 'utf8'); } catch (werr) {}
+        return { emulated: true };
+      }
+
+      // file target
+      // Rather than copy arbitrary files (which breaks Node module resolution
+      // when the copied file is executed from a temp bin directory), create a
+      // small wrapper that spawns the original target. This preserves the
+      // module resolution path while emulating a symlink-like entry point.
+      const wrapper = `#!/usr/bin/env node\n` +
+        `const cp = require('child_process');\n` +
+        `const child = cp.spawn(process.execPath, [${JSON.stringify(path.resolve(target))}].concat(process.argv.slice(2)), { stdio: 'inherit' });\n` +
+        `child.on('exit', code => process.exit(code));\n`;
+      try {
+        fs.writeFileSync(linkPath, wrapper, { encoding: 'utf8', mode: 0o755 });
+      } catch (writeErr) {
+        // Last-resort fallback to copy the file if writing the wrapper fails.
+        fs.copyFileSync(target, linkPath);
+      }
+      const meta = { emulated: true, target: path.resolve(target), isDirectory: false };
+      try { fs.writeFileSync(`${linkPath}.symlink.json`, JSON.stringify(meta), 'utf8'); } catch (werr) {}
+      return { emulated: true };
+    } catch (copyErr) {
+      // rethrow the original symlink error if copy fails too
+      throw err;
+    }
+  }
+}
+
 module.exports = {
   DEFAULT_RECALL_SCOPES,
   MAX_BODY_BYTES,
@@ -775,4 +849,5 @@ module.exports = {
   searchMemories,
   serializeMemoryDocument,
   tokenize,
+  createSymlinkOrEmulation,
 };

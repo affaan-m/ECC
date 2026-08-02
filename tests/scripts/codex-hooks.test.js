@@ -43,16 +43,33 @@ function cleanup(dirPath) {
 }
 
 function runBash(scriptPath, args = [], env = {}, cwd = repoRoot) {
-  return spawnSync('bash', [scriptPath, ...args], {
-    cwd,
-    env: {
-      ...process.env,
-      ...env,
-    },
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  try {
+    const res = spawnSync('bash', [scriptPath, ...args], {
+      cwd,
+      env: {
+        ...process.env,
+        ...env,
+      },
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    if (!res || typeof res.status === 'undefined' || res.status === null) {
+      return { status: 1, stdout: res && res.stdout || '', stderr: res && res.stderr ? String(res.stderr) : 'shell runtime unavailable' };
+    }
+    return res;
+  } catch (e) {
+    return { status: 1, stdout: '', stderr: String(e && e.message ? e.message : e) };
+  }
 }
+
+const HAS_BASH = (() => {
+  try {
+    const r = spawnSync('bash', ['--version'], { encoding: 'utf8' });
+    return r && r.status === 0;
+  } catch (e) {
+    return false;
+  }
+})();
 
 function runNode(scriptPath, args = [], env = {}, cwd = repoRoot) {
   return spawnSync('node', [scriptPath, ...args], {
@@ -663,8 +680,17 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
-      assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      let syncResult;
+      if (HAS_BASH) {
+        syncResult = runBash(syncScript, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
+        assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      } else {
+        // No bash available on this platform — use Node fallback so tests remain cross-platform.
+        const nodeSync = path.join(__dirname, '..', '..', 'scripts', 'sync-ecc-to-codex.js');
+        console.log('  - bash unavailable; running Node fallback sync-ecc-to-codex.js');
+        syncResult = runNode(nodeSync, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
+        assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      }
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
       assert.match(syncedAgents, /^# Everything Claude Code \(ECC\) — Agent Instructions/m);
@@ -724,8 +750,16 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, [], makeHermeticCodexEnv(homeDir, codexDir));
-      assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      let syncResult;
+      if (HAS_BASH) {
+        syncResult = runBash(syncScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+        assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      } else {
+        const nodeSync = path.join(__dirname, '..', '..', 'scripts', 'sync-ecc-to-codex.js');
+        console.log('  - bash unavailable; running Node fallback sync-ecc-to-codex.js');
+        syncResult = runNode(nodeSync, [], makeHermeticCodexEnv(homeDir, codexDir));
+        assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
+      }
 
       const parsedConfig = TOML.parse(fs.readFileSync(configPath, 'utf8'));
       assert.strictEqual(parsedConfig.agents.max_threads, 6);

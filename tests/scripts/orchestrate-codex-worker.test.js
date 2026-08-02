@@ -25,6 +25,13 @@ function test(desc, fn) {
 }
 
 test('fails fast for an unreadable task file and records failure artifacts', () => {
+  // Skip on Windows when bash is not available
+  const bashProbe = spawnSync('bash', ['-c', ':'], { stdio: 'ignore', timeout: 3000 });
+  if (bashProbe.error) {
+    console.log('  SKIP fails fast for an unreadable task file and records failure artifacts: bash not available');
+    return;
+  }
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-orch-worker-'));
   const handoffFile = path.join(tempRoot, '.orchestration', 'docs', 'handoff.md');
   const statusFile = path.join(tempRoot, '.orchestration', 'docs', 'status.md');

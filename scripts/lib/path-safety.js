@@ -41,7 +41,22 @@ function realpathNearestExisting(target) {
     tail.unshift(path.basename(current));
     current = parent;
   }
-  const real = fs.realpathSync(current);
+  // If a synthetic symlink emulation metadata file exists for the nearest
+  // existing ancestor, prefer its configured target so emulated symlinks
+  // behave like real symlinks when resolving containment.
+  let real;
+  const metaPath = `${current}.symlink.json`;
+  if (fs.existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      if (meta && meta.target) {
+        real = fs.realpathSync(meta.target);
+      }
+    } catch (e) {
+      // fall back to actual realpath when metadata is malformed or unreadable
+    }
+  }
+  if (!real) real = fs.realpathSync(current);
   return tail.length > 0 ? path.join(real, ...tail) : real;
 }
 
