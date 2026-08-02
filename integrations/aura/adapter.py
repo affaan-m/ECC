@@ -10,10 +10,9 @@ Design boundary (intentional):
   - read-only:   the only network call is GET /check?did=...
   - no auth:     /check is a public endpoint; no API key, no secret
   - no coupling: pure stdlib (urllib). No third-party imports, no SDK.
-  - fail-closed: on network failure the verdict is `unknown`, and the
-                 default gate (before_settle) rejects `unknown` — so an
-                 unreachable AURA never silently waves a counterparty
-                 through. Flip `fail_open=True` to invert that.
+  - fail-closed: by default, the gate rejects agents without interaction
+                 history (`new`) and agents it cannot verify (`unknown`).
+                 Flip `fail_open=True` to excuse transport failures only.
 
 Public API:
     aura_verdict(did)             -> AuraVerdict   (never raises on network)
@@ -43,9 +42,10 @@ __all__ = [
 DEFAULT_BASE_URL = "https://agent.auraopenprotocol.org"
 DEFAULT_TIMEOUT = 8  # seconds
 
-# Verdicts safe to proceed with by default. Rejects `high_risk` (poor track
-# record) and `unknown` (no verifiable history / endpoint unreachable).
-DEFAULT_ALLOW = ("trusted", "caution", "new")
+# Verdicts safe to proceed with by default. `new` remains available as an
+# explicit opt-in for onboarding flows, but history-free agents should not
+# satisfy a reputation gate automatically.
+DEFAULT_ALLOW = ("trusted", "caution")
 
 # All verdict classes the /check endpoint can return.
 VERDICTS = ("trusted", "caution", "high_risk", "new", "unknown")
@@ -180,13 +180,13 @@ def before_settle(
     raises AuraUntrusted on fail.
 
         try:
-            before_settle(counterparty_did)   # rejects high_risk + unknown
+            before_settle(counterparty_did)   # rejects high_risk + new + unknown
             settle_payment(counterparty_did, amount)
         except AuraUntrusted as e:
             abort(str(e))
 
-    Tighten to reject brand-new agents too:
-        before_settle(did, allow=("trusted", "caution"))
+    Explicitly allow brand-new agents in an onboarding flow:
+        before_settle(did, allow=("trusted", "caution", "new"))
 
     fail_open=True makes an *unreachable* AURA pass through (transport failure
     only — a reachable AURA that returns `unknown` is still rejected). Off by

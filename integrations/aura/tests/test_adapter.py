@@ -70,9 +70,13 @@ def test_gate_allows_trusted():
     assert v.verdict == "trusted"
 
 
-def test_gate_allows_caution_and_new_by_default():
+def test_gate_allows_caution_by_default():
     assert before_settle("did:aura:caution-bot", _fetch=FETCH).verdict == "caution"
-    assert before_settle("did:aura:fresh-bot", _fetch=FETCH).verdict == "new"
+
+
+def test_gate_rejects_new_by_default():
+    with pytest.raises(AuraUntrusted):
+        before_settle("did:aura:fresh-bot", _fetch=FETCH)
 
 
 def test_gate_rejects_high_risk():
@@ -86,9 +90,13 @@ def test_gate_rejects_unknown_by_default():
         before_settle("did:aura:ghost-bot", _fetch=FETCH)
 
 
-def test_strict_allow_rejects_new():
-    with pytest.raises(AuraUntrusted):
-        before_settle("did:aura:fresh-bot", allow=("trusted", "caution"), _fetch=FETCH)
+def test_opt_in_allow_can_include_new():
+    v = before_settle(
+        "did:aura:fresh-bot",
+        allow=("trusted", "caution", "new"),
+        _fetch=FETCH,
+    )
+    assert v.verdict == "new"
 
 
 # ── network-failure path ──────────────────────────────────────────────────────
