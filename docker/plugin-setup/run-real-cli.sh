@@ -44,10 +44,11 @@ if [[ ! -d "$SOURCE_PROJECT" ]]; then
   printf 'Source project is not mounted at %s\n' "$SOURCE_PROJECT" >&2
   exit 2
 fi
-readonly project_dir="$(
+project_dir="$(
   node "$ECC_ROOT/docker/plugin-setup/resolve-project-dir.js" \
     "$requested_project_dir"
 )"
+readonly project_dir
 
 mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$NPM_CONFIG_CACHE"
 chmod 0700 "$HOME" "$CLAUDE_CONFIG_DIR" "$NPM_CONFIG_CACHE"

@@ -1,5 +1,7 @@
 name: ecc-plugin-setup-test
 
+x-node-image: &node-image node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+
 x-real-cli: &real-cli
   working_dir: /workspace
   network_mode: none
@@ -36,8 +38,9 @@ x-real-cli: &real-cli
 
 services:
   fixture-tests:
-    image: node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+    image: *node-image
     working_dir: /ecc
+    user: "1000:1000"
     network_mode: none
     read_only: true
     pids_limit: 256
@@ -63,8 +66,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
-        OS_IMAGE: node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+        NODE_IMAGE: *node-image
+        OS_IMAGE: *node-image
         DISTRO: debian
         CLAUDE_CODE_VERSION: 2.1.220
 
@@ -82,7 +85,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+        NODE_IMAGE: *node-image
         OS_IMAGE: ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
         DISTRO: ubuntu
         CLAUDE_CODE_VERSION: 2.1.220

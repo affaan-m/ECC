@@ -87,6 +87,19 @@ test('builds pinned Debian and Ubuntu images as a non-root user', () => {
   assert.match(compose, /image:\s*ecc-plugin-setup:ubuntu/);
   assert.match(compose, /ubuntu:24\.04@sha256:[a-f0-9]{64}/);
   assert.match(compose, /real-cli-ubuntu:/);
+  assert.match(
+    compose,
+    /fixture-tests:[\s\S]*?user:\s*["']1000:1000["']/
+  );
+  assert.strictEqual(
+    (compose.match(/node:22-bookworm-slim@sha256:[a-f0-9]{64}/g) || []).length,
+    1,
+    'The pinned Node image must have one source of truth in Compose'
+  );
+  assert.match(compose, /x-node-image:\s*&node-image/);
+  assert.match(compose, /image:\s*\*node-image/);
+  assert.match(compose, /NODE_IMAGE:\s*\*node-image/);
+  assert.match(compose, /OS_IMAGE:\s*\*node-image/);
 });
 
 test('keeps checkout and source project read-only with hardened defaults', () => {
@@ -128,6 +141,11 @@ test('real runner copies into tmpfs and exposes only explicit safe modes', () =>
   assert.match(runner, /--dry-run/);
   assert.match(runner, /verify-install-plan\.js.*--dry-run/);
   assert.match(runner, /resolve-project-dir\.js/);
+  assert.match(
+    runner,
+    /project_dir="\$\([\s\S]*?resolve-project-dir\.js[\s\S]*?\)"\s*\nreadonly project_dir/
+  );
+  assert.doesNotMatch(runner, /readonly project_dir="\$\(/);
   assert.match(runner, /prepare-packed-cli\.js/);
   assert.match(runner, /run_ecc install/);
   assert.match(runner, /run_ecc list-installed --json/);
@@ -150,6 +168,11 @@ test('prepares a local npm artifact through the confined public bin contract', (
   assert.match(preparer, /npm_config_offline:\s*['"]true['"]/);
   assert.match(preparer, /run\(['"]tar['"]/);
   assert.match(preparer, /shell:\s*false/g);
+  assert.match(
+    preparer,
+    /const CHILD_PROCESS_TIMEOUT_MS\s*=\s*5 \* 60 \* 1000;/
+  );
+  assert.match(preparer, /timeout:\s*CHILD_PROCESS_TIMEOUT_MS/);
   assert.doesNotMatch(preparer, /execSync\(|\beval\b/);
 
   const { validatePackedPackage } = require(files.packedCliPreparer);
@@ -226,6 +249,9 @@ test('normalizes the isolated project path before enforcing workspace containmen
 
 test('fixture runner delegates to the cross-platform test entry point', () => {
   const runner = read(files.fixtureRunner);
+  assert.match(runner, /id -u/);
+  assert.match(runner, /id -g/);
+  assert.match(runner, /must run as uid\/gid 1000:1000/i);
   assert.match(
     runner,
     /exec node docker\/plugin-setup\/run-platform-tests\.js/
@@ -247,6 +273,14 @@ test('uses one shell-free focused runner across Linux, macOS, and Windows', () =
   );
   assert.match(platformRunner, /spawnSync\(/);
   assert.match(platformRunner, /shell:\s*false/);
+  assert.match(
+    platformRunner,
+    /const CHILD_PROCESS_TIMEOUT_MS\s*=\s*5 \* 60 \* 1000;/
+  );
+  assert.match(platformRunner, /timeout:\s*CHILD_PROCESS_TIMEOUT_MS/);
+  assert.match(platformRunner, /Object\.fromEntries\(/);
+  assert.match(platformRunner, /Object\.entries\(process\.env\)\.filter/);
+  assert.doesNotMatch(platformRunner, /delete childEnv\[/);
   assert.match(platformRunner, /tests\/lib\/install-manifests\.test\.js/);
   assert.match(platformRunner, /tests\/lib\/install-targets\.test\.js/);
   assert.match(platformRunner, /tests\/lib\/install-executor\.test\.js/);
@@ -354,6 +388,24 @@ test('validates dry-run target confinement and nonempty operations', () => {
   );
   assert.strictEqual(unsafe.status, 1);
   assert.match(unsafe.stderr, /outside/i);
+
+  for (const installRootValue of [undefined, 42, { path: installRoot }]) {
+    const invalidRootPlan = {
+      ...safePlan,
+      plan: {
+        ...safePlan.plan,
+        installRoot: installRootValue,
+      },
+    };
+    const invalidRoot = spawnSync(
+      process.execPath,
+      [files.planValidator, projectDir, '--dry-run'],
+      { encoding: 'utf8', input: JSON.stringify(invalidRootPlan) }
+    );
+    assert.strictEqual(invalidRoot.status, 1);
+    assert.match(invalidRoot.stderr, /install root is not confined/i);
+    assert.doesNotMatch(invalidRoot.stderr, /ERR_INVALID_ARG_TYPE|TypeError/);
+  }
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

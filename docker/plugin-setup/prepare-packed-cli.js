@@ -8,6 +8,7 @@ const path = require('path');
 
 const EXPECTED_NAME = 'ecc-universal';
 const EXPECTED_BIN = 'scripts/ecc.js';
+const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const REQUIRED_FILES = Object.freeze([
   'scripts/ecc.js',
   'manifests/install-components.json',
@@ -79,6 +80,7 @@ function run(executable, argv, options = {}) {
     ...options,
     encoding: 'utf8',
     shell: false,
+    timeout: CHILD_PROCESS_TIMEOUT_MS,
   });
   if (result.error) {
     fail(`Unable to run ${executable}: ${result.error.message}`);

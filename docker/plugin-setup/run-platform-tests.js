@@ -6,22 +6,22 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
+const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const testFiles = [
   'tests/lib/install-manifests.test.js',
   'tests/lib/install-targets.test.js',
   'tests/lib/install-executor.test.js',
 ];
-const childEnv = { ...process.env };
-
-for (const key of [
+const excludedGitEnvKeys = new Set([
   'GIT_DIR',
   'GIT_WORK_TREE',
   'GIT_INDEX_FILE',
   'GIT_COMMON_DIR',
   'GIT_PREFIX',
-]) {
-  delete childEnv[key];
-}
+]);
+const childEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !excludedGitEnvKeys.has(key))
+);
 
 console.log(`Running ECC install tests on ${process.platform}/${process.arch}`);
 
@@ -31,6 +31,7 @@ for (const testFile of testFiles) {
     env: childEnv,
     shell: false,
     stdio: 'inherit',
+    timeout: CHILD_PROCESS_TIMEOUT_MS,
   });
 
   if (result.error) {

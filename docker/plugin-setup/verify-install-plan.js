@@ -29,7 +29,10 @@ function validatePlan(payload, projectDir, requireDryRun) {
   if (payload.plan.target !== 'claude-project') {
     fail('Install plan target is not claude-project.');
   }
-  if (path.resolve(payload.plan.installRoot) !== expectedRoot) {
+  if (
+    typeof payload.plan.installRoot !== 'string'
+    || path.resolve(payload.plan.installRoot) !== expectedRoot
+  ) {
     fail('Install root is not confined to the isolated project.');
   }
   if (!Array.isArray(payload.plan.operations) || payload.plan.operations.length === 0) {
