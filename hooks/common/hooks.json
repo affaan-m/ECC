@@ -23,12 +23,12 @@
     ],
     "PostToolUse": [
       {
-        "description": "Run Bun quality gate after file edits",
+        "description": "Run Bun quality gate after file edits (skipped unless the project defines the scripts)",
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "bun run lint && bun run typecheck"
+            "command": "[ -f package.json ] || exit 0; jq -e '.scripts.lint' package.json >/dev/null 2>&1 && { bun run lint || exit 1; }; jq -e '.scripts.typecheck' package.json >/dev/null 2>&1 && { bun run typecheck || exit 1; }; exit 0"
           }
         ]
       },
@@ -43,11 +43,12 @@
         ]
       },
       {
+        "description": "Lint edited Markdown (skipped unless uv and bunx are installed)",
         "matcher": "(tool == \"Edit\" || tool == \"Write\") && tool_input.file_path matches \"\\\\.md$\"",
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['bunx','markdownlint-cli2',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); r and r.stderr.strip() and sys.stderr.write(r.stderr.strip()+'\\n'); print(d,end='')\""
+            "command": "command -v uv >/dev/null 2>&1 && command -v bunx >/dev/null 2>&1 || exit 0; uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['bunx','markdownlint-cli2',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); r and r.stderr.strip() and sys.stderr.write(r.stderr.strip()+'\\n'); print(d,end='')\""
           }
         ]
       }
