@@ -38,7 +38,8 @@ test('documents the ECC plugin setup harness and safe operating modes', () => {
   assert.match(skill, /\breal-cli\b/);
   assert.match(skill, /\breal-cli-ubuntu\b/);
   assert.match(skill, /\bfixture-tests\b/);
-  assert.match(skill, /dry-run.*install.*migrate.*plugin.*shell/is);
+  assert.match(skill, /dry-run.*install.*plugin.*shell/is);
+  assert.doesNotMatch(skill, /explicit modes such as.*migrate/i);
 });
 
 test('requires hardened ephemeral installer execution', () => {
@@ -68,6 +69,20 @@ test('provides a repeatable build, run, inspect, and cleanup sequence', () => {
   assert.match(skill, /docker compose.*run.*real-cli.*dry-run/is);
   assert.match(skill, /docker image inspect/is);
   assert.match(skill, /down --remove-orphans/);
+});
+
+test('documents the private named-container lifecycle and terminal boundary', () => {
+  assert.match(skill, /ECC_TMPFS_SIZE/);
+  assert.match(skill, /\/workspace.*mode=0700/is);
+  assert.match(skill, /NPM_CONFIG_CACHE.*\/tmp\/npm-cache/is);
+  assert.match(skill, /docker compose.*run.*--detach.*--name/is);
+  assert.match(skill, /interactive-plan\.js/);
+  assert.match(skill, /executable.*argv/is);
+  assert.match(skill, /docker exec -it/);
+  assert.match(skill, /reconnect/i);
+  assert.match(skill, /docker rm.*ecc-plugin-shell/is);
+  assert.match(skill, /host credentials.*opt-in/is);
+  assert.doesNotMatch(skill, /skills\/docker-patterns\/scripts\/open-interactive\.js/);
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

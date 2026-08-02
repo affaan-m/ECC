@@ -22,6 +22,9 @@ RUN getent passwd 1000 >/dev/null \
 
 RUN npm install --global --include=optional --ignore-scripts \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+      "@iarna/toml@2.2.5" \
+      "ajv@8.20.0" \
+      "sql.js@1.14.1" \
     && global_node_modules="$(npm root --global)" \
     && node "${global_node_modules}/@anthropic-ai/claude-code/install.cjs" \
     && npm cache clean --force \
@@ -33,6 +36,7 @@ RUN mkdir -p /workspace \
 ENV CLAUDE_CONFIG_DIR=/tmp/ecc-claude-config
 ENV DISABLE_AUTOUPDATER=1
 ENV HOME=/tmp/ecc-home
+ENV NODE_PATH=/usr/local/lib/node_modules
 
 WORKDIR /workspace
 USER 1000:1000

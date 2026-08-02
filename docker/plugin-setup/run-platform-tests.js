@@ -7,9 +7,9 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const testFiles = [
-  'tests/lib/claude-plugin-setup.test.js',
-  'tests/lib/claude-scope-migration.test.js',
-  'tests/scripts/setup.test.js',
+  'tests/lib/install-manifests.test.js',
+  'tests/lib/install-targets.test.js',
+  'tests/lib/install-executor.test.js',
 ];
 const childEnv = { ...process.env };
 
@@ -23,7 +23,7 @@ for (const key of [
   delete childEnv[key];
 }
 
-console.log(`Running ECC plugin setup tests on ${process.platform}/${process.arch}`);
+console.log(`Running ECC install tests on ${process.platform}/${process.arch}`);
 
 for (const testFile of testFiles) {
   const result = spawnSync(process.execPath, [path.join(repoRoot, testFile)], {

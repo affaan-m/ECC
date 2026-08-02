@@ -9,12 +9,13 @@ x-real-cli: &real-cli
   security_opt:
     - no-new-privileges:true
   tmpfs:
-    - /tmp:rw,nosuid,nodev,exec,size=512m,uid=1000,gid=1000
-    - /workspace:rw,nosuid,nodev,size=1g,uid=1000,gid=1000
+    - /tmp:rw,nosuid,nodev,exec,size=${ECC_TMPFS_SIZE:-2g},uid=1000,gid=1000,mode=0700
+    - /workspace:rw,nosuid,nodev,noexec,size=${ECC_WORKSPACE_SIZE:-1g},uid=1000,gid=1000,mode=0700
   environment:
     CLAUDE_CONFIG_DIR: /tmp/ecc-claude-config
     DISABLE_AUTOUPDATER: "1"
     HOME: /tmp/ecc-home
+    NPM_CONFIG_CACHE: /tmp/npm-cache
   volumes:
     - type: bind
       source: ../..
