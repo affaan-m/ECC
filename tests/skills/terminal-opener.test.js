@@ -93,6 +93,25 @@ function runTests() {
     assert.throws(() => parseArgs(['--'], { cwd: '/tmp', env: {} }), /executable is required/i);
   });
 
+  check('defaults to a non-launching plan and requires an explicit launch gate', () => {
+    const planned = parseArgs(['--', 'echo', 'hello'], { cwd: '/tmp', env: {} });
+    assert.strictEqual(planned.dryRun, true);
+
+    const launched = parseArgs(['--launch', '--', 'echo', 'hello'], {
+      cwd: '/tmp',
+      env: {},
+    });
+    assert.strictEqual(launched.dryRun, false);
+
+    assert.throws(
+      () => parseArgs(['--launch', '--dry-run', '--', 'echo'], {
+        cwd: '/tmp',
+        env: {},
+      }),
+      /mutually exclusive/i
+    );
+  });
+
   check('rejects unsafe values at input boundaries', () => {
     assert.throws(() => parseArgs(['--cwd', 'relative', '--', 'echo'], { cwd: '/tmp', env: {} }), /absolute/);
     assert.throws(() => parseArgs(['--terminal', '../wezterm', '--', 'echo'], { cwd: '/tmp', env: {} }), /terminal name/);
@@ -270,6 +289,12 @@ function runTests() {
     assert.strictEqual(result.stderr, '');
   });
 
+  check('keeps the CLI non-launching unless --launch is explicit', () => {
+    const result = runCli(['--json', '--', 'printf', 'safe']);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(JSON.parse(result.stdout).dryRun, true);
+  });
+
   check('supports terminal capability detection without a command', () => {
     const result = runCli(['--detect', '--terminal', 'unsupported', '--json']);
     assert.strictEqual(result.status, 1);
@@ -290,6 +315,8 @@ function runTests() {
     assert.match(frontmatter, /visible terminal/i);
     assert.match(skill, /shell:\s*false/);
     assert.match(skill, /--skip-config start --always-new-process/);
+    assert.match(skill, /--launch/);
+    assert.match(skill, /environment[\s\S]*secret/i);
     assert.ok(!skill.includes('[TODO'));
     assert.ok(!fs.existsSync(path.join(SKILL_ROOT, 'README.md')));
   });

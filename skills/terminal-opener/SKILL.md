@@ -7,7 +7,10 @@ description: Open an executable and its argument array in a visible terminal win
 
 Use `scripts/open-terminal.js` to preserve an executable and every argument as
 separate process entries. Never interpolate a shell command string. Keep every
-spawn on `shell: false`.
+spawn on `shell: false`. Default to a non-launching plan. Use `--launch` only
+after the user explicitly requests a real window and the argv has been reviewed.
+Remember that the target can inherit terminal environment variables; never pass
+secret-bearing values unless the requested interactive workflow requires them.
 
 ## Launch a command
 
@@ -16,6 +19,7 @@ its argument array:
 
 ```bash
 node skills/terminal-opener/scripts/open-terminal.js \
+  --launch \
   --cwd /absolute/host/path \
   -- ssh -t example.test command-with-arguments
 ```
@@ -37,9 +41,10 @@ Expect recovery mode to skip all user terminal configuration intentionally.
 
 ## Inspect before launch
 
-Add `--dry-run --json` to inspect the exact executable, argv, working directory,
-terminal adapter, primary launch, and fallback without opening a window. Treat
-the JSON plan as the composition boundary for callers.
+Omit `--launch` (or add `--dry-run`) and add `--json` to inspect the exact
+executable, argv, working directory, terminal adapter, primary launch, and
+fallback without opening a window. Treat the JSON plan as the composition
+boundary for callers.
 
 Run `--detect --json` without a command to probe terminal availability. Follow
 the returned `action` when the adapter is missing or unsupported. Use WezTerm

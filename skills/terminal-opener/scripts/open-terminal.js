@@ -21,7 +21,8 @@ Options:
   --recover          Start a standalone terminal with stock configuration.
   --standalone       Alias for --recover.
   --detect           Check whether the selected terminal can be launched.
-  --dry-run          Print the launch plan without opening a terminal.
+  --launch           Explicitly open the terminal (the default only prints a plan).
+  --dry-run          Explicitly print the launch plan without opening a terminal.
   --json             Emit the plan or capability result as JSON.
   --help, -h         Show this help.
 
@@ -90,13 +91,15 @@ function parseArgs(argv, context = {}) {
     argv: [],
     cwd: initialCwd,
     detect: false,
-    dryRun: false,
+    dryRun: true,
     executable: undefined,
     help: false,
     json: false,
     mode: 'normal',
     terminal: initialTerminal,
   };
+  let dryRunRequested = false;
+  let launchRequested = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -113,7 +116,11 @@ function parseArgs(argv, context = {}) {
       options.mode = 'recover';
     } else if (argument === '--detect') {
       options.detect = true;
+    } else if (argument === '--launch') {
+      launchRequested = true;
+      options.dryRun = false;
     } else if (argument === '--dry-run') {
+      dryRunRequested = true;
       options.dryRun = true;
     } else if (argument === '--json') {
       options.json = true;
@@ -122,6 +129,10 @@ function parseArgs(argv, context = {}) {
     } else {
       throw new Error(`Unknown option "${argument}"; put the executable after --.`);
     }
+  }
+
+  if (launchRequested && dryRunRequested) {
+    throw new Error('--launch and --dry-run are mutually exclusive.');
   }
 
   validateTerminalName(options.terminal);
