@@ -8,6 +8,7 @@ const path = require('path');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const harnessRoot = path.join(repoRoot, 'docker', 'plugin-setup');
+const SUBPROCESS_TIMEOUT_MS = 30_000;
 const files = {
   ci: path.join(repoRoot, '.github', 'workflows', 'ci.yml'),
   compose: path.join(harnessRoot, 'compose.yaml'),
@@ -46,6 +47,16 @@ function test(name, fn) {
 
 function read(filePath) {
   return fs.readFileSync(filePath, 'utf8');
+}
+
+function runNode(argv, options = {}) {
+  const result = spawnSync(process.execPath, argv, {
+    ...options,
+    shell: false,
+    timeout: SUBPROCESS_TIMEOUT_MS,
+  });
+  assert.ifError(result.error);
+  return result;
 }
 
 console.log('\n=== Docker plugin setup harness tests ===\n');
@@ -225,7 +236,7 @@ test('prepares a local npm artifact through the confined public bin contract', (
 });
 
 test('normalizes the isolated project path before enforcing workspace containment', () => {
-  const valid = spawnSync(process.execPath, [
+  const valid = runNode([
     files.projectDirResolver,
     '/workspace/nested/../project',
   ], { encoding: 'utf8' });
@@ -238,7 +249,7 @@ test('normalizes the isolated project path before enforcing workspace containmen
     '/tmp/project',
     'workspace/project',
   ]) {
-    const invalid = spawnSync(process.execPath, [
+    const invalid = runNode([
       files.projectDirResolver,
       candidate,
     ], { encoding: 'utf8' });
@@ -288,7 +299,7 @@ test('uses one shell-free focused runner across Linux, macOS, and Windows', () =
 });
 
 test('emits docker exec as an executable plus argv integration contract', () => {
-  const result = spawnSync(process.execPath, [
+  const result = runNode([
     files.interactivePlan,
     '--container', 'ecc-plugin-shell',
     '--workdir', '/workspace/project',
@@ -320,7 +331,7 @@ test('emits docker exec as an executable plus argv integration contract', () => 
 
 test('keeps Docker session values as argv entries and validates boundaries', () => {
   const literalArgument = '$(touch should-not-run)';
-  const result = spawnSync(process.execPath, [
+  const result = runNode([
     files.interactivePlan,
     '--container', 'ecc.plugin-shell_1',
     '--workdir', '/workspace/project with spaces',
@@ -345,7 +356,7 @@ test('keeps Docker session values as argv entries and validates boundaries', () 
     ['--container', 'valid-name', '--workdir', 'relative/path', '--json'],
     ['--container', 'valid-name', '--workdir', '/workspace/../tmp', '--json'],
   ]) {
-    const invalid = spawnSync(process.execPath, [files.interactivePlan, ...args], {
+    const invalid = runNode([files.interactivePlan, ...args], {
       cwd: repoRoot,
       encoding: 'utf8',
     });
@@ -367,8 +378,7 @@ test('validates dry-run target confinement and nonempty operations', () => {
       ],
     },
   };
-  const safe = spawnSync(
-    process.execPath,
+  const safe = runNode(
     [files.planValidator, projectDir, '--dry-run'],
     { encoding: 'utf8', input: JSON.stringify(safePlan) }
   );
@@ -381,8 +391,7 @@ test('validates dry-run target confinement and nonempty operations', () => {
       operations: [{ destinationPath: '/tmp/escape.md' }],
     },
   };
-  const unsafe = spawnSync(
-    process.execPath,
+  const unsafe = runNode(
     [files.planValidator, projectDir, '--dry-run'],
     { encoding: 'utf8', input: JSON.stringify(unsafePlan) }
   );
@@ -397,8 +406,7 @@ test('validates dry-run target confinement and nonempty operations', () => {
         installRoot: installRootValue,
       },
     };
-    const invalidRoot = spawnSync(
-      process.execPath,
+    const invalidRoot = runNode(
       [files.planValidator, projectDir, '--dry-run'],
       { encoding: 'utf8', input: JSON.stringify(invalidRootPlan) }
     );
