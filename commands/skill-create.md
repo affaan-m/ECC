@@ -53,12 +53,20 @@ Look for these pattern types:
 
 ### Step 3: Generate SKILL.md
 
+Write the generated skill to `<output-dir>/<skill-name>/SKILL.md`. The default
+project path is `.claude/skills/{repo-name}-patterns/SKILL.md`; a global skill
+uses `~/.claude/skills/<skill-name>/SKILL.md`.
+
+The directory form is required for discovery: Claude Code treats
+`<name>/SKILL.md` as the skill entrypoint. Keep the directory name and
+frontmatter `name:` identical.
+
 Output format:
 
 ```markdown
 ---
 name: {repo-name}-patterns
-description: Coding patterns extracted from {repo-name}
+description: "Use when working in {repo-name}, especially before editing its common modules, placing tests, naming branches, or writing commits — conventions measured from git history"
 version: 1.0.0
 source: local-git-analysis
 analyzed_commits: {count}
@@ -78,6 +86,15 @@ analyzed_commits: {count}
 ## Testing Patterns
 {detected test conventions}
 ```
+
+Make `description:` trigger-first rather than a generic summary. Lead with
+`Use when ...` and name observable moments where the conventions apply, based
+on the patterns actually found in the repository.
+
+**Verify discoverability after writing:** confirm that
+`<output-dir>/<skill-name>/SKILL.md` exists, starts with YAML frontmatter, and
+has a `name:` matching its directory plus a non-empty `description:` beginning
+with `Use when`.
 
 ### Step 4: Generate Instincts (if --instincts)
 

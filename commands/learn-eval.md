@@ -22,17 +22,19 @@ Look for:
 
 3. **Determine save location:**
    - Ask: "Would this pattern be useful in a different project?"
-   - **Global** (`~/.claude/skills/learned/`): Generic patterns usable across 2+ projects (bash compatibility, LLM API behavior, debugging techniques, etc.)
-   - **Project** (`.claude/skills/learned/` in current project): Project-specific knowledge (quirks of a particular config file, project-specific architecture decisions, etc.)
+   - **Global** (`~/.claude/skills/<pattern-name>/SKILL.md`): Generic patterns usable across 2+ projects (bash compatibility, LLM API behavior, debugging techniques, etc.)
+   - **Project** (`.claude/skills/<pattern-name>/SKILL.md` in current project): Project-specific knowledge (quirks of a particular config file, project-specific architecture decisions, etc.)
    - When in doubt, choose Global (moving Global → Project is easier than the reverse)
+   - Use the directory form exactly. Claude Code treats `<name>/SKILL.md` as
+     the skill entrypoint; a flat `skills/learned/<name>.md` file is not
+     discoverable as a skill.
 
 4. Draft the skill file using this format:
 
 ```markdown
 ---
 name: pattern-name
-description: "Under 130 characters"
-user-invocable: false
+description: "Use when <observable trigger condition>, or when <second trigger> — <one-line summary of the pattern>"
 origin: auto-extracted
 ---
 
@@ -50,6 +52,12 @@ origin: auto-extracted
 ## When to Use
 [Trigger conditions]
 ```
+
+The generated `description:` should lead with concrete, observable triggers,
+such as task verbs, file types, or error messages. Claude uses the skill name
+and description to decide when the body is relevant, so a generic summary like
+"best practices for X" is less likely to activate at the right time. Keep the
+directory name and frontmatter `name:` identical.
 
 5. **Quality gate — Checklist + Holistic verdict**
 
@@ -87,7 +95,13 @@ origin: auto-extracted
 - **Absorb into [X]**: Present target path + additions (diff format) + checklist results + verdict rationale → append after user confirmation
 - **Drop**: Show checklist results + reasoning only (no confirmation needed)
 
-7. Save / Absorb to the determined location
+7. Save / Absorb to the determined location. For **Save**, write
+   `<location>/<pattern-name>/SKILL.md`; for **Absorb**, update the existing
+   skill's `SKILL.md`.
+
+8. **Verify discoverability after writing** (Save only): confirm the path is
+   `<name>/SKILL.md`, the frontmatter starts with `---`, `name:` matches the
+   directory, and `description:` is non-empty and trigger-first.
 
 ## Output Format for Step 5
 
