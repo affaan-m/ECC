@@ -220,6 +220,44 @@ function runTests() {
     assert.ok(spawnCalls[0].args.includes('--always-new-process'));
   });
 
+  check('reports synchronous detached spawn failures actionably', () => {
+    assert.throws(
+      () => launch(buildLaunchPlan(baseOptions({ mode: 'recover' })), {
+        spawnSync() {
+          return { status: 0, stdout: 'wezterm 1\n', stderr: '' };
+        },
+        spawn() {
+          throw new Error('EACCES');
+        },
+      }),
+      /Unable to start wezterm: EACCES/
+    );
+  });
+
+  check('routes asynchronous detached spawn errors to the caller', () => {
+    let errorHandler;
+    let reportedError;
+    launch(buildLaunchPlan(baseOptions({ mode: 'recover' })), {
+      spawnSync() {
+        return { status: 0, stdout: 'wezterm 1\n', stderr: '' };
+      },
+      spawn() {
+        return {
+          once(event, handler) {
+            if (event === 'error') errorHandler = handler;
+          },
+          unref() {},
+        };
+      },
+      onDetachedError(error) {
+        reportedError = error;
+      },
+    });
+    assert.strictEqual(typeof errorHandler, 'function');
+    errorHandler(new Error('terminal disappeared'));
+    assert.match(reportedError.message, /Unable to start wezterm: terminal disappeared/);
+  });
+
   check('emits a machine-readable dry-run without launching', () => {
     const result = runCli([
       '--dry-run', '--json', '--cwd', '/tmp/demo', '--', 'ssh', '-t', 'example.test', 'echo $HOME; id',

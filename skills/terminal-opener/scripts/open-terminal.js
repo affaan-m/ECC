@@ -234,15 +234,31 @@ function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync) 
   };
 }
 
-function launchDetached(command, args, cwd, spawnImpl) {
-  const child = spawnImpl(command, args, {
-    cwd,
-    detached: true,
-    shell: false,
-    stdio: 'ignore',
-  });
+function reportDetachedError(error) {
+  process.stderr.write(`Error: ${error.message}\n`);
+}
+
+function launchDetached(command, args, cwd, spawnImpl, onDetachedError) {
+  let child;
+  try {
+    child = spawnImpl(command, args, {
+      cwd,
+      detached: true,
+      shell: false,
+      stdio: 'ignore',
+    });
+  } catch (error) {
+    throw new Error(`Unable to start ${command}: ${error.message}`, { cause: error });
+  }
   if (!child || typeof child.unref !== 'function') {
     throw new Error('Terminal process did not start correctly.');
+  }
+  if (typeof child.once === 'function') {
+    child.once('error', error => {
+      onDetachedError(
+        new Error(`Unable to start ${command}: ${error.message}`, { cause: error })
+      );
+    });
   }
   child.unref();
 }
@@ -250,13 +266,14 @@ function launchDetached(command, args, cwd, spawnImpl) {
 function launch(plan, dependencies = {}) {
   const spawnSyncImpl = dependencies.spawnSync || childProcess.spawnSync;
   const spawnImpl = dependencies.spawn || childProcess.spawn;
+  const onDetachedError = dependencies.onDetachedError || reportDetachedError;
   const capability = detectTerminalCapability(plan, spawnSyncImpl);
   if (!capability.available) {
     throw new Error(`${capability.reason}: ${capability.action}`);
   }
 
   if (plan.launchMode === 'recover') {
-    launchDetached(plan.command, plan.args, plan.cwd, spawnImpl);
+    launchDetached(plan.command, plan.args, plan.cwd, spawnImpl, onDetachedError);
     return { strategy: 'detached-recover', capability };
   }
 
@@ -269,7 +286,13 @@ function launch(plan, dependencies = {}) {
     return { strategy: 'mux', capability };
   }
 
-  launchDetached(plan.fallback.command, plan.fallback.args, plan.cwd, spawnImpl);
+  launchDetached(
+    plan.fallback.command,
+    plan.fallback.args,
+    plan.cwd,
+    spawnImpl,
+    onDetachedError
+  );
   return { strategy: 'detached-fallback', capability };
 }
 
