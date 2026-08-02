@@ -14,6 +14,7 @@ const SCRIPT = path.join(SKILL_ROOT, 'scripts', 'open-terminal.js');
 const {
   buildLaunchPlan,
   detectTerminalCapability,
+  formatLaunchResult,
   launch,
   parseArgs,
 } = require(SCRIPT);
@@ -274,6 +275,37 @@ function runTests() {
     assert.strictEqual(syncCalls[1].options.timeout, 10_000);
     assert.strictEqual(syncCalls[1].options.killSignal, 'SIGTERM');
     assert.match(result.muxFailure, /status 1.*mux unavailable/);
+  });
+
+  check('surfaces mux fallback failures in human and JSON launch output', () => {
+    const plan = buildLaunchPlan(baseOptions());
+    const result = {
+      strategy: 'detached-fallback',
+      capability: { available: true, terminal: 'wezterm', version: 'wezterm 1' },
+      muxFailure: 'wezterm cli spawn exited with status 1: mux unavailable',
+    };
+
+    const human = formatLaunchResult(plan, result, false);
+    assert.match(human, /Open printf in wezterm using mux mode\./);
+    assert.match(human, /Mux launch failed: .*status 1.*mux unavailable/);
+
+    const json = JSON.parse(formatLaunchResult(plan, result, true));
+    assert.strictEqual(json.executable, 'printf');
+    assert.strictEqual(json.strategy, 'detached-fallback');
+    assert.strictEqual(json.muxFailure, result.muxFailure);
+  });
+
+  check('preserves existing human launch output for non-fallback strategies', () => {
+    const plan = buildLaunchPlan(baseOptions());
+    const result = {
+      strategy: 'mux',
+      capability: { available: true, terminal: 'wezterm', version: 'wezterm 1' },
+    };
+
+    assert.strictEqual(
+      formatLaunchResult(plan, result, false),
+      'Open printf in wezterm using mux mode.\n'
+    );
   });
 
   check('launches recovery directly as a detached process', () => {
