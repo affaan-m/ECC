@@ -908,7 +908,7 @@ This repo is the raw code. The guides explain everything.
 ```text
 ECC/
 |-- agents/           # 67 specialized subagents for delegation
-|-- skills/           # 281 reusable workflows loaded on demand
+|-- skills/           # 282 reusable workflows loaded on demand
 |-- commands/         # 94 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
