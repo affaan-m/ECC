@@ -1,8 +1,8 @@
 ---
 name: comment-analyzer
 description: Analyze code comments for accuracy, completeness, maintainability, and comment rot risk.
-model: sonnet
-tools: [Read, Grep, Glob]
+model: haiku
+tools: Read, Grep, Glob
 ---
 
 ## Prompt Defense Baseline

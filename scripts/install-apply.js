@@ -17,6 +17,7 @@ const {
   normalizeInstallRequest,
   parseInstallArgs,
 } = require('./lib/install/request');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -31,8 +32,8 @@ Usage: install.sh [--target <${LEGACY_INSTALL_TARGETS.join('|')}>] [--dry-run] [
        install.sh [--dry-run] [--json] --config <path>
 
 Targets:
-  claude       (default) - Install ECC into ~/.claude/ with managed rules/skills under rules/ecc and skills/ecc
-  claude-project - Install ECC into ./.claude/ (per-project) with managed rules/skills under rules/ecc and skills/ecc
+  claude       (default) - Install ECC into ~/.claude/ with managed rules under rules/ecc and flat skills under skills/
+  claude-project - Install ECC into ./.claude/ (per-project) with managed rules under rules/ecc and flat skills under skills/
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
   antigravity  - Install rules, workflows, skills, and agents to ./.agent/
   codex        - Install shared agents/config into ~/.codex/
@@ -42,6 +43,9 @@ Targets:
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
+  hermes       - Install shared rules/skills/commands into ~/.hermes/
+  kimi         - Install shared rules/skills/commands into ./.kimi/
+  openclaw     - Install shared rules/skills/commands into ~/.openclaw/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
@@ -56,6 +60,9 @@ Options:
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
+
+Compute:
+  ${getComputeSponsorCopy()}
 
 Available languages:
 ${languages.map(language => `  - ${language}`).join('\n')}
@@ -95,7 +102,10 @@ function printHumanPlan(plan, dryRun) {
       console.log(`Excluded modules: ${plan.excludedModuleIds.join(', ')}`);
     }
   }
-  console.log(`Operations: ${plan.operations.length}`);
+  console.log(`${dryRun ? 'Operations' : 'Applied operations'}: ${plan.operations.length}`);
+  if (Array.isArray(plan.skippedOperations) && plan.skippedOperations.length > 0) {
+    console.log(`Skipped operations: ${plan.skippedOperations.length}`);
+  }
 
   if (plan.warnings.length > 0) {
     console.log('\nWarnings:');
@@ -104,14 +114,23 @@ function printHumanPlan(plan, dryRun) {
     }
   }
 
-  console.log('\nPlanned file operations:');
+  console.log(`\n${dryRun ? 'Planned' : 'Applied'} file operations:`);
   for (const operation of plan.operations) {
     console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
+  }
+
+  if (Array.isArray(plan.skippedOperations) && plan.skippedOperations.length > 0) {
+    console.log('\nSkipped file operations:');
+    for (const operation of plan.skippedOperations) {
+      console.log(`- ${operation.sourceRelativePath} -> ${operation.destinationPath}`);
+    }
   }
 
   if (!dryRun) {
     console.log(`\nDone. Install-state written to ${plan.installStatePath}`);
   }
+
+  console.log('\nCompute: ' + getComputeSponsorCopy());
 }
 
 function main() {
@@ -126,7 +145,10 @@ function main() {
       findDefaultInstallConfigPath,
       loadInstallConfig,
     } = require('./lib/install/config');
-    const { applyInstallPlan } = require('./lib/install-executor');
+    const {
+      applyInstallPlan,
+      previewInstallPlan,
+    } = require('./lib/install-executor');
     const { createInstallPlanFromRequest } = require('./lib/install/runtime');
     const defaultConfigPath = options.configPath || options.languages.length > 0
       ? null
@@ -138,13 +160,14 @@ function main() {
       ...options,
       config,
     });
-    const plan = createInstallPlanFromRequest(request, {
+    const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
 
     if (options.dryRun) {
+      const plan = previewInstallPlan(rawPlan);
       if (options.json) {
         console.log(JSON.stringify({ dryRun: true, plan }, null, 2));
       } else {
@@ -153,7 +176,7 @@ function main() {
       return;
     }
 
-    const result = applyInstallPlan(plan);
+    const result = applyInstallPlan(rawPlan);
     if (options.json) {
       console.log(JSON.stringify({ dryRun: false, result }, null, 2));
     } else {

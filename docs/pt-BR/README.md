@@ -80,7 +80,7 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
-### v2.0.0 — O Sistema Operacional do Harness de Agentes (Jun 2026)
+### v2.1.0 — O Sistema Operacional do Harness de Agentes (Jun 2026)
 
 Graduação estável da linha 2.0: 261 skills, substrato de control-pane, inventário MCP, serviço de ciclo de vida de worktrees e a comunidade no [Discord](https://discord.gg/36yGMHGFbR).
 

@@ -151,39 +151,43 @@ ORDER BY market_id, date;
 ### 一括挿入（推奨）
 
 ```typescript
-import { ClickHouse } from 'clickhouse'
+import { createClient } from '@clickhouse/client'
 
-const clickhouse = new ClickHouse({
-  url: process.env.CLICKHOUSE_URL,
-  port: 8123,
-  basicAuth: {
-    username: process.env.CLICKHOUSE_USER,
-    password: process.env.CLICKHOUSE_PASSWORD
-  }
+const clickhouse = createClient({
+  url: process.env.CLICKHOUSE_URL ?? 'http://localhost:8123',
+  username: process.env.CLICKHOUSE_USER,
+  password: process.env.CLICKHOUSE_PASSWORD
 })
 
 // PASS: バッチ挿入（効率的）
 async function bulkInsertTrades(trades: Trade[]) {
-  const values = trades.map(trade => `(
-    '${trade.id}',
-    '${trade.market_id}',
-    '${trade.user_id}',
-    ${trade.amount},
-    '${trade.timestamp.toISOString()}'
-  )`).join(',')
-
-  await clickhouse.query(`
-    INSERT INTO trades (id, market_id, user_id, amount, timestamp)
-    VALUES ${values}
-  `).toPromise()
+  await clickhouse.insert({
+    table: 'trades',
+    values: trades.map(trade => ({
+      id: trade.id,
+      market_id: trade.market_id,
+      user_id: trade.user_id,
+      amount: trade.amount,
+      timestamp: trade.timestamp.toISOString()
+    })),
+    format: 'JSONEachRow'
+  })
 }
 
 // FAIL: 個別挿入（低速）
 async function insertTrade(trade: Trade) {
   // ループ内でこれをしないでください！
-  await clickhouse.query(`
-    INSERT INTO trades VALUES ('${trade.id}', ...)
-  `).toPromise()
+  await clickhouse.insert({
+    table: 'trades',
+    values: [{
+      id: trade.id,
+      market_id: trade.market_id,
+      user_id: trade.user_id,
+      amount: trade.amount,
+      timestamp: trade.timestamp.toISOString()
+    }],
+    format: 'JSONEachRow'
+  })
 }
 ```
 
@@ -191,17 +195,14 @@ async function insertTrade(trade: Trade) {
 
 ```typescript
 // 継続的なデータ取り込み用
-import { createWriteStream } from 'fs'
-import { pipeline } from 'stream/promises'
+import { Readable } from 'node:stream'
 
-async function streamInserts() {
-  const stream = clickhouse.insert('trades').stream()
-
-  for await (const batch of dataSource) {
-    stream.write(batch)
-  }
-
-  await stream.end()
+async function streamInserts(dataSource: AsyncIterable<Record<string, unknown>>) {
+  await clickhouse.insert({
+    table: 'trades',
+    values: Readable.from(dataSource, { objectMode: true }),
+    format: 'JSONEachRow'
+  })
 }
 ```
 
@@ -386,14 +387,18 @@ pgClient.query('LISTEN market_updates')
 pgClient.on('notification', async (msg) => {
   const update = JSON.parse(msg.payload)
 
-  await clickhouse.insert('market_updates', [
-    {
-      market_id: update.id,
-      event_type: update.operation,  // INSERT, UPDATE, DELETE
-      timestamp: new Date(),
-      data: JSON.stringify(update.new_data)
-    }
-  ])
+  await clickhouse.insert({
+    table: 'market_updates',
+    values: [
+      {
+        market_id: update.id,
+        event_type: update.operation,  // INSERT, UPDATE, DELETE
+        timestamp: new Date(),
+        data: JSON.stringify(update.new_data)
+      }
+    ],
+    format: 'JSONEachRow'
+  })
 })
 ```
 

@@ -52,6 +52,29 @@ function writeInstallComponentsManifest(testDir, components) {
   });
 }
 
+function writeInstallModulesManifest(testDir, modules) {
+  writeJson(path.join(testDir, 'manifests', 'install-modules.json'), {
+    version: 1,
+    modules,
+  });
+}
+
+function writeInstallProfilesManifest(testDir, profiles) {
+  writeJson(path.join(testDir, 'manifests', 'install-profiles.json'), {
+    version: 1,
+    profiles,
+  });
+}
+
+function writeSkillFixture(testDir, skillId, description) {
+  const skillDir = path.join(testDir, 'skills', skillId);
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    `---\nname: ${skillId}\ndescription: ${description}\n---\n# ${skillId}\n`
+  );
+}
+
 function stripShebang(source) {
   let s = source;
   if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
@@ -2791,6 +2814,99 @@ function runTests() {
     const result = runValidator('validate-install-manifests');
     assert.strictEqual(result.code, 0, `Should pass, got stderr: ${result.stderr}`);
     assert.ok(result.stdout.includes('Validated'), 'Should output validation count');
+  })) passed++; else failed++;
+
+  if (test('fails when a curated skill is not referenced by any install module', () => {
+    const testDir = createTestDir();
+    try {
+      writeInstallModulesManifest(testDir, [
+        {
+          id: 'skill-alpha',
+          kind: 'skills',
+          description: 'Alpha skill',
+          paths: ['skills/alpha'],
+          targets: ['claude'],
+          dependencies: [],
+          defaultInstall: false,
+          cost: 'light',
+          stability: 'stable',
+        },
+        {
+          id: 'skill-beta',
+          kind: 'skills',
+          description: 'Beta skill',
+          paths: ['skills/beta'],
+          targets: ['claude'],
+          dependencies: [],
+          defaultInstall: false,
+          cost: 'light',
+          stability: 'stable',
+        },
+      ]);
+      writeInstallProfilesManifest(testDir, {
+        core: { description: 'Core', modules: ['skill-alpha', 'skill-beta'] },
+        developer: { description: 'Developer', modules: ['skill-alpha', 'skill-beta'] },
+        security: { description: 'Security', modules: ['skill-alpha', 'skill-beta'] },
+        research: { description: 'Research', modules: ['skill-alpha', 'skill-beta'] },
+        full: { description: 'Full', modules: ['skill-alpha', 'skill-beta'] },
+      });
+      writeSkillFixture(testDir, 'alpha', 'Alpha skill');
+      writeSkillFixture(testDir, 'beta', 'Beta skill');
+
+      let result = runValidatorWithDirs('validate-install-manifests', {
+        REPO_ROOT: testDir,
+        MODULES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-modules.json'),
+        PROFILES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-profiles.json'),
+        COMPONENTS_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-components.json'),
+        MODULES_SCHEMA_PATH: modulesSchemaPath,
+        PROFILES_SCHEMA_PATH: profilesSchemaPath,
+        COMPONENTS_SCHEMA_PATH: componentsSchemaPath,
+      });
+      assert.strictEqual(result.code, 0, `Should pass with both skills referenced, got stderr: ${result.stderr}`);
+
+      writeInstallModulesManifest(testDir, [
+        {
+          id: 'skill-alpha',
+          kind: 'skills',
+          description: 'Alpha skill',
+          paths: ['skills/alpha'],
+          targets: ['claude'],
+          dependencies: [],
+          defaultInstall: false,
+          cost: 'light',
+          stability: 'stable',
+        },
+        {
+          id: 'skill-beta',
+          kind: 'skills',
+          description: 'Beta skill',
+          paths: ['skills/beta-restored'],
+          targets: ['claude'],
+          dependencies: [],
+          defaultInstall: false,
+          cost: 'light',
+          stability: 'stable',
+        },
+      ]);
+      writeSkillFixture(testDir, 'beta-restored', 'Beta skill restored');
+
+      result = runValidatorWithDirs('validate-install-manifests', {
+        REPO_ROOT: testDir,
+        MODULES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-modules.json'),
+        PROFILES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-profiles.json'),
+        COMPONENTS_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-components.json'),
+        MODULES_SCHEMA_PATH: modulesSchemaPath,
+        PROFILES_SCHEMA_PATH: profilesSchemaPath,
+        COMPONENTS_SCHEMA_PATH: componentsSchemaPath,
+      });
+      assert.strictEqual(result.code, 1, 'Should fail when beta is no longer referenced');
+      assert.ok(
+        result.stderr.includes('curated skill skills/beta is not referenced by any install module'),
+        `Should report unreferenced skill, got: ${result.stderr}`
+      );
+    } finally {
+      cleanupTestDir(testDir);
+    }
   })) passed++; else failed++;
 
   if (test('exits 0 when install manifests do not exist', () => {

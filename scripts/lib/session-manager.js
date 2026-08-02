@@ -18,10 +18,6 @@ const {
   log
 } = require('./utils');
 
-function resolveCreatedTime(stats) {
-  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
-}
-
 // Session filename pattern: YYYY-MM-DD-[session-id]-session.tmp
 // The session-id is optional (old format) and can include letters, digits,
 // underscores, and hyphens, but must not start with a hyphen.
@@ -29,6 +25,18 @@ function resolveCreatedTime(stats) {
 // "2026-02-01-frontend-worktree-1-session.tmp", and
 // "2026-02-01-ChezMoi_2-session.tmp"
 const SESSION_FILENAME_REGEX = /^(\d{4}-\d{2}-\d{2})(?:-([a-zA-Z0-9_][a-zA-Z0-9_-]*))?-session\.tmp$/;
+
+/**
+ * Resolve a file's creation time, preferring birthtime but falling back to
+ * ctime when birthtime is unavailable. Some filesystems (e.g. overlayfs in
+ * containers) report birthtime as epoch 0; a Date object is always truthy, so
+ * `birthtime || ctime` would never fall back. Compare on milliseconds instead.
+ * @param {import('fs').Stats} stats
+ * @returns {Date}
+ */
+function resolveCreatedTime(stats) {
+  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
+}
 
 /**
  * Parse session filename to extract metadata

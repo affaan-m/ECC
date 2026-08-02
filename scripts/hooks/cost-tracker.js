@@ -92,6 +92,13 @@ function toNumber(v) {
  * Scan the session JSONL and sum token usage across all assistant turns.
  * Returns { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model }
  * or null on read failure.
+ *
+ * Claude Code writes one JSONL line per content block, so a single API
+ * response (one message.id) spans multiple assistant lines that each repeat
+ * the same message.usage. Summing every line inflates totals ~2.5-3x
+ * (verified: a session with 704 assistant lines had only 286 unique
+ * message.ids — $867 line-summed vs $333 deduped). Usage is therefore
+ * counted once per message.id, keeping the last line seen for each id.
  */
 function sumUsageFromTranscript(transcriptPath) {
   let content;
@@ -101,10 +108,8 @@ function sumUsageFromTranscript(transcriptPath) {
     return null;
   }
 
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheWriteTokens = 0;
-  let cacheReadTokens = 0;
+  const usageById = new Map();
+  let syntheticKey = 0;
   let model = 'unknown';
 
   for (const line of content.split('\n')) {
@@ -116,13 +121,26 @@ function sumUsageFromTranscript(transcriptPath) {
     const msg = entry.message;
     if (!msg || !msg.usage) continue;
 
-    const u = msg.usage;
+    // Lines without a message.id (older transcript shapes) keep the previous
+    // per-line behavior via a synthetic key.
+    const key = (typeof msg.id === 'string' && msg.id)
+      ? msg.id
+      : `__line_${++syntheticKey}`;
+    usageById.set(key, msg.usage);
+
+    if (msg.model && msg.model !== 'unknown') model = msg.model;
+  }
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheWriteTokens = 0;
+  let cacheReadTokens = 0;
+
+  for (const u of usageById.values()) {
     inputTokens      += toNumber(u.input_tokens);
     outputTokens     += toNumber(u.output_tokens);
     cacheWriteTokens += toNumber(u.cache_creation_input_tokens);
     cacheReadTokens  += toNumber(u.cache_read_input_tokens);
-
-    if (msg.model && msg.model !== 'unknown') model = msg.model;
   }
 
   return { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, model };

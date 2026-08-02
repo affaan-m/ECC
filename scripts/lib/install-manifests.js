@@ -4,7 +4,7 @@ const path = require('path');
 const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./install-targets/registry');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
-const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed'];
+const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi'];
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
@@ -67,6 +67,27 @@ const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
     'commands-core',
   ],
   zed: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
+  ],
+  hermes: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
+  ],
+  openclaw: [
+    'rules-core',
+    'agents-core',
+    'commands-core',
+    'platform-configs',
+    'workflow-quality',
+  ],
+  kimi: [
     'rules-core',
     'agents-core',
     'commands-core',
@@ -659,6 +680,7 @@ function resolveInstallPlan(options = {}) {
       projectRoot: targetPlanningInput.projectRoot,
       homeDir: targetPlanningInput.homeDir,
       modules: selectedModules,
+      exemptValidationCodes: options.exemptValidationCodes || [],
     })
     : null;
 
