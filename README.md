@@ -15,7 +15,8 @@
   <a href="docs/vi-VN/README.md">Tiếng Việt</a> |
   <a href="docs/th/README.md">ไทย</a> |
   <a href="docs/de-DE/README.md">Deutsch</a> |
-  <a href="docs/es/README.md">Español</a>
+  <a href="docs/es/README.md">Español</a> |
+  <a href="docs/bn/README.md">বাংলা</a>
 </p>
 
 <p align="center">
