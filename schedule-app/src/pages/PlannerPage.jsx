@@ -185,6 +185,31 @@ export default function PlannerPage() {
     setMode('day');
     setScrollNowNonce((n) => n + 1);
   };
+  // Snaps Week/Month back to the period containing today without also
+  // switching to Day view. jumpToNow used to run unconditionally from the
+  // header's date label and today button, so tapping "today" while looking
+  // at a week or month silently threw away that view for Day — the
+  // segmented control already exists to choose a view on purpose, and this
+  // was overriding it. Only Day view has an actual clock/"now" to scroll
+  // to, so there's nothing for Week/Month to do beyond moving the cursor.
+  const snapToToday = () => setCursor(todayISO());
+  const todayTapAt = useRef(0);
+  const TODAY_DOUBLE_TAP_MS = 350;
+  // Single tap snaps the current view to today; a second tap within the
+  // window on top of that additionally switches to Day view, so "take me
+  // to today, in detail" is still one quick gesture away without being the
+  // default for every tap.
+  const tapToday = () => {
+    if (mode === 'day') {
+      jumpToNow();
+      return;
+    }
+    const now = Date.now();
+    const isDoubleTap = now - todayTapAt.current < TODAY_DOUBLE_TAP_MS;
+    todayTapAt.current = isDoubleTap ? 0 : now;
+    if (isDoubleTap) jumpToNow();
+    else snapToToday();
+  };
   useEffect(() => {
     if (scrollNowNonce === 0) return;
     const id = requestAnimationFrame(() => {
@@ -705,7 +730,7 @@ export default function PlannerPage() {
           <button className="icon-btn" onClick={() => step(-1)} aria-label="Previous">
             <Chevron dir="left" />
           </button>
-          <button className="week-label" onClick={jumpToNow} title="Jump to now">
+          <button className="week-label" onClick={tapToday} title="Jump to today">
             {headerLabel}
             <span className="week-sub">{headerSub}</span>
           </button>
@@ -733,7 +758,7 @@ export default function PlannerPage() {
               Templates {!isPro && <Icon name="lock" size={14} />}
             </button>
           )}
-          <button className="today-btn" onClick={jumpToNow} aria-label="Jump to now" title="Jump to now">
+          <button className="today-btn" onClick={tapToday} aria-label="Jump to today" title="Jump to today (double-tap for Day view)">
             <TodayIcon />
           </button>
         </div>
@@ -2399,7 +2424,16 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
           {contact && (
             <div className="detail-field">
               <span className="detail-label">With</span>
-              <span className="detail-value">{contact.name}</span>
+              <button
+                type="button"
+                className="detail-value detail-value--link"
+                onClick={() => {
+                  onClose();
+                  navigate(`/contacts/${contact.id}`);
+                }}
+              >
+                {contact.name}
+              </button>
             </div>
           )}
           {(linkedGoal || linkedTask) && (

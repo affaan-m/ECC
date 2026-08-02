@@ -2443,7 +2443,19 @@ textarea {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .schedule-done-btn {
+  /* The timeline grid above this can run 1000px+ tall (a full day at 64px/hr),
+     easily taller than the sheet's visible scroll area. A plain in-flow
+     button there sat below the fold after picking a time — nothing wrong
+     had happened, but there was no visible way back to the edit form
+     without first discovering you had to scroll past the whole day. Sticky
+     keeps it reachable the moment a time is set, matching the "Done" tap
+     immediately returning you, rather than requiring a scroll hunt first. */
+  position: sticky;
+  bottom: 0;
   margin-top: 14px;
+  background: var(--surface);
+  padding-top: 10px;
+  box-shadow: 0 -8px 16px -8px rgba(0, 0, 0, 0.25);
 }
 
 /* --- Planner: month grid -------------------------------------------------- */
@@ -3090,6 +3102,17 @@ textarea {
 .detail-value {
   text-align: right;
   font-weight: 600;
+}
+.detail-value--link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.detail-value--link:active {
+  opacity: 0.6;
 }
 .link {
   color: var(--accent);
