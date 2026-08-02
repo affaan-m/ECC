@@ -16,19 +16,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); (re.search(r'\\.(md|txt)$',p) and not re.search(r'(README|CLAUDE|AGENTS|CONTRIBUTING|IMPLEMENTATION_PLAN|SKILL)\\.md$',p)) and (sys.stderr.write('[Hook] BLOCKED: Unnecessary documentation file creation\\n[Hook] File: '+p+'\\n[Hook] Use README.md for documentation instead\\n'), sys.exit(2)); print(d,end='')\""
+            "command": "command -v uv >/dev/null 2>&1 || exit 0; uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); (re.search(r'\\.(md|txt)$',p) and not re.search(r'(README|CLAUDE|AGENTS|CONTRIBUTING|IMPLEMENTATION_PLAN|SKILL)\\.md$',p)) and (sys.stderr.write('[Hook] BLOCKED: Unnecessary documentation file creation\\n[Hook] File: '+p+'\\n[Hook] Use README.md for documentation instead\\n'), sys.exit(2)); print(d,end='')\""
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "description": "Run Bun quality gate after file edits",
+        "description": "Run Bun quality gate after file edits (skipped unless the project defines the scripts)",
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "bun run lint && bun run typecheck"
+            "command": "[ -f package.json ] || exit 0; jq -e '.scripts.lint' package.json >/dev/null 2>&1 && { bun run lint || exit 1; }; jq -e '.scripts.typecheck' package.json >/dev/null 2>&1 && { bun run typecheck || exit 1; }; exit 0"
           }
         ]
       },
@@ -38,16 +38,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); cmd=i.get('tool_input',{}).get('command',''); m=re.search(r'gh pr create',cmd) and re.search(r'https://github.com/[^/]+/[^/]+/pull/\\d+',i.get('tool_output',{}).get('output','')); m and sys.stderr.write('[Hook] PR created: '+m.group()+'\\n[Hook] To review: gh pr review '+m.group().split('/')[-1]+' --repo '+'/'.join(m.group().split('/')[3:5])+'\\n'); print(d,end='')\""
+            "command": "command -v uv >/dev/null 2>&1 || exit 0; uv run python3 -c \"import sys, json, re; d=sys.stdin.read(); i=json.loads(d); cmd=i.get('tool_input',{}).get('command',''); m=re.search(r'gh pr create',cmd) and re.search(r'https://github.com/[^/]+/[^/]+/pull/\\d+',i.get('tool_output',{}).get('output','')); m and sys.stderr.write('[Hook] PR created: '+m.group()+'\\n[Hook] To review: gh pr review '+m.group().split('/')[-1]+' --repo '+'/'.join(m.group().split('/')[3:5])+'\\n'); print(d,end='')\""
           }
         ]
       },
       {
+        "description": "Lint edited Markdown (skipped unless uv and bunx are installed)",
         "matcher": "(tool == \"Edit\" || tool == \"Write\") && tool_input.file_path matches \"\\\\.md$\"",
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['bunx','markdownlint-cli2',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); r and r.stderr.strip() and sys.stderr.write(r.stderr.strip()+'\\n'); print(d,end='')\""
+            "command": "command -v uv >/dev/null 2>&1 && command -v bunx >/dev/null 2>&1 || exit 0; uv run python3 -c \"import sys, json, subprocess; d=sys.stdin.read(); i=json.loads(d); p=i.get('tool_input',{}).get('file_path',''); r=subprocess.run(['bunx','markdownlint-cli2',p],capture_output=True,text=True) if p else None; r and r.stdout.strip() and sys.stderr.write(r.stdout.strip()+'\\n'); r and r.stderr.strip() and sys.stderr.write(r.stderr.strip()+'\\n'); print(d,end='')\""
           }
         ]
       }

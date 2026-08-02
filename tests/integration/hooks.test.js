@@ -11,6 +11,10 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+// Leading toolchain guard on inline hooks, e.g.
+// `command -v uv >/dev/null 2>&1 && command -v bunx >/dev/null 2>&1 || exit 0; `
+const GUARD_PREFIX = /^command -v \S+ >\/dev\/null 2>&1 (?:&& command -v \S+ >\/dev\/null 2>&1 )*\|\| exit 0; /;
+
 // Async test helper
 async function asyncTest(name, fn) {
   try {
@@ -75,6 +79,47 @@ function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
 }
 
 /**
+ * Run a hook command verbatim through a shell, guard prefix included
+ * @param {string} command - The full hook command
+ * @param {object} input - Hook input object
+ * @param {object} env - Environment variables
+ * @returns {Promise<{code: number, stdout: string, stderr: string}>}
+ */
+function runShellHook(command, input = {}, env = {}, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    // Absolute path: callers may blank PATH to simulate a missing toolchain.
+    const proc = spawn('/bin/sh', ['-c', command], {
+      env: { ...process.env, ...env },
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+
+    proc.stdin.on('error', () => {}); // hook may exit before reading stdin
+    proc.stdin.write(JSON.stringify(input));
+    proc.stdin.end();
+
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      reject(new Error(`Hook timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    proc.on('close', code => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+
+    proc.on('error', err => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
  * Run an inline hook command (bun -e "..." or python3 -c "..." or node -e "...")
  * @param {string} command - The inline command
  * @param {object} input - Hook input object
@@ -82,13 +127,17 @@ function runHookWithInput(scriptPath, input = {}, env = {}, timeoutMs = 10000) {
  */
 function runInlineHook(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
+    // Strip any leading toolchain guard ("command -v uv ... || exit 0; ") so the
+    // payload itself is what gets exercised; the guard is covered separately.
+    const payload = command.replace(GUARD_PREFIX, '');
+
     // Parse command: "bun -e '...'", "uv run python3 -c '...'",
     // "python3 -c '...'", or "node -e '...'"
     let runner, flag, code;
-    const bunMatch = command.match(/^bun -e "(.+)"$/s);
-    const nodeMatch = command.match(/^node -e "(.+)"$/s);
-    const uvPythonMatch = command.match(/^uv run python3 -c "(.+)"$/s);
-    const pythonMatch = command.match(/^python3 -c "(.+)"$/s);
+    const bunMatch = payload.match(/^bun -e "(.+)"$/s);
+    const nodeMatch = payload.match(/^node -e "(.+)"$/s);
+    const uvPythonMatch = payload.match(/^uv run python3 -c "(.+)"$/s);
+    const pythonMatch = payload.match(/^python3 -c "(.+)"$/s);
 
     if (bunMatch) {
       // bun -e can also run as node -e for testing
@@ -289,6 +338,28 @@ async function runTests() {
       result.stderr.includes('PR created') || result.stderr.includes('github.com'),
       'Should extract and log PR URL'
     );
+  })) passed++; else failed++;
+
+  if (await asyncTest('guarded common hooks no-op when the toolchain is missing', async () => {
+    const guarded = Object.values(commonHooks.hooks)
+      .flat()
+      .flatMap(matcher => matcher.hooks)
+      .filter(hook => GUARD_PREFIX.test(hook.command));
+
+    assert.ok(guarded.length > 0, 'common/hooks.json should define guarded hooks');
+
+    for (const hook of guarded) {
+      // An empty PATH makes every `command -v` lookup fail, so the guard fires.
+      const result = await runShellHook(hook.command, {}, { PATH: '' });
+      assert.strictEqual(
+        result.code, 0,
+        `Guarded hook should exit 0 without its toolchain: ${hook.command.substring(0, 60)}`
+      );
+      assert.strictEqual(
+        result.stderr, '',
+        `Guarded hook should stay silent without its toolchain: ${hook.command.substring(0, 60)}`
+      );
+    }
   })) passed++; else failed++;
 
   // ==========================================
