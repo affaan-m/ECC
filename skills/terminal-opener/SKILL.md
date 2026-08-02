@@ -9,8 +9,10 @@ Use `scripts/open-terminal.js` to preserve an executable and every argument as
 separate process entries. Never interpolate a shell command string. Keep every
 spawn on `shell: false`. Default to a non-launching plan. Use `--launch` only
 after the user explicitly requests a real window and the argv has been reviewed.
-Remember that the target can inherit terminal environment variables; never pass
-secret-bearing values unless the requested interactive workflow requires them.
+The launched process inherits the full environment of the calling process,
+including secret-bearing variables. The launcher does not filter the
+environment. Run it from a shell whose environment is safe to expose to the
+target command.
 
 ## Launch a command
 

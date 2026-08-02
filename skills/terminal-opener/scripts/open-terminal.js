@@ -6,6 +6,8 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const DEFAULT_TERMINAL = 'wezterm';
+const SPAWN_KILL_SIGNAL = 'SIGTERM';
+const SYNC_TIMEOUT_MS = 10_000;
 const SUPPORTED_TERMINALS = new Set([DEFAULT_TERMINAL]);
 
 function usage() {
@@ -219,13 +221,16 @@ function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync) 
   try {
     result = spawnSyncImpl(plan.probe.command, plan.probe.args, {
       encoding: 'utf8',
+      killSignal: SPAWN_KILL_SIGNAL,
       shell: false,
+      timeout: SYNC_TIMEOUT_MS,
     });
   } catch (error) {
     return unavailableCapability(plan, 'probe-failed', error.message);
   }
   if (result.error) {
-    return unavailableCapability(plan, 'not-installed', result.error.message);
+    const reason = result.error.code === 'ETIMEDOUT' ? 'probe-failed' : 'not-installed';
+    return unavailableCapability(plan, reason, result.error.message);
   }
   if (result.status !== 0) {
     return unavailableCapability(
@@ -247,6 +252,7 @@ function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync) 
 
 function reportDetachedError(error) {
   process.stderr.write(`Error: ${error.message}\n`);
+  process.exitCode = 1;
 }
 
 function launchDetached(command, args, cwd, spawnImpl, onDetachedError) {
@@ -291,11 +297,19 @@ function launch(plan, dependencies = {}) {
   const muxResult = spawnSyncImpl(plan.command, plan.args, {
     cwd: plan.cwd,
     encoding: 'utf8',
+    killSignal: SPAWN_KILL_SIGNAL,
     shell: false,
+    timeout: SYNC_TIMEOUT_MS,
   });
   if (!muxResult.error && muxResult.status === 0) {
     return { strategy: 'mux', capability };
   }
+
+  const muxFailure = muxResult.error
+    ? muxResult.error.message
+    : `${plan.command} cli spawn exited with status ${muxResult.status}: ${String(
+        muxResult.stderr || ''
+      ).trim()}`;
 
   launchDetached(
     plan.fallback.command,
@@ -304,7 +318,7 @@ function launch(plan, dependencies = {}) {
     spawnImpl,
     onDetachedError
   );
-  return { strategy: 'detached-fallback', capability };
+  return { strategy: 'detached-fallback', capability, muxFailure };
 }
 
 function printJson(value) {
