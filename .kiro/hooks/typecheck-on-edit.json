@@ -1,16 +1,16 @@
 {
-  "version": "v1",
-  "hooks": [
-    {
-      "name": "typecheck-on-edit",
-      "description": "Run TypeScript type checking when TypeScript files are edited to catch type errors early.",
-      "trigger": "PostFileSave",
-      "matcher": "\\.(ts|tsx)$",
-      "action": {
-        "type": "agent",
-        "prompt": "A TypeScript file was just saved. Check for any obvious type errors or type safety issues in the modified file and flag them if found."
-      },
-      "enabled": true
-    }
-  ]
+    "version": "v1",
+    "hooks": [
+        {
+            "name": "typecheck-on-edit",
+            "description": "Run TypeScript type checking when TypeScript files are edited to catch type errors early.",
+            "trigger": "PostFileSave",
+            "matcher": "\\.(ts|tsx)$",
+            "action": {
+                "type": "agent",
+                "prompt": "A TypeScript file was just saved. Check for any obvious type errors or type safety issues in the modified file and flag them if found."
+            },
+            "enabled": false
+        }
+    ]
 }

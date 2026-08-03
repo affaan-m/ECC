@@ -1,16 +1,16 @@
 {
-  "version": "v1",
-  "hooks": [
-    {
-      "name": "python-lint-on-edit",
-      "description": "Check Python files for type errors and style issues when edited.",
-      "trigger": "PostFileSave",
-      "matcher": "\\.py$",
-      "action": {
-        "type": "agent",
-        "prompt": "A Python file was just saved. Check for any obvious type errors, PEP 8 violations, or common anti-patterns in the modified file and flag them if found."
-      },
-      "enabled": true
-    }
-  ]
+    "version": "v1",
+    "hooks": [
+        {
+            "name": "python-lint-on-edit",
+            "description": "Check Python files for type errors and style issues when edited.",
+            "trigger": "PostFileSave",
+            "matcher": "\\.py$",
+            "action": {
+                "type": "agent",
+                "prompt": "A Python file was just saved. Check for any obvious type errors, PEP 8 violations, or common anti-patterns in the modified file and flag them if found."
+            },
+            "enabled": false
+        }
+    ]
 }

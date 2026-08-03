@@ -1,16 +1,16 @@
 {
-  "version": "v1",
-  "hooks": [
-    {
-      "name": "rust-check-on-edit",
-      "description": "Prompts the agent to check for compilation errors, ownership issues, or lifetime problems when Rust files are edited.",
-      "trigger": "PostFileSave",
-      "matcher": "\\.rs$",
-      "action": {
-        "type": "agent",
-        "prompt": "A Rust file was just saved. Check for any obvious compilation errors, ownership issues, or lifetime problems in the modified file and flag them if found."
-      },
-      "enabled": true
-    }
-  ]
+    "version": "v1",
+    "hooks": [
+        {
+            "name": "rust-check-on-edit",
+            "description": "Prompts the agent to check for compilation errors, ownership issues, or lifetime problems when Rust files are edited.",
+            "trigger": "PostFileSave",
+            "matcher": "\\.rs$",
+            "action": {
+                "type": "agent",
+                "prompt": "A Rust file was just saved. Check for any obvious compilation errors, ownership issues, or lifetime problems in the modified file and flag them if found."
+            },
+            "enabled": false
+        }
+    ]
 }

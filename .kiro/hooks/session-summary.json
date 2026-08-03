@@ -1,15 +1,15 @@
 {
-  "version": "v1",
-  "hooks": [
-    {
-      "name": "session-summary",
-      "description": "Generate a brief summary of what was accomplished after agent execution completes",
-      "trigger": "Stop",
-      "action": {
-        "type": "agent",
-        "prompt": "Provide a brief 2-3 sentence summary of what was accomplished in this conversation. Focus on concrete outcomes: files created/modified, problems solved, decisions made. Keep it concise and actionable."
-      },
-      "enabled": true
-    }
-  ]
+    "version": "v1",
+    "hooks": [
+        {
+            "name": "session-summary",
+            "description": "Generate a brief summary of what was accomplished after agent execution completes",
+            "trigger": "Stop",
+            "action": {
+                "type": "agent",
+                "prompt": "Provide a brief 2-3 sentence summary of what was accomplished in this conversation. Focus on concrete outcomes: files created/modified, problems solved, decisions made. Keep it concise and actionable."
+            },
+            "enabled": false
+        }
+    ]
 }
