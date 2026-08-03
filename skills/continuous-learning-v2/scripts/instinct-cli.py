@@ -1184,8 +1184,8 @@ def _cluster_by_keyword_overlap(instincts: list) -> dict:
 
     Triggers are free-form sentences, so grouping on the whole normalized
     string puts every instinct in its own bucket and no skill or agent
-    candidate is ever produced. Greedy Jaccard clustering over keywords
-    groups the near-duplicate instincts that accumulate in a project.
+    candidate is ever produced. Greedy clustering on keyword overlap groups
+    the near-duplicate instincts that accumulate in a project.
     """
     clusters = []  # [(shared_keywords, [instincts])]
 
