@@ -1,0 +1,22 @@
+name: AgentShield Security Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  agentshield:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AgentShield Security Scan
+        uses: affaan-m/agentshield@v1
+        with:
+          path: "."
+          min-severity: "medium"
+          fail-on-findings: "true"
