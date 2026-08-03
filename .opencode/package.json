@@ -56,15 +56,14 @@
   "publishConfig": {
     "access": "public"
   },
-  "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.0.0"
-  },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.4.3",
     "@types/node": "^20.0.0",
     "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.17.15"
   }
 }
