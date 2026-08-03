@@ -150,18 +150,103 @@ function detectGitCommand(input) {
 }
 
 /**
- * Check if the input contains a --no-verify flag for a specific git command.
+ * Flags whose FOLLOWING token git consumes as a value rather than a flag.
+ *
+ * Only options whose value is mandatory belong here. An optional-value option
+ * such as -S or -u does not swallow the next token, so listing one would let
+ * `git commit -S -n` slip through.
+ */
+const VALUE_TAKING_FLAGS = new Set([
+  '-m', '--message',
+  '-F', '--file',
+  '-c', '--reedit-message',
+  '-C', '--reuse-message',
+  '-t', '--template',
+  '--author',
+  '--date',
+  '--cleanup',
+  '--trailer',
+  '--fixup',
+  '--squash',
+  '--pathspec-from-file',
+]);
+
+/**
+ * Split a command string into shell-like tokens.
+ *
+ * Quote-aware by design: without it, text inside a quoted argument cannot be
+ * told apart from a real flag, so `git commit -m "head -n 5"` — a message that
+ * merely mentions a flag — was blocked as if the flag had been passed. Quoted
+ * spans collapse into one token, exactly as the shell hands them to git.
+ *
+ * Each token carries a `segment` index that increments at every unquoted shell
+ * operator, letting callers tell git's own arguments (segment 0) from a later
+ * command's in a pipe or chain.
+ */
+function tokenizeCommand(input) {
+  const tokens = [];
+  let current = '';
+  let started = false;
+  let quote = null;
+  let segment = 0;
+
+  const flush = () => {
+    if (started) {
+      tokens.push({ value: current, segment });
+      current = '';
+      started = false;
+    }
+  };
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (quote) {
+      if (quote === '"' && ch === '\\' && i + 1 < input.length) { current += input[++i]; continue; }
+      if (ch === quote) { quote = null; continue; }
+      current += ch;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") { quote = ch; started = true; continue; }
+    if (ch === '\\' && i + 1 < input.length) { current += input[++i]; started = true; continue; }
+    if (/\s/.test(ch)) { flush(); continue; }
+    if (ch === '|' || ch === ';' || ch === '&' || ch === '>' || ch === '<') { flush(); segment++; continue; }
+
+    current += ch;
+    started = true;
+  }
+
+  flush();
+  return tokens;
+}
+
+/**
+ * Check if a bypass flag is passed to a specific git command.
  * Only inspects the portion of the input starting at `offset` (the position
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
 function hasNoVerifyFlag(input, command, offset) {
-  const region = input.slice(offset);
-  if (/--no-verify\b/.test(region)) return true;
+  const tokens = tokenizeCommand(input.slice(offset));
+  let expectValue = false;
 
-  // For commit, -n is shorthand for --no-verify
-  if (command === 'commit') {
-    if (/\s-n(?:\s|$)/.test(region) || /\s-n[a-zA-Z]/.test(region)) return true;
+  for (const { value, segment } of tokens) {
+    // A value token is data, never a flag — `-m "--no-verify"` is a message.
+    if (expectValue) { expectValue = false; continue; }
+    if (VALUE_TAKING_FLAGS.has(value)) { expectValue = true; continue; }
+
+    // Long form is unambiguous wherever it lands, including later in a chain
+    // (`git commit -m x && git push --no-verify`), so it is not scoped. Quoting
+    // does not exempt it: `git commit "--no-verify"` still reaches git as a flag.
+    if (value === '--no-verify') return true;
+
+    // For commit, -n is shorthand for --no-verify. Unlike the long form, -n is a
+    // common flag on other tools, so it only counts inside git's own argument
+    // list. Without that scope an innocent `git commit -m x | head -n 5` reads
+    // head's -n as git's; `tail -n`, `grep -n` and `sort -n` hit the same trap.
+    // Short flags cluster, so -an carries -n too.
+    if (command === 'commit' && segment === 0 && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(value)) return true;
   }
 
   return false;
@@ -169,9 +254,23 @@ function hasNoVerifyFlag(input, command, offset) {
 
 /**
  * Check if the input contains a -c core.hooksPath= override.
+ * Token-based for the same reason as above: a commit message that quotes the
+ * setting is not an attempt to override it.
  */
 function hasHooksPathOverride(input) {
-  return /-c\s+["']?core\.hooksPath\s*=/.test(input);
+  const tokens = tokenizeCommand(input);
+
+  for (let i = 0; i < tokens.length; i++) {
+    const { value } = tokens[i];
+    if (/^core\.hooksPath\s*=/.test(value)) {
+      if (i > 0 && tokens[i - 1].value === '-c') return true;
+      continue;
+    }
+    // Attached form: -ccore.hooksPath=...
+    if (/^-c["']?core\.hooksPath\s*=/.test(value)) return true;
+  }
+
+  return false;
 }
 
 /**

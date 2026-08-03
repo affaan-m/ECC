@@ -89,6 +89,61 @@ if (test('still blocks --no-verify on the git commit part of a chain', () => {
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
+// --- Downstream -n belongs to another tool, not to git commit ---
+
+if (test('does not false-positive on head -n after a piped git commit', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "msg" | head -n 5' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('does not false-positive on tail -n later in a chain', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "msg" && git log --oneline -1 | tail -n 4' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('does not false-positive on grep -n after git commit', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "msg" && grep -n TODO src/app.js' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks a genuine -n on git commit before a pipe', () => {
+  const r = runHook({ tool_input: { command: 'git commit -n -m "msg" | head -n 5' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// --- Quoted text is data, not flags ---
+
+if (test('allows a commit message that merely mentions a short flag', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "example: head -n 5"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows a commit message that merely mentions the long flag', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "never pass --no-verify"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows a commit message that mentions core.hooksPath', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "do not use -c core.hooksPath=/dev/null"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted long flag, since git still receives it', () => {
+  const r = runHook({ tool_input: { command: 'git commit "--no-verify" -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a clustered short flag carrying n', () => {
+  const r = runHook({ tool_input: { command: 'git commit -an -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('does not let an optional-value flag swallow the bypass', () => {
+  // -S takes an OPTIONAL value, so git does not consume -n as its argument
+  const r = runHook({ tool_input: { command: 'git commit -S -n -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 // --- Subcommand detection (Comment 4) ---
 
 if (test('does not misclassify "commit" as subcommand when it is an argument to push', () => {
