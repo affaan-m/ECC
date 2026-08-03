@@ -1145,6 +1145,82 @@ def cmd_export(args) -> int:
 # Evolve Command
 # ─────────────────────────────────────────────
 
+# Words carrying no topical signal in a trigger sentence.
+TRIGGER_STOP_WORDS = {
+    'when', 'while', 'the', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with',
+    'that', 'this', 'from', 'into', 'at', 'by', 'as', 'is', 'are', 'be', 'it',
+    'its', 'they', 'them', 'their', 'you', 'your', 'new', 'any', 'all', 'about',
+    'after', 'before', 'over', 'via', 'use', 'using', 'need', 'needs', 'not',
+}
+
+# Overlap coefficient (shared / smaller set) two triggers need to cluster.
+# Jaccard is the wrong metric here: trigger keyword sets average ~7 words, so
+# even clearly-related pairs top out near 0.33 and nothing ever groups.
+TRIGGER_SIMILARITY_THRESHOLD = 0.5
+
+# Guard against one incidental shared word pulling unrelated instincts together.
+TRIGGER_MIN_SHARED_KEYWORDS = 2
+
+
+def _evolved_command_name(trigger: str) -> str:
+    """Slug used for a generated command file. Shared by preview and writer."""
+    stripped = str(trigger or 'unknown').lower().replace('when ', '').replace('implementing ', '')
+    return re.sub(r'[^a-z0-9]+', '-', stripped).strip('-')[:20]
+
+
+def _evolved_agent_name(trigger: str) -> str:
+    """Slug used for a generated agent file. Shared by preview and writer."""
+    return re.sub(r'[^a-z0-9]+', '-', str(trigger or '').lower()).strip('-')[:20]
+
+
+def _trigger_keywords(trigger: str) -> set:
+    """Reduce a trigger sentence to the words that carry its topic."""
+    words = re.findall(r'[a-z0-9]+', str(trigger or '').lower())
+    return {w for w in words if len(w) > 2 and w not in TRIGGER_STOP_WORDS}
+
+
+def _cluster_by_keyword_overlap(instincts: list) -> dict:
+    """Group instincts whose triggers share enough keywords.
+
+    Triggers are free-form sentences, so grouping on the whole normalized
+    string puts every instinct in its own bucket and no skill or agent
+    candidate is ever produced. Greedy Jaccard clustering over keywords
+    groups the near-duplicate instincts that accumulate in a project.
+    """
+    clusters = []  # [(shared_keywords, [instincts])]
+
+    for inst in instincts:
+        keywords = _trigger_keywords(inst.get('trigger', ''))
+        if not keywords:
+            continue
+
+        best_index, best_score, best_shared = -1, 0.0, 0
+        for index, (cluster_keywords, _members) in enumerate(clusters):
+            shared = len(keywords & cluster_keywords)
+            smaller = min(len(keywords), len(cluster_keywords))
+            score = shared / smaller if smaller else 0.0
+            if score > best_score:
+                best_index, best_score, best_shared = index, score, shared
+
+        if (best_index >= 0
+                and best_score >= TRIGGER_SIMILARITY_THRESHOLD
+                and best_shared >= TRIGGER_MIN_SHARED_KEYWORDS):
+            cluster_keywords, members = clusters[best_index]
+            members.append(inst)
+            # Keep the shared core so a cluster stays on one topic.
+            clusters[best_index] = (cluster_keywords & keywords, members)
+        else:
+            clusters.append((keywords, [inst]))
+
+    grouped = {}
+    for cluster_keywords, members in clusters:
+        label = ' '.join(sorted(cluster_keywords)[:4]) or 'general'
+        while label in grouped:
+            label += ' +'
+        grouped[label] = members
+    return grouped
+
+
 def cmd_evolve(args) -> int:
     """Analyze instincts and suggest evolutions to skills/commands/agents."""
     project = detect_project()
@@ -1175,14 +1251,7 @@ def cmd_evolve(args) -> int:
     print(f"High confidence instincts (>=80%): {len(high_conf)}")
 
     # Find clusters (instincts with similar triggers)
-    trigger_clusters = defaultdict(list)
-    for inst in instincts:
-        trigger = inst.get('trigger', '')
-        # Normalize trigger
-        trigger_key = trigger.lower()
-        for keyword in ['when', 'creating', 'writing', 'adding', 'implementing', 'testing']:
-            trigger_key = trigger_key.replace(keyword, '').strip()
-        trigger_clusters[trigger_key].append(inst)
+    trigger_clusters = _cluster_by_keyword_overlap(instincts)
 
     # Find clusters with 2+ instincts (good skill candidates)
     skill_candidates = []
@@ -1222,8 +1291,9 @@ def cmd_evolve(args) -> int:
         print(f"\n## COMMAND CANDIDATES ({len(workflow_instincts)})\n")
         for inst in workflow_instincts[:5]:
             trigger = inst.get('trigger', 'unknown')
-            cmd_name = trigger.replace('when ', '').replace('implementing ', '').replace('a ', '')
-            cmd_name = cmd_name.replace(' ', '-')[:20]
+            # Must match _generate_evolved() exactly, or the preview advertises
+            # names that differ from the files --generate actually writes.
+            cmd_name = _evolved_command_name(trigger)
             print(f"  /{cmd_name}")
             print(f"    From: {inst.get('id')} [{inst.get('scope', '?')}]")
             print(f"    Confidence: {inst.get('confidence', 0.5):.0%}")
@@ -1234,7 +1304,7 @@ def cmd_evolve(args) -> int:
     if agent_candidates:
         print(f"\n## AGENT CANDIDATES ({len(agent_candidates)})\n")
         for cand in agent_candidates[:3]:
-            agent_name = cand['trigger'].replace(' ', '-')[:20] + '-agent'
+            agent_name = _evolved_agent_name(cand['trigger'])
             print(f"  {agent_name}")
             print(f"    Covers {len(cand['instincts'])} instincts")
             print(f"    Avg confidence: {cand['avg_confidence']:.0%}")
@@ -1804,8 +1874,7 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
     # Generate commands from workflow instincts
     for inst in workflow_instincts[:5]:
         trigger = inst.get('trigger', 'unknown')
-        cmd_name = re.sub(r'[^a-z0-9]+', '-', trigger.lower().replace('when ', '').replace('implementing ', ''))
-        cmd_name = cmd_name.strip('-')[:20]
+        cmd_name = _evolved_command_name(trigger)
         if not cmd_name:
             continue
 
@@ -1821,7 +1890,7 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
     # Generate agents from complex clusters
     for cand in agent_candidates[:3]:
         trigger = cand['trigger'].strip()
-        agent_name = re.sub(r'[^a-z0-9]+', '-', trigger.lower()).strip('-')[:20]
+        agent_name = _evolved_agent_name(trigger)
         if not agent_name:
             continue
 
