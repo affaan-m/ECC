@@ -269,7 +269,7 @@ When decomposing:
 ```
 Epic: <title> [<status>]
   ✓ <story-id> <title>            ← done
-  ▶ <story-id> <title>            ← review
+  » <story-id> <title>            ← review
   → <story-id> <title>            ← in-progress
   · <story-id> <title>            ← todo
 ```
