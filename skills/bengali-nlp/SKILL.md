@@ -287,7 +287,7 @@ def prepare_bangla_dataset(texts: list[str]) -> list[str]:
         # Normalize Unicode
         text = unicodedata.normalize("NFC", text)
         # Remove unwanted zero-width characters but preserve ZWNJ/ZWJ (important for conjuncts)
-        text = re.sub(r'[\u200b\u200e\u200f\u2028-\u202f\ufeff]', '', text)
+        text = re.sub(r'[\u200b\ufeff]', '', text)
         # Normalize whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         if text:
@@ -305,7 +305,8 @@ CREATE TABLE bengali_content (
   body TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 );
 
--- PostgreSQL: UTF-8 is the default. Verify ICU collation availability first:
+-- PostgreSQL: Verify UTF-8 encoding and ICU collation availability:
+-- SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = current_database();
 -- SELECT collname FROM pg_collation WHERE collname LIKE 'bn%';
 -- If missing, create it (requires ICU-enabled PostgreSQL build):
 -- CREATE COLLATION IF NOT EXISTS "bn-BD-x-icu" (provider = icu, locale = 'bn-BD');
@@ -370,5 +371,5 @@ title = "বাংলা ভাষা"
 text = scraped_html.get_text()
 
 # GOOD — strip unwanted zero-width chars, preserving ZWNJ (U+200C) and ZWJ (U+200D)
-text = re.sub(r'[\u200b\u200e\u200f\u2028-\u202f\ufeff]', '', scraped_html.get_text())
+text = re.sub(r'[\u200b\ufeff]', '', scraped_html.get_text())
 ```
