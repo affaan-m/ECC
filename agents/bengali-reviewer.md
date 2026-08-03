@@ -1,7 +1,7 @@
 ---
 name: bengali-reviewer
 description: Reviews code handling Bengali (Bangla) text for Unicode correctness, proper normalization, script-aware processing, and internationalization best practices. Use when code processes, displays, or stores Bengali text.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: sonnet
 ---
 
@@ -24,7 +24,7 @@ When invoked:
 2. **Check Unicode correctness** — Verify NFC normalization, correct handling of conjunct consonants (যুক্তবর্ণ), vowel signs (কার), and Hasanta (্).
 3. **Validate text processing** — Check tokenization, search, sort, and comparison operations for Bengali-awareness.
 4. **Review rendering and display** — Ensure proper font support, line breaking, and input handling for Bengali script.
-5. **Check data layer** — Verify database columns use UTF-8/UTF-8MB4, API responses include proper charset headers, and file I/O specifies encoding.
+5. **Check data layer** — Verify database columns use Unicode-capable encoding (utf8mb4 for MySQL, UTF-8 for PostgreSQL/SQLite), API responses include proper charset headers (`charset=utf-8`), and file I/O specifies encoding.
 6. **Report findings** — Use the output format below. Only report issues you are confident about (>80% sure it is a real problem).
 
 ## Confidence-Based Filtering
@@ -91,7 +91,9 @@ zero rows and verdict `APPROVE`.
 - **Missing NFC normalization before storage** — Bengali text stored without
   normalization will cause duplicate records and failed lookups.
 - **Non-Unicode database encoding** — MySQL columns using `latin1` or `ascii`
-  charset for Bengali text will silently corrupt or truncate data.
+  charset instead of `utf8mb4` for Bengali text will silently corrupt or
+  truncate data. For PostgreSQL, verify UTF-8 database encoding. For SQLite,
+  ensure text is handled as UTF-8.
 - **File I/O without encoding** — Reading/writing Bengali text files without
   explicit UTF-8 encoding on platforms where the default is not UTF-8.
 
@@ -130,9 +132,11 @@ if re.match(r'^[a-zA-Z\u0980-\u09FF]+$', name):
 
 ### MEDIUM — Quality Issues
 
-- **Zero-width characters not stripped** — Web-scraped Bengali text often contains
-  ZWNJ (U+200C), ZWJ (U+200D), and other invisible characters that cause
-  matching failures if not cleaned.
+- **Unwanted zero-width characters** — Web-scraped Bengali text often contains
+  invisible characters like ZWSP (U+200B) and BOM (U+FEFF) that cause matching
+  failures. Note: preserve ZWNJ (U+200C) and ZWJ (U+200D) by default as they
+  are orthographically significant for Bengali conjuncts — only remove them when
+  an explicit input policy identifies the sequence as invalid.
 - **Hardcoded strings** — Bengali UI text embedded in source code instead of
   i18n resource files.
 - **Missing locale in formatting** — Dates, numbers, and currencies displayed
@@ -167,20 +171,24 @@ Fix: Use grapheme cluster segmentation via `regex.findall(r"\X", text)` or
 
 ### Summary Format
 
-End every review with:
+End every review with a summary table. Calculate each severity count from your
+actual findings and derive the verdict accordingly. Example format:
 
 ```
 ## Bengali Text Review Summary
 
 | Severity | Count | Status |
 |----------|-------|--------|
-| CRITICAL | 0     | pass   |
-| HIGH     | 2     | warn   |
-| MEDIUM   | 1     | info   |
-| LOW      | 1     | note   |
+| CRITICAL | <n>   | pass/fail |
+| HIGH     | <n>   | pass/warn |
+| MEDIUM   | <n>   | pass/info |
+| LOW      | <n>   | pass/note |
 
-Verdict: WARNING — 2 HIGH issues should be resolved before merge.
+Verdict: APPROVE / WARNING / BLOCK — <reasoning based on actual findings>
 ```
+
+A clean review with zero findings across all severities is valid — use
+verdict `APPROVE` with status `pass` for all rows.
 
 ## Approval Criteria
 

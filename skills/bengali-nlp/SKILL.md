@@ -27,8 +27,8 @@ Bengali script occupies U+0980–U+09FF. Key character classes:
 
 ```
 U+0981–U+0983  Chandrabindu, Anusvara, Visarga
-U+0985–U+0990  Independent vowels (অ আ ই ঈ উ ঊ ঋ এ ঐ)
-U+0993–U+09B0  Consonants (ও–র)
+U+0985–U+0994  Independent vowels (অ আ ই ঈ উ ঊ ঋ ঌ এ ঐ ও ঔ)
+U+0995–U+09B0  Consonants (ক–র)
 U+09B2         ল
 U+09B6–U+09B9  শ ষ স হ
 U+09BC         Nukta
@@ -195,23 +195,20 @@ BANGLA_STOP_WORDS = {
 Bengali has a defined sort order (স্বরবর্ণ before ব্যঞ্জনবর্ণ). Use locale-aware sorting:
 
 ```python
-import locale
-
-# Set Bengali locale if available
+# Preferred: use PyICU for reliable Bengali collation (pip install PyICU)
 try:
-    locale.setlocale(locale.LC_COLLATE, "bn_BD.UTF-8")
-    sorted_words = sorted(words, key=locale.strxfrm)
-except locale.Error:
-    # Fallback: use ICU via PyICU
     import icu
     collator = icu.Collator.createInstance(icu.Locale("bn_BD"))
     sorted_words = sorted(words, key=collator.getSortKey)
+except ImportError:
+    # Fallback: Unicode code point order (not linguistically perfect)
+    sorted_words = sorted(words)
 ```
 
 ```javascript
 // JavaScript — Intl.Collator handles Bengali sort order
 const collator = new Intl.Collator('bn-BD');
-words.sort(collator.compare);
+const sortedWords = [...words].sort(collator.compare);
 ```
 
 ### Search with Normalization
@@ -232,6 +229,11 @@ def bangla_search(query: str, corpus: list[str]) -> list[str]:
 
 ### Prompt Engineering for Bengali
 
+**Important:** Bengali text, Banglish input, and web-scraped content should be
+treated as untrusted user data. Always separate system instructions from
+user-provided content with clear delimiters, and validate before executing
+tool calls or destructive actions.
+
 ```python
 # Use Bengali system prompts for Bengali-targeted apps
 system_prompt = (
@@ -245,6 +247,13 @@ system_prompt_mixed = (
     "respond in Bengali. When they write in English, respond in English. "
     "For technical terms, you may use English words within Bengali sentences."
 )
+
+# Always delimit user-provided content
+def build_prompt(system: str, user_input: str) -> str:
+    return f"{system}
+---USER INPUT---
+{user_input}
+---END INPUT---"
 ```
 
 ### Handling Banglish (Mixed Bengali-English)
@@ -277,8 +286,8 @@ def prepare_bangla_dataset(texts: list[str]) -> list[str]:
     for text in texts:
         # Normalize Unicode
         text = unicodedata.normalize("NFC", text)
-        # Remove zero-width characters (common in web-scraped Bengali)
-        text = re.sub(r'[\u200b-\u200f\u2028-\u202f\ufeff]', '', text)
+        # Remove unwanted zero-width characters but preserve ZWNJ/ZWJ (important for conjuncts)
+        text = re.sub(r'[\u200b\u200e\u200f\u2028-\u202f\ufeff]', '', text)
         # Normalize whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         if text:
@@ -296,7 +305,10 @@ CREATE TABLE bengali_content (
   body TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 );
 
--- PostgreSQL: UTF-8 is the default, but set collation for sorting
+-- PostgreSQL: UTF-8 is the default. Verify ICU collation availability first:
+-- SELECT collname FROM pg_collation WHERE collname LIKE 'bn%';
+-- If missing, create it (requires ICU-enabled PostgreSQL build):
+-- CREATE COLLATION IF NOT EXISTS "bn-BD-x-icu" (provider = icu, locale = 'bn-BD');
 CREATE TABLE bengali_content (
   id SERIAL PRIMARY KEY,
   title TEXT COLLATE "bn-BD-x-icu",
@@ -338,7 +350,7 @@ if text.isdigit(): ...
 
 # GOOD — handles both
 import re
-if re.match(r'^[\d০-৯]+$', text): ...
+if re.fullmatch(r'[0-9০-৯]+', text): ...
 ```
 
 ### Don't: Use ASCII Transliteration When Unicode Is Available
@@ -357,6 +369,6 @@ title = "বাংলা ভাষা"
 # BAD — invisible characters cause matching failures
 text = scraped_html.get_text()
 
-# GOOD — strip zero-width characters after extraction
-text = re.sub(r'[\u200b-\u200f\u2028-\u202f\ufeff]', '', scraped_html.get_text())
+# GOOD — strip unwanted zero-width chars, preserving ZWNJ (U+200C) and ZWJ (U+200D)
+text = re.sub(r'[\u200b\u200e\u200f\u2028-\u202f\ufeff]', '', scraped_html.get_text())
 ```
