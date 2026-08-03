@@ -146,6 +146,44 @@ function runReview(prompt, options, dependencies = {}) {
   }
 }
 
+function runStdinReview(options, dependencies = {}) {
+  const stdin = dependencies.stdin || process.stdin;
+  const stdout = dependencies.stdout || process.stdout;
+  const stderr = dependencies.stderr || process.stderr;
+  const review = dependencies.runReview || runReview;
+  const setExitCode = dependencies.setExitCode || ((code) => { process.exitCode = code; });
+  const chunks = [];
+  let promptBytes = 0;
+  let promptOverflow = false;
+  stdin.setEncoding('utf8');
+  stdin.on('data', (chunk) => {
+    if (promptOverflow) return;
+    promptBytes += Buffer.byteLength(chunk, 'utf8');
+    if (promptBytes > MAX_PROMPT_BYTES) {
+      promptOverflow = true;
+      chunks.length = 0;
+      return;
+    }
+    chunks.push(chunk);
+  });
+  stdin.on('end', () => {
+    if (promptOverflow) {
+      stderr.write(
+        `external review absent: review packet exceeds ${MAX_PROMPT_BYTES} bytes\n`
+      );
+      setExitCode(1);
+      return;
+    }
+    try {
+      stdout.write(`${review(chunks.join(''), options)}\n`);
+    } catch (error) {
+      stderr.write(`external review absent: ${error.message}\n`);
+      setExitCode(1);
+    }
+  });
+  return 0;
+}
+
 function main() {
   let options;
   try {
@@ -160,36 +198,7 @@ function main() {
     return 0;
   }
 
-  const chunks = [];
-  let promptBytes = 0;
-  let promptOverflow = false;
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    if (promptOverflow) return;
-    promptBytes += Buffer.byteLength(chunk, 'utf8');
-    if (promptBytes > MAX_PROMPT_BYTES) {
-      promptOverflow = true;
-      chunks.length = 0;
-      return;
-    }
-    chunks.push(chunk);
-  });
-  process.stdin.on('end', () => {
-    if (promptOverflow) {
-      process.stderr.write(
-        `external review absent: review packet exceeds ${MAX_PROMPT_BYTES} bytes\n`
-      );
-      process.exitCode = 1;
-      return;
-    }
-    try {
-      process.stdout.write(`${runReview(chunks.join(''), options)}\n`);
-    } catch (error) {
-      process.stderr.write(`external review absent: ${error.message}\n`);
-      process.exitCode = 1;
-    }
-  });
-  return 0;
+  return runStdinReview(options);
 }
 
 if (require.main === module) {
@@ -202,5 +211,6 @@ module.exports = {
   buildEnvironment,
   parseArgs,
   providerLabel,
+  runStdinReview,
   runReview,
 };

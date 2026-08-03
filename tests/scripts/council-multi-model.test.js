@@ -16,8 +16,20 @@ const {
   buildEnvironment,
   parseArgs,
   providerLabel,
+  runStdinReview,
   runReview,
 } = require(ADAPTER);
+
+function immediateStdin(chunks) {
+  return {
+    setEncoding() {},
+    on(event, handler) {
+      if (event === 'data') chunks.forEach((chunk) => handler(chunk));
+      if (event === 'end') handler();
+      return this;
+    },
+  };
+}
 
 function test(name, fn) {
   try {
@@ -131,12 +143,58 @@ function runTests() {
     }), /exceeds/);
   })) passed += 1; else failed += 1;
 
+  if (test('handles stdin overflow, success output, and review failures directly', () => {
+    const options = { consent: true, hostProvider: 'anthropic', timeoutMs: 20_000 };
+
+    let stdout = '';
+    let stderr = '';
+    let exitCode;
+    runStdinReview(options, {
+      stdin: immediateStdin(['review this draft']),
+      stdout: { write: (text) => { stdout += text; } },
+      stderr: { write: (text) => { stderr += text; } },
+      runReview: () => 'cross-provider external critique\ncritical fault',
+      setExitCode: (code) => { exitCode = code; },
+    });
+    assert.strictEqual(stdout, 'cross-provider external critique\ncritical fault\n');
+    assert.strictEqual(stderr, '');
+    assert.strictEqual(exitCode, undefined);
+
+    stdout = '';
+    stderr = '';
+    exitCode = undefined;
+    runStdinReview(options, {
+      stdin: immediateStdin(['x'.repeat(MAX_PROMPT_BYTES + 1)]),
+      stdout: { write: (text) => { stdout += text; } },
+      stderr: { write: (text) => { stderr += text; } },
+      runReview: () => { throw new Error('must not run'); },
+      setExitCode: (code) => { exitCode = code; },
+    });
+    assert.strictEqual(stdout, '');
+    assert.match(stderr, /review packet exceeds/);
+    assert.strictEqual(exitCode, 1);
+
+    stderr = '';
+    exitCode = undefined;
+    runStdinReview(options, {
+      stdin: immediateStdin(['review this draft']),
+      stdout: { write: () => {} },
+      stderr: { write: (text) => { stderr += text; } },
+      runReview: () => { throw new Error('authentication failed'); },
+      setExitCode: (code) => { exitCode = code; },
+    });
+    assert.match(stderr, /external review absent: authentication failed/);
+    assert.strictEqual(exitCode, 1);
+  })) passed += 1; else failed += 1;
+
   if (test('documents one post-draft node, consent, honest labels, and fail-closed absence', () => {
     const skill = fs.readFileSync(path.join(SKILL_ROOT, 'SKILL.md'), 'utf8');
     assert.match(skill, /adds only one optional\s+post-draft node/);
     assert.match(skill, /explicitly agrees to send that packet to OpenAI/);
     assert.match(skill, /same-provider external critique/);
     assert.match(skill, /external review absent/);
+    assert.match(skill, /SKILL_DIR="<native-skill-dir>"/);
+    assert.doesNotMatch(skill, /COUNCIL_MULTI_MODEL_SKILL_DIR/);
     assert.doesNotMatch(skill, /^## Entry B|openai-codex SDK|mcp__codex/m);
   })) passed += 1; else failed += 1;
 

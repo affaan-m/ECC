@@ -86,10 +86,12 @@ contents. Continue only after an explicit yes for this review packet.
 
 ### 4. Run the bounded adapter
 
-Resolve this skill through the active harness's native skill location, then pipe
-the packet over stdin:
+Resolve this skill through the active harness's native skill location. Before
+running the command, replace `<native-skill-dir>` with the exact directory that
+contains this `SKILL.md`, then pipe the packet over stdin:
 
 ```bash
+SKILL_DIR="<native-skill-dir>"
 node "$SKILL_DIR/scripts/review-with-codex.js" \
   --consent-to-openai \
   --host-provider anthropic < "$PROMPT_FILE"
