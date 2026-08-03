@@ -5,7 +5,12 @@ const path = require('path');
 
 const { writeInstallState } = require('../install-state');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
-const { buildInstallIndex, isNamespacedSource, rewriteRelativeLinks } = require('./link-rewrite');
+const {
+  assertSafeClaudeSkillOperation,
+  prepareClaudeSkillMigration,
+  removeLegacyClaudeSkillFiles,
+} = require('./claude-skill-migration');
+const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
 
 function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
@@ -139,13 +144,49 @@ function buildResolvedClaudeHooks(plan) {
   };
 }
 
-function applyInstallPlan(plan) {
-  const resolvedClaudeHooksPlan = buildResolvedClaudeHooks(plan);
-  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
-  const linkIndex = buildLinkIndexForPlan(plan);
+function previewInstallPlan(plan) {
+  const migration = prepareClaudeSkillMigration(plan);
+  return {
+    ...plan,
+    statePreview: migration.finalState,
+    plannedOperations: [...plan.operations],
+    operations: migration.appliedOperations,
+    skippedOperations: migration.skippedOperations,
+    warnings: [
+      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+      ...migration.warnings,
+    ],
+    applied: false,
+  };
+}
 
-  for (const operation of plan.operations) {
+function applyInstallPlan(plan, dependencies = {}) {
+  const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const migration = prepareClaudeSkillMigration(plan);
+  const appliedPlan = {
+    ...plan,
+    operations: migration.appliedOperations,
+  };
+  const resolvedClaudeHooksPlan = buildResolvedClaudeHooks(appliedPlan);
+  const disabledServers = parseDisabledMcpServers(process.env.ECC_DISABLED_MCPS);
+  const linkIndex = buildLinkIndexForPlan(appliedPlan);
+  const hasLegacyMigration = migration.legacyOperationsToRemove.length > 0;
+
+  if (migration.requiresBridgeState) {
+    // Own every operation that may be written during a flat-skill migration
+    // before the first copy. A later failure is retryable and uninstall can
+    // clean the entire partial install, including non-skill files. During
+    // legacy migration the bridge also retains the prior managed operations.
+    persistInstallState(plan.installStatePath, migration.bridgeState);
+  }
+
+  for (const operation of appliedPlan.operations) {
+    assertSafeClaudeSkillOperation(appliedPlan, operation);
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
+    // Recheck directories that were absent during the first validation. This
+    // narrows the symlink-swap window around mkdirSync, but path checks cannot
+    // eliminate a later TOCTOU race before the file write.
+    assertSafeClaudeSkillOperation(appliedPlan, operation);
 
     if (operation.kind === 'merge-json') {
       const payload = cloneJsonValue(operation.mergePayload);
@@ -174,16 +215,14 @@ function applyInstallPlan(plan) {
       continue;
     }
 
-    // Namespaced markdown (e.g. skills/<id> -> skills/ecc/<id>) needs its
-    // relative cross-directory links rewritten so they resolve after install
-    // (issue #2340). Files whose install path is unchanged (no namespace
-    // injected) and all non-markdown files stay on the byte-for-byte copy path.
+    // Markdown may reference files whose installed paths move, such as rules
+    // copied under rules/ecc. Rewrite only links that point at installed targets;
+    // untouched links and non-markdown files stay on the byte-for-byte path.
     if (
       linkIndex
       && operation.kind === 'copy-file'
       && operation.sourceRelativePath
       && isMarkdownPath(operation.destinationPath)
-      && isNamespacedSource(operation.sourceRelativePath, linkIndex)
     ) {
       const rewritten = rewriteRelativeLinks(
         fs.readFileSync(operation.sourcePath, 'utf8'),
@@ -205,14 +244,26 @@ function applyInstallPlan(plan) {
     );
   }
 
-  writeInstallState(plan.installStatePath, plan.statePreview);
+  if (hasLegacyMigration) {
+    removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
+  }
+  persistInstallState(plan.installStatePath, migration.finalState);
 
   return {
     ...plan,
+    statePreview: migration.finalState,
+    plannedOperations: [...plan.operations],
+    operations: migration.appliedOperations,
+    skippedOperations: migration.skippedOperations,
+    warnings: [
+      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+      ...migration.warnings,
+    ],
     applied: true,
   };
 }
 
 module.exports = {
   applyInstallPlan,
+  previewInstallPlan,
 };

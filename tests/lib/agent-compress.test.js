@@ -46,6 +46,29 @@ function runTests() {
   else failed++;
 
   if (
+    test('parseFrontmatter normalizes comma-separated scalar tools to an array', () => {
+      const content = '---\nname: scalar-tools\ndescription: Scalar tools\ntools: Read, Glob, Grep\nmodel: sonnet\n---\n\nBody.';
+      const { frontmatter } = parseFrontmatter(content);
+      assert.deepStrictEqual(frontmatter.tools, ['Read', 'Glob', 'Grep']);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('parseFrontmatter preserves commas inside scoped tool arguments', () => {
+      const content = '---\nname: scoped-tools\ndescription: Scoped tools\ntools: Agent(worker, researcher), Read, Bash\nmodel: sonnet\n---\n\nBody.';
+      const { frontmatter } = parseFrontmatter(content);
+      assert.deepStrictEqual(
+        frontmatter.tools,
+        ['Agent(worker, researcher)', 'Read', 'Bash']
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('parseFrontmatter handles content without frontmatter', () => {
       const content = 'Just a regular markdown file.';
       const { frontmatter, body } = parseFrontmatter(content);
@@ -155,7 +178,7 @@ function runTests() {
 
   // Create a temp directory with test agent files
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-compress-test-'));
-  const agentContent = '---\nname: test-agent\ndescription: A test agent\ntools: ["Read"]\nmodel: haiku\n---\n\nTest agent body paragraph.\n\n## Details\nMore info.';
+  const agentContent = '---\nname: test-agent\ndescription: A test agent\ntools: Read\nmodel: haiku\n---\n\nTest agent body paragraph.\n\n## Details\nMore info.';
   fs.writeFileSync(path.join(tmpDir, 'test-agent.md'), agentContent);
   fs.writeFileSync(path.join(tmpDir, 'not-an-agent.txt'), 'ignored');
 
@@ -332,6 +355,10 @@ function runTests() {
       if (!fs.existsSync(realAgentsDir)) return; // skip if not present
       const result = buildAgentCatalog(realAgentsDir, { mode: 'catalog' });
       assert.ok(result.agents.length > 0, 'Should find at least one agent');
+      assert.ok(
+        result.agents.every(agent => Array.isArray(agent.tools) && agent.tools.length > 0),
+        'Every catalog agent should retain its tools as a non-empty array'
+      );
       assert.ok(result.stats.compressedBytes < result.stats.originalBytes, 'Catalog should be smaller than original');
       // Verify significant compression ratio
       const ratio = result.stats.compressedBytes / result.stats.originalBytes;

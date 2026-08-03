@@ -1114,16 +1114,90 @@ function runTests() {
       return true;
     }
     const { execFileSync } = require('child_process');
-    // maxSize is a chunk-level guard: once data.length >= maxSize, no MORE chunks are added.
-    // A single small chunk that arrives when data.length < maxSize is added in full.
-    // To test multi-chunk behavior, we send >64KB (Node default highWaterMark=16KB)
-    // which should arrive in multiple chunks. With maxSize=100, only the first chunk(s)
-    // totaling under 100 bytes should be captured; subsequent chunks are dropped.
+    // Send enough data to cross the chunk-level cap. The child must keep
+    // draining stdin until EOF so the parent does not see EPIPE on macOS.
     const script = 'const u=require("./scripts/lib/utils");u.readStdinJson({timeoutMs:2000,maxSize:100}).then(d=>{process.stdout.write(JSON.stringify(d))})';
-    // Generate 100KB of data (arrives in multiple chunks)
     const bigInput = '{"k":"' + 'X'.repeat(100000) + '"}';
     const result = execFileSync('node', ['-e', script], { ...stdinOpts, input: bigInput });
-    // Truncated mid-string → invalid JSON → resolves to {}
+    // Oversized input is rejected rather than parsing a partial JSON prefix.
+    assert.deepStrictEqual(JSON.parse(result), {});
+  })) passed++; else failed++;
+
+  if (test('readStdinJson overflow drain still exits when the writer never closes stdin', () => {
+    const { execFileSync } = require('child_process');
+    const childScript = [
+      'const u=require("./scripts/lib/utils");',
+      'u.readStdinJson({timeoutMs:100,maxSize:100})',
+      '.then(d=>process.stdout.write(JSON.stringify(d)));'
+    ].join('');
+    const harness = `
+      const { spawn } = require('child_process');
+      const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], {
+        cwd: process.cwd(),
+        stdio: ['pipe', 'pipe', 'inherit']
+      });
+      let stdout = '';
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stdin.write('X'.repeat(100000));
+      const deadline = setTimeout(() => {
+        child.kill();
+        process.exit(2);
+      }, 1000);
+      child.on('exit', code => {
+        clearTimeout(deadline);
+        if (code !== 0) process.exit(code || 1);
+        process.stdout.write(stdout);
+      });
+    `;
+    const result = execFileSync('node', ['-e', harness], {
+      ...stdinOpts,
+      timeout: 2000
+    });
+    assert.deepStrictEqual(JSON.parse(result), {});
+  })) passed++; else failed++;
+
+  if (test('readStdinJson drains a slow finite oversized writer without EPIPE', () => {
+    const { execFileSync } = require('child_process');
+    const childScript = [
+      'const u=require("./scripts/lib/utils");',
+      'u.readStdinJson({timeoutMs:500,maxSize:100})',
+      '.then(d=>process.stdout.write(JSON.stringify(d)));'
+    ].join('');
+    const harness = `
+      const { spawn } = require('child_process');
+      const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], {
+        cwd: process.cwd(),
+        stdio: ['pipe', 'pipe', 'inherit']
+      });
+      let stdout = '';
+      let writes = 0;
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stdin.on('error', () => process.exit(3));
+      const writer = setInterval(() => {
+        writes += 1;
+        child.stdin.write('X'.repeat(5000));
+        if (writes === 20) {
+          clearInterval(writer);
+          child.stdin.end();
+        }
+      }, 5);
+      const deadline = setTimeout(() => {
+        child.kill();
+        process.exit(2);
+      }, 1500);
+      child.on('exit', code => {
+        clearInterval(writer);
+        clearTimeout(deadline);
+        if (code !== 0) process.exit(code || 1);
+        process.stdout.write(stdout);
+      });
+    `;
+    const result = execFileSync('node', ['-e', harness], {
+      ...stdinOpts,
+      timeout: 2000
+    });
     assert.deepStrictEqual(JSON.parse(result), {});
   })) passed++; else failed++;
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 93,
+  "totalCommands": 94,
   "commands": [
     {
       "command": "aside",
@@ -627,6 +627,17 @@
       "path": "commands/orch-review.md"
     },
     {
+      "command": "plan-canvas",
+      "description": "Open a plan or HTML artifact in the browser Plan Canvas for annotate-and-approve review",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "plan-canvas"
+      ],
+      "path": "commands/plan-canvas.md"
+    },
+    {
       "command": "plan-prd",
       "description": "Generate a lean, problem-first PRD and hand off to /plan for implementation planning.",
       "type": "testing",
@@ -645,7 +656,9 @@
       "allAgents": [
         "planner"
       ],
-      "skills": [],
+      "skills": [
+        "plan-canvas"
+      ],
       "path": "commands/plan.md"
     },
     {
@@ -1020,7 +1033,7 @@
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 14,
+      "review": 15,
       "testing": 53
     },
     "topAgents": [

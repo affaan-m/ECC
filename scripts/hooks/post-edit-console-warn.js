@@ -12,43 +12,54 @@
 const { readFile } = require('../lib/utils');
 
 const MAX_STDIN = 1024 * 1024; // 1MB limit
-let data = '';
-process.stdin.setEncoding('utf8');
-
-process.stdin.on('data', chunk => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += chunk.substring(0, remaining);
-  }
-});
-
-process.stdin.on('end', () => {
+function run(data) {
+  const warnings = [];
   try {
     const input = JSON.parse(data);
     const filePath = input.tool_input?.file_path;
 
     if (filePath && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
       const content = readFile(filePath);
-      if (!content) { process.stdout.write(data); process.exit(0); }
-      const lines = content.split('\n');
-      const matches = [];
+      if (content) {
+        const matches = content
+          .split('\n')
+          .map((line, index) => ({ line, index }))
+          .filter(item => /console\.log/.test(item.line))
+          .map(item => `${item.index + 1}: ${item.line.trim()}`);
 
-      lines.forEach((line, idx) => {
-        if (/console\.log/.test(line)) {
-          matches.push((idx + 1) + ': ' + line.trim());
+        if (matches.length > 0) {
+          warnings.push(`[Hook] WARNING: console.log found in ${filePath}`);
+          warnings.push(...matches.slice(0, 5));
+          warnings.push('[Hook] Remove console.log before committing');
         }
-      });
-
-      if (matches.length > 0) {
-        console.error('[Hook] WARNING: console.log found in ' + filePath);
-        matches.slice(0, 5).forEach(m => console.error(m));
-        console.error('[Hook] Remove console.log before committing');
       }
     }
   } catch {
     // Invalid input — pass through
   }
 
-  process.stdout.write(data);
-  process.exit(0);
-});
+  return {
+    stdout: data,
+    stderr: warnings.join('\n'),
+    exitCode: 0,
+  };
+}
+
+if (require.main === module) {
+  let data = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => {
+    if (data.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - data.length;
+      data += chunk.substring(0, remaining);
+    }
+  });
+  process.stdin.on('end', () => {
+    const result = run(data);
+    if (result.stderr) process.stderr.write(`${result.stderr}\n`);
+    process.stdout.write(result.stdout);
+    process.exitCode = result.exitCode;
+  });
+}
+
+module.exports = { run };

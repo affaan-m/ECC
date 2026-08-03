@@ -27,6 +27,7 @@ import ipaddress
 import socket
 import urllib.parse
 import urllib.request
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -298,10 +299,19 @@ def detect_project() -> dict:
             "observations_file": GLOBAL_OBSERVATIONS_FILE,
         }
 
-    # 1. CLAUDE_PROJECT_DIR env var
+    # 1. CLAUDE_PROJECT_DIR env var (explicit override)
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_dir and os.path.isdir(env_dir):
         project_root = _git_repo_root(env_dir)
+        # Non-git directory explicitly pointed at by CLAUDE_PROJECT_DIR: honor it
+        # as a project root (path-hash identity) rather than collapsing to the
+        # shared `global` bucket. Mirrors detect-project.sh so the observer
+        # (shell) and this CLI agree on the project id for the same directory;
+        # os.path.realpath matches the shell's `cd ... && pwd -P`. Gated on the
+        # explicit env var so an arbitrary non-git cwd (priority 2) never
+        # becomes a "project".
+        if not project_root:
+            project_root = os.path.realpath(env_dir)
 
     # 2. git repo root
     if not project_root:
@@ -1314,6 +1324,106 @@ def _show_promotion_candidates(project: dict) -> None:
         print(f"  Run `instinct-cli.py promote` to promote these to global scope.\n")
 
 
+def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
+    """Extract a simple scalar value from frontmatter lines."""
+    for line in lines:
+        if ':' not in line:
+            continue
+        parsed_key, value = line.split(':', 1)
+        if parsed_key.strip() != key:
+            continue
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            return value[1:-1].replace('\\"', '"').replace('\\\\', '\\')
+        if value.startswith("'") and value.endswith("'"):
+            return value[1:-1].replace("''", "'")
+        return value
+    return None
+
+
+def _remove_instinct_blocks(content: str, instinct_id: str) -> tuple[str, int]:
+    """Remove raw frontmatter blocks with a matching instinct ID."""
+    lines = content.splitlines(keepends=True)
+    retained = []
+    removed = 0
+    index = 0
+
+    while index < len(lines):
+        if lines[index].strip() != '---':
+            retained.append(lines[index])
+            index += 1
+            continue
+
+        block_start = index
+        frontmatter_end = index + 1
+        while frontmatter_end < len(lines) and lines[frontmatter_end].strip() != '---':
+            frontmatter_end += 1
+
+        if frontmatter_end >= len(lines):
+            retained.extend(lines[block_start:])
+            break
+
+        next_block_start = frontmatter_end + 1
+        while next_block_start < len(lines) and lines[next_block_start].strip() != '---':
+            next_block_start += 1
+
+        block_id = _frontmatter_scalar(lines[block_start + 1:frontmatter_end], 'id')
+        if block_id == instinct_id:
+            removed += 1
+        else:
+            retained.extend(lines[block_start:next_block_start])
+        index = next_block_start
+
+    return ''.join(retained), removed
+
+
+def _write_text_atomic(file_path: Path, content: str) -> None:
+    """Replace a text file via same-directory temp file."""
+    temp_fd, temp_name = tempfile.mkstemp(
+        prefix=f".{file_path.name}.",
+        suffix=".tmp",
+        dir=file_path.parent,
+        text=True,
+    )
+    temp_file = Path(temp_name)
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, file_path)
+    finally:
+        try:
+            temp_file.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None:
+    """Strip promoted instinct blocks from the project-scoped source file."""
+    source_file = Path(source_file_str)
+    if not source_file.exists():
+        return
+
+    try:
+        content = source_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"Warning: Failed to read promoted instinct source {source_file}: {exc}", file=sys.stderr)
+        return
+
+    remaining_content, removed = _remove_instinct_blocks(content, instinct_id)
+    if removed == 0:
+        return
+
+    try:
+        if remaining_content:
+            _write_text_atomic(source_file, remaining_content)
+        else:
+            source_file.unlink()
+    except OSError as exc:
+        print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
+
+
 def cmd_promote(args) -> int:
     """Promote project-scoped instincts to global scope."""
     project = detect_project()
@@ -1376,6 +1486,9 @@ def _promote_specific(project: dict, instinct_id: str, force: bool, dry_run: boo
     output_content += target.get('content', '') + "\n"
 
     output_file.write_text(output_content, encoding="utf-8")
+    source_file = target.get('_source_file')
+    if source_file:
+        _remove_instinct_from_source(source_file, instinct_id)
     print(f"\nPromoted '{instinct_id}' to global scope.")
     print(f"  Saved to: {output_file}")
     return 0
@@ -1449,6 +1562,10 @@ def _promote_auto(project: dict, force: bool, dry_run: bool) -> int:
         output_content += inst.get('content', '') + "\n"
 
         output_file.write_text(output_content, encoding="utf-8")
+        for _, _, entry_inst in cand['entries']:
+            entry_source = entry_inst.get('_source_file')
+            if entry_source:
+                _remove_instinct_from_source(entry_source, cand['id'])
         promoted += 1
 
     print(f"\nPromoted {promoted} instincts to global scope.")

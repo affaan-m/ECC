@@ -71,7 +71,7 @@ function runTests() {
     assert.strictEqual(statePath, path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
   })) passed++; else failed++;
 
-  if (test('plans claude rules and skills under ECC-managed subdirectories', () => {
+  if (test('plans namespaced Claude rules and flat discoverable skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
     const homeDir = '/Users/example';
 
@@ -101,9 +101,9 @@ function runTests() {
     assert.ok(
       plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
-        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'ecc', 'tdd-workflow')
+        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'tdd-workflow')
       )),
-      'Should install bundled Claude skills under skills/ecc'
+      'Should install bundled Claude skills under skills'
     );
   })) passed++; else failed++;
 
@@ -884,7 +884,7 @@ function runTests() {
     assert.ok(byTarget.supports('claude-project'));
   })) passed++; else failed++;
 
-  if (test('plans claude-project rules and skills under project-scope ECC-managed subdirectories', () => {
+  if (test('plans project-scoped namespaced Claude rules and flat skills', () => {
     const repoRoot = path.join(__dirname, '..', '..');
     const projectRoot = '/workspace/app';
 
@@ -917,9 +917,9 @@ function runTests() {
     assert.ok(
       plan.operations.some(operation => (
         normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
-        && operation.destinationPath === path.join(projectRoot, '.claude', 'skills', 'ecc', 'tdd-workflow')
+        && operation.destinationPath === path.join(projectRoot, '.claude', 'skills', 'tdd-workflow')
       )),
-      'Should install bundled skills under project-scope skills/ecc'
+      'Should install bundled skills under project-scope skills'
     );
   })) passed++; else failed++;
 
@@ -1085,6 +1085,75 @@ function runTests() {
       assert.deepStrictEqual(issues, [], 'Should not surface validation issues when plugin is built');
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('planInstallTargetScaffold only exempts explicitly allowed validation codes', () => {
+    const registryPath = require.resolve('../../scripts/lib/install-targets/registry');
+    const opencodeHomePath = require.resolve('../../scripts/lib/install-targets/opencode-home');
+    const originalRegistryEntry = require.cache[registryPath];
+    const originalOpencodeHomeEntry = require.cache[opencodeHomePath];
+    const repoRoot = path.join(__dirname, '..', '..');
+    const homeDir = '/Users/example';
+
+    try {
+      delete require.cache[registryPath];
+      require.cache[opencodeHomePath] = {
+        id: opencodeHomePath,
+        filename: opencodeHomePath,
+        loaded: true,
+        exports: {
+          id: 'opencode-home',
+          target: 'opencode',
+          kind: 'home',
+          supports: target => target === 'opencode',
+          resolveRoot: input => path.join((input.homeDir || '/Users/example'), '.opencode'),
+          getInstallStatePath: input => path.join((input.homeDir || '/Users/example'), '.opencode', 'ecc-install-state.json'),
+          validate: () => ([
+            { severity: 'error', code: 'opencode-plugin-not-built', message: 'missing payload' },
+            { severity: 'error', code: 'opencode-other-blocker', message: 'still blocked' },
+          ]),
+          planOperations: () => [],
+        },
+      };
+
+      const { planInstallTargetScaffold: sandboxedPlanInstallTargetScaffold } = require('../../scripts/lib/install-targets/registry');
+
+      assert.throws(
+        () => sandboxedPlanInstallTargetScaffold({
+          target: 'opencode',
+          repoRoot,
+          homeDir,
+          exemptValidationCodes: ['opencode-plugin-not-built'],
+        }),
+        /still blocked/
+      );
+
+      require.cache[opencodeHomePath].exports.validate = () => ([
+        { severity: 'error', code: 'opencode-plugin-not-built', message: 'missing payload' },
+      ]);
+
+      const plan = sandboxedPlanInstallTargetScaffold({
+        target: 'opencode',
+        repoRoot,
+        homeDir,
+        exemptValidationCodes: ['opencode-plugin-not-built'],
+      });
+
+      assert.strictEqual(plan.adapter.id, 'opencode-home');
+      assert.deepStrictEqual(plan.operations, []);
+    } finally {
+      if (originalOpencodeHomeEntry) {
+        require.cache[opencodeHomePath] = originalOpencodeHomeEntry;
+      } else {
+        delete require.cache[opencodeHomePath];
+      }
+
+      if (originalRegistryEntry) {
+        require.cache[registryPath] = originalRegistryEntry;
+      } else {
+        delete require.cache[registryPath];
+      }
     }
   })) passed++; else failed++;
 

@@ -94,7 +94,14 @@ function run(inputOrRaw, options = {}) {
   if (!filePath) return { exitCode: 0 };
 
   const basename = path.basename(filePath);
-  if (PROTECTED_FILES.has(basename)) {
+  // Match case-insensitively. Every PROTECTED_FILES entry is lowercase, and on
+  // case-insensitive filesystems (macOS APFS/HFS+, Windows NTFS) a write to
+  // `.ESLINTRC.JS` lands on the very same inode as `.eslintrc.js`. A
+  // case-sensitive Set lookup therefore let a single case-variant Write
+  // silently overwrite the real config while the guard returned exit 0.
+  // On genuinely case-sensitive filesystems this only costs a false positive
+  // on a distinct file that differs from a protected name by case alone.
+  if (PROTECTED_FILES.has(basename) || PROTECTED_FILES.has(basename.toLowerCase())) {
     // Allow first-time creation — there's no existing config to weaken.
     // The hook's purpose is blocking modifications; writing a brand-new
     // config file in a project that has none is a legitimate bootstrap
