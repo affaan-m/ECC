@@ -1449,7 +1449,7 @@ ECC provides Cursor IDE support with hooks, rules, agents, skills, commands, and
 .\install.ps1 --target cursor python golang swift php
 ```
 
-#### What's included
+#### What's included for Cursor
 
 | Component | Count | Details |
 |-----------|-------|---------|
@@ -1542,7 +1542,7 @@ Codex macOS app:
 - The reference `.codex/config.toml` intentionally does not pin `model` or `model_provider`, so Codex uses its own current default unless you override it.
 - Optional: copy `.codex/config.toml` to `~/.codex/config.toml` for global defaults; keep the multi-agent role files project-local unless you also copy `.codex/agents/`.
 
-#### What's included (Codex)
+#### What's included for Codex
 
 | Component | Count | Details |
 |-----------|-------|---------|
@@ -1662,7 +1662,7 @@ For the full ECC OpenCode setup, either:
 
 ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system. No extra tooling required.
 
-#### What's included (Copilot)
+#### What's included for GitHub Copilot
 
 | Component | File | Purpose |
 |-----------|------|---------|
