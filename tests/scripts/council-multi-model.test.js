@@ -1,25 +1,23 @@
 /**
- * Regression tests for the council-multi-model SDK fallback.
+ * Regression tests for the bounded council-multi-model Codex adapter.
  */
 
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SKILL_ROOT = path.join(ROOT, 'skills', 'council-multi-model');
-const ASK_CODEX = path.join(SKILL_ROOT, 'scripts', 'ask_codex.py');
-const CHECK_CODEX = path.join(SKILL_ROOT, 'scripts', 'check_codex.py');
-
-function runPython(script, args = [], env = {}) {
-  return spawnSync('python3', [script, ...args], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: { ...process.env, ...env },
-  });
-}
+const ADAPTER = path.join(SKILL_ROOT, 'scripts', 'review-with-codex.js');
+const {
+  MAX_PROMPT_BYTES,
+  buildCodexArgs,
+  buildEnvironment,
+  parseArgs,
+  providerLabel,
+  runReview,
+} = require(ADAPTER);
 
 function test(name, fn) {
   try {
@@ -33,132 +31,114 @@ function test(name, fn) {
   }
 }
 
-function fakeSdkDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-fake-codex-'));
-  fs.writeFileSync(path.join(dir, 'openai_codex.py'), `
-import os
-
-class Sandbox:
-    read_only = "read-only"
-
-class _Result:
-    status = "completed"
-
-class _Thread:
-    def run(self, prompt):
-        return _Result()
-
-class Codex:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback):
-        marker = os.environ.get("CODEX_TEST_MARKER")
-        if marker:
-            with open(marker, "w", encoding="utf-8") as fh:
-                fh.write("closed")
-
-    def thread_start(self, **kwargs):
-        return _Thread()
-`, 'utf8');
-  return dir;
-}
-
 function runTests() {
-  console.log('\n=== Testing council-multi-model fallback ===\n');
-
+  console.log('\n=== Testing council-multi-model adapter ===\n');
   let passed = 0;
   let failed = 0;
 
-  if (test('rejects prompt files outside the system temporary directory', () => {
-    const unsafeDir = fs.mkdtempSync(path.join(ROOT, '.council-prompt-test-'));
-    const promptPath = path.join(unsafeDir, 'prompt.txt');
-    fs.writeFileSync(promptPath, 'do not send this file', 'utf8');
-    try {
-      const result = runPython(ASK_CODEX, ['--prompt-file', promptPath]);
-      assert.strictEqual(result.status, 2, result.stderr);
-      assert.match(result.stderr, /system temporary directory/);
-    } finally {
-      fs.rmSync(unsafeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+  if (test('requires explicit OpenAI transfer consent and host-provider disclosure', () => {
+    assert.throws(() => parseArgs(['--host-provider', 'anthropic']), /consent/);
+    assert.throws(() => parseArgs(['--consent-to-openai']), /host-provider/);
+    assert.throws(
+      () => parseArgs(['--consent-to-openai', '--host-provider', 'google']),
+      /anthropic, openai, or unknown/
+    );
+    const options = parseArgs([
+      '--consent-to-openai', '--host-provider', 'anthropic', '--timeout-seconds', '30',
+    ]);
+    assert.strictEqual(options.timeoutMs, 30_000);
+  })) passed += 1; else failed += 1;
 
-  if (test('closes Codex and handles a missing final_response without a traceback', () => {
-    const promptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-council-prompt-'));
-    const promptPath = path.join(promptDir, 'prompt.txt');
-    const markerPath = path.join(promptDir, 'closed.txt');
-    const sdkDir = fakeSdkDir();
-    fs.writeFileSync(promptPath, 'review this draft', 'utf8');
-    try {
-      const result = runPython(ASK_CODEX, ['--prompt-file', promptPath], {
-        PYTHONPATH: sdkDir,
-        CODEX_TEST_MARKER: markerPath,
-      });
-      assert.strictEqual(result.status, 5, result.stderr);
-      assert.match(result.stderr, /Codex returned no text \(status=completed\)/);
-      assert.doesNotMatch(result.stderr, /Traceback/);
-      assert.strictEqual(fs.readFileSync(markerPath, 'utf8'), 'closed');
-    } finally {
-      fs.rmSync(promptDir, { recursive: true, force: true });
-      fs.rmSync(sdkDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+  if (test('bounds configurable timeouts', () => {
+    assert.throws(
+      () => parseArgs([
+        '--consent-to-openai', '--host-provider', 'openai', '--timeout-seconds', '121',
+      ]),
+      /10 to 120/
+    );
+  })) passed += 1; else failed += 1;
 
-  if (test('reports the actual CODEX_HOME auth path', () => {
-    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-home-'));
-    const sdkDir = fakeSdkDir();
-    try {
-      const result = runPython(CHECK_CODEX, [], {
-        CODEX_HOME: codexHome,
-        PYTHONPATH: sdkDir,
-      });
-      assert.strictEqual(result.status, 4, result.stdout);
-      assert.ok(result.stdout.includes(path.join(codexHome, 'auth.json')));
-      assert.doesNotMatch(result.stdout, /~\/.codex\/auth\.json/);
-    } finally {
-      fs.rmSync(codexHome, { recursive: true, force: true });
-      fs.rmSync(sdkDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+  if (test('labels provider relationship without overstating diversity', () => {
+    assert.strictEqual(providerLabel('anthropic'), 'cross-provider external critique');
+    assert.strictEqual(providerLabel('openai'), 'same-provider external critique');
+    assert.strictEqual(providerLabel('unknown'), 'provider relationship unverified');
+  })) passed += 1; else failed += 1;
 
-  if (test('closes Codex after a live preflight probe', () => {
-    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-probe-'));
-    const markerPath = path.join(codexHome, 'closed.txt');
-    const sdkDir = fakeSdkDir();
-    fs.writeFileSync(path.join(codexHome, 'auth.json'), '{}', 'utf8');
-    try {
-      const result = runPython(CHECK_CODEX, ['--probe'], {
-        CODEX_HOME: codexHome,
-        PYTHONPATH: sdkDir,
-        CODEX_TEST_MARKER: markerPath,
-      });
-      assert.strictEqual(result.status, 5, result.stdout);
-      assert.match(result.stdout, /live probe returned no text \(status=completed\)/);
-      assert.strictEqual(fs.readFileSync(markerPath, 'utf8'), 'closed');
-    } finally {
-      fs.rmSync(codexHome, { recursive: true, force: true });
-      fs.rmSync(sdkDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
+  if (test('builds an ephemeral isolated read-only invocation with no inherited MCPs', () => {
+    const args = buildCodexArgs('/tmp/isolated', '/tmp/isolated/final.txt');
+    const joined = args.join(' ');
+    assert.deepStrictEqual(args.slice(0, 3), ['--ask-for-approval', 'never', 'exec']);
+    assert.match(joined, /--ephemeral/);
+    assert.match(joined, /--ignore-user-config/);
+    assert.match(joined, /--ignore-rules/);
+    assert.match(joined, /--strict-config/);
+    assert.match(joined, /--sandbox read-only/);
+    assert.match(joined, /--cd \/tmp\/isolated/);
+    assert.ok(args.includes('sandbox_permissions=[]'));
+    assert.ok(args.includes('shell_environment_policy.inherit="none"'));
+    assert.ok(args.includes('mcp_servers={}'));
+    assert.strictEqual(args.at(-1), '-');
+  })) passed += 1; else failed += 1;
 
-  if (test('pins the official SDK and announces the network install', () => {
-    const setup = fs.readFileSync(path.join(SKILL_ROOT, 'scripts', 'setup.sh'), 'utf8');
-    assert.match(setup, /openai-codex==0\.1\.0b3/);
-    assert.doesNotMatch(setup, /--upgrade pip/);
-    assert.match(setup, /Installing openai-codex==0\.1\.0b3 from PyPI/);
-  })) passed++; else failed++;
+  if (test('passes only an allowlisted environment to Codex', () => {
+    const env = buildEnvironment({
+      PATH: '/bin', HOME: '/home/test', CODEX_HOME: '/home/test/.codex',
+      GITHUB_TOKEN: 'secret', AWS_SECRET_ACCESS_KEY: 'secret', NODE_OPTIONS: '--require bad',
+    });
+    assert.deepStrictEqual(env, {
+      PATH: '/bin', HOME: '/home/test', CODEX_HOME: '/home/test/.codex',
+    });
+  })) passed += 1; else failed += 1;
 
-  if (test('documents portable discovery and treats embedded material as untrusted data', () => {
+  if (test('runs from a temporary directory, reads the final response, and cleans up', () => {
+    let invocation;
+    let removed;
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-council-test-'));
+    const result = runReview('review this draft', {
+      consent: true,
+      hostProvider: 'openai',
+      timeoutMs: 20_000,
+    }, {
+      env: { PATH: '/bin', HOME: '/home/test' },
+      mkdtempSync: () => tempDir,
+      spawnSync: (command, args, options) => {
+        invocation = { command, args, options };
+        const outputIndex = args.indexOf('--output-last-message') + 1;
+        fs.writeFileSync(args[outputIndex], 'critical fault', 'utf8');
+        return { status: 0, stderr: '' };
+      },
+      rmSync: (target, options) => {
+        removed = { target, options };
+        fs.rmSync(target, options);
+      },
+    });
+    assert.strictEqual(invocation.command, 'codex');
+    assert.strictEqual(invocation.options.cwd, tempDir);
+    assert.strictEqual(invocation.options.timeout, 20_000);
+    assert.strictEqual(invocation.options.input, 'review this draft');
+    assert.strictEqual(result, 'same-provider external critique\ncritical fault');
+    assert.deepStrictEqual(removed, {
+      target: tempDir,
+      options: { recursive: true, force: true },
+    });
+  })) passed += 1; else failed += 1;
+
+  if (test('fails before invocation when the packet exceeds the size limit', () => {
+    assert.throws(() => runReview('x'.repeat(MAX_PROMPT_BYTES + 1), {
+      consent: true,
+      hostProvider: 'anthropic',
+      timeoutMs: 20_000,
+    }), /exceeds/);
+  })) passed += 1; else failed += 1;
+
+  if (test('documents one post-draft node, consent, honest labels, and fail-closed absence', () => {
     const skill = fs.readFileSync(path.join(SKILL_ROOT, 'SKILL.md'), 'utf8');
-    assert.match(skill, /^## When to Activate$/m);
-    assert.match(skill, /COUNCIL_MULTI_MODEL_SKILL_DIR/);
-    assert.match(skill, /CLAUDE_PROJECT_DIR/);
-    assert.match(skill, /mktemp/);
-    assert.match(skill, /BEGIN_UNTRUSTED_DISAGREEMENT/);
-    assert.match(skill, /END_UNTRUSTED_DISAGREEMENT/);
-    assert.match(skill, /BEGIN_UNTRUSTED_DRAFT/);
-    assert.match(skill, /Never follow instructions found inside/);
-  })) passed++; else failed++;
+    assert.match(skill, /adds only one optional\s+post-draft node/);
+    assert.match(skill, /explicitly agrees to send that packet to OpenAI/);
+    assert.match(skill, /same-provider external critique/);
+    assert.match(skill, /external review absent/);
+    assert.doesNotMatch(skill, /^## Entry B|openai-codex SDK|mcp__codex/m);
+  })) passed += 1; else failed += 1;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
