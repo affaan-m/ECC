@@ -33,6 +33,8 @@ const VALID_TRIGGERS = [
 
 const VALID_ACTION_TYPES = ['agent', 'command'];
 
+const EXPECTED_HOOK_COUNT = 13;
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function getJsonHookFiles() {
@@ -77,9 +79,9 @@ function runSchemaTests() {
 
     const hookFiles = getJsonHookFiles();
 
-    if (test(`discovers all 13 JSON hook files`, () => {
-        assert.strictEqual(hookFiles.length, 13,
-            `Expected 13 JSON hook files, found ${hookFiles.length}: ${hookFiles.map(f => path.basename(f)).join(', ')}`);
+    if (test(`discovers all ${EXPECTED_HOOK_COUNT} JSON hook files`, () => {
+        assert.strictEqual(hookFiles.length, EXPECTED_HOOK_COUNT,
+            `Expected ${EXPECTED_HOOK_COUNT} JSON hook files, found ${hookFiles.length}: ${hookFiles.map(f => path.basename(f)).join(', ')}`);
     })) passed++; else failed++;
 
     for (const filePath of hookFiles) {
@@ -167,8 +169,8 @@ function runInstallTests() {
             const jsonHooks = installedHooks.filter(f => f.endsWith('.json'));
             const legacyHooks = installedHooks.filter(f => f.endsWith('.kiro.hook'));
 
-            assert.strictEqual(jsonHooks.length, 13,
-                `Expected 13 JSON hooks installed, got ${jsonHooks.length}: ${jsonHooks.join(', ')}`);
+            assert.strictEqual(jsonHooks.length, EXPECTED_HOOK_COUNT,
+                `Expected ${EXPECTED_HOOK_COUNT} JSON hooks installed, got ${jsonHooks.length}: ${jsonHooks.join(', ')}`);
             assert.strictEqual(legacyHooks.length, 0,
                 `Expected 0 legacy .kiro.hook files installed, got ${legacyHooks.length}: ${legacyHooks.join(', ')}`);
         } finally {
