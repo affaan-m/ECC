@@ -16,7 +16,17 @@ const {
 
 const { DEFAULT_SCHEMA_VERSION, DEFAULT_POLICY } = require('../../scripts/lib/github-coordination/policy');
 
-const { test, testAsync, banner, section, summary, fatal } = require('./helpers/mini-test-runner');
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    return true;
+  } catch (err) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${err.message}`);
+    return false;
+  }
+}
 
 function makeStore() {
   const calls = [];
@@ -32,15 +42,15 @@ function makeStore() {
 let passed = 0;
 let failed = 0;
 
-banner('Testing github-coordination/store.js');
+console.log('\n=== Testing github-coordination/store.js ===\n');
 
-section('epicWorkItemId:');
+console.log('epicWorkItemId:');
 
 if (test('produces a stable ID from repo and issue number', () => {
   assert.strictEqual(epicWorkItemId('acme/my-repo', 42), 'github-acme-my-repo-epic-42');
 })) passed++; else failed++;
 
-section('upsertCoordinationWorkItem — null store:');
+console.log('\nupsertCoordinationWorkItem — null store:');
 
 if (test('returns null when store is null', () => {
   const result = upsertCoordinationWorkItem(null, 'r/r', { number: 1 }, {}, 'sync');
@@ -52,7 +62,7 @@ if (test('returns null when store is undefined', () => {
   assert.strictEqual(result, null);
 })) passed++; else failed++;
 
-section('upsertCoordinationWorkItem — with store:');
+console.log('\nupsertCoordinationWorkItem — with store:');
 
 if (test('passes schemaVersion from state when present', () => {
   const store = makeStore();
@@ -169,17 +179,30 @@ if (test('sets sessionId to null when options.sessionId absent', () => {
   assert.strictEqual(store.calls[0].sessionId, null);
 })) passed++; else failed++;
 
-section('openStore — dbPath: false:');
+console.log('\nopenStore — dbPath: false:');
 
 async function runAsyncTests() {
-  if (await testAsync('returns null when dbPath is false', async () => {
+  let asyncPassed = 0;
+  let asyncFailed = 0;
+
+  try {
     const result = await openStore({ dbPath: false });
     assert.strictEqual(result, null);
-  })) passed++; else failed++;
+    console.log('  ✓ returns null when dbPath is false');
+    asyncPassed++;
+  } catch (err) {
+    console.log('  ✗ returns null when dbPath is false');
+    console.log(`    Error: ${err.message}`);
+    asyncFailed++;
+  }
 
-  summary(passed, failed);
+  const totalPassed = passed + asyncPassed;
+  const totalFailed = failed + asyncFailed;
+  console.log(`\n  Results: ${totalPassed} passed, ${totalFailed} failed`);
+  if (totalFailed > 0) process.exit(1);
 }
 
 runAsyncTests().catch(err => {
-  fatal(`Unexpected async test failure: ${err.message}`);
+  console.error(`Unexpected async test failure: ${err.message}`);
+  process.exit(1);
 });
