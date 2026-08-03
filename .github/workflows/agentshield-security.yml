@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: AgentShield Security Scan
-        uses: affaan-m/agentshield@v1
+        uses: affaan-m/agentshield@v1.4.0
         with:
           path: "."
           min-severity: "medium"
