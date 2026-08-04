@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const CATEGORIES = [
@@ -11,7 +12,52 @@ const CATEGORIES = [
   'Eval Coverage',
   'Security Guardrails',
   'Cost Efficiency',
+  'GitHub Integration',
+  'Vercel Integration',
+  'Netlify Integration',
+  'Cloudflare Integration',
+  'Fly Integration',
 ];
+
+const RUBRIC_VERSION = '2026-05-19';
+
+const PROVIDERS = {
+  Vercel: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'vercel.json') ||
+      fileExists(rootDir, '.vercel/project.json') ||
+      fileExists(rootDir, '.vercel'),
+    keyPattern: /vercel/i,
+    buildPattern: /vercel/i,
+    workflowPattern: /(vercel-action|vercel\s+(deploy|--prod))/i,
+  },
+  Netlify: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'netlify.toml') || fileExists(rootDir, '.netlify'),
+    keyPattern: /netlify/i,
+    buildPattern: /netlify/i,
+    workflowPattern: /(netlify\/actions|netlify\s+deploy)/i,
+  },
+  Cloudflare: {
+    detect: (rootDir) =>
+      fileExists(rootDir, 'wrangler.toml') || fileExists(rootDir, 'wrangler.jsonc'),
+    keyPattern: /\b(cloudflare|wrangler)\b/i,
+    buildPattern: /(wrangler|cloudflare)/i,
+    workflowPattern: /(cloudflare\/wrangler-action|wrangler\s+(deploy|publish))/i,
+  },
+  Fly: {
+    detect: (rootDir) => fileExists(rootDir, 'fly.toml'),
+    keyPattern: /fly[_-]?(api|io)/i,
+    buildPattern: /fly\s+(deploy|launch)/i,
+    workflowPattern: /(superfly\/flyctl-actions|flyctl\s+deploy|fly\s+deploy)/i,
+  },
+};
+
+function getApplicableProviders(rootDir) {
+  return Object.entries(PROVIDERS)
+    .filter(([_, spec]) => spec.detect(rootDir))
+    .map(([name]) => name);
+}
 
 function normalizeScope(scope) {
   const value = (scope || 'repo').toLowerCase();
@@ -186,30 +232,161 @@ function detectTargetMode(rootDir) {
   return 'consumer';
 }
 
-function findPluginInstall(rootDir) {
-  const homeDir = process.env.HOME || '';
-  const pluginDirs = [
-    'ecc',
-    'ecc@ecc',
-    'everything-claude-code',
-    'everything-claude-code@everything-claude-code',
-  ];
-  const candidateRoots = [
-    path.join(rootDir, '.claude', 'plugins'),
-    homeDir && path.join(homeDir, '.claude', 'plugins'),
-  ].filter(Boolean);
-  const candidates = candidateRoots.flatMap((pluginsDir) =>
-    pluginDirs.flatMap((pluginDir) => [
-      path.join(pluginsDir, pluginDir, '.claude-plugin', 'plugin.json'),
-      path.join(pluginsDir, pluginDir, 'plugin.json'),
-    ])
-  );
+const ECC_PLUGIN_KEY_PATTERNS = [
+  /^ecc@/i,
+  /^everything-claude-code@/i,
+];
 
-  return candidates.find(candidate => fs.existsSync(candidate)) || null;
+const ECC_LEGACY_PLUGIN_DIRS = [
+  'ecc',
+  'ecc@ecc',
+  'everything-claude-code',
+  'everything-claude-code@everything-claude-code',
+];
+
+const ECC_CACHE_MARKETPLACES = ['everything-claude-code', 'ecc'];
+const ECC_CACHE_PLUGIN_NAMES = ['ecc', 'everything-claude-code'];
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+function compareVersionDesc(a, b) {
+  const partsA = String(a).split('.').map(part => parseInt(part, 10) || 0);
+  const partsB = String(b).split('.').map(part => parseInt(part, 10) || 0);
+  const length = Math.max(partsA.length, partsB.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const valueA = partsA[index] || 0;
+    const valueB = partsB[index] || 0;
+    if (valueA !== valueB) {
+      return valueB - valueA;
+    }
+  }
+
+  return 0;
+}
+
+function findPluginJsonUnder(installRoot) {
+  const pluginJson = path.join(installRoot, '.claude-plugin', 'plugin.json');
+  if (fs.existsSync(pluginJson)) {
+    return pluginJson;
+  }
+
+  const fallback = path.join(installRoot, 'plugin.json');
+  return fs.existsSync(fallback) ? fallback : null;
+}
+
+function findPluginInstallFromManifest(installedPluginsPaths) {
+  for (const installedPath of installedPluginsPaths) {
+    if (!fs.existsSync(installedPath)) {
+      continue;
+    }
+
+    const manifest = safeParseJson(safeRead(path.dirname(installedPath), path.basename(installedPath)));
+    if (!manifest || !manifest.plugins) {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(manifest.plugins)) {
+      if (!ECC_PLUGIN_KEY_PATTERNS.some(pattern => pattern.test(key))) {
+        continue;
+      }
+
+      const entries = Array.isArray(value) ? value : [];
+      for (const entry of entries) {
+        if (!entry || typeof entry.installPath !== 'string' || !entry.installPath.trim()) {
+          continue;
+        }
+
+        const installRoot = path.isAbsolute(entry.installPath)
+          ? entry.installPath
+          : path.resolve(path.dirname(installedPath), entry.installPath);
+        const hit = findPluginJsonUnder(installRoot);
+        if (hit) {
+          return hit;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function findPluginInstallFlatLayout(candidateRoots) {
+  for (const pluginsDir of candidateRoots) {
+    for (const pluginDir of ECC_LEGACY_PLUGIN_DIRS) {
+      const hit = findPluginJsonUnder(path.join(pluginsDir, pluginDir));
+      if (hit) {
+        return hit;
+      }
+    }
+  }
+
+  return null;
+}
+
+function findPluginInstallMarketplaceCache(candidateRoots) {
+  for (const pluginsDir of candidateRoots) {
+    for (const marketplace of ECC_CACHE_MARKETPLACES) {
+      for (const pluginName of ECC_CACHE_PLUGIN_NAMES) {
+        const pluginRoot = path.join(pluginsDir, 'cache', marketplace, pluginName);
+        if (!fs.existsSync(pluginRoot)) {
+          continue;
+        }
+
+        let versions = [];
+        try {
+          versions = fs
+            .readdirSync(pluginRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => entry.name)
+            .sort(compareVersionDesc);
+        } catch {
+          continue;
+        }
+
+        for (const version of versions) {
+          const hit = findPluginJsonUnder(path.join(pluginRoot, version));
+          if (hit) {
+            return hit;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function findPluginInstall(rootDir) {
+  const homeDirs = uniquePaths([
+    process.env.HOME,
+    process.env.USERPROFILE,
+    os.homedir(),
+  ]);
+  const pluginRoots = uniquePaths([
+    path.join(rootDir, '.claude', 'plugins'),
+    ...homeDirs.map(homeDir => path.join(homeDir, '.claude', 'plugins')),
+  ]);
+  const installedPluginsPaths = uniquePaths([
+    path.join(rootDir, '.claude', 'plugins', 'installed_plugins.json'),
+    ...homeDirs.map(homeDir => path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json')),
+  ]);
+  const flatRoots = uniquePaths([
+    ...pluginRoots,
+    ...pluginRoots.map(pluginsDir => path.join(pluginsDir, 'marketplaces')),
+  ]);
+
+  return (
+    findPluginInstallFromManifest(installedPluginsPaths)
+    || findPluginInstallFlatLayout(flatRoots)
+    || findPluginInstallMarketplaceCache(pluginRoots)
+  );
 }
 
 function getRepoChecks(rootDir) {
-  const packageJson = JSON.parse(readText(rootDir, 'package.json'));
+  const packageJson = safeParseJson(safeRead(rootDir, 'package.json'));
   const commandPrimary = safeRead(rootDir, 'commands/harness-audit.md').trim();
   const commandParity = safeRead(rootDir, '.opencode/commands/harness-audit.md').trim();
   const hooksJson = safeRead(rootDir, 'hooks/hooks.json');
@@ -322,7 +499,7 @@ function getRepoChecks(rootDir) {
       scopes: ['repo'],
       path: 'package.json',
       description: 'Test script runs validator chain before tests',
-      pass: typeof packageJson.scripts?.test === 'string' && packageJson.scripts.test.includes('validate-commands.js') && packageJson.scripts.test.includes('tests/run-all.js'),
+      pass: typeof packageJson?.scripts?.test === 'string' && packageJson?.scripts?.test.includes('validate-commands.js') && packageJson?.scripts?.test.includes('tests/run-all.js'),
       fix: 'Update package.json test script to run validators plus tests/run-all.js.',
     },
     {
@@ -389,11 +566,11 @@ function getRepoChecks(rootDir) {
       id: 'eval-commands',
       category: 'Eval Coverage',
       points: 4,
-      scopes: ['repo', 'commands'],
-      path: 'commands/eval.md',
-      description: 'Eval and verification commands exist',
-      pass: fileExists(rootDir, 'commands/eval.md') && fileExists(rootDir, 'commands/verify.md') && fileExists(rootDir, 'commands/checkpoint.md'),
-      fix: 'Add eval/checkpoint/verify commands to standardize verification loops.',
+      scopes: ['repo', 'commands', 'skills'],
+      path: 'commands/checkpoint.md',
+      description: 'Checkpoint command and eval/verification skills exist',
+      pass: fileExists(rootDir, 'commands/checkpoint.md') && fileExists(rootDir, 'skills/eval-harness/SKILL.md') && fileExists(rootDir, 'skills/verification-loop/SKILL.md'),
+      fix: 'Add checkpoint command plus eval-harness and verification-loop skills to standardize verification loops.',
     },
     {
       id: 'eval-tests-presence',
@@ -475,7 +652,170 @@ function getRepoChecks(rootDir) {
       pass: fileExists(rootDir, 'commands/model-route.md'),
       fix: 'Add commands/model-route.md and route policies for cheap-default execution.',
     },
+    ...buildGithubChecks(rootDir),
   ];
+}
+
+// GitHub Integration is intentionally repo-scoped. Scoped audits such as hooks,
+// skills, commands, and agents should keep reporting only that surface.
+function buildGithubChecks(rootDir) {
+  return [
+    {
+      id: 'github-workflows',
+      category: 'GitHub Integration',
+      points: 3,
+      scopes: ['repo'],
+      path: '.github/workflows/',
+      description: 'GitHub Actions workflows are checked in',
+      pass: hasFileWithExtension(rootDir, '.github/workflows', ['.yml', '.yaml']),
+      fix: 'Add at least one workflow under .github/workflows/ so CI runs on every PR.',
+    },
+    {
+      id: 'github-pr-template',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/PULL_REQUEST_TEMPLATE.md',
+      description: 'A pull request template is configured',
+      pass:
+        fileExists(rootDir, '.github/PULL_REQUEST_TEMPLATE.md') ||
+        fileExists(rootDir, '.github/pull_request_template.md'),
+      fix: 'Add .github/PULL_REQUEST_TEMPLATE.md so PR descriptions follow a consistent shape.',
+    },
+    {
+      id: 'github-issue-templates',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/ISSUE_TEMPLATE/',
+      description: 'Issue templates are configured',
+      pass: hasFileWithExtension(rootDir, '.github/ISSUE_TEMPLATE', ['.md', '.yml', '.yaml']),
+      fix: 'Add at least one issue template under .github/ISSUE_TEMPLATE/.',
+    },
+    {
+      id: 'github-codeowners',
+      category: 'GitHub Integration',
+      points: 1,
+      scopes: ['repo'],
+      path: '.github/CODEOWNERS',
+      description: 'A CODEOWNERS file routes reviews',
+      pass:
+        fileExists(rootDir, 'CODEOWNERS') ||
+        fileExists(rootDir, '.github/CODEOWNERS') ||
+        fileExists(rootDir, 'docs/CODEOWNERS'),
+      fix: 'Add a CODEOWNERS file so PRs auto-request the right reviewers.',
+    },
+    {
+      id: 'github-dep-updates',
+      category: 'GitHub Integration',
+      points: 2,
+      scopes: ['repo'],
+      path: '.github/dependabot.yml',
+      description: 'Automated dependency updates are configured',
+      pass:
+        fileExists(rootDir, '.github/dependabot.yml') ||
+        fileExists(rootDir, '.github/dependabot.yaml') ||
+        fileExists(rootDir, 'renovate.json') ||
+        fileExists(rootDir, '.github/renovate.json') ||
+        fileExists(rootDir, '.renovaterc'),
+      fix: 'Add a Dependabot or Renovate config so dependency updates land automatically.',
+    },
+  ];
+}
+
+function readAllWorkflowsText(rootDir) {
+  const dir = path.join(rootDir, '.github/workflows');
+  if (!fs.existsSync(dir)) {
+    return '';
+  }
+
+  const stack = [dir];
+  let combined = '';
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const nextPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(nextPath);
+      } else if (entry.name.endsWith('.yml') || entry.name.endsWith('.yaml')) {
+        try {
+          combined += `${fs.readFileSync(nextPath, 'utf8')}\n`;
+        } catch (_error) {
+          // Ignore unreadable workflow files; the finding should stay deterministic.
+        }
+      }
+    }
+  }
+
+  return combined;
+}
+
+function buildProviderChecks(rootDir, provider, sharedContext) {
+  const spec = PROVIDERS[provider];
+  const packageJson = sharedContext.packageJson || {};
+  const scriptsText = Object.values(packageJson.scripts || {}).join('\n');
+  const category = `${provider} Integration`;
+
+  return [
+    {
+      id: `${provider.toLowerCase()}-config`,
+      category,
+      points: 3,
+      scopes: ['repo'],
+      path: `${provider} config`,
+      description: `${provider} deployment config is checked in`,
+      pass: spec.detect(rootDir),
+      fix: `Commit ${provider} configuration so deploys are reproducible from source.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-build-script`,
+      category,
+      points: 2,
+      scopes: ['repo'],
+      path: 'package.json scripts',
+      description: `package.json scripts reference ${provider}`,
+      pass: spec.buildPattern.test(scriptsText),
+      fix: `Add a build or deploy script in package.json that runs ${provider}.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-env-doc`,
+      category,
+      points: 2,
+      scopes: ['repo'],
+      path: '.env.example',
+      description: `${provider} env keys are documented in .env.example`,
+      pass: spec.keyPattern.test(sharedContext.envExample),
+      fix: `Document ${provider} environment variables in .env.example.`,
+    },
+    {
+      id: `${provider.toLowerCase()}-workflow-uses`,
+      category,
+      points: 3,
+      scopes: ['repo'],
+      path: '.github/workflows/',
+      description: `A GitHub workflow uses the ${provider} action or CLI`,
+      pass: spec.workflowPattern.test(sharedContext.workflowsText),
+      fix: `Reference the ${provider} action or CLI from a workflow under .github/workflows/.`,
+    },
+  ];
+}
+
+function collectProviderChecks(rootDir, packageJson) {
+  const providers = getApplicableProviders(rootDir);
+  if (providers.length === 0) {
+    return [];
+  }
+
+  const sharedContext = {
+    packageJson: packageJson || {},
+    envExample: `${safeRead(rootDir, '.env.example')}\n${safeRead(rootDir, '.env.sample')}`,
+    workflowsText: readAllWorkflowsText(rootDir),
+  };
+
+  return providers.flatMap(provider => buildProviderChecks(rootDir, provider, sharedContext));
 }
 
 function getConsumerChecks(rootDir) {
@@ -599,6 +939,8 @@ function getConsumerChecks(rootDir) {
       pass: projectHooks.includes('PreToolUse') || projectHooks.includes('beforeSubmitPrompt') || fileExists(rootDir, '.claude/hooks.json'),
       fix: 'Add project-local hook settings or hook definitions for prompt/tool guardrails.',
     },
+    ...buildGithubChecks(rootDir),
+    ...collectProviderChecks(rootDir, packageJson),
   ];
 }
 
@@ -632,6 +974,7 @@ function buildReport(scope, options = {}) {
   const overallScore = checks
     .filter(check => check.pass)
     .reduce((sum, check) => sum + check.points, 0);
+  const applicableCategories = CATEGORIES.filter(name => categoryScores[name]?.max > 0);
 
   const failedChecks = checks.filter(check => !check.pass);
   const topActions = failedChecks
@@ -649,10 +992,12 @@ function buildReport(scope, options = {}) {
     root_dir: rootDir,
     target_mode: targetMode,
     deterministic: true,
-    rubric_version: '2026-03-30',
+    rubric_version: RUBRIC_VERSION,
     overall_score: overallScore,
     max_score: maxScore,
     categories: categoryScores,
+    applicable_categories: applicableCategories,
+    category_count: applicableCategories.length,
     checks: checks.map(check => ({
       id: check.id,
       category: check.category,
@@ -732,4 +1077,6 @@ if (require.main === module) {
 module.exports = {
   buildReport,
   parseArgs,
+  findPluginInstall,
+  compareVersionDesc,
 };

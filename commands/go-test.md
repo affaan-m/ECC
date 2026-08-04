@@ -260,7 +260,7 @@ go test -race -cover ./...
 
 - `/go-build` - Fix build errors
 - `/go-review` - Review code after implementation
-- `/verify` - Run full verification loop
+- `verification-loop` skill - Run full verification loop
 
 ## Related
 

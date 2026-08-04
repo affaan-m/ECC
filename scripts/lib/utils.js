@@ -15,6 +15,9 @@ const isMacOS = process.platform === 'darwin';
 const isLinux = process.platform === 'linux';
 const SESSION_DATA_DIR_NAME = 'session-data';
 const LEGACY_SESSIONS_DIR_NAME = 'sessions';
+const {
+  resolveAgentDataHome,
+} = require('./agent-data-home');
 const WINDOWS_RESERVED_SESSION_IDS = new Set([
   'CON', 'PRN', 'AUX', 'NUL',
   'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
@@ -33,11 +36,19 @@ function getHomeDir() {
 }
 
 /**
- * Get the Claude config directory
+ * ECC agent data root for memory persistence (see scripts/lib/agent-data-home.js).
+ */
+function getAgentDataHome() {
+  return resolveAgentDataHome();
+}
+
+/**
+ * Get the Claude config directory (alias of getAgentDataHome for backwards compatibility).
  */
 function getClaudeDir() {
-  return path.join(getHomeDir(), '.claude');
+  return getAgentDataHome();
 }
+
 
 /**
  * Get the sessions directory
@@ -273,6 +284,7 @@ async function readStdinJson(options = {}) {
   return new Promise((resolve) => {
     let data = '';
     let settled = false;
+    let overflowed = false;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -282,7 +294,12 @@ async function readStdinJson(options = {}) {
         process.stdin.removeAllListeners('end');
         process.stdin.removeAllListeners('error');
         if (process.stdin.unref) process.stdin.unref();
-        // Resolve with whatever we have so far rather than hanging
+        // Oversized input is always rejected. Otherwise, resolve with whatever
+        // arrived before the timeout rather than hanging.
+        if (overflowed) {
+          resolve({});
+          return;
+        }
         try {
           resolve(data.trim() ? JSON.parse(data) : {});
         } catch {
@@ -293,15 +310,34 @@ async function readStdinJson(options = {}) {
 
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (data.length < maxSize) {
-        data += chunk;
+      if (settled) return;
+      if (overflowed) return;
+      // Mark oversized input as rejected and discard the buffered prefix.
+      // Continue consuming the stream without retaining later chunks so a
+      // finite parent can finish writing without EPIPE. Resolution happens at
+      // EOF or the existing timeout, which also bounds never-closing writers.
+      if (data.length + chunk.length > maxSize) {
+        overflowed = true;
+        data = '';
+        process.stderr.write(
+          `[readStdinJson] stdin exceeded ${maxSize} bytes; input truncated and treated as empty\n`
+        );
+        return;
       }
+      data += chunk;
     });
 
     process.stdin.on('end', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
+      if (overflowed) {
+        resolve({});
+        return;
+      }
       try {
         resolve(data.trim() ? JSON.parse(data) : {});
       } catch {
@@ -312,7 +348,10 @@ async function readStdinJson(options = {}) {
     });
 
     process.stdin.on('error', () => {
-      if (settled) return;
+      if (settled) {
+        clearTimeout(timer);
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       // Resolve with empty object so hooks don't crash on stdin errors
@@ -585,6 +624,7 @@ module.exports = {
 
   // Directories
   getHomeDir,
+  getAgentDataHome,
   getClaudeDir,
   getSessionsDir,
   getLegacySessionsDir,

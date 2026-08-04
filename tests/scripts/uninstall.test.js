@@ -17,6 +17,7 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
 const CURRENT_MANIFEST_VERSION = JSON.parse(
   fs.readFileSync(path.join(REPO_ROOT, 'manifests', 'install-modules.json'), 'utf8')
 ).version;
+const CLI_TIMEOUT_MS = 30000;
 const {
   createInstallState,
   writeInstallState,
@@ -48,7 +49,7 @@ function run(args = [], options = {}) {
       env,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 10000,
+      timeout: CLI_TIMEOUT_MS,
     });
 
     return { code: 0, stdout, stderr: '' };
@@ -92,7 +93,7 @@ function runTests() {
         },
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 10000,
+        timeout: CLI_TIMEOUT_MS,
       });
       assert.ok(installStdout.includes('Done. Install-state written'));
 

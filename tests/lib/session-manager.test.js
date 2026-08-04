@@ -1165,16 +1165,35 @@ src/main.ts
   })) passed++; else failed++;
 
   if (test('createdTime falls back to ctime when birthtime is epoch-zero', () => {
-    // This tests the || fallback logic: stats.birthtime || stats.ctime
-    // On some FS, birthtime may be epoch 0 (falsy as a Date number comparison
-    // but truthy as a Date object). The fallback is defensive.
-    const stats = fs.statSync(r33FilePath);
-    // Both birthtime and ctime should be valid Dates on any modern OS
-    assert.ok(stats.ctime instanceof Date, 'ctime should exist');
-    // The fallback expression `birthtime || ctime` should always produce a valid Date
-    const fallbackResult = stats.birthtime || stats.ctime;
-    assert.ok(fallbackResult instanceof Date, 'Fallback should produce a Date');
-    assert.ok(fallbackResult.getTime() > 0, 'Fallback date should be non-zero');
+    const originalStatSync = fs.statSync;
+    const realStats = originalStatSync(r33FilePath);
+    const fallbackCtime = new Date('2024-01-02T03:04:05.000Z');
+
+    fs.statSync = targetPath => {
+      if (path.resolve(targetPath) === path.resolve(r33FilePath)) {
+        return {
+          ...realStats,
+          birthtime: new Date(0),
+          birthtimeMs: 0,
+          ctime: fallbackCtime,
+          ctimeMs: fallbackCtime.getTime()
+        };
+      }
+      return originalStatSync(targetPath);
+    };
+
+    try {
+      const session = sessionManager.getSessionById('r33birth');
+      assert.ok(session, 'Should find the session');
+      assert.ok(session.createdTime instanceof Date, 'createdTime should be a Date');
+      assert.strictEqual(
+        session.createdTime.getTime(),
+        fallbackCtime.getTime(),
+        'createdTime should fall back to ctime when birthtime is epoch-zero'
+      );
+    } finally {
+      fs.statSync = originalStatSync;
+    }
   })) passed++; else failed++;
 
   // Cleanup Round 33 HOME override
@@ -1384,7 +1403,19 @@ src/main.ts
 
     // Create a broken symlink that matches the session filename pattern
     const brokenSymlink = '2026-02-10-deadbeef-session.tmp';
-    fs.symlinkSync('/nonexistent/path/that/does/not/exist', path.join(sessionsDir, brokenSymlink));
+    try {
+      fs.symlinkSync('/nonexistent/path/that/does/not/exist', path.join(sessionsDir, brokenSymlink));
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
 
     const origHome = process.env.HOME;
     const origUserProfile = process.env.USERPROFILE;
@@ -1421,7 +1452,19 @@ src/main.ts
 
     // Create a broken symlink that matches a session ID pattern
     const brokenFile = '2026-02-11-deadbeef-session.tmp';
-    fs.symlinkSync('/nonexistent/target/that/does/not/exist', path.join(sessionsDir, brokenFile));
+    try {
+      fs.symlinkSync('/nonexistent/target/that/does/not/exist', path.join(sessionsDir, brokenFile));
+    } catch (err) {
+      // Skip only where symlink creation is blocked (e.g. Windows without
+      // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+      // so real failures aren't masked.
+      if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+        console.log('    (skipped — symlinks not supported)');
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
 
     const origHome = process.env.HOME;
     const origUserProfile = process.env.USERPROFILE;
@@ -2047,9 +2090,9 @@ file.ts
   // ── Round 112: appendSessionContent with read-only file — returns false ──
   console.log('\nRound 112: appendSessionContent (read-only file):');
   if (test('appendSessionContent returns false when file is read-only (EACCES)', () => {
-    if (process.platform === 'win32') {
-      // chmod doesn't work reliably on Windows — skip
-      assert.ok(true, 'Skipped on Windows');
+    if (process.platform === 'win32' || process.getuid?.() === 0) {
+      // chmod ineffective on Windows/root — skip
+      assert.ok(true, 'Skipped on Windows/root');
       return;
     }
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'r112-readonly-'));

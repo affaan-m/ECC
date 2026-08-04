@@ -1,0 +1,46 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "stale-pr-salvage-maintainer-branch",
+  "run_id": "2026-05-12-cleanup-salvage-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "Public PR, issue, and discussion queues are clear; release publication remains approval-gated; stale-salvage ledger has landed, skipped, superseded, and manual-review states.",
+      "evidence": [
+        "docs/ECC-2.0-GA-ROADMAP.md",
+        "docs/stale-pr-salvage-ledger.md"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved stale PR source mappings, existing maintainer salvage examples, legacy import rules, and manual-review localization tails.",
+      "evidence": [
+        "docs/stale-pr-salvage-ledger.md",
+        "docs/legacy-artifact-inventory.md",
+        "https://github.com/affaan-m/everything-claude-code/pull/1815",
+        "https://github.com/affaan-m/everything-claude-code/pull/1818"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: maintainer-owned salvage branch with attribution, and blind cherry-pick of stale translations.",
+      "candidate_ids": [
+        "maintainer-salvage-branch",
+        "blind-cherry-pick-translations"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the maintainer-owned salvage branch and rejected blind translation cherry-picking because it violates manual-review and attribution gates.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the maintainer-owned salvage branch playbook as a reusable process. No repository, GitHub, release, billing, or plugin publication action is performed by this prototype.",
+      "promoted_candidate_id": "maintainer-salvage-branch"
+    }
+  ]
+}

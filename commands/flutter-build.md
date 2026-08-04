@@ -156,7 +156,7 @@ The agent will stop and report if:
 
 - `/flutter-test` — Run tests after build succeeds
 - `/flutter-review` — Review code quality
-- `/verify` — Full verification loop
+- `verification-loop` skill — Full verification loop
 
 ## Related
 

@@ -1,0 +1,45 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "deep-analyzer-evidence",
+  "run_id": "2026-05-12-deep-analyzer-evidence-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "A deep-analysis PR changes repository, commit, architecture, workflow, pattern, or risk-taxonomy behavior. The evaluator records the touched analyzer surface and remains read-only.",
+      "evidence": [
+        "../ECC-Tools/src/lib/analyzer.ts",
+        "../ECC-Tools/src/lib/pr-risk-taxonomy.ts"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved the maintained analyzer corpus, corpus regression test, and follow-up tests that distinguish corpus-backed analyzer changes from no-evidence analyzer rewrites.",
+      "evidence": [
+        "../ECC-Tools/src/analyzers/fixtures/deep-analyzer-corpus.ts",
+        "../ECC-Tools/src/analyzers/deep-analyzer-corpus.test.ts",
+        "../ECC-Tools/src/lib/analyzer.compare.test.ts"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: corpus-backed analyzer change, and threshold-only analyzer rewrite without expected-output evidence.",
+      "candidate_ids": [
+        "corpus-backed-analyzer-change",
+        "threshold-only-analyzer-rewrite"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the corpus-backed analyzer change because it names representative repository/commit cases and expected-output comparisons. Rejected the threshold-only rewrite because it lacks corpus or benchmark evidence.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/deep-analyzer-evidence/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only deep-analyzer evidence playbook. Future analyzer edits must move through maintainer PRs with corpus evidence, regression commands, and rollback notes.",
+      "promoted_candidate_id": "corpus-backed-analyzer-change"
+    }
+  ]
+}

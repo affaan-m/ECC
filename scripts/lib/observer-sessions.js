@@ -1,11 +1,28 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { getClaudeDir, ensureDir, sanitizeSessionId } = require('./utils');
+const { ensureDir, sanitizeSessionId } = require('./utils');
 
 function getHomunculusDir() {
-  return path.join(getClaudeDir(), 'homunculus');
+  const override = process.env.CLV2_HOMUNCULUS_DIR;
+  if (override) {
+    if (path.isAbsolute(override)) {
+      return override;
+    }
+    process.stderr.write(`[ecc] CLV2_HOMUNCULUS_DIR=${override} is not absolute; ignoring\n`);
+  }
+
+  const xdgDataHome = process.env.XDG_DATA_HOME;
+  if (xdgDataHome) {
+    if (path.isAbsolute(xdgDataHome)) {
+      return path.join(xdgDataHome, 'ecc-homunculus');
+    }
+    process.stderr.write(`[ecc] XDG_DATA_HOME=${xdgDataHome} is not absolute; ignoring\n`);
+  }
+
+  return path.join(os.homedir(), '.local', 'share', 'ecc-homunculus');
 }
 
 function getProjectsDir() {
@@ -39,6 +56,23 @@ function stripRemoteCredentials(remoteUrl) {
   return String(remoteUrl).replace(/:\/\/[^@]+@/, '://');
 }
 
+function normalizeRemoteUrl(remoteUrl) {
+  if (!remoteUrl) return '';
+  const raw = String(remoteUrl);
+  const isNetwork = !raw.startsWith('file://') && (raw.includes('://') || /^[^@/:]+@[^:/]+:/.test(raw));
+  let normalized = stripRemoteCredentials(raw)
+    .replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, '')
+    .replace(/^[^@/:]+@([^:/]+):/, '$1/')
+    .replace(/\.git\/?$/, '')
+    .replace(/\/+$/, '');
+
+  if (isNetwork) {
+    normalized = normalized.toLowerCase();
+  }
+
+  return normalized;
+}
+
 function resolveProjectRoot(cwd = process.cwd()) {
   const envRoot = process.env.CLAUDE_PROJECT_DIR;
   if (envRoot && fs.existsSync(envRoot)) {
@@ -53,7 +87,8 @@ function resolveProjectRoot(cwd = process.cwd()) {
 
 function computeProjectId(projectRoot) {
   const remoteUrl = stripRemoteCredentials(runGit(['remote', 'get-url', 'origin'], projectRoot));
-  return crypto.createHash('sha256').update(remoteUrl || projectRoot).digest('hex').slice(0, 12);
+  const hashInput = normalizeRemoteUrl(remoteUrl) || remoteUrl || projectRoot;
+  return crypto.createHash('sha256').update(hashInput).digest('hex').slice(0, 12);
 }
 
 function resolveProjectContext(cwd = process.cwd()) {
@@ -163,6 +198,8 @@ function stopObserverForContext(context) {
 }
 
 module.exports = {
+  getHomunculusDir,
+  normalizeRemoteUrl,
   resolveProjectContext,
   getObserverActivityFile,
   getObserverPidFile,

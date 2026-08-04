@@ -10,6 +10,7 @@ unset CLAUDECODE
 
 SLEEP_PID=""
 USR1_FIRED=0
+PENDING_ANALYSIS=0
 ANALYZING=0
 LAST_ANALYSIS_EPOCH=0
 # Minimum seconds between analyses (prevents rapid re-triggering)
@@ -17,6 +18,12 @@ ANALYSIS_COOLDOWN="${ECC_OBSERVER_ANALYSIS_COOLDOWN:-60}"
 IDLE_TIMEOUT_SECONDS="${ECC_OBSERVER_IDLE_TIMEOUT_SECONDS:-1800}"
 SESSION_LEASE_DIR="${PROJECT_DIR}/.observer-sessions"
 ACTIVITY_FILE="${PROJECT_DIR}/.observer-last-activity"
+
+# Resolve this script's own directory so sibling scripts (session-guardian.sh)
+# and relative helpers (../scripts/instinct-cli.py) resolve correctly whether
+# this file is executed or sourced. $0 is the *caller* when sourced, so prefer
+# ${BASH_SOURCE[0]}, which always points at this file (#2370).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cleanup() {
   [ -n "$SLEEP_PID" ] && kill "$SLEEP_PID" 2>/dev/null
@@ -83,6 +90,28 @@ exit_if_idle_without_sessions() {
   fi
 }
 
+wait_for_claude_analysis() {
+  local child_pid="$1"
+  local wait_status=0
+
+  while true; do
+    wait "$child_pid"
+    wait_status=$?
+
+    if [ "$wait_status" -eq 0 ]; then
+      return 0
+    fi
+
+    # SIGUSR1 can interrupt wait while the Claude child is still running.
+    # Re-wait in that case so a signal is not logged as a false child failure.
+    if kill -0 "$child_pid" 2>/dev/null; then
+      continue
+    fi
+
+    return "$wait_status"
+  done
+}
+
 analyze_observations() {
   if [ ! -f "$OBSERVATIONS_FILE" ]; then
     return
@@ -106,7 +135,7 @@ analyze_observations() {
   fi
 
   # session-guardian: gate observer cycle (active hours, cooldown, idle detection)
-  if ! bash "$(dirname "$0")/session-guardian.sh"; then
+  if ! bash "${SCRIPT_DIR}/session-guardian.sh"; then
     echo "[$(date)] Observer cycle skipped by session-guardian" >> "$LOG_FILE"
     return
   fi
@@ -116,7 +145,10 @@ analyze_observations() {
   MAX_ANALYSIS_LINES="${ECC_OBSERVER_MAX_ANALYSIS_LINES:-500}"
   observer_tmp_dir="${PROJECT_DIR}/.observer-tmp"
   mkdir -p "$observer_tmp_dir"
-  analysis_file="$(mktemp "${observer_tmp_dir}/ecc-observer-analysis.XXXXXX.jsonl")"
+  # Keep the XXXXXX run at the very end of the template: BSD/macOS mktemp only
+  # substitutes a trailing X run, so a suffix after it (e.g. `.jsonl`) produces a
+  # literal, non-random name that wedges every later cycle with "File exists" (#2417).
+  analysis_file="$(mktemp "${observer_tmp_dir}/ecc-observer-analysis.jsonl.XXXXXX")"
   tail -n "$MAX_ANALYSIS_LINES" "$OBSERVATIONS_FILE" > "$analysis_file"
   analysis_count=$(wc -l < "$analysis_file" 2>/dev/null || echo 0)
   echo "[$(date)] Using last $analysis_count of $obs_count observations for analysis" >> "$LOG_FILE"
@@ -182,9 +214,22 @@ PROMPT
   fi
 
   timeout_seconds="${ECC_OBSERVER_TIMEOUT_SECONDS:-120}"
-  max_turns="${ECC_OBSERVER_MAX_TURNS:-20}"
+  # Auto-scale max_turns proportional to analysis batch size when not explicitly set.
+  # The old hardcoded default of 20 is insufficient for the 500-line MAX_ANALYSIS_LINES
+  # default: Claude hits --max-turns before it can write all discovered instinct files.
+  # Formula: 1 turn per 10 analysis lines, floor 20, cap 100. (#2035)
+  if [ -n "${ECC_OBSERVER_MAX_TURNS:-}" ]; then
+    max_turns="${ECC_OBSERVER_MAX_TURNS}"
+  else
+    max_turns=$(( analysis_count / 10 ))
+    if [ "$max_turns" -lt 20 ]; then max_turns=20; fi
+    if [ "$max_turns" -gt 100 ]; then max_turns=100; fi
+  fi
   exit_code=0
 
+  # Sanitize max_turns. The auto-scaled path above always yields a valid value >=20,
+  # but an explicit ECC_OBSERVER_MAX_TURNS override may be non-numeric, empty, or too
+  # small, so guard here and fall back to the safe default of 20.
   case "$max_turns" in
     ''|*[!0-9]*)
       max_turns=20
@@ -199,13 +244,20 @@ PROMPT
   # on all platforms, not just when the observer happens to be launched from the project root.
   cd "$PROJECT_DIR" || { echo "[$(date)] Failed to cd to PROJECT_DIR ($PROJECT_DIR), skipping analysis" >> "$LOG_FILE"; rm -f "$analysis_file"; return; }
 
-  # Prevent observe.sh from recording this automated Haiku session as observations.
+  # Prevent observe.sh from recording this automated observer session as observations.
   # Pass prompt via -p flag instead of stdin redirect for Windows compatibility (#842).
   # prompt_content is already loaded in-memory so this no longer depends on the
   # mktemp absolute path continuing to resolve after cwd changes (#1296).
-  ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model haiku --max-turns "$max_turns" --print \
+  # stdin is explicitly closed with </dev/null: on Git Bash/MSYS2 the backgrounded
+  # child otherwise inherits an open stdin, and claude waits on it, warns
+  # "no stdin data received", and exits 1 before reading the analysis file (#2452).
+  # Model is configurable via ECC_OBSERVER_MODEL (defaults to haiku for cost efficiency);
+  # e.g. ECC_OBSERVER_MODEL=opus for higher-quality instinct extraction. Heavier models are
+  # slower — consider raising ECC_OBSERVER_TIMEOUT_SECONDS (default 120s) so the watchdog
+  # doesn't kill the analysis mid-run.
+  ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model "${ECC_OBSERVER_MODEL:-haiku}" --max-turns "$max_turns" --print \
     --allowedTools "Read,Write" \
-    -p "$prompt_content" >> "$LOG_FILE" 2>&1 &
+    -p "$prompt_content" < /dev/null >> "$LOG_FILE" 2>&1 &
   claude_pid=$!
 
   (
@@ -217,15 +269,20 @@ PROMPT
   ) &
   watchdog_pid=$!
 
-  wait "$claude_pid"
+  wait_for_claude_analysis "$claude_pid"
   exit_code=$?
   kill "$watchdog_pid" 2>/dev/null || true
   rm -f "$analysis_file"
 
   if [ "$exit_code" -ne 0 ]; then
-    echo "[$(date)] Claude analysis failed (exit $exit_code)" >> "$LOG_FILE"
+    echo "[$(date)] Claude analysis failed (exit $exit_code); retaining observations for retry" >> "$LOG_FILE"
+    return
   fi
 
+  # Archive observations only after a successful analysis. A transient
+  # failure (timeout, non-zero exit, rate limit) must not discard the batch
+  # before it has been turned into instincts, since the analyzer only ever
+  # reads the live observations file (#2370).
   if [ -f "$OBSERVATIONS_FILE" ]; then
     archive_dir="${PROJECT_DIR}/observations.archive"
     mkdir -p "$archive_dir"
@@ -236,13 +293,16 @@ PROMPT
 on_usr1() {
   [ -n "$SLEEP_PID" ] && kill "$SLEEP_PID" 2>/dev/null
   SLEEP_PID=""
-  USR1_FIRED=1
 
-  # Re-entrancy guard: skip if analysis is already running (#521)
+  # Re-entrancy guard: defer the nudge so the main loop runs a follow-up
+  # analysis immediately after the current analysis finishes.
   if [ "$ANALYZING" -eq 1 ]; then
-    echo "[$(date)] Analysis already in progress, skipping signal" >> "$LOG_FILE"
+    PENDING_ANALYSIS=1
+    echo "[$(date)] Analysis already in progress, deferring signal" >> "$LOG_FILE"
     return
   fi
+
+  USR1_FIRED=1
 
   # Cooldown: skip if last analysis was too recent (#521)
   now_epoch=$(date +%s)
@@ -259,15 +319,35 @@ on_usr1() {
 }
 trap on_usr1 USR1
 
+# When this file is sourced (e.g. by tests/hooks/observer-loop-archive.test.js)
+# rather than executed, stop here so callers can invoke individual functions
+# such as analyze_observations without starting the observer loop. The only
+# production caller (start-observer.sh) executes the script, so $0 equals
+# BASH_SOURCE[0] there and this guard is a no-op (#2370).
+if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+  return 0 2>/dev/null || true
+fi
+
 echo "$$" > "$PID_FILE"
 echo "[$(date)] Observer started for ${PROJECT_NAME} (PID: $$)" >> "$LOG_FILE"
 
-# Prune expired pending instincts before analysis
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Prune expired pending instincts before analysis (SCRIPT_DIR resolved at top
+# via ${BASH_SOURCE[0]} so it is correct under both execution and sourcing).
 "${CLV2_PYTHON_CMD:-python3}" "${SCRIPT_DIR}/../scripts/instinct-cli.py" prune --quiet >> "$LOG_FILE" 2>&1 || echo "[$(date)] Warning: instinct prune failed (non-fatal)" >> "$LOG_FILE"
 
 while true; do
   exit_if_idle_without_sessions
+
+  if [ "$PENDING_ANALYSIS" -eq 1 ]; then
+    PENDING_ANALYSIS=0
+    USR1_FIRED=0
+    ANALYZING=1
+    analyze_observations
+    LAST_ANALYSIS_EPOCH=$(date +%s)
+    ANALYZING=0
+    continue
+  fi
+
   sleep "$OBSERVER_INTERVAL_SECONDS" &
   SLEEP_PID=$!
   wait "$SLEEP_PID" 2>/dev/null
@@ -277,6 +357,9 @@ while true; do
   if [ "$USR1_FIRED" -eq 1 ]; then
     USR1_FIRED=0
   else
+    ANALYZING=1
     analyze_observations
+    LAST_ANALYSIS_EPOCH=$(date +%s)
+    ANALYZING=0
   fi
 done

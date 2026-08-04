@@ -411,6 +411,27 @@ pub struct SessionMetrics {
     pub cost_usd: f64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionBoardMeta {
+    pub lane: String,
+    pub project: Option<String>,
+    pub feature: Option<String>,
+    pub issue: Option<String>,
+    pub row_label: Option<String>,
+    pub previous_lane: Option<String>,
+    pub previous_row_label: Option<String>,
+    pub column_index: i64,
+    pub row_index: i64,
+    pub stack_index: i64,
+    pub progress_percent: i64,
+    pub status_detail: Option<String>,
+    pub movement_note: Option<String>,
+    pub activity_kind: Option<String>,
+    pub activity_note: Option<String>,
+    pub handoff_backlog: i64,
+    pub conflict_signal: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMessage {
     pub id: i64,

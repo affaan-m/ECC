@@ -110,7 +110,7 @@ This document captures architect-level improvements for the Everything Claude Co
 
 ### 5.1 Hook Runtime Consistency
 
-**Issue:** Most hooks invoke Node scripts via `run-with-flags.js`; one path uses `run-with-flags-shell.sh` + `observe.sh`. The mixed runtime is documented but could be simplified over time.
+**Issue:** Hooks should keep a consistent Node-mode dispatch surface. Continuous-learning observation now dispatches through `run-with-flags.js` and `observe-runner.js`, which delegates to the existing `observe.sh` implementation without exposing a shell-mode hook entry.
 
 **Recommendation:**
 

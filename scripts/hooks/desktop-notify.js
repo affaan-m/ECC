@@ -4,8 +4,12 @@
  *
  * Sends a native desktop notification with the task summary when Claude
  * finishes responding.  Supports:
- *   - macOS: osascript (native)
+ *   - macOS: iTerm2 native escape sequence (preferred) or osascript (fallback)
  *   - WSL: PowerShell 7 or Windows PowerShell + BurntToast module
+ *
+ * On macOS under iTerm2, the notification is owned by iTerm2; clicking it
+ * focuses the iTerm2 tab where Claude Code runs. Outside iTerm2, falls back
+ * to osascript (notification owned by Script Editor; clicks launch it).
  *
  * On WSL, if BurntToast is not installed, logs a tip for installation.
  *
@@ -15,11 +19,14 @@
 
 'use strict';
 
-const { spawnSync } = require('child_process');
+const { spawnSync, execFileSync } = require('child_process');
+const fs = require('fs');
 const { isMacOS, log } = require('../lib/utils');
 
 const TITLE = 'Claude Code';
 const MAX_BODY_LENGTH = 100;
+const MAX_TTY_LOOKUP_DEPTH = 30;
+const PS_TIMEOUT_MS = 2000;
 
 /**
  * Memoized WSL detection at module load (avoids repeated /proc/version reads).
@@ -27,7 +34,7 @@ const MAX_BODY_LENGTH = 100;
 let isWSL = false;
 if (process.platform === 'linux') {
   try {
-    isWSL = require('fs').readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+    isWSL = fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
   } catch {
     isWSL = false;
   }
@@ -99,11 +106,86 @@ function extractSummary(message) {
 }
 
 /**
- * Send a macOS notification via osascript.
- * AppleScript strings do not support backslash escapes, so we replace
- * double quotes with curly quotes and strip backslashes before embedding.
+ * Walk up the process tree to find an ancestor attached to a real TTY.
+ * Hook subprocesses are detached from a controlling terminal, but the parent
+ * Claude Code process still owns the terminal emulator's tty (e.g. iTerm2 tab).
+ * Returns absolute path like "/dev/ttys017", or null if none found.
+ */
+function findTerminalTTY() {
+  let pid = process.pid;
+  for (let depth = 0; depth < MAX_TTY_LOOKUP_DEPTH; depth += 1) {
+    try {
+      const out = execFileSync('ps', ['-o', 'ppid=,tty=', '-p', String(pid)], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: PS_TIMEOUT_MS,
+      }).toString().trim();
+      const m = out.match(/^\s*(\d+)\s+(\S+)\s*$/);
+      if (!m) return null;
+      const [, ppidStr, tty] = m;
+      if (tty && !tty.startsWith('?')) {
+        // `ps -o tty=` may emit either "ttys001" or the short form "s001"
+        // depending on macOS version; normalize so the resulting path exists.
+        const name = tty.startsWith('tty') ? tty : `tty${tty}`;
+        return `/dev/${name}`;
+      }
+      const ppid = parseInt(ppidStr, 10);
+      if (!ppid || ppid <= 1) return null;
+      pid = ppid;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Detect whether the process runs under a terminal multiplexer that would
+ * swallow OSC 9. tmux and screen don't pass OSC 9 through by default, so the
+ * sequence written to their pty never reaches iTerm2 and the user gets no
+ * notification. In that case we skip the iTerm2 fast path and let osascript
+ * handle the notification instead.
+ */
+function isUnderMultiplexer() {
+  if (process.env.TMUX) return true;
+  const term = process.env.TERM || '';
+  return /^screen/.test(term) || /^tmux/.test(term);
+}
+
+/**
+ * Send a macOS notification.
+ *
+ * On terminals that support the OSC 9 notification sequence (iTerm2 and
+ * Ghostty), and when not inside tmux/screen, prefers the native escape
+ * sequence (ESC ] 9 ; <message> BEL) written to the parent terminal's tty.
+ * This makes the terminal the notification owner, so clicking the
+ * notification focuses the exact tab/window where Claude Code is running.
+ * The default osascript path makes Script Editor the owner instead, which
+ * causes clicks to launch Script Editor.
+ *
+ * Falls back to osascript when not running under an OSC 9-capable terminal,
+ * when tty discovery fails, or when running inside a multiplexer that would
+ * swallow OSC 9.
+ * AppleScript strings do not support backslash escapes, so we replace double
+ * quotes with curly quotes and strip backslashes before embedding.
  */
 function notifyMacOS(title, body) {
+  const osc9Capable =
+    process.env.TERM_PROGRAM === 'iTerm.app' ||
+    process.env.TERM_PROGRAM === 'ghostty';
+  if (osc9Capable && !isUnderMultiplexer()) {
+    try {
+      const tty = findTerminalTTY();
+      if (tty) {
+        // Strip control chars (incl. ESC/BEL) to prevent escape-sequence injection.
+        // eslint-disable-next-line no-control-regex
+        const message = `${title}: ${body}`.replace(/[\x00-\x1f\x7f]/g, ' ');
+        fs.writeFileSync(tty, `\x1b]9;${message}\x07`);
+        return;
+      }
+    } catch (err) {
+      log(`[DesktopNotify] iTerm escape failed, falling back to osascript: ${err.message}`);
+    }
+  }
   const safeBody = body.replace(/\\/g, '').replace(/"/g, '\u201C');
   const safeTitle = title.replace(/\\/g, '').replace(/"/g, '\u201C');
   const script = `display notification "${safeBody}" with title "${safeTitle}"`;
@@ -154,15 +236,26 @@ module.exports = { run };
 if (require.main === module) {
   const MAX_STDIN = 1024 * 1024;
   let data = '';
+  let truncated = false;
 
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
     if (data.length < MAX_STDIN) {
-      data += chunk.substring(0, MAX_STDIN - data.length);
+      const remaining = MAX_STDIN - data.length;
+      data += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
     }
   });
   process.stdin.on('end', () => {
     const output = run(data);
+    // Never echo truncated stdin — invalid JSON on stdout is reported as a
+    // Stop hook failure (#2090).
+    if (truncated) {
+      log('[DesktopNotify] stdin exceeded 1MB; suppressing pass-through (fail-open)');
+      return;
+    }
     if (output) process.stdout.write(output);
   });
 }

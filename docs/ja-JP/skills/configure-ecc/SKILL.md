@@ -65,7 +65,7 @@ mkdir -p $TARGET/skills $TARGET/rules
 
 ### 2a: スキルカテゴリの選択
 
-27個のスキルが4つのカテゴリに分類されています。`multiSelect: true` で `AskUserQuestion` を使用します：
+31個のスキルが4つのカテゴリに分類されています。`multiSelect: true` で `AskUserQuestion` を使用します：
 
 ```
 Question: "どのスキルカテゴリをインストールしますか？"
@@ -80,7 +80,7 @@ Options:
 
 選択された各カテゴリについて、以下の完全なスキルリストを表示し、ユーザーに確認または特定のものの選択解除を依頼します。リストが4項目を超える場合、リストをテキストとして表示し、`AskUserQuestion` で「リストされたすべてをインストール」オプションと、ユーザーが特定の名前を貼り付けるための「その他」オプションを使用します。
 
-**カテゴリ: Framework & Language（16スキル）**
+**カテゴリ: Framework & Language（20スキル）**
 
 | スキル | 説明 |
 |-------|-------------|
@@ -96,6 +96,10 @@ Options:
 | `java-coding-standards` | Spring Boot 用 Java コーディング標準: 命名、不変性、Optional、ストリーム |
 | `python-patterns` | Pythonic なイディオム、PEP 8、型ヒント、ベストプラクティス |
 | `python-testing` | pytest、TDD、フィクスチャ、モック、パラメータ化による Python テスト |
+| `quarkus-patterns` | Quarkus アーキテクチャ、Camel メッセージング、CDI サービス、Panache データアクセス |
+| `quarkus-security` | Quarkus セキュリティ: JWT/OIDC、RBAC、入力バリデーション、シークレット管理 |
+| `quarkus-tdd` | JUnit 5、Mockito、REST Assured、Camel テストによる Quarkus TDD |
+| `quarkus-verification` | Quarkus 検証: ビルド、静的解析、テスト、ネイティブコンパイル |
 | `springboot-patterns` | Spring Boot アーキテクチャ、REST API、レイヤードサービス、キャッシング、非同期 |
 | `springboot-security` | Spring Security: 認証/認可、検証、CSRF、シークレット、レート制限 |
 | `springboot-tdd` | JUnit 5、Mockito、MockMvc、Testcontainers による Spring Boot TDD |
@@ -130,9 +134,20 @@ Options:
 
 ### 2c: インストールの実行
 
-選択された各スキルについて、スキルディレクトリ全体をコピーします：
+選択された各スキルについて、正しいソースルートからスキルディレクトリ全体をコピーします：
+
 ```bash
-cp -r $ECC_ROOT/skills/<skill-name> $TARGET/skills/
+# コアスキルは .agents/skills/ 配下にあります
+cp -R "$ECC_ROOT/.agents/skills/<skill-name>" "$TARGET/skills/"
+
+# ニッチスキルは skills/ 配下にあります
+cp -R "$ECC_ROOT/skills/<skill-name>" "$TARGET/skills/"
+```
+
+glob で取得したソースディレクトリを処理するときは、trailing slash 付きのソースをそのまま `cp` に渡さないでください。宛先名にディレクトリ名を明示します：
+
+```bash
+cp -R "${src%/}" "$TARGET/skills/$(basename "${src%/}")"
 ```
 
 注: `continuous-learning` と `continuous-learning-v2` には追加ファイル（config.json、フック、スクリプト）があります — SKILL.md だけでなく、ディレクトリ全体がコピーされることを確認してください。
@@ -154,13 +169,13 @@ Options:
 
 インストールを実行：
 ```bash
-# 共通ルール（rules/ にフラットコピー）
-cp -r $ECC_ROOT/rules/common/* $TARGET/rules/
+# 共通ルール
+cp -r $ECC_ROOT/rules/common $TARGET/rules/common
 
-# 言語固有のルール（rules/ にフラットコピー）
-cp -r $ECC_ROOT/rules/typescript/* $TARGET/rules/   # 選択された場合
-cp -r $ECC_ROOT/rules/python/* $TARGET/rules/        # 選択された場合
-cp -r $ECC_ROOT/rules/golang/* $TARGET/rules/        # 選択された場合
+# 言語固有のルール（言語別ディレクトリを保持）
+cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # 選択された場合
+cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # 選択された場合
+cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # 選択された場合
 ```
 
 **重要**: ユーザーが言語固有のルールを選択したが、共通ルールを選択しなかった場合、警告します：

@@ -25,6 +25,8 @@ class TestProviderType:
         assert ProviderType.CLAUDE.value == "claude"
         assert ProviderType.OPENAI.value == "openai"
         assert ProviderType.OLLAMA.value == "ollama"
+        assert ProviderType.ASTRAFLOW.value == "astraflow"
+        assert ProviderType.ASTRAFLOW_CN.value == "astraflow_cn"
 
 
 class TestMessage:
@@ -62,6 +64,37 @@ class TestToolDefinition:
         result = tool.to_dict()
         assert result["name"] == "search"
         assert result["strict"] is True
+
+    def test_tool_to_openai_tool(self):
+        tool = ToolDefinition(
+            name="search",
+            description="Search",
+            parameters={"type": "object"},
+            strict=False,
+        )
+
+        assert tool.to_openai_tool() == {
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search",
+                "parameters": {"type": "object"},
+                "strict": False,
+            },
+        }
+
+    def test_tool_to_anthropic_tool(self):
+        tool = ToolDefinition(
+            name="search",
+            description="Search",
+            parameters={"type": "object"},
+        )
+
+        assert tool.to_anthropic_tool() == {
+            "name": "search",
+            "description": "Search",
+            "input_schema": {"type": "object"},
+        }
 
 
 class TestToolCall:

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Claude API"
-  short_description: "Anthropic Claude API patterns and SDKs"
-  brand_color: "#D97706"
-  default_prompt: "Build applications with the Claude API using Messages, tool use, streaming, and Agent SDK"
-policy:
-  allow_implicit_invocation: true

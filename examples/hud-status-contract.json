@@ -1,0 +1,117 @@
+{
+  "schema_version": "ecc.hud-status.v1",
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "context": {
+    "harness": "codex",
+    "model": "gpt-5",
+    "repo": "affaan-m/everything-claude-code",
+    "branch": "main",
+    "worktree": "/repo/everything-claude-code",
+    "sessionId": "session-active",
+    "contextWindow": {
+      "remainingPct": 62,
+      "pressure": "normal"
+    }
+  },
+  "toolCalls": {
+    "total": 47,
+    "pending": 0,
+    "stale": 0,
+    "lastTool": {
+      "name": "gh-pr-view",
+      "status": "success",
+      "finishedAt": "2026-05-12T00:00:00.000Z"
+    }
+  },
+  "activeAgents": [
+    {
+      "id": "worker-release-docs",
+      "state": "completed",
+      "branch": "codex/release-docs",
+      "worktree": "/tmp/ecc-release-docs",
+      "objective": "Update release readiness docs",
+      "handoffPath": "/tmp/ecc-release-docs/handoff.md"
+    }
+  ],
+  "todos": {
+    "inProgress": "Verify release publication matrix",
+    "counts": {
+      "pending": 2,
+      "inProgress": 1,
+      "completed": 6
+    }
+  },
+  "checks": {
+    "local": [
+      {
+        "command": "npm run observability:ready",
+        "status": "pass"
+      }
+    ],
+    "remote": [
+      {
+        "name": "CI",
+        "status": "pass",
+        "url": "https://github.com/affaan-m/everything-claude-code/actions"
+      }
+    ]
+  },
+  "cost": {
+    "sessionUsd": 1.23,
+    "budgetUsd": 10,
+    "trend": "within-budget"
+  },
+  "risk": {
+    "status": "attention",
+    "reasons": [
+      "release tag not published"
+    ],
+    "dirtyWorktree": false,
+    "conflicts": 0,
+    "manualReviewRequired": true
+  },
+  "queueState": {
+    "github": {
+      "openPullRequests": 0,
+      "openIssues": 0,
+      "openDiscussions": 0
+    },
+    "mergeQueue": [],
+    "conflictQueue": [],
+    "staleSalvageQueue": [
+      {
+        "sourcePullRequest": 1310,
+        "status": "landed"
+      }
+    ]
+  },
+  "sessionControls": {
+    "supported": [
+      "create",
+      "resume",
+      "status",
+      "stop",
+      "diff",
+      "pr",
+      "mergeQueue",
+      "conflictQueue"
+    ],
+    "blocked": []
+  },
+  "sync": {
+    "Linear": {
+      "project": "ECC 2.0 GA",
+      "health": "atRisk",
+      "issueCapacityBlocked": true,
+      "latestStatusUpdateId": "status-update-id"
+    },
+    "GitHub": {
+      "repo": "affaan-m/everything-claude-code",
+      "latestPullRequest": 1820
+    },
+    "handoff": {
+      "path": "~/.cluster-swarm/handoffs/ecc-update.md",
+      "written": true
+    }
+  }
+}

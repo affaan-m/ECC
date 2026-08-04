@@ -1,0 +1,7 @@
+interface:
+  display_name: "MCP Server Patterns"
+  short_description: "MCP server tools, resources, and prompts"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $mcp-server-patterns to build MCP tools, resources, and prompts."
+policy:
+  allow_implicit_invocation: true

@@ -1,3 +1,7 @@
+---
+description: Detect the project build system and incrementally fix build/type errors with minimal safe changes.
+---
+
 # Build and Fix
 
 Incrementally fix build and type errors with minimal, safe changes.

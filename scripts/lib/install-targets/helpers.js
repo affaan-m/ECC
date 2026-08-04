@@ -7,8 +7,14 @@ const PLATFORM_SOURCE_PATH_OWNERS = Object.freeze({
   '.codex': 'codex',
   '.cursor': 'cursor',
   '.gemini': 'gemini',
+  '.hermes': 'hermes',
+  '.kimi': 'kimi',
+  '.joycode': 'joycode',
   '.opencode': 'opencode',
+  '.openclaw': 'openclaw',
   '.codebuddy': 'codebuddy',
+  '.qwen': 'qwen',
+  '.zed': 'zed',
 });
 
 function normalizeRelativePath(relativePath) {
@@ -181,7 +187,7 @@ function createNamespacedFlatRuleOperations(adapter, moduleId, sourceRelativePat
   return operations;
 }
 
-function createFlatRuleOperations({
+function createFlatFileOperations({
   moduleId,
   repoRoot,
   sourceRelativePath,
@@ -240,6 +246,10 @@ function createFlatRuleOperations({
   }
 
   return operations;
+}
+
+function createFlatRuleOperations(options) {
+  return createFlatFileOperations(options);
 }
 
 function createInstallTargetAdapter(config) {
@@ -342,6 +352,7 @@ function createInstallTargetAdapter(config) {
 
 module.exports = {
   buildValidationIssue,
+  createFlatFileOperations,
   createFlatRuleOperations,
   createInstallTargetAdapter,
   createManagedOperation,

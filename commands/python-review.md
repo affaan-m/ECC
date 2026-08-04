@@ -171,7 +171,7 @@ Run: `black app/routes/user.py app/services/auth.py`
 
 ## Integration with Other Commands
 
-- Use `/tdd` first to ensure tests pass
+- Use the `tdd-workflow` skill first to ensure tests pass
 - Use `/code-review` for non-Python specific concerns
 - Use `/python-review` before committing
 - Use `/build-fix` if static analysis tools fail

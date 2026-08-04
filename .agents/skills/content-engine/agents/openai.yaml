@@ -1,7 +1,7 @@
 interface:
   display_name: "Content Engine"
-  short_description: "Turn one idea into platform-native social and content outputs"
+  short_description: "Platform-native content systems and campaigns"
   brand_color: "#DC2626"
-  default_prompt: "Turn this source asset into strong multi-platform content"
+  default_prompt: "Use $content-engine to turn source material into platform-native content."
 policy:
   allow_implicit_invocation: true

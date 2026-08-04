@@ -1,6 +1,6 @@
 spec_version: "0.1.0"
-name: everything-claude-code
-version: 1.10.0
+name: ecc
+version: 2.1.0
 description: "Initial gitagent export surface for ECC's shared skill catalog, governance, and identity. Native agents, commands, and hooks remain authoritative in the repository while manifest coverage expands."
 author: affaan-m
 license: MIT
@@ -9,10 +9,12 @@ model:
   fallback:
     - claude-sonnet-4-6
 skills:
+  - agent-architecture-audit
   - agent-eval
   - agent-harness-construction
   - agent-payment-x402
   - agentic-engineering
+  - agentic-os
   - ai-first-engineering
   - ai-regression-testing
   - android-clean-architecture
@@ -28,7 +30,6 @@ skills:
   - canary-watch
   - carrier-relationship-management
   - ck
-  - claude-api
   - claude-devfleet
   - click-path-audit
   - clickhouse-io
@@ -36,6 +37,7 @@ skills:
   - coding-standards
   - compose-multiplatform-patterns
   - configure-ecc
+  - contract-first
   - content-engine
   - content-hash-cache-pattern
   - context-budget
@@ -62,6 +64,7 @@ skills:
   - e2e-testing
   - energy-procurement
   - enterprise-agent-ops
+  - error-handling
   - eval-harness
   - exa-search
   - fal-ai-media
@@ -69,6 +72,7 @@ skills:
   - foundation-models-on-device
   - frontend-patterns
   - frontend-slides
+  - fsharp-testing
   - git-workflow
   - golang-patterns
   - golang-testing
@@ -96,6 +100,7 @@ skills:
   - logistics-exception-management
   - market-research
   - mcp-server-patterns
+  - motion-ui
   - nanoclaw-repl
   - nextjs-turbopack
   - nutrient-document-processing
@@ -104,6 +109,8 @@ skills:
   - perl-security
   - perl-testing
   - plankton-code-quality
+  - plan-canvas
+  - plan-orchestrate
   - postgres-patterns
   - product-lens
   - production-scheduling
@@ -112,7 +119,14 @@ skills:
   - python-testing
   - pytorch-patterns
   - quality-nonconformance
+  - quarkus-patterns
+  - quarkus-security
+  - quarkus-tdd
+  - quarkus-verification
   - ralphinho-rfc-pipeline
+  - react-patterns
+  - react-performance
+  - react-testing
   - regex-vs-llm-structured-text
   - repo-scan
   - returns-reverse-logistics
@@ -138,27 +152,32 @@ skills:
   - tdd-workflow
   - team-builder
   - token-budget-advisor
+  - unified-memory
   - verification-loop
   - video-editing
   - videodb
   - visa-doc-translate
   - x-api
 commands:
-  - agent-sort
   - aside
+  - auto-update
   - build-fix
   - checkpoint
-  - claw
   - code-review
-  - context-budget
+  - cost-report
   - cpp-build
   - cpp-review
   - cpp-test
-  - devfleet
-  - docs
-  - e2e
-  - eval
+  - ecc-guide
+  - epic-claim
+  - epic-decompose
+  - epic-publish
+  - epic-review
+  - epic-sync
+  - epic-unblock
+  - epic-validate
   - evolve
+  - fastapi-review
   - feature-dev
   - flutter-build
   - flutter-review
@@ -185,18 +204,27 @@ commands:
   - learn-eval
   - loop-start
   - loop-status
+  - marketing-campaign
   - model-route
   - multi-backend
   - multi-execute
   - multi-frontend
   - multi-plan
   - multi-workflow
-  - orchestrate
+  - orch-add-feature
+  - orch-build-mvp
+  - orch-change-feature
+  - orch-fix-defect
+  - orch-refine-code
+  - orch-review
   - plan
+  - plan-canvas
+  - plan-prd
   - pm2
   - projects
   - promote
-  - prompt-optimize
+  - project-init
+  - pr
   - prp-commit
   - prp-implement
   - prp-plan
@@ -205,24 +233,26 @@ commands:
   - prune
   - python-review
   - quality-gate
+  - react-build
+  - react-review
+  - react-test
   - refactor-clean
   - resume-session
   - review-pr
-  - rules-distill
   - rust-build
   - rust-review
   - rust-test
   - santa-loop
   - save-session
+  - security-scan
   - sessions
   - setup-pm
   - skill-create
   - skill-health
-  - tdd
   - test-coverage
   - update-codemaps
   - update-docs
-  - verify
+  - vue-review
 tags:
   - agent-harness
   - developer-tools

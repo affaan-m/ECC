@@ -640,7 +640,7 @@ Suggested operation shape:
   "kind": "copy",
   "moduleId": "rules-core",
   "source": "rules/common/coding-style.md",
-  "destination": "/Users/example/.claude/rules/common/coding-style.md",
+  "destination": "/Users/example/.claude/rules/ecc/common/coding-style.md",
   "ownership": "managed",
   "overwritePolicy": "replace"
 }
@@ -703,7 +703,7 @@ Suggested payload:
     "skippedModules": []
   },
   "source": {
-    "repoVersion": "1.10.0",
+    "repoVersion": "2.1.0",
     "repoCommit": "git-sha",
     "manifestVersion": 1
   },
@@ -711,7 +711,7 @@ Suggested payload:
     {
       "kind": "copy",
       "moduleId": "rules-core",
-      "destination": "/Users/example/.claude/rules/common/coding-style.md",
+      "destination": "/Users/example/.claude/rules/ecc/common/coding-style.md",
       "digest": "sha256:..."
     }
   ]

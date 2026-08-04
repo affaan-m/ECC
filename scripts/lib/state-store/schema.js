@@ -13,6 +13,7 @@ const ENTITY_DEFINITIONS = {
   decision: 'decision',
   installState: 'installState',
   governanceEvent: 'governanceEvent',
+  workItem: 'workItem',
 };
 
 let cachedSchema = null;

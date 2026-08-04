@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "deep-analyzer-evidence",
+  "run_id": "2026-05-12-deep-analyzer-evidence-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "corpus_retrieval": 0.95,
+    "expected_output_comparison": 0.91,
+    "representative_case_coverage": 0.89,
+    "taxonomy_gap_safety": 0.93,
+    "publication_safety": 1
+  },
+  "findings": [
+    {
+      "id": "corpus-required",
+      "severity": "warning",
+      "summary": "Deep-analysis behavior changes need maintained corpus, snapshot, fixture, benchmark, golden, eval, or reference-set evidence before promotion."
+    },
+    {
+      "id": "expected-output-required",
+      "severity": "warning",
+      "summary": "Analyzer changes should compare expected folder type, module organization, test location, primary language, commit pattern, or workflow outputs."
+    },
+    {
+      "id": "read-only-routing",
+      "severity": "info",
+      "summary": "The evaluator can recommend a maintainer PR but cannot post PR comments, check runs, Linear sync updates, packages, plugins, or release actions itself."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "corpus-backed-analyzer-change",
+    "action": "Use the promoted deep-analyzer evidence playbook for PRs that change repository, commit, architecture, workflow, pattern, or risk-taxonomy analysis behavior."
+  }
+}

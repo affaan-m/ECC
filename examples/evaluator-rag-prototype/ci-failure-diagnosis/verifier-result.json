@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "ci-failure-diagnosis",
+  "run_id": "2026-05-12-ci-failure-diagnosis-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "log-backed-minimal-fix",
+      "decision": "accepted",
+      "score": 0.93,
+      "reasons": [
+        "requires failed job, step, platform, runtime, and log evidence",
+        "compares changed files to the failing surface before proposing a fix",
+        "names a focused local reproduction or regression command",
+        "keeps required checks intact",
+        "keeps merge, release, package, plugin, billing, and announcement actions approval-gated"
+      ],
+      "rollback": "Revert the future implementation PR or restore the original failing test fixture; no code is changed by this read-only playbook."
+    },
+    {
+      "candidate_id": "rerun-only-green-wait",
+      "decision": "rejected",
+      "score": 0.17,
+      "reasons": [
+        "does not preserve the failing log excerpt",
+        "does not identify job, step, platform, runtime, or package manager",
+        "does not compare failure surface to changed files",
+        "does not add or name a regression gate",
+        "risks merging a flaky or still-unexplained CI failure"
+      ],
+      "rollback": "Do not treat this as a fix; restart diagnosis from captured failed logs and changed-file context."
+    }
+  ],
+  "promoted_candidate_id": "log-backed-minimal-fix"
+}

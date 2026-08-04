@@ -151,4 +151,6 @@ grep -A5 "annotationProcessorPaths\|annotationProcessor" pom.xml build.gradle
 
 最终：`Build Status: SUCCESS/FAILED | Errors Fixed: N | Files Modified: list`
 
-有关详细的 Java 和 Spring Boot 模式，请参阅 `skill: springboot-patterns`。
+有关详细的模式和示例：
+* **[SPRING]**：请参阅 `skill: springboot-patterns`
+* **[QUARKUS]**：请参阅 `skill: quarkus-patterns`

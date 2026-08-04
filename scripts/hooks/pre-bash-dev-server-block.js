@@ -4,6 +4,10 @@
 const MAX_STDIN = 1024 * 1024;
 const path = require('path');
 const { splitShellSegments } = require('../lib/shell-split');
+const {
+  extractCommandSubstitutions,
+  extractSubshellGroups
+} = require('../lib/shell-substitution');
 
 const DEV_COMMAND_WORDS = new Set([
   'npm',
@@ -123,6 +127,8 @@ function getLeadingCommandWord(segment) {
       continue;
     }
 
+    if (token === '{' || token === '}') continue;
+
     if (/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token)) continue;
 
     const normalizedToken = normalizeCommandWord(token);
@@ -154,23 +160,59 @@ process.stdin.on('data', chunk => {
   }
 });
 
+const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
+// Trailing (?![\w-]) rather than \b: \b treats a hyphen as a word boundary, so
+// `dev\b` matches the `dev` prefix of distinct scripts like `dev-setup` /
+// `dev-docs` / `dev-build` and wrongly blocks them. The lookahead still matches
+// the dev server (`dev`, `dev;`, `dev:ssr`, ...) but not a `dev-<suffix>` script.
+const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)(?![\w-])/;
+
+/**
+ * Collect every command-line segment we should evaluate. Returns the top-level
+ * segments first, then segments harvested from `$(...)` / backtick command
+ * substitutions and plain `(...)` subshell groups, recursively.
+ *
+ * Without this expansion the leading-command and dev-pattern check below only
+ * sees the outermost command, so wrappers like `$(npm run dev)` and
+ * `(npm run dev)` (which still spawn a dev server) sneak past.
+ */
+function collectCheckSegments(cmd) {
+  const segments = [...splitShellSegments(cmd)];
+  const queue = [cmd];
+  const seen = new Set();
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    for (const body of extractCommandSubstitutions(current)) {
+      for (const seg of splitShellSegments(body)) segments.push(seg);
+      queue.push(body);
+    }
+    for (const body of extractSubshellGroups(current)) {
+      for (const seg of splitShellSegments(body)) segments.push(seg);
+      queue.push(body);
+    }
+  }
+
+  return segments;
+}
+
+function isBlockedDevSegment(segment) {
+  const commandWord = getLeadingCommandWord(segment);
+  if (!commandWord || !DEV_COMMAND_WORDS.has(commandWord)) return false;
+  return DEV_PATTERN.test(segment) && !TMUX_LAUNCHER.test(segment);
+}
+
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw);
     const cmd = String(input.tool_input?.command || '');
 
     if (process.platform !== 'win32') {
-      const segments = splitShellSegments(cmd);
-      const tmuxLauncher = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
-      const devPattern = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn\s+dev|bun\s+run\s+dev)\b/;
-
-      const hasBlockedDev = segments.some(segment => {
-        const commandWord = getLeadingCommandWord(segment);
-        if (!commandWord || !DEV_COMMAND_WORDS.has(commandWord)) {
-          return false;
-        }
-        return devPattern.test(segment) && !tmuxLauncher.test(segment);
-      });
+      const segments = collectCheckSegments(cmd);
+      const hasBlockedDev = segments.some(isBlockedDevSegment);
 
       if (hasBlockedDev) {
         console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');

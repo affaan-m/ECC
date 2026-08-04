@@ -319,6 +319,126 @@ function runTests() {
       assert.strictEqual(record.duration_ms, 0);
     })) passed++; else failed++;
 
+    if (test('normalizes aliases, defaults, and nullable telemetry fields', () => {
+      const aliasRecord = tracker.normalizeExecutionRecord({
+        skillId: 'alias-skill',
+        skillVersion: 'v2',
+        taskAttempted: 'Alias task',
+        outcome: 'failure',
+        failureReason: 'Needs more examples',
+        tokensUsed: null,
+        userFeedback: 'rejected',
+      }, {
+        now: '2026-03-15T12:30:00.000Z',
+      });
+
+      assert.deepStrictEqual(aliasRecord, {
+        skill_id: 'alias-skill',
+        skill_version: 'v2',
+        task_description: 'Alias task',
+        outcome: 'failure',
+        failure_reason: 'Needs more examples',
+        tokens_used: null,
+        duration_ms: null,
+        user_feedback: 'rejected',
+        recorded_at: '2026-03-15T12:30:00.000Z',
+      });
+
+      const legacyTaskRecord = tracker.normalizeExecutionRecord({
+        skill_id: 'legacy-skill',
+        skill_version: 'v1',
+        task_attempted: 'Legacy attempted task',
+        outcome: 'partial',
+        durationMs: null,
+        recorded_at: '2026-03-15T12:31:00.000Z',
+      });
+
+      assert.strictEqual(legacyTaskRecord.task_description, 'Legacy attempted task');
+      assert.strictEqual(legacyTaskRecord.failure_reason, null);
+      assert.strictEqual(legacyTaskRecord.tokens_used, null);
+      assert.strictEqual(legacyTaskRecord.duration_ms, null);
+      assert.strictEqual(legacyTaskRecord.user_feedback, null);
+    })) passed++; else failed++;
+
+    if (test('rejects invalid execution payloads and numeric telemetry', () => {
+      const valid = {
+        skill_id: 'alpha',
+        skill_version: 'v1',
+        task_description: 'Run task',
+        outcome: 'success',
+        user_feedback: 'accepted',
+        recorded_at: '2026-03-15T12:32:00.000Z',
+      };
+
+      const cases = [
+        [null, /payload must be an object/],
+        [[], /payload must be an object/],
+        [{ ...valid, skill_id: ' ' }, /skill_id is required/],
+        [{ ...valid, skill_version: '' }, /skill_version is required/],
+        [{ ...valid, task_description: '\t' }, /task_description is required/],
+        [{ ...valid, outcome: 'skipped' }, /outcome must be one of/],
+        [{ ...valid, user_feedback: 'ignored' }, /user_feedback must be/],
+        [{ ...valid, recorded_at: 'not-a-date' }, /recorded_at must be/],
+        [{ ...valid, tokens_used: 'lots' }, /tokens_used must be a number/],
+        [{ ...valid, duration_ms: Number.POSITIVE_INFINITY }, /duration_ms must be a number/],
+      ];
+
+      for (const [payload, expectedError] of cases) {
+        assert.throws(() => tracker.normalizeExecutionRecord(payload), expectedError);
+      }
+    })) passed++; else failed++;
+
+    if (test('uses state-store adapters for recording and reading when available', () => {
+      let capturedRecord = null;
+      const stateStore = {
+        recordSkillExecution(record) {
+          capturedRecord = record;
+          return { id: 'run-1' };
+        },
+        listSkillExecutionRecords() {
+          return [{ skill_id: 'stored-skill', outcome: 'success' }];
+        },
+      };
+
+      const result = tracker.recordSkillExecution({
+        skill_id: 'stored-skill',
+        skill_version: 'v4',
+        task_description: 'Persist in formal store',
+        outcome: 'success',
+        recorded_at: '2026-03-15T12:33:00.000Z',
+      }, {
+        stateStore,
+      });
+
+      assert.strictEqual(result.storage, 'state-store');
+      assert.deepStrictEqual(result.result, { id: 'run-1' });
+      assert.strictEqual(capturedRecord.skill_id, 'stored-skill');
+      assert.deepStrictEqual(
+        tracker.readSkillExecutionRecords({ stateStore }),
+        [{ skill_id: 'stored-skill', outcome: 'success' }]
+      );
+    })) passed++; else failed++;
+
+    if (test('resolves default run paths and treats missing JSONL storage as empty', () => {
+      const pathHome = createTempDir('skill-evolution-path-home-');
+      try {
+        const defaultPath = tracker.getRunsFilePath({ homeDir: pathHome });
+        assert.strictEqual(
+          defaultPath,
+          path.join(pathHome, '.claude', 'state', 'skill-runs.jsonl')
+        );
+        assert.deepStrictEqual(
+          tracker.readSkillExecutionRecords({ homeDir: pathHome }),
+          []
+        );
+
+        const relativePath = path.join('.', 'relative-skill-runs.jsonl');
+        assert.strictEqual(tracker.getRunsFilePath({ runsFilePath: relativePath }), path.resolve(relativePath));
+      } finally {
+        cleanupTempDir(pathHome);
+      }
+    })) passed++; else failed++;
+
     console.log('\nHealth:');
 
     if (test('computes per-skill health metrics and flags declining skills', () => {

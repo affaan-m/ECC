@@ -1,6 +1,6 @@
 # .codex-plugin — Codex Native Plugin for ECC
 
-This directory contains the **Codex plugin manifest** for Everything Claude Code.
+This directory contains the **Codex plugin manifest** for ECC.
 
 ## Structure
 
@@ -12,23 +12,55 @@ This directory contains the **Codex plugin manifest** for Everything Claude Code
 
 ## What This Provides
 
-- **156 skills** from `./skills/` — reusable Codex workflows for TDD, security,
+- **249 skills** from `./skills/` — reusable Codex workflows for TDD, security,
   code review, architecture, and more
 - **6 MCP servers** — GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking
 
 ## Installation
 
-Codex plugin support is currently in preview. Once generally available:
+Codex plugin support is marketplace-backed. The repo exposes a repo-scoped
+marketplace at `.agents/plugins/marketplace.json`; Codex can add and track that
+marketplace source from the CLI:
 
 ```bash
-# Install from Codex CLI
-codex plugin install affaan-m/everything-claude-code
+# Add the public repo marketplace
+codex plugin marketplace add affaan-m/ECC
 
-# Or reference locally during development
-codex plugin install ./
-
-Run this from the repository root so `./` points to the repo root and `.mcp.json` resolves correctly.
+# Or add a local checkout while developing
+codex plugin marketplace add /absolute/path/to/ECC
 ```
+
+The marketplace entry points at `plugins/ecc/` — Codex does not discover
+plugins whose local marketplace `source.path` is the marketplace root (`./`),
+so the entry must target a concrete plugin subdirectory (see
+[#2128](https://github.com/affaan-m/ECC/issues/2128)). That thin plugin folder
+references the root `skills/` and `.mcp.json` so content stays single-sourced.
+After adding or updating the marketplace, restart Codex and install or enable
+`ecc` from the plugin directory.
+
+After install, `codex plugin list` is only a registration check. From an ECC
+checkout, run the cache check to verify that the installed manifest can resolve
+its referenced skills, MCP config, and assets:
+
+```bash
+node scripts/codex/check-plugin-cache.js
+```
+
+> **Plugin mode is currently fragile on Codex.** Marketplace discovery and
+> install work with this layout, but runtime skill loading from local/repo
+> marketplaces is unreliable upstream
+> ([openai/codex#26037](https://github.com/openai/codex/issues/26037)) — Codex
+> copies only the plugin folder into its install cache, so parent-referenced
+> content may not be exposed in a fresh session. The safer, fully supported
+> path today is the manual sync flow:
+> `npm install && bash scripts/sync-ecc-to-codex.sh`.
+
+Official Plugin Directory publishing is coming soon. For official OpenAI
+plugin-directory review, package this repo under the `openai/plugins`
+repository shape: `plugins/ecc/.codex-plugin/plugin.json`,
+`plugins/ecc/skills/`, and the supporting README/assets. Until that listing is
+accepted, treat the public repo marketplace as the supported Codex distribution
+path and keep release copy framed as repo-marketplace/manual installation.
 
 The installed plugin registers under the short slug `ecc` so tool and command names
 stay below provider length limits.
@@ -37,17 +69,14 @@ stay below provider length limits.
 
 | Server | Purpose |
 |---|---|
-| `github` | GitHub API access |
-| `context7` | Live documentation lookup |
-| `exa` | Neural web search |
-| `memory` | Persistent memory across sessions |
-| `playwright` | Browser automation & E2E testing |
-| `sequential-thinking` | Step-by-step reasoning |
+| `chrome-devtools` | Interactive browser debugging via Chrome DevTools (CDP sessions, performance traces, console/network inspection) |
+
+The former defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `sequential-thinking`) were retired in the June 2026 connector audit — their jobs are covered by skills wrapping CLIs/REST APIs or by harness-native features. They remain available as opt-in entries in `mcp-configs/mcp-servers.json`. See `docs/MCP-CONNECTOR-POLICY.md` for the policy and the per-connector rationale.
 
 ## Notes
 
-- The `skills/` directory at the repo root is shared between Claude Code (`.claude-plugin/`)
-  and Codex (`.codex-plugin/`) — same source of truth, no duplication
+- The `skills/` directory at the repo root is the source of truth for the Codex
+  plugin package; do not duplicate skill content inside `.codex-plugin/`.
 - ECC is moving to a skills-first workflow surface. Legacy `commands/` remain for
   compatibility on harnesses that still expect slash-entry shims.
 - MCP server credentials are inherited from the launching environment (env vars)

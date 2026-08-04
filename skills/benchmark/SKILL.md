@@ -1,7 +1,9 @@
 ---
 name: benchmark
 description: Use this skill to measure performance baselines, detect regressions before/after PRs, and compare stack alternatives.
-origin: ECC
+license: MIT
+metadata:
+  origin: ECC
 ---
 
 # Benchmark — Performance Baseline & Regression Detection

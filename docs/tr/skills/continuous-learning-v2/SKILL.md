@@ -141,28 +141,11 @@ Her proje 12 karakterlik bir hash ID alır (örn. `a1b2c3d4e5f6`). `~/.claude/ho
 
 **Plugin olarak kuruluysa** (önerilen):
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/skills/continuous-learning-v2/hooks/observe.sh"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/skills/continuous-learning-v2/hooks/observe.sh"
-      }]
-    }]
-  }
-}
-```
+`~/.claude/settings.json` içine ek hook bloğu eklemeyin. Claude Code v2.1+ eklentinin `hooks/hooks.json` dosyasını otomatik yükler; `observe.sh` zaten orada kayıtlıdır.
 
-**`~/.claude/skills` dizinine manuel kuruluysa**:
+Daha önce `observe.sh` satırlarını `~/.claude/settings.json` içine kopyaladıysanız, yinelenen `PreToolUse` / `PostToolUse` bloğunu kaldırın. Yinelenen kayıt hem çift çalıştırmaya yol açar hem de `${CLAUDE_PLUGIN_ROOT}` çözümleme hatası üretir; bu değişken yalnızca eklentiye ait `hooks/hooks.json` girdilerinde genişletilir.
+
+**`~/.claude/skills` dizinine manuel kuruluysa**, aşağıdakini `~/.claude/settings.json` içine ekleyin:
 
 ```json
 {

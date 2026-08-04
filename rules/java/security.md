@@ -97,4 +97,5 @@ try {
 ## References
 
 See skill: `springboot-security` for Spring Security authentication and authorization patterns.
+See skill: `quarkus-security` for Quarkus security with JWT/OIDC, RBAC, and CDI.
 See skill: `security-review` for general security checklists.

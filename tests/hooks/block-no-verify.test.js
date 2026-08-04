@@ -72,6 +72,12 @@ if (test('blocks core.hooksPath override', () => {
   assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
 })) passed++; else failed++;
 
+if (test('blocks quoted core.hooksPath override argument', () => {
+  const r = runHook({ tool_input: { command: 'git -c "core.hooksPath=/dev/null" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
 // --- Chained command false positive prevention (Comment 2) ---
 
 if (test('does not false-positive on -n belonging to git log in a chain', () => {
@@ -84,9 +90,56 @@ if (test('does not false-positive on --no-verify in a prior non-git command', ()
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+if (test('allows --no-verify discussed in a double-quoted commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "fix: --no-verify edge case"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows --no-verify discussed in a single-quoted commit message', () => {
+  const r = runHook({ tool_input: { command: "git commit -m 'fix: --no-verify edge case'" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows -n discussed in a quoted commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "Fixed -n bug in module"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows --no-verify after combined -am message option', () => {
+  const r = runHook({ tool_input: { command: 'git commit -am "--no-verify"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows -n after combined -am message option', () => {
+  const r = runHook({ tool_input: { command: 'git commit -am "-n"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows core.hooksPath discussed in a quoted commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "doc: explain core.hooksPath= setting"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows git bypass phrase discussed in a quoted commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "doc: explain git push --no-verify risk"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 if (test('still blocks --no-verify on the git commit part of a chain', () => {
   const r = runHook({ tool_input: { command: 'git log -n 5 && git commit --no-verify -m "msg"' } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still blocks a real quoted --no-verify flag', () => {
+  const r = runHook({ tool_input: { command: 'git commit "--no-verify" -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks bypass flags in later chained git commands', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "msg" && git push --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('git push'), `stderr should mention git push: ${r.stderr}`);
 })) passed++; else failed++;
 
 // --- Subcommand detection (Comment 4) ---
@@ -124,6 +177,24 @@ if (test('handles plain text input', () => {
 if (test('blocks plain text input with --no-verify', () => {
   const r = runHook('git commit --no-verify -m "msg"');
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// --- Case-insensitivity of git config keys + -t template short option ---
+
+if (test('blocks case-variant core.hooksPath (lowercase)', () => {
+  const r = runHook({ tool_input: { command: 'git -c core.hookspath=/dev/null commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks case-variant core.hooksPath (uppercase)', () => {
+  const r = runHook({ tool_input: { command: 'git -c core.HOOKSPATH=/dev/null commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows -tn (n is the -t template path, not a flag)', () => {
+  const r = runHook({ tool_input: { command: 'git commit -tn -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
 console.log('─'.repeat(50));

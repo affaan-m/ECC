@@ -1,3 +1,7 @@
+---
+description: Scan project structure and generate token-lean architecture codemaps.
+---
+
 # Update Codemaps
 
 Analyze the codebase structure and generate token-lean architecture documentation.

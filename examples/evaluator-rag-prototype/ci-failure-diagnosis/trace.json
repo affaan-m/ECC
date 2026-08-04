@@ -1,0 +1,45 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "ci-failure-diagnosis",
+  "run_id": "2026-05-12-ci-failure-diagnosis-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "A PR or maintainer branch has a red GitHub Actions matrix. The evaluator records status without rerunning, merging, or editing code.",
+      "evidence": [
+        "gh pr view <pr-number> --json statusCheckRollup,files",
+        "gh run view <run-id> --json jobs"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved failed-job logs, changed-file context, current roadmap CI failure-mode requirements, and existing local regression commands.",
+      "evidence": [
+        "gh run view <run-id> --log-failed",
+        "docs/ECC-2.0-GA-ROADMAP.md",
+        "tests/run-all.js"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: log-backed minimal fix with regression coverage, and rerun-only optimism that treats CI flake as proven without evidence.",
+      "candidate_ids": [
+        "log-backed-minimal-fix",
+        "rerun-only-green-wait"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the log-backed minimal fix because it names failing evidence, scope, and validation. Rejected rerun-only waiting because it does not explain the failure or preserve a regression guard.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/ci-failure-diagnosis/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only CI triage playbook. The evaluator does not push a fix, rerun CI, merge, publish, or weaken checks.",
+      "promoted_candidate_id": "log-backed-minimal-fix"
+    }
+  ]
+}

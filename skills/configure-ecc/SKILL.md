@@ -1,7 +1,8 @@
 ---
 name: configure-ecc
 description: Interactive installer for Everything Claude Code — guides users through selecting and installing skills and rules to user-level or project-level directories, verifies paths, and optionally optimizes installed files.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Configure Everything Claude Code (ECC)
@@ -87,7 +88,7 @@ There are 7 selectable category groups below. The detailed confirmation lists th
 ```
 Question: "Which skill categories do you want to install?"
 Options:
-  - "Framework & Language" — "Django, Laravel, Spring Boot, Go, Python, Java, Frontend, Backend patterns"
+  - "Framework & Language" — "Django, Laravel, Spring Boot, Quarkus, Go, Python, Java, Frontend, Backend patterns"
   - "Database" — "PostgreSQL, ClickHouse, JPA/Hibernate patterns"
   - "Workflow & Quality" — "TDD, verification, learning, security review, compaction"
   - "Research & APIs" — "Deep research, Exa search, Claude API patterns"
@@ -101,7 +102,7 @@ Options:
 
 For each selected category, print the full list of skills below and ask the user to confirm or deselect specific ones. If the list exceeds 4 items, print the list as text and use `AskUserQuestion` with an "Install all listed" option plus "Other" for the user to paste specific names.
 
-**Category: Framework & Language (21 skills)**
+**Category: Framework & Language (25 skills)**
 
 | Skill | Description |
 |-------|-------------|
@@ -119,9 +120,13 @@ For each selected category, print the full list of skills below and ask the user
 | `frontend-slides` | Zero-dependency HTML presentations, style previews, and PPTX-to-web conversion |
 | `golang-patterns` | Idiomatic Go patterns, conventions for robust Go applications |
 | `golang-testing` | Go testing: table-driven tests, subtests, benchmarks, fuzzing |
-| `java-coding-standards` | Java coding standards for Spring Boot: naming, immutability, Optional, streams |
+| `java-coding-standards` | Java coding standards for Spring Boot and Quarkus: naming, immutability, Optional, streams, CDI |
 | `python-patterns` | Pythonic idioms, PEP 8, type hints, best practices |
 | `python-testing` | Python testing with pytest, TDD, fixtures, mocking, parametrization |
+| `quarkus-patterns` | Quarkus architecture, Camel messaging, CDI services, Panache data access |
+| `quarkus-security` | Quarkus security: JWT/OIDC, RBAC, input validation, secrets management |
+| `quarkus-tdd` | Quarkus TDD with JUnit 5, Mockito, REST Assured, Camel testing |
+| `quarkus-verification` | Quarkus verification: build, static analysis, tests, native compilation |
 | `springboot-patterns` | Spring Boot architecture, REST API, layered services, caching, async |
 | `springboot-security` | Spring Security: authn/authz, validation, CSRF, secrets, rate limiting |
 | `springboot-tdd` | Spring Boot TDD with JUnit 5, Mockito, MockMvc, Testcontainers |
@@ -158,13 +163,14 @@ For each selected category, print the full list of skills below and ask the user
 | `investor-materials` | Pitch decks, one-pagers, investor memos, and financial models |
 | `investor-outreach` | Personalized investor cold emails, warm intros, and follow-ups |
 
-**Category: Research & APIs (3 skills)**
+**Category: Research & APIs (2 skills)**
 
 | Skill | Description |
 |-------|-------------|
 | `deep-research` | Multi-source deep research using firecrawl and exa MCPs with cited reports |
 | `exa-search` | Neural search via Exa MCP for web, code, company, and people research |
-| `claude-api` | Anthropic Claude API patterns: Messages, streaming, tool use, vision, batches, Agent SDK |
+
+`claude-api` is an Anthropic canonical skill. Install it from [`anthropics/skills`](https://github.com/anthropics/skills) when you want the official Claude API workflow instead of an ECC-bundled copy.
 
 **Category: Social & Content Distribution (2 skills)**
 
@@ -194,9 +200,20 @@ For each selected category, print the full list of skills below and ask the user
 
 ### 2d: Execute Installation
 
-For each selected skill, copy the entire skill directory:
+For each selected skill, copy the entire skill directory from the correct source root:
+
 ```bash
-cp -r $ECC_ROOT/skills/<skill-name> $TARGET/skills/
+# Core skills live under .agents/skills/
+cp -R "$ECC_ROOT/.agents/skills/<skill-name>" "$TARGET/skills/"
+
+# Niche skills live under skills/
+cp -R "$ECC_ROOT/skills/<skill-name>" "$TARGET/skills/"
+```
+
+When iterating over globbed source directories, never pass a trailing-slash source directly to `cp`. Use the directory path as the destination name explicitly:
+
+```bash
+cp -R "${src%/}" "$TARGET/skills/$(basename "${src%/}")"
 ```
 
 Note: `continuous-learning` and `continuous-learning-v2` have extra files (config.json, hooks, scripts) — ensure the entire directory is copied, not just SKILL.md.
@@ -218,13 +235,13 @@ Options:
 
 Execute installation:
 ```bash
-# Common rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/common/* $TARGET/rules/
+# Common rules
+cp -r $ECC_ROOT/rules/common $TARGET/rules/common
 
-# Language-specific rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/typescript/* $TARGET/rules/   # if selected
-cp -r $ECC_ROOT/rules/python/* $TARGET/rules/        # if selected
-cp -r $ECC_ROOT/rules/golang/* $TARGET/rules/        # if selected
+# Language-specific rules (preserve per-language directories)
+cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # if selected
+cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # if selected
+cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # if selected
 ```
 
 **Important**: If the user selects any language-specific rules but NOT common rules, warn them:
@@ -263,6 +280,7 @@ grep -rn "skills/" $TARGET/skills/
 Some skills reference others. Verify these dependencies:
 - `django-tdd` may reference `django-patterns`
 - `laravel-tdd` may reference `laravel-patterns`
+- `quarkus-tdd` may reference `quarkus-patterns`
 - `springboot-tdd` may reference `springboot-patterns`
 - `continuous-learning-v2` references `~/.claude/homunculus/` directory
 - `python-testing` may reference `python-patterns`

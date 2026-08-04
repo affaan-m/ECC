@@ -1,7 +1,7 @@
 interface:
   display_name: "Exa Search"
-  short_description: "Neural search via Exa MCP for web, code, and companies"
+  short_description: "Neural search via Exa MCP"
   brand_color: "#8B5CF6"
-  default_prompt: "Search using Exa MCP tools for web content, code, or company research"
+  default_prompt: "Use $exa-search to search web, code, or company data through Exa."
 policy:
   allow_implicit_invocation: true

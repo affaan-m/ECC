@@ -442,6 +442,126 @@ function runTests() {
       assert.ok(result.text.includes('No failure patterns detected'));
     })) passed++; else failed++;
 
+    if (test('chart helpers handle zero widths, truncation, and invalid buckets', () => {
+      assert.strictEqual(dashboard.horizontalBar(10, 0, 4), '\u2591\u2591\u2591\u2591');
+      assert.strictEqual(dashboard.horizontalBar(10, 10, 0), '');
+
+      const boxed = dashboard.panelBox('LongTitleForTinyPanel', ['abcdefghijklmnopqrstuvwxyz'], 10);
+      assert.ok(boxed.includes('abcdefgh'), 'long content should be truncated to inner width');
+
+      const defaultBox = dashboard.panelBox('Default Width', ['ok']);
+      assert.ok(defaultBox.split('\n')[0].length >= 60, 'omitted width should use default panel width');
+
+      const buckets = dashboard.bucketByDay([
+        { skill_id: 'alpha', outcome: 'success', recorded_at: 'not-a-date' },
+        { skill_id: 'alpha', outcome: 'success', recorded_at: now },
+      ], Date.parse(now), 1);
+      assert.strictEqual(buckets[0].runs, 1, 'invalid dates should be ignored');
+    })) passed++; else failed++;
+
+    if (test('success rate panel handles no skills, missing records, and trend directions', () => {
+      const empty = dashboard.renderSuccessRatePanel([], [], { now });
+      assert.ok(empty.text.includes('No skill execution data available'));
+      assert.deepStrictEqual(empty.data.skills, []);
+
+      const orphan = dashboard.renderSuccessRatePanel([], [{ skill_id: 'orphan' }], { now });
+      assert.strictEqual(orphan.data.skills.length, 1);
+      assert.strictEqual(orphan.data.skills[0].current_7d, null);
+      assert.ok(orphan.text.includes('n/a'));
+
+      const declining = dashboard.renderSuccessRatePanel([
+        { skill_id: 'gamma', outcome: 'failure', recorded_at: '2026-03-15T08:00:00.000Z' },
+        { skill_id: 'gamma', outcome: 'success', recorded_at: '2026-02-28T08:00:00.000Z' },
+        { skill_id: 'gamma', outcome: 'success', recorded_at: '2026-02-27T08:00:00.000Z' },
+      ], [{ skill_id: 'gamma' }], { now });
+      assert.strictEqual(declining.data.skills[0].trend, '\u2198');
+
+      const flat = dashboard.renderSuccessRatePanel([
+        { skill_id: 'delta', outcome: 'success', recorded_at: '2026-03-15T08:00:00.000Z' },
+        { skill_id: 'delta', outcome: 'success', recorded_at: '2026-02-28T08:00:00.000Z' },
+      ], [{ skill_id: 'delta' }], { now });
+      assert.strictEqual(flat.data.skills[0].trend, '\u2192');
+    })) passed++; else failed++;
+
+    if (test('failure cluster panel labels unknown single-skill failures', () => {
+      const result = dashboard.renderFailureClusterPanel([
+        { skill_id: 'alpha', outcome: 'failure', failure_reason: '' },
+      ]);
+
+      assert.strictEqual(result.data.clusters.length, 1);
+      assert.strictEqual(result.data.clusters[0].pattern, 'unknown');
+      assert.strictEqual(result.data.clusters[0].percentage, 100);
+      assert.ok(result.text.includes('(1 skill)'));
+    })) passed++; else failed++;
+
+    if (test('amendment panel handles missing dirs and pending proposal defaults', () => {
+      const proposalSkillDir = createSkill(skillsRoot, 'proposal-defaults', '# Proposal Defaults\n');
+      const proposalLog = path.join(proposalSkillDir, '.evolution', 'amendments.jsonl');
+      appendFile(proposalLog, JSON.stringify({ event: 'proposal' }) + '\n');
+      appendFile(proposalLog, JSON.stringify({ event: 'proposal', status: 'applied' }) + '\n');
+
+      const skillsById = new Map();
+      skillsById.set('missing-dir', { skill_id: 'missing-dir' });
+      skillsById.set('proposal-defaults', { skill_id: 'proposal-defaults', skill_dir: proposalSkillDir });
+
+      const result = dashboard.renderAmendmentPanel(skillsById, { width: 80 });
+      assert.strictEqual(result.data.total, 1);
+      assert.strictEqual(result.data.amendments[0].event, 'proposal');
+      assert.strictEqual(result.data.amendments[0].status, 'pending');
+      assert.strictEqual(result.data.amendments[0].created_at, null);
+      assert.ok(result.text.includes('1 amendment pending review'));
+      assert.ok(result.text.includes(' -'));
+    })) passed++; else failed++;
+
+    if (test('version timeline skips missing dirs and empty histories', () => {
+      const emptyVersionDir = createSkill(skillsRoot, 'empty-version-history', '# Empty Version History\n');
+      const skillsById = new Map();
+      skillsById.set('missing-dir', { skill_id: 'missing-dir' });
+      skillsById.set('empty-version-history', { skill_id: 'empty-version-history', skill_dir: emptyVersionDir });
+
+      const result = dashboard.renderVersionTimelinePanel(skillsById);
+      assert.deepStrictEqual(result.data.skills, []);
+      assert.ok(result.text.includes('No version history available'));
+    })) passed++; else failed++;
+
+    if (test('version timeline renders fallback date and reason values', () => {
+      const originalListVersions = versioning.listVersions;
+      const originalGetEvolutionLog = versioning.getEvolutionLog;
+      versioning.listVersions = () => [
+        { version: 9, created_at: null },
+      ];
+      versioning.getEvolutionLog = () => [
+        { version: 9, reason: '' },
+      ];
+
+      try {
+        const skillsById = new Map();
+        skillsById.set('fallback-version', { skill_id: 'fallback-version', skill_dir: skillsRoot });
+        const result = dashboard.renderVersionTimelinePanel(skillsById);
+
+        assert.strictEqual(result.data.skills.length, 1);
+        assert.strictEqual(result.data.skills[0].versions[0].reason, null);
+        assert.ok(result.text.includes('v9'));
+        assert.ok(result.text.includes(' - '));
+      } finally {
+        versioning.listVersions = originalListVersions;
+        versioning.getEvolutionLog = originalGetEvolutionLog;
+      }
+    })) passed++; else failed++;
+
+    if (test('renderDashboard rejects invalid timestamps', () => {
+      assert.throws(() => {
+        dashboard.renderDashboard({
+          skillsRoot,
+          learnedRoot,
+          importedRoot,
+          homeDir,
+          runsFilePath: runsFile,
+          now: 'not-a-timestamp',
+        });
+      }, /Invalid now timestamp/);
+    })) passed++; else failed++;
+
     console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   } finally {
     cleanupTempDir(repoRoot);

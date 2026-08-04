@@ -110,24 +110,70 @@ function runHookCommand(command, input = {}, env = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const isWindows = process.platform === 'win32';
     const mergedEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: REPO_ROOT, ...env };
+    if (Array.isArray(command)) {
+      const [program, ...args] = command;
+      const proc = spawn(program, args, { env: mergedEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+
+      let stdout = '';
+      let stderr = '';
+      let timer;
+
+      proc.stdout.on('data', data => stdout += data);
+      proc.stderr.on('data', data => stderr += data);
+
+      proc.stdin.on('error', (err) => {
+        if (err.code !== 'EPIPE' && err.code !== 'EOF') {
+          if (timer) clearTimeout(timer);
+          reject(err);
+        }
+      });
+
+      if (input && Object.keys(input).length > 0) {
+        proc.stdin.write(JSON.stringify(input));
+      }
+      proc.stdin.end();
+
+      timer = setTimeout(() => {
+        proc.kill(isWindows ? undefined : 'SIGKILL');
+        reject(new Error(`Hook command timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      proc.on('close', code => {
+        clearTimeout(timer);
+        resolve({ code, stdout, stderr });
+      });
+
+      proc.on('error', err => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      return;
+    }
+
     const resolvedCommand = command.replace(
       /\$\{([A-Z_][A-Z0-9_]*)\}/g,
       (_, name) => String(mergedEnv[name] || '')
     );
 
-    const nodeMatch = resolvedCommand.match(/^node\s+"([^"]+)"\s*(.*)$/);
-    const useDirectNodeSpawn = Boolean(nodeMatch);
+    const inlineNodeMatch = resolvedCommand.match(/^node -e "((?:[^"\\]|\\.)*)"(?:\s+(.*))?$/s);
+    const fileNodeMatch = resolvedCommand.match(/^node\s+"([^"]+)"\s*(.*)$/);
+    const useDirectNodeSpawn = Boolean(inlineNodeMatch || fileNodeMatch);
     const shell = isWindows ? 'cmd' : 'bash';
     const shellArgs = isWindows ? ['/d', '/s', '/c', resolvedCommand] : ['-lc', resolvedCommand];
-    const nodeArgs = nodeMatch
-      ? [
-          nodeMatch[1],
-          ...Array.from(
-            nodeMatch[2].matchAll(/"([^"]*)"|(\S+)/g),
-            m => m[1] !== undefined ? m[1] : m[2]
-          )
-        ]
-      : [];
+    const splitArgs = value => Array.from(
+      String(value || '').matchAll(/"([^"]*)"|(\S+)/g),
+      m => m[1] !== undefined ? m[1] : m[2]
+    );
+    const unescapeInlineJs = value => value
+      .replace(/\\\\/g, '\\')
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t');
+    const nodeArgs = inlineNodeMatch
+      ? ['-e', unescapeInlineJs(inlineNodeMatch[1]), ...splitArgs(inlineNodeMatch[2])]
+      : fileNodeMatch
+        ? [fileNodeMatch[1], ...splitArgs(fileNodeMatch[2])]
+        : [];
 
     const proc = useDirectNodeSpawn
       ? spawn('node', nodeArgs, { env: mergedEnv, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -180,6 +226,15 @@ function cleanupTestDir(testDir) {
   fs.rmSync(testDir, { recursive: true, force: true });
 }
 
+function getTestHomunculusEnv(testDir) {
+  const xdgDataHome = path.join(testDir, '.local', 'share');
+  return {
+    HOME: testDir,
+    XDG_DATA_HOME: xdgDataHome,
+    homunculusDir: path.join(xdgDataHome, 'ecc-homunculus'),
+  };
+}
+
 function writeInstinctFile(filePath, entries) {
   const body = entries.map(entry => `---
 id: ${entry.id}
@@ -207,6 +262,14 @@ function getHookCommandByDescription(hooks, lifecycle, descriptionText) {
 
   assert.ok(hookGroup, `Expected ${lifecycle} hook matching "${descriptionText}"`);
   assert.ok(hookGroup.hooks?.[0]?.command, `Expected ${lifecycle} hook command for "${descriptionText}"`);
+  return hookGroup.hooks[0].command;
+}
+
+function getHookCommandById(hooks, lifecycle, hookId) {
+  const hookGroup = hooks.hooks[lifecycle]?.find(entry => entry.id === hookId);
+
+  assert.ok(hookGroup, `Expected ${lifecycle} hook with id "${hookId}"`);
+  assert.ok(hookGroup.hooks?.[0]?.command, `Expected ${lifecycle} hook command for id "${hookId}"`);
   return hookGroup.hooks[0].command;
 }
 
@@ -294,12 +357,7 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('dev server hook transforms command to tmux session', async () => {
-    // Test the auto-tmux dev hook — transforms dev commands to run in tmux
-    const hookCommand = getHookCommandByDescription(
-      hooks,
-      'PreToolUse',
-      'Auto-start dev servers in tmux'
-    );
+    const hookCommand = getHookCommandById(hooks, 'PreToolUse', 'pre:bash:dispatcher');
     const result = await runHookCommand(hookCommand, {
       tool_input: { command: 'npm run dev' }
     });
@@ -331,19 +389,20 @@ async function runTests() {
 
     try {
       const sessionId = `session-${Date.now()}`;
+      const homunculusEnv = getTestHomunculusEnv(testDir);
       const result = await runHookWithInput(
         path.join(scriptsDir, 'session-start.js'),
         {},
         {
-          HOME: testDir,
+          HOME: homunculusEnv.HOME,
+          XDG_DATA_HOME: homunculusEnv.XDG_DATA_HOME,
           CLAUDE_PROJECT_DIR: projectDir,
           CLAUDE_SESSION_ID: sessionId
         }
       );
 
       assert.strictEqual(result.code, 0, 'SessionStart should exit 0');
-      const homunculusDir = path.join(testDir, '.claude', 'homunculus');
-      const projectsDir = path.join(homunculusDir, 'projects');
+      const projectsDir = path.join(homunculusEnv.homunculusDir, 'projects');
       const projectEntries = fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir) : [];
       assert.ok(projectEntries.length > 0, 'SessionStart should create a homunculus project directory');
       const leaseDir = path.join(projectsDir, projectEntries[0], '.observer-sessions');
@@ -361,7 +420,8 @@ async function runTests() {
 
     try {
       const projectId = crypto.createHash('sha256').update(projectDir).digest('hex').slice(0, 12);
-      const homunculusDir = path.join(testDir, '.claude', 'homunculus');
+      const homunculusEnv = getTestHomunculusEnv(testDir);
+      const homunculusDir = homunculusEnv.homunculusDir;
       const projectInstinctDir = path.join(homunculusDir, 'projects', projectId, 'instincts', 'personal');
       const globalInstinctDir = path.join(homunculusDir, 'instincts', 'inherited');
 
@@ -396,7 +456,8 @@ async function runTests() {
         path.join(scriptsDir, 'session-start.js'),
         {},
         {
-          HOME: testDir,
+          HOME: homunculusEnv.HOME,
+          XDG_DATA_HOME: homunculusEnv.XDG_DATA_HOME,
           CLAUDE_PROJECT_DIR: projectDir,
         }
       );
@@ -425,18 +486,19 @@ async function runTests() {
     });
 
     try {
+      const homunculusEnv = getTestHomunculusEnv(testDir);
       await runHookWithInput(
         path.join(scriptsDir, 'session-start.js'),
         {},
         {
-          HOME: testDir,
+          HOME: homunculusEnv.HOME,
+          XDG_DATA_HOME: homunculusEnv.XDG_DATA_HOME,
           CLAUDE_PROJECT_DIR: projectDir,
           CLAUDE_SESSION_ID: sessionId
         }
       );
 
-      const homunculusDir = path.join(testDir, '.claude', 'homunculus');
-      const projectsDir = path.join(homunculusDir, 'projects');
+      const projectsDir = path.join(homunculusEnv.homunculusDir, 'projects');
       const projectEntries = fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir) : [];
       assert.ok(projectEntries.length > 0, 'Expected SessionStart to create a homunculus project directory');
       const projectStorageDir = path.join(projectsDir, projectEntries[0]);
@@ -448,7 +510,8 @@ async function runTests() {
         path.join(scriptsDir, 'session-end-marker.js'),
         markerInput,
         {
-          HOME: testDir,
+          HOME: homunculusEnv.HOME,
+          XDG_DATA_HOME: homunculusEnv.XDG_DATA_HOME,
           CLAUDE_PROJECT_DIR: projectDir,
           CLAUDE_SESSION_ID: sessionId
         }
@@ -480,12 +543,7 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('dev server hook transforms yarn dev to tmux session', async () => {
-    // The auto-tmux dev hook transforms dev commands (yarn dev, npm run dev, etc.)
-    const hookCommand = getHookCommandByDescription(
-      hooks,
-      'PreToolUse',
-      'Auto-start dev servers in tmux'
-    );
+    const hookCommand = getHookCommandById(hooks, 'PreToolUse', 'pre:bash:dispatcher');
     const result = await runHookCommand(hookCommand, {
       tool_input: { command: 'yarn dev' }
     });
@@ -533,7 +591,7 @@ async function runTests() {
           CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
           ECC_MCP_CONFIG_PATH: configPath,
           ECC_MCP_HEALTH_STATE_PATH: statePath,
-          ECC_MCP_HEALTH_TIMEOUT_MS: '100'
+          ECC_MCP_HEALTH_TIMEOUT_MS: '1000'
         }
       );
 
@@ -617,22 +675,23 @@ async function runTests() {
   })) passed++; else failed++;
 
   if (await asyncTest('PostToolUse PR hook extracts PR URL', async () => {
-    // Find the PR logging hook
-    const prHook = hooks.hooks.PostToolUse.find(h =>
-      h.description && h.description.includes('PR URL')
-    );
+    const hookCommand = getHookCommandById(hooks, 'PostToolUse', 'post:dispatcher:async');
+    const testDir = createTestDir();
+    try {
+      const result = await runHookCommand(hookCommand, {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Bash',
+        tool_input: { command: 'gh pr create --title "Test"' },
+        tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
+      }, { HOME: testDir, USERPROFILE: testDir });
 
-    assert.ok(prHook, 'PR hook should exist');
-
-    const result = await runHookCommand(prHook.hooks[0].command, {
-      tool_input: { command: 'gh pr create --title "Test"' },
-      tool_output: { output: 'Creating pull request...\nhttps://github.com/owner/repo/pull/123' }
-    });
-
-    assert.ok(
-      result.stderr.includes('PR created') || result.stderr.includes('github.com'),
-      'Should extract and log PR URL'
-    );
+      assert.ok(
+        result.stderr.includes('PR created') || result.stderr.includes('github.com'),
+        'Should extract and log PR URL'
+      );
+    } finally {
+      cleanupTestDir(testDir);
+    }
   })) passed++; else failed++;
 
   // ==========================================
@@ -899,16 +958,22 @@ async function runTests() {
     assert.ok(asyncHook.hooks[0].timeout > 0, 'Timeout should be positive');
 
     const command = asyncHook.hooks[0].command;
-    const isNodeInline = command.startsWith('node -e');
-    const isNodeScript = command.startsWith('node "');
+    const commandText = Array.isArray(command) ? command.join(' ') : command;
+    const isNodeInline =
+      (Array.isArray(command) && command[0] === 'node' && command[1] === '-e') ||
+      commandText.startsWith('node -e');
+    const isNodeScript =
+      (Array.isArray(command) && command[0] === 'node' && typeof command[1] === 'string' && command[1].endsWith('.js')) ||
+      commandText.startsWith('node "');
     const isShellWrapper =
-      command.startsWith('bash "') ||
-      command.startsWith('sh "') ||
-      command.startsWith('bash -lc ') ||
-      command.startsWith('sh -c ');
+      (Array.isArray(command) && (command[0] === 'bash' || command[0] === 'sh')) ||
+      commandText.startsWith('bash "') ||
+      commandText.startsWith('sh "') ||
+      commandText.startsWith('bash -lc ') ||
+      commandText.startsWith('sh -c ');
     assert.ok(
       isNodeInline || isNodeScript || isShellWrapper,
-      `Async hook command should be runnable (node -e, node script, or shell wrapper), got: ${command.substring(0, 80)}`
+      `Async hook command should be runnable (node -e, node script, or shell wrapper), got: ${commandText.substring(0, 80)}`
     );
   })) passed++; else failed++;
 
@@ -920,19 +985,35 @@ async function runTests() {
         for (const hook of hookDef.hooks) {
           assert.ok(hook.command, `Hook in ${hookType} should have command field`);
 
-          const isInline = hook.command.startsWith('node -e');
-          const isFilePath = hook.command.startsWith('node "');
-          const isNpx = hook.command.startsWith('npx ');
+          const command = hook.command;
+          const commandText = Array.isArray(command) ? command.join(' ') : command;
+          const isInline =
+            (Array.isArray(command) && command[0] === 'node' && command[1] === '-e') ||
+            commandText.startsWith('node -e');
+          const isFilePath =
+            (Array.isArray(command) && command[0] === 'node' && typeof command[1] === 'string' && command[1].endsWith('.js')) ||
+            commandText.startsWith('node "');
+          const isNpx = (Array.isArray(command) && command[0] === 'npx') || commandText.startsWith('npx ');
           const isShellWrapper =
-            hook.command.startsWith('bash "') ||
-            hook.command.startsWith('sh "') ||
-            hook.command.startsWith('bash -lc ') ||
-            hook.command.startsWith('sh -c ');
-          const isShellScriptPath = hook.command.endsWith('.sh');
+            (Array.isArray(command) && (command[0] === 'bash' || command[0] === 'sh')) ||
+            commandText.startsWith('bash "') ||
+            commandText.startsWith('sh "') ||
+            commandText.startsWith('bash -lc ') ||
+            commandText.startsWith('sh -c ');
+          const isShellScriptPath =
+            (Array.isArray(command) && typeof command[0] === 'string' && command[0].endsWith('.sh')) ||
+            commandText.endsWith('.sh');
+
+          if (isInline) {
+            assert.ok(
+              !commandText.includes('\\"'),
+              `Hook command in ${hookType} should not include escaped double quotes in node -e payload: ${commandText.substring(0, 80)}`
+            );
+          }
 
           assert.ok(
             isInline || isFilePath || isNpx || isShellWrapper || isShellScriptPath,
-            `Hook command in ${hookType} should be node -e, node script, npx, or shell wrapper/script, got: ${hook.command.substring(0, 80)}`
+            `Hook command in ${hookType} should be node -e, node script, npx, or shell wrapper/script, got: ${commandText.substring(0, 80)}`
           );
         }
       }

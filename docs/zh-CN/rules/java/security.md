@@ -98,4 +98,5 @@ try {
 ## 参考
 
 关于 Spring Security 认证与授权模式，请参见技能：`springboot-security`。
+关于使用 JWT/OIDC、RBAC 和 CDI 的 Quarkus 安全模式，请参见技能：`quarkus-security`。
 关于通用安全检查清单，请参见技能：`security-review`。

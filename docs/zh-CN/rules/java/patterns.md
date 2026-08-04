@@ -144,4 +144,5 @@ public record ApiResponse<T>(boolean success, T data, String error) {
 ## 参考
 
 有关 Spring Boot 架构模式，请参见技能：`springboot-patterns`。
+有关使用 Camel 和 Panache 的 Quarkus 架构模式，请参见技能：`quarkus-patterns`。
 有关实体设计和查询优化，请参见技能：`jpa-patterns`。

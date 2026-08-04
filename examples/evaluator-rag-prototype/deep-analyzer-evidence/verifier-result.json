@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "deep-analyzer-evidence",
+  "run_id": "2026-05-12-deep-analyzer-evidence-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "corpus-backed-analyzer-change",
+      "decision": "accepted",
+      "score": 0.92,
+      "reasons": [
+        "names the changed analyzer surface and matching maintained corpus case",
+        "compares expected analyzer outputs for representative repository and commit-history inputs",
+        "keeps Deep Analyzer Evidence taxonomy behavior tied to co-located corpus or benchmark evidence",
+        "names the regression command that exercises corpus and follow-up behavior",
+        "keeps PR comments, check runs, Linear sync, and publication actions out of the evaluator run"
+      ],
+      "rollback": "Revert the future analyzer PR and restore the prior corpus expectations; no hosted check-run, Linear, package, or publication state changes in this read-only playbook."
+    },
+    {
+      "candidate_id": "threshold-only-analyzer-rewrite",
+      "decision": "rejected",
+      "score": 0.13,
+      "reasons": [
+        "changes analyzer thresholds without corpus evidence",
+        "does not compare expected outputs against representative repository or commit-history cases",
+        "does not update analyzer corpus, snapshot, fixture, benchmark, golden, eval, or reference-set artifacts",
+        "would suppress Deep Analyzer Evidence risk without proof",
+        "does not name a regression command"
+      ],
+      "rollback": "Do not promote this analyzer rewrite; restart from maintained corpus inputs, expected-output snapshots, and a focused maintainer PR."
+    }
+  ],
+  "promoted_candidate_id": "corpus-backed-analyzer-change"
+}

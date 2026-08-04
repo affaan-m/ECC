@@ -3,13 +3,13 @@
 > WARNING: This README is specific to OpenCode usage.
 > If you installed ECC via npm (e.g. `npm install opencode-ecc`), refer to the root README instead.
 
-Everything Claude Code (ECC) plugin for OpenCode - agents, commands, hooks, and skills.
+ECC plugin for OpenCode - agents, commands, hooks, and skills.
 
 ## Installation
 
 ## Installation Overview
 
-There are two ways to use Everything Claude Code (ECC):
+There are two ways to use ECC:
 
 1. **npm package (recommended for most users)**
    Install via npm/bun/yarn and use the `ecc-install` CLI to set up rules and agents.
@@ -52,17 +52,31 @@ npx ecc-install typescript
 Clone and run OpenCode in the repository:
 
 ```bash
-git clone https://github.com/affaan-m/everything-claude-code
-cd everything-claude-code
+git clone https://github.com/affaan-m/ECC
+cd ECC
 opencode
 ```
 
+If you also want to apply the ECC home install
+(`node scripts/install-apply.js --target opencode --profile full`), build the
+plugin first so the compiled payload at `.opencode/dist/` exists:
+
+```bash
+node scripts/build-opencode.js   # or: npm run build:opencode
+node scripts/install-apply.js --target opencode --profile full
+```
+
+Without `.opencode/dist/index.js`, OpenCode will detect the slash commands
+but silently skip plugin hooks and tools. The installer now fails fast with
+a pointer to this command if the build step is missing.
+
 ## Features
 
-### Agents (12)
+### Agents (26)
 
 | Agent | Description |
 |-------|-------------|
+| build | Primary coding agent for development work |
 | planner | Implementation planning |
 | architect | System design |
 | code-reviewer | Code review |
@@ -75,8 +89,21 @@ opencode
 | go-reviewer | Go code review |
 | go-build-resolver | Go build errors |
 | database-reviewer | Database optimization |
+| docs-lookup | Documentation lookup via Context7 |
+| harness-optimizer | Harness config tuning |
+| java-reviewer | Java code review |
+| java-build-resolver | Java build errors |
+| kotlin-reviewer | Kotlin code review |
+| kotlin-build-resolver | Kotlin build errors |
+| loop-operator | Autonomous loop execution |
+| php-reviewer | PHP code review |
+| python-reviewer | Python code review |
+| rust-reviewer | Rust code review |
+| rust-build-resolver | Rust build errors |
+| cpp-reviewer | C++ code review |
+| cpp-build-resolver | C++ build errors |
 
-### Commands (31)
+### Commands (26)
 
 | Command | Description |
 |---------|-------------|
@@ -106,11 +133,6 @@ opencode
 | `/evolve` | Cluster instincts |
 | `/promote` | Promote project instincts |
 | `/projects` | List known projects |
-| `/harness-audit` | Audit harness reliability and eval readiness |
-| `/loop-start` | Start controlled agentic loops |
-| `/loop-status` | Check loop state and checkpoints |
-| `/quality-gate` | Run quality gates on file/repo scope |
-| `/model-route` | Route tasks by model and budget |
 
 ### Plugin Hooks
 
@@ -119,8 +141,18 @@ opencode
 | Prettier | `file.edited` | Auto-format JS/TS |
 | TypeScript | `tool.execute.after` | Check for type errors |
 | console.log | `file.edited` | Warn about debug statements |
-| Notification | `session.idle` | Desktop notification |
+| Notification | `session.idle` | Desktop notification (cross-platform) |
 | Security | `tool.execute.before` | Check for secrets |
+| Git Push Reminder | `tool.execute.before` | Remind to review before pushing |
+| Doc File Warning | `tool.execute.before` | Warn about unnecessary documentation |
+| Long Command Reminder | `tool.execute.before` | Remind about long-running commands |
+| Session Context | `session.created` | Load project context |
+| Console Log Audit | `session.idle` | Audit edited files for console.log |
+| File Watcher | `file.watcher.updated` | Track file system changes |
+| Todo Progress | `todo.updated` | Log task completion progress |
+| Shell Environment | `shell.env` | Inject environment variables |
+| Session Compacting | `experimental.session.compacting` | Preserve context across compaction |
+| Permission Auto-Approve | `permission.ask` | Auto-approve safe operations |
 
 ### Custom Tools
 
@@ -129,6 +161,11 @@ opencode
 | run-tests | Run test suite with options |
 | check-coverage | Analyze test coverage |
 | security-audit | Security vulnerability scan |
+| format-code | Detect formatter and return command |
+| lint-check | Detect linter and return command |
+| git-summary | Generate git summary with branch, status, and diff |
+| changed-files | List files changed in session as a navigable tree |
+| dependency-analyzer | Analyze dependencies for outdated, vulnerable, and unused packages |
 
 ## Hook Event Mapping
 

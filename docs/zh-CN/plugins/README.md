@@ -61,7 +61,7 @@ claude plugin install typescript-lsp@claude-plugins-official
 **工作流：**
 
 * `commit-commands` - Git 工作流
-* `frontend-design` - UI 模式
+* `frontend-patterns` - UI 模式
 * `feature-dev` - 功能开发
 
 ***

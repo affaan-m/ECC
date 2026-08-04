@@ -1,0 +1,543 @@
+{
+  "version": 1,
+  "description": "Maps project indicator files to ECC skills, rules, hooks, and default commands. Used by /project-init to auto-configure projects.",
+  "stacks": [
+    {
+      "id": "typescript",
+      "name": "TypeScript / JavaScript",
+      "indicators": [
+        { "file": "tsconfig.json" },
+        { "file": "tsconfig.*.json" },
+        { "file": "package.json", "contains": "typescript" }
+      ],
+      "rules": ["common", "typescript"],
+      "skills": [
+        "coding-standards",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["npx tsc --noEmit", "npm run build"],
+        "test": ["npm test", "npx jest", "npx vitest"],
+        "lint": ["npx eslint .", "npx tsc --noEmit"],
+        "format": ["npx prettier --write ."]
+      },
+      "permissions": {
+        "allow": ["npx tsc", "npx eslint", "npx prettier", "npm test", "npm run *", "npx jest", "npx vitest"],
+        "deny": ["npm publish"]
+      }
+    },
+    {
+      "id": "javascript",
+      "name": "JavaScript (Node.js)",
+      "indicators": [
+        { "file": "package.json" },
+        { "file": ".eslintrc*" },
+        { "file": "eslint.config.*" }
+      ],
+      "rules": ["common", "typescript"],
+      "skills": [
+        "coding-standards",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["npm run build"],
+        "test": ["npm test", "npx jest", "npx vitest"],
+        "lint": ["npx eslint ."],
+        "format": ["npx prettier --write ."]
+      },
+      "permissions": {
+        "allow": ["npx eslint", "npx prettier", "npm test", "npm run *", "npx jest", "npx vitest"],
+        "deny": ["npm publish"]
+      }
+    },
+    {
+      "id": "react",
+      "name": "React",
+      "indicators": [
+        { "file": "package.json", "contains": "\"react\":" }
+      ],
+      "rules": ["common", "typescript", "web", "react"],
+      "skills": [
+        "coding-standards",
+        "frontend-patterns",
+        "react-patterns",
+        "react-performance",
+        "react-testing",
+        "accessibility",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["npm run build"],
+        "test": ["npm test", "npx jest", "npx vitest"],
+        "lint": ["npx eslint ."],
+        "format": ["npx prettier --write ."]
+      },
+      "permissions": {
+        "allow": ["npx eslint", "npx prettier", "npm test", "npm run *", "npx jest", "npx vitest"],
+        "deny": ["npm publish"]
+      }
+    },
+    {
+      "id": "nextjs",
+      "name": "Next.js",
+      "indicators": [
+        { "file": "next.config.*" },
+        { "file": "package.json", "contains": "\"next\":" }
+      ],
+      "rules": ["common", "typescript", "web"],
+      "skills": [
+        "coding-standards",
+        "frontend-patterns",
+        "backend-patterns",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["npm run build", "npx next build"],
+        "test": ["npm test", "npx jest", "npx vitest"],
+        "lint": ["npx next lint", "npx eslint ."],
+        "format": ["npx prettier --write ."],
+        "dev": ["npm run dev", "npx next dev"]
+      },
+      "permissions": {
+        "allow": ["npx next *", "npx eslint", "npx prettier", "npm test", "npm run *", "npx jest", "npx vitest"],
+        "deny": ["npm publish"]
+      }
+    },
+    {
+      "id": "golang",
+      "name": "Go",
+      "indicators": [
+        { "file": "go.mod" },
+        { "file": "go.sum" }
+      ],
+      "rules": ["common", "golang"],
+      "skills": [
+        "golang-patterns",
+        "golang-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["go build ./..."],
+        "test": ["go test ./..."],
+        "lint": ["golangci-lint run", "go vet ./..."],
+        "format": ["gofmt -w ."]
+      },
+      "permissions": {
+        "allow": ["go build *", "go test *", "go vet *", "go mod *", "go run *", "golangci-lint *", "gofmt *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "indicators": [
+        { "file": "pyproject.toml" },
+        { "file": "setup.py" },
+        { "file": "setup.cfg" },
+        { "file": "requirements.txt" },
+        { "file": "Pipfile" },
+        { "file": "poetry.lock" }
+      ],
+      "rules": ["common", "python"],
+      "skills": [
+        "python-patterns",
+        "python-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["python -m build", "pip install -e ."],
+        "test": ["pytest", "python -m pytest"],
+        "lint": ["ruff check .", "flake8", "mypy ."],
+        "format": ["ruff format .", "black ."]
+      },
+      "permissions": {
+        "allow": ["python *", "pip install *", "pytest *", "ruff *", "black *", "mypy *", "flake8 *"],
+        "deny": ["pip install --user *"]
+      }
+    },
+    {
+      "id": "rust",
+      "name": "Rust",
+      "indicators": [
+        { "file": "Cargo.toml" },
+        { "file": "Cargo.lock" }
+      ],
+      "rules": ["common", "rust"],
+      "skills": [
+        "rust-patterns",
+        "rust-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["cargo build"],
+        "test": ["cargo test"],
+        "lint": ["cargo clippy -- -D warnings"],
+        "format": ["cargo fmt"]
+      },
+      "permissions": {
+        "allow": ["cargo build *", "cargo test *", "cargo clippy *", "cargo fmt *", "cargo run *", "cargo check *"],
+        "deny": ["cargo publish"]
+      }
+    },
+    {
+      "id": "java",
+      "name": "Java",
+      "indicators": [
+        { "file": "pom.xml" },
+        { "file": "build.gradle" },
+        { "file": "build.gradle.kts" }
+      ],
+      "rules": ["common", "java"],
+      "skills": [
+        "java-coding-standards",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["./mvnw compile", "./gradlew build", "mvn compile", "gradle build"],
+        "test": ["./mvnw test", "./gradlew test", "mvn test", "gradle test"],
+        "lint": ["./mvnw checkstyle:check", "./gradlew checkstyleMain"],
+        "format": ["./mvnw spotless:apply", "./gradlew spotlessApply"]
+      },
+      "permissions": {
+        "allow": ["./mvnw *", "./gradlew *", "mvn *", "gradle *", "java *"],
+        "deny": ["./mvnw deploy", "./gradlew publish", "mvn deploy", "gradle publish"]
+      }
+    },
+    {
+      "id": "springboot",
+      "name": "Spring Boot (Java/Kotlin)",
+      "indicators": [
+        { "file": "pom.xml", "contains": "spring-boot" },
+        { "file": "build.gradle", "contains": "spring-boot" },
+        { "file": "build.gradle.kts", "contains": "spring-boot" }
+      ],
+      "rules": ["common", "java"],
+      "skills": [
+        "springboot-patterns",
+        "springboot-tdd",
+        "springboot-verification",
+        "springboot-security",
+        "java-coding-standards",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["./mvnw compile", "./gradlew build"],
+        "test": ["./mvnw test", "./gradlew test"],
+        "lint": ["./mvnw checkstyle:check"],
+        "format": ["./mvnw spotless:apply"],
+        "dev": ["./mvnw spring-boot:run", "./gradlew bootRun"]
+      },
+      "permissions": {
+        "allow": ["./mvnw *", "./gradlew *", "mvn *", "gradle *", "java *"],
+        "deny": ["./mvnw deploy", "./gradlew publish", "mvn deploy", "gradle publish"]
+      }
+    },
+    {
+      "id": "kotlin",
+      "name": "Kotlin",
+      "indicators": [
+        { "file": "build.gradle.kts" },
+        { "file": "settings.gradle.kts" },
+        { "file": "build.gradle", "contains": "kotlin" }
+      ],
+      "rules": ["common", "kotlin"],
+      "skills": [
+        "kotlin-patterns",
+        "kotlin-testing",
+        "kotlin-coroutines-flows",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["./gradlew build"],
+        "test": ["./gradlew test"],
+        "lint": ["./gradlew ktlintCheck", "./gradlew detekt"],
+        "format": ["./gradlew ktlintFormat"]
+      },
+      "permissions": {
+        "allow": ["./gradlew *", "gradle *", "kotlin *"],
+        "deny": ["./gradlew publish"]
+      }
+    },
+    {
+      "id": "swift",
+      "name": "Swift / SwiftUI",
+      "indicators": [
+        { "file": "Package.swift" },
+        { "file": "*.xcodeproj" },
+        { "file": "*.xcworkspace" },
+        { "file": "Podfile" }
+      ],
+      "rules": ["common", "swift"],
+      "skills": [
+        "swiftui-patterns",
+        "swift-concurrency-6-2",
+        "swift-actor-persistence",
+        "swift-protocol-di-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["swift build", "xcodebuild build"],
+        "test": ["swift test", "xcodebuild test"],
+        "lint": ["swiftlint"],
+        "format": ["swiftformat ."]
+      },
+      "permissions": {
+        "allow": ["swift build *", "swift test *", "swift run *", "xcodebuild *", "swiftlint *", "swiftformat *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "dart-flutter",
+      "name": "Dart / Flutter",
+      "indicators": [
+        { "file": "pubspec.yaml" },
+        { "file": "pubspec.lock" }
+      ],
+      "rules": ["common", "dart"],
+      "skills": [
+        "dart-flutter-patterns",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["flutter build", "dart compile"],
+        "test": ["flutter test", "dart test"],
+        "lint": ["dart analyze"],
+        "format": ["dart format ."]
+      },
+      "permissions": {
+        "allow": ["flutter *", "dart *"],
+        "deny": ["flutter pub publish"]
+      }
+    },
+    {
+      "id": "php-laravel",
+      "name": "PHP / Laravel",
+      "indicators": [
+        { "file": "composer.json" },
+        { "file": "artisan" },
+        { "file": "composer.lock" }
+      ],
+      "rules": ["common", "php"],
+      "skills": [
+        "laravel-patterns",
+        "laravel-tdd",
+        "laravel-verification",
+        "laravel-security",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["composer install"],
+        "test": ["php artisan test", "vendor/bin/phpunit", "vendor/bin/pest"],
+        "lint": ["vendor/bin/phpstan analyse", "vendor/bin/pint"],
+        "format": ["vendor/bin/pint"]
+      },
+      "permissions": {
+        "allow": ["php artisan *", "composer *", "vendor/bin/*"],
+        "deny": []
+      }
+    },
+    {
+      "id": "ruby",
+      "name": "Ruby / Rails",
+      "indicators": [
+        { "file": "Gemfile" },
+        { "file": "Gemfile.lock" },
+        { "file": "Rakefile" }
+      ],
+      "rules": ["common"],
+      "skills": [
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["bundle install"],
+        "test": ["bundle exec rspec", "bundle exec rake test"],
+        "lint": ["bundle exec rubocop"],
+        "format": ["bundle exec rubocop -A"]
+      },
+      "permissions": {
+        "allow": ["bundle exec *", "rails *", "rake *", "ruby *"],
+        "deny": ["gem push"]
+      }
+    },
+    {
+      "id": "csharp-dotnet",
+      "name": "C# / .NET",
+      "indicators": [
+        { "file": "*.csproj" },
+        { "file": "*.sln" },
+        { "file": "global.json" }
+      ],
+      "rules": ["common", "csharp"],
+      "skills": [
+        "dotnet-patterns",
+        "csharp-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["dotnet build"],
+        "test": ["dotnet test"],
+        "lint": ["dotnet format --verify-no-changes"],
+        "format": ["dotnet format"]
+      },
+      "permissions": {
+        "allow": ["dotnet build *", "dotnet test *", "dotnet run *", "dotnet format *"],
+        "deny": ["dotnet nuget push"]
+      }
+    },
+    {
+      "id": "cpp",
+      "name": "C / C++",
+      "indicators": [
+        { "file": "CMakeLists.txt" },
+        { "file": "Makefile" },
+        { "file": "meson.build" },
+        { "file": "*.vcxproj" }
+      ],
+      "rules": ["common", "cpp"],
+      "skills": [
+        "cpp-coding-standards",
+        "cpp-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["cmake --build build", "make"],
+        "test": ["ctest --test-dir build", "make test"],
+        "lint": ["clang-tidy -p build"],
+        "format": ["clang-format -i **/*.cpp **/*.h **/*.c **/*.hpp"]
+      },
+      "permissions": {
+        "allow": ["cmake *", "make *", "ctest *", "clang-tidy *", "clang-format *", "gcc *", "g++ *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "perl",
+      "name": "Perl",
+      "indicators": [
+        { "file": "cpanfile" },
+        { "file": "Makefile.PL" },
+        { "file": "Build.PL" },
+        { "file": "dist.ini" }
+      ],
+      "rules": ["common", "perl"],
+      "skills": [
+        "perl-patterns",
+        "perl-testing",
+        "perl-security",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["perl Makefile.PL && make", "perl Build.PL && ./Build"],
+        "test": ["prove -lr t/", "make test"],
+        "lint": ["perlcritic lib/"],
+        "format": ["perltidy -b lib/**/*.pl"]
+      },
+      "permissions": {
+        "allow": ["perl *", "prove *", "make *", "perlcritic *", "perltidy *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "django",
+      "name": "Django (Python)",
+      "indicators": [
+        { "file": "manage.py" },
+        { "file": "requirements.txt", "contains": "django" },
+        { "file": "pyproject.toml", "contains": "django" }
+      ],
+      "rules": ["common", "python"],
+      "skills": [
+        "django-patterns",
+        "django-tdd",
+        "django-verification",
+        "django-security",
+        "python-patterns",
+        "python-testing",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["pip install -e ."],
+        "test": ["python manage.py test", "pytest"],
+        "lint": ["ruff check .", "mypy ."],
+        "format": ["ruff format .", "black ."],
+        "dev": ["python manage.py runserver"]
+      },
+      "permissions": {
+        "allow": ["python *", "pip install *", "pytest *", "ruff *", "black *", "mypy *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "android",
+      "name": "Android (Kotlin/Java)",
+      "indicators": [
+        { "file": "settings.gradle.kts", "contains": "android" },
+        { "file": "build.gradle", "contains": "android" },
+        { "file": "AndroidManifest.xml" }
+      ],
+      "rules": ["common", "kotlin"],
+      "skills": [
+        "android-clean-architecture",
+        "kotlin-patterns",
+        "kotlin-testing",
+        "kotlin-coroutines-flows",
+        "compose-multiplatform-patterns",
+        "tdd-workflow",
+        "verification-loop"
+      ],
+      "commands": {
+        "build": ["./gradlew assembleDebug"],
+        "test": ["./gradlew testDebugUnitTest"],
+        "lint": ["./gradlew lint", "./gradlew ktlintCheck"],
+        "format": ["./gradlew ktlintFormat"]
+      },
+      "permissions": {
+        "allow": ["./gradlew *", "adb *"],
+        "deny": []
+      }
+    },
+    {
+      "id": "docker",
+      "name": "Docker / Containerized",
+      "indicators": [
+        { "file": "Dockerfile" },
+        { "file": "docker-compose.yml" },
+        { "file": "docker-compose.yaml" },
+        { "file": "compose.yml" },
+        { "file": "compose.yaml" }
+      ],
+      "rules": [],
+      "skills": [
+        "docker-patterns",
+        "deployment-patterns"
+      ],
+      "commands": {
+        "build": ["docker compose build", "docker build ."],
+        "test": ["docker compose run --rm app test"],
+        "dev": ["docker compose up"]
+      },
+      "permissions": {
+        "allow": ["docker compose *", "docker build *"],
+        "deny": ["docker push"]
+      }
+    }
+  ]
+}

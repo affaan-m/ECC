@@ -150,4 +150,6 @@ Remaining errors: 1
 
 Son: `Build Status: SUCCESS/FAILED | Errors Fixed: N | Files Modified: list`
 
-Detaylı Java ve Spring Boot kalıpları için, `skill: springboot-patterns`'a bakın.
+Detaylı Java kalıpları ve örnekler için:
+- **[SPRING]**: `skill: springboot-patterns`'a bakın
+- **[QUARKUS]**: `skill: quarkus-patterns`'a bakın

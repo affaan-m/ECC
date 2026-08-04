@@ -20,8 +20,31 @@ class PromptConfig:
 
 
 class PromptBuilder:
-    def __init__(self, config: PromptConfig | None = None) -> None:
-        self.config = config or PromptConfig()
+    def __init__(
+        self,
+        config: PromptConfig | None = None,
+        *,
+        system_template: str | None = None,
+        user_template: str | None = None,
+        include_tools_in_system: bool | None = None,
+        tool_format: str | None = None,
+    ) -> None:
+        if config is not None and any(
+            value is not None
+            for value in (system_template, user_template, include_tools_in_system, tool_format)
+        ):
+            raise ValueError("Pass either config or PromptBuilder keyword options, not both")
+
+        if config is None:
+            overrides = {
+                "system_template": system_template,
+                "user_template": user_template,
+                "include_tools_in_system": include_tools_in_system,
+                "tool_format": tool_format,
+            }
+            config = PromptConfig(**{key: value for key, value in overrides.items() if value is not None})
+
+        self.config = config
 
     def build(self, messages: list[Message], tools: list[ToolDefinition] | None = None) -> list[Message]:
         if not messages:

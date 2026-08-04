@@ -1,5 +1,45 @@
 # 更新日志
 
+## 2.0.0-rc.1 - 2026-04-28
+
+### 亮点
+
+* 为 Hermes 操作员叙事新增公开的 ECC 2.0 release candidate 表面。
+* 将 ECC 明确记录为跨 Claude Code、Codex、Cursor、OpenCode 和 Gemini 的可复用 cross-harness 基础层。
+* 新增经过清理的 Hermes import 技能表面，而不是发布私有操作员状态。
+
+### 发布表面
+
+* 将 package、plugin、marketplace、OpenCode、agent 和 README 元数据更新为 `2.0.0-rc.1`。
+* 在 `docs/releases/2.0.0-rc.1/` 下集中发布说明、社交草稿、发布清单、交接说明和演示提示词。
+* 新增 `docs/architecture/cross-harness.md`，并补充 ECC/Hermes 边界的回归覆盖。
+* `ecc2/` 版本保持独立；除非 release engineering 另有决定，它仍是 alpha control-plane scaffold。
+
+### 备注
+
+* 这是 release candidate，不是完整 ECC 2.0 control-plane 路线图的 GA 声明。
+* 预发布 npm 发布应使用 `next` dist-tag，除非 release engineering 明确选择其他策略。
+
+## 1.10.0 - 2026-04-05
+
+### 亮点
+
+* 在数周 OSS 增长和 backlog 合并后，公开发布表面已同步到当前仓库状态。
+* 操作员工作流扩展了 voice、graph-ranking、billing、workspace 和 outbound 技能。
+* 媒体生成工作流扩展了 Manim 和 Remotion 优先的发布工具。
+* ECC 2.0 alpha control-plane binary 现在可从 `ecc2/` 本地构建，并提供首个可用的 CLI/TUI 表面。
+
+### 发布表面
+
+* 将 plugin、marketplace、Codex、OpenCode 和 agent 元数据更新为 `1.10.0`。
+* 将公开计数同步到当前 OSS 表面：38 个代理、156 个技能、72 个命令。
+* 刷新顶层安装文档和 marketplace 描述，使其匹配当前仓库状态。
+
+### 备注
+
+* Claude plugin 仍受平台级 rules 分发限制影响；selective install / OSS 路径仍是最可靠的完整安装方式。
+* 这是仓库表面校正和生态同步版本，不表示完整 ECC 2.0 路线图已经完成。
+
 ## 1.9.0 - 2026-03-20
 
 ### 亮点

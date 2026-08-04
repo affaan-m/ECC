@@ -1,7 +1,7 @@
 interface:
   display_name: "Article Writing"
-  short_description: "Write long-form content in a supplied voice without sounding templated"
+  short_description: "Long-form content in a supplied voice"
   brand_color: "#B45309"
-  default_prompt: "Draft a sharp long-form article from these notes and examples"
+  default_prompt: "Use $article-writing to draft polished long-form content in the supplied voice."
 policy:
   allow_implicit_invocation: true

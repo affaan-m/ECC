@@ -1,0 +1,56 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "stale-pr-salvage-maintainer-branch",
+  "title": "Recover useful stale PR work through maintainer-owned branches",
+  "mode": "read_only_prototype",
+  "objective": "Given a closed stale PR batch, identify useful work, reject unsafe bulk imports, and promote only a maintainer-owned salvage playbook with attribution and validation.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/stale-pr-salvage-ledger.md",
+      "purpose": "Durable source-to-disposition mapping for stale PR cleanup"
+    },
+    {
+      "kind": "repo_doc",
+      "path": "docs/legacy-artifact-inventory.md",
+      "purpose": "Import guardrails for legacy and private-context material"
+    },
+    {
+      "kind": "roadmap",
+      "path": "docs/ECC-2.0-GA-ROADMAP.md",
+      "purpose": "Operating rule and current execution lane"
+    },
+    {
+      "kind": "github_pr",
+      "url": "https://github.com/affaan-m/everything-claude-code/pull/1815",
+      "purpose": "Example maintainer-owned stale salvage PR with attribution"
+    },
+    {
+      "kind": "github_pr",
+      "url": "https://github.com/affaan-m/everything-claude-code/pull/1818",
+      "purpose": "Example gap pass classifying already-present and skipped stale work"
+    }
+  ],
+  "retrieval_questions": [
+    "Which closed PRs contain useful work that is not already present?",
+    "Which files or concepts are unsafe to cherry-pick without manual review?",
+    "Which current docs, skills, commands, or tests are the correct integration points?",
+    "Which validation gates are required before the salvage work can merge?"
+  ],
+  "forbidden_actions": [
+    "closing, reopening, or commenting on PRs",
+    "merging PRs",
+    "creating release tags",
+    "publishing packages or plugins",
+    "copying private paths, secrets, or raw personal context",
+    "blindly cherry-picking bulk localization"
+  ],
+  "acceptance_gates": [
+    "source attribution is preserved",
+    "salvage ledger or equivalent tracker is updated",
+    "translation/manual-review tails remain blocked",
+    "candidate action is reversible and maintainer-owned",
+    "validation commands are named",
+    "at least one unsafe candidate is rejected"
+  ]
+}

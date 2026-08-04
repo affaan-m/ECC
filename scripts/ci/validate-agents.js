@@ -18,15 +18,45 @@ function extractFrontmatter(content) {
   if (!match) return null;
 
   const frontmatter = {};
+  const duplicates = [];
+  const sequenceFields = [];
+  let currentTopLevelKey = null;
   const lines = match[1].split(/\r?\n/);
   for (const line of lines) {
+    if (/^\s*-\s+/.test(line)) {
+      if (currentTopLevelKey) {
+        sequenceFields.push(currentTopLevelKey);
+      }
+      continue;
+    }
+
+    // Only top-level keys are unique. Indented YAML belongs to nested values.
+    if (/^\s/.test(line)) continue;
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+
+    currentTopLevelKey = null;
     const colonIdx = line.indexOf(':');
     if (colonIdx > 0) {
       const key = line.slice(0, colonIdx).trim();
       const value = line.slice(colonIdx + 1).trim();
+      currentTopLevelKey = key;
+      if (Object.prototype.hasOwnProperty.call(frontmatter, key)) {
+        duplicates.push(key);
+      }
       frontmatter[key] = value;
+      if (value && '[!&*{|>'.includes(value[0])) {
+        sequenceFields.push(key);
+      }
     }
   }
+  Object.defineProperty(frontmatter, '__duplicates__', {
+    value: duplicates,
+    enumerable: false,
+  });
+  Object.defineProperty(frontmatter, '__sequenceFields__', {
+    value: sequenceFields,
+    enumerable: false,
+  });
   return frontmatter;
 }
 
@@ -57,11 +87,21 @@ function validateAgents() {
       continue;
     }
 
+    if (frontmatter.__duplicates__.length > 0) {
+      console.error(`ERROR: ${file} - Duplicate frontmatter keys: ${[...new Set(frontmatter.__duplicates__)].join(', ')}`);
+      hasErrors = true;
+    }
+
     for (const field of REQUIRED_FIELDS) {
       if (!frontmatter[field] || (typeof frontmatter[field] === 'string' && !frontmatter[field].trim())) {
         console.error(`ERROR: ${file} - Missing required field: ${field}`);
         hasErrors = true;
       }
+    }
+
+    if (frontmatter.__sequenceFields__.includes('tools')) {
+      console.error(`ERROR: ${file} - Agent tools must be a comma-separated scalar, not a YAML sequence`);
+      hasErrors = true;
     }
 
     // Validate model is a known value

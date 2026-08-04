@@ -73,7 +73,7 @@ function validateHookEntry(hook, label) {
       console.error(`ERROR: ${label} missing or invalid 'command' field`);
       hasErrors = true;
     } else if (typeof hook.command === 'string') {
-      const nodeEMatch = hook.command.match(/^node -e "(.*)"$/s);
+      const nodeEMatch = hook.command.match(/^node -e "((?:[^"\\]|\\.)*)"(?:\s|$)/s);
       if (nodeEMatch) {
         try {
           new vm.Script(nodeEMatch[1].replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t'));

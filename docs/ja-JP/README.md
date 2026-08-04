@@ -1,4 +1,4 @@
-**言語:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md)
+**言語:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
 
 # Everything Claude Code
 
@@ -19,9 +19,9 @@
 
 <div align="center">
 
-**言語 / Language / 語言 / Dil**
+**言語 / Language / 語言 / Dil / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
 
 </div>
 
@@ -107,7 +107,7 @@
 
 ```bash
 # マーケットプレイスを追加
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # プラグインをインストール
 /plugin install ecc@ecc
@@ -122,12 +122,12 @@
 git clone https://github.com/affaan-m/everything-claude-code.git
 
 # 共通ルールをインストール（必須）
-cp -r everything-claude-code/rules/common/* ~/.claude/rules/
+cp -r everything-claude-code/rules/common ~/.claude/rules/common
 
 # 言語固有ルールをインストール（スタックを選択）
-cp -r everything-claude-code/rules/typescript/* ~/.claude/rules/
-cp -r everything-claude-code/rules/python/* ~/.claude/rules/
-cp -r everything-claude-code/rules/golang/* ~/.claude/rules/
+cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript
+cp -r everything-claude-code/rules/python ~/.claude/rules/python
+cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
 ```
 
 ### ステップ3：使用開始
@@ -228,6 +228,10 @@ everything-claude-code/
 |   |-- django-verification/        # Django 検証ループ（新規）
 |   |-- python-patterns/            # Python イディオムとベストプラクティス（新規）
 |   |-- python-testing/             # pytest を使った Python テスト（新規）
+|   |-- quarkus-patterns/            # Quarkus アーキテクチャ、Camel、CDI、Panache パターン（新規）
+|   |-- quarkus-security/           # Quarkus セキュリティ: JWT/OIDC、RBAC、バリデーション（新規）
+|   |-- quarkus-tdd/                # Quarkus TDD: JUnit 5、Mockito、REST Assured（新規）
+|   |-- quarkus-verification/       # Quarkus 検証: ビルド、テスト、ネイティブコンパイル（新規）
 |   |-- springboot-patterns/        # Java Spring Boot パターン（新規）
 |   |-- springboot-security/        # Spring Boot セキュリティ（新規）
 |   |-- springboot-tdd/             # Spring Boot TDD（新規）
@@ -424,7 +428,7 @@ Duplicate hook file detected: ./hooks/hooks.json is already resolved to a loaded
 
 ```bash
 # このリポジトリをマーケットプレイスとして追加
-/plugin marketplace add https://github.com/affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/ECC
 
 # プラグインをインストール
 /plugin install ecc@ecc
@@ -458,15 +462,15 @@ Duplicate hook file detected: ./hooks/hooks.json is already resolved to a loaded
 >
 > # オプション A：ユーザーレベルルール（すべてのプロジェクトに適用）
 > mkdir -p ~/.claude/rules
-> cp -r everything-claude-code/rules/common/* ~/.claude/rules/
-> cp -r everything-claude-code/rules/typescript/* ~/.claude/rules/   # スタックを選択
-> cp -r everything-claude-code/rules/python/* ~/.claude/rules/
-> cp -r everything-claude-code/rules/golang/* ~/.claude/rules/
+> cp -r everything-claude-code/rules/common ~/.claude/rules/common
+> cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # スタックを選択
+> cp -r everything-claude-code/rules/python ~/.claude/rules/python
+> cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
 >
 > # オプション B：プロジェクトレベルルール（現在のプロジェクトのみ）
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/common/* .claude/rules/
-> cp -r everything-claude-code/rules/typescript/* .claude/rules/     # スタックを選択
+> cp -r everything-claude-code/rules/common .claude/rules/common
+> cp -r everything-claude-code/rules/typescript .claude/rules/typescript     # スタックを選択
 > ```
 
 ---
@@ -483,10 +487,10 @@ git clone https://github.com/affaan-m/everything-claude-code.git
 cp everything-claude-code/agents/*.md ~/.claude/agents/
 
 # ルール（共通 + 言語固有）をコピー
-cp -r everything-claude-code/rules/common/* ~/.claude/rules/
-cp -r everything-claude-code/rules/typescript/* ~/.claude/rules/   # スタックを選択
-cp -r everything-claude-code/rules/python/* ~/.claude/rules/
-cp -r everything-claude-code/rules/golang/* ~/.claude/rules/
+cp -r everything-claude-code/rules/common ~/.claude/rules/common
+cp -r everything-claude-code/rules/typescript ~/.claude/rules/typescript   # スタックを選択
+cp -r everything-claude-code/rules/python ~/.claude/rules/python
+cp -r everything-claude-code/rules/golang ~/.claude/rules/golang
 
 # コマンドをコピー
 cp everything-claude-code/commands/*.md ~/.claude/commands/

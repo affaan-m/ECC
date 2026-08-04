@@ -38,8 +38,24 @@ function appendLine(filePath, line) {
   fs.appendFileSync(filePath, `${line}\n`, 'utf8');
 }
 
+function run(rawInput, mode = 'audit') {
+  const config = MODE_CONFIG[mode];
+
+  try {
+    if (config) {
+      const input = String(rawInput || '').trim() ? JSON.parse(String(rawInput)) : {};
+      const command = sanitizeCommand(input.tool_input?.command || '?');
+      appendLine(path.join(os.homedir(), '.claude', config.fileName), config.format(command));
+    }
+  } catch {
+    // Logging must never block the calling hook.
+  }
+
+  return typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput);
+}
+
 function main() {
-  const config = MODE_CONFIG[process.argv[2]];
+  const mode = process.argv[2];
 
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {
@@ -50,17 +66,7 @@ function main() {
   });
 
   process.stdin.on('end', () => {
-    try {
-      if (config) {
-        const input = raw.trim() ? JSON.parse(raw) : {};
-        const command = sanitizeCommand(input.tool_input?.command || '?');
-        appendLine(path.join(os.homedir(), '.claude', config.fileName), config.format(command));
-      }
-    } catch {
-      // Logging must never block the calling hook.
-    }
-
-    process.stdout.write(raw);
+    process.stdout.write(run(raw, mode));
   });
 }
 
@@ -69,5 +75,6 @@ if (require.main === module) {
 }
 
 module.exports = {
+  run,
   sanitizeCommand,
 };

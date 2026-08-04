@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "skill-quality-evidence",
+  "run_id": "2026-05-12-skill-quality-evidence-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "evidence-backed-skill-amendment",
+      "decision": "accepted",
+      "score": 0.91,
+      "reasons": [
+        "retrieves the skill development guide and existing focused skill examples",
+        "records observed failure, user feedback, or reference-set gap before proposing an amendment",
+        "names validation commands for skill structure, examples, catalog consistency, and regression behavior",
+        "keeps package, plugin, catalog, and publication actions out of the evaluator run",
+        "includes rollback guidance for reverting the future maintainer PR"
+      ],
+      "rollback": "Revert the future skill-amendment PR and restore the prior SKILL.md content; no installed user skill or publication surface changes in this read-only playbook."
+    },
+    {
+      "candidate_id": "vague-skill-rewrite",
+      "decision": "rejected",
+      "score": 0.14,
+      "reasons": [
+        "does not name observed failure evidence or user feedback",
+        "rewrites broad skill guidance without focused scope",
+        "does not include working examples or a reference set",
+        "does not name a regression command",
+        "risks changing catalog or publication state from evaluator output"
+      ],
+      "rollback": "Do not promote this rewrite; restart from observed skill-run evidence, example validation, and a focused maintainer PR."
+    }
+  ],
+  "promoted_candidate_id": "evidence-backed-skill-amendment"
+}

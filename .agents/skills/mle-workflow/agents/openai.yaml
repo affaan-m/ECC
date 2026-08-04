@@ -1,0 +1,7 @@
+interface:
+  display_name: "MLE Workflow"
+  short_description: "Production ML workflow and review gates"
+  brand_color: "#2563EB"
+  default_prompt: "Use $mle-workflow to plan or review a production ML pipeline."
+policy:
+  allow_implicit_invocation: true

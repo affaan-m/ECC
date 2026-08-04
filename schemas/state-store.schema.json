@@ -40,6 +40,12 @@
       "items": {
         "$ref": "#/$defs/governanceEvent"
       }
+    },
+    "workItems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/workItem"
+      }
     }
   },
   "$defs": {
@@ -308,6 +314,66 @@
           "$ref": "#/$defs/nullableString"
         },
         "createdAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "workItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "sourceId",
+        "title",
+        "status",
+        "priority",
+        "url",
+        "owner",
+        "repoRoot",
+        "sessionId",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "priority": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "url": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "repoRoot": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "metadata": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "updatedAt": {
           "$ref": "#/$defs/nonEmptyString"
         }
       }

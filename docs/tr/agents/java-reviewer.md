@@ -89,4 +89,6 @@ grep -rn "FetchType.EAGER" src/main/java --include="*.java"
 - **Uyarı**: Sadece MEDIUM sorunlar
 - **Bloke Et**: CRITICAL veya HIGH sorunlar bulundu
 
-Detaylı Spring Boot kalıpları ve örnekleri için, `skill: springboot-patterns`'a bakın.
+Detaylı kalıplar ve örnekler için:
+- **[SPRING]**: `skill: springboot-patterns`'a bakın
+- **[QUARKUS]**: `skill: quarkus-patterns`'a bakın

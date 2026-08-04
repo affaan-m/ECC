@@ -1,6 +1,6 @@
 ---
 description: Update documentation for recent changes
-agent: everything-claude-code:doc-updater
+agent: doc-updater
 subtask: true
 ---
 

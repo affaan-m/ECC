@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "harness-config-quality",
+  "run_id": "2026-05-12-harness-config-quality-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "adapter-matrix-backed-drift-check",
+      "decision": "accepted",
+      "score": 0.92,
+      "reasons": [
+        "retrieves adapter state before making a support claim",
+        "names install or onramp path and verification commands",
+        "preserves existing user and project config",
+        "keeps runtime MCP toggles and plugin publication out of the evaluator run",
+        "requires focused compatibility regression coverage"
+      ],
+      "rollback": "Revert the future adapter/config PR or restore the prior config merge behavior; no live user config is changed by this read-only playbook."
+    },
+    {
+      "candidate_id": "unsupported-hook-parity-claim",
+      "decision": "rejected",
+      "score": 0.16,
+      "reasons": [
+        "claims native support without adapter matrix evidence",
+        "copies Claude hook semantics into instruction-backed harnesses",
+        "does not name a verification command",
+        "does not preserve existing MCP or hook config",
+        "risks publishing or installing unsupported plugin behavior"
+      ],
+      "rollback": "Do not publish this setup recommendation; restart from adapter state, risk note, and config-preservation evidence."
+    }
+  ],
+  "promoted_candidate_id": "adapter-matrix-backed-drift-check"
+}

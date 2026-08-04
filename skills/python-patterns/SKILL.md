@@ -1,7 +1,8 @@
 ---
 name: python-patterns
 description: Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, efficient, and maintainable Python applications.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Python Development Patterns
@@ -57,14 +58,14 @@ Python prefers exception handling over checking conditions.
 
 ```python
 # Good: EAFP style
-def get_value(dictionary: dict, key: str) -> Any:
+def get_value(dictionary: dict, key: str, default_value: Any = None) -> Any:
     try:
         return dictionary[key]
     except KeyError:
         return default_value
 
 # Bad: LBYL (Look Before You Leap) style
-def get_value(dictionary: dict, key: str) -> Any:
+def get_value(dictionary: dict, key: str, default_value: Any = None) -> Any:
     if key in dictionary:
         return dictionary[key]
     else:

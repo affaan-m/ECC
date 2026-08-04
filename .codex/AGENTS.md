@@ -2,14 +2,17 @@
 
 This supplements the root `AGENTS.md` with Codex-specific guidance.
 
+For repo navigation, surface ownership, and PR diff packet guidance, read
+`docs/CODEX-NAVIGATION-GUIDE.md` after this supplement.
+
 ## Model Recommendations
 
 | Task Type | Recommended Model |
 |-----------|------------------|
-| Routine coding, tests, formatting | GPT 5.4 |
-| Complex features, architecture | GPT 5.4 |
-| Debugging, refactoring | GPT 5.4 |
-| Security review | GPT 5.4 |
+| Routine coding, tests, formatting | GPT 5.5 |
+| Complex features, architecture | GPT 5.5 |
+| Debugging, refactoring | GPT 5.5 |
+| Security review | GPT 5.5 |
 
 ## Skills Discovery
 
@@ -59,6 +62,12 @@ The sync script (`scripts/sync-ecc-to-codex.sh`) uses a Node-based TOML parser t
 - **Drift warnings** — if an existing server's config differs from the ECC recommendation, the script logs a warning.
 - **`--update-mcp`** — explicitly replaces all ECC-managed servers with the latest recommended config (safely removes subtables like `[mcp_servers.supabase.env]`).
 - **User config is always preserved** — custom servers, args, env vars, and credentials outside ECC-managed sections are never touched.
+
+## External Action Boundaries
+
+Treat networked tools as read-only by default. Search, inspect, and draft freely within the user's requested scope, but require explicit user approval before posting, publishing, pushing, merging, opening paid jobs, dispatching remote agents, changing third-party resources, or modifying credentials.
+
+When approval is ambiguous, produce a local plan or draft artifact instead of taking the external action. Preserve user config and private state unless the user specifically asks for a scoped change.
 
 ## Multi-Agent Support
 

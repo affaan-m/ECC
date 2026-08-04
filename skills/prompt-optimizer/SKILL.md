@@ -12,8 +12,8 @@ description: >-
   "just do it" / "直接做". DO NOT TRIGGER when user says "优化代码",
   "优化性能", "optimize performance", "optimize this code" — those are
   refactoring/performance tasks, not prompt optimization.
-origin: community
 metadata:
+  origin: community
   author: YannJY02
   version: "1.0.0"
 ---
@@ -68,7 +68,7 @@ Before analyzing the prompt, detect the current project context:
    - `go.mod` → Go
    - `pyproject.toml` / `requirements.txt` → Python
    - `Cargo.toml` → Rust
-   - `build.gradle` / `pom.xml` → Java / Kotlin / Spring Boot
+   - `build.gradle` / `pom.xml` → Java / Kotlin (then check for `quarkus` in build file → Quarkus, or `spring-boot` → Spring Boot)
    - `Package.swift` → Swift
    - `Gemfile` → Ruby
    - `composer.json` → PHP
@@ -134,7 +134,8 @@ Map intent + scope + tech stack (from Phase 0) to specific ECC components.
 |------------|--------------|-------|
 | Python / Django | django-patterns, django-tdd, django-security, django-verification, python-patterns, python-testing | python-reviewer |
 | Go | golang-patterns, golang-testing | go-reviewer, go-build-resolver |
-| Spring Boot / Java | springboot-patterns, springboot-tdd, springboot-security, springboot-verification, java-coding-standards, jpa-patterns | code-reviewer |
+| Spring Boot / Java | springboot-patterns, springboot-tdd, springboot-security, springboot-verification, java-coding-standards, jpa-patterns | java-reviewer |
+| Quarkus / Java | quarkus-patterns, quarkus-tdd, quarkus-security, quarkus-verification, java-coding-standards, jpa-patterns | java-reviewer |
 | Kotlin / Android | kotlin-coroutines-flows, compose-multiplatform-patterns, android-clean-architecture | kotlin-reviewer |
 | TypeScript / React | frontend-patterns, backend-patterns, coding-standards | code-reviewer |
 | Swift / iOS | swiftui-patterns, swift-concurrency-6-2, swift-actor-persistence, swift-protocol-di-testing | code-reviewer |

@@ -299,7 +299,7 @@ test('executePlan rolls back partial setup when orchestration fails mid-run', ()
         workerName: 'Docs',
         workerSlug: 'docs',
         worktreePath: '/tmp/ecc-rollback-docs',
-        seedPaths: ['commands/orchestrate.md'],
+        seedPaths: ['commands/multi-workflow.md'],
         gitArgs: ['worktree', 'add', '-b', 'orchestrator-rollback-test-docs', '/tmp/ecc-rollback-docs', 'HEAD'],
         launchCommand: 'echo run'
       }

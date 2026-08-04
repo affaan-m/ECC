@@ -21,7 +21,7 @@ description: Suggests manual context compaction at logical intervals to preserve
 
 ## 運作方式
 
-`suggest-compact.sh` 腳本在 PreToolUse（Edit/Write）執行並：
+`suggest-compact.js` 腳本在 PreToolUse（Edit/Write）執行並：
 
 1. **追蹤工具呼叫** - 計算工作階段中的工具呼叫次數
 2. **門檻偵測** - 在可設定門檻建議（預設：50 次呼叫）
@@ -29,18 +29,23 @@ description: Suggests manual context compaction at logical intervals to preserve
 
 ## Hook 設定
 
-新增到你的 `~/.claude/settings.json`：
+**以外掛安裝？** 無需任何設定。外掛的 `hooks/hooks.json` 已經註冊了 `suggest-compact.js`（Hook ID `pre:edit-write:suggest-compact`，在 `standard` 與 `strict` hook 設定檔中生效）。請勿將下方區塊複製到 `~/.claude/settings.json` — 外掛安裝中不存在 `~/.claude/scripts/`，且重複註冊外掛 hook 會導致重複執行。
+
+**如果是手動安裝**（`./install.sh`），新增到你的 `~/.claude/settings.json`：
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "tool == \"Edit\" || tool == \"Write\"",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/skills/strategic-compact/suggest-compact.sh"
-      }]
-    }]
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
+      }
+    ]
   }
 }
 ```

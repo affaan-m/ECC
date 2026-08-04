@@ -175,7 +175,7 @@ The agent will stop and report if:
 
 - `/go-test` - Run tests after build succeeds
 - `/go-review` - Review code quality
-- `/verify` - Full verification loop
+- `verification-loop` skill - Full verification loop
 
 ## Related
 

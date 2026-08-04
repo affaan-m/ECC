@@ -27,16 +27,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Setup pnpm
         if: inputs.package-manager == 'pnpm' && inputs.node-version != '18.x'
-        uses: pnpm/action-setup@08c4be7e2e672a47d11bd04269e27e5f3e8529cb # v6.0.0
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           # Keep an explicit pnpm major because this repo's packageManager is Yarn.
           version: 10
@@ -59,82 +61,26 @@ jobs:
         if: inputs.package-manager == 'bun'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - name: Get npm cache directory
-        if: inputs.package-manager == 'npm'
-        id: npm-cache-dir
-        shell: bash
-        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
-
-      - name: Cache npm
-        if: inputs.package-manager == 'npm'
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ inputs.node-version }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node-version }}-npm-
-
-      - name: Get pnpm store directory
-        if: inputs.package-manager == 'pnpm'
-        id: pnpm-cache-dir
-        shell: bash
-        env:
-          COREPACK_ENABLE_STRICT: '0'
-        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm
-        if: inputs.package-manager == 'pnpm'
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ${{ steps.pnpm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ inputs.node-version }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node-version }}-pnpm-
-
-      - name: Get yarn cache directory
-        if: inputs.package-manager == 'yarn'
-        id: yarn-cache-dir
-        shell: bash
-        run: |
-          # Try Yarn Berry first, fall back to Yarn v1
-          if yarn config get cacheFolder >/dev/null 2>&1; then
-            echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
-          else
-            echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Cache yarn
-        if: inputs.package-manager == 'yarn'
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ${{ steps.yarn-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-
-
-      - name: Cache bun
-        if: inputs.package-manager == 'bun'
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
       # COREPACK_ENABLE_STRICT=0 allows pnpm to install even though
       # package.json declares "packageManager": "yarn@..."
       - name: Install dependencies
         shell: bash
         env:
           COREPACK_ENABLE_STRICT: '0'
+          npm_config_ignore_scripts: 'true'
+          YARN_ENABLE_SCRIPTS: 'false'
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
         run: |
-          case "${{ inputs.package-manager }}" in
-            npm) npm ci ;;
-            pnpm) pnpm install --no-frozen-lockfile ;;
+          case "$PACKAGE_MANAGER" in
+            npm) npm ci --ignore-scripts ;;
+            # pnpm v10 can fail CI on ignored native build scripts
+            # (for example msgpackr-extract) even though this repo is Yarn-native
+            # and pnpm is only exercised here as a compatibility lane.
+            pnpm) pnpm install --ignore-scripts --config.strict-dep-builds=false --no-frozen-lockfile ;;
             # Yarn Berry (v4+) removed --ignore-engines; engine checking is no longer a core feature
-            yarn) yarn install ;;
-            bun) bun install ;;
-            *) echo "Unsupported package manager: ${{ inputs.package-manager }}" && exit 1 ;;
+            yarn) yarn install --mode=skip-build ;;
+            bun) bun install --ignore-scripts ;;
+            *) echo "Unsupported package manager: $PACKAGE_MANAGER" && exit 1 ;;
           esac
 
       - name: Run tests

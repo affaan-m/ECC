@@ -1,3 +1,7 @@
+---
+description: Analyze a project and generate PM2 service commands for detected frontend, backend, or database services.
+---
+
 # PM2 Init
 
 Auto-analyze project and generate PM2 service commands.

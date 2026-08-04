@@ -1,21 +1,41 @@
 ---
 name: agent-payment-x402
-description: Add x402 payment execution to AI agents — per-task budgets, spending controls, and non-custodial wallets via MCP tools. Use when agents need to pay for APIs, services, or other agents.
-origin: community
+description: Add x402 payment execution to AI agents with per-task budgets, spending controls, and non-custodial wallets. Supports Base through agentwallet-sdk and X Layer through OKX Payments / OKX Agent Payments Protocol.
+metadata:
+  origin: community
 ---
 
 # Agent Payment Execution (x402)
 
-Enable AI agents to make autonomous payments with built-in spending controls. Uses the x402 HTTP payment protocol and MCP tools so agents can pay for external services, APIs, or other agents without custodial risk.
+Enable AI agents to make policy-gated payments with built-in spending controls. Uses the x402 HTTP payment protocol and MCP tools so agents can pay for external services, APIs, or other agents without custodial risk.
 
 ## When to Use
 
 Use when: your agent needs to pay for an API call, purchase a service, settle with another agent, enforce per-task spending limits, or manage a non-custodial wallet. Pairs naturally with cost-aware-llm-pipeline and security-review skills.
 
+## Decision Tree
+
+Choose the integration path based on whether your agent is buying access to a paid API or charging others for one:
+
+| Need | Recommended path |
+|------|------------------|
+| Agent pays a 402-gated API on Base or another agentwallet-supported chain | Use `agentwallet-sdk` as an MCP payment server with strict spending policy |
+| Agent pays a 402-gated API on X Layer | Use OKX Agent Payments Protocol from `okx/onchainos-skills`; `okx-x402-payment` is a deprecated legacy alias |
+| TypeScript API charges agents | Use OKX Payments TypeScript seller SDK docs for Express, Hono, Fastify, or Next.js |
+| Go API charges agents | Use OKX Payments Go seller SDK docs for Gin, Echo, or `net/http` |
+| Rust API charges agents | Use OKX Payments Rust seller SDK docs for Axum |
+| Java API charges agents | Use OKX Payments Java seller SDK docs for Spring Boot 2/3, Java EE, or Jakarta |
+| Python API charges agents | Check the current OKX Payments repository before implementation; a Python seller guide may not be available |
+
+## Supported Networks
+
+- `agentwallet-sdk`: use the package docs to confirm current network coverage before production. Base Sepolia is the safest development default; Base mainnet is the production path called out by the original skill.
+- OKX Payments / X Layer: current seller docs target X Layer (`eip155:196`) and USDT0 settlement. Fetch current SDK docs before generating production code because payment packages and facilitator behavior can change quickly.
+
 ## How It Works
 
 ### x402 Protocol
-x402 extends HTTP 402 (Payment Required) into a machine-negotiable flow. When a server returns `402`, the agent's payment tool automatically negotiates price, checks budget, signs a transaction, and retries — no human in the loop.
+x402 extends HTTP 402 (Payment Required) into a machine-negotiable flow. When a server returns `402`, the agent's payment tool negotiates price, checks budget, signs a transaction, and retries only inside the policy and confirmation boundary set by the orchestrator.
 
 ### Spending Controls
 Every payment tool call enforces a `SpendingPolicy`:
@@ -32,6 +52,8 @@ Agents hold their own keys via ERC-4337 smart accounts. The orchestrator sets po
 The payment layer exposes standard MCP tools that slot into any Claude Code or agent harness setup.
 
 > **Security note**: Always pin the package version. This tool manages private keys — unpinned `npx` installs introduce supply-chain risk.
+
+### Option A: agentwallet-sdk (Base / multi-chain)
 
 ```json
 {
@@ -54,6 +76,28 @@ The payment layer exposes standard MCP tools that slot into any Claude Code or a
 | `list_transactions` | Audit trail of all payments |
 
 > **Note**: Spending policy is set by the **orchestrator** before delegating to the agent — not by the agent itself. This prevents agents from escalating their own spending limits. Configure policy via `set_policy` in your orchestration layer or pre-task hook, never as an agent-callable tool.
+
+### Option B: OKX Agent Payments Protocol (X Layer)
+
+Use this path for X Layer x402, Multi-Party Payment (MPP), session payment, charge, and A2A charge flows.
+
+For buyer-side agent flows:
+
+1. Install or reference the current `okx/onchainos-skills` repository.
+2. Use `skills/okx-agent-payments-protocol/SKILL.md` as the dispatcher.
+3. Treat `skills/okx-x402-payment/SKILL.md` as a deprecated compatibility alias, not as the canonical skill.
+4. Require explicit user confirmation before wallet status checks or payment actions. Do not hide payment execution behind a generic tool call.
+
+For seller-side API flows, fetch the latest language-specific guide before generating code:
+
+| Runtime | Current guide |
+|---------|---------------|
+| TypeScript | `https://raw.githubusercontent.com/okx/payments/main/typescript/SELLER.md` |
+| Go | `https://raw.githubusercontent.com/okx/payments/main/go/x402/SELLER.md` |
+| Rust | `https://raw.githubusercontent.com/okx/payments/main/rust/x402/SELLER.md` |
+| Java | `https://raw.githubusercontent.com/okx/payments/main/java/SELLER.md` |
+
+Do not copy examples from older docs without checking the current OKX repository. Current OKX guidance uses `okx-agent-payments-protocol` as the dispatcher, and Java seller docs are now available.
 
 ## Examples
 
@@ -176,3 +220,6 @@ main().catch((err) => {
 - **npm**: [`agentwallet-sdk`](https://www.npmjs.com/package/agentwallet-sdk)
 - **Merged into NVIDIA NeMo Agent Toolkit**: [PR #17](https://github.com/NVIDIA/NeMo-Agent-Toolkit-Examples/pull/17) — x402 payment tool for NVIDIA's agent examples
 - **Protocol spec**: [x402.org](https://x402.org)
+- **OKX Payments SDKs**: [`okx/payments`](https://github.com/okx/payments) — TypeScript, Go, Rust, and Java seller integrations for X Layer x402
+- **OKX Agent Payments Protocol skill**: [`okx/onchainos-skills`](https://github.com/okx/onchainos-skills/tree/main/skills/okx-agent-payments-protocol)
+- **OKX Payments overview**: [web3.okx.com/onchainos/dev-docs/payments/overview](https://web3.okx.com/onchainos/dev-docs/payments/overview)

@@ -5,7 +5,7 @@
   "required": ["name"],
   "properties": {
     "name": { "type": "string" },
-    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
     "description": { "type": "string" },
     "author": {
       "oneOf": [
@@ -31,9 +31,21 @@
       "type": "array",
       "items": { "type": "string" }
     },
-    "agents": {
+    "commands": {
       "type": "array",
       "items": { "type": "string" }
+    },
+    "mcpServers": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object"
+        }
+      ]
     },
     "features": {
       "type": "object",

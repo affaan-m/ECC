@@ -5,6 +5,8 @@ const { assertValidEntity } = require('./schema');
 const ACTIVE_SESSION_STATES = ['active', 'running', 'idle'];
 const SUCCESS_OUTCOMES = new Set(['success', 'succeeded', 'passed']);
 const FAILURE_OUTCOMES = new Set(['failure', 'failed', 'error']);
+const CLOSED_WORK_ITEM_STATUSES = new Set(['done', 'closed', 'resolved', 'merged', 'cancelled']);
+const ATTENTION_WORK_ITEM_STATUSES = new Set(['blocked', 'needs-review', 'failed', 'stalled']);
 
 function normalizeLimit(value, fallback) {
   if (value === undefined || value === null) {
@@ -121,6 +123,24 @@ function mapGovernanceEventRow(row) {
   };
 }
 
+function mapWorkItemRow(row) {
+  return {
+    id: row.id,
+    source: row.source,
+    sourceId: row.source_id,
+    title: row.title,
+    status: row.status,
+    priority: row.priority,
+    url: row.url,
+    owner: row.owner,
+    repoRoot: row.repo_root,
+    sessionId: row.session_id,
+    metadata: parseJsonColumn(row.metadata, null),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function classifyOutcome(outcome) {
   const normalized = String(outcome || '').toLowerCase();
   if (SUCCESS_OUTCOMES.has(normalized)) {
@@ -132,6 +152,19 @@ function classifyOutcome(outcome) {
   }
 
   return 'unknown';
+}
+
+function classifyWorkItemStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (CLOSED_WORK_ITEM_STATUSES.has(normalized)) {
+    return 'closed';
+  }
+
+  if (ATTENTION_WORK_ITEM_STATUSES.has(normalized)) {
+    return 'attention';
+  }
+
+  return 'open';
 }
 
 function toPercent(numerator, denominator) {
@@ -199,6 +232,48 @@ function summarizeInstallHealth(installations) {
     status: summary.warningCount > 0 ? 'warning' : 'healthy',
     ...summary,
     installations,
+  };
+}
+
+function summarizeWorkItems(workItems) {
+  const summary = {
+    totalCount: workItems.length,
+    openCount: 0,
+    blockedCount: 0,
+    closedCount: 0,
+    items: workItems,
+  };
+
+  for (const workItem of workItems) {
+    const classification = classifyWorkItemStatus(workItem.status);
+    if (classification === 'closed') {
+      summary.closedCount += 1;
+    } else if (classification === 'attention') {
+      summary.openCount += 1;
+      summary.blockedCount += 1;
+    } else {
+      summary.openCount += 1;
+    }
+  }
+
+  return summary;
+}
+
+function summarizeReadiness({ activeSessionCount, skillRuns, installHealth, pendingGovernanceCount, workItems }) {
+  const failedSkillRuns = skillRuns.summary.failureCount;
+  const warningInstallations = installHealth.warningCount;
+  const pendingGovernanceEvents = pendingGovernanceCount;
+  const blockedWorkItems = workItems.blockedCount;
+  const attentionCount = failedSkillRuns + warningInstallations + pendingGovernanceEvents + blockedWorkItems;
+
+  return {
+    status: attentionCount > 0 ? 'attention' : 'ok',
+    attentionCount,
+    activeSessions: activeSessionCount,
+    failedSkillRuns,
+    warningInstallations,
+    pendingGovernanceEvents,
+    blockedWorkItems,
   };
 }
 
@@ -285,6 +360,25 @@ function normalizeGovernanceEventInput(governanceEvent) {
   };
 }
 
+function normalizeWorkItemInput(workItem) {
+  const now = new Date().toISOString();
+  return {
+    id: workItem.id,
+    source: workItem.source,
+    sourceId: workItem.sourceId ?? null,
+    title: workItem.title,
+    status: workItem.status,
+    priority: workItem.priority ?? null,
+    url: workItem.url ?? null,
+    owner: workItem.owner ?? null,
+    repoRoot: workItem.repoRoot ?? null,
+    sessionId: workItem.sessionId ?? null,
+    metadata: workItem.metadata ?? null,
+    createdAt: workItem.createdAt || now,
+    updatedAt: workItem.updatedAt || now,
+  };
+}
+
 function createQueryApi(db) {
   const listRecentSessionsStatement = db.prepare(`
     SELECT *
@@ -349,6 +443,26 @@ function createQueryApi(db) {
     WHERE resolved_at IS NULL
     ORDER BY created_at DESC, id DESC
     LIMIT ?
+  `);
+  const listWorkItemsStatement = db.prepare(`
+    SELECT *
+    FROM work_items
+    ORDER BY updated_at DESC, id DESC
+    LIMIT ?
+  `);
+  const countWorkItemsStatement = db.prepare(`
+    SELECT COUNT(*) AS total_count
+    FROM work_items
+  `);
+  const listAllWorkItemsStatement = db.prepare(`
+    SELECT *
+    FROM work_items
+    ORDER BY updated_at DESC, id DESC
+  `);
+  const getWorkItemStatement = db.prepare(`
+    SELECT *
+    FROM work_items
+    WHERE id = ?
   `);
   const getSkillVersionStatement = db.prepare(`
     SELECT *
@@ -531,9 +645,58 @@ function createQueryApi(db) {
       created_at = excluded.created_at
   `);
 
+  const upsertWorkItemStatement = db.prepare(`
+    INSERT INTO work_items (
+      id,
+      source,
+      source_id,
+      title,
+      status,
+      priority,
+      url,
+      owner,
+      repo_root,
+      session_id,
+      metadata,
+      created_at,
+      updated_at
+    ) VALUES (
+      @id,
+      @source,
+      @source_id,
+      @title,
+      @status,
+      @priority,
+      @url,
+      @owner,
+      @repo_root,
+      @session_id,
+      @metadata,
+      @created_at,
+      @updated_at
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      source = excluded.source,
+      source_id = excluded.source_id,
+      title = excluded.title,
+      status = excluded.status,
+      priority = excluded.priority,
+      url = excluded.url,
+      owner = excluded.owner,
+      repo_root = excluded.repo_root,
+      session_id = excluded.session_id,
+      metadata = excluded.metadata,
+      updated_at = excluded.updated_at
+  `);
+
   function getSessionById(id) {
     const row = getSessionStatement.get(id);
     return row ? mapSessionRow(row) : null;
+  }
+
+  function getWorkItemById(id) {
+    const row = getWorkItemStatement.get(id);
+    return row ? mapWorkItemRow(row) : null;
   }
 
   function listRecentSessions(options = {}) {
@@ -562,38 +725,62 @@ function createQueryApi(db) {
     };
   }
 
+  function listWorkItems(options = {}) {
+    const limit = normalizeLimit(options.limit, 20);
+    return {
+      totalCount: countWorkItemsStatement.get().total_count,
+      items: listWorkItemsStatement.all(limit).map(mapWorkItemRow),
+    };
+  }
+
   function getStatus(options = {}) {
     const activeLimit = normalizeLimit(options.activeLimit, 5);
     const recentSkillRunLimit = normalizeLimit(options.recentSkillRunLimit, 20);
     const pendingLimit = normalizeLimit(options.pendingLimit, 5);
+    const workItemLimit = normalizeLimit(options.workItemLimit, 10);
 
     const activeSessions = listActiveSessionsStatement.all(activeLimit).map(mapSessionRow);
+    const activeSessionCount = countActiveSessionsStatement.get().total_count;
     const recentSkillRuns = listRecentSkillRunsStatement.all(recentSkillRunLimit).map(mapSkillRunRow);
     const installations = listInstallStateStatement.all().map(mapInstallStateRow);
     const pendingGovernanceEvents = listPendingGovernanceStatement.all(pendingLimit).map(mapGovernanceEventRow);
+    const workItems = summarizeWorkItems(listAllWorkItemsStatement.all().map(mapWorkItemRow));
+    workItems.items = listWorkItemsStatement.all(workItemLimit).map(mapWorkItemRow);
+    const skillRuns = {
+      windowSize: recentSkillRunLimit,
+      summary: summarizeSkillRuns(recentSkillRuns),
+      recent: recentSkillRuns,
+    };
+    const installHealth = summarizeInstallHealth(installations);
+    const pendingGovernanceCount = countPendingGovernanceStatement.get().total_count;
 
     return {
       generatedAt: new Date().toISOString(),
+      readiness: summarizeReadiness({
+        activeSessionCount,
+        skillRuns,
+        installHealth,
+        pendingGovernanceCount,
+        workItems,
+      }),
       activeSessions: {
-        activeCount: countActiveSessionsStatement.get().total_count,
+        activeCount: activeSessionCount,
         sessions: activeSessions,
       },
-      skillRuns: {
-        windowSize: recentSkillRunLimit,
-        summary: summarizeSkillRuns(recentSkillRuns),
-        recent: recentSkillRuns,
-      },
-      installHealth: summarizeInstallHealth(installations),
+      skillRuns,
+      installHealth,
       governance: {
-        pendingCount: countPendingGovernanceStatement.get().total_count,
+        pendingCount: pendingGovernanceCount,
         events: pendingGovernanceEvents,
       },
+      workItems,
     };
   }
 
   return {
     getSessionById,
     getSessionDetail,
+    getWorkItemById,
     getStatus,
     insertDecision(decision) {
       const normalized = normalizeDecisionInput(decision);
@@ -643,6 +830,7 @@ function createQueryApi(db) {
       return normalized;
     },
     listRecentSessions,
+    listWorkItems,
     upsertInstallState(installState) {
       const normalized = normalizeInstallStateInput(installState);
       assertValidEntity('installState', normalized);
@@ -656,6 +844,27 @@ function createQueryApi(db) {
         source_version: normalized.sourceVersion,
       });
       return normalized;
+    },
+    upsertWorkItem(workItem) {
+      const normalized = normalizeWorkItemInput(workItem);
+      assertValidEntity('workItem', normalized);
+      upsertWorkItemStatement.run({
+        id: normalized.id,
+        source: normalized.source,
+        source_id: normalized.sourceId,
+        title: normalized.title,
+        status: normalized.status,
+        priority: normalized.priority,
+        url: normalized.url,
+        owner: normalized.owner,
+        repo_root: normalized.repoRoot,
+        session_id: normalized.sessionId,
+        metadata: stringifyJson(normalized.metadata, 'workItem.metadata'),
+        created_at: normalized.createdAt,
+        updated_at: normalized.updatedAt,
+      });
+      const row = getWorkItemStatement.get(normalized.id);
+      return row ? mapWorkItemRow(row) : null;
     },
     upsertSession(session) {
       const normalized = normalizeSessionInput(session);

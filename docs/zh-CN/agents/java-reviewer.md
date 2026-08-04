@@ -102,4 +102,6 @@ grep -rn "FetchType.EAGER" src/main/java --include="*.java"
 * **警告**：仅存在**中**优先级问题
 * **阻止**：发现**关键**或**高**优先级问题
 
-有关详细的Spring Boot模式和示例，请参阅 `skill: springboot-patterns`。
+有关详细的模式和示例：
+* **[SPRING]**：请参阅 `skill: springboot-patterns`
+* **[QUARKUS]**：请参阅 `skill: quarkus-patterns`

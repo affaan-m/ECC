@@ -1,7 +1,9 @@
 ---
 name: verification-loop
 description: "A comprehensive verification system for Claude Code sessions."
-origin: ECC
+license: MIT
+metadata:
+  origin: ECC
 ---
 
 # Verification Loop Skill
@@ -30,8 +32,9 @@ If build fails, STOP and fix before continuing.
 
 ### Phase 2: Type Check
 ```bash
+set -o pipefail
 # TypeScript projects
-npx tsc --noEmit 2>&1 | head -30
+npx --no-install tsc --noEmit 2>&1 | head -30
 
 # Python projects
 pyright . 2>&1 | head -30

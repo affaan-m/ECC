@@ -24,7 +24,7 @@ use crate::session::output::{
 use crate::session::store::{DaemonActivity, FileActivityOverlap, StateStore};
 use crate::session::{
     ContextObservationPriority, DecisionLogEntry, FileActivityEntry, Session, SessionGrouping,
-    SessionHarnessInfo, SessionMessage, SessionState,
+    SessionBoardMeta, SessionHarnessInfo, SessionMessage, SessionState,
 };
 use crate::worktree;
 
@@ -93,6 +93,7 @@ pub struct Dashboard {
     approval_queue_counts: HashMap<String, usize>,
     approval_queue_preview: Vec<SessionMessage>,
     handoff_backlog_counts: HashMap<String, usize>,
+    board_meta_by_session: HashMap<String, SessionBoardMeta>,
     worktree_health_by_session: HashMap<String, worktree::WorktreeHealth>,
     global_handoff_backlog_leads: usize,
     global_handoff_backlog_messages: usize,
@@ -179,6 +180,7 @@ enum Pane {
     Sessions,
     Output,
     Metrics,
+    Board,
     Log,
 }
 
@@ -333,7 +335,7 @@ impl PaneAreas {
         match pane {
             Pane::Sessions => self.sessions = area,
             Pane::Output => self.output = Some(area),
-            Pane::Metrics => self.metrics = Some(area),
+            Pane::Metrics | Pane::Board => self.metrics = Some(area),
             Pane::Log => self.log = Some(area),
         }
     }
@@ -553,6 +555,7 @@ impl Dashboard {
             approval_queue_counts: HashMap::new(),
             approval_queue_preview: Vec::new(),
             handoff_backlog_counts: HashMap::new(),
+            board_meta_by_session: HashMap::new(),
             worktree_health_by_session: HashMap::new(),
             global_handoff_backlog_leads: 0,
             global_handoff_backlog_messages: 0,
@@ -619,6 +622,7 @@ impl Dashboard {
         dashboard.unread_message_counts = dashboard.db.unread_message_counts().unwrap_or_default();
         dashboard.sync_approval_queue();
         dashboard.sync_handoff_backlog_counts();
+        dashboard.sync_board_meta();
         dashboard.sync_global_handoff_backlog();
         dashboard.sync_selected_output();
         dashboard.sync_selected_diff();
@@ -1294,14 +1298,33 @@ impl Dashboard {
     }
 
     fn render_metrics(&mut self, frame: &mut Frame, area: Rect) {
+        let side_pane = if self.selected_pane == Pane::Board {
+            Pane::Board
+        } else {
+            Pane::Metrics
+        };
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Metrics ")
-            .border_style(self.pane_border_style(Pane::Metrics));
+            .title(match side_pane {
+                Pane::Board => " Board ",
+                _ => " Metrics ",
+            })
+            .border_style(self.pane_border_style(side_pane));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
         if inner.is_empty() {
+            return;
+        }
+
+        if side_pane == Pane::Board {
+            frame.render_widget(
+                Paragraph::new(self.board_text())
+                    .scroll((self.metrics_scroll_offset as u16, 0))
+                    .wrap(Wrap { trim: true }),
+                inner,
+            );
+            self.sync_metrics_scroll(inner.height as usize);
             return;
         }
 
@@ -1620,7 +1643,7 @@ impl Dashboard {
             return;
         };
 
-        if !self.visible_panes().contains(&target) {
+        if !self.is_pane_visible(target) {
             self.set_operator_note(format!(
                 "{} pane is not visible",
                 target.title().to_lowercase()
@@ -1702,6 +1725,7 @@ impl Dashboard {
             crossterm::event::KeyCode::Char('2') => self.focus_pane_number(2),
             crossterm::event::KeyCode::Char('3') => self.focus_pane_number(3),
             crossterm::event::KeyCode::Char('4') => self.focus_pane_number(4),
+            crossterm::event::KeyCode::Char('5') => self.focus_pane_number(5),
             crossterm::event::KeyCode::Char('+') | crossterm::event::KeyCode::Char('=') => {
                 self.increase_pane_size()
             }
@@ -2017,7 +2041,7 @@ impl Dashboard {
                     self.output_scroll_offset = self.output_scroll_offset.saturating_add(1);
                 }
             }
-            Pane::Metrics => {
+            Pane::Metrics | Pane::Board => {
                 let max_scroll = self.max_metrics_scroll();
                 self.metrics_scroll_offset =
                     self.metrics_scroll_offset.saturating_add(1).min(max_scroll);
@@ -2057,7 +2081,7 @@ impl Dashboard {
 
                 self.output_scroll_offset = self.output_scroll_offset.saturating_sub(1);
             }
-            Pane::Metrics => {
+            Pane::Metrics | Pane::Board => {
                 self.metrics_scroll_offset = self.metrics_scroll_offset.saturating_sub(1);
             }
             Pane::Log => {
@@ -4073,6 +4097,7 @@ impl Dashboard {
         };
         self.sync_approval_queue();
         self.sync_handoff_backlog_counts();
+        self.sync_board_meta();
         self.sync_worktree_health_by_session();
         self.sync_session_state_notifications();
         self.sync_approval_notifications();
@@ -4478,7 +4503,7 @@ impl Dashboard {
     }
 
     fn ensure_selected_pane_visible(&mut self) {
-        if !self.visible_panes().contains(&self.selected_pane) {
+        if !self.is_pane_visible(self.selected_pane) {
             self.selected_pane = Pane::Sessions;
         }
     }
@@ -4579,6 +4604,16 @@ impl Dashboard {
                 tracing::warn!("Failed to refresh handoff backlog counts: {error}");
             }
         }
+    }
+
+    fn sync_board_meta(&mut self) {
+        self.board_meta_by_session = match self.db.list_session_board_meta() {
+            Ok(meta) => meta,
+            Err(error) => {
+                tracing::warn!("Failed to refresh board metadata: {error}");
+                HashMap::new()
+            }
+        };
     }
 
     fn sync_worktree_health_by_session(&mut self) {
@@ -6497,6 +6532,268 @@ impl Dashboard {
         }
     }
 
+    fn board_text(&self) -> String {
+        if self.sessions.is_empty() {
+            return "No sessions available.\n\nStart a session to populate the board.".to_string();
+        }
+
+        let mut lines = Vec::new();
+        lines.push(format!("Board snapshot | {} sessions", self.sessions.len()));
+
+        if let Some(session) = self.sessions.get(self.selected_session) {
+            let meta = self.board_meta_by_session.get(&session.id);
+            let branch = session_branch(session);
+            lines.push(format!(
+                "Focus {} {} | {} | {}{}",
+                board_presence_marker(session),
+                board_codename(session),
+                meta.map(|meta| meta.lane.as_str())
+                    .unwrap_or_else(|| board_lane_label(&session.state)),
+                format_session_id(&session.id),
+                if branch == "-" {
+                    String::new()
+                } else {
+                    format!(" | {branch}")
+                }
+            ));
+            lines.push(format!("Task {}", truncate_for_dashboard(&session.task, 48)));
+            if let Some(meta) = meta {
+                lines.push(format!(
+                    "Progress {:>3}% {}",
+                    meta.progress_percent,
+                    board_progress_bar(meta.progress_percent)
+                ));
+                if let Some(status_detail) = meta.status_detail.as_ref() {
+                    lines.push(format!("Status {status_detail}"));
+                }
+                if let Some(movement_note) = meta.movement_note.as_ref() {
+                    lines.push(format!("Event {movement_note}"));
+                }
+                if meta.handoff_backlog > 0 {
+                    lines.push(format!("Inbox {} handoff(s)", meta.handoff_backlog));
+                }
+                if let Some(activity_note) = meta.activity_note.as_ref() {
+                    lines.push(format!("Route {activity_note}"));
+                }
+                lines.push(format!(
+                    "Coords C{} R{} S{}",
+                    meta.column_index + 1,
+                    meta.row_index + 1,
+                    meta.stack_index + 1
+                ));
+                if let Some(row_label) = meta.row_label.as_ref() {
+                    lines.push(format!("Row {row_label}"));
+                }
+                if let Some(project) = meta.project.as_ref() {
+                    lines.push(format!("Project {project}"));
+                }
+                if let Some(feature) = meta.feature.as_ref() {
+                    lines.push(format!("Feature {feature}"));
+                }
+                if let Some(issue) = meta.issue.as_ref() {
+                    lines.push(format!("Issue {issue}"));
+                }
+            }
+        }
+
+        let overlap_risks = self.board_overlap_risks();
+        if overlap_risks.is_empty() {
+            lines.push("Overlap risk clear".to_string());
+        } else {
+            lines.push("Overlap risk".to_string());
+            for risk in overlap_risks {
+                lines.push(format!("- {risk}"));
+            }
+        }
+
+        let lanes = ["Inbox", "In Progress", "Review", "Blocked", "Done", "Stopped"];
+        for label in lanes {
+            let mut lane_sessions = self
+                .sessions
+                .iter()
+                .filter_map(|session| {
+                    let lane = self
+                        .board_meta_by_session
+                        .get(&session.id)
+                        .map(|meta| meta.lane.as_str())
+                        .unwrap_or_else(|| board_lane_label(&session.state));
+                    if lane == label {
+                        Some((session, self.board_meta_by_session.get(&session.id)))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if lane_sessions.is_empty() {
+                continue;
+            }
+
+            let mut row_risks: HashMap<(i64, String), Vec<String>> = HashMap::new();
+            let mut row_backlogs: HashMap<(i64, String), i64> = HashMap::new();
+            for (_, meta) in &lane_sessions {
+                let Some(meta) = meta else {
+                    continue;
+                };
+                let key = (
+                    meta.row_index,
+                    meta.row_label
+                        .clone()
+                        .unwrap_or_else(|| "General".to_string()),
+                );
+                if let Some(conflict_signal) = meta.conflict_signal.as_ref() {
+                    let entry = row_risks.entry(key.clone()).or_default();
+                    for risk in conflict_signal.split("; ") {
+                        if !entry.iter().any(|existing| existing == risk) {
+                            entry.push(risk.to_string());
+                        }
+                    }
+                }
+                if meta.handoff_backlog > 0 {
+                    *row_backlogs.entry(key).or_default() += meta.handoff_backlog;
+                }
+            }
+
+            lane_sessions.sort_by(|left, right| {
+                let left_meta = left.1.cloned().unwrap_or_default();
+                let right_meta = right.1.cloned().unwrap_or_default();
+                left_meta
+                    .row_index
+                    .cmp(&right_meta.row_index)
+                    .then_with(|| left_meta.stack_index.cmp(&right_meta.stack_index))
+                    .then_with(|| left.0.id.cmp(&right.0.id))
+            });
+
+            lines.push(String::new());
+            lines.push(format!("{label} ({})", lane_sessions.len()));
+            let mut current_row: Option<String> = None;
+            for (session, meta) in lane_sessions.into_iter().take(6) {
+                let meta = meta.cloned().unwrap_or_default();
+                let row_label = meta
+                    .row_label
+                    .clone()
+                    .unwrap_or_else(|| "General".to_string());
+                if current_row.as_ref() != Some(&row_label) {
+                    current_row = Some(row_label.clone());
+                    let row_key = (meta.row_index, row_label.clone());
+                    let row_conflict_summary = row_risks
+                        .get(&row_key)
+                        .filter(|risks| !risks.is_empty())
+                        .map(|risks| truncate_for_dashboard(&risks.join(" + "), 42));
+                    let row_backlog = row_backlogs.get(&row_key).copied().unwrap_or(0);
+                    let row_pressure_summary = if row_backlog > 0 {
+                        Some(format!("{} handoff(s)", row_backlog))
+                    } else {
+                        None
+                    };
+                    let row_marker = if row_conflict_summary.is_some() {
+                        "!"
+                    } else if row_pressure_summary.is_some() {
+                        "+"
+                    } else {
+                        "-"
+                    };
+                    lines.push(format!(
+                        "  {} Row {} | {}{}{}",
+                        row_marker,
+                        meta.row_index + 1,
+                        row_label,
+                        row_conflict_summary
+                            .map(|summary| format!(" | {summary}"))
+                            .unwrap_or_default(),
+                        row_pressure_summary
+                            .map(|summary| format!(" | {summary}"))
+                            .unwrap_or_default()
+                    ));
+                }
+                let branch = session_branch(session);
+                let branch_suffix = if branch == "-" {
+                    String::new()
+                } else {
+                    format!(" | {branch}")
+                };
+                let activity_suffix = meta
+                    .activity_note
+                    .as_ref()
+                    .map(|note| format!(" | {}", truncate_for_dashboard(note, 26)))
+                    .unwrap_or_default();
+                let backlog_suffix = if meta.handoff_backlog > 0 {
+                    format!(" | inbox {}", meta.handoff_backlog)
+                } else {
+                    String::new()
+                };
+                let kind_marker = board_activity_marker(&meta);
+                lines.push(format!(
+                    "    {}{} {} {} {} [{}] {:>3}% {} | {}{}{}{}",
+                    board_motion_marker(&meta),
+                    kind_marker,
+                    board_presence_marker(session),
+                    board_codename(session),
+                    format_session_id(&session.id),
+                    session.agent_type,
+                    meta.progress_percent,
+                    board_progress_bar(meta.progress_percent),
+                    truncate_for_dashboard(meta.status_detail.as_deref().unwrap_or(&session.task), 18),
+                    activity_suffix,
+                    backlog_suffix,
+                    branch_suffix
+                ));
+            }
+        }
+
+        lines.join("\n")
+    }
+
+    fn board_overlap_risks(&self) -> Vec<String> {
+        let mut risks = self
+            .board_meta_by_session
+            .values()
+            .filter_map(|meta| meta.conflict_signal.clone())
+            .collect::<Vec<_>>();
+        if risks.is_empty() {
+            let mut duplicate_branches: HashMap<String, Vec<String>> = HashMap::new();
+            let mut duplicate_tasks: HashMap<String, Vec<String>> = HashMap::new();
+
+            for session in self.sessions.iter().filter(|session| {
+                matches!(
+                    session.state,
+                    SessionState::Pending
+                        | SessionState::Running
+                        | SessionState::Idle
+                        | SessionState::Stale
+                )
+            }) {
+                if let Some(worktree) = session.worktree.as_ref() {
+                    duplicate_branches
+                        .entry(worktree.branch.clone())
+                        .or_default()
+                        .push(format_session_id(&session.id));
+                }
+                duplicate_tasks
+                    .entry(session.task.trim().to_ascii_lowercase())
+                    .or_default()
+                    .push(format_session_id(&session.id));
+            }
+
+            for (branch, sessions) in duplicate_branches {
+                if sessions.len() >= 2 {
+                    risks.push(format!("Shared branch {branch}: {}", sessions.join(", ")));
+                }
+            }
+            for (task, sessions) in duplicate_tasks {
+                if sessions.len() >= 2 {
+                    risks.push(format!(
+                        "Shared task {}: {}",
+                        truncate_for_dashboard(&task, 32),
+                        sessions.join(", ")
+                    ));
+                }
+            }
+        }
+        risks.sort();
+        risks.dedup();
+        risks
+    }
+
     fn aggregate_cost_summary(&self) -> (String, Style) {
         let aggregate = self.aggregate_usage();
         let thresholds = self.cfg.effective_budget_alert_thresholds();
@@ -6774,7 +7071,9 @@ impl Dashboard {
     }
 
     fn visible_detail_panes(&self) -> Vec<Pane> {
-        self.visible_panes()
+        self.layout_panes()
+            .into_iter()
+            .filter(|pane| !self.collapsed_panes.contains(pane))
             .into_iter()
             .filter(|pane| *pane != Pane::Sessions)
             .collect()
@@ -6816,6 +7115,19 @@ impl Dashboard {
         match self.cfg.theme {
             Theme::Dark => "dark",
             Theme::Light => "light",
+        }
+    }
+
+    fn board_pane_visible(&self) -> bool {
+        self.cfg.pane_layout == PaneLayout::Grid
+            && !self.collapsed_panes.contains(&Pane::Metrics)
+            && self.layout_panes().contains(&Pane::Metrics)
+    }
+
+    fn is_pane_visible(&self, pane: Pane) -> bool {
+        match pane {
+            Pane::Board => self.board_pane_visible(),
+            _ => self.visible_panes().contains(&pane),
         }
     }
 
@@ -6886,6 +7198,7 @@ impl Pane {
             Pane::Sessions => "Sessions",
             Pane::Output => "Output",
             Pane::Metrics => "Metrics",
+            Pane::Board => "Board",
             Pane::Log => "Log",
         }
     }
@@ -6896,6 +7209,7 @@ impl Pane {
             2 => Some(Self::Output),
             3 => Some(Self::Metrics),
             4 => Some(Self::Log),
+            5 => Some(Self::Board),
             _ => None,
         }
     }
@@ -6905,7 +7219,8 @@ impl Pane {
             Self::Sessions => 1,
             Self::Output => 2,
             Self::Metrics => 3,
-            Self::Log => 4,
+            Self::Board => 4,
+            Self::Log => 5,
         }
     }
 }
@@ -6915,6 +7230,7 @@ fn pane_rect(pane_areas: &PaneAreas, pane: Pane) -> Option<Rect> {
         Pane::Sessions => Some(pane_areas.sessions),
         Pane::Output => pane_areas.output,
         Pane::Metrics => pane_areas.metrics,
+        Pane::Board => pane_areas.metrics,
         Pane::Log => pane_areas.log,
     }
 }
@@ -8247,6 +8563,17 @@ fn diff_addition_word_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+fn board_lane_label(state: &SessionState) -> &'static str {
+    match state {
+        SessionState::Pending => "Inbox",
+        SessionState::Running => "In Progress",
+        SessionState::Idle => "Review",
+        SessionState::Stale | SessionState::Failed => "Blocked",
+        SessionState::Completed => "Done",
+        SessionState::Stopped => "Stopped",
+    }
+}
+
 fn session_state_label(state: &SessionState) -> &'static str {
     match state {
         SessionState::Pending => "Pending",
@@ -8269,6 +8596,25 @@ fn session_state_color(state: &SessionState) -> Color {
         SessionState::Completed => Color::Blue,
         SessionState::Pending => Color::Reset,
     }
+}
+
+fn board_codename(session: &Session) -> String {
+    const ADJECTIVES: &[&str] = &[
+        "Amber", "Cinder", "Moss", "Nova", "Sable", "Slate", "Swift", "Talon",
+    ];
+    const NOUNS: &[&str] = &[
+        "Fox", "Kite", "Lynx", "Otter", "Rook", "Sprite", "Wisp", "Wolf",
+    ];
+
+    let seed = session
+        .id
+        .bytes()
+        .fold(0usize, |acc, byte| acc.wrapping_mul(33).wrapping_add(byte as usize));
+    format!(
+        "{} {}",
+        ADJECTIVES[seed % ADJECTIVES.len()],
+        NOUNS[(seed / ADJECTIVES.len()) % NOUNS.len()]
+    )
 }
 
 fn file_activity_summary(entry: &FileActivityEntry) -> String {
@@ -9046,6 +9392,44 @@ fn session_branch(session: &Session) -> String {
         .as_ref()
         .map(|worktree| worktree.branch.clone())
         .unwrap_or_else(|| "-".to_string())
+}
+
+fn board_progress_bar(progress_percent: i64) -> String {
+    let clamped = progress_percent.clamp(0, 100);
+    let filled = ((clamped + 9) / 10) as usize;
+    let empty = 10usize.saturating_sub(filled);
+    format!("[{}{}]", "#".repeat(filled), ".".repeat(empty))
+}
+
+fn board_presence_marker(session: &Session) -> String {
+    let codename = board_codename(session);
+    let initials = codename
+        .split_whitespace()
+        .filter_map(|part| part.chars().next())
+        .take(2)
+        .collect::<String>()
+        .to_ascii_uppercase();
+    format!("@{initials}")
+}
+
+fn board_motion_marker(meta: &SessionBoardMeta) -> &'static str {
+    match meta.movement_note.as_deref() {
+        Some("Blocked") => "x",
+        Some("Completed") => "*",
+        Some(note) if note.starts_with("Moved ") => ">",
+        Some(note) if note.starts_with("Retargeted ") => "~",
+        _ => ".",
+    }
+}
+
+fn board_activity_marker(meta: &SessionBoardMeta) -> &'static str {
+    match meta.activity_kind.as_deref() {
+        Some("received") => "<",
+        Some("delegated") => ">",
+        Some("spawned") => "+",
+        Some("spawned_fallback") => "#",
+        _ => "",
+    }
 }
 
 fn format_duration(duration_secs: u64) -> String {
@@ -12239,7 +12623,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
             state: SessionState::Running,
-            pid: Some(1111),
+            pid: None,
             worktree: None,
             created_at: now - Duration::minutes(2),
             updated_at: now - Duration::minutes(2),
@@ -12254,7 +12638,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             agent_type: "claude".to_string(),
             working_dir: PathBuf::from("/tmp"),
             state: SessionState::Running,
-            pid: Some(2222),
+            pid: None,
             worktree: None,
             created_at: now - Duration::minutes(1),
             updated_at: now - Duration::minutes(1),
@@ -12539,8 +12923,7 @@ diff --git a/src/lib.rs b/src/lib.rs
         let repo_root = tempdir.join("repo");
         init_git_repo(&repo_root)?;
 
-        let original_dir = std::env::current_dir()?;
-        std::env::set_current_dir(&repo_root)?;
+        let cwd_guard = crate::test_support::CurrentDirGuard::enter(&repo_root)?;
 
         let mut cfg = build_config(&tempdir);
         cfg.orchestration_templates = BTreeMap::from([(
@@ -12616,7 +12999,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             ])
         );
 
-        std::env::set_current_dir(original_dir)?;
+        drop(cwd_guard);
         let _ = std::fs::remove_dir_all(&tempdir);
         Ok(())
     }
@@ -14217,6 +14600,11 @@ diff --git a/src/lib.rs b/src/lib.rs
 
     #[test]
     fn pane_command_mode_sets_layout() {
+        let tempdir = std::env::temp_dir().join(format!("ecc2-pane-command-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&tempdir).unwrap();
+        let previous_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &tempdir);
+
         let mut dashboard = test_dashboard(Vec::new(), 0);
         dashboard.cfg.pane_layout = PaneLayout::Horizontal;
 
@@ -14231,10 +14619,22 @@ diff --git a/src/lib.rs b/src/lib.rs
             .operator_note
             .as_deref()
             .is_some_and(|note| note.contains("pane layout set to grid | saved to ")));
+
+        if let Some(home) = previous_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        let _ = std::fs::remove_dir_all(tempdir);
     }
 
     #[test]
     fn cycle_pane_layout_rotates_and_hides_log_when_leaving_grid() {
+        let tempdir = std::env::temp_dir().join(format!("ecc2-cycle-pane-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&tempdir).unwrap();
+        let previous_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &tempdir);
+
         let mut dashboard = test_dashboard(Vec::new(), 0);
         dashboard.cfg.pane_layout = PaneLayout::Grid;
         dashboard.cfg.linear_pane_size_percent = 44;
@@ -14247,6 +14647,13 @@ diff --git a/src/lib.rs b/src/lib.rs
         assert_eq!(dashboard.cfg.pane_layout, PaneLayout::Horizontal);
         assert_eq!(dashboard.pane_size_percent, 44);
         assert_eq!(dashboard.selected_pane, Pane::Sessions);
+
+        if let Some(home) = previous_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        let _ = std::fs::remove_dir_all(tempdir);
     }
 
     #[test]
@@ -14532,6 +14939,7 @@ diff --git a/src/lib.rs b/src/lib.rs
             approval_queue_counts: HashMap::new(),
             approval_queue_preview: Vec::new(),
             handoff_backlog_counts: HashMap::new(),
+            board_meta_by_session: HashMap::new(),
             worktree_health_by_session: HashMap::new(),
             global_handoff_backlog_leads: 0,
             global_handoff_backlog_messages: 0,
@@ -14639,6 +15047,9 @@ diff --git a/src/lib.rs b/src/lib.rs
         run_git(path, &["init", "-q"])?;
         run_git(path, &["config", "user.name", "ECC Tests"])?;
         run_git(path, &["config", "user.email", "ecc-tests@example.com"])?;
+        // Keep fixtures hermetic: a global core.hooksPath (e.g. identity-checking
+        // pre-push hooks) must not run inside test repos.
+        run_git(path, &["config", "core.hooksPath", "hooks-disabled"])?;
         fs::write(path.join("README.md"), "hello\n")?;
         run_git(path, &["add", "README.md"])?;
         run_git(path, &["commit", "-qm", "init"])?;

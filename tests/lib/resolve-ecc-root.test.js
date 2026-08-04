@@ -19,6 +19,11 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
 
 const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
+// Sentinel ECC skill that resolveEccRoot() requires (alongside the script tree)
+// before accepting a root for skill consumers. Kept in sync with the module's
+// DEFAULT_SKILL_PROBE; the #2544 regression test guards the behaviour.
+const ECC_SKILL_SENTINEL = path.join('skills', 'continuous-learning-v2');
+
 function test(name, fn) {
   try {
     fn();
@@ -40,6 +45,7 @@ function setupStandardInstall(homeDir) {
   const scriptDir = path.join(claudeDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(claudeDir, ECC_SKILL_SENTINEL), { recursive: true });
   return claudeDir;
 }
 
@@ -48,6 +54,7 @@ function setupLegacyPluginInstall(homeDir, segments) {
   const scriptDir = path.join(legacyDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(legacyDir, ECC_SKILL_SENTINEL), { recursive: true });
   return legacyDir;
 }
 function setupPluginCache(homeDir, pluginSlug, orgName, version) {
@@ -58,6 +65,7 @@ function setupPluginCache(homeDir, pluginSlug, orgName, version) {
   const scriptDir = path.join(cacheDir, 'scripts', 'lib');
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+  fs.mkdirSync(path.join(cacheDir, ECC_SKILL_SENTINEL), { recursive: true });
   return cacheDir;
 }
 
@@ -158,10 +166,10 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('finds marketplace current plugin install at ~/.claude/plugins/marketplace/ecc', () => {
+  if (test('finds marketplace current plugin install at ~/.claude/plugins/marketplaces/ecc', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupLegacyPluginInstall(homeDir, ['marketplace', 'ecc']);
+      const expected = setupLegacyPluginInstall(homeDir, ['marketplaces', 'ecc']);
       const result = resolveEccRoot({ envRoot: '', homeDir });
       assert.strictEqual(result, expected);
     } finally {
@@ -169,10 +177,10 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('finds marketplace legacy plugin install at ~/.claude/plugins/marketplace/everything-claude-code', () => {
+  if (test('finds marketplace legacy plugin install at ~/.claude/plugins/marketplaces/everything-claude-code', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupLegacyPluginInstall(homeDir, ['marketplace', 'everything-claude-code']);
+      const expected = setupLegacyPluginInstall(homeDir, ['marketplaces', 'everything-claude-code']);
       const result = resolveEccRoot({ envRoot: '', homeDir });
       assert.strictEqual(result, expected);
     } finally {
@@ -183,7 +191,7 @@ function runTests() {
   if (test('prefers exact legacy plugin install over plugin cache', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupLegacyPluginInstall(homeDir, ['marketplace', 'ecc']);
+      const expected = setupLegacyPluginInstall(homeDir, ['marketplaces', 'ecc']);
       setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
       const result = resolveEccRoot({ envRoot: '', homeDir });
       assert.strictEqual(result, expected);
@@ -277,11 +285,126 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  // ─── Partial install (#2544) ───
+
+  if (test('rejects a partial ~/.claude (scripts + non-ECC skills) and prefers a complete root (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // ~/.claude has ECC's scripts and a user's OWN skills/ dir, but not ECC's
+      // skills. The old script-only probe accepted it and every skill path 404'd.
+      const claudeDir = path.join(homeDir, '.claude');
+      const scriptDir = path.join(claudeDir, 'scripts', 'lib');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+      fs.mkdirSync(path.join(claudeDir, 'skills', 'my-own-skill'), { recursive: true });
+      // A COMPLETE ECC root exists in the plugin cache (scripts + ECC skill).
+      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected,
+        'a scripts-only ~/.claude must not shadow a complete plugin-cache root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('a scripts-only ~/.claude with no complete root falls back to ~/.claude (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // No complete root anywhere: the resolver still returns ~/.claude as a
+      // last resort (unchanged fallback), so callers fail loudly at the missing
+      // path rather than the resolver inventing one.
+      const claudeDir = path.join(homeDir, '.claude');
+      const scriptDir = path.join(claudeDir, 'scripts', 'lib');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, claudeDir);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects a partial exact plugin root (scripts, no ECC skill) and prefers a complete root (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // An exact plugin root under ~/.claude/plugins/ecc ships ECC's scripts but
+      // not ECC's skills. The stricter predicate must reject it on the
+      // exact-plugin branch too, not only for ~/.claude.
+      const partialScripts = path.join(homeDir, '.claude', 'plugins', 'ecc', 'scripts', 'lib');
+      fs.mkdirSync(partialScripts, { recursive: true });
+      fs.writeFileSync(path.join(partialScripts, 'utils.js'), '// stub');
+      // A COMPLETE ECC root exists in the plugin cache (scripts + ECC skill).
+      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected,
+        'a scripts-only exact plugin root must not shadow a complete plugin-cache root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects a partial plugin-cache root (scripts, no ECC skill) and falls back to ~/.claude (#2544)', () => {
+    const homeDir = createTempDir();
+    try {
+      // A versioned plugin-cache root ships ECC's scripts but not ECC's skills.
+      // The stricter predicate must reject it on the cache branch, so the
+      // resolver returns the last-resort ~/.claude rather than the partial root.
+      const cacheScripts = path.join(
+        homeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION,
+        'scripts', 'lib'
+      );
+      fs.mkdirSync(cacheScripts, { recursive: true });
+      fs.writeFileSync(path.join(cacheScripts, 'utils.js'), '// stub');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, path.join(homeDir, '.claude'),
+        'a scripts-only plugin-cache root must not be returned; fall back to ~/.claude');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('custom probe skips a qualifying root that lacks the probed script (auto-update)', () => {
+    // The surviving failure shape after #2544/#2577: a partial install can
+    // carry full resolver evidence (script tree + sentinel ECC skill) yet
+    // still lack the top-level script that auto-update will execute. The
+    // default probe rightly accepts such a root; a caller probing for the
+    // script it runs must skip it and reach the complete plugin root.
+    const homeDir = createTempDir();
+    try {
+      const claudeDir = setupStandardInstall(homeDir);
+      const marketplaceRoot = setupLegacyPluginInstall(homeDir, ['marketplaces', 'ecc']);
+      fs.writeFileSync(path.join(marketplaceRoot, 'scripts', 'auto-update.js'), '// stub');
+
+      assert.strictEqual(
+        resolveEccRoot({ envRoot: '', homeDir }),
+        claudeDir,
+        'default probe accepts a root with full resolver evidence'
+      );
+      assert.strictEqual(
+        resolveEccRoot({
+          envRoot: '',
+          homeDir,
+          probe: path.join('scripts', 'auto-update.js'),
+        }),
+        marketplaceRoot,
+        'auto-update probe must skip roots that lack the script it will execute'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // ─── INLINE_RESOLVE ───
 
   if (test('INLINE_RESOLVE is a non-empty string', () => {
     assert.ok(typeof INLINE_RESOLVE === 'string');
     assert.ok(INLINE_RESOLVE.length > 50, 'Should be a substantial inline expression');
+  })) passed++; else failed++;
+
+  if (test('INLINE_RESOLVE does not contain spread, nested arrays, or escaped quotes', () => {
+    assert.ok(!INLINE_RESOLVE.includes('...'));
+    assert.ok(!INLINE_RESOLVE.includes('[['));
+    assert.ok(!INLINE_RESOLVE.includes('\\"'));
   })) passed++; else failed++;
 
   if (test('INLINE_RESOLVE returns CLAUDE_PLUGIN_ROOT when set', () => {
@@ -295,26 +418,37 @@ function runTests() {
     assert.strictEqual(result, '/inline/test/root');
   })) passed++; else failed++;
 
-  if (test('INLINE_RESOLVE discovers exact legacy plugin root when env var is unset', () => {
+  if (test('INLINE_RESOLVE delegates to committed resolver when env var is unset', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupLegacyPluginInstall(homeDir, ['marketplace', 'ecc']);
+      const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'delegated:' + process.env.INLINE_RESOLVE_MARKER; } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
       ], {
-        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        env: {
+          PATH: process.env.PATH,
+          HOME: homeDir,
+          USERPROFILE: homeDir,
+          INLINE_RESOLVE_MARKER: 'ok',
+        },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, expected);
+      assert.strictEqual(result, 'delegated:ok');
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
   })) passed++; else failed++;
-  if (test('INLINE_RESOLVE discovers plugin cache when env var is unset', () => {
+
+  if (test('INLINE_RESOLVE loads the committed resolver module from home base', () => {
     const homeDir = createTempDir();
     try {
-      const expected = setupPluginCache(homeDir, 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION);
+      const resolverDir = path.join(homeDir, '.claude', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `const assert = require('assert');
+module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSON.stringify(homeDir)}); return 'module-loaded'; } };`);
       const { execFileSync } = require('child_process');
       const result = execFileSync('node', [
         '-e', `console.log(${INLINE_RESOLVE})`,
@@ -322,7 +456,48 @@ function runTests() {
         env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
         encoding: 'utf8',
       }).trim();
-      assert.strictEqual(result, expected);
+      assert.strictEqual(result, 'module-loaded');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('INLINE_RESOLVE bootstraps module from an exact plugin root when env unset', () => {
+    const homeDir = createTempDir();
+    try {
+      const resolverDir = path.join(homeDir, '.claude', 'plugins', 'ecc', 'scripts', 'lib');
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'plugin-root'; } };`);
+      const { execFileSync } = require('child_process');
+      const result = execFileSync('node', [
+        '-e', `console.log(${INLINE_RESOLVE})`,
+      ], {
+        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        encoding: 'utf8',
+      }).trim();
+      assert.strictEqual(result, 'plugin-root');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('INLINE_RESOLVE bootstraps module from the versioned plugin cache when env unset', () => {
+    const homeDir = createTempDir();
+    try {
+      const resolverDir = path.join(
+        homeDir, '.claude', 'plugins', 'cache', 'ecc', 'affaan-m', CURRENT_PACKAGE_VERSION,
+        'scripts', 'lib'
+      );
+      fs.mkdirSync(resolverDir, { recursive: true });
+      fs.writeFileSync(path.join(resolverDir, 'resolve-ecc-root.js'), `module.exports = { resolveEccRoot() { return 'cache-root'; } };`);
+      const { execFileSync } = require('child_process');
+      const result = execFileSync('node', [
+        '-e', `console.log(${INLINE_RESOLVE})`,
+      ], {
+        env: { PATH: process.env.PATH, HOME: homeDir, USERPROFILE: homeDir },
+        encoding: 'utf8',
+      }).trim();
+      assert.strictEqual(result, 'cache-root');
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

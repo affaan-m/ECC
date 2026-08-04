@@ -15,13 +15,18 @@ from llm.core.interface import (
     RateLimitError,
 )
 from llm.core.types import LLMInput, LLMOutput, Message, ModelInfo, ProviderType, ToolCall
+from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 
 
 class OpenAIProvider(LLMProvider):
     provider_type = ProviderType.OPENAI
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
-        self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"), base_url=base_url)
+        self.client = OpenAI(
+            api_key=api_key or os.environ.get("OPENAI_API_KEY"),
+            base_url=base_url,
+            _enforce_credentials=False,
+        )
         self._models = [
             ModelInfo(
                 name="gpt-4o",
@@ -67,9 +72,11 @@ class OpenAIProvider(LLMProvider):
             if input.max_tokens:
                 params["max_tokens"] = input.max_tokens
             if input.tools:
-                params["tools"] = [tool.to_dict() for tool in input.tools]
+                params["tools"] = [tool.to_openai_tool() for tool in input.tools]
 
             response = self.client.chat.completions.create(**params)
+            if not response.choices or response.choices[0].message is None:
+                raise ValueError(EMPTY_FILTERED_RESPONSE_ERROR)
             choice = response.choices[0]
 
             tool_calls = None
@@ -83,15 +90,19 @@ class OpenAIProvider(LLMProvider):
                     for tc in choice.message.tool_calls
                 ]
 
+            usage = None
+            if response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+
             return LLMOutput(
                 content=choice.message.content or "",
                 tool_calls=tool_calls,
                 model=response.model,
-                usage={
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                },
+                usage=usage,
                 stop_reason=choice.finish_reason,
             )
         except Exception as e:

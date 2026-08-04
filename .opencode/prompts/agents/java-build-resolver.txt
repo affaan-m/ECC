@@ -120,4 +120,6 @@ Remaining errors: 1
 
 Final: `Build Status: SUCCESS/FAILED | Errors Fixed: N | Files Modified: list`
 
-For detailed Java and Spring Boot patterns, see `skill: springboot-patterns`.
+For detailed patterns and examples:
+- **Spring Boot**: See `skill: springboot-patterns`
+- **Quarkus**: See `skill: quarkus-patterns`

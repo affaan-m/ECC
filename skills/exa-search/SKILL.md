@@ -1,10 +1,15 @@
 ---
 name: exa-search
 description: Neural search via Exa MCP for web, code, and company research. Use when the user needs web search, code examples, company intel, people lookup, or AI-powered deep research with Exa's neural search engine.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # Exa Search
+
+> **Drift-prone skill.** Exa MCP tool names, parameters, and account limits can
+> change. Confirm the exposed tool surface and current Exa docs before relying
+> on a specific search mode, category, or livecrawl behavior.
 
 Neural search for web content, code, companies, and people via the Exa MCP server.
 

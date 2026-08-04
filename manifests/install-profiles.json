@@ -1,6 +1,24 @@
 {
   "version": 1,
   "profiles": {
+    "minimal": {
+      "description": "Low-context Claude Code setup with rules, agents, commands, platform configs, and quality workflow support, but no hook runtime.",
+      "modules": [
+        "rules-core",
+        "agents-core",
+        "commands-core",
+        "platform-configs",
+        "workflow-quality"
+      ]
+    },
+    "opencode": {
+      "description": "Default OpenCode setup with commands, platform configs, and quality workflow support. It intentionally excludes hooks-runtime; opt in with --modules hooks-runtime.",
+      "modules": [
+        "commands-core",
+        "platform-configs",
+        "workflow-quality"
+      ]
+    },
     "core": {
       "description": "Minimal harness baseline with commands, hooks, platform configs, and quality workflow support.",
       "modules": [
@@ -63,16 +81,21 @@
         "framework-language",
         "database",
         "workflow-quality",
+        "skill-unified-memory",
         "security",
         "research-apis",
         "business-content",
         "operator-workflows",
+        "optimization-workflows",
+        "prediction-market-skills",
+        "ito-compute",
         "social-distribution",
         "media-generation",
         "orchestration",
         "swift-apple",
         "agentic-patterns",
         "devops-infra",
+        "machine-learning",
         "supply-chain-domain",
         "document-processing"
       ]

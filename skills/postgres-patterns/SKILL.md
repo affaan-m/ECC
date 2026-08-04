@@ -1,7 +1,8 @@
 ---
 name: postgres-patterns
 description: PostgreSQL database patterns for query optimization, schema design, indexing, and security. Based on Supabase best practices.
-origin: ECC
+metadata:
+  origin: ECC
 ---
 
 # PostgreSQL Patterns

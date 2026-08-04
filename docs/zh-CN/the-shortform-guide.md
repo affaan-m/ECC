@@ -292,7 +292,7 @@ mgrep --web "Next.js 15 app router changes"  # Web search
 
 ```markdown
 ralph-wiggum@claude-code-plugins       # 循环自动化
-frontend-design@claude-code-plugins    # UI/UX 模式
+frontend-patterns@claude-code-plugins  # UI/UX 模式
 commit-commands@claude-code-plugins    # Git 工作流
 security-guidance@claude-code-plugins  # 安全检查
 pr-review-toolkit@claude-code-plugins  # PR 自动化

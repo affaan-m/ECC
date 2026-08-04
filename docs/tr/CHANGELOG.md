@@ -1,5 +1,45 @@
 # Değişiklik Günlüğü
 
+## 2.0.0-rc.1 - 2026-04-28
+
+### Öne Çıkanlar
+
+- Hermes operatör hikayesi için genel ECC 2.0 sürüm adayı yüzeyi eklendi.
+- ECC, Claude Code, Codex, Cursor, OpenCode ve Gemini genelinde yeniden kullanılabilir cross-harness altyapı olarak belgelendi.
+- Özel operatör state'i yayımlamak yerine sanitize edilmiş Hermes import becerisi eklendi.
+
+### Sürüm Yüzeyi
+
+- Paket, plugin, marketplace, OpenCode, ajan ve README metadataları `2.0.0-rc.1` olarak güncellendi.
+- Sürüm notları, sosyal taslaklar, launch checklist, handoff notları ve demo prompt'ları `docs/releases/2.0.0-rc.1/` altında toplandı.
+- ECC/Hermes sınırı için `docs/architecture/cross-harness.md` ve regresyon kapsamı eklendi.
+- `ecc2/` sürümlemesi bağımsız tutuldu; release engineering aksi karar vermedikçe alpha control-plane scaffold olarak kalır.
+
+### Notlar
+
+- Bu bir sürüm adayıdır; tam ECC 2.0 control-plane yol haritası için GA iddiası değildir.
+- Ön sürüm npm yayımları, release engineering aksi karar vermedikçe `next` dist-tag kullanmalıdır.
+
+## 1.10.0 - 2026-04-05
+
+### Öne Çıkanlar
+
+- Genel repo yüzeyi birkaç haftalık OSS büyümesi ve backlog merge'lerinden sonra canlı repo ile senkronize edildi.
+- Operatör iş akışı hattı voice, graph-ranking, billing, workspace ve outbound becerileriyle genişletildi.
+- Medya üretim hattı Manim ve Remotion odaklı launch araçlarıyla genişletildi.
+- ECC 2.0 alpha control-plane binary artık `ecc2/` üzerinden yerelde build ediliyor ve ilk kullanılabilir CLI/TUI yüzeyini sunuyor.
+
+### Sürüm Yüzeyi
+
+- Plugin, marketplace, Codex, OpenCode ve ajan metadataları `1.10.0` olarak güncellendi.
+- Yayınlanan sayımlar canlı OSS yüzeyine eşitlendi: 38 ajan, 156 beceri, 72 komut.
+- Üst seviye install dokümanları ve marketplace açıklamaları mevcut repo durumuyla eşitlendi.
+
+### Notlar
+
+- Claude plugin'i platform seviyesindeki rules dağıtım kısıtlarıyla sınırlı kalır; selective install / OSS yolu hâlâ en güvenilir tam kurulum yoludur.
+- Bu sürüm bir repo-yüzeyi düzeltmesi ve ekosistem senkronizasyonudur; tam ECC 2.0 yol haritasının tamamlandığı iddiası değildir.
+
 ## 1.9.0 - 2026-03-20
 
 ### Öne Çıkanlar

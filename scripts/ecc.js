@@ -3,6 +3,8 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { listAvailableLanguages } = require('./lib/install-executor');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
+const { createSafeItoInvocationEnvironment } = require('./lib/ito-environment');
 
 const COMMANDS = {
   install: {
@@ -16,6 +18,22 @@ const COMMANDS = {
   catalog: {
     script: 'catalog.js',
     description: 'Discover install profiles and component IDs',
+  },
+  consult: {
+    script: 'consult.js',
+    description: 'Recommend ECC components and profiles from a natural language query',
+  },
+  'control-pane': {
+    script: 'control-pane.js',
+    description: 'Run the local ECC2 operator control pane',
+  },
+  ito: {
+    script: 'ito.js',
+    description: 'Invoke the separately installed canonical Itô compute CLI',
+  },
+  memory: {
+    script: 'memory.js',
+    description: 'Share durable context across Claude, Codex, Hermes, and other harnesses',
   },
   'install-plan': {
     script: 'install-plan.js',
@@ -33,17 +51,37 @@ const COMMANDS = {
     script: 'repair.js',
     description: 'Restore drifted or missing ECC-managed files',
   },
+  'auto-update': {
+    script: 'auto-update.js',
+    description: 'Pull latest ECC changes and reinstall the current managed targets',
+  },
   status: {
     script: 'status.js',
     description: 'Query the ECC SQLite state store status summary',
+  },
+  'platform-audit': {
+    script: 'platform-audit.js',
+    description: 'Audit GitHub queues, discussions, roadmap, release, and security evidence',
+  },
+  'security-ioc-scan': {
+    script: 'ci/scan-supply-chain-iocs.js',
+    description: 'Scan dependency and AI-tool persistence surfaces for active supply-chain IOCs',
   },
   sessions: {
     script: 'sessions-cli.js',
     description: 'List or inspect ECC sessions from the SQLite state store',
   },
+  'work-items': {
+    script: 'work-items.js',
+    description: 'Track linked Linear, GitHub, handoff, and manual work items',
+  },
   'session-inspect': {
     script: 'session-inspect.js',
     description: 'Emit canonical ECC session snapshots from dmux or Claude history targets',
+  },
+  'loop-status': {
+    script: 'loop-status.js',
+    description: 'Inspect Claude transcripts for stale loop wakeups and pending tool results',
   },
   uninstall: {
     script: 'uninstall.js',
@@ -55,22 +93,32 @@ const PRIMARY_COMMANDS = [
   'install',
   'plan',
   'catalog',
+  'consult',
+  'control-pane',
+  'ito',
+  'memory',
   'list-installed',
   'doctor',
   'repair',
+  'auto-update',
   'status',
+  'platform-audit',
+  'security-ioc-scan',
   'sessions',
+  'work-items',
   'session-inspect',
+  'loop-status',
   'uninstall',
 ];
 
 function showHelp(exitCode = 0) {
-  console.log(`
+  process.stdout.write(`
 ECC selective-install CLI
 
 Usage:
   ecc <command> [args...]
   ecc [install args...]
+  ecc --dry-run <command> [args...]
 
 Commands:
 ${PRIMARY_COMMANDS.map(command => `  ${command.padEnd(15)} ${COMMANDS[command].description}`).join('\n')}
@@ -80,6 +128,12 @@ Compatibility:
   ecc [args...]      Without a command, args are routed to "install"
   ecc help <command> Show help for a specific command
 
+Global Flags:
+  --dry-run          Preview actions without executing (sets ECC_DRY_RUN=1)
+
+Compute:
+  ${getComputeSponsorCopy()}
+
 Examples:
   ecc typescript
   ecc install --profile developer --target claude
@@ -87,13 +141,30 @@ Examples:
   ecc catalog profiles
   ecc catalog components --family language
   ecc catalog show framework:nextjs
+  ecc consult "security reviews"
+  ecc control-pane --port 8765
+  ecc ito auth
+  ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
+  ecc ito status --json
+  ecc ito evals --cluster clu_prod_example --live-sixtytwo --nodes gpu-01,gpu-02 --config-dir /absolute/path/to/qualification-config
+  ecc memory init
+  ecc memory handoff --from codex --target claude --title "Continue migration" --stdin
+  ecc memory search "migration blockers" --target-harness hermes
   ecc list-installed --json
   ecc doctor --target cursor
   ecc repair --dry-run
+  ecc auto-update --dry-run
   ecc status --json
+  ecc status --exit-code
+  ecc status --markdown --write status.md
+  ecc platform-audit --json --allow-untracked docs/drafts/
+  ecc security-ioc-scan --home
   ecc sessions
   ecc sessions session-active --json
+  ecc work-items upsert linear-ecc-20 --source linear --source-id ECC-20 --title "Review control-plane contract" --status blocked
+  ecc work-items sync-github --repo affaan-m/ECC
   ecc session-inspect claude:latest
+  ecc loop-status --json
   ecc uninstall --target antigravity --dry-run
 `);
 
@@ -107,7 +178,21 @@ function resolveCommand(argv) {
     return { mode: 'help' };
   }
 
-  const [firstArg, ...restArgs] = args;
+  if (args.includes('--dry-run')) {
+    process.env.ECC_DRY_RUN = '1';
+  }
+
+  let cmdStart = 0;
+  while (cmdStart < args.length && args[cmdStart] === '--dry-run') {
+    cmdStart++;
+  }
+
+  if (cmdStart >= args.length) {
+    return { mode: 'help' };
+  }
+
+  const firstArg = args[cmdStart];
+  const restArgs = args.slice(cmdStart + 1);
 
   if (firstArg === '--help' || firstArg === '-h') {
     return { mode: 'help' };
@@ -150,13 +235,21 @@ function runCommand(commandName, args) {
   if (!command) {
     throw new Error(`Unknown command: ${commandName}`);
   }
-
   const result = spawnSync(
     process.execPath,
     [path.join(__dirname, command.script), ...args],
     {
       cwd: process.cwd(),
-      env: process.env,
+      env: commandName === 'ito'
+        ? {
+          ...createSafeItoInvocationEnvironment(process.env, args, {
+            includeControls: true,
+          }),
+        }
+        : process.env,
+      stdio: commandName === 'memory'
+        ? ['inherit', 'pipe', 'pipe']
+        : ['pipe', 'pipe', 'pipe'],
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
     }

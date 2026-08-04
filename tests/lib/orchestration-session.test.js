@@ -59,7 +59,7 @@ test('parseWorkerTask extracts objective and seeded overlays', () => {
     '',
     '## Seeded Local Overlays',
     '- `scripts/orchestrate-worktrees.js`',
-    '- `commands/orchestrate.md`',
+    '- `commands/multi-workflow.md`',
     '',
     '## Objective',
     'Verify seeded files and summarize status.'
@@ -67,7 +67,7 @@ test('parseWorkerTask extracts objective and seeded overlays', () => {
 
   assert.deepStrictEqual(task.seedPaths, [
     'scripts/orchestrate-worktrees.js',
-    'commands/orchestrate.md'
+    'commands/multi-workflow.md'
   ]);
   assert.strictEqual(task.objective, 'Verify seeded files and summarize status.');
 });

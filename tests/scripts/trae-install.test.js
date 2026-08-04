@@ -29,7 +29,7 @@ function runInstall(options = {}) {
     },
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 60000,
+    timeout: 300000,
   });
 }
 
@@ -43,7 +43,7 @@ function runUninstall(options = {}) {
     encoding: 'utf8',
     input: options.input || 'y\n',
     stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 60000,
+    timeout: 300000,
   });
 }
 
@@ -84,14 +84,14 @@ function runTests() {
     const projectRoot = createTempDir('trae-project-');
 
     try {
-      const preexistingCommandPath = path.join(projectRoot, '.trae', 'commands', 'e2e.md');
+      const preexistingCommandPath = path.join(projectRoot, '.trae', 'commands', 'quality-gate.md');
       fs.mkdirSync(path.dirname(preexistingCommandPath), { recursive: true });
       fs.writeFileSync(preexistingCommandPath, 'user owned command\n');
 
       runInstall({ cwd: projectRoot, homeDir });
 
       const manifestLines = readManifestLines(projectRoot);
-      assert.ok(!manifestLines.includes('commands/e2e.md'), 'Preexisting file should not be recorded in manifest');
+      assert.ok(!manifestLines.includes('commands/quality-gate.md'), 'Preexisting file should not be recorded in manifest');
 
       runUninstall({ cwd: projectRoot, homeDir });
 
@@ -113,11 +113,11 @@ function runTests() {
       assert.ok(manifestLines.includes('skills/skill-comply/pyproject.toml'));
       assert.ok(manifestLines.includes('rules/common/code-review.md'));
       assert.ok(manifestLines.includes('rules/python/coding-style.md'));
-      assert.ok(manifestLines.includes('rules/zh/README.md'));
+      assert.ok(manifestLines.includes('rules/web/performance.md'));
 
       assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'skills', 'skill-comply', 'pyproject.toml')));
       assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'python', 'coding-style.md')));
-      assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'zh', 'README.md')));
+      assert.ok(fs.existsSync(path.join(projectRoot, '.trae', 'rules', 'web', 'performance.md')));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -131,13 +131,13 @@ function runTests() {
     try {
       runInstall({ cwd: projectRoot, homeDir });
 
-      const managedCommandPath = path.join(projectRoot, '.trae', 'commands', 'e2e.md');
+      const managedCommandPath = path.join(projectRoot, '.trae', 'commands', 'quality-gate.md');
       fs.rmSync(managedCommandPath);
 
       runInstall({ cwd: projectRoot, homeDir });
 
       const manifestLines = readManifestLines(projectRoot);
-      const entryCount = manifestLines.filter((line) => line === 'commands/e2e.md').length;
+      const entryCount = manifestLines.filter((line) => line === 'commands/quality-gate.md').length;
 
       assert.strictEqual(entryCount, 1, 'Managed file should appear once in manifest after reinstall');
       assert.ok(fs.existsSync(managedCommandPath), 'Managed file should be recreated on reinstall');

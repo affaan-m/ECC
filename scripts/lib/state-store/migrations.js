@@ -107,11 +107,42 @@ CREATE INDEX IF NOT EXISTS idx_governance_events_session_id_created_at
   ON governance_events (session_id, created_at DESC);
 `;
 
+const WORK_ITEMS_SQL = `
+CREATE TABLE IF NOT EXISTS work_items (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority TEXT,
+  url TEXT,
+  owner TEXT,
+  repo_root TEXT,
+  session_id TEXT,
+  metadata TEXT NOT NULL CHECK (json_valid(metadata)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_items_status_updated_at
+  ON work_items (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_work_items_source_source_id
+  ON work_items (source, source_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_session_id_updated_at
+  ON work_items (session_id, updated_at DESC);
+`;
+
 const MIGRATIONS = [
   {
     version: 1,
     name: '001_initial_state_store',
     sql: INITIAL_SCHEMA_SQL,
+  },
+  {
+    version: 2,
+    name: '002_work_items',
+    sql: WORK_ITEMS_SQL,
   },
 ];
 

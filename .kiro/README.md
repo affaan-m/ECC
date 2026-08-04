@@ -24,11 +24,11 @@ The installer uses non-destructive copy — it will not overwrite your existing 
 
 | Component | Count | Location |
 |-----------|-------|----------|
-| Agents (JSON) | 16 | `.kiro/agents/*.json` |
-| Agents (MD) | 16 | `.kiro/agents/*.md` |
-| Skills | 18 | `.kiro/skills/*/SKILL.md` |
-| Steering Files | 16 | `.kiro/steering/*.md` |
-| IDE Hooks | 10 | `.kiro/hooks/*.kiro.hook` |
+| Agents (JSON) | 33 | `.kiro/agents/*.json` |
+| Agents (MD) | 33 | `.kiro/agents/*.md` |
+| Skills | 43 | `.kiro/skills/*/SKILL.md` |
+| Steering Files | 22 | `.kiro/steering/*.md` |
+| IDE Hooks | 13 | `.kiro/hooks/*.kiro.hook` |
 | Scripts | 2 | `.kiro/scripts/*.sh` |
 | MCP Examples | 1 | `.kiro/settings/mcp.json.example` |
 | Documentation | 5 | `docs/*.md` |
@@ -59,6 +59,23 @@ Both formats are included for maximum compatibility.
 | `refactor-cleaner` | Dead code cleanup and consolidation specialist. Removes unused code, duplicates, and refactors safely. |
 | `go-reviewer` | Go code review specialist. Reviews Go code for idiomatic patterns, error handling, concurrency, and performance. |
 | `python-reviewer` | Python code review specialist. Reviews Python code for PEP 8, type hints, error handling, and best practices. |
+| `typescript-reviewer` | TypeScript/JavaScript code reviewer. Type safety, async correctness, Node/web security, and idiomatic patterns. |
+| `rust-reviewer` | Rust code reviewer. Ownership, lifetimes, error handling, unsafe usage, and idiomatic patterns. |
+| `rust-build-resolver` | Rust/Cargo build error resolution specialist. Fixes compilation, dependency, and linking errors. |
+| `kotlin-reviewer` | Kotlin/Android/KMP code reviewer. Coroutine safety, Compose best practices, clean architecture. |
+| `kotlin-build-resolver` | Kotlin/Gradle build error resolution specialist. Fixes Gradle, KSP, and dependency errors. |
+| `java-reviewer` | Java/Spring Boot/Quarkus code reviewer. Enterprise patterns, security, and performance. |
+| `java-build-resolver` | Java/Maven/Gradle build error resolution specialist. Fixes compilation and dependency errors. |
+| `cpp-reviewer` | C++ code reviewer. Memory safety, modern C++, RAII, and performance patterns. |
+| `cpp-build-resolver` | C++/CMake build error resolution specialist. Fixes compilation, linking, and CMake errors. |
+| `django-reviewer` | Django code reviewer. ORM patterns, DRF, migrations, and Django security. |
+| `swift-reviewer` | Swift code reviewer. Concurrency, ARC, protocols, and SwiftUI patterns. |
+| `fsharp-reviewer` | F# functional code reviewer. Immutability, pattern matching, and type-driven design. |
+| `react-reviewer` | React code reviewer. Component patterns, hooks, performance, and accessibility. |
+| `react-build-resolver` | React/Next.js build error resolution specialist. Fixes bundler, SSR, and hydration errors. |
+| `pytorch-build-resolver` | PyTorch runtime/CUDA/training error resolution specialist. |
+| `mle-reviewer` | Production ML engineering reviewer. Pipelines, evals, serving, monitoring, and rollback. |
+| `performance-optimizer` | Performance analysis and optimization specialist. Profiling, bottleneck detection, and tuning. |
 | `database-reviewer` | Database and SQL specialist. Reviews schema design, queries, migrations, and database security. |
 | `e2e-runner` | End-to-end testing specialist. Creates and maintains E2E tests using Playwright or Cypress. |
 | `harness-optimizer` | Test harness optimization specialist. Improves test performance, reliability, and maintainability. |
@@ -101,6 +118,31 @@ Skills are on-demand workflows invocable via the `/` menu in chat.
 | `deployment-patterns` | Deployment strategies and CI/CD patterns. Use when setting up deployments or improving CI/CD pipelines. |
 | `search-first` | Search-first development methodology. Use when exploring unfamiliar codebases or debugging issues. |
 | `agentic-engineering` | Agentic software engineering patterns and workflows. Use when working with AI agents or building agentic systems. |
+| `rust-patterns` | Idiomatic Rust patterns, ownership, error handling, traits, and concurrency. Use when writing Rust code. |
+| `rust-testing` | Rust testing patterns including unit, integration, async, property-based testing, and coverage. |
+| `kotlin-patterns` | Idiomatic Kotlin patterns, coroutines, null safety, and DSL builders. Use when writing Kotlin code. |
+| `kotlin-testing` | Kotlin testing with Kotest, MockK, coroutine testing, and Kover coverage. |
+| `java-coding-standards` | Java coding standards for Spring Boot and Quarkus services. |
+| `jpa-patterns` | JPA/Hibernate patterns for entity design, relationships, and query optimization. |
+| `springboot-patterns` | Spring Boot architecture patterns, REST API design, and layered services. |
+| `springboot-security` | Spring Security best practices for authn/authz, validation, and secrets. |
+| `django-patterns` | Django architecture patterns, REST API design with DRF, and ORM best practices. |
+| `django-security` | Django security best practices, authentication, and CSRF/XSS prevention. |
+| `fastapi-patterns` | FastAPI patterns for async APIs, dependency injection, and Pydantic models. |
+| `nestjs-patterns` | NestJS architecture patterns for modules, controllers, and providers. |
+| `react-patterns` | React 18/19 patterns including hooks, server/client components, and Suspense. |
+| `react-testing` | React component testing with Testing Library, Vitest/Jest, and MSW. |
+| `nextjs-turbopack` | Next.js 16+ and Turbopack incremental bundling patterns. |
+| `cpp-coding-standards` | C++ coding standards based on C++ Core Guidelines. |
+| `cpp-testing` | C++ testing with GoogleTest, CTest, and sanitizers. |
+| `swift-actor-persistence` | Thread-safe data persistence in Swift using actors. |
+| `swift-protocol-di-testing` | Protocol-based dependency injection for testable Swift code. |
+| `mle-workflow` | Production ML engineering workflow for training, evaluation, deployment, and monitoring. |
+| `pytorch-patterns` | PyTorch deep learning patterns for training pipelines and model architectures. |
+| `deep-research` | Multi-source deep research with synthesis and source attribution. |
+| `strategic-compact` | Context management and manual compaction suggestions at logical intervals. |
+| `autonomous-loops` | Patterns for autonomous agent loops — sequential pipelines to multi-agent DAGs. |
+| `content-hash-cache-pattern` | Cache expensive file processing using SHA-256 content hashes. |
 
 **Usage:**
 
@@ -128,6 +170,13 @@ Steering files provide always-on rules and context that shape how the agent work
 | `python-patterns.md` | fileMatch: `*.py` | Python-specific patterns, type hints, and best practices. Loaded when editing Python files. |
 | `golang-patterns.md` | fileMatch: `*.go` | Go-specific patterns, concurrency, and best practices. Loaded when editing Go files. |
 | `swift-patterns.md` | fileMatch: `*.swift` | Swift-specific patterns and best practices. Loaded when editing Swift files. |
+| `rust-patterns.md` | fileMatch: `*.rs` | Rust ownership, lifetimes, error handling, and idiomatic patterns. Loaded when editing Rust files. |
+| `kotlin-patterns.md` | fileMatch: `*.kt` | Kotlin coroutines, Compose, and Android/KMP best practices. Loaded when editing Kotlin files. |
+| `java-patterns.md` | fileMatch: `*.java` | Java patterns, Spring Boot, and enterprise best practices. Loaded when editing Java files. |
+| `cpp-patterns.md` | fileMatch: `*.cpp,*.hpp,*.h,*.cc,*.cxx` | C++ RAII, smart pointers, and modern C++ patterns. Loaded when editing C++ files. |
+| `php-patterns.md` | fileMatch: `*.php` | PHP patterns, Laravel, and modern PHP best practices. Loaded when editing PHP files. |
+| `ruby-patterns.md` | fileMatch: `*.rb` | Ruby patterns and Rails best practices. Loaded when editing Ruby files. |
+| `typescript-security.md` | fileMatch: `*.ts,*.tsx` | TypeScript security patterns. Loaded when editing TypeScript files. |
 | `dev-mode.md` | manual | Development context mode. Invoke with `#dev-mode` for focused development. |
 | `review-mode.md` | manual | Code review context mode. Invoke with `#review-mode` for thorough reviews. |
 | `research-mode.md` | manual | Research context mode. Invoke with `#research-mode` for exploration and learning. |
@@ -139,6 +188,7 @@ To create your own, add a markdown file to `.kiro/steering/` with YAML frontmatt
 ```yaml
 ---
 inclusion: auto        # auto | fileMatch | manual
+name: my-steering      # required if inclusion is auto
 description: Brief explanation of what this steering file contains
 fileMatchPattern: "*.ts"  # required if inclusion is fileMatch
 ---
@@ -169,6 +219,9 @@ These hooks appear in the Agent Hooks panel in the Kiro IDE and can be toggled o
 | `extract-patterns` | Agent stops | `askAgent` | Suggests patterns to add to lessons-learned.md after completing work. |
 | `session-summary` | Agent stops | `askAgent` | Provides a summary of work completed in the session. |
 | `doc-file-warning` | Before write operation | `askAgent` | Warns before modifying documentation files to ensure intentional changes. |
+| `rust-check-on-edit` | File edited (`*.rs`) | `askAgent` | Checks for compilation errors, ownership issues, or lifetime problems in Rust files. |
+| `python-lint-on-edit` | File edited (`*.py`) | `askAgent` | Checks for type errors, PEP 8 violations, or common anti-patterns in Python files. |
+| `security-check-on-create` | File created (`**/auth/**`, `**/api/**`, `**/middleware/**`) | `askAgent` | Runs a quick security check when new files are created in sensitive directories. |
 
 **IDE Hook Format:**
 
@@ -232,77 +285,46 @@ Shell scripts used by hooks to perform quality checks and formatting.
 
 ```
 .kiro/
-├── agents/                       # 16 agents (JSON + MD formats)
-│   ├── planner.json              # Planning specialist (CLI)
-│   ├── planner.md                # Planning specialist (IDE)
-│   ├── code-reviewer.json        # Code review specialist (CLI)
-│   ├── code-reviewer.md          # Code review specialist (IDE)
-│   ├── tdd-guide.json            # TDD specialist (CLI)
-│   ├── tdd-guide.md              # TDD specialist (IDE)
-│   ├── security-reviewer.json    # Security specialist (CLI)
-│   ├── security-reviewer.md      # Security specialist (IDE)
-│   ├── architect.json            # Architecture specialist (CLI)
-│   ├── architect.md              # Architecture specialist (IDE)
-│   ├── build-error-resolver.json # Build error specialist (CLI)
-│   ├── build-error-resolver.md   # Build error specialist (IDE)
-│   ├── doc-updater.json          # Documentation specialist (CLI)
-│   ├── doc-updater.md            # Documentation specialist (IDE)
-│   ├── refactor-cleaner.json     # Refactoring specialist (CLI)
-│   ├── refactor-cleaner.md       # Refactoring specialist (IDE)
-│   ├── go-reviewer.json          # Go review specialist (CLI)
-│   ├── go-reviewer.md            # Go review specialist (IDE)
-│   ├── python-reviewer.json      # Python review specialist (CLI)
-│   ├── python-reviewer.md        # Python review specialist (IDE)
-│   ├── database-reviewer.json    # Database specialist (CLI)
-│   ├── database-reviewer.md      # Database specialist (IDE)
-│   ├── e2e-runner.json           # E2E testing specialist (CLI)
-│   ├── e2e-runner.md             # E2E testing specialist (IDE)
-│   ├── harness-optimizer.json    # Test harness specialist (CLI)
-│   ├── harness-optimizer.md      # Test harness specialist (IDE)
-│   ├── loop-operator.json        # Verification loop specialist (CLI)
-│   ├── loop-operator.md          # Verification loop specialist (IDE)
-│   ├── chief-of-staff.json       # Project management specialist (CLI)
-│   ├── chief-of-staff.md         # Project management specialist (IDE)
-│   ├── go-build-resolver.json    # Go build specialist (CLI)
-│   └── go-build-resolver.md      # Go build specialist (IDE)
-├── skills/                       # 18 skills
-│   ├── tdd-workflow/
-│   │   └── SKILL.md              # TDD workflow skill
-│   ├── coding-standards/
-│   │   └── SKILL.md              # Coding standards skill
-│   ├── security-review/
-│   │   └── SKILL.md              # Security review skill
-│   ├── verification-loop/
-│   │   └── SKILL.md              # Verification loop skill
-│   ├── api-design/
-│   │   └── SKILL.md              # API design skill
-│   ├── frontend-patterns/
-│   │   └── SKILL.md              # Frontend patterns skill
-│   ├── backend-patterns/
-│   │   └── SKILL.md              # Backend patterns skill
-│   ├── e2e-testing/
-│   │   └── SKILL.md              # E2E testing skill
-│   ├── golang-patterns/
-│   │   └── SKILL.md              # Go patterns skill
-│   ├── golang-testing/
-│   │   └── SKILL.md              # Go testing skill
-│   ├── python-patterns/
-│   │   └── SKILL.md              # Python patterns skill
-│   ├── python-testing/
-│   │   └── SKILL.md              # Python testing skill
-│   ├── database-migrations/
-│   │   └── SKILL.md              # Database migrations skill
-│   ├── postgres-patterns/
-│   │   └── SKILL.md              # PostgreSQL patterns skill
-│   ├── docker-patterns/
-│   │   └── SKILL.md              # Docker patterns skill
-│   ├── deployment-patterns/
-│   │   └── SKILL.md              # Deployment patterns skill
-│   ├── search-first/
-│   │   └── SKILL.md              # Search-first methodology skill
-│   └── agentic-engineering/
-│       └── SKILL.md              # Agentic engineering skill
-├── steering/                     # 16 steering files
+├── agents/                       # 33 agents (JSON + MD formats)
+│   ├── planner.json / .md        # Planning specialist
+│   ├── code-reviewer.json / .md  # Code review specialist
+│   ├── tdd-guide.json / .md      # TDD specialist
+│   ├── security-reviewer.json / .md # Security specialist
+│   ├── architect.json / .md      # Architecture specialist
+│   ├── build-error-resolver.json / .md # Build error specialist
+│   ├── typescript-reviewer.json / .md  # TypeScript/JS reviewer
+│   ├── rust-reviewer.json / .md  # Rust reviewer
+│   ├── kotlin-reviewer.json / .md # Kotlin/Android reviewer
+│   ├── java-reviewer.json / .md  # Java/Spring Boot reviewer
+│   ├── cpp-reviewer.json / .md   # C++ reviewer
+│   ├── django-reviewer.json / .md # Django reviewer
+│   ├── swift-reviewer.json / .md # Swift reviewer
+│   ├── react-reviewer.json / .md # React reviewer
+│   ├── mle-reviewer.json / .md   # ML engineering reviewer
+│   ├── performance-optimizer.json / .md # Performance specialist
+│   ├── ... and 17 more           # (build-resolvers, go, python, db, e2e, etc.)
+│   └── (each agent has both .json for CLI and .md for IDE)
+├── skills/                       # 43 skills
+│   ├── tdd-workflow/             # TDD workflow
+│   ├── coding-standards/         # Universal coding standards
+│   ├── security-review/          # Security checklist
+│   ├── verification-loop/        # Build/test/lint verification
+│   ├── api-design/               # REST API patterns
+│   ├── frontend-patterns/        # React/Next.js patterns
+│   ├── backend-patterns/         # Node.js/Express patterns
+│   ├── react-patterns/           # React 18/19 patterns
+│   ├── react-testing/            # React Testing Library
+│   ├── rust-patterns/            # Rust idioms and ownership
+│   ├── kotlin-patterns/          # Kotlin coroutines and KMP
+│   ├── springboot-patterns/      # Spring Boot architecture
+│   ├── django-patterns/          # Django ORM and DRF
+│   ├── fastapi-patterns/         # FastAPI async APIs
+│   ├── nestjs-patterns/          # NestJS modules and DI
+│   ├── mle-workflow/             # ML engineering workflow
+│   ├── pytorch-patterns/         # PyTorch training pipelines
+│   ├── ... and 26 more           # (testing, deployment, docker, etc.)
+│   └── (each skill has a SKILL.md with YAML frontmatter)
+├── steering/                     # 22 steering files
 │   ├── coding-style.md           # Auto-loaded coding style rules
 │   ├── security.md               # Auto-loaded security rules
 │   ├── testing.md                # Auto-loaded testing rules
@@ -312,13 +334,20 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   ├── performance.md            # Auto-loaded performance rules
 │   ├── lessons-learned.md        # Auto-loaded project patterns
 │   ├── typescript-patterns.md    # Loaded for .ts/.tsx files
+│   ├── typescript-security.md    # Loaded for .ts/.tsx files
 │   ├── python-patterns.md        # Loaded for .py files
 │   ├── golang-patterns.md        # Loaded for .go files
 │   ├── swift-patterns.md         # Loaded for .swift files
+│   ├── rust-patterns.md          # Loaded for .rs files
+│   ├── kotlin-patterns.md        # Loaded for .kt files
+│   ├── java-patterns.md          # Loaded for .java files
+│   ├── cpp-patterns.md           # Loaded for .cpp/.hpp/.h files
+│   ├── php-patterns.md           # Loaded for .php files
+│   ├── ruby-patterns.md          # Loaded for .rb files
 │   ├── dev-mode.md               # Manual: #dev-mode
 │   ├── review-mode.md            # Manual: #review-mode
 │   └── research-mode.md          # Manual: #research-mode
-├── hooks/                        # 10 IDE hooks
+├── hooks/                        # 13 IDE hooks
 │   ├── README.md                      # Documentation on IDE and CLI hooks
 │   ├── quality-gate.kiro.hook         # Manual quality gate hook
 │   ├── typecheck-on-edit.kiro.hook    # Auto typecheck on edit
@@ -329,7 +358,10 @@ Shell scripts used by hooks to perform quality checks and formatting.
 │   ├── auto-format.kiro.hook          # Auto-format on edit
 │   ├── extract-patterns.kiro.hook     # Extract patterns on stop
 │   ├── session-summary.kiro.hook      # Summary on stop
-│   └── doc-file-warning.kiro.hook     # Warn before doc changes
+│   ├── doc-file-warning.kiro.hook     # Warn before doc changes
+│   ├── rust-check-on-edit.kiro.hook   # Rust compilation check
+│   ├── python-lint-on-edit.kiro.hook  # Python lint on edit
+│   └── security-check-on-create.kiro.hook # Security check on sensitive dirs
 ├── scripts/                      # 2 shell scripts
 │   ├── quality-gate.sh           # Quality gate shell script
 │   └── format.sh                 # Auto-format shell script

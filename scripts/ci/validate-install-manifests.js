@@ -16,11 +16,17 @@ const COMPONENTS_MANIFEST_PATH = path.join(REPO_ROOT, 'manifests/install-compone
 const MODULES_SCHEMA_PATH = path.join(REPO_ROOT, 'schemas/install-modules.schema.json');
 const PROFILES_SCHEMA_PATH = path.join(REPO_ROOT, 'schemas/install-profiles.schema.json');
 const COMPONENTS_SCHEMA_PATH = path.join(REPO_ROOT, 'schemas/install-components.schema.json');
+const CURATED_SKILLS_DIR = path.join(REPO_ROOT, 'skills');
+// Empty by default; add only curated skills that are intentionally unshipped.
+const INTENTIONALLY_UNSHIPPED_SKILL_IDS = new Set([
+  'skill-comply', // meta/measurement dev-skill; ships committed .pyc artifacts and a nested .gitignore, revisit after packaging cleanup
+]);
 const COMPONENT_FAMILY_PREFIXES = {
   baseline: 'baseline:',
   language: 'lang:',
   framework: 'framework:',
   capability: 'capability:',
+  locale: 'locale:',
 };
 
 function readJson(filePath, label) {
@@ -33,6 +39,18 @@ function readJson(filePath, label) {
 
 function normalizeRelativePath(relativePath) {
   return String(relativePath).replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function isCuratedSkillReferenced(claimedPaths, skillId) {
+  const skillRoot = `skills/${skillId}`;
+
+  for (const claimedPath of claimedPaths.keys()) {
+    if (claimedPath === skillRoot || claimedPath.startsWith(`${skillRoot}/`)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function validateSchema(ajv, schemaPath, data, label) {
@@ -130,6 +148,30 @@ function validateInstallManifests() {
     }
   }
 
+  if (fs.existsSync(CURATED_SKILLS_DIR)) {
+    const entries = fs.readdirSync(CURATED_SKILLS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) {
+        continue;
+      }
+
+      const skillMdPath = path.join(CURATED_SKILLS_DIR, entry.name, 'SKILL.md');
+      if (!fs.existsSync(skillMdPath)) {
+        continue;
+      }
+
+      if (
+        !INTENTIONALLY_UNSHIPPED_SKILL_IDS.has(entry.name)
+        && !isCuratedSkillReferenced(claimedPaths, entry.name)
+      ) {
+        console.error(
+          `ERROR: curated skill skills/${entry.name} is not referenced by any install module`
+        );
+        hasErrors = true;
+      }
+    }
+  }
+
   const profiles = profilesData.profiles || {};
   const components = Array.isArray(componentsData.components) ? componentsData.components : [];
   const expectedProfileIds = ['core', 'developer', 'security', 'research', 'full'];
@@ -163,9 +205,12 @@ function validateInstallManifests() {
 
   if (profiles.full) {
     const fullModules = new Set(profiles.full.modules);
-    for (const moduleId of moduleIds) {
-      if (!fullModules.has(moduleId)) {
-        console.error(`ERROR: full profile is missing module ${moduleId}`);
+    for (const module of modules) {
+      if (module.kind === 'docs' && module.defaultInstall === false) {
+        continue;
+      }
+      if (!fullModules.has(module.id)) {
+        console.error(`ERROR: full profile is missing module ${module.id}`);
         hasErrors = true;
       }
     }

@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "agentshield-policy-exception",
+  "run_id": "2026-05-12-agentshield-policy-exception-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "sarif_report_evidence": 0.95,
+    "exception_lifecycle": 0.93,
+    "ownership_specificity": 0.9,
+    "remediation_decision": 0.88,
+    "blanket_suppression_safety": 1
+  },
+  "findings": [
+    {
+      "id": "sarif-report-match-required",
+      "severity": "warning",
+      "summary": "AgentShield policy exceptions must name SARIF or report evidence before a remediation or exception playbook can be promoted."
+    },
+    {
+      "id": "expired-exception-enforcement",
+      "severity": "warning",
+      "summary": "Expired exceptions must remain rejected or enforced; the evaluator cannot treat stale approvals as active evidence."
+    },
+    {
+      "id": "bounded-owner-fields",
+      "severity": "info",
+      "summary": "Accepted exceptions preserve owner, ticket, scope, expiry, policy-pack source, and affected surface fields."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "sarif-backed-timeboxed-exception-review",
+    "action": "Use the promoted playbook for future AgentShield policy exception requests before changing gates, suppressing categories, or accepting security risk."
+  }
+}

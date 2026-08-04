@@ -1,0 +1,45 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "harness-config-quality",
+  "run_id": "2026-05-12-harness-config-quality-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "A setup recommendation or PR touches MCP, plugin, hook, command, agent, rule, or adapter surfaces. The evaluator records the surface without editing local or user-level config.",
+      "evidence": [
+        "docs/architecture/harness-adapter-compliance.md",
+        "scripts/lib/harness-adapter-compliance.js"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved the adapter state, install/onramp path, verification commands, risk notes, and config-preservation tests for the affected harness.",
+      "evidence": [
+        "npm run harness:adapters -- --check",
+        "npm run harness:audit -- --format json",
+        "node tests/lib/install-targets.test.js"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidate playbooks: adapter-matrix-backed drift check, and unsupported hook parity claim that copies Claude semantics into every harness.",
+      "candidate_ids": [
+        "adapter-matrix-backed-drift-check",
+        "unsupported-hook-parity-claim"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the matrix-backed drift check because it names state, install path, verification, and preservation behavior. Rejected unsupported hook parity because it overclaims portability.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/harness-config-quality/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only harness-config quality playbook. The evaluator does not overwrite configs, toggle MCP servers, publish plugins, or claim native support.",
+      "promoted_candidate_id": "adapter-matrix-backed-drift-check"
+    }
+  ]
+}

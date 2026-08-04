@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuous Learning v2 - Project Detection Helper
 #
 # Shared logic for detecting current project context.
@@ -19,7 +19,9 @@
 #   3. git repo root path (fallback, machine-specific)
 #   4. "global" (no project context detected)
 
-_CLV2_HOMUNCULUS_DIR="${HOME}/.claude/homunculus"
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/lib/homunculus-dir.sh"
+_CLV2_HOMUNCULUS_DIR="$(_clv2_resolve_homunculus_dir)"
 _CLV2_PROJECTS_DIR="${_CLV2_HOMUNCULUS_DIR}/projects"
 _CLV2_REGISTRY_FILE="${_CLV2_HOMUNCULUS_DIR}/projects.json"
 
@@ -49,16 +51,78 @@ export CLV2_PYTHON_CMD
 CLV2_OBSERVER_PROMPT_PATTERN='Can you confirm|requires permission|Awaiting (user confirmation|confirmation|approval|permission)|confirm I should proceed|once granted access|grant.*access'
 export CLV2_OBSERVER_PROMPT_PATTERN
 
+_clv2_normalize_remote_url() {
+  local url="$1"
+  [ -z "$url" ] && return 0
+
+  local is_network=0
+  case "$url" in
+    file://*) is_network=0 ;;
+    *://*) is_network=1 ;;
+    *@*:*) is_network=1 ;;
+    *) is_network=0 ;;
+  esac
+
+  url=$(printf '%s' "$url" | sed -E 's|://[^@]+@|://|')
+  url=$(printf '%s' "$url" | sed -E 's|^[A-Za-z][A-Za-z0-9+.-]*://||')
+  url=$(printf '%s' "$url" | sed -E 's|^[^@/:]+@([^:/]+):|\1/|')
+  url=$(printf '%s' "$url" | sed -E 's|\.git/?$||; s|/+$||')
+
+  if [ "$is_network" = "1" ]; then
+    printf '%s' "$url" | tr '[:upper:]' '[:lower:]'
+  else
+    printf '%s' "$url"
+  fi
+}
+
+_clv2_main_worktree_root() {
+  local root="$1"
+  [ -z "$root" ] && return 0
+  command -v git >/dev/null 2>&1 || return 0
+
+  git -C "$root" worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
+    case "$line" in
+      worktree\ *)
+        printf '%s\n' "${line#worktree }"
+        break
+        ;;
+    esac
+  done
+}
+
 _clv2_detect_project() {
   local project_root=""
   local project_name=""
   local project_id=""
   local source_hint=""
 
-  # 1. Try CLAUDE_PROJECT_DIR env var
+  if [ "${CLV2_NO_PROJECT:-0}" = "1" ]; then
+    _CLV2_PROJECT_ID="global"
+    _CLV2_PROJECT_NAME="global"
+    _CLV2_PROJECT_ROOT=""
+    _CLV2_PROJECT_DIR="${_CLV2_HOMUNCULUS_DIR}"
+    mkdir -p "$_CLV2_PROJECT_DIR"
+    return 0
+  fi
+
+  # 1. Try CLAUDE_PROJECT_DIR env var (explicit override)
   if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
-    project_root="$CLAUDE_PROJECT_DIR"
-    source_hint="env"
+    if command -v git &>/dev/null; then
+      project_root=$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
+      if [ -n "$project_root" ]; then
+        source_hint="env"
+      fi
+    fi
+    # Non-git directory explicitly pointed at by CLAUDE_PROJECT_DIR: honor it as
+    # a project root (path-hash identity) rather than collapsing to the shared
+    # `global` bucket. Gated on the explicit env var so an arbitrary non-git cwd
+    # never becomes a "project" — priority 2 below stays git-only on purpose.
+    if [ -z "$project_root" ]; then
+      project_root=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)
+      if [ -n "$project_root" ]; then
+        source_hint="env-nogit"
+      fi
+    fi
   fi
 
   # 2. Try git repo root from CWD (only if git is available)
@@ -75,11 +139,16 @@ _clv2_detect_project() {
     _CLV2_PROJECT_NAME="global"
     _CLV2_PROJECT_ROOT=""
     _CLV2_PROJECT_DIR="${_CLV2_HOMUNCULUS_DIR}"
+    mkdir -p "$_CLV2_PROJECT_DIR"
     return 0
   fi
 
   # Derive project name from directory basename
-  project_name=$(basename "$project_root")
+  # Normalize Windows backslashes so basename works when CLAUDE_PROJECT_DIR
+  # is passed as e.g. C:\Users\...\project.
+  local _norm_root
+  _norm_root=$(printf '%s' "$project_root" | sed 's|\\|/|g')
+  project_name=$(basename "$_norm_root")
 
   # Derive project ID: prefer git remote URL hash (portable across machines),
   # fall back to path hash (machine-specific but still useful)
@@ -90,18 +159,37 @@ _clv2_detect_project() {
     fi
   fi
 
-  # Compute hash from the original remote URL (legacy, for backward compatibility)
-  local legacy_hash_input="${remote_url:-$project_root}"
+  local raw_remote_url="$remote_url"
 
   # Strip embedded credentials from remote URL (e.g., https://ghp_xxxx@github.com/...)
   if [ -n "$remote_url" ]; then
     remote_url=$(printf '%s' "$remote_url" | sed -E 's|://[^@]+@|://|')
   fi
 
-  local hash_input="${remote_url:-$project_root}"
+  local legacy_hash_input="${remote_url:-$project_root}"
+  local normalized_remote=""
+  if [ -n "$remote_url" ]; then
+    normalized_remote=$(_clv2_normalize_remote_url "$remote_url")
+  fi
+
+  local fallback_root="$project_root"
+  if [ -z "$remote_url" ]; then
+    local main_worktree_root
+    main_worktree_root=$(_clv2_main_worktree_root "$project_root")
+    [ -n "$main_worktree_root" ] && fallback_root="$main_worktree_root"
+  fi
+
+  local hash_input="${normalized_remote:-${remote_url:-$fallback_root}}"
   # Prefer Python for consistent SHA256 behavior across shells/platforms.
+  # Pass the value via env var and encode as UTF-8 inside Python so the hash
+  # is locale-independent (shells vary between UTF-8 / CP932 / CP1252, which
+  # would otherwise produce different hashes for the same non-ASCII path).
   if [ -n "$_CLV2_PYTHON_CMD" ]; then
-    project_id=$(printf '%s' "$hash_input" | "$_CLV2_PYTHON_CMD" -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])" 2>/dev/null)
+    project_id=$(_CLV2_HASH_INPUT="$hash_input" "$_CLV2_PYTHON_CMD" -c '
+import os, hashlib
+s = os.environ["_CLV2_HASH_INPUT"]
+print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
+' 2>/dev/null)
   fi
 
   # Fallback if Python is unavailable or hash generation failed.
@@ -111,15 +199,33 @@ _clv2_detect_project() {
                  echo "fallback")
   fi
 
-  # Backward compatibility: if credentials were stripped and the hash changed,
-  # check if a project dir exists under the legacy hash and reuse it
-  if [ "$legacy_hash_input" != "$hash_input" ] && [ -n "$_CLV2_PYTHON_CMD" ]; then
-    local legacy_id=""
-    legacy_id=$(printf '%s' "$legacy_hash_input" | "$_CLV2_PYTHON_CMD" -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])" 2>/dev/null)
-    if [ -n "$legacy_id" ] && [ -d "${_CLV2_PROJECTS_DIR}/${legacy_id}" ] && [ ! -d "${_CLV2_PROJECTS_DIR}/${project_id}" ]; then
-      # Migrate legacy directory to new hash
-      mv "${_CLV2_PROJECTS_DIR}/${legacy_id}" "${_CLV2_PROJECTS_DIR}/${project_id}" 2>/dev/null || project_id="$legacy_id"
-    fi
+  # Backward compatibility: migrate a single legacy project directory from
+  # credential-stripped or raw remote hashes to the normalized remote hash.
+  if [ -n "$_CLV2_PYTHON_CMD" ] && [ ! -d "${_CLV2_PROJECTS_DIR}/${project_id}" ]; then
+    local legacy_inputs=()
+    [ -n "$legacy_hash_input" ] && [ "$legacy_hash_input" != "$hash_input" ] \
+      && legacy_inputs+=("$legacy_hash_input")
+    [ -n "$raw_remote_url" ] && [ "$raw_remote_url" != "$hash_input" ] \
+      && [ "$raw_remote_url" != "$legacy_hash_input" ] \
+      && legacy_inputs+=("$raw_remote_url")
+
+    local legacy_input legacy_id
+    for legacy_input in "${legacy_inputs[@]}"; do
+      legacy_id=$(_CLV2_HASH_INPUT="$legacy_input" "$_CLV2_PYTHON_CMD" -c '
+import os, hashlib
+s = os.environ["_CLV2_HASH_INPUT"]
+print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
+' 2>/dev/null)
+      if [ -n "$legacy_id" ] && [ "$legacy_id" != "$project_id" ] \
+         && [ -d "${_CLV2_PROJECTS_DIR}/${legacy_id}" ]; then
+        if mv "${_CLV2_PROJECTS_DIR}/${legacy_id}" "${_CLV2_PROJECTS_DIR}/${project_id}" 2>/dev/null; then
+          break
+        else
+          project_id="$legacy_id"
+          break
+        fi
+      fi
+    done
   fi
 
   # Export results

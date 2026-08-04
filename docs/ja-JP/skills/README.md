@@ -19,6 +19,10 @@
 - `django-patterns/` - Django ベストプラクティス
 - `django-tdd/` - Django テスト駆動開発
 - `django-security/` - Django セキュリティ
+- `quarkus-patterns/` - Quarkus アーキテクチャ、Camel、CDI、Panache パターン
+- `quarkus-security/` - Quarkus セキュリティ: JWT/OIDC、RBAC、バリデーション
+- `quarkus-tdd/` - Quarkus テスト駆動開発
+- `quarkus-verification/` - Quarkus 検証ループ
 - `springboot-patterns/` - Spring Boot パターン
 - `springboot-tdd/` - Spring Boot テスト
 - `springboot-security/` - Spring Boot セキュリティ

@@ -21,7 +21,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const path = require('path');
 
 // Shell metacharacters that cmd.exe interprets as command separators/operators
-const UNSAFE_PATH_CHARS = /[&|<>^%!]/;
+const UNSAFE_PATH_CHARS = /[&|<>^%!;`()$]/;
 
 const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../lib/resolve-formatter');
 

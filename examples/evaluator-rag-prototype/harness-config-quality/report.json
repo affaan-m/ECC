@@ -1,0 +1,35 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "harness-config-quality",
+  "run_id": "2026-05-12-harness-config-quality-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "adapter_evidence": 0.94,
+    "config_preservation": 0.88,
+    "verification_specificity": 0.9,
+    "parity_claim_safety": 1,
+    "publication_safety": 1
+  },
+  "findings": [
+    {
+      "id": "adapter-state-required",
+      "severity": "warning",
+      "summary": "Harness recommendations must retrieve the adapter state before claiming native support or runtime enforcement."
+    },
+    {
+      "id": "config-overwrite-risk",
+      "severity": "warning",
+      "summary": "MCP, hook, plugin, command, and rule changes must preserve existing user/project config and use dry-run or merge behavior when available."
+    },
+    {
+      "id": "verification-command-needed",
+      "severity": "info",
+      "summary": "The accepted playbook names harness adapter, harness audit, install-target, or plugin-hook regression gates before a config change can merge."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "adapter-matrix-backed-drift-check",
+    "action": "Use the promoted harness-config quality playbook for PRs or setup work touching MCP, plugin, hook, command, agent, rule, or adapter surfaces."
+  }
+}

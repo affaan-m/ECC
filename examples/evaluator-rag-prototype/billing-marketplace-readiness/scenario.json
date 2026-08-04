@@ -1,0 +1,55 @@
+{
+  "schema_version": "ecc.evaluator-rag.scenario.v1",
+  "scenario_id": "billing-marketplace-readiness",
+  "title": "Verify billing and Marketplace claims before launch copy",
+  "mode": "read_only_prototype",
+  "objective": "Given rc.1 release docs and ECC Tools billing roadmap evidence, separate verified Marketplace/App/billing state from assumptions before any announcement or publication action.",
+  "sources": [
+    {
+      "kind": "repo_doc",
+      "path": "docs/releases/2.0.0-rc.1/publication-readiness.md",
+      "purpose": "Release gate that blocks billing and Marketplace claims until fresh evidence exists"
+    },
+    {
+      "kind": "repo_doc",
+      "path": "docs/releases/2.0.0-rc.1/publication-evidence-2026-05-12.md",
+      "purpose": "Dry-run publication evidence and explicit remaining blocker list"
+    },
+    {
+      "kind": "roadmap",
+      "path": "docs/ECC-2.0-GA-ROADMAP.md",
+      "purpose": "ECC Tools billing audit acceptance criteria and remaining release blockers"
+    },
+    {
+      "kind": "github_api",
+      "command": "gh api repos/ECC-Tools/ECC-Tools",
+      "purpose": "Fresh repository access and app-surface evidence before launch claims"
+    },
+    {
+      "kind": "public_url",
+      "url": "https://github.com/marketplace/ecc-tools",
+      "purpose": "Marketplace listing that must be checked live before copy says billing is ready"
+    }
+  ],
+  "retrieval_questions": [
+    "Which billing or Marketplace claims are already backed by repo evidence?",
+    "Which claims still need a live Marketplace, App, subscription, plan, or entitlement check?",
+    "Which announcement docs mention billing or Marketplace status?",
+    "Which publication actions remain approval-gated and must not run during this evaluator pass?"
+  ],
+  "forbidden_actions": [
+    "creating or editing GitHub Marketplace listings",
+    "changing plan limits, subscriptions, seats, or entitlements",
+    "creating release tags",
+    "publishing packages or plugins",
+    "posting announcement copy",
+    "claiming live billing readiness from dry-run evidence alone"
+  ],
+  "acceptance_gates": [
+    "launch-copy claims are classified as verified, blocked, or remove-before-publication",
+    "Marketplace and App checks name the exact URL or command needed",
+    "billing claims link to fresh evidence rather than roadmap intent",
+    "publication actions remain approval-gated",
+    "at least one overclaim candidate is rejected"
+  ]
+}

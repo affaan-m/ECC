@@ -21,7 +21,7 @@ description: 任意の自動コンパクションではなく、タスクフェ�
 
 ## 仕組み
 
-`suggest-compact.sh`スクリプトはPreToolUse（Edit/Write）で実行され：
+`suggest-compact.js`スクリプトはPreToolUse（Edit/Write）で実行され：
 
 1. **ツール呼び出しを追跡** - セッション内のツール呼び出しをカウント
 2. **閾値検出** - 設定可能な閾値で提案（デフォルト：50回）
@@ -29,18 +29,23 @@ description: 任意の自動コンパクションではなく、タスクフェ�
 
 ## フック設定
 
-`~/.claude/settings.json`に追加：
+**プラグインとしてインストール済みの場合**：設定は不要です。プラグインの `hooks/hooks.json` が既に `suggest-compact.js` を登録しています（フック ID `pre:edit-write:suggest-compact`、`standard` と `strict` フックプロファイルで有効）。下のブロックを `~/.claude/settings.json` にコピーしないでください — プラグインインストールでは `~/.claude/scripts/` は存在せず、プラグインフックを重複させると二重実行になります。
+
+**手動インストール**（`./install.sh`）の場合、`~/.claude/settings.json` に追加：
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "tool == \"Edit\" || tool == \"Write\"",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/skills/strategic-compact/suggest-compact.sh"
-      }]
-    }]
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/scripts/hooks/suggest-compact.js" }]
+      }
+    ]
   }
 }
 ```

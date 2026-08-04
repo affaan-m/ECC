@@ -126,6 +126,10 @@ mkdir -p $TARGET/skills $TARGET/rules
 | `java-coding-standards` | Spring Boot 的 Java 编码标准：命名、不可变性、Optional、流 |
 | `python-patterns` | Pythonic 惯用法、PEP 8、类型提示、最佳实践 |
 | `python-testing` | 使用 pytest、TDD、夹具、模拟、参数化进行 Python 测试 |
+| `quarkus-patterns` | Quarkus 架构、使用 Camel 的事件驱动模式、Panache 数据访问、CDI 服务 |
+| `quarkus-security` | Quarkus 安全：JWT/OIDC 认证、RBAC、Bean 验证、CORS、密钥管理 |
+| `quarkus-tdd` | 使用 JUnit 5、Mockito、REST Assured、Camel 测试进行 Quarkus TDD |
+| `quarkus-verification` | Quarkus 验证：构建、静态分析、测试、安全扫描、原生编译 |
 | `springboot-patterns` | Spring Boot 架构、REST API、分层服务、缓存、异步处理 |
 | `springboot-security` | Spring Security：认证/授权、验证、CSRF、密钥、速率限制 |
 | `springboot-tdd` | 使用 JUnit 5、Mockito、MockMvc、Testcontainers 进行 Spring Boot TDD |
@@ -162,13 +166,14 @@ mkdir -p $TARGET/skills $TARGET/rules
 | `investor-materials` | 宣传文稿、一页简介、投资者备忘录和财务模型 |
 | `investor-outreach` | 个性化的投资者冷邮件、熟人介绍和后续跟进 |
 
-**类别：研究与API（3项技能）**
+**类别：研究与API（2项技能）**
 
 | 技能 | 描述 |
 |-------|-------------|
 | `deep-research` | 使用 firecrawl 和 exa MCP 进行多源深度研究，并生成带引用的报告 |
 | `exa-search` | 通过 Exa MCP 进行网络、代码、公司和人员的神经搜索 |
-| `claude-api` | Anthropic Claude API 模式：消息、流式处理、工具使用、视觉、批处理、Agent SDK |
+
+`claude-api` 是 Anthropic 官方技能；需要时请从 [`anthropics/skills`](https://github.com/anthropics/skills) 安装官方版本，而不是通过 ECC 重复打包。
 
 **类别：社交与内容分发（2项技能）**
 
@@ -198,10 +203,20 @@ mkdir -p $TARGET/skills $TARGET/rules
 
 ### 2d: 执行安装
 
-对于每个选定的技能，复制整个技能目录：
+对于每个选定的技能，请从正确的源目录复制整个技能目录：
 
 ```bash
-cp -r $ECC_ROOT/skills/<skill-name> $TARGET/skills/
+# 核心技能位于 .agents/skills/
+cp -R "$ECC_ROOT/.agents/skills/<skill-name>" "$TARGET/skills/"
+
+# 细分技能位于 skills/
+cp -R "$ECC_ROOT/skills/<skill-name>" "$TARGET/skills/"
+```
+
+遍历 glob 得到的源目录时，不要把带 trailing slash 的源路径直接传给 `cp`。显式使用目录名作为目标名：
+
+```bash
+cp -R "${src%/}" "$TARGET/skills/$(basename "${src%/}")"
 ```
 
 注意：`continuous-learning` 和 `continuous-learning-v2` 有额外的文件（config.json、钩子、脚本）——确保复制整个目录，而不仅仅是 SKILL.md。
@@ -224,13 +239,13 @@ cp -r $ECC_ROOT/skills/<skill-name> $TARGET/skills/
 执行安装：
 
 ```bash
-# Common rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/common/* $TARGET/rules/
+# Common rules
+cp -r $ECC_ROOT/rules/common $TARGET/rules/common
 
-# Language-specific rules (flat copy into rules/)
-cp -r $ECC_ROOT/rules/typescript/* $TARGET/rules/   # if selected
-cp -r $ECC_ROOT/rules/python/* $TARGET/rules/        # if selected
-cp -r $ECC_ROOT/rules/golang/* $TARGET/rules/        # if selected
+# Language-specific rules (preserve per-language directories)
+cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # if selected
+cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # if selected
+cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # if selected
 ```
 
 **重要**：如果用户选择了任何特定语言的规则但**没有**选择通用规则，警告他们：
@@ -274,6 +289,7 @@ grep -rn "skills/" $TARGET/skills/
 
 * `django-tdd` 可能会引用 `django-patterns`
 * `laravel-tdd` 可能会引用 `laravel-patterns`
+* `quarkus-tdd` 可能会引用 `quarkus-patterns`
 * `springboot-tdd` 可能会引用 `springboot-patterns`
 * `continuous-learning-v2` 引用 `~/.claude/homunculus/` 目录
 * `python-testing` 可能会引用 `python-patterns`

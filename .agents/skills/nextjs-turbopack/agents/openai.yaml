@@ -1,7 +1,7 @@
 interface:
   display_name: "Next.js Turbopack"
-  short_description: "Next.js 16+ and Turbopack dev bundler"
+  short_description: "Next.js and Turbopack workflow guidance"
   brand_color: "#000000"
-  default_prompt: "Next.js dev, Turbopack, or bundle optimization"
+  default_prompt: "Use $nextjs-turbopack to work through Next.js and Turbopack decisions."
 policy:
   allow_implicit_invocation: true

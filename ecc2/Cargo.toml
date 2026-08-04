@@ -5,7 +5,7 @@ edition = "2021"
 description = "ECC 2.0 — Agentic IDE control plane with TUI dashboard"
 license = "MIT"
 authors = ["Affaan Mustafa <me@affaanmustafa.com>"]
-repository = "https://github.com/affaan-m/everything-claude-code"
+repository = "https://github.com/affaan-m/ECC"
 
 [features]
 default = ["vendored-openssl"]
@@ -13,25 +13,25 @@ vendored-openssl = ["git2/vendored-openssl"]
 
 [dependencies]
 # TUI
-ratatui = { version = "0.30", features = ["crossterm_0_28"] }
-crossterm = "0.28"
+ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+crossterm = "0.29"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # State store
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Git integration
-git2 = { version = "0.20", features = ["ssh"] }
+git2 = { version = "0.21", features = ["ssh"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+toml = "1.1"
 regex = "1"
-sha2 = "0.10"
-ureq = { version = "2", features = ["json"] }
+sha2 = "0.11"
+ureq = { version = "3", features = ["json"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -47,7 +47,7 @@ libc = "0.2"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.12"
+cron = "0.17"
 
 # UUID for session IDs
 uuid = { version = "1", features = ["v4"] }

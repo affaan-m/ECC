@@ -1,5 +1,5 @@
 ---
-name: everything-claude-code-conventions
+name: everything-claude-code
 description: Development conventions and patterns for everything-claude-code. JavaScript project with conventional commits.
 ---
 

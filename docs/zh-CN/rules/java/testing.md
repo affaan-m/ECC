@@ -113,6 +113,7 @@ class OrderRepositoryIT {
 ```
 
 关于 Spring Boot 集成测试，请参阅技能：`springboot-tdd`。
+关于 Quarkus 集成测试，请参阅技能：`quarkus-tdd`。
 
 ## 测试命名
 
@@ -130,4 +131,5 @@ class OrderRepositoryIT {
 ## 参考
 
 关于使用 MockMvc 和 Testcontainers 的 Spring Boot TDD 模式，请参阅技能：`springboot-tdd`。
+关于使用 REST Assured 和 Camel 测试的 Quarkus TDD 模式，请参阅技能：`quarkus-tdd`。
 关于测试期望，请参阅技能：`java-coding-standards`。

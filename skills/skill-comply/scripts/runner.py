@@ -15,6 +15,15 @@ from scripts.scenario_generator import Scenario
 
 SANDBOX_BASE = Path("/tmp/skill-comply-sandbox")
 ALLOWED_MODELS = frozenset({"haiku", "sonnet", "opus"})
+ALLOWED_SETUP_EXECUTABLES = frozenset({
+    "git", "npm", "pip", "pip3",
+    "touch", "mkdir", "cp", "mv", "echo",
+    "chmod", "unzip", "tar",
+})
+# Shell builtins cannot be invoked via subprocess.run; cwd is already
+# controlled by the cwd= keyword. Scenarios that include these in
+# setup_commands (a common shell-style convention) must be tolerated.
+SHELL_BUILTINS = frozenset({"cd", "pushd", "popd"})
 
 
 @dataclass(frozen=True)
@@ -53,9 +62,22 @@ def run_scenario(
         cwd=sandbox_dir,
     )
 
-    if result.returncode != 0:
+    # claude -p returns rc=1 when --max-turns is reached, but the stream-json
+    # output is still complete and parseable. Treat this graceful termination
+    # as non-fatal so scenarios that hit the turn cap still produce usable
+    # observations.
+    nonfatal_max_turns = (
+        result.returncode == 1
+        and '"terminal_reason":"max_turns"' in result.stdout
+    )
+    if result.returncode != 0 and not nonfatal_max_turns:
+        # Include both stderr and stdout tails. claude -p often surfaces the
+        # actual failure context (model error JSON, partial stream-json) on
+        # stdout, while stderr carries generic transport / auth messages.
+        # Showing both dramatically reduces "rc=N: <empty>" debugging dead-ends.
         raise RuntimeError(
-            f"claude -p failed (rc={result.returncode}): {result.stderr[:500]}"
+            f"claude -p failed (rc={result.returncode}): "
+            f"stderr={result.stderr[:500]!r} stdout_tail={result.stdout[-500:]!r}"
         )
 
     observations = _parse_stream_json(result.stdout)
@@ -86,7 +108,18 @@ def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
 
     for cmd in scenario.setup_commands:
         parts = shlex.split(cmd)
-        subprocess.run(parts, cwd=sandbox_dir, capture_output=True)
+        if not parts or parts[0] in SHELL_BUILTINS:
+            # Shell builtins (cd/pushd/popd) cannot run as subprocess; skip.
+            continue
+        if parts[0] not in ALLOWED_SETUP_EXECUTABLES:
+            # Restrict to known-safe executables to prevent arbitrary code execution.
+            continue
+        try:
+            subprocess.run(parts, cwd=sandbox_dir, capture_output=True)
+        except FileNotFoundError:
+            # Setup tool not installed in this environment; skip rather than
+            # crash the whole scenario. The compliance run continues.
+            continue
 
 
 def _parse_stream_json(stdout: str) -> list[ObservationEvent]:

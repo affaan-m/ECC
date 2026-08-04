@@ -6,4 +6,5 @@
 
 'use strict';
 
-require('./doc-file-warning.js');
+// doc-file-warning.js guards its stdin entrypoint behind require.main; call main() explicitly.
+require('./doc-file-warning.js').main();

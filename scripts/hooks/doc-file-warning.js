@@ -14,9 +14,9 @@
 'use strict';
 
 const path = require('path');
+const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
-let data = '';
 
 // Known ad-hoc filenames that indicate impulse/scratch files (case-sensitive, uppercase only)
 const ADHOC_FILENAMES = /^(NOTES|TODO|SCRATCH|TEMP|DRAFT|BRAINSTORM|SPIKE|DEBUG|WIP)\.(md|txt)$/;
@@ -58,33 +58,51 @@ function run(inputOrRaw, _options = {}) {
   if (filePath && isSuspiciousDocPath(filePath)) {
     return {
       exitCode: 0,
-      stderr:
-        '[Hook] WARNING: Ad-hoc documentation filename detected\n' +
-        `[Hook] File: ${filePath}\n` +
+      additionalContext: [
+        '[Hook] WARNING: Ad-hoc documentation filename detected',
+        `[Hook] File: ${filePath}`,
         '[Hook] Consider using a structured path (e.g. docs/, .claude/, skills/, .github/, benchmarks/, templates/)',
+      ],
     };
   }
 
   return { exitCode: 0 };
 }
 
-module.exports = { run };
+/**
+ * Stdin entrypoint for direct/spawnSync execution: reads the hook payload from
+ * stdin (capped at MAX_STDIN), runs the policy, and writes the PreToolUse result
+ * to stdout. Must only run when invoked directly, never on require(), so the
+ * stdin listeners are not leaked into a parent that loads this hook in-process.
+ */
+function main() {
+  let data = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', c => {
+    if (data.length < MAX_STDIN) {
+      const remaining = MAX_STDIN - data.length;
+      data += c.substring(0, remaining);
+    }
+  });
 
-// Stdin fallback for spawnSync execution
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', c => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += c.substring(0, remaining);
-  }
-});
+  process.stdin.on('end', () => {
+    const result = run(data);
 
-process.stdin.on('end', () => {
-  const result = run(data);
+    if (result.stderr) {
+      process.stderr.write(result.stderr + '\n');
+    }
 
-  if (result.stderr) {
-    process.stderr.write(result.stderr + '\n');
-  }
+    if (Object.prototype.hasOwnProperty.call(result, 'additionalContext')) {
+      process.stdout.write(buildPreToolUseAdditionalContext(result.additionalContext));
+    } else {
+      process.stdout.write(data);
+    }
+  });
+}
 
-  process.stdout.write(data);
-});
+module.exports = { run, main };
+
+// Stdin fallback for spawnSync execution — only when invoked directly, not via require()
+if (require.main === module) {
+  main();
+}

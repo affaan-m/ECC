@@ -1,7 +1,7 @@
 interface:
   display_name: "Investor Outreach"
-  short_description: "Write concise, personalized outreach and follow-ups for fundraising"
+  short_description: "Personalized investor outreach and follow-ups"
   brand_color: "#059669"
-  default_prompt: "Draft a personalized investor outreach email with a clear low-friction ask"
+  default_prompt: "Use $investor-outreach to write concise personalized investor outreach."
 policy:
   allow_implicit_invocation: true

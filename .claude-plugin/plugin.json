@@ -1,13 +1,13 @@
 {
-  "name": "everything-claude-code",
-  "version": "1.10.0",
-  "description": "Battle-tested Claude Code plugin for engineering teams — 38 agents, 156 skills, 72 legacy command shims, production-ready hooks, and selective install workflows evolved through continuous real-world use",
+  "name": "ecc",
+  "version": "2.1.0",
+  "description": "Harness-native ECC plugin for engineering teams - 67 agents, 281 skills, 94 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
   "author": {
     "name": "Affaan Mustafa",
     "url": "https://x.com/affaanmustafa"
   },
   "homepage": "https://ecc.tools",
-  "repository": "https://github.com/affaan-m/everything-claude-code",
+  "repository": "https://github.com/affaan-m/ECC",
   "license": "MIT",
   "keywords": [
     "claude-code",
@@ -22,46 +22,11 @@
     "automation",
     "best-practices"
   ],
-  "agents": [
-    "./agents/architect.md",
-    "./agents/build-error-resolver.md",
-    "./agents/chief-of-staff.md",
-    "./agents/code-reviewer.md",
-    "./agents/cpp-build-resolver.md",
-    "./agents/cpp-reviewer.md",
-    "./agents/csharp-reviewer.md",
-    "./agents/dart-build-resolver.md",
-    "./agents/database-reviewer.md",
-    "./agents/doc-updater.md",
-    "./agents/docs-lookup.md",
-    "./agents/e2e-runner.md",
-    "./agents/flutter-reviewer.md",
-    "./agents/gan-evaluator.md",
-    "./agents/gan-generator.md",
-    "./agents/gan-planner.md",
-    "./agents/go-build-resolver.md",
-    "./agents/go-reviewer.md",
-    "./agents/harness-optimizer.md",
-    "./agents/healthcare-reviewer.md",
-    "./agents/java-build-resolver.md",
-    "./agents/java-reviewer.md",
-    "./agents/kotlin-build-resolver.md",
-    "./agents/kotlin-reviewer.md",
-    "./agents/loop-operator.md",
-    "./agents/opensource-forker.md",
-    "./agents/opensource-packager.md",
-    "./agents/opensource-sanitizer.md",
-    "./agents/performance-optimizer.md",
-    "./agents/planner.md",
-    "./agents/python-reviewer.md",
-    "./agents/pytorch-build-resolver.md",
-    "./agents/refactor-cleaner.md",
-    "./agents/rust-build-resolver.md",
-    "./agents/rust-reviewer.md",
-    "./agents/security-reviewer.md",
-    "./agents/tdd-guide.md",
-    "./agents/typescript-reviewer.md"
+  "mcpServers": {},
+  "skills": [
+    "./skills/"
   ],
-  "skills": ["./skills/"],
-  "commands": ["./commands/"]
+  "commands": [
+    "./commands/"
+  ]
 }
