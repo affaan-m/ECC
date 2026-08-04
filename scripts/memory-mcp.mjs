@@ -437,7 +437,8 @@ function createMemoryMcpService(options = {}) {
           !isRecord(params)
           || typeof name !== 'string'
           || !TOOL_BY_NAME.has(name)
-          || Object.keys(params).some(key => !['name', 'arguments'].includes(key))
+          // `_meta` is reserved by MCP for request metadata (e.g. progressToken) and must be accepted.
+          || Object.keys(params).some(key => !['name', 'arguments', '_meta'].includes(key))
         ) {
           return jsonRpcError(message.id, -32602, 'Unknown or missing memory tool.');
         }
