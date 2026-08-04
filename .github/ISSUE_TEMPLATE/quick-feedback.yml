@@ -11,6 +11,8 @@ body:
         Thank you for telling us what got in the way. This form is intentionally short.
 
         This is a public GitHub issue. Do not include secrets, prompts, customer data, or private repository details.
+
+        Report a vulnerability through [GitHub's private security advisory form](https://github.com/affaan-m/ECC/security/advisories/new), not here. Non-vulnerability security or trust concerns are welcome in this form.
   - type: dropdown
     id: reason
     attributes:

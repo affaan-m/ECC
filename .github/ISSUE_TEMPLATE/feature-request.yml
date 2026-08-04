@@ -5,6 +5,10 @@ labels:
   - enhancement
   - needs-triage
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a public GitHub issue. Do not include secrets, prompts, customer data, private repository details, or unredacted paths.
   - type: textarea
     id: outcome
     attributes:

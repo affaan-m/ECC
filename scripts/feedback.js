@@ -6,7 +6,7 @@ const {
 } = require('./lib/feedback-links');
 
 function showHelp(exitCode = 0) {
-  console.log(`
+  process.stdout.write(`
 Usage: node scripts/feedback.js [--json]
 
 Print ECC's low-friction public feedback routes. This command never uploads
@@ -16,27 +16,32 @@ diagnostics or reads project files.
 }
 
 function parseArgs(argv) {
-  const parsed = { json: false, help: false };
-
-  for (const arg of argv.slice(2)) {
+  return argv.slice(2).reduce((parsed, arg) => {
     if (arg === '--json') {
-      parsed.json = true;
-    } else if (arg === '--help' || arg === '-h') {
-      parsed.help = true;
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
+      return { ...parsed, json: true };
     }
-  }
 
-  return parsed;
+    if (arg === '--help' || arg === '-h') {
+      return { ...parsed, help: true };
+    }
+
+    throw new Error(`Unknown argument: ${arg}`);
+  }, { json: false, help: false });
 }
 
 function printHuman() {
-  console.log('ECC feedback\n');
-  console.log(`Install or runtime problem:\n${FEEDBACK_ROUTES.problem}\n`);
-  console.log(`Quick feedback (public GitHub issue):\n${FEEDBACK_ROUTES.feedback}\n`);
-  console.log(`Feature idea:\n${FEEDBACK_ROUTES.feature}\n`);
-  console.log('ECC does not upload diagnostics or read project files. Redact sensitive information before posting publicly.');
+  process.stdout.write([
+    'ECC feedback',
+    '',
+    `Install or runtime problem:\n${FEEDBACK_ROUTES.problem}`,
+    '',
+    `Quick feedback (public GitHub issue):\n${FEEDBACK_ROUTES.feedback}`,
+    '',
+    `Feature idea:\n${FEEDBACK_ROUTES.feature}`,
+    '',
+    'ECC does not upload diagnostics or read project files. Redact sensitive information before posting publicly.',
+    '',
+  ].join('\n'));
 }
 
 function main() {
@@ -47,12 +52,12 @@ function main() {
     }
 
     if (options.json) {
-      console.log(JSON.stringify(getFeedbackPayload(), null, 2));
+      process.stdout.write(`${JSON.stringify(getFeedbackPayload(), null, 2)}\n`);
     } else {
       printHuman();
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    process.stderr.write(`Error: ${error.message}\n`);
     process.exit(1);
   }
 }

@@ -1604,7 +1604,7 @@ The adapter writes ECC-managed files under `.zed/` and keeps BYOK/OpenRouter cre
 <details>
 <summary><strong>OpenCode support in depth</strong></summary>
 
-ECC provides a beta OpenCode plugin integration with instructions, a catalog subset, commands, custom tools, and hook events. It is not feature-parity with Claude Code, and the reference model IDs must exist in the user's configured provider.
+ECC provides a beta OpenCode plugin integration with instructions, a catalog subset, commands, custom tools, and hook events. It does not provide feature parity with Claude Code, and the reference model IDs must exist in the user's configured provider.
 
 ```bash
 # Install OpenCode
