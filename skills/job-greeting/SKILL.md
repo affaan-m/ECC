@@ -7,7 +7,6 @@ description: >-
   按偏好输出符合规范（去AI化、无换行、突出项目经验/开发能力/大模型技术）的打招呼话。
 
   典型触发：读取这个岗位 {url} 结合 {简历} 生成打招呼话 / 给这个岗位写投递开场白。
-origin: ECC
 ---
 
 # 岗位打招呼话生成
@@ -90,7 +89,7 @@ python3 <skill_dir>/scripts/extract_resume.py <简历路径>
 
 ## 风格偏好记忆
 
-- 用户选定的版本偏好（复杂/中度/简单）保存到 Claude 记忆（feedback 类型），key 如 `job-greeting-style`
+- 用户选定的版本偏好（复杂/中度/简单）持久化到 agent 偏好记忆：Claude Code 用 Claude 记忆（feedback 类型）；Codex 等其他运行时可写入项目内偏好文件（如 `.agents/prefs/job-greeting-style`），key 如 `job-greeting-style`
 - 之后每次生成：先查记忆，有偏好就按该版本为主输出，**不再每次询问**
 - 仅当用户明确说"调整风格 / 换个版本 / 换个风格"时，才重新输出 3 版并让用户挑选，随后更新记忆
 

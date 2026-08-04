@@ -7,7 +7,6 @@ description: >-
 
   典型触发：岗位描述如下：{文本}，结合 {简历} 生成打招呼话 / 这是岗位JD
   {文本}，帮我写投递开场白。
-origin: ECC
 ---
 
 # 岗位打招呼话生成（指导版）
@@ -37,7 +36,7 @@ origin: ECC
 ### 步骤 3：提取简历文本
 
 ```bash
-python3 <skill_dir>/scripts/extract_resume.py <简历路径>
+python3 <skill_dir>/../job-greeting/scripts/extract_resume.py <简历路径>
 ```
 
 ### 步骤 4：匹配分析
@@ -54,7 +53,7 @@ python3 <skill_dir>/scripts/extract_resume.py <简历路径>
 
 ## 风格偏好记忆
 
-- 用户选定版本偏好保存到 Claude 记忆（feedback 类型），key 如 `job-greeting-style`
+- 用户选定版本偏好持久化到 agent 偏好记忆（Claude Code 存 Claude 记忆；Codex 等可写入 `.agents/prefs/job-greeting-style`），key 如 `job-greeting-style`
 - 之后按偏好为主输出，**不再每次询问**；仅当用户明确说"调整风格/换个版本"时重新挑选并更新
 
 ## 生成规范速查
