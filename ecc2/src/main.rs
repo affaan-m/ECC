@@ -1,5 +1,6 @@
 mod comms;
 mod config;
+mod feature_fleet;
 mod notifications;
 mod observability;
 mod session;
@@ -110,6 +111,8 @@ impl OptionalWorktreePolicyArgs {
 enum Commands {
     /// Launch the TUI dashboard
     Dashboard,
+    /// Experimental multi-feature planning and durable fleet state
+    Fleet(feature_fleet::cli::FleetArgs),
     /// Start a new agent session
     Start {
         /// Task description for the agent
@@ -1354,11 +1357,18 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let cfg = config::Config::load()?;
-    let db = session::store::StateStore::open(&cfg.db_path)?;
+    let db_path = match &cli.command {
+        Some(Commands::Fleet(args)) => args.state_db.as_ref().unwrap_or(&cfg.db_path),
+        _ => &cfg.db_path,
+    };
+    let db = session::store::StateStore::open(db_path)?;
 
     match cli.command {
         Some(Commands::Dashboard) | None => {
             tui::app::run(db, cfg).await?;
+        }
+        Some(Commands::Fleet(args)) => {
+            feature_fleet::cli::execute(args.command, &db)?;
         }
         Some(Commands::Start {
             task,

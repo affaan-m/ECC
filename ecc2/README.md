@@ -70,6 +70,38 @@ cargo run -- resume <session-id>
 cargo run -- daemon
 ```
 
+## Experimental Feature Fleet
+
+Feature Fleet is the ECC 2.2 multi-feature workflow. Its first review slice
+provides a strict TOML/JSON manifest, normalized SHA-256 identity, deterministic
+DAG planning, declared path/contract collision detection, a pinned base commit,
+typed blockers kept separate from lifecycle state, durable events, and
+`plan` / `create` / `status` commands:
+
+```bash
+# Preview the DAG without creating a fleet record
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db plan examples/feature-fleet.toml
+
+# Create an idempotent fleet record and pin main's current commit OID
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db create examples/feature-fleet.toml
+
+# Inspect the durable record and event history
+cargo run -- fleet --state-db /tmp/ecc-feature-fleet.db status feature-fleet-runtime
+```
+
+The surface is explicitly experimental. This slice does **not** launch agents,
+create fleet worktrees, run verification commands, integrate branches, or clean
+up fleet resources. Those operations require the admission, ownership, recovery,
+evidence, and safe-cleanup guarantees planned for later review slices. Existing
+session, worktree, and tmux workflows remain available as legacy surfaces.
+Local Feature Fleet capabilities stay MIT-licensed; hosted operation and
+advanced orchestration are separate private/paid surfaces.
+
+Verification checks are data, not shell strings: each check names one executable,
+an argument array, repository-relative working directory, timeout, environment
+allowlist, output limit, and whether repository-trust approval is required. See
+[`examples/feature-fleet.toml`](examples/feature-fleet.toml).
+
 ## Validate
 
 ```bash

@@ -1,5 +1,6 @@
 pub mod daemon;
 pub mod manager;
+pub(crate) mod migrations;
 pub mod output;
 pub mod runtime;
 pub mod store;

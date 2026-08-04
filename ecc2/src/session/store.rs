@@ -166,6 +166,12 @@ impl StateStore {
     }
 
     fn init_schema(&self) -> Result<()> {
+        super::migrations::run_all(&self.conn, || self.apply_legacy_schema_v1())
+    }
+
+    // Frozen procedural baseline for migration 1. Append a numbered migration
+    // instead of changing this schema after Feature Fleet PR 1 lands.
+    fn apply_legacy_schema_v1(&self) -> Result<()> {
         self.conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -437,6 +443,10 @@ impl StateStore {
         self.ensure_session_board_columns()?;
         self.refresh_session_board_meta()?;
         Ok(())
+    }
+
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.conn
     }
 
     fn ensure_session_columns(&self) -> Result<()> {
@@ -5178,6 +5188,14 @@ mod tests {
         assert!(column_names
             .iter()
             .any(|column| column == "last_heartbeat_at"));
+        let migration_versions = crate::session::migrations::applied_migrations(db.connection())?
+            .into_iter()
+            .map(|migration| migration.version)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            migration_versions,
+            (1..=crate::session::migrations::LATEST_SCHEMA_VERSION).collect::<Vec<_>>()
+        );
         Ok(())
     }
 
