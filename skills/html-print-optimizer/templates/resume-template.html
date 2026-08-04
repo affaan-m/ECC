@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>{{NAME}} - {{TARGET_POSITION}}简历</title>
+<style>
+  /* ══ 打印页设置：A4 + 页码 ══ */
+  @page {
+    size: A4;
+    margin: 14mm 16mm 12mm 16mm;
+    @bottom-right {
+      content: "第 " counter(page) " 页";
+      font-size: 7.5pt;
+      color: #bbb;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+  }
+  @page :first { @bottom-right { content: none; } }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    color: #2c3e50;
+    line-height: 1.55;
+    font-size: 10pt;
+  }
+
+  /* ══ 头部 ══ */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 7px;
+    border-bottom: 2.5px solid #1a73e8;
+  }
+  .header-left h1 {
+    font-size: 24pt;
+    font-weight: 700;
+    color: #1a73e8;
+    letter-spacing: 2pt;
+    margin-bottom: 1px;
+  }
+  .header-left .subtitle {
+    font-size: 10.5pt;
+    color: #5f6368;
+    font-weight: 500;
+  }
+  .header-right {
+    text-align: right;
+    font-size: 9pt;
+    color: #5f6368;
+    line-height: 1.75;
+  }
+
+  /* ══ 个人总结高亮框 ══ */
+  .summary {
+    margin-top: 9px;
+    padding: 8px 12px;
+    background: #e8f0fe;
+    border-radius: 3px;
+    font-size: 9.5pt;
+    color: #1a3a5c;
+    line-height: 1.65;
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+
+  /* ══ 章节 ══ */
+  .section { margin-top: 13px; }
+  .section-title {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #1a73e8;
+    padding-bottom: 4px;
+    border-bottom: 1.5px solid #1a73e8;
+    margin-bottom: 7px;
+    page-break-after: avoid;
+  }
+
+  /* ══ 专业技能（两列网格） ══ */
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 16px;
+  }
+  .skill-item {
+    font-size: 9pt;
+    line-height: 1.55;
+    padding-left: 10px;
+    position: relative;
+    page-break-inside: avoid;
+  }
+  .skill-item::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 5px;
+    width: 4px; height: 4px;
+    background: #1a73e8;
+    border-radius: 50%;
+  }
+  .skill-tag {
+    display: inline-block;
+    background: #e8f0fe;
+    color: #1a3a5c;
+    font-size: 8pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    margin-left: 1px;
+    font-weight: 500;
+  }
+
+  /* ══ 工作经历（时间轴布局） ══ */
+  .work-item {
+    margin-bottom: 5px;
+    display: flex;
+    gap: 8px;
+    page-break-inside: avoid;
+  }
+  .work-period {
+    width: 100px;
+    font-size: 8.5pt;
+    color: #5f6368;
+    text-align: right;
+    flex-shrink: 0;
+    line-height: 1.5;
+    padding-top: 1px;
+  }
+  .work-content { flex: 1; }
+  .work-title { font-size: 10pt; font-weight: 700; color: #2c3e50; }
+  .work-company { font-size: 9pt; color: #1a73e8; font-weight: 500; }
+  .work-desc {
+    font-size: 8.5pt;
+    color: #5f6368;
+    margin-top: 1px;
+    line-height: 1.5;
+  }
+
+  /* ══ 项目经验 ══ */
+  .project-item {
+    margin-bottom: 10px;
+    page-break-inside: avoid;
+  }
+  .project-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .project-name { font-size: 10pt; font-weight: 700; color: #2c3e50; }
+  .project-time { font-size: 8pt; color: #5f6368; }
+  .project-tags { margin-top: 1px; }
+  .project-tags .tag {
+    display: inline-block;
+    background: #e8f0fe;
+    color: #1a3a5c;
+    font-size: 7.5pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    margin-right: 1px;
+    font-weight: 500;
+  }
+  .project-desc {
+    font-size: 8.5pt;
+    color: #5f6368;
+    margin-top: 2px;
+    line-height: 1.55;
+  }
+  .project-resp-title { font-size: 8.5pt; font-weight: 600; color: #3c4858; margin-top: 3px; }
+  .project-resp {
+    font-size: 8.5pt;
+    color: #5f6368;
+    line-height: 1.55;
+    padding-left: 10px;
+    position: relative;
+    margin-top: 1px;
+  }
+  .project-resp::before {
+    content: "";
+    position: absolute;
+    left: 1px; top: 5px;
+    width: 3px; height: 3px;
+    background: #1a73e8;
+    border-radius: 50%;
+  }
+  .highlight { color: #1a73e8; font-weight: 600; }
+
+  /* ══ 教育经历 ══ */
+  .edu-item { display: flex; gap: 8px; page-break-inside: avoid; }
+  .edu-period {
+    width: 100px;
+    font-size: 8.5pt;
+    color: #5f6368;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .edu-content { flex: 1; font-size: 9pt; color: #2c3e50; }
+  .edu-content .school { font-weight: 700; }
+  .awards {
+    font-size: 8pt;
+    color: #5f6368;
+    line-height: 1.5;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ 头部：姓名 + 副标题（左），联系信息（右） ══ -->
+<div class="header">
+  <div class="header-left">
+    <h1>{{NAME}}</h1>
+    <div class="subtitle">{{TARGET_POSITION}} · {{EXPERIENCE_YEARS}}年经验</div>
+  </div>
+  <div class="header-right">
+    <div>{{PHONE}}</div>
+    <div>{{EMAIL}}</div>
+    <div>{{GENDER}} · {{BIRTH}} · {{POLITICAL}} · {{EDUCATION}}</div>
+  </div>
+</div>
+
+<!-- ══ 个人总结：核心定位 + 1-3 个最强亮点（数据高亮） ══ -->
+<div class="summary">
+  <strong>核心定位：</strong>{{SUMMARY}}
+</div>
+
+<!-- ══ 专业技能：每项一个 .skill-item，关键技术词用 .skill-tag ══ -->
+<div class="section">
+  <div class="section-title">专业技能</div>
+  <div class="skills-grid">
+    {{SKILL_ITEMS}}
+  </div>
+</div>
+
+<!-- ══ 工作经历：按时间倒序 ══ -->
+<div class="section">
+  <div class="section-title">工作经历</div>
+  {{WORK_ITEMS}}
+</div>
+
+<!-- ══ 项目经验：按相关度排序，量化成果用 .highlight ══ -->
+<div class="section">
+  <div class="section-title">项目经验</div>
+  {{PROJECT_ITEMS}}
+</div>
+
+<!-- ══ 教育经历 + 荣誉 ══ -->
+<div class="section">
+  <div class="section-title">教育经历</div>
+  {{EDUCATION_ITEMS}}
+</div>
+
+</body>
+</html>
