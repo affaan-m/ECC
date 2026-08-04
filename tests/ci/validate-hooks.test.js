@@ -11,14 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const {
-  test,
-  createTestDir,
-  cleanupTestDir,
-  runValidatorWithDir,
-  runValidator,
-  finish
-} = require('./validator-test-utils');
+const { test, createTestDir, cleanupTestDir, runValidatorWithDir, runValidator, finish } = require('./validator-test-utils');
 
 console.log('\nvalidate-hooks.js:');
 
@@ -26,6 +19,117 @@ test('passes on real project hooks.json', () => {
   const result = runValidator('validate-hooks');
   assert.strictEqual(result.code, 0, `Should pass, got stderr: ${result.stderr}`);
   assert.ok(result.stdout.includes('Validated'), 'Should output validation count');
+});
+
+test('exits 0 when hooks.json does not exist', () => {
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', '/nonexistent/hooks.json');
+  assert.strictEqual(result.code, 0, 'Should skip when no hooks.json');
+});
+
+test('fails on invalid event type', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        InvalidEventType: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo hi' }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 1, 'Should fail on invalid event type');
+  assert.ok(result.stderr.includes('Invalid event type'), 'Should report invalid event type');
+  cleanupTestDir(testDir);
+});
+
+test('fails on hook entry missing type field', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [{ matcher: 'test', hooks: [{ command: 'echo hi' }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 1, 'Should fail on missing type');
+  assert.ok(result.stderr.includes('type'), 'Should report missing type');
+  cleanupTestDir(testDir);
+});
+
+test('fails on hook entry missing command field', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command' }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 1, 'Should fail on missing command');
+  assert.ok(result.stderr.includes('command'), 'Should report missing command');
+  cleanupTestDir(testDir);
+});
+
+test('fails on invalid inline JS syntax', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'node -e "function {"' }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 1, 'Should fail on invalid inline JS');
+  assert.ok(result.stderr.includes('invalid inline JS'), 'Should report JS syntax error');
+  cleanupTestDir(testDir);
+});
+
+test('passes valid inline JS commands', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'node -e "console.log(1+2)"' }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 0, 'Should pass valid inline JS');
+  cleanupTestDir(testDir);
+});
+
+test('validates array command format', () => {
+  const testDir = createTestDir();
+  const hooksFile = path.join(testDir, 'hooks.json');
+  fs.writeFileSync(
+    hooksFile,
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: ['node', '-e', 'console.log(1)'] }] }]
+      }
+    })
+  );
+
+  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+  assert.strictEqual(result.code, 0, 'Should accept array command format');
+  cleanupTestDir(testDir);
 });
 
 console.log('\nvalidate-hooks.js (whitespace edge cases):');
@@ -84,7 +188,6 @@ test('rejects numeric command value', () => {
   cleanupTestDir(testDir);
 });
 
-// --- validate-agents.js whitespace edge cases ---
 console.log('\nvalidate-hooks.js (schema edge cases):');
 
 test('rejects event type value that is not an array', () => {
@@ -305,8 +408,7 @@ test('legacy format: rejects matcher missing hooks array', () => {
   cleanupTestDir(testDir);
 });
 
-// --- validate-agents.js: empty directory ---
-console.log('\nvalidate-hooks.js (Round 27 edge cases):');
+console.log('\nvalidate-hooks.js (command arrays and error indexing):');
 
 test('rejects array command with empty string element', () => {
   const testDir = createTestDir();
@@ -323,42 +425,6 @@ test('rejects array command with empty string element', () => {
   const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
   assert.strictEqual(result.code, 1, 'Should reject array with empty string element');
   assert.ok(result.stderr.includes('command'), 'Should report command field error');
-  cleanupTestDir(testDir);
-});
-
-test('rejects negative timeout', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo hi', timeout: -5 }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should reject negative timeout');
-  assert.ok(result.stderr.includes('timeout'), 'Should report timeout error');
-  cleanupTestDir(testDir);
-});
-
-test('rejects non-boolean async field', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PostToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo ok', async: 'yes' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should reject non-boolean async');
-  assert.ok(result.stderr.includes('async'), 'Should report async type error');
   cleanupTestDir(testDir);
 });
 
@@ -423,8 +489,7 @@ test('accepts multiple valid event types in single hooks file', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 27: command validation edge cases ──
-console.log('\nRound 42: validate-hooks (empty matchers array):');
+console.log('\nvalidate-hooks.js (empty matchers array):');
 
 test('accepts event type with empty matchers array', () => {
   const testDir = createTestDir();
@@ -444,8 +509,7 @@ test('accepts event type with empty matchers array', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 47: escape sequence and frontmatter edge cases ──
-console.log('\nRound 47: validate-hooks (inline JS escape sequences):');
+console.log('\nvalidate-hooks.js (inline JS escape sequences):');
 
 test('validates inline JS with mixed escape sequences (newline + escaped quote)', () => {
   const testDir = createTestDir();
@@ -486,7 +550,7 @@ test('rejects inline JS with syntax error after unescaping', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 58: validate-hooks.js (command is a plain object — not string or array):');
+console.log('\nvalidate-hooks.js (command is a plain object — not string or array):');
 
 test('rejects hook entry where command is a plain object', () => {
   const testDir = createTestDir();
@@ -506,8 +570,7 @@ test('rejects hook entry where command is a plain object', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 63: object-format missing matcher, unreadable command file, empty commands dir ──
-console.log('\nRound 63: validate-hooks.js (object-format matcher missing matcher field):');
+console.log('\nvalidate-hooks.js (object-format matcher missing matcher field):');
 
 test('rejects object-format matcher entry missing matcher field', () => {
   const testDir = createTestDir();
@@ -528,7 +591,7 @@ test('rejects object-format matcher entry missing matcher field', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 72: validate-hooks.js (async and timeout type validation):');
+console.log('\nvalidate-hooks.js (async and timeout type validation):');
 
 test('rejects hook with non-boolean async field', () => {
   const testDir = createTestDir();
@@ -584,8 +647,7 @@ test('rejects hook with negative timeout value', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 73: validate-commands.js skill directory statSync catch ──
-console.log('\nRound 76: validate-hooks.js (invalid JSON in hooks.json):');
+console.log('\nvalidate-hooks.js (invalid JSON in hooks.json):');
 
 test('reports error for invalid JSON in hooks.json', () => {
   const testDir = createTestDir();
@@ -598,8 +660,7 @@ test('reports error for invalid JSON in hooks.json', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 78: validate-hooks.js wrapped { hooks: { ... } } format ──
-console.log('\nRound 78: validate-hooks.js (wrapped hooks format):');
+console.log('\nvalidate-hooks.js (wrapped hooks format):');
 
 test('validates wrapped format { hooks: { PreToolUse: [...] } }', () => {
   const testDir = createTestDir();
@@ -623,8 +684,7 @@ test('validates wrapped format { hooks: { PreToolUse: [...] } }', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 79: validate-commands.js warnings count suffix in output ──
-console.log('\nRound 80: validate-hooks.js (legacy array format):');
+console.log('\nvalidate-hooks.js (legacy array format):');
 
 test('validates hooks in legacy array format (hooks is an array, not object)', () => {
   const testDir = createTestDir();
@@ -647,9 +707,7 @@ test('validates hooks in legacy array format (hooks is an array, not object)', (
   cleanupTestDir(testDir);
 });
 
-// ── Round 82: Notification and SubagentStop event types ──
-
-console.log('\nRound 82: validate-hooks (Notification and SubagentStop event types):');
+console.log('\nvalidate-hooks.js (Notification and SubagentStop event types):');
 
 test('accepts Notification and SubagentStop as valid event types', () => {
   const testDir = createTestDir();
@@ -673,7 +731,7 @@ test('accepts Notification and SubagentStop as valid event types', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 82b: validate-hooks (current official events and hook types):');
+console.log('\nvalidate-hooks.js (current official events and hook types):');
 
 test('accepts UserPromptSubmit with omitted matcher and prompt/http/agent hooks', () => {
   const testDir = createTestDir();
@@ -697,7 +755,5 @@ test('accepts UserPromptSubmit with omitted matcher and prompt/http/agent hooks'
   assert.strictEqual(result.code, 0, 'Should accept current official hook event/type combinations');
   cleanupTestDir(testDir);
 });
-
-// ── Round 83: validate-agents whitespace-only field, validate-skills empty SKILL.md ──
 
 finish();

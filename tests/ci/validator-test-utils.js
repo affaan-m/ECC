@@ -6,6 +6,7 @@
  * harness that tracks pass/fail counts per test file.
  */
 
+const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -28,7 +29,10 @@ function test(name, fn) {
     passed++;
   } catch (err) {
     console.log(`  \u2717 ${name}`);
-    console.log(`    Error: ${err.message}`);
+    // Assertion failures are self-describing; anything else is a test bug
+    // where the stack is needed to locate the crash.
+    const detail = err instanceof assert.AssertionError ? err.message : err.stack || err.message;
+    console.log(`    Error: ${detail}`);
     failed++;
   }
 }
@@ -44,6 +48,19 @@ function createTestDir() {
 
 function cleanupTestDir(testDir) {
   fs.rmSync(testDir, { recursive: true, force: true });
+}
+
+/**
+ * Create a temp fixture directory, run fn(testDir), and always clean up —
+ * even when an assertion inside fn throws.
+ */
+function withTestDir(fn) {
+  const testDir = createTestDir();
+  try {
+    return fn(testDir);
+  } finally {
+    cleanupTestDir(testDir);
+  }
 }
 
 function writeJson(filePath, value) {
@@ -91,33 +108,50 @@ function stripShebang(source) {
 /**
  * Run modified source via a temp file (avoids Windows node -e shebang issues).
  * The temp file is written inside the repo so require() can resolve node_modules.
+ * Captures stderr on both success and failure so WARN-only output is visible.
  * @param {string} source - JavaScript source to execute
+ * @param {Record<string, string>} [envOverrides] - extra env vars for the child
  * @returns {{code: number, stdout: string, stderr: string}}
  */
-function runSourceViaTempFile(source) {
+function runSourceViaTempFile(source, envOverrides = {}) {
   const tmpFile = path.join(repoRoot, `.tmp-validator-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
   try {
     fs.writeFileSync(tmpFile, source, 'utf8');
-    const stdout = execFileSync('node', [tmpFile], {
+    const r = spawnSync('node', [tmpFile], {
       encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 10000,
-      cwd: repoRoot
+      cwd: repoRoot,
+      env: { ...process.env, ...envOverrides }
     });
-    return { code: 0, stdout, stderr: '' };
-  } catch (err) {
+    if (r.error) {
+      return { code: 1, stdout: r.stdout || '', stderr: r.stderr || r.error.message };
+    }
     return {
-      code: err.status || 1,
-      stdout: err.stdout || '',
-      stderr: err.stderr || err.message || ''
+      code: typeof r.status === 'number' ? r.status : 1,
+      stdout: r.stdout || '',
+      stderr: r.stderr || ''
     };
   } finally {
     try {
       fs.unlinkSync(tmpFile);
     } catch (cleanupErr) {
-      console.error(`[validators.test] Failed to remove temp file ${tmpFile}: ${cleanupErr.message}`);
+      console.error(`[validator-test-utils] Failed to remove temp file ${tmpFile}: ${cleanupErr.message}`);
     }
   }
+}
+
+/**
+ * Replace a `const NAME = ...;` declaration in validator source, throwing when
+ * the declaration is absent so a renamed constant fails loudly instead of
+ * silently running the validator against the real project. Uses a replacement
+ * function so values containing `$` (e.g. Windows paths) are inserted literally.
+ */
+function replaceConstant(source, constant, value) {
+  const declRegex = new RegExp(`const ${constant} = .*?;`);
+  if (!declRegex.test(source)) {
+    throw new Error(`Could not find "const ${constant} = ...;" in validator source to override`);
+  }
+  return source.replace(declRegex, () => `const ${constant} = ${JSON.stringify(value)};`);
 }
 
 /**
@@ -130,33 +164,30 @@ function runSourceViaTempFile(source) {
  * @returns {{code: number, stdout: string, stderr: string}}
  */
 function runValidatorWithDir(validatorName, dirConstant, overridePath) {
-  const validatorPath = path.join(validatorsDir, `${validatorName}.js`);
-
-  // Read the validator source, replace the directory constant, and run as a wrapper
-  let source = fs.readFileSync(validatorPath, 'utf8');
-
-  // Remove the shebang line so wrappers also work against CRLF-checked-out files on Windows.
-  source = stripShebang(source);
-
-  // Replace the directory constant with our override path
-  const dirRegex = new RegExp(`const ${dirConstant} = .*?;`);
-  source = source.replace(dirRegex, `const ${dirConstant} = ${JSON.stringify(overridePath)};`);
-
-  return runSourceViaTempFile(source);
+  return runValidatorWithDirs(validatorName, { [dirConstant]: overridePath });
 }
 
 /**
- * Run a validator script with multiple directory overrides.
+ * Run a validator script with multiple directory overrides and optional
+ * extra source substitutions.
  * @param {string} validatorName
  * @param {Record<string, string>} overrides - map of constant name to path
+ * @param {Array<{pattern: RegExp, replacement: string}>} [extraReplacements]
  */
-function runValidatorWithDirs(validatorName, overrides) {
+function runValidatorWithDirs(validatorName, overrides, extraReplacements = []) {
   const validatorPath = path.join(validatorsDir, `${validatorName}.js`);
-  let source = fs.readFileSync(validatorPath, 'utf8');
-  source = stripShebang(source);
+
+  // Remove the shebang line so wrappers also work against CRLF-checked-out files on Windows.
+  let source = stripShebang(fs.readFileSync(validatorPath, 'utf8'));
+
   for (const [constant, overridePath] of Object.entries(overrides)) {
-    const dirRegex = new RegExp(`const ${constant} = .*?;`);
-    source = source.replace(dirRegex, `const ${constant} = ${JSON.stringify(overridePath)};`);
+    source = replaceConstant(source, constant, overridePath);
+  }
+  for (const { pattern, replacement } of extraReplacements) {
+    if (!pattern.test(source)) {
+      throw new Error(`Extra replacement pattern ${pattern} did not match validator source`);
+    }
+    source = source.replace(pattern, () => replacement);
   }
   return runSourceViaTempFile(source);
 }
@@ -183,10 +214,10 @@ function runValidator(validatorName) {
 }
 
 function runCatalogValidator(overrides = {}) {
+  const { argv: argvOverride, ...constantOverrides } = overrides;
   const validatorPath = path.join(validatorsDir, 'catalog.js');
-  let source = fs.readFileSync(validatorPath, 'utf8');
-  source = stripShebang(source);
-  const argv = Array.isArray(overrides.argv) && overrides.argv.length > 0 ? overrides.argv : ['--text'];
+  let source = stripShebang(fs.readFileSync(validatorPath, 'utf8'));
+  const argv = Array.isArray(argvOverride) && argvOverride.length > 0 ? argvOverride : ['--text'];
   const argvPreamble = argv.map(arg => `process.argv.push(${JSON.stringify(arg)});`).join('\n');
   source = `${argvPreamble}\n${source}`;
 
@@ -199,55 +230,29 @@ function runCatalogValidator(overrides = {}) {
     DOCS_ZH_CN_AGENTS_PATH: path.join(repoRoot, 'docs', 'zh-CN', 'AGENTS.md'),
     PLUGIN_JSON_PATH: path.join(repoRoot, '.claude-plugin', 'plugin.json'),
     MARKETPLACE_JSON_PATH: path.join(repoRoot, '.claude-plugin', 'marketplace.json'),
-    ...overrides
+    ...constantOverrides
   };
 
   for (const [constant, overridePath] of Object.entries(resolvedOverrides)) {
-    const dirRegex = new RegExp(`const ${constant} = .*?;`);
-    source = source.replace(dirRegex, `const ${constant} = ${JSON.stringify(overridePath)};`);
+    source = replaceConstant(source, constant, overridePath);
   }
 
   return runSourceViaTempFile(source);
 }
 
 // Run validate-skills.js against a fixture dir, optionally passing
-// extra argv (e.g. '--strict') and env overrides (e.g.
-// CI_STRICT_SKILLS=1) so the frontmatter finding suite can exercise
-// both warn and strict modes via argv and env code paths.
-//
-// Captures stderr on both success and failure (the shared
-// runSourceViaTempFile helper only surfaces stderr when the child
-// exits non-zero, which hides WARN lines in the default mode).
+// extra argv (e.g. '--strict') and env overrides (e.g. CI_STRICT_SKILLS=1)
+// so the frontmatter finding suite can exercise both warn and strict modes
+// via argv and env code paths.
 function runSkillsValidator(testDir, argv = [], envOverrides = {}) {
   const validatorPath = path.join(validatorsDir, 'validate-skills.js');
-  let source = fs.readFileSync(validatorPath, 'utf8');
-  source = stripShebang(source);
-  source = source.replace(/const SKILLS_DIR = .*?;/, `const SKILLS_DIR = ${JSON.stringify(testDir)};`);
+  let source = stripShebang(fs.readFileSync(validatorPath, 'utf8'));
+  source = replaceConstant(source, 'SKILLS_DIR', testDir);
   if (argv.length > 0) {
     const argvPreamble = argv.map(arg => `process.argv.push(${JSON.stringify(arg)});`).join('\n');
     source = `${argvPreamble}\n${source}`;
   }
-  const tmpFile = path.join(repoRoot, `.tmp-validator-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
-  try {
-    fs.writeFileSync(tmpFile, source, 'utf8');
-    const r = spawnSync('node', [tmpFile], {
-      encoding: 'utf8',
-      timeout: 10000,
-      cwd: repoRoot,
-      env: { ...process.env, CI_STRICT_SKILLS: '', ...envOverrides }
-    });
-    return {
-      code: typeof r.status === 'number' ? r.status : 1,
-      stdout: r.stdout || '',
-      stderr: r.stderr || ''
-    };
-  } finally {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch (_) {
-      /* ignore */
-    }
-  }
+  return runSourceViaTempFile(source, { CI_STRICT_SKILLS: '', ...envOverrides });
 }
 
 function writeCatalogFixture(testDir, options = {}) {
@@ -340,6 +345,7 @@ module.exports = {
   finish,
   createTestDir,
   cleanupTestDir,
+  withTestDir,
   writeJson,
   writeInstallComponentsManifest,
   writeInstallModulesManifest,

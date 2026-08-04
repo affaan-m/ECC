@@ -11,15 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const {
-  test,
-  createTestDir,
-  cleanupTestDir,
-  stripShebang,
-  runValidatorWithDir,
-  runValidator,
-  finish
-} = require('./validator-test-utils');
+const { test, createTestDir, cleanupTestDir, stripShebang, runValidatorWithDir, runValidator, finish } = require('./validator-test-utils');
 
 console.log('validate-agents.js:');
 
@@ -121,7 +113,7 @@ test('rejects agent with empty model value', () => {
 
 test('rejects agent with empty tools value', () => {
   const testDir = createTestDir();
-  fs.writeFileSync(path.join(testDir, 'empty.md'), '---\nmodel: claude-sonnet-4-5-20250929\ntools:\n---\n# Empty tools');
+  fs.writeFileSync(path.join(testDir, 'empty.md'), '---\nmodel: sonnet\ntools:\n---\n# Empty tools');
   const result = runValidatorWithDir('validate-agents', 'AGENTS_DIR', testDir);
   assert.strictEqual(result.code, 1, 'Should reject empty tools');
   assert.ok(result.stderr.includes('tools'), 'Should mention tools field');
@@ -170,7 +162,6 @@ test('rejects agent with invalid model value', () => {
   cleanupTestDir(testDir);
 });
 
-// --- validate-commands.js additional edge cases ---
 console.log('\nvalidate-agents.js (empty directory):');
 
 test('passes on empty agents directory', () => {
@@ -183,18 +174,7 @@ test('passes on empty agents directory', () => {
   cleanupTestDir(testDir);
 });
 
-// --- validate-commands.js: whitespace-only file ---
-console.log('\nRound 30: validate-agents (model validation):');
-
-test('rejects agent with unrecognized model value', () => {
-  const testDir = createTestDir();
-  fs.writeFileSync(path.join(testDir, 'bad-model.md'), '---\nmodel: gpt-4\ntools: Read, Write\n---\n# Bad Model Agent');
-
-  const result = runValidatorWithDir('validate-agents', 'AGENTS_DIR', testDir);
-  assert.strictEqual(result.code, 1, 'Should reject unrecognized model');
-  assert.ok(result.stderr.includes('gpt-4'), 'Should mention the invalid model');
-  cleanupTestDir(testDir);
-});
+console.log('\nvalidate-agents.js (model validation):');
 
 test('accepts all valid model values (haiku, sonnet, opus)', () => {
   const testDir = createTestDir();
@@ -228,8 +208,7 @@ test('allows duplicate-looking nested frontmatter keys', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 32: empty frontmatter & edge cases ──
-console.log('\nRound 32: validate-agents (empty frontmatter):');
+console.log('\nvalidate-agents.js (empty frontmatter):');
 
 test('rejects agent with empty frontmatter block (no key-value pairs)', () => {
   const testDir = createTestDir();
@@ -276,7 +255,7 @@ test('handles multiple agents where only one is invalid', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 42: validate-agents (case sensitivity):');
+console.log('\nvalidate-agents.js (case sensitivity):');
 
 test('rejects uppercase model value (case-sensitive check)', () => {
   const testDir = createTestDir();
@@ -299,7 +278,7 @@ test('handles space before colon in frontmatter key', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 47: validate-agents (frontmatter lines without colon):');
+console.log('\nvalidate-agents.js (frontmatter lines without colon):');
 
 test('silently ignores frontmatter line without colon', () => {
   const testDir = createTestDir();
@@ -311,8 +290,7 @@ test('silently ignores frontmatter line without colon', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 52: command inline backtick refs, workflow whitespace, code-only rules ──
-console.log('\nRound 58: validate-agents.js (unreadable agent file — readFileSync catch):');
+console.log('\nvalidate-agents.js (unreadable agent file — readFileSync catch):');
 
 test('reports error when agent .md file is unreadable (chmod 000)', () => {
   // Skip on Windows or when running as root (permissions won't work)
@@ -335,7 +313,7 @@ test('reports error when agent .md file is unreadable (chmod 000)', () => {
   }
 });
 
-console.log('\nRound 58: validate-agents.js (frontmatter line with colon at position 0):');
+console.log('\nvalidate-agents.js (frontmatter line with colon at position 0):');
 
 test('rejects agent when required field key has colon at position 0 (no key name)', () => {
   const testDir = createTestDir();
@@ -347,7 +325,7 @@ test('rejects agent when required field key has colon at position 0 (no key name
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 83: validate-agents (whitespace-only frontmatter field value):');
+console.log('\nvalidate-agents.js (whitespace-only frontmatter field value):');
 
 test('rejects agent with whitespace-only model field (trim guard)', () => {
   const testDir = createTestDir();

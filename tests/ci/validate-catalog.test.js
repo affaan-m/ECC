@@ -11,7 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const { test, createTestDir, cleanupTestDir, runValidatorWithDir, runCatalogValidator, writeCatalogFixture, finish } = require('./validator-test-utils');
+const { test, createTestDir, cleanupTestDir, withTestDir, runCatalogValidator, writeCatalogFixture, finish } = require('./validator-test-utils');
 
 console.log('\ncatalog.js:');
 
@@ -21,37 +21,36 @@ test('passes on real project catalog counts', () => {
   assert.ok(result.stdout.includes('Documentation counts match the repository catalog.'), 'Should report matching counts');
 });
 
-test('fails when README and AGENTS catalog counts drift', () => {
-  const testDir = createTestDir();
-  const { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath } = writeCatalogFixture(testDir, {
-    readmeCounts: { agents: 99, skills: 99, commands: 99 },
-    readmeTableCounts: { agents: 99, skills: 99, commands: 99 },
-    readmeParityCounts: { agents: 99, skills: 99, commands: 99 },
-    summaryCounts: { agents: 99, skills: 99, commands: 99 },
-    structureLines: ['agents/          — 99 specialized subagents', 'skills/          — 99 workflow skills and domain knowledge', 'commands/        — 99 slash commands'],
-    zhRootReadmeCounts: { agents: 99, skills: 99, commands: 99 },
-    zhDocsReadmeCounts: { agents: 99, skills: 99, commands: 99 },
-    zhDocsTableCounts: { agents: 99, skills: 99, commands: 99 },
-    zhDocsParityCounts: { agents: 99, skills: 99, commands: 99 },
-    zhAgentsSummaryCounts: { agents: 99, skills: 99, commands: 99 },
-    zhAgentsStructureLines: ['agents/          — 99 个专业子代理', 'skills/          — 99 个工作流技能和领域知识', 'commands/        — 99 个斜杠命令']
-  });
+test('fails when README and AGENTS catalog counts drift', () =>
+  withTestDir(testDir => {
+    const { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, zhAgentsPath, pluginJsonPath, marketplaceJsonPath } = writeCatalogFixture(testDir, {
+      readmeCounts: { agents: 99, skills: 99, commands: 99 },
+      readmeTableCounts: { agents: 99, skills: 99, commands: 99 },
+      readmeParityCounts: { agents: 99, skills: 99, commands: 99 },
+      summaryCounts: { agents: 99, skills: 99, commands: 99 },
+      structureLines: ['agents/          — 99 specialized subagents', 'skills/          — 99 workflow skills and domain knowledge', 'commands/        — 99 slash commands'],
+      zhRootReadmeCounts: { agents: 99, skills: 99, commands: 99 },
+      zhDocsReadmeCounts: { agents: 99, skills: 99, commands: 99 },
+      zhDocsTableCounts: { agents: 99, skills: 99, commands: 99 },
+      zhDocsParityCounts: { agents: 99, skills: 99, commands: 99 },
+      zhAgentsSummaryCounts: { agents: 99, skills: 99, commands: 99 },
+      zhAgentsStructureLines: ['agents/          — 99 个专业子代理', 'skills/          — 99 个工作流技能和领域知识', 'commands/        — 99 个斜杠命令']
+    });
 
-  const result = runCatalogValidator({
-    ROOT: testDir,
-    README_PATH: readmePath,
-    AGENTS_PATH: agentsPath,
-    README_ZH_CN_PATH: zhRootReadmePath,
-    DOCS_ZH_CN_README_PATH: zhDocsReadmePath,
-    DOCS_ZH_CN_AGENTS_PATH: zhAgentsPath,
-    PLUGIN_JSON_PATH: pluginJsonPath,
-    MARKETPLACE_JSON_PATH: marketplaceJsonPath
-  });
+    const result = runCatalogValidator({
+      ROOT: testDir,
+      README_PATH: readmePath,
+      AGENTS_PATH: agentsPath,
+      README_ZH_CN_PATH: zhRootReadmePath,
+      DOCS_ZH_CN_README_PATH: zhDocsReadmePath,
+      DOCS_ZH_CN_AGENTS_PATH: zhAgentsPath,
+      PLUGIN_JSON_PATH: pluginJsonPath,
+      MARKETPLACE_JSON_PATH: marketplaceJsonPath
+    });
 
-  assert.strictEqual(result.code, 1, 'Should fail when catalog counts drift');
-  assert.ok((result.stdout + result.stderr).includes('Documentation count mismatches found:'), 'Should report mismatches');
-  cleanupTestDir(testDir);
-});
+    assert.strictEqual(result.code, 1, 'Should fail when catalog counts drift');
+    assert.ok((result.stdout + result.stderr).includes('Documentation count mismatches found:'), 'Should report mismatches');
+  }));
 
 test('fails when README parity table counts drift', () => {
   const testDir = createTestDir();
@@ -82,7 +81,7 @@ test('fails when a tracked catalog document is missing', () => {
   const testDir = createTestDir();
   const { readmePath, agentsPath, zhRootReadmePath, zhDocsReadmePath, pluginJsonPath, marketplaceJsonPath } = writeCatalogFixture(testDir);
   const missingZhAgentsPath = path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md');
-  fs.rmSync(missingZhAgentsPath);
+  fs.rmSync(missingZhAgentsPath, { force: true });
 
   const result = runCatalogValidator({
     ROOT: testDir,
@@ -182,191 +181,6 @@ test('accepts AGENTS project structure entries with varied spacing and dash styl
   });
 
   assert.strictEqual(result.code, 0, `Should accept formatting variations, got stderr: ${result.stderr}`);
-  cleanupTestDir(testDir);
-});
-
-test('exits 0 when hooks.json does not exist', () => {
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', '/nonexistent/hooks.json');
-  assert.strictEqual(result.code, 0, 'Should skip when no hooks.json');
-});
-
-test('fails on invalid JSON', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(hooksFile, '{ not valid json }}}');
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on invalid JSON');
-  assert.ok(result.stderr.includes('Invalid JSON'), 'Should report invalid JSON');
-  cleanupTestDir(testDir);
-});
-
-test('fails on invalid event type', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        InvalidEventType: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo hi' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on invalid event type');
-  assert.ok(result.stderr.includes('Invalid event type'), 'Should report invalid event type');
-  cleanupTestDir(testDir);
-});
-
-test('fails on hook entry missing type field', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ command: 'echo hi' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on missing type');
-  assert.ok(result.stderr.includes('type'), 'Should report missing type');
-  cleanupTestDir(testDir);
-});
-
-test('fails on hook entry missing command field', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on missing command');
-  assert.ok(result.stderr.includes('command'), 'Should report missing command');
-  cleanupTestDir(testDir);
-});
-
-test('fails on invalid async field type', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo', async: 'yes' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on non-boolean async');
-  assert.ok(result.stderr.includes('async'), 'Should report async type error');
-  cleanupTestDir(testDir);
-});
-
-test('fails on negative timeout', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'echo', timeout: -5 }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on negative timeout');
-  assert.ok(result.stderr.includes('timeout'), 'Should report timeout error');
-  cleanupTestDir(testDir);
-});
-
-test('fails on invalid inline JS syntax', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'node -e "function {"' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on invalid inline JS');
-  assert.ok(result.stderr.includes('invalid inline JS'), 'Should report JS syntax error');
-  cleanupTestDir(testDir);
-});
-
-test('passes valid inline JS commands', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: 'node -e "console.log(1+2)"' }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 0, 'Should pass valid inline JS');
-  cleanupTestDir(testDir);
-});
-
-test('validates array command format', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test', hooks: [{ type: 'command', command: ['node', '-e', 'console.log(1)'] }] }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 0, 'Should accept array command format');
-  cleanupTestDir(testDir);
-});
-
-test('validates legacy array format', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(hooksFile, JSON.stringify([{ matcher: 'test', hooks: [{ type: 'command', command: 'echo ok' }] }]));
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 0, 'Should accept legacy array format');
-  cleanupTestDir(testDir);
-});
-
-test('fails on matcher missing hooks array', () => {
-  const testDir = createTestDir();
-  const hooksFile = path.join(testDir, 'hooks.json');
-  fs.writeFileSync(
-    hooksFile,
-    JSON.stringify({
-      hooks: {
-        PreToolUse: [{ matcher: 'test' }]
-      }
-    })
-  );
-
-  const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
-  assert.strictEqual(result.code, 1, 'Should fail on missing hooks array');
   cleanupTestDir(testDir);
 });
 

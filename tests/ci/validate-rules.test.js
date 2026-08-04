@@ -11,14 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const {
-  test,
-  createTestDir,
-  cleanupTestDir,
-  runValidatorWithDir,
-  runValidator,
-  finish
-} = require('./validator-test-utils');
+const { test, createTestDir, cleanupTestDir, withTestDir, runValidatorWithDir, runValidator, finish } = require('./validator-test-utils');
 
 console.log('\nvalidate-rules.js:');
 
@@ -33,15 +26,14 @@ test('exits 0 when directory does not exist', () => {
   assert.strictEqual(result.code, 0, 'Should skip when no rules dir');
 });
 
-test('fails on empty rule file', () => {
-  const testDir = createTestDir();
-  fs.writeFileSync(path.join(testDir, 'empty.md'), '');
+test('fails on empty rule file', () =>
+  withTestDir(testDir => {
+    fs.writeFileSync(path.join(testDir, 'empty.md'), '');
 
-  const result = runValidatorWithDir('validate-rules', 'RULES_DIR', testDir);
-  assert.strictEqual(result.code, 1, 'Should fail on empty rule file');
-  assert.ok(result.stderr.includes('Empty'), 'Should report empty file');
-  cleanupTestDir(testDir);
-});
+    const result = runValidatorWithDir('validate-rules', 'RULES_DIR', testDir);
+    assert.strictEqual(result.code, 1, 'Should fail on empty rule file');
+    assert.ok(result.stderr.includes('Empty'), 'Should report empty file');
+  }));
 
 test('passes on valid rule files', () => {
   const testDir = createTestDir();
@@ -76,8 +68,6 @@ test('validates rules in subdirectories recursively', () => {
   cleanupTestDir(testDir);
 });
 
-
-// --- validate-hooks.js whitespace/null edge cases ---
 console.log('\nvalidate-rules.js (mixed files):');
 
 test('fails on mix of valid and empty rule files', () => {
@@ -91,8 +81,7 @@ test('fails on mix of valid and empty rule files', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 27: hook validation edge cases ──
-console.log('\nRound 32: validate-rules (non-file entries):');
+console.log('\nvalidate-rules.js (non-file entries):');
 
 test('skips directory entries even if named with .md extension', () => {
   const testDir = createTestDir();
@@ -118,7 +107,7 @@ test('handles deeply nested rule in subdirectory', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 52: validate-rules (code-only content):');
+console.log('\nvalidate-rules.js (code-only content):');
 
 test('passes rule file containing only a fenced code block', () => {
   const testDir = createTestDir();
@@ -130,8 +119,7 @@ test('passes rule file containing only a fenced code block', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 57: readFileSync error path, statSync catch block, adjacent code blocks ──
-console.log('\nRound 57: validate-rules.js (broken symlink — statSync catch block):');
+console.log('\nvalidate-rules.js (broken symlink — statSync catch block):');
 
 test('reports error for broken symlink .md file in rules directory', () => {
   const testDir = createTestDir();
@@ -141,11 +129,16 @@ test('reports error for broken symlink .md file in rules directory', () => {
   // statSync follows symlinks and throws ENOENT, exercising catch (lines 35-38)
   try {
     fs.symlinkSync('/nonexistent/target.md', path.join(testDir, 'broken.md'));
-  } catch {
-    // Skip on systems that don't support symlinks
-    console.log('    (skipped — symlinks not supported)');
-    cleanupTestDir(testDir);
-    return;
+  } catch (err) {
+    // Skip only where symlink creation is blocked (e.g. Windows without
+    // Developer Mode / admin rights → EPERM/EACCES); rethrow anything else
+    // so real failures aren't masked.
+    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+      console.log('    (skipped — symlinks not supported)');
+      cleanupTestDir(testDir);
+      return;
+    }
+    throw err;
   }
 
   const result = runValidatorWithDir('validate-rules', 'RULES_DIR', testDir);
@@ -154,7 +147,7 @@ test('reports error for broken symlink .md file in rules directory', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 65: validate-rules.js (empty directory — no .md files):');
+console.log('\nvalidate-rules.js (empty directory — no .md files):');
 
 test('passes on rules directory with no .md files (Validated 0)', () => {
   const testDir = createTestDir();

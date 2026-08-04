@@ -15,15 +15,13 @@ const {
   test,
   createTestDir,
   cleanupTestDir,
+  withTestDir,
   writeInstallComponentsManifest,
   writeInstallModulesManifest,
   writeInstallProfilesManifest,
   writeSkillFixture,
-  stripShebang,
-  runSourceViaTempFile,
   runValidatorWithDirs,
   runValidator,
-  validatorsDir,
   modulesSchemaPath,
   profilesSchemaPath,
   componentsSchemaPath,
@@ -116,15 +114,12 @@ test('exempts intentionally-unshipped skills from curated-skill coverage', () =>
     writeSkillFixture(testDir, 'alpha', 'Alpha skill');
     writeSkillFixture(testDir, 'unshipped-skill', 'Intentionally unshipped skill');
 
-    const validatorPath = path.join(validatorsDir, 'validate-install-manifests.js');
-    let source = stripShebang(fs.readFileSync(validatorPath, 'utf8'));
-    for (const [constant, overridePath] of Object.entries(installManifestOverrides(testDir))) {
-      const dirRegex = new RegExp(`const ${constant} = .*?;`);
-      source = source.replace(dirRegex, `const ${constant} = ${JSON.stringify(overridePath)};`);
-    }
-    source = source.replace(/const INTENTIONALLY_UNSHIPPED_SKILL_IDS = .*?;/, "const INTENTIONALLY_UNSHIPPED_SKILL_IDS = new Set(['unshipped-skill']);");
-
-    const result = runSourceViaTempFile(source);
+    const result = runValidatorWithDirs('validate-install-manifests', installManifestOverrides(testDir), [
+      {
+        pattern: /const INTENTIONALLY_UNSHIPPED_SKILL_IDS = .*?;/,
+        replacement: "const INTENTIONALLY_UNSHIPPED_SKILL_IDS = new Set(['unshipped-skill']);"
+      }
+    ]);
     assert.strictEqual(result.code, 0, `Should pass when unshipped skill is allowlisted, got stderr: ${result.stderr}`);
   } finally {
     cleanupTestDir(testDir);
@@ -133,28 +128,23 @@ test('exempts intentionally-unshipped skills from curated-skill coverage', () =>
 
 test('exits 0 when install manifests do not exist', () => {
   const testDir = createTestDir();
-  const result = runValidatorWithDirs('validate-install-manifests', {
-    REPO_ROOT: testDir,
-    MODULES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-modules.json'),
-    PROFILES_MANIFEST_PATH: path.join(testDir, 'manifests', 'install-profiles.json')
-  });
+  const result = runInstallManifestsValidator(testDir);
   assert.strictEqual(result.code, 0, 'Should skip when manifests are missing');
   assert.ok(result.stdout.includes('skipping'), 'Should say skipping');
   cleanupTestDir(testDir);
 });
 
-test('fails on invalid install manifest JSON', () => {
-  const testDir = createTestDir();
-  const manifestsDir = path.join(testDir, 'manifests');
-  fs.mkdirSync(manifestsDir, { recursive: true });
-  fs.writeFileSync(path.join(manifestsDir, 'install-modules.json'), '{ invalid json');
-  writeInstallProfilesManifest(testDir, {});
+test('fails on invalid install manifest JSON', () =>
+  withTestDir(testDir => {
+    const manifestsDir = path.join(testDir, 'manifests');
+    fs.mkdirSync(manifestsDir, { recursive: true });
+    fs.writeFileSync(path.join(manifestsDir, 'install-modules.json'), '{ invalid json');
+    writeInstallProfilesManifest(testDir, {});
 
-  const result = runInstallManifestsValidator(testDir);
-  assert.strictEqual(result.code, 1, 'Should fail on invalid JSON');
-  assert.ok(result.stderr.includes('Invalid JSON'), 'Should report invalid JSON');
-  cleanupTestDir(testDir);
-});
+    const result = runInstallManifestsValidator(testDir);
+    assert.strictEqual(result.code, 1, 'Should fail on invalid JSON');
+    assert.ok(result.stderr.includes('Invalid JSON'), 'Should report invalid JSON');
+  }));
 
 test('fails when install module references a missing path', () => {
   const testDir = createTestDir();

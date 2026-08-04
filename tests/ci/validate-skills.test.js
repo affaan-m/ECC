@@ -11,15 +11,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
-const {
-  test,
-  createTestDir,
-  cleanupTestDir,
-  runValidatorWithDir,
-  runValidator,
-  runSkillsValidator,
-  finish
-} = require('./validator-test-utils');
+const { test, createTestDir, cleanupTestDir, withTestDir, runValidatorWithDir, runValidator, runSkillsValidator, finish } = require('./validator-test-utils');
 
 console.log('\nvalidate-skills.js:');
 
@@ -45,17 +37,16 @@ test('fails on skill directory without SKILL.md', () => {
   cleanupTestDir(testDir);
 });
 
-test('fails on empty SKILL.md', () => {
-  const testDir = createTestDir();
-  const skillDir = path.join(testDir, 'empty-skill');
-  fs.mkdirSync(skillDir);
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '');
+test('fails on empty SKILL.md', () =>
+  withTestDir(testDir => {
+    const skillDir = path.join(testDir, 'empty-skill');
+    fs.mkdirSync(skillDir);
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '');
 
-  const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
-  assert.strictEqual(result.code, 1, 'Should fail on empty SKILL.md');
-  assert.ok(result.stderr.includes('Empty'), 'Should report empty file');
-  cleanupTestDir(testDir);
-});
+    const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
+    assert.strictEqual(result.code, 1, 'Should fail on empty SKILL.md');
+    assert.ok(result.stderr.includes('Empty'), 'Should report empty file');
+  }));
 
 test('passes on valid skill directory', () => {
   const testDir = createTestDir();
@@ -262,8 +253,7 @@ test('fails on mix of valid and invalid skill directories', () => {
   cleanupTestDir(testDir);
 });
 
-// ── Round 30: validate-commands skill warnings and workflow edge cases ──
-console.log('\nRound 57: validate-skills.js (SKILL.md is a directory — readFileSync error):');
+console.log('\nvalidate-skills.js (SKILL.md is a directory — readFileSync error):');
 
 test('fails gracefully when SKILL.md is a directory instead of a file', () => {
   const testDir = createTestDir();
@@ -279,7 +269,7 @@ test('fails gracefully when SKILL.md is a directory instead of a file', () => {
   cleanupTestDir(testDir);
 });
 
-console.log('\nRound 65: validate-skills.js (empty directory — no subdirectories):');
+console.log('\nvalidate-skills.js (empty directory — no subdirectories):');
 
 test('passes on skills directory with only files, no subdirectories (Validated 0)', () => {
   const testDir = createTestDir();
@@ -290,22 +280,6 @@ test('passes on skills directory with only files, no subdirectories (Validated 0
   const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
   assert.strictEqual(result.code, 0, 'Should pass on skills directory with no subdirectories');
   assert.ok(result.stdout.includes('Validated 0'), 'Should report 0 validated skill directories');
-  cleanupTestDir(testDir);
-});
-
-// ── Round 70: validate-commands.js "would create:" line skip ──
-console.log('\nRound 83: validate-skills (empty SKILL.md file):');
-
-test('rejects skill directory with empty SKILL.md file', () => {
-  const testDir = createTestDir();
-  const skillDir = path.join(testDir, 'empty-skill');
-  fs.mkdirSync(skillDir, { recursive: true });
-  // Create SKILL.md with only whitespace (trim to zero length)
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '   \n  \n');
-
-  const result = runValidatorWithDir('validate-skills', 'SKILLS_DIR', testDir);
-  assert.strictEqual(result.code, 1, 'Should reject empty SKILL.md');
-  assert.ok(result.stderr.includes('Empty file'), `Should report "Empty file", got: ${result.stderr}`);
   cleanupTestDir(testDir);
 });
 
