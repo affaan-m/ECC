@@ -7,7 +7,7 @@ const {
   normalizeRelativePath,
 } = require('./helpers');
 
-const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', 'skills', '.agents', 'AGENTS.md'];
+const SUPPORTED_SOURCE_PREFIXES = ['rules', 'commands', 'agents', '.agents', 'AGENTS.md'];
 
 function supportsAntigravitySourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
