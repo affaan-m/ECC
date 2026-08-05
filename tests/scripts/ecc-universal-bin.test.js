@@ -129,10 +129,13 @@ function prepareLocalPackedProject(packageManager) {
     `${JSON.stringify({ name: 'ecc-packed-smoke', private: true }, null, 2)}\n`
   );
   if (packageManager === 'yarn') {
+    // This empty fixture has no dependencies. Generate only its local lockfile
+    // so `yarn exec` can run the manually unpacked package in PR hardened mode.
     run('yarn', ['install', '--mode=skip-build'], {
       cwd: projectDirectory,
       env: {
         ...process.env,
+        YARN_ENABLE_HARDENED_MODE: '0',
         YARN_ENABLE_NETWORK: '0',
       },
     });
@@ -166,33 +169,29 @@ function prepareLocalPackedProject(packageManager) {
   return localPackedProject;
 }
 
-function getRunnerInvocation(packageManager, archivePath, executable, args) {
+function getRunnerInvocation(packageManager, executable, args) {
+  const project = prepareLocalPackedProject(packageManager);
+  const localEnvironment = withPathPrefix(process.env, project.binDirectory);
   switch (packageManager) {
     case 'npm':
-      return {
-        command: 'npx',
-        args: [
-          '--yes',
-          '--offline',
-          `--package=${archivePath}`,
-          '--',
-          executable,
-          ...args,
-        ],
-      };
+      {
+        // npx --offline --package=<local.tgz> still resolves uncached
+        // transitive dependencies from the registry. Unpack the artifact and
+        // invoke npm's local executable runner so CI proves the packaged bin
+        // without depending on registry cache state.
+        return {
+          command: 'npm',
+          args: ['exec', '--offline', '--', executable, ...args],
+          cwd: project.projectDirectory,
+          env: { ...localEnvironment, npm_config_offline: 'true' },
+        };
+      }
     case 'pnpm':
       return {
         command: 'pnpm',
-        args: [
-          'dlx',
-          `--package=${archivePath}`,
-          executable,
-          ...args,
-        ],
-        env: {
-          ...process.env,
-          npm_config_offline: 'true',
-        },
+        args: ['exec', executable, ...args],
+        cwd: project.projectDirectory,
+        env: { ...localEnvironment, npm_config_offline: 'true' },
       };
     case 'yarn':
       {
@@ -201,13 +200,13 @@ function getRunnerInvocation(packageManager, archivePath, executable, args) {
         // hermetic pre-publish gate, execute the exact unpacked artifact through
         // Yarn's runner with network disabled. A post-publish dlx smoke test is
         // still required to validate registry metadata.
-        const project = prepareLocalPackedProject('yarn');
         return {
           command: 'yarn',
           args: ['exec', executable, ...args],
           env: {
-            ...withPathPrefix(process.env, project.binDirectory),
+            ...localEnvironment,
             YARN_ENABLE_NETWORK: '0',
+            YARN_ENABLE_HARDENED_MODE: '0',
           },
           cwd: project.projectDirectory,
         };
@@ -216,11 +215,10 @@ function getRunnerInvocation(packageManager, archivePath, executable, args) {
       {
         // bunx has no strict offline install mode. Unpack the exact artifact
         // locally and use --no-install so the smoke cannot reach the registry.
-        const project = prepareLocalPackedProject('bun');
         return {
           command: 'bunx',
           args: ['--no-install', executable, ...args],
-          env: withPathPrefix(process.env, project.binDirectory),
+          env: localEnvironment,
           cwd: project.projectDirectory,
         };
       }
@@ -233,7 +231,6 @@ function launchPackedBinary(executable, args) {
   const fixture = getPackedFixture();
   const invocation = getRunnerInvocation(
     activePackageManager,
-    fixture.archivePath,
     executable,
     args
   );

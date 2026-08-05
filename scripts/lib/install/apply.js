@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -49,6 +50,27 @@ function readJsonObject(filePath, label) {
   }
 
   return parsed;
+}
+
+function stateWithContentDigests(state) {
+  return {
+    ...state,
+    operations: (state.operations || []).map(operation => {
+      if (
+        !operation.destinationPath
+        || !fs.existsSync(operation.destinationPath)
+        || !fs.statSync(operation.destinationPath).isFile()
+      ) {
+        return { ...operation };
+      }
+      return {
+        ...operation,
+        contentSha256: crypto.createHash('sha256')
+          .update(fs.readFileSync(operation.destinationPath))
+          .digest('hex'),
+      };
+    }),
+  };
 }
 
 function cloneJsonValue(value) {
@@ -303,14 +325,15 @@ function applyInstallPlan(plan, dependencies = {}) {
   if (hasLegacyMigration) {
     removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
   }
+  const finalState = stateWithContentDigests(migration.finalState);
   if (typeof beforeInstallStateWrite === 'function') {
-    beforeInstallStateWrite({ plan: appliedPlan, state: migration.finalState });
+    beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
   }
-  persistInstallState(plan.installStatePath, migration.finalState);
+  persistInstallState(plan.installStatePath, finalState);
 
   return {
     ...plan,
-    statePreview: migration.finalState,
+    statePreview: finalState,
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,

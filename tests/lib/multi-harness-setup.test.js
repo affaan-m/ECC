@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -35,6 +36,10 @@ function tempDir(prefix) {
 function writeFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function sha256(content) {
+  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 function stateOperation(destinationPath, overrides = {}) {
@@ -80,7 +85,11 @@ function managedPlan(root, operations, owned = []) {
     targetRoot: root,
   });
   if (owned.length > 0) {
-    writeManagedState(plan, { operations: owned.map(destinationPath => stateOperation(destinationPath)) });
+    writeManagedState(plan, {
+      operations: owned.map(destinationPath => stateOperation(destinationPath, {
+        contentSha256: sha256(fs.readFileSync(destinationPath)),
+      })),
+    });
   }
   return plan;
 }
@@ -149,7 +158,7 @@ function writeManagedState(plan, overrides = {}) {
       writeFile(destinationJson, '{"other":true}\n');
       const plan = managedPlan(root, [
         { kind: 'copy-file', sourcePath: sourceSame, destinationPath: destinationSame },
-        { kind: 'copy-file', sourcePath: sourceManaged, destinationPath: destinationManaged },
+        stateOperation(destinationManaged, { sourcePath: sourceManaged }),
         { kind: 'merge-json', destinationPath: destinationJson, mergePayload: { ecc: true } },
         { kind: 'copy-file', sourcePath: sourceSame, destinationPath: path.join(root, 'new.md') },
       ], [destinationManaged]);
@@ -259,6 +268,72 @@ function writeManagedState(plan, overrides = {}) {
           { kind: 'copy-file', sourcePath: source, destinationPath: destination },
         ])),
         /unowned.*AGENTS\.md/i
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await test('same-target state without a content digest cannot claim a user file', () => {
+    const root = tempDir('ecc-guided-forged-same-target-');
+    try {
+      const source = path.join(root, 'source.md');
+      const destination = path.join(root, 'AGENTS.md');
+      writeFile(source, 'ecc\n');
+      writeFile(destination, 'user\n');
+      const operation = stateOperation(destination, { sourcePath: source });
+      const plan = managedPlan(root, [operation]);
+      writeManagedState(plan, { operations: [stateOperation(destination)] });
+
+      assert.throws(
+        () => preflightManagedPlan(plan),
+        /unverified ownership|content digest|unowned existing file/i
+      );
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'user\n');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await test('managed ownership requires an exact operation identity and content digest', () => {
+    const root = tempDir('ecc-guided-managed-digest-');
+    try {
+      const source = path.join(root, 'source.md');
+      const destination = path.join(root, 'AGENTS.md');
+      writeFile(source, 'new ecc\n');
+      writeFile(destination, 'old ecc\n');
+      const operation = stateOperation(destination, { sourcePath: source });
+      const plan = managedPlan(root, [operation]);
+
+      writeManagedState(plan, {
+        operations: [stateOperation(destination, {
+          contentSha256: sha256('old ecc\n'),
+        })],
+      });
+      assert.strictEqual(
+        preflightManagedPlan(plan).operations[0].classification,
+        'managed-update'
+      );
+
+      writeManagedState(plan, {
+        operations: [stateOperation(destination, {
+          contentSha256: sha256('old ecc\n'),
+          sourceRelativePath: 'rules/other.md',
+        })],
+      });
+      assert.throws(
+        () => preflightManagedPlan(plan),
+        /operation identity|unverified ownership|unowned existing file/i
+      );
+
+      writeManagedState(plan, {
+        operations: [stateOperation(destination, {
+          contentSha256: sha256('different bytes\n'),
+        })],
+      });
+      assert.throws(
+        () => preflightManagedPlan(plan),
+        /content digest|unverified ownership|unowned existing file/i
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

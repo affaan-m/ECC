@@ -195,6 +195,12 @@ function createFallbackValidator() {
         if (typeof operation.scaffoldOnly !== 'boolean') {
           pushError(`${instancePath}/scaffoldOnly`, 'must be boolean');
         }
+        if (
+          operation.contentSha256 !== undefined
+          && !/^[a-f0-9]{64}$/i.test(operation.contentSha256)
+        ) {
+          pushError(`${instancePath}/contentSha256`, 'must be a SHA-256 hex digest');
+        }
       }
     }
 

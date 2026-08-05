@@ -5,6 +5,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -424,6 +425,14 @@ function runTests() {
       const state = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json'), 'utf8'));
       assert.strictEqual(state.request.profile, 'minimal');
       assert.deepStrictEqual(state.resolution.selectedModules, ['fixture-core']);
+      for (const operation of state.operations) {
+        assert.strictEqual(
+          operation.contentSha256,
+          crypto.createHash('sha256')
+            .update(fs.readFileSync(operation.destinationPath))
+            .digest('hex')
+        );
+      }
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);

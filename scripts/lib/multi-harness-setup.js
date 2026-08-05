@@ -72,6 +72,16 @@ function fingerprintFile(filePath) {
   };
 }
 
+function operationIdentityMatches(stateOperation, plannedOperation) {
+  return [
+    'kind',
+    'moduleId',
+    'sourceRelativePath',
+    'strategy',
+    'scaffoldOnly',
+  ].every(field => stateOperation[field] === plannedOperation[field]);
+}
+
 function assertInstallStateUnchanged(plan, expectedFingerprint) {
   const currentFingerprint = fingerprintFile(plan.installStatePath);
   if (
@@ -137,7 +147,12 @@ function readOwnedDestinations(plan, dependencies) {
     );
   }
   assertPriorInstallStateMatchesPlan(state, plan);
-  const destinations = new Set((state.operations || []).map(operation => {
+  const plannedByDestination = new Map(plan.operations.map(operation => [
+    canonicalPath(operation.destinationPath),
+    operation,
+  ]));
+  const destinations = new Set();
+  for (const operation of state.operations || []) {
     if (operation.ownership !== 'managed') {
       throw new Error(
         `Refusing to trust non-managed ownership from install-state at ${plan.installStatePath}.`
@@ -145,8 +160,28 @@ function readOwnedDestinations(plan, dependencies) {
     }
     const destinationPath = operation.destinationPath;
     assertWithinTrustedRoot(destinationPath, plan.targetRoot, 'trust install-state ownership');
-    return canonicalPath(destinationPath);
-  }));
+    const canonicalDestination = canonicalPath(destinationPath);
+    const plannedOperation = plannedByDestination.get(canonicalDestination);
+    if (!plannedOperation) continue;
+    if (!operationIdentityMatches(operation, plannedOperation)) {
+      throw new Error(
+        `Refusing unverified ownership from install-state at ${plan.installStatePath}: `
+        + `operation identity does not match the current plan for ${destinationPath}.`
+      );
+    }
+    const currentFingerprint = fingerprintFile(destinationPath);
+    if (
+      !currentFingerprint.exists
+      || !/^[a-f0-9]{64}$/i.test(operation.contentSha256 || '')
+      || currentFingerprint.sha256 !== operation.contentSha256.toLowerCase()
+    ) {
+      throw new Error(
+        `Refusing unverified ownership from install-state at ${plan.installStatePath}: `
+        + `content digest does not match ${destinationPath}.`
+      );
+    }
+    destinations.add(canonicalDestination);
+  }
   return { destinations, stateFingerprint: validatedFingerprint };
 }
 
