@@ -14,18 +14,15 @@ const repoRoot = path.resolve(__dirname, '..');
 const harnessPath = path.join(repoRoot, 'scripts', 'gan-harness.sh');
 const harnessSource = fs.readFileSync(harnessPath, 'utf8');
 
-let passed = 0;
-let failed = 0;
-
 function test(name, fn) {
   try {
     fn();
     console.log(`  ✓ ${name}`);
-    passed += 1;
+    return true;
   } catch (error) {
     console.log(`  ✗ ${name}`);
     console.log(`    Error: ${error.message}`);
-    failed += 1;
+    return false;
   }
 }
 
@@ -52,21 +49,30 @@ function extractScore(feedback) {
 
 console.log('\n=== GAN harness helpers ===\n');
 
-test('extract_score reads the documented TOTAL table format', () => {
-  assert.strictEqual(extractScore('| **TOTAL** | | | **7.5** |\n'), '7.5');
-});
+const results = Object.freeze([
+  test('extract_score reads the documented TOTAL table format', () => {
+    assert.strictEqual(extractScore('| **TOTAL** | | | **7.5** |\n'), '7.5');
+  }),
 
-test('extract_score reads the compact TOTAL format', () => {
-  assert.strictEqual(extractScore('**TOTAL** | **8.3**\n'), '8.3');
-});
+  test('extract_score reads the compact TOTAL format', () => {
+    assert.strictEqual(extractScore('**TOTAL** | **8.3**\n'), '8.3');
+  }),
 
-test('extract_score reads a Verdict score', () => {
-  assert.strictEqual(extractScore('Verdict: PASS with score 9.1\n'), '9.1');
-});
+  test('extract_score reads a Verdict score', () => {
+    assert.strictEqual(extractScore('Verdict: PASS with score 9.1\n'), '9.1');
+  }),
 
-test('final score lookup is compatible with the macOS Bash 3.2 runtime', () => {
-  assert.ok(!harnessSource.includes('SCORES[-1]'), 'negative array subscripts require Bash 4.3+');
-});
+  test('extract_score returns the fallback when no supported score exists', () => {
+    assert.strictEqual(extractScore('Other score: 9.9\n'), '0.0');
+  }),
+
+  test('final score lookup is compatible with the macOS Bash 3.2 runtime', () => {
+    assert.ok(!harnessSource.includes('SCORES[-1]'), 'negative array subscripts require Bash 4.3+');
+  }),
+]);
+
+const passed = results.filter(Boolean).length;
+const failed = results.length - passed;
 
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
