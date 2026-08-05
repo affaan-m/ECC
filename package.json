@@ -479,12 +479,12 @@
     "node": ">=18"
   },
   "overrides": {
-    "fast-uri": "3.1.4",
+    "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.0"
   },
   "resolutions": {
-    "fast-uri": "3.1.4",
+    "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.0"
   },

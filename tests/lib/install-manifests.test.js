@@ -846,7 +846,7 @@ function runTests() {
             id: 'unsupported-antigravity',
             kind: 'skills',
             description: 'Unsupported',
-            paths: ['.cursor', 'skills/example'],
+            paths: ['.cursor', 'skills/example', 'commands/example'],
             targets: ['antigravity'],
             dependencies: [],
             defaultInstall: false,
@@ -875,8 +875,12 @@ function runTests() {
         'Unsupported antigravity paths should be filtered from planned operations'
       );
       assert.ok(
-        plan.operations.some(operation => operation.sourceRelativePath === 'skills/example'),
-        'Supported antigravity skill paths should still be planned'
+        plan.operations.every(operation => operation.sourceRelativePath !== 'skills/example'),
+        'ECC skills should be filtered: antigravity .agent/skills holds ECC agents'
+      );
+      assert.ok(
+        plan.operations.some(operation => operation.sourceRelativePath === 'commands/example'),
+        'Supported antigravity source paths should still be planned'
       );
     } finally {
       cleanupTestRepo(repoRoot);
