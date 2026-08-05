@@ -580,7 +580,10 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(projectDir, '.agent', 'rules', 'common-coding-style.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agent', 'skills', 'architect.md')));
       assert.ok(fs.existsSync(path.join(projectDir, '.agent', 'workflows', 'plan.md')));
-      assert.ok(fs.existsSync(path.join(projectDir, '.agent', 'skills', 'tdd-workflow', 'SKILL.md')));
+      // .agent/skills is where antigravity keeps its agents, and ECC agents are
+      // already mapped there. Installing ECC skills into the same directory made
+      // the two collide, so skills are no longer an antigravity source path.
+      assert.ok(!fs.existsSync(path.join(projectDir, '.agent', 'skills', 'tdd-workflow', 'SKILL.md')));
 
       const state = readJson(path.join(projectDir, '.agent', 'ecc-install-state.json'));
       assert.strictEqual(state.request.profile, 'core');
