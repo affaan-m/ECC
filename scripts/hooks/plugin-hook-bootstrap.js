@@ -216,11 +216,28 @@ function spawnShell(rootDir, relPath, raw, args) {
   });
 }
 
+/**
+ * The plugin root, derived from this file's own location.
+ *
+ * Used when neither CLAUDE_PLUGIN_ROOT nor ECC_PLUGIN_ROOT is set. This file
+ * lives at <root>/scripts/hooks/, so the root is two levels up — the same
+ * derivation `run-with-flags.js` already uses in `getPluginRoot()`.
+ *
+ * Before this, root resolution came exclusively from the environment, which is
+ * why every hook command in hooks.json carried an inline bootstrap that located
+ * the root itself and assigned `process.env.CLAUDE_PLUGIN_ROOT` before
+ * `require`-ing this module. Resolving from `__dirname` lets hooks invoke this
+ * script directly by path and drop that inline preamble entirely.
+ */
+function defaultPluginRoot() {
+  return path.resolve(__dirname, '..', '..');
+}
+
 function main() {
   const [, , mode, relPath, ...args] = process.argv;
   const raw = readStdinRaw();
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT || defaultPluginRoot()
   );
 
   if (!mode || !relPath || !rootDir) {

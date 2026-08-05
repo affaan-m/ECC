@@ -265,7 +265,14 @@ async function main() {
   }
   if (result.stderr) process.stderr.write(result.stderr);
   const stdout = resolveMainStdout(raw, result, {
-    passthrough: process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1',
+    // `--passthrough` is the argv equivalent of ECC_POSTTOOLUSE_PASSTHROUGH=1.
+    // The env var alone forced hooks.json to wrap this script in an inline
+    // `node -e` preamble purely to assign it before requiring the module, since
+    // there is no portable way to set a per-command env var across cmd.exe and
+    // POSIX shells. A flag lets the hook invoke this file directly.
+    passthrough:
+      process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1' ||
+      process.argv.includes('--passthrough'),
     truncated
   });
   if (stdout) process.stdout.write(stdout);
