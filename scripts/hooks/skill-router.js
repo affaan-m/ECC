@@ -34,7 +34,7 @@ function buildMessage(matches) {
         : match.description;
       lines.push(`- ${match.id} (installed): ${summary}`);
     } else {
-      lines.push(`- ${match.id} (on demand): Read ${toPosix(match.sourceRoot)}/skills/${match.id}/SKILL.md and follow it`);
+      lines.push(`- ${match.id} (on demand): definition at ${toPosix(match.sourceRoot)}/skills/${match.id}/SKILL.md`);
     }
   }
   return `${lines.join('\n')}\n`;

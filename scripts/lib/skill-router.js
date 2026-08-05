@@ -89,9 +89,14 @@ function catalogSignature(sourceRoot) {
   }
 }
 
+// Cache lives under the user's home directory, NOT os.tmpdir(): a stable,
+// predictable filename in a shared /tmp would let another local user
+// pre-plant cache content that gets injected into this user's context.
 function cachePathFor(sourceRoot) {
+  const cacheDir = process.env.ECC_SKILL_ROUTER_CACHE_DIR
+    || path.join(os.homedir(), '.claude', 'cache');
   const digest = crypto.createHash('sha1').update(path.resolve(sourceRoot)).digest('hex').slice(0, 12);
-  return path.join(os.tmpdir(), `ecc-skill-router-${digest}.json`);
+  return path.join(cacheDir, `ecc-skill-router-${digest}.json`);
 }
 
 /**
@@ -120,34 +125,60 @@ function loadCatalog(sourceRoot) {
 
   const entries = readCatalog(sourceRoot);
   try {
-    fs.writeFileSync(cachePath, JSON.stringify({ signature, builtAt: Date.now(), entries }));
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    let existing = null;
+    try {
+      existing = fs.lstatSync(cachePath);
+    } catch {
+      // no existing cache file
+    }
+    // Refuse to write through anything that is not a regular file (symlink
+    // planting) — writeFileSync would otherwise follow the link.
+    if (!existing || existing.isFile()) {
+      fs.writeFileSync(cachePath, JSON.stringify({ signature, builtAt: Date.now(), entries }), { mode: 0o600 });
+    }
   } catch {
     // cache write is best-effort only
   }
   return entries;
 }
 
+// A sourceRoot from ecc-profile.json is only honored when it looks like a
+// real ECC checkout. The metadata is plugin-supplied data, so an arbitrary
+// path must never end up in routed output (Prompt Defense Baseline).
+function isEccSourceRoot(candidate) {
+  return fs.existsSync(path.join(candidate, 'skills'))
+    && fs.existsSync(path.join(candidate, 'manifests', 'install-modules.json'));
+}
+
 /**
  * Resolve where the full skill catalog lives and which skills are installed
  * in the active plugin. Generated slim profiles carry an ecc-profile.json
- * pointing at their source repository; the full plugin routes over itself.
+ * with their source repository and an embedded catalog snapshot; the full
+ * plugin routes over itself. A missing or unverifiable sourceRoot falls
+ * back to installed-only routing.
  */
 function resolveRouterContext(pluginRoot) {
   const installedIds = new Set(listSkillDirs(path.join(pluginRoot, 'skills')));
   let sourceRoot = pluginRoot;
+  let embeddedCatalog = null;
 
   const metadataPath = path.join(pluginRoot, PROFILE_METADATA_FILE);
   try {
     const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-    if (metadata && typeof metadata.sourceRoot === 'string'
-      && fs.existsSync(path.join(metadata.sourceRoot, 'skills'))) {
+    if (metadata && typeof metadata.sourceRoot === 'string' && isEccSourceRoot(metadata.sourceRoot)) {
       sourceRoot = metadata.sourceRoot;
+      if (Array.isArray(metadata.catalog)) {
+        embeddedCatalog = metadata.catalog.filter(
+          entry => entry && typeof entry.id === 'string' && typeof entry.description === 'string'
+        );
+      }
     }
   } catch {
     // no profile metadata: plugin root is the catalog source
   }
 
-  return { sourceRoot, installedIds };
+  return { sourceRoot, installedIds, embeddedCatalog };
 }
 
 /**
@@ -160,18 +191,18 @@ function routePrompt(prompt, options = {}) {
   if (!pluginRoot) {
     throw new Error('routePrompt requires pluginRoot');
   }
-  const maxResults = options.maxResults || DEFAULT_MAX_RESULTS;
-  const minScore = options.minScore || DEFAULT_MIN_SCORE;
+  const maxResults = options.maxResults ?? DEFAULT_MAX_RESULTS;
+  const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
 
   const promptTokens = tokenize(prompt);
   if (promptTokens.size === 0) {
     return [];
   }
 
-  const { sourceRoot, installedIds } = resolveRouterContext(pluginRoot);
+  const { sourceRoot, installedIds, embeddedCatalog } = resolveRouterContext(pluginRoot);
   const scored = [];
 
-  for (const entry of loadCatalog(sourceRoot)) {
+  for (const entry of embeddedCatalog || loadCatalog(sourceRoot)) {
     if (entry.id === 'ecc-catalog') {
       continue;
     }

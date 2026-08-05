@@ -237,23 +237,35 @@ function estimatePlanCatalogTokens(plan) {
  * entry whose body indexes the FULL upstream skill catalog, so a slim
  * profile never loses access to a skill — it loads on demand instead.
  */
-function writeCatalogSkill(plan, pluginRoot) {
-  const { repoRoot } = plan;
-  const installed = new Set(plan.skills);
-  const rows = [];
-
+/**
+ * Read {id, description} for every skill in the source catalog. Consumed by
+ * the catalog skill, and embedded in ecc-profile.json so the skill-router
+ * hook never has to re-scan the source tree at prompt time.
+ */
+function readCatalogEntries(repoRoot) {
+  const entries = [];
   for (const skillId of listChildDirectories(path.join(repoRoot, 'skills'))) {
     const skillPath = path.join(repoRoot, 'skills', skillId, 'SKILL.md');
     if (!fs.existsSync(skillPath)) {
       continue;
     }
     const { description } = parseFrontmatter(fs.readFileSync(skillPath, 'utf8'));
+    entries.push({ id: skillId, description });
+  }
+  return entries;
+}
+
+function writeCatalogSkill(plan, pluginRoot, catalogEntries) {
+  const installed = new Set(plan.skills);
+  const rows = [];
+
+  for (const { id: skillId, description } of catalogEntries) {
     const summary = description.length > 140 ? `${description.slice(0, 137)}...` : description;
     const status = installed.has(skillId) ? 'installed' : 'on demand';
     rows.push(`| ${skillId} | ${status} | ${summary.replace(/\|/g, '\\|')} |`);
   }
 
-  const sourceRoot = toPosix(repoRoot);
+  const sourceRoot = toPosix(plan.repoRoot);
   const body = [
     '---',
     `name: ${CATALOG_SKILL_ID}`,
@@ -351,7 +363,8 @@ function generateProfilePlugin(options = {}) {
     );
   }
 
-  const catalogSkillCount = includeCatalogSkill ? writeCatalogSkill(plan, pluginRoot) : 0;
+  const catalogEntries = readCatalogEntries(repoRoot);
+  const catalogSkillCount = includeCatalogSkill ? writeCatalogSkill(plan, pluginRoot, catalogEntries) : 0;
 
   const manifest = buildPluginManifest(plan, {
     hasSkills: plan.skills.length > 0 || includeCatalogSkill,
@@ -364,7 +377,10 @@ function generateProfilePlugin(options = {}) {
   );
 
   // Router metadata: the skill-router hook reads this to route prompts over
-  // the FULL source catalog even when only this slim profile is enabled.
+  // the FULL source catalog even when only this slim profile is enabled. The
+  // catalog snapshot is embedded so routing never re-scans the source tree
+  // at prompt time; sourceRoot is machine-local, so generated plugins must
+  // be regenerated rather than copied between machines.
   fs.writeFileSync(
     path.join(pluginRoot, 'ecc-profile.json'),
     `${JSON.stringify({
@@ -372,6 +388,7 @@ function generateProfilePlugin(options = {}) {
       profileId: plan.profileId,
       version: plan.version,
       sourceRoot: toPosix(path.resolve(repoRoot)),
+      catalog: catalogEntries,
     }, null, 2)}\n`
   );
 

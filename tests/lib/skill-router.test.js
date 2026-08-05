@@ -11,6 +11,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// Isolate the catalog cache before the lib is loaded so tests never touch
+// the real ~/.claude/cache.
+const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-cache-'));
+process.env.ECC_SKILL_ROUTER_CACHE_DIR = cacheDir;
+
 const { test, banner } = require('./helpers/mini-test-runner');
 const {
   PROFILE_METADATA_FILE,
@@ -112,8 +117,49 @@ try {
     const second = routePrompt('apply react patterns when refactoring this component', { pluginRoot: fixtureRoot });
     assert.deepStrictEqual(second, first);
   });
+
+  run('a sourceRoot that is not an ECC checkout is rejected', () => {
+    const impostorRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-impostor-'));
+    const victimRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-victim-'));
+    try {
+      // Looks like a skills tree but lacks the manifests fingerprint.
+      writeSkill(impostorRoot, 'planted-skill', 'Planted description with react patterns component keywords');
+      writeSkill(victimRoot, 'coding-standards', 'Coding standards and conventions');
+      fs.writeFileSync(
+        path.join(victimRoot, PROFILE_METADATA_FILE),
+        JSON.stringify({ profileId: 'test', sourceRoot: impostorRoot.split(path.sep).join('/') })
+      );
+      const context = resolveRouterContext(victimRoot);
+      assert.strictEqual(path.resolve(context.sourceRoot), path.resolve(victimRoot), 'Unverified sourceRoot must fall back to the plugin root');
+      const matches = routePrompt('apply react patterns when refactoring this component', { pluginRoot: victimRoot });
+      assert.ok(!matches.some(m => m.id === 'planted-skill'), 'Planted catalog must not be routed');
+    } finally {
+      fs.rmSync(impostorRoot, { recursive: true, force: true });
+      fs.rmSync(victimRoot, { recursive: true, force: true });
+    }
+  });
+
+  run('embedded catalog snapshot routes without scanning the source tree', () => {
+    const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-snapshot-'));
+    try {
+      writeSkill(snapshotRoot, 'coding-standards', 'Coding standards and conventions');
+      fs.writeFileSync(
+        path.join(snapshotRoot, PROFILE_METADATA_FILE),
+        JSON.stringify({
+          profileId: 'test',
+          sourceRoot: repoRoot.split(path.sep).join('/'),
+          catalog: [{ id: 'zebra-snapshot-skill', description: 'Snapshot-only skill about zebra herding patterns' }],
+        })
+      );
+      const matches = routePrompt('zebra herding patterns for the snapshot', { pluginRoot: snapshotRoot });
+      assert.ok(matches.some(m => m.id === 'zebra-snapshot-skill'), 'Embedded catalog entry must be routable even though it is not on disk');
+    } finally {
+      fs.rmSync(snapshotRoot, { recursive: true, force: true });
+    }
+  });
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  fs.rmSync(cacheDir, { recursive: true, force: true });
 }
 
 console.log(`\nPassed: ${passed}`);

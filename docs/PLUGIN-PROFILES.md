@@ -148,3 +148,8 @@ version.
   load them, so they are skipped (use `./install.sh` for those).
 - The generated marketplace is local to the machine. Committing generated
   profile plugins to a shared repo works, but treat them as build artifacts.
+- `ecc-profile.json` embeds the machine-local absolute path of the source
+  checkout (and a catalog snapshot). Do not copy a generated plugin to
+  another machine — regenerate it there instead. On a machine where the
+  recorded path does not exist (or fails the ECC-checkout check), the
+  skill-router hook silently falls back to routing installed skills only.
