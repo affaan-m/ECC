@@ -61,11 +61,18 @@ phase()  { echo -e "\n${PURPLE}════════════════�
 extract_score() {
   # Extract the TOTAL weighted score from a feedback file
   local file="$1"
-  # Look for **TOTAL** or **X.X/10** pattern
-  grep -oP '(?<=\*\*TOTAL\*\*.*\*\*)[0-9]+\.[0-9]+' "$file" 2>/dev/null \
-    || grep -oP '(?<=TOTAL.*\|.*\| \*\*)[0-9]+\.[0-9]+' "$file" 2>/dev/null \
-    || grep -oP 'Verdict:.*([0-9]+\.[0-9]+)' "$file" 2>/dev/null | grep -oP '[0-9]+\.[0-9]+' \
-    || echo "0.0"
+  awk '
+    /\*\*TOTAL\*\*/ || /Verdict:/ {
+      if (match($0, /[0-9]+[.][0-9]+/)) {
+        print substr($0, RSTART, RLENGTH)
+        found = 1
+        exit
+      }
+    }
+    END {
+      if (!found) print "0.0"
+    }
+  ' "$file" 2>/dev/null
 }
 
 score_passes() {
@@ -241,8 +248,12 @@ done
 
 phase "PHASE 3: Build Report"
 
-FINAL_SCORE="${SCORES[-1]:-0.0}"
 NUM_ITERATIONS=${#SCORES[@]}
+if [ "$NUM_ITERATIONS" -gt 0 ]; then
+  FINAL_SCORE="${SCORES[$((NUM_ITERATIONS - 1))]}"
+else
+  FINAL_SCORE="0.0"
+fi
 ELAPSED=$(elapsed)
 
 # Build score progression table
