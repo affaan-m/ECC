@@ -430,6 +430,51 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('per-operation guard runs after mkdir and immediately before a copy write', () => {
+    const tempDir = createTempDir('install-executor-write-guard-');
+    try {
+      const targetRoot = path.join(tempDir, 'target');
+      const sourcePath = writeFile(tempDir, path.join('source', 'security.md'), 'ecc\n');
+      const destinationPath = path.join(targetRoot, 'rules', 'security.md');
+      const plan = {
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'core',
+          sourcePath,
+          sourceRelativePath: 'rules/security.md',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        statePreview: { operations: [] },
+        target: 'kimi',
+        targetRoot,
+      };
+      const events = [];
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, {
+          beforeOperationWrite({ operation }) {
+            events.push(operation.destinationPath);
+            assert.strictEqual(fs.existsSync(path.dirname(destinationPath)), true);
+            assert.strictEqual(fs.existsSync(destinationPath), false);
+            writeFile(targetRoot, path.join('rules', 'security.md'), 'user\n');
+            throw new Error('late unowned collision');
+          },
+          writeInstallState() {},
+        }),
+        /late unowned collision/
+      );
+      assert.deepStrictEqual(events, [destinationPath]);
+      assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), 'user\n');
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
   if (test('dedupeCopyFileOperations keeps the last writer per destination (issue #2414)', () => {
     // Mirrors the OpenCode command scenario: a generic commands/<name>.md source
     // (preserve-relative-path) and an override .opencode/commands/<name>.md source

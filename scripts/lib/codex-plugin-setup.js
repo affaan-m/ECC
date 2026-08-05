@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile: nodeExecFile } = require('child_process');
+const path = require('path');
 
 const CODEX_PLUGIN_ID = 'ecc@ecc';
 const OFFICIAL_MARKETPLACE_NAME = 'ecc';
@@ -22,20 +23,22 @@ function fail(code, message, details) {
   throw new CodexPluginSetupError(code, message, details);
 }
 
-function parseJsonObject(stdout, inventoryName) {
+function parseJsonObject(stdout, inventoryName, phase = 'inventory') {
   let parsed;
   try {
     parsed = JSON.parse(String(stdout || ''));
   } catch (error) {
     fail(
       `INVALID_${inventoryName.toUpperCase()}_INVENTORY`,
-      `Codex ${inventoryName} inventory returned invalid JSON: ${error.message}`
+      `Codex ${inventoryName} inventory returned invalid JSON: ${error.message}`,
+      { phase }
     );
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     fail(
       `INVALID_${inventoryName.toUpperCase()}_INVENTORY`,
-      `Codex ${inventoryName} inventory is invalid: expected a JSON object`
+      `Codex ${inventoryName} inventory is invalid: expected a JSON object`,
+      { phase }
     );
   }
   return parsed;
@@ -50,12 +53,13 @@ function normalizeGitHubRepository(value) {
   return match ? match[1].toLowerCase() : null;
 }
 
-function parseMarketplaceInventory(stdout) {
-  const inventory = parseJsonObject(stdout, 'marketplace');
+function parseMarketplaceInventory(stdout, phase) {
+  const inventory = parseJsonObject(stdout, 'marketplace', phase);
   if (!Array.isArray(inventory.marketplaces)) {
     fail(
       'INVALID_MARKETPLACE_INVENTORY',
-      'Codex marketplace inventory is invalid: expected `marketplaces` to be an array'
+      'Codex marketplace inventory is invalid: expected `marketplaces` to be an array',
+      { phase }
     );
   }
   for (const marketplace of inventory.marketplaces) {
@@ -68,7 +72,8 @@ function parseMarketplaceInventory(stdout) {
     ) {
       fail(
         'INVALID_MARKETPLACE_INVENTORY',
-        'Codex marketplace inventory contains an invalid marketplace entry'
+        'Codex marketplace inventory contains an invalid marketplace entry',
+        { phase }
       );
     }
   }
@@ -78,17 +83,19 @@ function parseMarketplaceInventory(stdout) {
   if (eccEntries.length > 1) {
     fail(
       'INVALID_MARKETPLACE_INVENTORY',
-      'Codex marketplace inventory contains duplicate `ecc` entries'
+      'Codex marketplace inventory contains duplicate `ecc` entries',
+      { phase }
     );
   }
   return inventory.marketplaces;
 }
 
-function assertPluginEntries(entries, field) {
+function assertPluginEntries(entries, field, phase) {
   if (!Array.isArray(entries)) {
     fail(
       'INVALID_PLUGIN_INVENTORY',
-      `Codex plugin inventory is invalid: expected \`${field}\` to be an array`
+      `Codex plugin inventory is invalid: expected \`${field}\` to be an array`,
+      { phase }
     );
   }
   for (const plugin of entries) {
@@ -99,35 +106,39 @@ function assertPluginEntries(entries, field) {
     ) {
       fail(
         'INVALID_PLUGIN_INVENTORY',
-        `Codex plugin inventory contains an invalid \`${field}\` entry`
+        `Codex plugin inventory contains an invalid \`${field}\` entry`,
+        { phase }
       );
     }
     if (plugin.installed !== undefined && typeof plugin.installed !== 'boolean') {
       fail(
         'INVALID_PLUGIN_INVENTORY',
-        `Codex plugin inventory contains an invalid \`${field}\` install state`
+        `Codex plugin inventory contains an invalid \`${field}\` install state`,
+        { phase }
       );
     }
     if (plugin.enabled !== undefined && typeof plugin.enabled !== 'boolean') {
       fail(
         'INVALID_PLUGIN_INVENTORY',
-        `Codex plugin inventory contains an invalid \`${field}\` enabled state`
+        `Codex plugin inventory contains an invalid \`${field}\` enabled state`,
+        { phase }
       );
     }
   }
 }
 
-function parsePluginInventory(stdout) {
-  const inventory = parseJsonObject(stdout, 'plugin');
-  assertPluginEntries(inventory.installed, 'installed');
-  assertPluginEntries(inventory.available, 'available');
+function parsePluginInventory(stdout, phase) {
+  const inventory = parseJsonObject(stdout, 'plugin', phase);
+  assertPluginEntries(inventory.installed, 'installed', phase);
+  assertPluginEntries(inventory.available, 'available', phase);
   const eccEntries = inventory.installed.filter(
     plugin => plugin.pluginId === CODEX_PLUGIN_ID
   );
   if (eccEntries.length > 1) {
     fail(
       'INVALID_PLUGIN_INVENTORY',
-      `Codex plugin inventory contains duplicate ${CODEX_PLUGIN_ID} entries`
+      `Codex plugin inventory contains duplicate ${CODEX_PLUGIN_ID} entries`,
+      { phase }
     );
   }
   return {
@@ -206,16 +217,25 @@ async function resolveMarketplaceRepository(marketplace, options = {}, dependenc
     fail(
       'MARKETPLACE_COLLISION',
       `Refusing the existing \`ecc\` marketplace because its Git provenance could not be verified${detail ? `: ${detail}` : ''}.`,
-      { phase: 'marketplace-provenance' }
+      { phase: options.phase || 'marketplace-provenance' }
     );
   }
   return normalizeGitHubRepository(result.stdout);
 }
 
-async function assertOfficialMarketplace(marketplace, options, dependencies) {
+async function assertOfficialMarketplace(
+  marketplace,
+  options,
+  dependencies,
+  phase = 'marketplace-provenance'
+) {
   if (!marketplace) return;
   const resolveRepository = dependencies.resolveMarketplaceRepository
-    || (entry => resolveMarketplaceRepository(entry, options, dependencies));
+    || (entry => resolveMarketplaceRepository(
+      entry,
+      { ...options, phase },
+      dependencies
+    ));
   let repository;
   try {
     repository = normalizeGitHubRepository(await resolveRepository(marketplace));
@@ -225,16 +245,76 @@ async function assertOfficialMarketplace(marketplace, options, dependencies) {
     fail(
       'MARKETPLACE_COLLISION',
       `Refusing the existing \`ecc\` marketplace because its provenance could not be verified${detail ? `: ${detail}` : ''}.`,
-      { phase: 'marketplace-provenance' }
+      { phase }
     );
   }
   if (repository !== NORMALIZED_OFFICIAL_MARKETPLACE_REPO) {
     fail(
       'MARKETPLACE_COLLISION',
       'Refusing the existing `ecc` marketplace because it is not the official affaan-m/ECC source.',
-      { phase: 'marketplace-provenance' }
+      { phase }
     );
   }
+}
+
+function normalizeMarketplaceRoot(value) {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const isWindowsPath = /^[a-z]:[\\/]/i.test(value) || /^\\\\/.test(value);
+  const normalized = isWindowsPath
+    ? path.win32.normalize(value)
+    : path.posix.normalize(value);
+  return isWindowsPath ? normalized.toLowerCase() : normalized;
+}
+
+function parseMarketplaceUpgradeResult(stdout, marketplace) {
+  const phase = 'marketplace-upgrade';
+  const argv = [
+    'plugin', 'marketplace', 'upgrade', OFFICIAL_MARKETPLACE_NAME, '--json',
+  ];
+  let result;
+  try {
+    result = JSON.parse(String(stdout || ''));
+  } catch (error) {
+    fail(
+      'INVALID_MARKETPLACE_UPGRADE_RESULT',
+      `Codex marketplace refresh returned invalid JSON: ${error.message}`,
+      { phase, argv }
+    );
+  }
+  const validShape = (
+    result
+    && typeof result === 'object'
+    && !Array.isArray(result)
+    && Array.isArray(result.selectedMarketplaces)
+    && result.selectedMarketplaces.every(name => typeof name === 'string')
+    && Array.isArray(result.upgradedRoots)
+    && result.upgradedRoots.every(root => typeof root === 'string' && root.length > 0)
+    && Array.isArray(result.errors)
+  );
+  if (!validShape) {
+    fail(
+      'INVALID_MARKETPLACE_UPGRADE_RESULT',
+      'Codex marketplace refresh returned an invalid result.',
+      { phase, argv }
+    );
+  }
+  const expectedRoot = normalizeMarketplaceRoot(marketplace.root);
+  const upgradedRoot = result.upgradedRoots.length === 1
+    ? normalizeMarketplaceRoot(result.upgradedRoots[0])
+    : null;
+  if (
+    result.errors.length > 0
+    || result.selectedMarketplaces.length !== 1
+    || result.selectedMarketplaces[0] !== OFFICIAL_MARKETPLACE_NAME
+    || upgradedRoot !== expectedRoot
+  ) {
+    fail(
+      'MARKETPLACE_REFRESH_FAILED',
+      'Codex did not confirm that the official ECC marketplace was refreshed.',
+      { phase, argv }
+    );
+  }
+  return result;
 }
 
 function findEccMarketplace(marketplaces) {
@@ -254,12 +334,12 @@ async function readMarketplaceInventory(run, phase) {
     ['plugin', 'marketplace', 'list', '--json'],
     { phase }
   );
-  return parseMarketplaceInventory(result.stdout);
+  return parseMarketplaceInventory(result.stdout, phase);
 }
 
 async function readPluginInventory(run, phase) {
   const result = await run(['plugin', 'list', '--json'], { phase });
-  return parsePluginInventory(result.stdout);
+  return parsePluginInventory(result.stdout, phase);
 }
 
 async function reconcileCodexPlugin(options = {}, dependencies = {}) {
@@ -291,19 +371,10 @@ async function reconcileCodexPlugin(options = {}, dependencies = {}) {
         : (installedPlugin ? 'would-update' : 'would-install'),
       dryRun: true,
       marketplaceAction: marketplace
-        ? (isReconciled ? 'unchanged' : 'would-upgrade')
+        ? 'would-upgrade'
         : 'would-add',
       pluginId: CODEX_PLUGIN_ID,
       restartRequired: !isReconciled,
-    };
-  }
-
-  if (isReconciled) {
-    return {
-      action: 'unchanged',
-      marketplaceAction: 'unchanged',
-      pluginId: CODEX_PLUGIN_ID,
-      restartRequired: false,
     };
   }
 
@@ -311,9 +382,12 @@ async function reconcileCodexPlugin(options = {}, dependencies = {}) {
     ? ['plugin', 'marketplace', 'upgrade', OFFICIAL_MARKETPLACE_NAME, '--json']
     : ['plugin', 'marketplace', 'add', OFFICIAL_MARKETPLACE_REPO, '--json'];
   const marketplaceAction = marketplace ? 'upgraded' : 'added';
-  await run(marketplaceArgs, {
+  const marketplaceResult = await run(marketplaceArgs, {
     phase: marketplace ? 'marketplace-upgrade' : 'marketplace-add',
   });
+  if (marketplace) {
+    parseMarketplaceUpgradeResult(marketplaceResult.stdout, marketplace);
+  }
 
   const verifiedMarketplaces = await readMarketplaceInventory(
     run,
@@ -329,17 +403,29 @@ async function reconcileCodexPlugin(options = {}, dependencies = {}) {
   await assertOfficialMarketplace(
     findEccMarketplace(verifiedMarketplaces),
     options,
-    dependencies
+    dependencies,
+    'marketplace-verification'
   );
 
-  if (!pluginReady) {
+  const pluginsAfterMarketplace = marketplace
+    ? await readPluginInventory(run, 'plugin-verification')
+    : plugins;
+  const pluginAfterMarketplace = findInstalledEccPlugin(pluginsAfterMarketplace);
+  const pluginReadyAfterMarketplace = (
+    pluginAfterMarketplace?.installed === true
+    && pluginAfterMarketplace.enabled === true
+  );
+
+  if (!pluginReadyAfterMarketplace) {
     await run(
       ['plugin', 'add', CODEX_PLUGIN_ID, '--json'],
       { phase: 'plugin-add' }
     );
   }
 
-  const verifiedPlugins = await readPluginInventory(run, 'plugin-verification');
+  const verifiedPlugins = pluginReadyAfterMarketplace
+    ? pluginsAfterMarketplace
+    : await readPluginInventory(run, 'plugin-verification');
   const verifiedPlugin = findInstalledEccPlugin(verifiedPlugins);
   if (!(verifiedPlugin?.installed === true && verifiedPlugin.enabled === true)) {
     fail(
@@ -350,10 +436,12 @@ async function reconcileCodexPlugin(options = {}, dependencies = {}) {
   }
 
   return {
-    action: installedPlugin ? 'updated' : 'installed',
+    action: pluginReady && pluginReadyAfterMarketplace
+      ? 'unchanged'
+      : (installedPlugin ? 'updated' : 'installed'),
     marketplaceAction,
     pluginId: CODEX_PLUGIN_ID,
-    restartRequired: true,
+    restartRequired: !pluginReadyAfterMarketplace,
   };
 }
 
@@ -366,6 +454,7 @@ module.exports = {
   findInstalledEccPlugin,
   normalizeGitHubRepository,
   parseMarketplaceInventory,
+  parseMarketplaceUpgradeResult,
   parsePluginInventory,
   reconcileCodexPlugin,
   resolveMarketplaceRepository,

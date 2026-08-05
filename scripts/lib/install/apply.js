@@ -203,6 +203,8 @@ function previewInstallPlan(plan) {
 
 function applyInstallPlan(plan, dependencies = {}) {
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const beforeOperationWrite = dependencies.beforeOperationWrite;
+  const beforeInstallStateWrite = dependencies.beforeInstallStateWrite;
   const migration = prepareClaudeSkillMigration(plan);
   const appliedPlan = {
     ...plan,
@@ -218,6 +220,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     // before the first copy. A later failure is retryable and uninstall can
     // clean the entire partial install, including non-skill files. During
     // legacy migration the bridge also retains the prior managed operations.
+    if (typeof beforeInstallStateWrite === 'function') {
+      beforeInstallStateWrite({ plan: appliedPlan, state: migration.bridgeState });
+    }
     persistInstallState(plan.installStatePath, migration.bridgeState);
   }
 
@@ -230,6 +235,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     // eliminate a later TOCTOU race before the file write.
     assertSafeInstallOperation(appliedPlan, operation);
     assertSafeClaudeSkillOperation(appliedPlan, operation);
+    if (typeof beforeOperationWrite === 'function') {
+      beforeOperationWrite({ plan: appliedPlan, operation });
+    }
 
     if (operation.kind === 'merge-json') {
       const payload = cloneJsonValue(operation.mergePayload);
@@ -282,6 +290,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
     fs.mkdirSync(path.dirname(resolvedClaudeHooksPlan.hooksDestinationPath), { recursive: true });
     assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
+    if (typeof beforeOperationWrite === 'function') {
+      beforeOperationWrite({ plan: appliedPlan, operation: resolvedClaudeHooksPlan.hooksOperation });
+    }
     fs.writeFileSync(
       resolvedClaudeHooksPlan.hooksDestinationPath,
       JSON.stringify(resolvedClaudeHooksPlan.resolvedHooksConfig, null, 2) + '\n',
@@ -291,6 +302,9 @@ function applyInstallPlan(plan, dependencies = {}) {
 
   if (hasLegacyMigration) {
     removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
+  }
+  if (typeof beforeInstallStateWrite === 'function') {
+    beforeInstallStateWrite({ plan: appliedPlan, state: migration.finalState });
   }
   persistInstallState(plan.installStatePath, migration.finalState);
 

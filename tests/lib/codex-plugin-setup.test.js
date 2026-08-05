@@ -7,6 +7,7 @@ const {
   OFFICIAL_MARKETPLACE_REPO,
   normalizeGitHubRepository,
   parseMarketplaceInventory,
+  parseMarketplaceUpgradeResult,
   parsePluginInventory,
   reconcileCodexPlugin,
   resolveMarketplaceRepository,
@@ -41,6 +42,15 @@ function pluginInventory(installed = false, overrides = {}) {
   return JSON.stringify({
     installed: installed ? [ecc] : [],
     available: [],
+  });
+}
+
+function marketplaceUpgradeResult(overrides = {}) {
+  return JSON.stringify({
+    selectedMarketplaces: ['ecc'],
+    upgradedRoots: ['/cache/ecc'],
+    errors: [],
+    ...overrides,
   });
 }
 
@@ -184,8 +194,11 @@ async function runTests() {
         assert.ok(!call.args.includes('-c'));
       }
     }],
-    ['already installed and enabled is an idempotent no-op', async () => {
+    ['already installed and enabled is refreshed and strongly verified', async () => {
       const fake = createExecFile([
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+        { args: MARKETPLACE_UPGRADE, stdout: marketplaceUpgradeResult() },
         { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
         { args: PLUGIN_LIST, stdout: pluginInventory(true) },
       ]);
@@ -194,14 +207,112 @@ async function runTests() {
 
       assert.deepStrictEqual(result, {
         action: 'unchanged',
-        marketplaceAction: 'unchanged',
+        marketplaceAction: 'upgraded',
         pluginId: 'ecc@ecc',
         restartRequired: false,
       });
       assert.deepStrictEqual(fake.calls.map(call => call.args), [
         MARKETPLACE_LIST,
         PLUGIN_LIST,
+        MARKETPLACE_UPGRADE,
+        MARKETPLACE_LIST,
+        PLUGIN_LIST,
       ]);
+    }],
+    ['fails closed when native refresh does not confirm the marketplace root', async () => {
+      const fake = createExecFile([
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+        {
+          args: MARKETPLACE_UPGRADE,
+          stdout: marketplaceUpgradeResult({ upgradedRoots: [] }),
+        },
+      ]);
+
+      await assert.rejects(
+        reconcileCodexPlugin({}, dependenciesFor(fake)),
+        error => {
+          assert.strictEqual(error.code, 'MARKETPLACE_REFRESH_FAILED');
+          assert.strictEqual(error.phase, 'marketplace-upgrade');
+          assert.deepStrictEqual(error.argv, MARKETPLACE_UPGRADE);
+          assert.match(error.message, /did not confirm.*refreshed/i);
+          return true;
+        }
+      );
+      assert.strictEqual(fake.calls.length, 3);
+    }],
+    ['accepts the provider root across Windows separator and case differences', () => {
+      const result = parseMarketplaceUpgradeResult(
+        marketplaceUpgradeResult({
+          upgradedRoots: ['c:/users/hira/.codex/marketplaces/ecc'],
+        }),
+        { name: 'ecc', root: 'C:\\Users\\Hira\\.codex\\marketplaces\\ecc' }
+      );
+
+      assert.deepStrictEqual(result.selectedMarketplaces, ['ecc']);
+    }],
+    ['rejects ambiguous native refresh results for a targeted upgrade', () => {
+      assert.throws(
+        () => parseMarketplaceUpgradeResult(
+          marketplaceUpgradeResult({
+            selectedMarketplaces: ['ecc', 'other'],
+            upgradedRoots: ['/cache/ecc', '/cache/other'],
+          }),
+          { name: 'ecc', root: '/cache/ecc' }
+        ),
+        error => (
+          error.code === 'MARKETPLACE_REFRESH_FAILED'
+          && error.phase === 'marketplace-upgrade'
+        )
+      );
+      assert.throws(
+        () => parseMarketplaceUpgradeResult(
+          marketplaceUpgradeResult({ errors: [{ message: 'dirty checkout' }] }),
+          { name: 'ecc', root: '/cache/ecc' }
+        ),
+        error => error.code === 'MARKETPLACE_REFRESH_FAILED'
+      );
+    }],
+    ['fails closed when post-refresh marketplace provenance changes', async () => {
+      const fake = createExecFile([
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+        { args: MARKETPLACE_UPGRADE, stdout: marketplaceUpgradeResult() },
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+      ]);
+      let provenanceChecks = 0;
+
+      await expectSetupError(
+        reconcileCodexPlugin({}, dependenciesFor(fake, {
+          resolveMarketplaceRepository: async () => {
+            provenanceChecks += 1;
+            return provenanceChecks === 1 ? 'affaan-m/ecc' : 'attacker/ecc';
+          },
+        })),
+        'MARKETPLACE_COLLISION',
+        /not the official/i
+      );
+      assert.strictEqual(provenanceChecks, 2);
+      assert.strictEqual(fake.calls.length, 4);
+    }],
+    ['fails closed on malformed post-refresh plugin inventory', async () => {
+      const fake = createExecFile([
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(true) },
+        { args: MARKETPLACE_UPGRADE, stdout: marketplaceUpgradeResult() },
+        { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: '{not json' },
+      ]);
+
+      await assert.rejects(
+        reconcileCodexPlugin({}, dependenciesFor(fake)),
+        error => {
+          assert.strictEqual(error.code, 'INVALID_PLUGIN_INVENTORY');
+          assert.strictEqual(error.phase, 'plugin-verification');
+          return true;
+        }
+      );
+      assert.strictEqual(fake.calls.length, 5);
     }],
     ['dry-run fresh install is inventory-only planning', async () => {
       const fake = createExecFile([
@@ -260,7 +371,7 @@ async function runTests() {
       assert.deepStrictEqual(result, {
         action: 'unchanged',
         dryRun: true,
-        marketplaceAction: 'unchanged',
+        marketplaceAction: 'would-upgrade',
         pluginId: 'ecc@ecc',
         restartRequired: false,
       });
@@ -270,8 +381,9 @@ async function runTests() {
       const fake = createExecFile([
         { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
         { args: PLUGIN_LIST, stdout: pluginInventory(false) },
-        { args: MARKETPLACE_UPGRADE, stdout: '{"upgraded":true}' },
+        { args: MARKETPLACE_UPGRADE, stdout: marketplaceUpgradeResult() },
         { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+        { args: PLUGIN_LIST, stdout: pluginInventory(false) },
         { args: PLUGIN_ADD, stdout: '{"pluginId":"ecc@ecc"}' },
         { args: PLUGIN_LIST, stdout: pluginInventory(true) },
       ]);
@@ -285,6 +397,7 @@ async function runTests() {
         PLUGIN_LIST,
         MARKETPLACE_UPGRADE,
         MARKETPLACE_LIST,
+        PLUGIN_LIST,
         PLUGIN_ADD,
         PLUGIN_LIST,
       ]);

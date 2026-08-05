@@ -1,10 +1,12 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 
 const { assertSafeInstallOperation } = require('./install/apply');
+const { assertWithinTrustedRoot, realpathNearestExisting } = require('./path-safety');
 
 const VALID_CLAUDE_SCOPES = new Set(['user', 'project', 'local']);
 const VALID_CLAUDE_HOOKS = new Set(['off', 'minimal', 'standard', 'strict']);
@@ -54,11 +56,98 @@ function normalizeGuidedInstallRequest(input = {}) {
   };
 }
 
+function canonicalPath(filePath) {
+  return realpathNearestExisting(filePath);
+}
+
+function pathsMatch(left, right) {
+  return canonicalPath(left) === canonicalPath(right);
+}
+
+function fingerprintFile(filePath) {
+  if (!fs.existsSync(filePath)) return { exists: false, sha256: null };
+  return {
+    exists: true,
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
+  };
+}
+
+function assertInstallStateUnchanged(plan, expectedFingerprint) {
+  const currentFingerprint = fingerprintFile(plan.installStatePath);
+  if (
+    currentFingerprint.exists !== expectedFingerprint.exists
+    || currentFingerprint.sha256 !== expectedFingerprint.sha256
+  ) {
+    throw new Error(
+      `Refusing to overwrite an unowned or changed install-state at ${plan.installStatePath}. `
+      + 'Re-run the guided preview and review the existing state before retrying.'
+    );
+  }
+}
+
+function assertPriorInstallStateMatchesPlan(state, plan) {
+  const target = state.target || {};
+  const adapter = plan.adapter || {};
+  if (
+    target.id !== adapter.id
+    || target.target !== adapter.target
+    || target.kind !== adapter.kind
+  ) {
+    throw new Error(
+      `Refusing to trust managed install-state at ${plan.installStatePath}: `
+      + 'target identity does not match the current Kimi install plan.'
+    );
+  }
+  if (!pathsMatch(target.root, plan.targetRoot)) {
+    throw new Error(
+      `Refusing to trust managed install-state at ${plan.installStatePath}: `
+      + 'recorded root does not match the current install root.'
+    );
+  }
+  if (!pathsMatch(target.installStatePath, plan.installStatePath)) {
+    throw new Error(
+      `Refusing to trust managed install-state at ${plan.installStatePath}: `
+      + 'recorded install-state path does not match the current install-state path.'
+    );
+  }
+}
+
 function readOwnedDestinations(plan, dependencies) {
-  if (!plan.installStatePath || !fs.existsSync(plan.installStatePath)) return new Set();
+  if (!plan.installStatePath) {
+    return { destinations: new Set(), stateFingerprint: { exists: false, sha256: null } };
+  }
+  try {
+    assertSafeInstallOperation(plan, { destinationPath: plan.installStatePath });
+  } catch (error) {
+    throw new Error(`Refusing to trust managed install-state path: ${error.message}`);
+  }
+  if (!fs.existsSync(plan.installStatePath)) {
+    return { destinations: new Set(), stateFingerprint: { exists: false, sha256: null } };
+  }
   const readState = dependencies.readInstallState || require('./install-state').readInstallState;
+  const initialFingerprint = fingerprintFile(plan.installStatePath);
   const state = readState(plan.installStatePath);
-  return new Set((state.operations || []).map(operation => operation.destinationPath));
+  const validatedFingerprint = fingerprintFile(plan.installStatePath);
+  if (
+    initialFingerprint.exists !== validatedFingerprint.exists
+    || initialFingerprint.sha256 !== validatedFingerprint.sha256
+  ) {
+    throw new Error(
+      `Refusing to trust install-state that changed during validation: ${plan.installStatePath}.`
+    );
+  }
+  assertPriorInstallStateMatchesPlan(state, plan);
+  const destinations = new Set((state.operations || []).map(operation => {
+    if (operation.ownership !== 'managed') {
+      throw new Error(
+        `Refusing to trust non-managed ownership from install-state at ${plan.installStatePath}.`
+      );
+    }
+    const destinationPath = operation.destinationPath;
+    assertWithinTrustedRoot(destinationPath, plan.targetRoot, 'trust install-state ownership');
+    return canonicalPath(destinationPath);
+  }));
+  return { destinations, stateFingerprint: validatedFingerprint };
 }
 
 function assertMergeDestination(destinationPath) {
@@ -95,9 +184,10 @@ function findJsonConflicts(current, patch, prefix = '') {
 function classifyManagedOperation(operation, ownedDestinations) {
   const destinationPath = operation.destinationPath;
   if (!fs.existsSync(destinationPath)) return 'create';
+  const canonicalDestination = canonicalPath(destinationPath);
   if (operation.kind === 'merge-json') {
     const current = assertMergeDestination(destinationPath);
-    if (ownedDestinations.has(destinationPath)) return 'managed-json-update';
+    if (ownedDestinations.has(canonicalDestination)) return 'managed-json-update';
     const conflicts = findJsonConflicts(current, operation.mergePayload);
     if (conflicts.length > 0) {
       throw new Error(
@@ -106,7 +196,7 @@ function classifyManagedOperation(operation, ownedDestinations) {
     }
     return 'json-merge';
   }
-  if (ownedDestinations.has(destinationPath)) return 'managed-update';
+  if (ownedDestinations.has(canonicalDestination)) return 'managed-update';
   if (
     operation.kind === 'copy-file'
     && typeof operation.sourcePath === 'string'
@@ -170,17 +260,58 @@ function preflightManagedPlan(plan, dependencies = {}) {
   if (!plan || !Array.isArray(plan.operations)) {
     throw new Error('A managed install plan with operations is required.');
   }
-  const ownedDestinations = readOwnedDestinations(plan, dependencies);
+  const ownership = readOwnedDestinations(plan, dependencies);
   const operations = plan.operations.map(operation => {
     assertSafeInstallOperation(plan, operation);
     return {
       destinationPath: operation.destinationPath,
       kind: operation.kind,
-      classification: classifyManagedOperation(operation, ownedDestinations),
+      classification: classifyManagedOperation(operation, ownership.destinations),
     };
   });
   assertManagedDestinationsWritable(plan, dependencies);
-  return { plan, operations };
+  return {
+    plan,
+    operations,
+    ownershipSnapshot: {
+      destinations: [...ownership.destinations],
+      stateFingerprint: ownership.stateFingerprint,
+    },
+  };
+}
+
+function applyPreflightedManagedPlan(entry) {
+  const preview = entry.preview && entry.preview.ownershipSnapshot
+    ? entry.preview
+    : preflightManagedPlan(entry.preview.plan);
+  const ownedDestinations = new Set(preview.ownershipSnapshot.destinations);
+  const expectedStateFingerprint = preview.ownershipSnapshot.stateFingerprint;
+  let operationIndex = 0;
+  const assertStateUnchanged = () => (
+    assertInstallStateUnchanged(preview.plan, expectedStateFingerprint)
+  );
+
+  return require('./install-executor').applyInstallPlan(preview.plan, {
+    beforeOperationWrite({ operation }) {
+      assertStateUnchanged();
+      const expected = preview.operations[operationIndex];
+      const currentClassification = classifyManagedOperation(operation, ownedDestinations);
+      const destination = canonicalPath(operation.destinationPath);
+      if (
+        !expected
+        || expected.kind !== operation.kind
+        || canonicalPath(expected.destinationPath) !== destination
+        || expected.classification !== currentClassification
+      ) {
+        throw new Error(
+          `Refusing to write ${operation.destinationPath}: destination changed after Kimi preflight.`
+        );
+      }
+      ownedDestinations.add(destination);
+      operationIndex += 1;
+    },
+    beforeInstallStateWrite: assertStateUnchanged,
+  });
 }
 
 function defaultDependencies(options = {}) {
@@ -205,7 +336,7 @@ function defaultDependencies(options = {}) {
       { dryRun: false, hooks: request.claudeHooks, scope: request.claudeScope }
     ),
     applyCodex: () => require('./codex-plugin-setup').reconcileCodexPlugin({ dryRun: false }),
-    applyManaged: entry => require('./install-executor').applyInstallPlan(entry.preview.plan),
+    applyManaged: applyPreflightedManagedPlan,
   };
 }
 
@@ -244,7 +375,15 @@ async function applyMultiHarnessPlan(plan, injected = {}, options = {}) {
       let result;
       if (entry.id === 'claude') result = await dependencies.applyClaude(plan.request, entry);
       else if (entry.id === 'codex') result = await dependencies.applyCodex(plan.request, entry);
-      else result = await dependencies.applyManaged(entry, plan.request);
+      else if (entry.preview && entry.preview.plan) {
+        const latestPreview = dependencies.preflightManaged(entry.preview.plan);
+        result = await dependencies.applyManaged(
+          { ...entry, preview: latestPreview },
+          plan.request
+        );
+      } else {
+        result = await dependencies.applyManaged(entry, plan.request);
+      }
       completed = [...completed, { id: entry.id, result }];
     } catch (error) {
       return {
