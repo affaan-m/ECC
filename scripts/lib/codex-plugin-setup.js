@@ -2,6 +2,7 @@
 
 const { execFile: nodeExecFile } = require('child_process');
 const path = require('path');
+const { normalizeGitHubGitOrigin } = require('./github-origin');
 
 const CODEX_PLUGIN_ID = 'ecc@ecc';
 const OFFICIAL_MARKETPLACE_NAME = 'ecc';
@@ -43,15 +44,6 @@ function parseJsonObject(stdout, inventoryName, phase = 'inventory') {
     );
   }
   return parsed;
-}
-
-function normalizeGitHubGitOrigin(value) {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
-  const match = normalized.match(
-    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i
-  );
-  return match ? match[1].toLowerCase() : null;
 }
 
 function parseMarketplaceInventory(stdout, phase) {

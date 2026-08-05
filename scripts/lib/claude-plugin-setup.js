@@ -5,6 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { writeFileAtomic } = require('./atomic-write');
+const { normalizeGitHubGitOrigin } = require('./github-origin');
 const {
   CURRENT_PLUGIN_ID,
   LEGACY_PLUGIN_IDS,
@@ -51,15 +52,6 @@ function normalizeGitHubRepository(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
   const match = normalized.match(/^([^/]+\/[^/]+)$/);
-  return match ? match[1].toLowerCase() : null;
-}
-
-function normalizeGitHubGitOrigin(value) {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
-  const match = normalized.match(
-    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i
-  );
   return match ? match[1].toLowerCase() : null;
 }
 
