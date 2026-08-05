@@ -51,23 +51,39 @@ console.log('\n=== GAN harness helpers ===\n');
 
 const results = Object.freeze([
   test('extract_score reads the documented TOTAL table format', () => {
-    assert.strictEqual(extractScore('| **TOTAL** | | | **7.5** |\n'), '7.5');
+    const feedback = '| **TOTAL** | | | **7.5** |\n';
+    const result = extractScore(feedback);
+
+    assert.strictEqual(result, '7.5');
   }),
 
   test('extract_score reads the compact TOTAL format', () => {
-    assert.strictEqual(extractScore('**TOTAL** | **8.3**\n'), '8.3');
+    const feedback = '**TOTAL** | **8.3**\n';
+    const result = extractScore(feedback);
+
+    assert.strictEqual(result, '8.3');
   }),
 
   test('extract_score reads a Verdict score', () => {
-    assert.strictEqual(extractScore('Verdict: PASS with score 9.1\n'), '9.1');
+    const feedback = 'Verdict: PASS with score 9.1\n';
+    const result = extractScore(feedback);
+
+    assert.strictEqual(result, '9.1');
   }),
 
   test('extract_score returns the fallback when no supported score exists', () => {
-    assert.strictEqual(extractScore('Other score: 9.9\n'), '0.0');
+    const feedback = 'Other score: 9.9\n';
+    const result = extractScore(feedback);
+
+    assert.strictEqual(result, '0.0');
   }),
 
   test('final score lookup is compatible with the macOS Bash 3.2 runtime', () => {
-    assert.ok(!harnessSource.includes('SCORES[-1]'), 'negative array subscripts require Bash 4.3+');
+    assert.doesNotMatch(
+      harnessSource,
+      /\bSCORES\[\s*-\s*\d+\s*\]/,
+      'negative array subscripts require Bash 4.3+'
+    );
   }),
 ]);
 
