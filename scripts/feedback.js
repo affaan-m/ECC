@@ -5,14 +5,13 @@ const {
   getFeedbackPayload,
 } = require('./lib/feedback-links');
 
-function showHelp(exitCode = 0) {
+function showHelp() {
   process.stdout.write(`
-Usage: node scripts/feedback.js [--json]
+Usage: node scripts/feedback.js [--json] [--help|-h]
 
 Print ECC's low-friction public feedback routes. This command never uploads
 diagnostics or reads project files.
 `);
-  process.exit(exitCode);
 }
 
 function parseArgs(argv) {
@@ -48,7 +47,8 @@ function main() {
   try {
     const options = parseArgs(process.argv);
     if (options.help) {
-      showHelp(0);
+      showHelp();
+      return;
     }
 
     if (options.json) {
@@ -58,7 +58,7 @@ function main() {
     }
   } catch (error) {
     process.stderr.write(`Error: ${error.message}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

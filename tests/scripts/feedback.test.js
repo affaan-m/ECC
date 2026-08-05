@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -54,6 +55,21 @@ function main() {
     assert.match(payload.routes.feedback, /quick-feedback\.yml/);
     assert.match(payload.routes.feature, /feature-request\.yml/);
     assert.strictEqual(payload.diagnosticsUploaded, false);
+  })) passed++; else failed++;
+
+  if (test('documents both help flags and returns after printing help', () => {
+    for (const flag of ['--help', '-h']) {
+      const result = run([flag]);
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.match(result.stdout, /\[--json\] \[--help\|-h\]/);
+      assert.doesNotMatch(result.stdout, /^ECC feedback$/m);
+    }
+  })) passed++; else failed++;
+
+  if (test('lets stdout and stderr flush through natural process exit', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    assert.doesNotMatch(source, /process\.exit\(/);
+    assert.match(source, /process\.exitCode = 1/);
   })) passed++; else failed++;
 
   if (test('rejects unknown arguments', () => {
