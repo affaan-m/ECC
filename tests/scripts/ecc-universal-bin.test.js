@@ -131,11 +131,12 @@ function prepareLocalPackedProject(packageManager) {
   if (packageManager === 'yarn') {
     // This empty fixture has no dependencies. Generate only its local lockfile
     // so `yarn exec` can run the manually unpacked package in PR hardened mode.
-    run('yarn', ['install', '--mode=skip-build'], {
+    run('yarn', ['install', '--mode=skip-build', '--no-immutable'], {
       cwd: projectDirectory,
       env: {
         ...process.env,
         YARN_ENABLE_HARDENED_MODE: '0',
+        YARN_ENABLE_IMMUTABLE_INSTALLS: 'false',
         YARN_ENABLE_NETWORK: '0',
       },
     });
