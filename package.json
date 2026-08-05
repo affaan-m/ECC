@@ -98,6 +98,7 @@
     "scripts/discussion-audit.js",
     "scripts/doctor.js",
     "scripts/ecc.js",
+    "scripts/feedback.js",
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
     "scripts/gemini-adapt-agents.js",

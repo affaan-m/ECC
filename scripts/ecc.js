@@ -55,6 +55,10 @@ const COMMANDS = {
     script: 'doctor.js',
     description: 'Diagnose missing or drifted ECC-managed files',
   },
+  feedback: {
+    script: 'feedback.js',
+    description: 'Open the shortest path to report a problem, feedback, or an idea',
+  },
   repair: {
     script: 'repair.js',
     description: 'Restore drifted or missing ECC-managed files',
@@ -109,6 +113,7 @@ const PRIMARY_COMMANDS = [
   'memory',
   'list-installed',
   'doctor',
+  'feedback',
   'repair',
   'auto-update',
   'status',
@@ -167,6 +172,7 @@ Examples:
   ecc memory search "migration blockers" --target-harness hermes
   ecc list-installed --json
   ecc doctor --target cursor
+  ecc feedback
   ecc repair --dry-run
   ecc auto-update --dry-run
   ecc status --json
