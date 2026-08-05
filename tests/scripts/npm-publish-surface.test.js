@@ -42,6 +42,7 @@ function buildExpectedPublishPaths(repoRoot) {
   const extraPaths = [
     "manifests",
     "scripts/ecc.js",
+    "scripts/feedback.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
@@ -148,6 +149,7 @@ function main() {
         "scripts/ci/supply-chain-advisory-sources.js",
         "scripts/consult.js",
         "scripts/control-pane.js",
+        "scripts/feedback.js",
         "scripts/ito.js",
         "scripts/memory.js",
         "scripts/memory-mcp.mjs",

@@ -98,6 +98,7 @@
     "scripts/discussion-audit.js",
     "scripts/doctor.js",
     "scripts/ecc.js",
+    "scripts/feedback.js",
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
     "scripts/gemini-adapt-agents.js",
@@ -476,12 +477,12 @@
     "node": ">=18"
   },
   "overrides": {
-    "fast-uri": "3.1.4",
+    "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.0"
   },
   "resolutions": {
-    "fast-uri": "3.1.4",
+    "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
     "js-yaml": "4.3.0"
   },

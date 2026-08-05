@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
-const { parseAccumulator } = require('../../scripts/hooks/stop-format-typecheck');
+const { parseAccumulator, isPluginClonePath } = require('../../scripts/hooks/stop-format-typecheck');
 
 function test(name, fn) {
   try {
@@ -231,6 +231,46 @@ if (test('stop hook passes stdin through unchanged', () => {
     timeout: 10000
   });
   assert.strictEqual(result.toString(), input);
+})) passed++; else failed++;
+
+// --- Plugin and marketplace clones are read, not owned: never format them ---
+
+const FAKE_HOME = path.join(path.sep, 'home', 'someone');
+const FAKE_CWD = path.join(path.sep, 'work', 'project');
+
+if (test('skips a file inside the user-level plugin install root', () => {
+  const p = path.join(FAKE_HOME, '.claude', 'plugins', 'cache', 'some-plugin', 'scripts', 'tool.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), true);
+})) passed++; else failed++;
+
+if (test('skips a file inside a marketplace clone', () => {
+  const p = path.join(FAKE_HOME, '.claude', 'plugins', 'marketplaces', 'some-market', 'tests', 'a.test.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), true);
+})) passed++; else failed++;
+
+if (test('skips a file inside a project-local plugin install root', () => {
+  const p = path.join(FAKE_CWD, '.claude', 'plugins', 'local-plugin', 'index.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), true);
+})) passed++; else failed++;
+
+if (test('still formats ordinary project files', () => {
+  const p = path.join(FAKE_CWD, 'src', 'app.ts');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), false);
+})) passed++; else failed++;
+
+if (test('still formats the user own .claude config outside plugins', () => {
+  const p = path.join(FAKE_HOME, '.claude', 'scripts', 'hooks', 'mine.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), false);
+})) passed++; else failed++;
+
+if (test('does not match a sibling directory sharing the prefix', () => {
+  const p = path.join(FAKE_HOME, '.claude', 'plugins-backup', 'thing.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), false);
+})) passed++; else failed++;
+
+if (test('resolves traversal before deciding', () => {
+  const p = path.join(FAKE_CWD, 'src', '..', '.claude', 'plugins', 'p', 'x.js');
+  assert.strictEqual(isPluginClonePath(p, FAKE_CWD, FAKE_HOME), true);
 })) passed++; else failed++;
 
 // Restore env
