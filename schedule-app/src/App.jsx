@@ -358,6 +358,27 @@ export default function App() {
     return () => document.removeEventListener('click', onClick);
   }, []);
 
+  // Opening a page should land at its top, not wherever the previous page
+  // happened to be scrolled to — the window is the scroller (see below), and
+  // neither the browser nor React Router resets it on a client-side route
+  // change, so without this a long Contacts list left scrolled halfway down
+  // would hand that same scroll position to whatever you opened next. Keyed
+  // on location.key rather than pathname so re-tapping the tab you're
+  // already on counts as "opening" it too — Home already did exactly this
+  // locally (see the effect this replaces there); this is that same fix
+  // made to apply everywhere instead of living on one page.
+  // The map is its own case: it isn't a scrolling document, it's a
+  // full-bleed canvas with its own pan/zoom state, so forcing scrollTo(0,0)
+  // on it would just be a no-op at best and fight a restored view at worst.
+  // Planner is left to run its own "jump to now" scroll on top of this —
+  // that's a smarter, more specific version of the same idea, not a
+  // conflict: this puts it at the top first, then it smooth-scrolls on to
+  // the current hour, same as it already did before this effect existed.
+  useEffect(() => {
+    if (location.pathname === '/map') return;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [location.key]);
+
   // Sticky page headers fade in a solid backdrop once there's content
   // scrolled underneath them (see `body.is-scrolled .page-head::before`).
   // Every page shares the same header, and the window is the scroller, so
