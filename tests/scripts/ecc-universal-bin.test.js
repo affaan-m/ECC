@@ -21,6 +21,15 @@ const packageLock = JSON.parse(
 );
 const activePackageManager = process.env.CLAUDE_CODE_PACKAGE_MANAGER || 'npm';
 const supportedPackageManagers = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const windowsPackageCommands = new Set([
+  'bun',
+  'bunx',
+  'npm',
+  'npx',
+  'pnpm',
+  'yarn',
+]);
+const unsafeWindowsShellChars = /[\r\n"&|<>^%!()]/;
 const commandTimeoutMs = 90_000;
 
 let passed = 0;
@@ -40,18 +49,32 @@ function test(name, fn) {
   }
 }
 
-function platformCommand(command) {
-  const windowsPackageCommands = new Set([
-    'bun',
-    'bunx',
-    'npm',
-    'npx',
-    'pnpm',
-    'yarn',
-  ]);
-  return process.platform === 'win32' && windowsPackageCommands.has(command)
-    ? `${command}.cmd`
-    : command;
+function quoteWindowsCommandToken(value) {
+  const token = String(value);
+  assert.doesNotMatch(
+    token,
+    unsafeWindowsShellChars,
+    'Package command contains characters that are unsafe for cmd.exe'
+  );
+  if (token === '') return '""';
+  return /\s/.test(token) ? `"${token}"` : token;
+}
+
+function getSpawnInvocation(command, args, platform = process.platform) {
+  if (platform !== 'win32' || !windowsPackageCommands.has(command)) {
+    return { args, command };
+  }
+
+  // Node 18.20+/20.12+ refuse to spawn .cmd files directly after the
+  // CVE-2024-27980 mitigation. Build one validated command line so cmd.exe
+  // preserves path arguments containing spaces instead of re-splitting them.
+  return {
+    args: undefined,
+    command: [`${command}.cmd`, ...args]
+      .map(quoteWindowsCommandToken)
+      .join(' '),
+    shell: true,
+  };
 }
 
 function withPathPrefix(environment, prefix) {
@@ -65,11 +88,13 @@ function withPathPrefix(environment, prefix) {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(platformCommand(command), args, {
+  const invocation = getSpawnInvocation(command, args);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: options.cwd || repoRoot,
     encoding: 'utf8',
     env: options.env || process.env,
     maxBuffer: 10 * 1024 * 1024,
+    shell: invocation.shell || false,
     timeout: commandTimeoutMs,
     windowsHide: true,
   });
@@ -247,6 +272,28 @@ test('CI selects a supported package runner', () => {
   assert.ok(
     supportedPackageManagers.has(activePackageManager),
     `CLAUDE_CODE_PACKAGE_MANAGER must be one of ${[...supportedPackageManagers].join(', ')}`
+  );
+});
+
+test('Windows package shims use one safely quoted command line', () => {
+  assert.deepStrictEqual(
+    getSpawnInvocation('npm', ['pack', '--pack-destination', 'C:\\Temp Dir'], 'win32'),
+    {
+      args: undefined,
+      command: 'npm.cmd pack --pack-destination "C:\\Temp Dir"',
+      shell: true,
+    }
+  );
+  assert.deepStrictEqual(
+    getSpawnInvocation('tar', ['-xzf', 'C:\\Temp Dir\\fixture.tgz'], 'win32'),
+    {
+      args: ['-xzf', 'C:\\Temp Dir\\fixture.tgz'],
+      command: 'tar',
+    }
+  );
+  assert.throws(
+    () => getSpawnInvocation('npm', ['pack', 'C:\\Temp & unsafe'], 'win32'),
+    /unsafe for cmd\.exe/
   );
 });
 
