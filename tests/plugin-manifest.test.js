@@ -430,6 +430,10 @@ test('Chinese capability matrix documents the native Codex SessionStart hook', (
     source.includes('| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |'),
     'Expected the Codex capability column to document the SessionStart bootstrap script'
   );
+  assert.ok(
+    !source.includes('Codex 缺少钩子功能'),
+    'Codex architecture guidance must not contradict its native SessionStart hook'
+  );
 });
 
 test('codex plugin.json has interface.displayName', () => {

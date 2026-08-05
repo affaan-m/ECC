@@ -125,6 +125,16 @@ function runTests() {
       assert.strictEqual(areHooksEnabled(), true);
       assert.strictEqual(getHookProfile(), 'strict');
     });
+    withEnv({
+      ECC_HOOK_PROFILE: '',
+      CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: 'minimal',
+    }, () => {
+      assert.strictEqual(
+        getHookProfile(),
+        'standard',
+        'an explicit empty ECC profile must not fall through to plugin config'
+      );
+    });
   })) passed++; else failed++;
 
   if (test('managed hook config is used after explicit and plugin preferences', () => {

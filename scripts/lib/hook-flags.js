@@ -74,12 +74,14 @@ function areHooksEnabled(env = process.env, managed = readManagedHookConfig(env)
 }
 
 function getHookProfile(env = process.env, managed = readManagedHookConfig(env)) {
-  const raw = String(
-    env.ECC_HOOK_PROFILE
-    || env.CLAUDE_PLUGIN_OPTION_HOOK_PROFILE
-    || managed.profile
-    || 'standard'
-  ).trim().toLowerCase();
+  const selected = env.ECC_HOOK_PROFILE !== undefined
+    ? env.ECC_HOOK_PROFILE
+    : (
+      env.CLAUDE_PLUGIN_OPTION_HOOK_PROFILE !== undefined
+        ? env.CLAUDE_PLUGIN_OPTION_HOOK_PROFILE
+        : managed.profile
+    );
+  const raw = String(selected ?? 'standard').trim().toLowerCase();
   return VALID_PROFILES.has(raw) ? raw : 'standard';
 }
 

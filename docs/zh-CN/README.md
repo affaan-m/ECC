@@ -1299,7 +1299,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 * **AGENTS.md** 在根目录是通用的跨工具文件（所有 4 个工具都能读取）
 * **DRY 适配器模式** 让 Cursor 可以重用 Claude Code 的钩子脚本而无需重复
 * **技能格式**（带有 YAML 前言的 SKILL.md）在 Claude Code、Codex 和 OpenCode 中都能工作
-* Codex 缺少钩子功能，通过 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限来弥补
+* Codex 通过原生 `SessionStart` 引导钩子初始化 ECC；其余行为由 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限提供
 
 ***
 
