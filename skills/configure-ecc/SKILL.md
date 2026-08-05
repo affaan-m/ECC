@@ -165,13 +165,16 @@ Continue only when the JSON reports ECC installed and provides its
 `installedPath`. Then render the verified bundle's welcome:
 
 Use only the exact absolute `installedPath` returned by Codex JSON. Reject
-control characters and invoke Node with an argument array when the tool API
-supports one; never concatenate user-authored path or version text. Require the
-installed version to match `ECC_VERSION_PATTERN`.
+control characters and require the installed version to match
+`ECC_VERSION_PATTERN`. Invoke `node` directly with this argument array; this is
+a tool API invocation, not a shell command:
 
-```bash
-node "<installedPath>/scripts/welcome.js" --action configured --version "<installed-version>"
+```text
+["<installedPath>/scripts/welcome.js", "--action", "configured", "--version", "<installed-version>"]
 ```
+
+If the current harness cannot invoke an executable with a separate argument
+array, skip the welcome. Never construct a shell command from Codex JSON values.
 
 Never claim that Claude's `off | minimal | standard | strict` profiles were
 applied to Codex.

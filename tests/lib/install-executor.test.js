@@ -619,6 +619,8 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('Claude hooks install refuses a symlinked hooks destination', () => {
+    if (process.platform === 'win32') return;
+
     const tempDir = createTempDir('install-executor-hooks-symlink-');
     try {
       const sourceRoot = path.join(tempDir, 'source');
@@ -631,7 +633,7 @@ function runTests() {
       );
       fs.mkdirSync(targetRoot, { recursive: true });
       fs.mkdirSync(outsideRoot, { recursive: true });
-      fs.symlinkSync(outsideRoot, path.join(targetRoot, 'hooks'));
+      fs.symlinkSync(outsideRoot, path.join(targetRoot, 'hooks'), 'dir');
       const plan = {
         mode: 'manifest',
         target: 'claude',

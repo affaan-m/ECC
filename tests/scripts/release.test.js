@@ -93,6 +93,10 @@ function runTests() {
       source.includes('update_latest_release_heading "$ROOT_ZH_CN_README_FILE"'),
       'release.sh should update localized latest-release headings that plugin-manifest.test.js verifies'
     );
+    assert.ok(
+      source.includes('Error: could not update release heading for v${oldVersion} in ${file}'),
+      'release.sh should fail loudly when a required release heading is absent'
+    );
   })) passed++; else failed++;
 
   if (test('a 2.2 bump preserves historical root README release headings', () => {

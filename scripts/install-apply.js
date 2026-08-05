@@ -18,6 +18,7 @@ const {
   parseInstallArgs,
 } = require('./lib/install/request');
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
+const { stripAnsi } = require('./lib/utils');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -188,12 +189,26 @@ function main() {
   }
 }
 
+function sanitizeTerminalText(value) {
+  return stripAnsi(String(value || '')).replace(/[^\x20-\x7E]/g, '?');
+}
+
+function runGuidedMain(guidedArgs) {
+  Promise.resolve()
+    .then(() => require('./install-guided').main(guidedArgs))
+    .then(exitCode => {
+      process.exitCode = exitCode;
+    })
+    .catch(error => {
+      process.stderr.write(`Error: ${sanitizeTerminalText(error?.message)}\n`);
+      process.exitCode = 1;
+    });
+}
+
 const cliArgs = process.argv.slice(2);
 if (cliArgs.includes('--guided')) {
   const guidedArgs = cliArgs.filter(argument => argument !== '--guided');
-  require('./install-guided').main(guidedArgs).then(exitCode => {
-    process.exitCode = exitCode;
-  });
+  runGuidedMain(guidedArgs);
 } else {
   main();
 }

@@ -207,7 +207,14 @@ function getRunnerInvocation(packageManager, executable, args) {
         // without depending on registry cache state.
         return {
           command: 'npm',
-          args: ['exec', '--offline', '--', executable, ...args],
+          args: [
+            'exec',
+            '--offline',
+            '--package=./node_modules/ecc-universal',
+            '--',
+            executable,
+            ...args,
+          ],
           cwd: project.projectDirectory,
           env: { ...localEnvironment, npm_config_offline: 'true' },
         };

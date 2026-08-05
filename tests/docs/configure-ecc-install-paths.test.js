@@ -49,6 +49,12 @@ function readConfigureEccDoc(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+function countEntries(relativePath, predicate) {
+  return fs.readdirSync(path.join(repoRoot, relativePath), { withFileTypes: true })
+    .filter(predicate)
+    .length;
+}
+
 console.log('\n=== Testing configure-ecc install path guidance ===\n');
 
 for (const relativePath of configureEccDocs) {
@@ -107,17 +113,58 @@ for (const relativePath of configureEccDocs) {
     const content = readConfigureEccDoc(relativePath);
     const codexVerifyIndex = content.indexOf('codex plugin list --json');
     const codexWelcomeIndex = content.indexOf(
-      'node "<installedPath>/scripts/welcome.js" --action configured'
+      '["<installedPath>/scripts/welcome.js", "--action", "configured", "--version", "<installed-version>"]'
     );
     const kimiVerifyIndex = content.indexOf('ecc doctor --target kimi');
     const kimiWelcomeIndex = content.indexOf('ecc welcome --action configured');
 
     assert.ok(codexVerifyIndex > -1, 'missing Codex verification');
     assert.ok(codexWelcomeIndex > codexVerifyIndex, 'Codex welcome must follow verification');
+    assert.ok(
+      content.includes('argument array'),
+      'Codex welcome must use an executable plus argument array'
+    );
+    assert.ok(
+      !content.includes('node "<installedPath>/scripts/welcome.js"'),
+      'Codex JSON values must not be shown in a shell command'
+    );
     assert.ok(kimiVerifyIndex > -1, 'missing Kimi verification');
     assert.ok(kimiWelcomeIndex > kimiVerifyIndex, 'Kimi welcome must follow verification');
   });
 }
+
+test('Codex legacy sync docs do not require an unrelated package install', () => {
+  const content = readConfigureEccDoc('.codex-plugin/README.md');
+
+  assert.ok(content.includes('bash scripts/sync-ecc-to-codex.sh'));
+  assert.ok(!content.includes('npm install && bash scripts/sync-ecc-to-codex.sh'));
+});
+
+test('Kimi docs scope hooks and compatibility to the verified adapter', () => {
+  const content = readConfigureEccDoc('.kimi/README.md');
+
+  assert.ok(content.includes('verified against Kimi Code 0.31.x'));
+  assert.ok(content.includes("newer provider releases are outside this adapter's verified range"));
+  assert.ok(content.includes('does not configure or map provider lifecycle hooks'));
+  assert.ok(!content.includes('Kimi Code 0.31.x does not expose'));
+});
+
+test('Turkish agent instructions report the live catalog counts', () => {
+  const content = readConfigureEccDoc('docs/tr/AGENTS.md');
+  const agentCount = countEntries('agents', entry => entry.isFile() && entry.name.endsWith('.md'));
+  const skillCount = countEntries('skills', entry => entry.isDirectory());
+  const commandCount = countEntries(
+    'commands',
+    entry => entry.isFile() && entry.name.endsWith('.md')
+  );
+
+  assert.ok(content.includes(`${agentCount} özel agent`));
+  assert.ok(content.includes(`${skillCount} skill`));
+  assert.ok(content.includes(`${commandCount} command`));
+  assert.ok(content.includes(`agents/          — ${agentCount} özel subagent`));
+  assert.ok(content.includes(`skills/          — ${skillCount} iş akışı`));
+  assert.ok(content.includes(`commands/        — ${commandCount} slash command`));
+});
 
 if (failed > 0) {
   console.log(`\nFailed: ${failed}`);

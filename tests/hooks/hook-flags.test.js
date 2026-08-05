@@ -154,6 +154,52 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('a hook evaluation reads managed config only once', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-read-once-'));
+    const configPath = path.join(root, 'setup.json');
+    const originalReadFileSync = fs.readFileSync;
+    let configReadCount = 0;
+    try {
+      fs.writeFileSync(configPath, JSON.stringify({
+        hooks: { enabled: true, profile: 'minimal' },
+      }));
+      fs.readFileSync = (...args) => {
+        if (args[0] === configPath) configReadCount += 1;
+        return originalReadFileSync(...args);
+      };
+      assert.strictEqual(isHookEnabled('pre:test', {
+        env: { ECC_HOOK_CONFIG: configPath },
+        profiles: ['minimal'],
+      }), true);
+      assert.strictEqual(configReadCount, 1);
+    } finally {
+      fs.readFileSync = originalReadFileSync;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('malformed managed config emits one sanitized diagnostic', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-invalid-'));
+    const configPath = path.join(root, 'setup.json');
+    const originalWrite = process.stderr.write;
+    const diagnostics = [];
+    try {
+      fs.writeFileSync(configPath, '{"hooks":\u001b[31m');
+      process.stderr.write = value => {
+        diagnostics.push(String(value));
+        return true;
+      };
+      assert.deepStrictEqual(readManagedHookConfig({ ECC_HOOK_CONFIG: configPath }), {});
+      assert.strictEqual(diagnostics.length, 1);
+      assert.match(diagnostics[0], /Warning: unable to read managed ECC hook config/);
+      assert.strictEqual(diagnostics[0].includes('\u001b'), false);
+      assert.match(diagnostics[0], /setup\.json/);
+    } finally {
+      process.stderr.write = originalWrite;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('boolean parsing recognizes supported values and uses its fallback', () => {
     for (const value of ['1', 'true', 'yes', 'on']) {
       assert.strictEqual(parseBoolean(value, false), true);

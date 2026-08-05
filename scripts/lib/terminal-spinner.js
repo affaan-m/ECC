@@ -28,6 +28,7 @@ function runAnimator(label, options = {}) {
 function startTerminalSpinner(label, options = {}) {
   const output = options.output || process.stdout;
   const spawnProcess = options.spawnProcess || spawn;
+  const onAnimatorError = options.onAnimatorError;
   output.write(`${FRAMES[0]} ${label}`);
 
   let animator;
@@ -39,7 +40,11 @@ function startTerminalSpinner(label, options = {}) {
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
       }
     );
-    animator.on?.('error', () => {});
+    animator.on?.('error', error => {
+      // Preserve a stable visible fallback if the child cannot animate.
+      output.write(`\r${FRAMES[0]} ${label}`);
+      onAnimatorError?.(error);
+    });
   } catch {
     // The first frame still provides visible progress if animation cannot start.
   }
@@ -49,6 +54,10 @@ function startTerminalSpinner(label, options = {}) {
     stop() {
       if (stopped) return;
       stopped = true;
+      animator?.once?.('close', () => {
+        // A child can render between kill() and close; clear that final frame.
+        output.write(CLEAR_LINE);
+      });
       animator?.kill();
       output.write(CLEAR_LINE);
     },

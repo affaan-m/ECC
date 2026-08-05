@@ -68,19 +68,22 @@ test('animator advances frames and exits when its parent disconnects', () => {
   assert.strictEqual(exitCode, 0);
 });
 
-test('spinner renders immediately, launches an isolated animator, and clears once', () => {
+test('spinner renders immediately and clears again after animator termination', () => {
   const writes = [];
   const spawnCalls = [];
-  let errorHandler;
+  const handlers = {};
+  const animatorErrors = [];
   let killCount = 0;
   const child = {
     kill: () => { killCount += 1; },
     on: (event, handler) => {
       assert.strictEqual(event, 'error');
-      errorHandler = handler;
+      handlers[event] = handler;
     },
+    once: (event, handler) => { handlers[event] = handler; },
   };
   const spinner = startTerminalSpinner('Applying ECC setup...', {
+    onAnimatorError: error => animatorErrors.push(error.message),
     output: { write: value => writes.push(value) },
     spawnProcess: (...args) => {
       spawnCalls.push(args);
@@ -95,12 +98,21 @@ test('spinner renders immediately, launches an isolated animator, and clears onc
     '--animate',
     'Applying ECC setup...',
   ]);
-  assert.strictEqual(typeof errorHandler, 'function');
+  assert.strictEqual(typeof handlers.error, 'function');
+  handlers.error(new Error('animation unavailable'));
+  assert.deepStrictEqual(animatorErrors, ['animation unavailable']);
 
   spinner.stop();
+  writes.push(`\r${FRAMES[2]} late frame`);
+  handlers.close();
   spinner.stop();
   assert.strictEqual(killCount, 1);
   assert.strictEqual(writes.at(-1), CLEAR_LINE);
+  assert.deepStrictEqual(writes.slice(-3), [
+    CLEAR_LINE,
+    `\r${FRAMES[2]} late frame`,
+    CLEAR_LINE,
+  ]);
 });
 
 test('spinner keeps a visible first frame when the animator cannot launch', () => {

@@ -32,6 +32,13 @@ function parseBoolean(value, fallback = true) {
   return fallback;
 }
 
+function sanitizeDiagnostic(value) {
+  return String(value || '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|\([A-Z]|[A-Z])/g, '')
+    .replace(/[^\x20-\x7E]/g, '?');
+}
+
 function readManagedHookConfig(env = process.env) {
   const pluginRoot = String(
     env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || ''
@@ -47,13 +54,15 @@ function readManagedHookConfig(env = process.env) {
       && !Array.isArray(config.hooks)
       ? config.hooks
       : {};
-  } catch {
+  } catch (error) {
+    process.stderr.write(`${sanitizeDiagnostic(
+      `Warning: unable to read managed ECC hook config at ${configPath}: ${error.message}`
+    )}\n`);
     return {};
   }
 }
 
-function areHooksEnabled(env = process.env) {
-  const managed = readManagedHookConfig(env);
+function areHooksEnabled(env = process.env, managed = readManagedHookConfig(env)) {
   const raw = env.ECC_HOOKS_ENABLED !== undefined
     ? env.ECC_HOOKS_ENABLED
     : (
@@ -64,8 +73,7 @@ function areHooksEnabled(env = process.env) {
   return parseBoolean(raw, true);
 }
 
-function getHookProfile(env = process.env) {
-  const managed = readManagedHookConfig(env);
+function getHookProfile(env = process.env, managed = readManagedHookConfig(env)) {
   const raw = String(
     env.ECC_HOOK_PROFILE
     || env.CLAUDE_PLUGIN_OPTION_HOOK_PROFILE
@@ -111,7 +119,8 @@ function isDryRun(env = process.env) {
 
 function isHookEnabled(hookId, options = {}) {
   const env = options.env || process.env;
-  if (!areHooksEnabled(env)) {
+  const managed = readManagedHookConfig(env);
+  if (!areHooksEnabled(env, managed)) {
     return false;
   }
 
@@ -123,7 +132,7 @@ function isHookEnabled(hookId, options = {}) {
     return false;
   }
 
-  const profile = getHookProfile(env);
+  const profile = getHookProfile(env, managed);
   const allowedProfiles = parseProfiles(options.profiles);
   return allowedProfiles.includes(profile);
 }

@@ -187,7 +187,8 @@ update_latest_release_heading() {
       `### v${version}$1`
     );
     if (updated === current) {
-      process.exit(0);
+      console.error(`Error: could not update release heading for v${oldVersion} in ${file}`);
+      process.exit(1);
     }
     fs.writeFileSync(file, updated);
   ' "$file" "$VERSION" "$old_version"

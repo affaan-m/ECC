@@ -80,7 +80,7 @@ not create a second scope or duplicate hook registration.
 ## Native plugin versus legacy managed sync
 
 The commands above are the native Codex plugin path. The legacy managed sync
-(`npm install && bash scripts/sync-ecc-to-codex.sh`) is a separate compatibility
+(`bash scripts/sync-ecc-to-codex.sh`) is a separate compatibility
 path that merges files into `~/.codex`. It is not a native plugin install and
 does not create a marketplace registration. Prefer the native path on current
 Codex; use the legacy managed sync only when you intentionally need its copied

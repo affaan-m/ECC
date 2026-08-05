@@ -125,8 +125,10 @@ Windows PowerShell:
 [Environment]::SetEnvironmentVariable('ECC_CONTEXT_MONITOR_COST_WARNINGS', 'off', 'User')
 ```
 
-Profiles:
-- `off` — available through `ecc setup`; no local ECC hook work runs.
+Claude setup-only value:
+- `off` — disables local ECC hook work through `ecc setup`; it is not a runtime hook profile.
+
+Runtime hook profiles:
 - `minimal` — keep essential lifecycle and safety hooks only.
 - `standard` — default; balanced quality + safety checks.
 - `strict` — enables additional reminders and stricter guardrails.

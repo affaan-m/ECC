@@ -16,6 +16,7 @@ const {
 const OFFICIAL_MARKETPLACE_NAME = 'ecc';
 const OFFICIAL_MARKETPLACE_REPO = 'affaan-m/ecc';
 const OFFICIAL_MARKETPLACE_URL = 'https://github.com/affaan-m/ECC';
+const PROVIDER_COMMAND_TIMEOUT_MS = 120 * 1000;
 const VALID_SCOPES = new Set(['user', 'project', 'local']);
 const VALID_HOOK_MODES = new Set(['off', 'minimal', 'standard', 'strict']);
 
@@ -168,16 +169,20 @@ function resolveWindowsCmdShim(command, env) {
     .find(Boolean) || null;
 }
 
-function runClaude(args, options = {}) {
+function runClaude(args, options = {}, dependencies = {}) {
   const command = options.command || 'claude';
+  const spawn = dependencies.spawnSync || spawnSync;
+  const timeoutMs = options.timeoutMs ?? PROVIDER_COMMAND_TIMEOUT_MS;
   const spawnOptions = {
     cwd: options.cwd || process.cwd(),
     env: options.env || process.env,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
+    killSignal: 'SIGKILL',
+    timeout: timeoutMs,
     windowsHide: true,
   };
-  let result = spawnSync(command, args, spawnOptions);
+  let result = spawn(command, args, spawnOptions);
 
   if (process.platform === 'win32' && result.error) {
     const shim = resolveWindowsCmdShim(command, spawnOptions.env);
@@ -192,13 +197,24 @@ function runClaude(args, options = {}) {
           { phase: options.phase || 'provider' }
         );
       }
-      result = spawnSync(commandLine, {
+      result = spawn(commandLine, {
         ...spawnOptions,
         shell: true,
       });
     }
   }
 
+  const timedOut = (
+    result.error?.code === 'ETIMEDOUT'
+    || (result.error?.killed === true && result.error?.signal === spawnOptions.killSignal)
+  );
+  if (timedOut) {
+    fail(
+      'CLAUDE_COMMAND_FAILED',
+      `Claude Code command timed out after ${timeoutMs} ms`,
+      { phase: options.phase || 'provider' }
+    );
+  }
   if (result.error) {
     if (result.error.code === 'ENOENT') {
       fail(
@@ -612,6 +628,7 @@ module.exports = {
   CURRENT_PLUGIN_ID,
   OFFICIAL_MARKETPLACE_NAME,
   OFFICIAL_MARKETPLACE_URL,
+  PROVIDER_COMMAND_TIMEOUT_MS,
   VALID_HOOK_MODES,
   VALID_SCOPES,
   buildWindowsCommandLine,

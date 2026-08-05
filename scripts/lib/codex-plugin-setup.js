@@ -8,6 +8,7 @@ const OFFICIAL_MARKETPLACE_NAME = 'ecc';
 const OFFICIAL_MARKETPLACE_REPO = 'affaan-m/ECC';
 const NORMALIZED_OFFICIAL_MARKETPLACE_REPO = OFFICIAL_MARKETPLACE_REPO.toLowerCase();
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+const PROVIDER_COMMAND_TIMEOUT_MS = 120 * 1000;
 
 class CodexPluginSetupError extends Error {
   constructor(code, message, details = {}) {
@@ -151,13 +152,9 @@ function executeFile(execFile, command, args, options) {
   return new Promise((resolve, reject) => {
     execFile(command, args, options, (error, stdout, stderr) => {
       if (error) {
-        reject({
-          cause: error,
-          code: error.code,
-          message: error.message,
-          stderr: error.stderr || stderr,
-          stdout: error.stdout || stdout,
-        });
+        if (error.stderr === undefined) error.stderr = stderr;
+        if (error.stdout === undefined) error.stdout = stdout;
+        reject(error);
         return;
       }
       resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
@@ -165,20 +162,36 @@ function executeFile(execFile, command, args, options) {
   });
 }
 
+function isCommandTimeout(error, killSignal = 'SIGKILL') {
+  return error?.code === 'ETIMEDOUT'
+    || (error?.killed === true && error?.signal === killSignal);
+}
+
 async function runCodexCommand(args, options = {}, dependencies = {}) {
   const command = dependencies.command || options.command || 'codex';
   const execFile = dependencies.execFile || nodeExecFile;
   const argv = [...args];
+  const timeoutMs = options.timeoutMs ?? PROVIDER_COMMAND_TIMEOUT_MS;
+  const killSignal = 'SIGKILL';
   try {
     return await executeFile(execFile, command, argv, {
       cwd: options.cwd || process.cwd(),
       encoding: 'utf8',
       env: options.env || process.env,
       maxBuffer: MAX_OUTPUT_BYTES,
+      killSignal,
       shell: false,
+      timeout: timeoutMs,
       windowsHide: true,
     });
   } catch (error) {
+    if (isCommandTimeout(error, killSignal)) {
+      fail(
+        'CODEX_COMMAND_TIMEOUT',
+        `Codex command timed out after ${timeoutMs} ms`,
+        { argv, phase: options.phase }
+      );
+    }
     if (error?.code === 'ENOENT') {
       fail(
         'CODEX_NOT_FOUND',
@@ -197,6 +210,8 @@ async function runCodexCommand(args, options = {}, dependencies = {}) {
 
 async function resolveMarketplaceRepository(marketplace, options = {}, dependencies = {}) {
   const execFile = dependencies.execFile || nodeExecFile;
+  const timeoutMs = options.timeoutMs ?? PROVIDER_COMMAND_TIMEOUT_MS;
+  const killSignal = 'SIGKILL';
   let result;
   try {
     result = await executeFile(
@@ -208,11 +223,20 @@ async function resolveMarketplaceRepository(marketplace, options = {}, dependenc
         encoding: 'utf8',
         env: options.env || process.env,
         maxBuffer: MAX_OUTPUT_BYTES,
+        killSignal,
         shell: false,
+        timeout: timeoutMs,
         windowsHide: true,
       }
     );
   } catch (error) {
+    if (isCommandTimeout(error, killSignal)) {
+      fail(
+        'MARKETPLACE_PROVENANCE_TIMEOUT',
+        `Git provenance verification timed out after ${timeoutMs} ms`,
+        { phase: options.phase || 'marketplace-provenance' }
+      );
+    }
     const detail = String(error?.stderr || error?.message || '').trim();
     fail(
       'MARKETPLACE_COLLISION',
@@ -448,6 +472,8 @@ module.exports = {
   CodexPluginSetupError,
   OFFICIAL_MARKETPLACE_NAME,
   OFFICIAL_MARKETPLACE_REPO,
+  PROVIDER_COMMAND_TIMEOUT_MS,
+  executeFile,
   findEccMarketplace,
   findInstalledEccPlugin,
   normalizeGitHubRepository,

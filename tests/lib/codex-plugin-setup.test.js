@@ -5,6 +5,7 @@ const assert = require('assert');
 const {
   CodexPluginSetupError,
   OFFICIAL_MARKETPLACE_REPO,
+  executeFile,
   normalizeGitHubRepository,
   parseMarketplaceInventory,
   parseMarketplaceUpgradeResult,
@@ -135,6 +136,60 @@ async function runTests() {
       assert.strictEqual(repository, 'affaan-m/ecc');
       assert.strictEqual(fake.calls[0].options.shell, false);
       assert.strictEqual(fake.calls[0].options.cwd, '/workspace with spaces');
+      assert.ok(fake.calls[0].options.timeout > 0);
+      assert.strictEqual(fake.calls[0].options.killSignal, 'SIGKILL');
+    }],
+    ['preserves the original execFile error and attaches callback output', async () => {
+      const original = new Error('provider failed');
+      const execFile = (command, args, options, callback) => {
+        callback(original, 'partial stdout', 'partial stderr');
+      };
+
+      await assert.rejects(
+        executeFile(execFile, 'codex', ['plugin', 'list'], {}),
+        error => {
+          assert.strictEqual(error, original);
+          assert.strictEqual(error.stdout, 'partial stdout');
+          assert.strictEqual(error.stderr, 'partial stderr');
+          assert.match(error.stack, /provider failed/);
+          return true;
+        }
+      );
+    }],
+    ['maps provider and provenance timeouts to distinct structured errors', async () => {
+      const providerTimeout = Object.assign(new Error('timed out'), {
+        code: 'ETIMEDOUT',
+        killed: true,
+        signal: 'SIGKILL',
+      });
+      const provider = createExecFile([{ args: MARKETPLACE_LIST, error: providerTimeout }]);
+      await expectSetupError(
+        reconcileCodexPlugin({}, dependenciesFor(provider)),
+        'CODEX_COMMAND_TIMEOUT',
+        /timed out/i
+      );
+
+      const provenanceTimeout = Object.assign(new Error('timed out'), {
+        code: 'ETIMEDOUT',
+        killed: true,
+        signal: 'SIGKILL',
+      });
+      const provenance = createExecFile([{
+        command: 'git',
+        args: ['-C', '/cache/ecc', 'remote', 'get-url', 'origin'],
+        error: provenanceTimeout,
+      }]);
+      await expectSetupError(
+        resolveMarketplaceRepository(
+          { name: 'ecc', root: '/cache/ecc' },
+          {},
+          { execFile: provenance.execFile }
+        ),
+        'MARKETPLACE_PROVENANCE_TIMEOUT',
+        /timed out/i
+      );
+      assert.ok(provenance.calls[0].options.timeout > 0);
+      assert.strictEqual(provenance.calls[0].options.killSignal, 'SIGKILL');
     }],
     ['rejects unverifiable Git provenance without using a shell', async () => {
       const gitFailure = Object.assign(new Error('no origin'), {
@@ -190,6 +245,8 @@ async function runTests() {
         assert.strictEqual(call.command, 'codex');
         assert.strictEqual(call.options.cwd, '/workspace with spaces');
         assert.strictEqual(call.options.shell, false);
+        assert.ok(call.options.timeout > 0);
+        assert.strictEqual(call.options.killSignal, 'SIGKILL');
         assert.ok(!call.args.includes('--config'));
         assert.ok(!call.args.includes('-c'));
       }

@@ -144,13 +144,16 @@ codex plugin list --json
 
 只有 JSON 报告 ECC 已安装并提供 `installedPath` 时才继续，然后渲染已验证组合包的欢迎信息：
 
-`installedPath` 只能使用 Codex JSON 返回的原始绝对路径，并拒绝控制字符。工具 API
-支持时使用 argument array 调用 Node，不得拼接用户提供的路径或版本。版本必须通过
-`ECC_VERSION_PATTERN` 验证。
+`installedPath` 只能使用 Codex JSON 返回的原始绝对路径，并拒绝控制字符。版本必须通过
+`ECC_VERSION_PATTERN` 验证。请使用下面的 argument array 直接调用 `node`；这是工具 API
+调用，不是 shell 命令：
 
-```bash
-node "<installedPath>/scripts/welcome.js" --action configured --version "<installed-version>"
+```text
+["<installedPath>/scripts/welcome.js", "--action", "configured", "--version", "<installed-version>"]
 ```
+
+如果当前工具无法把可执行文件与 argument array 分开传递，请跳过欢迎信息。不得使用 Codex
+JSON 中的值构造 shell 命令。
 
 绝不要声称 Claude 的 `off | minimal | standard | strict` 配置已应用到 Codex。
 

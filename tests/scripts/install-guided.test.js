@@ -10,6 +10,9 @@ const {
   parseArgs,
   validateExecutionMode,
 } = require('../../scripts/install-guided');
+const {
+  normalizeGuidedInstallRequest,
+} = require('../../scripts/lib/multi-harness-setup');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const guidedPtyFixture = path.join(repoRoot, 'tests', 'fixtures', 'run-guided-install-pty.js');
@@ -111,6 +114,13 @@ function runGuidedPtyFixture(answers) {
     for (const harnesses of combinations) {
       const parsed = parseArgs(harnesses.flatMap(id => ['--harness', id]));
       assert.deepStrictEqual(parsed.harnesses, harnesses);
+      const request = normalizeGuidedInstallRequest({
+        ...parsed,
+        claudeHooks: harnesses.includes('claude') ? 'standard' : undefined,
+        claudeScope: harnesses.includes('claude') ? 'user' : undefined,
+        profile: harnesses.includes('kimi') ? 'core' : undefined,
+      });
+      assert.deepStrictEqual(request.harnesses, harnesses);
     }
   });
 

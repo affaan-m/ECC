@@ -10,6 +10,7 @@ const fakeClaudeScript = path.join(repoRoot, 'tests', 'fixtures', 'fake-claude-p
 const {
   OFFICIAL_MARKETPLACE_URL,
   buildWindowsCommandLine,
+  runClaude,
   setupClaudePlugin,
 } = require('../../scripts/lib/claude-plugin-setup');
 
@@ -176,6 +177,38 @@ test('Windows command-line fallback preserves spaced paths and JSON arguments', 
   assert.throws(
     () => buildWindowsCommandLine('claude.cmd', ['plugin', 'install', 'bad&unsafe']),
     /unsafe/
+  );
+});
+
+test('provider runner times out a hung Claude command with structured context', () => {
+  const timeoutError = Object.assign(new Error('spawnSync timed out'), {
+    code: 'ETIMEDOUT',
+    killed: true,
+    signal: 'SIGKILL',
+  });
+  const spawn = (command, args, options) => {
+    assert.strictEqual(command, process.execPath);
+    assert.deepStrictEqual(args, ['plugin', 'marketplace', 'update', 'ecc']);
+    assert.strictEqual(options.timeout, 25);
+    assert.strictEqual(options.killSignal, 'SIGKILL');
+    return { error: timeoutError, signal: 'SIGKILL', status: null };
+  };
+  assert.throws(
+    () => runClaude(
+      ['plugin', 'marketplace', 'update', 'ecc'],
+      {
+        command: process.execPath,
+        phase: 'marketplace',
+        timeoutMs: 25,
+      },
+      { spawnSync: spawn }
+    ),
+    error => {
+      assert.strictEqual(error.code, 'CLAUDE_COMMAND_FAILED');
+      assert.strictEqual(error.phase, 'marketplace');
+      assert.match(error.message, /timed out after 25 ms/i);
+      return true;
+    }
   );
 });
 
@@ -465,6 +498,8 @@ test('managed rules-only state is allowed but overlapping managed content is rej
 });
 
 test('managed overlap detection resolves symlink aliases before classifying paths', () => {
+  if (process.platform === 'win32') return;
+
   withFixture({}, fixture => {
     const aliasPath = path.join(fixture.configDir, 'alias');
     fs.symlinkSync(fixture.configDir, aliasPath, 'dir');

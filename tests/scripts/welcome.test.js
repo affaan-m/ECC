@@ -51,6 +51,19 @@ test('ecc welcome renders the install artwork for captured agent output', () => 
   assert.strictEqual(result.stderr, '');
 });
 
+test('ecc welcome disables ANSI color when stdout is redirected', () => {
+  const env = { ...process.env, TERM: 'xterm-256color' };
+  delete env.NO_COLOR;
+  const result = spawnSync(process.execPath, [eccScript, 'welcome'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env,
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(result.stdout.includes('\u001b['), false);
+});
+
 test('ecc welcome supports explicit update and configured outcomes', () => {
   const cases = [
     ['updated', /ECC is updated/],

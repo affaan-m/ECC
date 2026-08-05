@@ -34,6 +34,7 @@ const selectiveInstallArchitecturePath = path.join(repoRoot, 'docs', 'SELECTIVE-
 const opencodePackageJsonPath = path.join(repoRoot, '.opencode', 'package.json');
 const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.json');
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
+const hooksReadmePath = path.join(repoRoot, 'hooks', 'README.md');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
 const installPrPublishedBaseline = '2.1.0';
 
@@ -406,6 +407,29 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
     }))
   };
   assert.deepStrictEqual(config.hooks.SessionStart[0], expectedSessionStart, 'Codex SessionStart hook must track its canonical implementation with a Codex-root bootstrap');
+});
+
+test('hook documentation distinguishes the Claude off setting from runtime profiles', () => {
+  const source = fs.readFileSync(hooksReadmePath, 'utf8');
+  assert.ok(source.includes('Claude setup-only value:'), 'Expected hooks README to label off as a Claude setup-only value');
+  const runtimeProfiles = source.match(/Runtime hook profiles:\n((?:- `[^`]+`[^\n]*\n)+)/);
+  assert.ok(runtimeProfiles, 'Expected hooks README to identify runtime hook profiles separately');
+  assert.ok(!runtimeProfiles[1].includes('`off`'), 'off is a Claude setup value, not a runtime hook profile');
+  for (const profile of ['minimal', 'standard', 'strict']) {
+    assert.ok(runtimeProfiles[1].includes(`\`${profile}\``), `Expected documented runtime hook profile: ${profile}`);
+  }
+});
+
+test('Chinese capability matrix documents the native Codex SessionStart hook', () => {
+  const source = fs.readFileSync(zhCnReadmePath, 'utf8');
+  assert.ok(
+    source.includes('| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |'),
+    'Expected the Codex capability column to document one native SessionStart event'
+  );
+  assert.ok(
+    source.includes('| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |'),
+    'Expected the Codex capability column to document the SessionStart bootstrap script'
+  );
 });
 
 test('codex plugin.json has interface.displayName', () => {

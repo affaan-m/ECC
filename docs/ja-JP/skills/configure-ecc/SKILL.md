@@ -148,12 +148,15 @@ codex plugin list --json
 JSON が ECC を導入済みと報告し、`installedPath` を提供した場合のみ続行し、検証済みバンドルからウェルカムを表示します。
 
 `installedPath` は Codex JSON が返した絶対パスそのものだけを使い、制御文字を
-拒否します。ツール API が対応する場合は argument array で Node を呼び出し、
-ユーザー入力を連結しません。バージョンは `ECC_VERSION_PATTERN` で検証します。
+拒否します。バージョンは `ECC_VERSION_PATTERN` で検証します。`node` を次の
+argument array で直接呼び出してください。これは shell コマンドではなく、ツール API 呼び出しです。
 
-```bash
-node "<installedPath>/scripts/welcome.js" --action configured --version "<installed-version>"
+```text
+["<installedPath>/scripts/welcome.js", "--action", "configured", "--version", "<installed-version>"]
 ```
+
+現在のハーネスが実行ファイルと argument array を分けて渡せない場合は、ウェルカム表示を
+スキップします。Codex JSON の値から shell コマンドを組み立ててはいけません。
 
 Claude の `off | minimal | standard | strict` が Codex に適用されたとは表現しません。
 

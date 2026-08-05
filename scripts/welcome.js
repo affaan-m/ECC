@@ -52,7 +52,9 @@ function parseArgs(argv) {
 function main(argv = process.argv.slice(2)) {
   try {
     const { action, version } = parseArgs(argv);
-    const color = process.env.NO_COLOR === undefined && process.env.TERM !== 'dumb';
+    const color = process.env.NO_COLOR === undefined
+      && process.env.TERM !== 'dumb'
+      && Boolean(process.stdout.isTTY);
     process.stdout.write(renderTerminalWelcome({ action, color, version }));
   } catch (error) {
     process.stderr.write(`Error: ${error.message}\n`);
