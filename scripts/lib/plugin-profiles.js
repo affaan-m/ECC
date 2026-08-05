@@ -281,7 +281,7 @@ function writeCatalogSkill(plan, pluginRoot) {
   return rows.length;
 }
 
-function buildPluginManifest(plan) {
+function buildPluginManifest(plan, { hasSkills, hasCommands }) {
   const rootPluginPath = path.join(plan.repoRoot, '.claude-plugin', 'plugin.json');
   const rootPlugin = fs.existsSync(rootPluginPath)
     ? readJson(rootPluginPath, '.claude-plugin/plugin.json')
@@ -290,7 +290,8 @@ function buildPluginManifest(plan) {
   // Claude Code's plugin validator rejects `agents` and v2.1+ auto-loads
   // hooks/hooks.json, so neither field may appear here (see
   // tests/plugin-manifest.test.js). mcpServers stays explicitly empty so a
-  // root .mcp.json copy is never auto-bundled.
+  // root .mcp.json copy is never auto-bundled, and skills/commands are only
+  // declared when the corresponding directory actually exists on disk.
   return {
     name: plan.pluginName,
     version: plan.version,
@@ -300,10 +301,10 @@ function buildPluginManifest(plan) {
     author: rootPlugin.author,
     homepage: rootPlugin.homepage,
     repository: rootPlugin.repository,
-    license: rootPlugin.license || 'MIT',
+    ...(rootPlugin.license ? { license: rootPlugin.license } : {}),
     mcpServers: {},
-    skills: ['./skills/'],
-    commands: ['./commands/'],
+    ...(hasSkills ? { skills: ['./skills/'] } : {}),
+    ...(hasCommands ? { commands: ['./commands/'] } : {}),
   };
 }
 
@@ -330,12 +331,16 @@ function generateProfilePlugin(options = {}) {
   for (const skillId of plan.skills) {
     fs.cpSync(path.join(repoRoot, 'skills', skillId), path.join(pluginRoot, 'skills', skillId), { recursive: true });
   }
-  for (const agentFile of plan.agents) {
+  if (plan.agents.length > 0) {
     fs.mkdirSync(path.join(pluginRoot, 'agents'), { recursive: true });
+  }
+  for (const agentFile of plan.agents) {
     fs.cpSync(path.join(repoRoot, 'agents', agentFile), path.join(pluginRoot, 'agents', agentFile));
   }
-  for (const commandFile of plan.commands) {
+  if (plan.commands.length > 0) {
     fs.mkdirSync(path.join(pluginRoot, 'commands'), { recursive: true });
+  }
+  for (const commandFile of plan.commands) {
     fs.cpSync(path.join(repoRoot, 'commands', commandFile), path.join(pluginRoot, 'commands', commandFile));
   }
   for (const runtimePath of plan.runtimePaths) {
@@ -348,7 +353,10 @@ function generateProfilePlugin(options = {}) {
 
   const catalogSkillCount = includeCatalogSkill ? writeCatalogSkill(plan, pluginRoot) : 0;
 
-  const manifest = buildPluginManifest(plan);
+  const manifest = buildPluginManifest(plan, {
+    hasSkills: plan.skills.length > 0 || includeCatalogSkill,
+    hasCommands: plan.commands.length > 0,
+  });
   fs.mkdirSync(path.join(pluginRoot, '.claude-plugin'), { recursive: true });
   fs.writeFileSync(
     path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
@@ -379,13 +387,7 @@ function writeMarketplaceManifest(options = {}) {
   if (!outRoot) {
     throw new Error('writeMarketplaceManifest requires outRoot');
   }
-  const repoRoot = options.repoRoot || DEFAULT_REPO_ROOT;
   const marketplaceName = options.marketplaceName || DEFAULT_MARKETPLACE_NAME;
-
-  const rootMarketplacePath = path.join(repoRoot, '.claude-plugin', 'marketplace.json');
-  const owner = fs.existsSync(rootMarketplacePath)
-    ? readJson(rootMarketplacePath, '.claude-plugin/marketplace.json').owner
-    : undefined;
 
   const plugins = [];
   for (const dirName of listChildDirectories(outRoot)) {
@@ -399,14 +401,16 @@ function writeMarketplaceManifest(options = {}) {
       source: `./${dirName}`,
       description: manifest.description,
       version: manifest.version,
-      license: manifest.license,
+      ...(manifest.license ? { license: manifest.license } : {}),
       category: 'workflow',
     });
   }
 
+  // Deliberately generic owner: these plugins are generated locally, so the
+  // marketplace must not claim upstream ECC maintainers as its publisher.
   const marketplace = {
     name: marketplaceName,
-    ...(owner ? { owner } : {}),
+    owner: { name: 'Generated locally by ecc plugin-profiles' },
     metadata: {
       description: 'Generated ECC profile plugins - slim per-project alternatives to the full ecc plugin',
     },

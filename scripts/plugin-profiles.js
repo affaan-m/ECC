@@ -36,6 +36,9 @@ const {
 
 const DEFAULT_OUT_ROOT = path.join(os.homedir(), '.claude', 'ecc-profiles');
 
+const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json'];
+const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root'];
+
 function parseArgs(argv) {
   const args = { command: argv[0] || 'help', flags: {} };
   for (let i = 1; i < argv.length; i += 1) {
@@ -44,15 +47,17 @@ function parseArgs(argv) {
       throw new Error(`Unexpected argument: ${arg}`);
     }
     const key = arg.slice(2);
-    if (['no-catalog', 'no-hooks', 'json'].includes(key)) {
+    if (BOOLEAN_FLAGS.includes(key)) {
       args.flags[key] = true;
-    } else {
+    } else if (VALUE_FLAGS.includes(key)) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) {
         throw new Error(`Flag --${key} requires a value`);
       }
       args.flags[key] = value;
       i += 1;
+    } else {
+      throw new Error(`Unknown flag --${key}. Valid flags: ${[...VALUE_FLAGS, ...BOOLEAN_FLAGS].map(f => `--${f}`).join(', ')}`);
     }
   }
   return args;
@@ -109,6 +114,11 @@ function runGenerate(flags) {
   const marketplaceName = flags['marketplace-name'] || DEFAULT_MARKETPLACE_NAME;
   const plan = resolvePluginProfilePlan(buildPlanOptions(flags));
 
+  if (!flags.name && !flags.profile) {
+    console.warn(`Warning:  no --profile or --name given; using default name "${plan.pluginName}". `
+      + 'Another custom generation without --name will overwrite this plugin.');
+  }
+
   printPlanSummary(plan);
 
   const result = generateProfilePlugin({
@@ -116,7 +126,7 @@ function runGenerate(flags) {
     outRoot,
     includeCatalogSkill: !flags['no-catalog'],
   });
-  writeMarketplaceManifest({ outRoot, repoRoot: plan.repoRoot, marketplaceName });
+  writeMarketplaceManifest({ outRoot, marketplaceName });
 
   console.log(`\nGenerated: ${result.pluginRoot}`);
   console.log('\nNext steps:');

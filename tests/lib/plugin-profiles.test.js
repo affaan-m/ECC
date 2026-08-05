@@ -150,18 +150,39 @@ try {
   });
 
   run('writeMarketplaceManifest lists generated plugins', () => {
-    const { marketplace, manifestPath } = writeMarketplaceManifest({ outRoot: tempRoot, repoRoot });
+    const { marketplace, manifestPath } = writeMarketplaceManifest({ outRoot: tempRoot });
     assert.ok(fs.existsSync(manifestPath));
     assert.strictEqual(marketplace.plugins.length, 1);
     assert.strictEqual(marketplace.plugins[0].name, 'ecc-test-profile');
     assert.strictEqual(marketplace.plugins[0].source, './ecc-test-profile');
     assert.strictEqual(marketplace.plugins[0].version, rootPackage.version);
+    assert.ok(/generated/i.test(marketplace.owner.name), 'Owner must identify the marketplace as generated, not upstream');
   });
 
   run('--no-catalog generation omits the catalog skill', () => {
     const bare = generateProfilePlugin({ plan: generationPlan, outRoot: tempRoot, includeCatalogSkill: false });
     assert.ok(!fs.existsSync(path.join(bare.pluginRoot, 'skills', CATALOG_SKILL_ID)), 'Catalog skill should be absent');
     assert.strictEqual(bare.catalogSkillCount, 0);
+  });
+
+  run('runtime-only plan omits empty skills/commands manifest keys', () => {
+    const runtimePlan = resolvePluginProfilePlan({
+      repoRoot,
+      moduleIds: ['hooks-runtime'],
+      pluginName: 'ecc-test-runtime',
+    });
+    assert.strictEqual(runtimePlan.commands.length, 0, 'hooks-runtime should resolve zero commands');
+    assert.strictEqual(runtimePlan.skills.length, 0, 'hooks-runtime should resolve zero skills');
+
+    const withCatalog = generateProfilePlugin({ plan: runtimePlan, outRoot: tempRoot });
+    assert.ok(!('commands' in withCatalog.manifest), 'commands key must be omitted with zero commands');
+    assert.deepStrictEqual(withCatalog.manifest.skills, ['./skills/'], 'catalog skill alone still declares skills');
+    assert.ok(!fs.existsSync(path.join(withCatalog.pluginRoot, 'commands')), 'commands directory must not exist');
+
+    const bare = generateProfilePlugin({ plan: runtimePlan, outRoot: tempRoot, includeCatalogSkill: false });
+    assert.ok(!('skills' in bare.manifest), 'skills key must be omitted with zero skills and no catalog');
+    assert.ok(!('commands' in bare.manifest), 'commands key must be omitted with zero commands');
+    assert.ok(!fs.existsSync(path.join(bare.pluginRoot, 'skills')), 'skills directory must not exist');
   });
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
