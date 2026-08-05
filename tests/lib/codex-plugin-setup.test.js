@@ -6,7 +6,7 @@ const {
   CodexPluginSetupError,
   OFFICIAL_MARKETPLACE_REPO,
   executeFile,
-  normalizeGitHubRepository,
+  normalizeGitHubGitOrigin,
   parseMarketplaceInventory,
   parseMarketplaceUpgradeResult,
   parsePluginInventory,
@@ -74,7 +74,7 @@ function createExecFile(steps) {
 function dependenciesFor(fake, overrides = {}) {
   return {
     execFile: fake.execFile,
-    resolveMarketplaceRepository: async () => 'affaan-m/ecc',
+    resolveMarketplaceRepository: async () => 'https://github.com/affaan-m/ECC.git',
     ...overrides,
   };
 }
@@ -116,7 +116,7 @@ async function runTests() {
         'ecc@ecc'
       );
       assert.strictEqual(
-        normalizeGitHubRepository('git@github.com:affaan-m/ECC.git'),
+        normalizeGitHubGitOrigin('git@github.com:affaan-m/ECC.git'),
         'affaan-m/ecc'
       );
     }],
@@ -133,7 +133,7 @@ async function runTests() {
         { execFile: fake.execFile }
       );
 
-      assert.strictEqual(repository, 'affaan-m/ecc');
+      assert.strictEqual(repository, 'https://github.com/affaan-m/ECC.git');
       assert.strictEqual(fake.calls[0].options.shell, false);
       assert.strictEqual(fake.calls[0].options.cwd, '/workspace with spaces');
       assert.ok(fake.calls[0].options.timeout > 0);
@@ -343,7 +343,9 @@ async function runTests() {
         reconcileCodexPlugin({}, dependenciesFor(fake, {
           resolveMarketplaceRepository: async () => {
             provenanceChecks += 1;
-            return provenanceChecks === 1 ? 'affaan-m/ecc' : 'attacker/ecc';
+            return provenanceChecks === 1
+              ? 'https://github.com/affaan-m/ECC.git'
+              : 'https://github.com/attacker/ecc.git';
           },
         })),
         'MARKETPLACE_COLLISION',
@@ -469,7 +471,7 @@ async function runTests() {
         reconcileCodexPlugin({}, dependenciesFor(fake, {
           resolveMarketplaceRepository: async marketplace => {
             assert.strictEqual(marketplace.root, '/cache/ecc');
-            return 'attacker/ecc';
+            return 'https://github.com/attacker/ecc.git';
           },
         })),
         'MARKETPLACE_COLLISION',
@@ -479,6 +481,28 @@ async function runTests() {
         MARKETPLACE_LIST,
         PLUGIN_LIST,
       ]);
+    }],
+    ['rejects relative and insecure Git origins before marketplace mutation', async () => {
+      for (const origin of [
+        'affaan-m/ecc',
+        'http://github.com/affaan-m/ECC.git',
+      ]) {
+        const fake = createExecFile([
+          { args: MARKETPLACE_LIST, stdout: marketplaceInventory(true) },
+          { args: PLUGIN_LIST, stdout: pluginInventory(false) },
+        ]);
+        await expectSetupError(
+          reconcileCodexPlugin({}, dependenciesFor(fake, {
+            resolveMarketplaceRepository: async () => origin,
+          })),
+          'MARKETPLACE_COLLISION',
+          /not the official/i
+        );
+        assert.deepStrictEqual(fake.calls.map(call => call.args), [
+          MARKETPLACE_LIST,
+          PLUGIN_LIST,
+        ]);
+      }
     }],
     ['reports a missing Codex CLI without attempting another command', async () => {
       const missing = Object.assign(new Error('spawn codex ENOENT'), { code: 'ENOENT' });
@@ -527,8 +551,13 @@ async function runTests() {
         })),
         error => error.code === 'INVALID_PLUGIN_INVENTORY'
       );
-      assert.strictEqual(normalizeGitHubRepository(null), null);
-      assert.strictEqual(normalizeGitHubRepository('not a repository'), null);
+      assert.strictEqual(normalizeGitHubGitOrigin(null), null);
+      assert.strictEqual(normalizeGitHubGitOrigin('not a repository'), null);
+      assert.strictEqual(normalizeGitHubGitOrigin('affaan-m/ECC'), null);
+      assert.strictEqual(
+        normalizeGitHubGitOrigin('http://github.com/affaan-m/ECC.git'),
+        null
+      );
     }],
     ['surfaces mutation command failures with phase and exact argv', async () => {
       const commandFailure = Object.assign(new Error('upgrade failed'), {

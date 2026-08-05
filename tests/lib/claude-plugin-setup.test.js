@@ -10,6 +10,7 @@ const fakeClaudeScript = path.join(repoRoot, 'tests', 'fixtures', 'fake-claude-p
 const {
   OFFICIAL_MARKETPLACE_URL,
   buildWindowsCommandLine,
+  isOfficialMarketplace,
   runClaude,
   setupClaudePlugin,
 } = require('../../scripts/lib/claude-plugin-setup');
@@ -210,6 +211,25 @@ test('provider runner times out a hung Claude command with structured context', 
       return true;
     }
   );
+});
+
+test('marketplace provenance is validated according to its source type', () => {
+  assert.strictEqual(isOfficialMarketplace(officialMarketplace()), true);
+  assert.strictEqual(isOfficialMarketplace({
+    name: 'ecc',
+    source: 'git',
+    url: 'https://github.com/affaan-m/ECC.git',
+  }), true);
+  for (const url of [
+    'affaan-m/ECC',
+    'http://github.com/affaan-m/ECC.git',
+  ]) {
+    assert.strictEqual(isOfficialMarketplace({
+      name: 'ecc',
+      source: 'git',
+      url,
+    }), false);
+  }
 });
 
 test('fresh installs require an explicit scope and perform no mutation', () => {

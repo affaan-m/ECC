@@ -50,18 +50,28 @@ function fail(code, message, details) {
 function normalizeGitHubRepository(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
+  const match = normalized.match(/^([^/]+\/[^/]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function normalizeGitHubGitOrigin(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
   const match = normalized.match(
-    /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)?([^/]+\/[^/]+)$/i
+    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i
   );
   return match ? match[1].toLowerCase() : null;
 }
 
+function normalizeMarketplaceRepository(marketplace) {
+  return marketplace?.source === 'github'
+    ? normalizeGitHubRepository(marketplace.repo)
+    : normalizeGitHubGitOrigin(marketplace?.url);
+}
+
 function isOfficialMarketplace(marketplace) {
   if (!marketplace || marketplace.name !== OFFICIAL_MARKETPLACE_NAME) return false;
-  const repository = marketplace.source === 'github'
-    ? normalizeGitHubRepository(marketplace.repo)
-    : normalizeGitHubRepository(marketplace.url);
-  return repository === OFFICIAL_MARKETPLACE_REPO;
+  return normalizeMarketplaceRepository(marketplace) === OFFICIAL_MARKETPLACE_REPO;
 }
 
 function parseJsonArray(stdout, label) {
@@ -115,9 +125,7 @@ function parseMarketplaceList(stdout) {
       typeof marketplace.name !== 'string'
       || typeof marketplace.source !== 'string'
       || !['github', 'git'].includes(marketplace.source)
-      || !normalizeGitHubRepository(
-        marketplace.source === 'github' ? marketplace.repo : marketplace.url
-      )
+      || !normalizeMarketplaceRepository(marketplace)
     ) {
       fail(
         'INVALID_MARKETPLACE_INVENTORY',

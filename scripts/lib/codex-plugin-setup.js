@@ -45,11 +45,11 @@ function parseJsonObject(stdout, inventoryName, phase = 'inventory') {
   return parsed;
 }
 
-function normalizeGitHubRepository(value) {
+function normalizeGitHubGitOrigin(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
   const match = normalized.match(
-    /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)?([^/]+\/[^/]+)$/i
+    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i
   );
   return match ? match[1].toLowerCase() : null;
 }
@@ -244,7 +244,7 @@ async function resolveMarketplaceRepository(marketplace, options = {}, dependenc
       { phase: options.phase || 'marketplace-provenance' }
     );
   }
-  return normalizeGitHubRepository(result.stdout);
+  return String(result.stdout || '').trim();
 }
 
 async function assertOfficialMarketplace(
@@ -262,7 +262,7 @@ async function assertOfficialMarketplace(
     ));
   let repository;
   try {
-    repository = normalizeGitHubRepository(await resolveRepository(marketplace));
+    repository = normalizeGitHubGitOrigin(await resolveRepository(marketplace));
   } catch (error) {
     if (error instanceof CodexPluginSetupError) throw error;
     const detail = String(error?.message || error || '').trim();
@@ -476,7 +476,7 @@ module.exports = {
   executeFile,
   findEccMarketplace,
   findInstalledEccPlugin,
-  normalizeGitHubRepository,
+  normalizeGitHubGitOrigin,
   parseMarketplaceInventory,
   parseMarketplaceUpgradeResult,
   parsePluginInventory,
