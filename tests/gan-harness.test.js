@@ -26,6 +26,14 @@ function test(name, fn) {
   }
 }
 
+function runHarnessScript(script, args = []) {
+  const result = spawnSync('/bin/bash', ['-c', script, 'gan-harness-test', ...args], {
+    encoding: 'utf8',
+  });
+  assert.strictEqual(result.status, 0, result.stderr || 'GAN harness script failed');
+  return result.stdout.trim();
+}
+
 function extractScore(feedback) {
   const functionMatch = harnessSource.match(/extract_score\(\) \{[\s\S]*?\n\}/);
   assert.ok(functionMatch, 'expected scripts/gan-harness.sh to define extract_score');
@@ -35,13 +43,7 @@ function extractScore(feedback) {
   fs.writeFileSync(feedbackPath, feedback, 'utf8');
 
   try {
-    const result = spawnSync(
-      '/bin/bash',
-      ['-c', `${functionMatch[0]}\nextract_score "$1"`, 'gan-harness-score-test', feedbackPath],
-      { encoding: 'utf8' }
-    );
-    assert.strictEqual(result.status, 0, result.stderr || 'extract_score failed');
-    return result.stdout.trim();
+    return runHarnessScript(`${functionMatch[0]}\nextract_score "$1"`, [feedbackPath]);
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
@@ -79,11 +81,25 @@ const results = Object.freeze([
   }),
 
   test('final score lookup is compatible with the macOS Bash 3.2 runtime', () => {
+    const finalScoreBlock = harnessSource.match(
+      /NUM_ITERATIONS=\$\{#SCORES\[@\]\}\nif \[ "\$NUM_ITERATIONS"[\s\S]*?\nfi/
+    );
+    const scoreOutput = harnessSource.match(/echo -e "\s{2}Score:[^\n]+/);
+
+    assert.ok(finalScoreBlock, 'expected scripts/gan-harness.sh to select a final score');
+    assert.ok(scoreOutput, 'expected scripts/gan-harness.sh to print the final score');
     assert.doesNotMatch(
       harnessSource,
       /\bSCORES\[\s*-\s*\d+\s*\]/,
       'negative array subscripts require Bash 4.3+'
     );
+
+    const output = runHarnessScript(
+      [`SCORES=("$@")`, 'CYAN=""', 'NC=""', finalScoreBlock[0], scoreOutput[0]].join('\n'),
+      ['6.2', '8.7']
+    );
+
+    assert.match(output, /Score:\s+8\.7\s+\/\s+10\.0/);
   }),
 ]);
 
