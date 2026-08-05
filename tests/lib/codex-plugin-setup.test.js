@@ -206,10 +206,10 @@ async function runTests() {
       const result = await reconcileCodexPlugin({}, dependenciesFor(fake));
 
       assert.deepStrictEqual(result, {
-        action: 'unchanged',
+        action: 'updated',
         marketplaceAction: 'upgraded',
         pluginId: 'ecc@ecc',
-        restartRequired: false,
+        restartRequired: true,
       });
       assert.deepStrictEqual(fake.calls.map(call => call.args), [
         MARKETPLACE_LIST,

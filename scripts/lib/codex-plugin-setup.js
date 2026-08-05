@@ -436,12 +436,10 @@ async function reconcileCodexPlugin(options = {}, dependencies = {}) {
   }
 
   return {
-    action: pluginReady && pluginReadyAfterMarketplace
-      ? 'unchanged'
-      : (installedPlugin ? 'updated' : 'installed'),
+    action: installedPlugin ? 'updated' : 'installed',
     marketplaceAction,
     pluginId: CODEX_PLUGIN_ID,
-    restartRequired: !pluginReadyAfterMarketplace,
+    restartRequired: marketplaceAction === 'upgraded' || !pluginReadyAfterMarketplace,
   };
 }
 
