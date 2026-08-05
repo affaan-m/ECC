@@ -114,6 +114,23 @@ node scripts/plugin-profiles.js generate --profile developer \
 Component IDs come from `manifests/install-components.json` plus synthetic
 per-skill components (`skill:<dir>`), exactly as in `install-plan.js`.
 
+## In-Session Tooling
+
+Two companions make profiles usable without leaving Claude Code:
+
+- **`/plugin-profiles` command** (`commands/plugin-profiles.md`) wraps this
+  CLI: `list`, `plan <profile>`, `generate <profile>`, and `activate
+  <plugin-name>` (offers the per-project `enabledPlugins` edit with explicit
+  confirmation).
+- **Skill-router hook** (`scripts/hooks/skill-router.js`, UserPromptSubmit,
+  id `user-prompt:skill-router`) scores each prompt against the skill catalog
+  with offline token matching and injects up to three matches as context —
+  installed skills directly, uninstalled ones with their on-demand SKILL.md
+  path. Generated profiles carry an `ecc-profile.json` pointing at the source
+  repository, so routing always covers the full catalog even under a minimal
+  profile. It emits nothing when no skill clearly matches, and is disabled
+  like any hook via `ECC_DISABLED_HOOKS=user-prompt:skill-router`.
+
 ## Refreshing After Updates
 
 Generated plugins snapshot the repo at generation time. After updating ECC,

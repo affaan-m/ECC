@@ -127,6 +127,13 @@ try {
     assert.ok(fs.existsSync(path.join(result.pluginRoot, 'scripts', 'harness-audit.js')), 'Expected commands-core runtime script');
   });
 
+  run('generateProfilePlugin writes skill-router profile metadata', () => {
+    const metadata = JSON.parse(fs.readFileSync(path.join(result.pluginRoot, 'ecc-profile.json'), 'utf8'));
+    assert.strictEqual(path.resolve(metadata.sourceRoot), repoRoot, 'sourceRoot must point at the generating repo');
+    assert.strictEqual(metadata.version, rootPackage.version);
+    assert.strictEqual(metadata.generatedFrom, 'everything-claude-code');
+  });
+
   run('generated plugin.json follows Claude validator rules', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(result.pluginRoot, '.claude-plugin', 'plugin.json'), 'utf8'));
     assert.strictEqual(manifest.name, 'ecc-test-profile');

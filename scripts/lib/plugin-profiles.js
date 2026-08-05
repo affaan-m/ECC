@@ -363,6 +363,18 @@ function generateProfilePlugin(options = {}) {
     `${JSON.stringify(manifest, null, 2)}\n`
   );
 
+  // Router metadata: the skill-router hook reads this to route prompts over
+  // the FULL source catalog even when only this slim profile is enabled.
+  fs.writeFileSync(
+    path.join(pluginRoot, 'ecc-profile.json'),
+    `${JSON.stringify({
+      generatedFrom: 'everything-claude-code',
+      profileId: plan.profileId,
+      version: plan.version,
+      sourceRoot: toPosix(path.resolve(repoRoot)),
+    }, null, 2)}\n`
+  );
+
   return {
     pluginRoot,
     manifest,
