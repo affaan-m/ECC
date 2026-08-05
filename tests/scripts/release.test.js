@@ -21,6 +21,8 @@ const ciWorkflowPath = path.join(__dirname, '..', '..', '.github', 'workflows', 
 const releaseWorkflowSource = fs.readFileSync(releaseWorkflowPath, 'utf8');
 const reusableReleaseWorkflowSource = fs.readFileSync(reusableReleaseWorkflowPath, 'utf8');
 const ciWorkflowSource = fs.readFileSync(ciWorkflowPath, 'utf8');
+const rootReadmePath = path.join(__dirname, '..', '..', 'README.md');
+const rootReadmeSource = fs.readFileSync(rootReadmePath, 'utf8');
 const normalizedCiWorkflowSource = ciWorkflowSource.replace(/\r\n/g, '\n');
 
 function test(name, fn) {
@@ -90,6 +92,47 @@ function runTests() {
     assert.ok(
       source.includes('update_latest_release_heading "$ROOT_ZH_CN_README_FILE"'),
       'release.sh should update localized latest-release headings that plugin-manifest.test.js verifies'
+    );
+  })) passed++; else failed++;
+
+  if (test('a 2.2 bump preserves historical root README release headings', () => {
+    const historicalHeading = rootReadmeSource.match(/^### v2\.0\.0:.*$/m);
+    assert.ok(historicalHeading, 'README fixture should contain the historical v2.0.0 heading');
+    assert.ok(
+      source.includes('const oldVersion = process.argv[3]'),
+      'release heading sync should receive the version being replaced'
+    );
+    assert.ok(
+      source.includes('escape(oldVersion)'),
+      'release heading sync should target the current release version exactly'
+    );
+    assert.ok(
+      !source.includes('/^### v[0-9]+\\.[0-9]+\\.[0-9]+'),
+      'release heading sync must not relabel the first version-shaped heading as the new release'
+    );
+
+    const oldVersion = '2.1.0';
+    const nextVersion = '2.2.0';
+    const escapedOldVersion = oldVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const simulated = rootReadmeSource.replace(
+      new RegExp(`^### v${escapedOldVersion}( .*)$`, 'm'),
+      `### v${nextVersion}$1`
+    );
+    assert.ok(
+      simulated.includes(historicalHeading[0]),
+      'syncing the current release must leave the historical v2.0.0 heading unchanged'
+    );
+  })) passed++; else failed++;
+
+  if (test('release script rejects same-version reruns with direct tag guidance', () => {
+    assert.ok(
+      source.includes('if [[ "$OLD_VERSION" == "$VERSION" ]]'),
+      'release.sh should detect metadata that already declares the requested version'
+    );
+    assert.ok(
+      source.includes('echo "  git tag \\"v$VERSION\\""') &&
+        source.includes('echo "  git push origin \\"v$VERSION\\""'),
+      'same-version guidance should point maintainers to the tag-driven publish path'
     );
   })) passed++; else failed++;
 

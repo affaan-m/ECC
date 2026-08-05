@@ -35,6 +35,7 @@ const opencodePackageJsonPath = path.join(repoRoot, '.opencode', 'package.json')
 const opencodePackageLockPath = path.join(repoRoot, '.opencode', 'package-lock.json');
 const opencodeHooksPluginPath = path.join(repoRoot, '.opencode', 'plugins', 'ecc-hooks.ts');
 const semverPattern = '[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?';
+const installPrPublishedBaseline = '2.1.0';
 
 let passed = 0;
 let failed = 0;
@@ -95,6 +96,25 @@ const expectedVersion = rootPackage.version;
 
 test('package.json has version field', () => {
   assert.ok(expectedVersion, 'Expected package.json version field');
+});
+
+test('package.json declares a stable release after the install PR published baseline', () => {
+  const parseStableSemver = (version) => {
+    const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+    assert.ok(match, `Expected a stable semver version, got ${version}`);
+    return match.slice(1).map(Number);
+  };
+  const compareSemver = (left, right) => {
+    for (let index = 0; index < left.length; index++) {
+      if (left[index] !== right[index]) return left[index] - right[index];
+    }
+    return 0;
+  };
+
+  assert.ok(
+    compareSemver(parseStableSemver(expectedVersion), parseStableSemver(installPrPublishedBaseline)) > 0,
+    `Expected package version after install PR baseline ${installPrPublishedBaseline}, got ${expectedVersion}`
+  );
 });
 
 test('package-lock.json root version matches package.json', () => {

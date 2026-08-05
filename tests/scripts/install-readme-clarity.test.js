@@ -154,9 +154,14 @@ function runTests() {
     );
   })) passed++; else failed++;
 
-  if (test('README gives verified Codex and Kimi package install paths', () => {
+  if (test('README gives the native guided Codex and managed Kimi dry-run paths', () => {
     assert.ok(
-      readme.includes('npx ecc-universal install --profile core --target codex --dry-run')
+      readme.includes('npx ecc-universal install --guided --harness codex --dry-run'),
+      'README should verify Codex through the native guided reconciler'
+    );
+    assert.ok(
+      !readme.includes('npx ecc-universal install --profile core --target codex --dry-run'),
+      'README should not present the legacy managed Codex adapter as the native lifecycle'
     );
     assert.ok(
       readme.includes('npx ecc-universal install --profile core --target kimi --dry-run')

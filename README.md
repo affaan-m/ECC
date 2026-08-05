@@ -129,6 +129,11 @@ Access to 67 agents, 281 skills, and 94 legacy command shims, plus hooks, rules,
 
 ## Install ECC
 
+> [!NOTE]
+> The guided commands below require `ecc-universal` 2.2.0 or newer. If npm
+> still resolves 2.1.0, use the provider-native instructions below until the
+> 2.2.0 package is published.
+
 ### Pick one path only (per harness)
 
 You can use ECC with Claude Code, Codex, and other harnesses at the same time. Choose one install method for each harness:
@@ -188,10 +193,10 @@ npx ecc-universal install --guided \
   --profile core --yes
 ```
 
-Verify the package-managed Codex and Kimi paths without writing first:
+Verify the native guided Codex path and managed Kimi path without writing first:
 
 ```bash
-npx ecc-universal install --profile core --target codex --dry-run
+npx ecc-universal install --guided --harness codex --dry-run
 npx ecc-universal install --profile core --target kimi --dry-run
 ```
 
@@ -1474,7 +1479,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | **Context File** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md | copilot-instructions.md |
 | **Secret Detection** | Hook-based            | beforeSubmitPrompt hook | Sandbox-based | Hook-based | Instruction-based |
 | **Auto-Format** | PostToolUse hook      | afterFileEdit hook | N/A | file.edited hook | N/A |
-| **Version** | Plugin | Plugin | Reference config | 2.1.0 | Instruction layer |
+| **Version** | Plugin | Plugin | Reference config | 2.2.0 | Instruction layer |
 
 **Key architectural decisions:**
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode; GitHub Copilot uses `.github/copilot-instructions.md` instead)
