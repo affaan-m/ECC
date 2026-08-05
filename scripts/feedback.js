@@ -7,7 +7,7 @@ const {
 
 function showHelp() {
   process.stdout.write(`
-Usage: node scripts/feedback.js [--json] [--help|-h]
+Usage: ecc feedback [--json] [--help|-h]
 
 Print ECC's low-friction public feedback routes. This command never uploads
 diagnostics or reads project files.
