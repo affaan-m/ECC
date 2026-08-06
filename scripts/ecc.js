@@ -4,7 +4,7 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 const { listAvailableLanguages } = require('./lib/install-executor');
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
-const { createSafeItoInvocationEnvironment } = require('./lib/ito-environment');
+const { createSafeItoInvocationEnvironment, getInvocationCommand } = require('./lib/ito-environment');
 
 const COMMANDS = {
   setup: {
@@ -163,6 +163,7 @@ Examples:
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
   ecc control-pane --port 8765
+  ecc ito login [--no-browser]
   ecc ito auth
   ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
   ecc ito status --json
@@ -256,6 +257,7 @@ function runCommand(commandName, args) {
   if (!command) {
     throw new Error(`Unknown command: ${commandName}`);
   }
+  const isItoLogin = commandName === 'ito' && getInvocationCommand(args) === 'login';
   const result = spawnSync(
     process.execPath,
     [path.join(__dirname, command.script), ...args],
@@ -268,7 +270,7 @@ function runCommand(commandName, args) {
           }),
         }
         : process.env,
-      stdio: commandName === 'setup' || commandName === 'install'
+      stdio: isItoLogin || commandName === 'setup' || commandName === 'install'
         ? 'inherit'
         : commandName === 'memory'
           ? ['inherit', 'pipe', 'pipe']

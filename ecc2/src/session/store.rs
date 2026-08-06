@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::comms;
 use crate::config::Config;
+use crate::harness_eval::{CandidateSpec, HealthEvidenceSnapshot, PairedSample, PromotionPolicy};
 use crate::observability::{ToolCallEvent, ToolLogEntry, ToolLogPage};
 
 use super::output::{OutputLine, OutputStream, OUTPUT_BUFFER_LIMIT};
@@ -25,6 +26,30 @@ use super::{
 
 pub struct StateStore {
     conn: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HarnessAuditEntry {
+    pub id: i64,
+    pub event_type: String,
+    pub candidate_id: String,
+    pub prior_candidate_id: Option<String>,
+    pub evaluation_id: Option<i64>,
+    pub evidence_ref: String,
+    pub health_evidence_json: Option<String>,
+    pub health_evidence_sha256: Option<String>,
+    pub asserted_health: Option<bool>,
+    pub health_check_status: Option<String>,
+    pub legacy_unverifiable: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HarnessPromotionOutcome {
+    pub evaluation_id: Option<i64>,
+    pub promoted: bool,
+    pub rolled_back: bool,
+    pub failures: Vec<String>,
 }
 
 const DEFAULT_CONTEXT_GRAPH_OBSERVATION_RETENTION: usize = 12;
@@ -403,6 +428,63 @@ impl StateStore {
                 last_auto_prune_active_skipped INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS harness_candidates (
+                id TEXT PRIMARY KEY,
+                canonical_config_json TEXT NOT NULL,
+                trace_refs_json TEXT NOT NULL,
+                evidence_refs_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS harness_candidate_aliases (
+                alias_id TEXT PRIMARY KEY,
+                candidate_id TEXT NOT NULL REFERENCES harness_candidates(id),
+                id_version INTEGER NOT NULL CHECK(id_version = 2),
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS harness_evaluations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id TEXT NOT NULL REFERENCES harness_candidates(id),
+                baseline_id TEXT NOT NULL REFERENCES harness_candidates(id),
+                evaluator TEXT NOT NULL,
+                samples_json TEXT NOT NULL,
+                policy_json TEXT NOT NULL,
+                comparison_json TEXT NOT NULL,
+                evidence_ref TEXT NOT NULL,
+                health_evidence_json TEXT,
+                health_evidence_sha256 TEXT,
+                asserted_health INTEGER,
+                health_check_status TEXT,
+                legacy_unverifiable INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS active_harness_config (
+                slot TEXT PRIMARY KEY CHECK(slot = 'default'),
+                candidate_id TEXT NOT NULL REFERENCES harness_candidates(id),
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS harness_eval_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                candidate_id TEXT NOT NULL REFERENCES harness_candidates(id),
+                prior_candidate_id TEXT REFERENCES harness_candidates(id),
+                evaluation_id INTEGER REFERENCES harness_evaluations(id),
+                evidence_ref TEXT NOT NULL,
+                health_evidence_json TEXT,
+                health_evidence_sha256 TEXT,
+                asserted_health INTEGER,
+                health_check_status TEXT,
+                legacy_unverifiable INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS harness_candidates_no_update BEFORE UPDATE ON harness_candidates BEGIN SELECT RAISE(ABORT, 'harness candidates are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_candidates_no_delete BEFORE DELETE ON harness_candidates BEGIN SELECT RAISE(ABORT, 'harness candidates are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_candidate_aliases_no_update BEFORE UPDATE ON harness_candidate_aliases BEGIN SELECT RAISE(ABORT, 'harness candidate aliases are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_candidate_aliases_no_delete BEFORE DELETE ON harness_candidate_aliases BEGIN SELECT RAISE(ABORT, 'harness candidate aliases are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_evaluations_no_update BEFORE UPDATE ON harness_evaluations BEGIN SELECT RAISE(ABORT, 'harness evaluations are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_evaluations_no_delete BEFORE DELETE ON harness_evaluations BEGIN SELECT RAISE(ABORT, 'harness evaluations are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_eval_audit_no_update BEFORE UPDATE ON harness_eval_audit BEGIN SELECT RAISE(ABORT, 'harness audit is immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS harness_eval_audit_no_delete BEFORE DELETE ON harness_eval_audit BEGIN SELECT RAISE(ABORT, 'harness audit is immutable'); END;
+
             CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
             CREATE INDEX IF NOT EXISTS idx_tool_log_session ON tool_log(session_id);
             CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_session, read);
@@ -434,6 +516,8 @@ impl StateStore {
             ",
         )?;
         self.ensure_session_columns()?;
+        self.ensure_harness_eval_columns()?;
+        self.ensure_harness_candidate_aliases()?;
         self.ensure_session_board_columns()?;
         self.refresh_session_board_meta()?;
         Ok(())
@@ -802,6 +886,109 @@ impl StateStore {
         Ok(())
     }
 
+    fn ensure_harness_eval_columns(&self) -> Result<()> {
+        for (table, column, definition) in [
+            ("harness_evaluations", "health_evidence_json", "TEXT"),
+            ("harness_evaluations", "health_evidence_sha256", "TEXT"),
+            ("harness_evaluations", "asserted_health", "INTEGER"),
+            ("harness_evaluations", "health_check_status", "TEXT"),
+            ("harness_eval_audit", "health_evidence_json", "TEXT"),
+            ("harness_eval_audit", "health_evidence_sha256", "TEXT"),
+            ("harness_eval_audit", "asserted_health", "INTEGER"),
+            ("harness_eval_audit", "health_check_status", "TEXT"),
+        ] {
+            if !self.has_column(table, column)? {
+                self.conn
+                    .execute(
+                        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+                        [],
+                    )
+                    .with_context(|| format!("Failed to add {column} column to {table}"))?;
+            }
+        }
+        for table in ["harness_evaluations", "harness_eval_audit"] {
+            if !self.has_column(table, "legacy_unverifiable")? {
+                self.conn.execute(
+                    &format!("ALTER TABLE {table} ADD COLUMN legacy_unverifiable INTEGER NOT NULL DEFAULT 1"),
+                    [],
+                ).with_context(|| format!("Failed to mark legacy rows in {table}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_harness_candidate_aliases(&self) -> Result<()> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, canonical_config_json, trace_refs_json, evidence_refs_json FROM harness_candidates ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(statement);
+        let tx = self.conn.unchecked_transaction()?;
+        for (id, canonical_config, trace_json, evidence_json) in rows {
+            let candidate = CandidateSpec {
+                id: id.clone(),
+                canonical_config,
+                trace_refs: serde_json::from_str(&trace_json)?,
+                evidence_refs: serde_json::from_str(&evidence_json)?,
+            };
+            candidate.verify_persisted_id(&id)?;
+            if id == candidate.legacy_id() && id != candidate.id_for_v2()? {
+                Self::register_harness_alias(&tx, &candidate.id_for_v2()?, &id)?;
+            }
+        }
+        let mut aliases = tx.prepare(
+            "SELECT alias_id, candidate_id, id_version FROM harness_candidate_aliases ORDER BY alias_id",
+        )?;
+        let alias_rows = aliases
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(aliases);
+        for (alias_id, target_id, version) in alias_rows {
+            let (canonical_config, trace_json, evidence_json) = tx.query_row(
+                "SELECT canonical_config_json, trace_refs_json, evidence_refs_json FROM harness_candidates WHERE id = ?1",
+                [&target_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            )?;
+            let target = CandidateSpec {
+                id: target_id.clone(),
+                canonical_config,
+                trace_refs: serde_json::from_str(&trace_json)?,
+                evidence_refs: serde_json::from_str(&evidence_json)?,
+            };
+            if version != 2
+                || target_id != target.legacy_id()
+                || alias_id != target.id_for_v2()?
+                || tx
+                    .query_row(
+                        "SELECT 1 FROM harness_candidates WHERE id = ?1",
+                        [&alias_id],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some()
+            {
+                anyhow::bail!("candidate alias integrity verification failed");
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     fn ensure_session_board_columns(&self) -> Result<()> {
         if !self.has_column("session_board", "row_label")? {
             self.conn
@@ -811,13 +998,19 @@ impl StateStore {
 
         if !self.has_column("session_board", "previous_lane")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN previous_lane TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN previous_lane TEXT",
+                    [],
+                )
                 .context("Failed to add previous_lane column to session_board table")?;
         }
 
         if !self.has_column("session_board", "previous_row_label")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN previous_row_label TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN previous_row_label TEXT",
+                    [],
+                )
                 .context("Failed to add previous_row_label column to session_board table")?;
         }
 
@@ -859,25 +1052,37 @@ impl StateStore {
 
         if !self.has_column("session_board", "status_detail")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN status_detail TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN status_detail TEXT",
+                    [],
+                )
                 .context("Failed to add status_detail column to session_board table")?;
         }
 
         if !self.has_column("session_board", "movement_note")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN movement_note TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN movement_note TEXT",
+                    [],
+                )
                 .context("Failed to add movement_note column to session_board table")?;
         }
 
         if !self.has_column("session_board", "activity_kind")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN activity_kind TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN activity_kind TEXT",
+                    [],
+                )
                 .context("Failed to add activity_kind column to session_board table")?;
         }
 
         if !self.has_column("session_board", "activity_note")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN activity_note TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN activity_note TEXT",
+                    [],
+                )
                 .context("Failed to add activity_note column to session_board table")?;
         }
 
@@ -892,7 +1097,10 @@ impl StateStore {
 
         if !self.has_column("session_board", "conflict_signal")? {
             self.conn
-                .execute("ALTER TABLE session_board ADD COLUMN conflict_signal TEXT", [])
+                .execute(
+                    "ALTER TABLE session_board ADD COLUMN conflict_signal TEXT",
+                    [],
+                )
                 .context("Failed to add conflict_signal column to session_board table")?;
         }
 
@@ -1062,9 +1270,7 @@ impl StateStore {
                         permission_mode: row.get(4)?,
                         add_dirs: serde_json::from_str(&add_dirs_json).unwrap_or_default(),
                         max_budget_usd: row.get(6)?,
-                        token_budget: row
-                            .get::<_, Option<i64>>(7)?
-                            .map(|tokens| tokens as u64),
+                        token_budget: row.get::<_, Option<i64>>(7)?.map(|tokens| tokens as u64),
                         append_system_prompt: row.get(8)?,
                         agent: None,
                     })
@@ -2260,13 +2466,14 @@ impl StateStore {
         let now = chrono::Utc::now().to_rfc3339();
 
         for session in sessions {
-            let mut meta = board_meta
-                .get(&session.id)
-                .cloned()
-                .unwrap_or_else(|| SessionBoardMeta {
-                    lane: board_lane_for_state(&session.state).to_string(),
-                    ..SessionBoardMeta::default()
-                });
+            let mut meta =
+                board_meta
+                    .get(&session.id)
+                    .cloned()
+                    .unwrap_or_else(|| SessionBoardMeta {
+                        lane: board_lane_for_state(&session.state).to_string(),
+                        ..SessionBoardMeta::default()
+                    });
             if let Some(previous) = existing_meta.get(&session.id) {
                 annotate_board_motion(&mut meta, previous);
             }
@@ -2676,10 +2883,7 @@ impl StateStore {
             .map_err(Into::into)
     }
 
-    fn latest_task_handoff_activity(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<(String, String)>> {
+    fn latest_task_handoff_activity(&self, session_id: &str) -> Result<Option<(String, String)>> {
         let latest_handoff = self
             .conn
             .query_row(
@@ -2700,49 +2904,52 @@ impl StateStore {
             )
             .optional()?;
 
-        Ok(latest_handoff.and_then(|(from_session, to_session, content)| {
-            let context = extract_task_handoff_context(&content)?;
-            let routing_suffix = routing_activity_suffix(&context);
+        Ok(
+            latest_handoff.and_then(|(from_session, to_session, content)| {
+                let context = extract_task_handoff_context(&content)?;
+                let routing_suffix = routing_activity_suffix(&context);
 
-            if session_id == to_session {
-                Some((
-                    "received".to_string(),
-                    format!(
-                        "Received from {}{}",
-                        short_session_ref(&from_session),
-                        routing_suffix
-                            .map(|value| format!(" | {value}"))
-                            .unwrap_or_default()
-                    ),
-                ))
-            } else if session_id == from_session {
-                let (kind, base) = match routing_suffix {
-                    Some("spawned") => {
-                        ("spawned", format!("Spawned {}", short_session_ref(&to_session)))
-                    }
-                    Some("spawned fallback") => (
-                        "spawned_fallback",
-                        format!("Spawned fallback {}", short_session_ref(&to_session)),
-                    ),
-                    _ => (
-                        "delegated",
-                        format!("Delegated to {}", short_session_ref(&to_session)),
-                    ),
-                };
-                Some((
-                    kind.to_string(),
-                    format!(
-                        "{base}{}",
-                        routing_suffix
-                            .filter(|value| !value.starts_with("spawned"))
-                            .map(|value| format!(" | {value}"))
-                            .unwrap_or_default()
-                    ),
-                ))
-            } else {
-                None
-            }
-        }))
+                if session_id == to_session {
+                    Some((
+                        "received".to_string(),
+                        format!(
+                            "Received from {}{}",
+                            short_session_ref(&from_session),
+                            routing_suffix
+                                .map(|value| format!(" | {value}"))
+                                .unwrap_or_default()
+                        ),
+                    ))
+                } else if session_id == from_session {
+                    let (kind, base) = match routing_suffix {
+                        Some("spawned") => (
+                            "spawned",
+                            format!("Spawned {}", short_session_ref(&to_session)),
+                        ),
+                        Some("spawned fallback") => (
+                            "spawned_fallback",
+                            format!("Spawned fallback {}", short_session_ref(&to_session)),
+                        ),
+                        _ => (
+                            "delegated",
+                            format!("Delegated to {}", short_session_ref(&to_session)),
+                        ),
+                    };
+                    Some((
+                        kind.to_string(),
+                        format!(
+                            "{base}{}",
+                            routing_suffix
+                                .filter(|value| !value.starts_with("spawned"))
+                                .map(|value| format!(" | {value}"))
+                                .unwrap_or_default()
+                        ),
+                    ))
+                } else {
+                    None
+                }
+            }),
+        )
     }
 
     pub fn insert_decision(
@@ -3862,21 +4069,22 @@ impl StateStore {
             .query_map(
                 rusqlite::params![session_id, page_size as i64, offset as i64],
                 |row| {
-                Ok(ToolLogEntry {
-                    id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    tool_name: row.get(2)?,
-                    input_summary: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                    input_params_json: row
-                        .get::<_, Option<String>>(4)?
-                        .unwrap_or_else(|| "{}".to_string()),
-                    output_summary: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                    trigger_summary: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                    duration_ms: row.get::<_, Option<i64>>(7)?.unwrap_or_default() as u64,
-                    risk_score: row.get::<_, Option<f64>>(8)?.unwrap_or_default(),
-                    timestamp: row.get(9)?,
-                })
-            })?
+                    Ok(ToolLogEntry {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        tool_name: row.get(2)?,
+                        input_summary: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                        input_params_json: row
+                            .get::<_, Option<String>>(4)?
+                            .unwrap_or_else(|| "{}".to_string()),
+                        output_summary: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                        trigger_summary: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                        duration_ms: row.get::<_, Option<i64>>(7)?.unwrap_or_default() as u64,
+                        risk_score: row.get::<_, Option<f64>>(8)?.unwrap_or_default(),
+                        timestamp: row.get(9)?,
+                    })
+                },
+            )?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ToolLogPage {
@@ -4322,7 +4530,11 @@ fn derive_board_meta_map(sessions: &[Session]) -> HashMap<String, SessionBoardMe
     row_specs.sort_by(|left, right| {
         left.2
             .cmp(&right.2)
-            .then_with(|| left.1.to_ascii_lowercase().cmp(&right.1.to_ascii_lowercase()))
+            .then_with(|| {
+                left.1
+                    .to_ascii_lowercase()
+                    .cmp(&right.1.to_ascii_lowercase())
+            })
             .then_with(|| left.0.cmp(&right.0))
     });
 
@@ -4473,7 +4685,9 @@ fn extract_labeled_scope(task: &str, labels: &[&str]) -> Option<String> {
 
     for label in labels {
         if let Some(index) = lowered.find(label) {
-            let mut tail = task.get(index + label.len()..)?.trim_start_matches([' ', ':', '-', '#']);
+            let mut tail = task
+                .get(index + label.len()..)?
+                .trim_start_matches([' ', ':', '-', '#']);
             if tail.is_empty() {
                 continue;
             }
@@ -4537,7 +4751,10 @@ fn derive_board_conflict_signals(sessions: &[Session]) -> HashMap<String, String
         .filter(|session| {
             matches!(
                 session.state,
-                SessionState::Pending | SessionState::Running | SessionState::Idle | SessionState::Stale
+                SessionState::Pending
+                    | SessionState::Running
+                    | SessionState::Idle
+                    | SessionState::Stale
             )
         })
         .collect::<Vec<_>>();
@@ -4560,7 +4777,11 @@ fn derive_board_conflict_signals(sessions: &[Session]) -> HashMap<String, String
             .push(session);
 
         let (project, feature, issue) = derive_board_scope(session);
-        if let Some(scope) = issue.or(feature).or(project).filter(|scope| !scope.is_empty()) {
+        if let Some(scope) = issue
+            .or(feature)
+            .or(project)
+            .filter(|scope| !scope.is_empty())
+        {
             sessions_by_scope.entry(scope).or_default().push(session);
         }
     }
@@ -4646,7 +4867,8 @@ fn routing_activity_suffix(context: &str) -> Option<&'static str> {
 }
 
 fn extract_task_handoff_context(content: &str) -> Option<String> {
-    if let Some(crate::comms::MessageType::TaskHandoff { context, .. }) = crate::comms::parse(content)
+    if let Some(crate::comms::MessageType::TaskHandoff { context, .. }) =
+        crate::comms::parse(content)
     {
         return Some(context);
     }
@@ -5064,6 +5286,361 @@ fn overlap_state_priority(state: &SessionState) -> u8 {
         SessionState::Completed => 4,
         SessionState::Failed => 5,
         SessionState::Stopped => 6,
+    }
+}
+
+impl StateStore {
+    fn register_harness_alias(
+        tx: &rusqlite::Transaction<'_>,
+        alias_id: &str,
+        candidate_id: &str,
+    ) -> Result<()> {
+        if tx
+            .query_row(
+                "SELECT 1 FROM harness_candidates WHERE id = ?1",
+                [alias_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some()
+        {
+            anyhow::bail!("candidate alias collision with physical candidate id");
+        }
+        let existing = tx
+            .query_row(
+                "SELECT candidate_id FROM harness_candidate_aliases WHERE alias_id = ?1",
+                [alias_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            if existing != candidate_id {
+                anyhow::bail!("candidate alias collision with different immutable target");
+            }
+            return Ok(());
+        }
+        tx.execute(
+            "INSERT INTO harness_candidate_aliases (alias_id, candidate_id, id_version, created_at) VALUES (?1, ?2, 2, ?3)",
+            rusqlite::params![alias_id, candidate_id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    fn resolve_harness_candidate_id(connection: &Connection, candidate_id: &str) -> Result<String> {
+        if let Some(target) = connection
+            .query_row(
+                "SELECT candidate_id FROM harness_candidate_aliases WHERE alias_id = ?1",
+                [candidate_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            return Ok(target);
+        }
+        connection
+            .query_row(
+                "SELECT id FROM harness_candidates WHERE id = ?1",
+                [candidate_id],
+                |row| row.get(0),
+            )
+            .with_context(|| format!("unknown harness candidate id {candidate_id}"))
+    }
+
+    pub fn record_harness_candidate(&self, candidate: &CandidateSpec) -> Result<()> {
+        candidate.verify_integrity()?;
+        let trace_json = serde_json::to_string(&candidate.trace_refs)?;
+        let evidence_json = serde_json::to_string(&candidate.evidence_refs)?;
+        let legacy_id = candidate.legacy_id();
+        let legacy = self
+            .conn
+            .query_row(
+                "SELECT canonical_config_json, trace_refs_json, evidence_refs_json FROM harness_candidates WHERE id = ?1",
+                [&legacy_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            )
+            .optional()?;
+        let expected = (
+            candidate.canonical_config.clone(),
+            trace_json.clone(),
+            evidence_json.clone(),
+        );
+        if let Some(stored) = legacy {
+            let legacy_candidate = CandidateSpec {
+                id: legacy_id.clone(),
+                canonical_config: stored.0,
+                trace_refs: serde_json::from_str(&stored.1)?,
+                evidence_refs: serde_json::from_str(&stored.2)?,
+            };
+            legacy_candidate.verify_persisted_id(&legacy_id)?;
+            if legacy_candidate.id_for_v2()? != candidate.id {
+                anyhow::bail!("legacy candidate id collision with different immutable content");
+            }
+            let tx = self.conn.unchecked_transaction()?;
+            Self::register_harness_alias(&tx, &candidate.id, &legacy_id)?;
+            tx.commit()?;
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO harness_candidates (id, canonical_config_json, trace_refs_json, evidence_refs_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO NOTHING",
+            rusqlite::params![candidate.id, candidate.canonical_config, trace_json, evidence_json, chrono::Utc::now().to_rfc3339()],
+        )?;
+        let stored: (String, String, String) = self.conn.query_row(
+            "SELECT canonical_config_json, trace_refs_json, evidence_refs_json FROM harness_candidates WHERE id = ?1",
+            [&candidate.id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        if stored != expected {
+            anyhow::bail!("candidate id collision with different immutable content");
+        }
+        Ok(())
+    }
+
+    pub fn activate_initial_harness(&self, candidate_id: &str, evidence_ref: &str) -> Result<()> {
+        if candidate_id.len() != 64 || evidence_ref.trim().is_empty() || evidence_ref.len() > 4096 {
+            anyhow::bail!(
+                "valid candidate id and bounded activation evidence reference are required"
+            );
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let stored_candidate_id = Self::resolve_harness_candidate_id(&tx, candidate_id)?;
+        if tx
+            .query_row(
+                "SELECT candidate_id FROM active_harness_config WHERE slot = 'default'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .is_some()
+        {
+            anyhow::bail!("an active harness configuration already exists");
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.execute("INSERT INTO active_harness_config (slot, candidate_id, updated_at) VALUES ('default', ?1, ?2)", rusqlite::params![stored_candidate_id, now])?;
+        tx.execute("INSERT INTO harness_eval_audit (event_type, candidate_id, evidence_ref, legacy_unverifiable, created_at) VALUES ('initial_activation', ?1, ?2, 0, ?3)", rusqlite::params![stored_candidate_id, evidence_ref, now])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn active_harness_id(&self) -> Result<Option<String>> {
+        let stored = self
+            .conn
+            .query_row(
+                "SELECT candidate_id FROM active_harness_config WHERE slot = 'default'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(stored) = stored {
+            Ok(Some(
+                self.conn
+                    .query_row(
+                        "SELECT alias_id FROM harness_candidate_aliases WHERE candidate_id = ?1 AND id_version = 2",
+                        [&stored],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or(stored),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_promote_and_health_check<F>(
+        &self,
+        candidate_id: &str,
+        baseline_id: &str,
+        evaluator: &str,
+        samples: &[PairedSample],
+        policy: PromotionPolicy,
+        evidence_ref: &str,
+        health_evidence: &HealthEvidenceSnapshot,
+        health_check: F,
+    ) -> Result<HarnessPromotionOutcome>
+    where
+        F: FnOnce(&str) -> Result<bool>,
+    {
+        if candidate_id.len() != 64
+            || baseline_id.len() != 64
+            || evaluator != "recorded-v1"
+            || evidence_ref.trim().is_empty()
+            || evidence_ref.len() > 4096
+        {
+            anyhow::bail!("valid candidate ids, recorded-v1 evaluator, and bounded evidence reference are required");
+        }
+        health_evidence.verify()?;
+        if health_evidence.candidate_id != candidate_id || health_evidence.evaluator != evaluator {
+            anyhow::bail!("health evidence does not match candidate and evaluator");
+        }
+        let comparison = policy.compare(samples)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let stored_candidate_id = Self::resolve_harness_candidate_id(&tx, candidate_id)?;
+        let stored_baseline_id = Self::resolve_harness_candidate_id(&tx, baseline_id)?;
+        let active: String = tx
+            .query_row(
+                "SELECT candidate_id FROM active_harness_config WHERE slot = 'default'",
+                [],
+                |row| row.get(0),
+            )
+            .context("no active baseline configuration")?;
+        if active != stored_baseline_id {
+            anyhow::bail!("baseline is not the active harness configuration");
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        if !comparison.passed {
+            tx.execute("INSERT INTO harness_evaluations (candidate_id, baseline_id, evaluator, samples_json, policy_json, comparison_json, evidence_ref, legacy_unverifiable, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)", rusqlite::params![stored_candidate_id, stored_baseline_id, evaluator, serde_json::to_string(samples)?, serde_json::to_string(&policy)?, serde_json::to_string(&comparison)?, evidence_ref, now])?;
+            let evaluation_id = tx.last_insert_rowid();
+            tx.execute("INSERT INTO harness_eval_audit (event_type, candidate_id, prior_candidate_id, evaluation_id, evidence_ref, legacy_unverifiable, created_at) VALUES ('promotion_rejected', ?1, ?2, ?3, ?4, 0, ?5)", rusqlite::params![stored_candidate_id, stored_baseline_id, evaluation_id, evidence_ref, now])?;
+            tx.commit()?;
+            return Ok(HarnessPromotionOutcome {
+                evaluation_id: Some(evaluation_id),
+                promoted: false,
+                rolled_back: false,
+                failures: comparison.failures,
+            });
+        }
+        let changed = tx.execute("UPDATE active_harness_config SET candidate_id = ?1, updated_at = ?2 WHERE slot = 'default' AND candidate_id = ?3", rusqlite::params![stored_candidate_id, now, stored_baseline_id])?;
+        if changed != 1 {
+            anyhow::bail!("atomic promotion compare-and-swap failed");
+        }
+        let health_result = health_check(candidate_id).and_then(|healthy| {
+            if healthy != health_evidence.asserted_healthy {
+                anyhow::bail!("health check result does not match persisted assertion");
+            }
+            Ok(healthy)
+        });
+        let healthy = matches!(health_result, Ok(true));
+        let event_type = match &health_result {
+            Ok(true) => "promoted",
+            Ok(false) => "promotion_rolled_back",
+            Err(_) => "health_check_error_rolled_back",
+        };
+        let health_check_status = match &health_result {
+            Ok(true) => "healthy",
+            Ok(false) => "unhealthy",
+            Err(_) => "error",
+        };
+        if !healthy {
+            let restored = tx.execute("UPDATE active_harness_config SET candidate_id = ?1, updated_at = ?2 WHERE slot = 'default' AND candidate_id = ?3", rusqlite::params![stored_baseline_id, now, stored_candidate_id])?;
+            if restored != 1 {
+                anyhow::bail!("atomic rollback compare-and-swap failed");
+            }
+        }
+        let health_json = health_evidence.canonical_json()?;
+        let health_digest = health_evidence.digest()?;
+        tx.execute("INSERT INTO harness_evaluations (candidate_id, baseline_id, evaluator, samples_json, policy_json, comparison_json, evidence_ref, health_evidence_json, health_evidence_sha256, asserted_health, health_check_status, legacy_unverifiable, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12)", rusqlite::params![stored_candidate_id, stored_baseline_id, evaluator, serde_json::to_string(samples)?, serde_json::to_string(&policy)?, serde_json::to_string(&comparison)?, evidence_ref, health_json, health_digest, health_evidence.asserted_healthy, health_check_status, now])?;
+        let evaluation_id = tx.last_insert_rowid();
+        tx.execute("INSERT INTO harness_eval_audit (event_type, candidate_id, prior_candidate_id, evaluation_id, evidence_ref, health_evidence_json, health_evidence_sha256, asserted_health, health_check_status, legacy_unverifiable, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)", rusqlite::params![event_type, stored_candidate_id, stored_baseline_id, evaluation_id, evidence_ref, health_json, health_digest, health_evidence.asserted_healthy, health_check_status, now])?;
+        tx.commit()?;
+        let failures = match health_result {
+            Ok(true) => Vec::new(),
+            Ok(false) => vec!["post-promotion health check returned false".to_string()],
+            Err(error) => vec![format!("health check error: {error:#}")],
+        };
+        Ok(HarnessPromotionOutcome {
+            evaluation_id: Some(evaluation_id),
+            promoted: healthy,
+            rolled_back: !healthy,
+            failures,
+        })
+    }
+
+    pub fn harness_audit_entries(&self) -> Result<Vec<HarnessAuditEntry>> {
+        let mut statement = self.conn.prepare("SELECT id, event_type, candidate_id, prior_candidate_id, evaluation_id, evidence_ref, health_evidence_json, health_evidence_sha256, asserted_health, health_check_status, legacy_unverifiable, created_at FROM harness_eval_audit ORDER BY id")?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok(HarnessAuditEntry {
+                    id: row.get(0)?,
+                    event_type: row.get(1)?,
+                    candidate_id: row.get(2)?,
+                    prior_candidate_id: row.get(3)?,
+                    evaluation_id: row.get(4)?,
+                    evidence_ref: row.get(5)?,
+                    health_evidence_json: row.get(6)?,
+                    health_evidence_sha256: row.get(7)?,
+                    asserted_health: row.get(8)?,
+                    health_check_status: row.get(9)?,
+                    legacy_unverifiable: row.get(10)?,
+                    created_at: row.get(11)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for entry in &entries {
+            self.verify_harness_audit_entry(entry)?;
+        }
+        Ok(entries)
+    }
+
+    fn verify_harness_audit_entry(&self, entry: &HarnessAuditEntry) -> Result<()> {
+        let fields = (
+            &entry.health_evidence_json,
+            &entry.health_evidence_sha256,
+            entry.asserted_health,
+            &entry.health_check_status,
+        );
+        if matches!(fields, (None, None, None, None)) {
+            if entry.legacy_unverifiable
+                || matches!(
+                    entry.event_type.as_str(),
+                    "initial_activation" | "promotion_rejected"
+                )
+            {
+                return Ok(());
+            }
+            anyhow::bail!("missing harness health evidence integrity metadata");
+        }
+        let (Some(json), Some(digest), Some(asserted), Some(status)) = fields else {
+            anyhow::bail!("incomplete harness health evidence integrity metadata");
+        };
+        if json.len() > 8192 {
+            anyhow::bail!("harness health evidence exceeds integrity verification bound");
+        }
+        let snapshot: HealthEvidenceSnapshot = serde_json::from_str(json)?;
+        let snapshot_candidate_id =
+            Self::resolve_harness_candidate_id(&self.conn, &snapshot.candidate_id)?;
+        if snapshot.canonical_json()? != *json
+            || snapshot.digest()? != *digest
+            || snapshot.asserted_healthy != asserted
+            || snapshot_candidate_id != entry.candidate_id
+        {
+            anyhow::bail!("harness health evidence integrity verification failed");
+        }
+        let event_consistent = match entry.event_type.as_str() {
+            "promoted" => status == "healthy" && asserted,
+            "promotion_rolled_back" => status == "unhealthy" && !asserted,
+            "health_check_error_rolled_back" => status == "error",
+            _ => false,
+        };
+        if !event_consistent {
+            anyhow::bail!("harness health evidence is inconsistent with audit outcome");
+        }
+        if let Some(evaluation_id) = entry.evaluation_id {
+            let evaluation: (Option<String>, Option<String>, Option<bool>, Option<String>, bool) = self.conn.query_row(
+                "SELECT health_evidence_json, health_evidence_sha256, asserted_health, health_check_status, legacy_unverifiable FROM harness_evaluations WHERE id = ?1",
+                [evaluation_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )?;
+            if evaluation
+                != (
+                    Some(json.clone()),
+                    Some(digest.clone()),
+                    Some(asserted),
+                    Some(status.clone()),
+                    false,
+                )
+            {
+                anyhow::bail!("audit health evidence does not match its evaluation");
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn connection_for_test(&self) -> &Connection {
+        &self.conn
     }
 }
 
@@ -7108,6 +7685,582 @@ mod tests {
         let recovered = db.daemon_activity()?;
         assert_eq!(recovered.chronic_saturation_streak, 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn harness_eval_store_promotes_and_rolls_back_with_immutable_audit() -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-eval")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let baseline = CandidateSpec::new(
+            json!({"prompt": "baseline"}),
+            vec!["trace://b".into()],
+            vec!["evidence://b".into()],
+        )?;
+        let candidate = CandidateSpec::new(
+            json!({"prompt": "candidate"}),
+            vec!["trace://c".into()],
+            vec!["evidence://c".into()],
+        )?;
+        db.record_harness_candidate(&baseline)?;
+        db.record_harness_candidate(&candidate)?;
+        db.activate_initial_harness(&baseline.id, "evidence://bootstrap")?;
+
+        let samples = vec![
+            PairedSample {
+                seed: 1,
+                candidate_score: 0.9,
+                baseline_score: 0.5,
+            },
+            PairedSample {
+                seed: 2,
+                candidate_score: 0.8,
+                baseline_score: 0.5,
+            },
+        ];
+        let policy = PromotionPolicy {
+            min_samples: 2,
+            min_mean_delta: 0.1,
+            min_win_rate: 1.0,
+        };
+        let health = HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, false)?;
+        let outcome = db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &samples,
+            policy,
+            "evidence://run",
+            &health,
+            |_| Ok(false),
+        )?;
+
+        assert!(outcome.rolled_back);
+        assert_eq!(
+            outcome.failures,
+            vec!["post-promotion health check returned false"]
+        );
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        let audit = db.harness_audit_entries()?;
+        assert_eq!(
+            audit
+                .iter()
+                .map(|entry| entry.event_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["initial_activation", "promotion_rolled_back"]
+        );
+        let rollback = audit.last().unwrap();
+        assert_eq!(rollback.asserted_health, Some(false));
+        assert_eq!(rollback.health_check_status.as_deref(), Some("unhealthy"));
+        assert!(rollback.health_evidence_json.is_some());
+        assert_eq!(
+            rollback.health_evidence_sha256.as_deref().map(str::len),
+            Some(64)
+        );
+        assert!(db
+            .connection_for_test()
+            .execute("UPDATE harness_eval_audit SET event_type = 'tampered'", [])
+            .is_err());
+        assert!(db
+            .connection_for_test()
+            .execute("DELETE FROM harness_candidates", [])
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn record_harness_candidate_is_atomic_and_idempotent_across_connections() -> Result<()> {
+        use crate::harness_eval::CandidateSpec;
+        use serde_json::json;
+        use std::sync::{Arc, Barrier};
+
+        let tempdir = TestDir::new("store-harness-concurrent-record")?;
+        let db_path = tempdir.path().join("state.db");
+        let first = StateStore::open(&db_path)?;
+        let second = StateStore::open(&db_path)?;
+        let candidate = CandidateSpec::new(
+            json!({"prompt": "candidate"}),
+            vec!["trace://one".into()],
+            vec!["evidence://one".into()],
+        )?;
+        let barrier = Arc::new(Barrier::new(2));
+        let candidate_one = candidate.clone();
+        let barrier_one = Arc::clone(&barrier);
+        let first_thread = std::thread::spawn(move || {
+            barrier_one.wait();
+            first.record_harness_candidate(&candidate_one)
+        });
+        let candidate_two = candidate.clone();
+        let second_thread = std::thread::spawn(move || {
+            barrier.wait();
+            second.record_harness_candidate(&candidate_two)
+        });
+
+        first_thread.join().unwrap()?;
+        second_thread.join().unwrap()?;
+        let reopened = StateStore::open(&db_path)?;
+        let count: i64 = reopened.connection_for_test().query_row(
+            "SELECT COUNT(*) FROM harness_candidates WHERE id = ?1",
+            [&candidate.id],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1);
+        reopened.record_harness_candidate(&candidate)?;
+        Ok(())
+    }
+
+    #[test]
+    fn record_harness_candidate_reports_deterministic_content_collision() -> Result<()> {
+        use crate::harness_eval::CandidateSpec;
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-collision")?;
+        let db_path = tempdir.path().join("state.db");
+        let db = StateStore::open(&db_path)?;
+        let candidate = CandidateSpec::new(
+            json!({"v": 1}),
+            vec!["trace://one".into()],
+            vec!["evidence://one".into()],
+        )?;
+        db.connection_for_test().execute(
+            "INSERT INTO harness_candidates (id, canonical_config_json, trace_refs_json, evidence_refs_json, created_at) VALUES (?1, '{}', '[\"trace://other\"]', '[\"evidence://other\"]', ?2)",
+            rusqlite::params![candidate.id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        drop(db);
+        assert!(StateStore::open(&db_path)
+            .err()
+            .expect("mismatched v2 collision must be rejected")
+            .to_string()
+            .contains("candidate content address"));
+        Ok(())
+    }
+
+    #[test]
+    fn harness_health_evidence_integrity_detects_tampering() -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-health-tamper")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let baseline = CandidateSpec::new(
+            json!({"v": 1}),
+            vec!["trace://b".into()],
+            vec!["evidence://b".into()],
+        )?;
+        let candidate = CandidateSpec::new(
+            json!({"v": 2}),
+            vec!["trace://c".into()],
+            vec!["evidence://c".into()],
+        )?;
+        db.record_harness_candidate(&baseline)?;
+        db.record_harness_candidate(&candidate)?;
+        db.activate_initial_harness(&baseline.id, "evidence://bootstrap")?;
+        let health = HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, true)?;
+        db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 1,
+                candidate_score: 0.9,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 1,
+                min_mean_delta: 0.1,
+                min_win_rate: 1.0,
+            },
+            "evidence://run",
+            &health,
+            |_| Ok(true),
+        )?;
+        assert!(db.harness_audit_entries().is_ok());
+
+        db.connection_for_test().execute_batch("DROP TRIGGER harness_eval_audit_no_update; UPDATE harness_eval_audit SET health_evidence_json = NULL, health_evidence_sha256 = NULL, asserted_health = NULL, health_check_status = NULL WHERE event_type = 'promoted';")?;
+        assert!(db
+            .harness_audit_entries()
+            .unwrap_err()
+            .to_string()
+            .contains("integrity"));
+        Ok(())
+    }
+
+    #[test]
+    fn open_adds_nullable_health_integrity_columns_to_legacy_schema() -> Result<()> {
+        let tempdir = TestDir::new("store-harness-legacy-migration")?;
+        let db_path = tempdir.path().join("state.db");
+        let candidate = CandidateSpec::new(
+            serde_json::json!({}),
+            vec!["trace://legacy".into()],
+            vec!["evidence://legacy".into()],
+        )?;
+        let legacy_id = candidate.legacy_id();
+        let legacy = Connection::open(&db_path)?;
+        legacy.execute_batch(
+            "CREATE TABLE harness_candidates (id TEXT PRIMARY KEY, canonical_config_json TEXT NOT NULL, trace_refs_json TEXT NOT NULL, evidence_refs_json TEXT NOT NULL, created_at TEXT NOT NULL);
+             CREATE TABLE harness_evaluations (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL, baseline_id TEXT NOT NULL, evaluator TEXT NOT NULL, samples_json TEXT NOT NULL, policy_json TEXT NOT NULL, comparison_json TEXT NOT NULL, evidence_ref TEXT NOT NULL, created_at TEXT NOT NULL);
+             CREATE TABLE active_harness_config (slot TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, updated_at TEXT NOT NULL);
+             CREATE TABLE harness_eval_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, candidate_id TEXT NOT NULL, prior_candidate_id TEXT, evaluation_id INTEGER, evidence_ref TEXT NOT NULL, created_at TEXT NOT NULL);",
+        )?;
+        legacy.execute(
+            "INSERT INTO harness_candidates VALUES (?1, ?2, ?3, ?4, '2026-01-01T00:00:00Z')",
+            rusqlite::params![
+                legacy_id,
+                candidate.canonical_config,
+                serde_json::to_string(&candidate.trace_refs)?,
+                serde_json::to_string(&candidate.evidence_refs)?
+            ],
+        )?;
+        legacy.execute(
+            "INSERT INTO active_harness_config VALUES ('default', ?1, '2026-01-01T00:00:00Z')",
+            [&legacy_id],
+        )?;
+        legacy.execute(
+            "INSERT INTO harness_eval_audit (event_type, candidate_id, evidence_ref, created_at) VALUES ('promoted', ?1, 'evidence://legacy', '2026-01-01T00:00:00Z')",
+            [&legacy_id],
+        )?;
+        drop(legacy);
+
+        let db = StateStore::open(&db_path)?;
+        for table in ["harness_evaluations", "harness_eval_audit"] {
+            for column in [
+                "health_evidence_json",
+                "health_evidence_sha256",
+                "asserted_health",
+                "health_check_status",
+                "legacy_unverifiable",
+            ] {
+                assert!(db.has_column(table, column)?);
+            }
+        }
+        let audit = db.harness_audit_entries()?;
+        assert_eq!(audit.len(), 1);
+        assert!(audit[0].legacy_unverifiable);
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(candidate.id.as_str())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn open_aliases_exact_legacy_candidate_and_supports_v2_promotion_without_history_rewrite(
+    ) -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-v1-alias-migration")?;
+        let db_path = tempdir.path().join("state.db");
+        let baseline = CandidateSpec::new(
+            json!({"prompt": "legacy baseline"}),
+            vec!["trace://legacy".into()],
+            vec!["evidence://legacy".into()],
+        )?;
+        let legacy_id = baseline.legacy_id();
+        let legacy = StateStore::open(&db_path)?;
+        legacy.connection_for_test().execute(
+            "INSERT INTO harness_candidates (id, canonical_config_json, trace_refs_json, evidence_refs_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![legacy_id, baseline.canonical_config, "[\" trace://legacy \",\"trace://legacy\"]", "[\" evidence://legacy \",\"evidence://legacy\"]", "2026-01-01T00:00:00Z"],
+        )?;
+        legacy.connection_for_test().execute(
+            "INSERT INTO active_harness_config (slot, candidate_id, updated_at) VALUES ('default', ?1, ?2)",
+            rusqlite::params![legacy_id, "2026-01-01T00:00:00Z"],
+        )?;
+        legacy.connection_for_test().execute(
+            "INSERT INTO harness_eval_audit (event_type, candidate_id, evidence_ref, legacy_unverifiable, created_at) VALUES ('initial_activation', ?1, 'evidence://legacy', 1, ?2)",
+            rusqlite::params![legacy_id, "2026-01-01T00:00:00Z"],
+        )?;
+        drop(legacy);
+
+        let db = StateStore::open(&db_path)?;
+        db.record_harness_candidate(&baseline)?;
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        let candidate = CandidateSpec::new(
+            json!({"prompt": "v2 candidate"}),
+            vec!["trace://v2".into()],
+            vec!["evidence://v2".into()],
+        )?;
+        db.record_harness_candidate(&candidate)?;
+        let outcome = db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 1,
+                candidate_score: 1.0,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 1,
+                min_mean_delta: 0.1,
+                min_win_rate: 1.0,
+            },
+            "evidence://v2-evaluation",
+            &HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, true)?,
+            |_| Ok(true),
+        )?;
+        assert!(outcome.promoted);
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(candidate.id.as_str())
+        );
+        let audit = db.harness_audit_entries()?;
+        assert_eq!(audit[0].candidate_id, legacy_id);
+        assert_eq!(audit[1].candidate_id, candidate.id);
+        assert_eq!(
+            audit[1].prior_candidate_id.as_deref(),
+            Some(legacy_id.as_str())
+        );
+        let legacy_backed_outcome = db.evaluate_promote_and_health_check(
+            &baseline.id,
+            &candidate.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 2,
+                candidate_score: 1.0,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 1,
+                min_mean_delta: 0.1,
+                min_win_rate: 1.0,
+            },
+            "evidence://legacy-backed-evaluation",
+            &HealthEvidenceSnapshot::new("recorded-v1", &baseline.id, true)?,
+            |_| Ok(true),
+        )?;
+        assert!(legacy_backed_outcome.promoted);
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        assert_eq!(db.harness_audit_entries()?.len(), 3);
+        drop(db);
+
+        let reopened = StateStore::open(&db_path)?;
+        reopened.record_harness_candidate(&baseline)?;
+        assert_eq!(
+            reopened.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        assert_eq!(reopened.harness_audit_entries()?.len(), 3);
+        let alias_count: i64 = reopened.connection_for_test().query_row(
+            "SELECT COUNT(*) FROM harness_candidate_aliases WHERE alias_id = ?1 AND candidate_id = ?2",
+            rusqlite::params![baseline.id, legacy_id],
+            |row| row.get(0),
+        )?;
+        assert_eq!(alias_count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn open_rejects_tampered_legacy_candidate_and_alias_collisions() -> Result<()> {
+        use crate::harness_eval::CandidateSpec;
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-v1-alias-tamper")?;
+        let db_path = tempdir.path().join("state.db");
+        let candidate = CandidateSpec::new(
+            json!({"prompt": "legacy"}),
+            vec!["trace://legacy".into()],
+            vec!["evidence://legacy".into()],
+        )?;
+        let db = StateStore::open(&db_path)?;
+        db.connection_for_test().execute(
+            "INSERT INTO harness_candidates (id, canonical_config_json, trace_refs_json, evidence_refs_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![candidate.legacy_id(), "{\"prompt\":\"tampered\"}", serde_json::to_string(&candidate.trace_refs)?, serde_json::to_string(&candidate.evidence_refs)?, chrono::Utc::now().to_rfc3339()],
+        )?;
+        drop(db);
+        assert!(StateStore::open(&db_path)
+            .err()
+            .expect("tampered legacy candidate must be rejected")
+            .to_string()
+            .contains("candidate content address"));
+
+        let collision_path = tempdir.path().join("collision.db");
+        let db = StateStore::open(&collision_path)?;
+        db.connection_for_test().execute(
+            "INSERT INTO harness_candidates (id, canonical_config_json, trace_refs_json, evidence_refs_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![candidate.legacy_id(), candidate.canonical_config, serde_json::to_string(&candidate.trace_refs)?, serde_json::to_string(&candidate.evidence_refs)?, chrono::Utc::now().to_rfc3339()],
+        )?;
+        let other = CandidateSpec::new(
+            json!({"prompt": "other"}),
+            vec!["trace://other".into()],
+            vec!["evidence://other".into()],
+        )?;
+        db.record_harness_candidate(&other)?;
+        db.connection_for_test().execute(
+            "INSERT INTO harness_candidate_aliases (alias_id, candidate_id, id_version, created_at) VALUES (?1, ?2, 2, ?3)",
+            rusqlite::params![candidate.id, other.id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        drop(db);
+        assert!(StateStore::open(&collision_path)
+            .err()
+            .expect("mismatched alias must be rejected")
+            .to_string()
+            .contains("alias collision"));
+        Ok(())
+    }
+
+    #[test]
+    fn harness_eval_health_callback_error_is_reported_and_rolled_back() -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-health-error")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let baseline = CandidateSpec::new(
+            json!({"v": 1}),
+            vec!["trace://b".into()],
+            vec!["evidence://b".into()],
+        )?;
+        let candidate = CandidateSpec::new(
+            json!({"v": 2}),
+            vec!["trace://c".into()],
+            vec!["evidence://c".into()],
+        )?;
+        db.record_harness_candidate(&baseline)?;
+        db.record_harness_candidate(&candidate)?;
+        db.activate_initial_harness(&baseline.id, "evidence://bootstrap")?;
+
+        let outcome = db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 1,
+                candidate_score: 0.9,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 1,
+                min_mean_delta: 0.4,
+                min_win_rate: 1.0,
+            },
+            "evidence://run",
+            &HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, true)?,
+            |_| anyhow::bail!("probe unavailable"),
+        )?;
+
+        assert!(outcome.rolled_back);
+        assert_eq!(
+            outcome.failures,
+            vec!["health check error: probe unavailable"]
+        );
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        assert_eq!(
+            db.harness_audit_entries()?.last().unwrap().event_type,
+            "health_check_error_rolled_back"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn harness_eval_failed_gate_never_changes_active_configuration() -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-gate")?;
+        let db = StateStore::open(&tempdir.path().join("state.db"))?;
+        let baseline = CandidateSpec::new(
+            json!({"v": 1}),
+            vec!["trace://b".into()],
+            vec!["evidence://b".into()],
+        )?;
+        let candidate = CandidateSpec::new(
+            json!({"v": 2}),
+            vec!["trace://c".into()],
+            vec!["evidence://c".into()],
+        )?;
+        db.record_harness_candidate(&baseline)?;
+        db.record_harness_candidate(&candidate)?;
+        db.activate_initial_harness(&baseline.id, "evidence://bootstrap")?;
+        let health = HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, true)?;
+        let outcome = db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 1,
+                candidate_score: 0.6,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 2,
+                min_mean_delta: 0.0,
+                min_win_rate: 0.0,
+            },
+            "evidence://run",
+            &health,
+            |_| Ok(true),
+        )?;
+        assert!(!outcome.promoted);
+        assert_eq!(
+            db.active_harness_id()?.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        assert_eq!(
+            db.harness_audit_entries()?.last().unwrap().event_type,
+            "promotion_rejected"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn harness_eval_successful_promotion_is_persisted() -> Result<()> {
+        use crate::harness_eval::{CandidateSpec, PairedSample, PromotionPolicy};
+        use serde_json::json;
+        let tempdir = TestDir::new("store-harness-success")?;
+        let db_path = tempdir.path().join("state.db");
+        let db = StateStore::open(&db_path)?;
+        let baseline = CandidateSpec::new(
+            json!({"v": 1}),
+            vec!["trace://b".into()],
+            vec!["evidence://b".into()],
+        )?;
+        let candidate = CandidateSpec::new(
+            json!({"v": 2}),
+            vec!["trace://c".into()],
+            vec!["evidence://c".into()],
+        )?;
+        db.record_harness_candidate(&baseline)?;
+        db.record_harness_candidate(&candidate)?;
+        db.activate_initial_harness(&baseline.id, "evidence://bootstrap")?;
+        let health = HealthEvidenceSnapshot::new("recorded-v1", &candidate.id, true)?;
+        let outcome = db.evaluate_promote_and_health_check(
+            &candidate.id,
+            &baseline.id,
+            "recorded-v1",
+            &[PairedSample {
+                seed: 1,
+                candidate_score: 0.9,
+                baseline_score: 0.5,
+            }],
+            PromotionPolicy {
+                min_samples: 1,
+                min_mean_delta: 0.4,
+                min_win_rate: 1.0,
+            },
+            "evidence://run",
+            &health,
+            |_| Ok(true),
+        )?;
+        assert!(outcome.promoted);
+        drop(db);
+        let reopened = StateStore::open(&db_path)?;
+        assert_eq!(
+            reopened.active_harness_id()?.as_deref(),
+            Some(candidate.id.as_str())
+        );
+        assert_eq!(
+            reopened.harness_audit_entries()?.last().unwrap().event_type,
+            "promoted"
+        );
         Ok(())
     }
 }
