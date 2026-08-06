@@ -248,6 +248,7 @@
         "skills/clickhouse-io",
         "skills/database-migrations",
         "skills/jpa-patterns",
+        "skills/mybatis-patterns",
         "skills/mysql-patterns",
         "skills/postgres-patterns",
         "skills/prisma-patterns",
