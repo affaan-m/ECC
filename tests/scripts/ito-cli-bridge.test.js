@@ -9,7 +9,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
 const ECC_SCRIPT = path.join(REPO_ROOT, "scripts", "ecc.js");
@@ -21,6 +21,7 @@ const {
 const {
   createSafeItoInvocationEnvironment,
   getInvocationCommand,
+  ITO_RUNTIME_ENVIRONMENT_KEYS,
 } = require("../../scripts/lib/ito-environment");
 
 function runCli(args, environment = {}) {
@@ -32,6 +33,34 @@ function runCli(args, environment = {}) {
       NODE_ENV: "test",
       ...environment,
     },
+  });
+}
+
+function runCliAndObserveFirstOutput(args, environment = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [ECC_SCRIPT, ...args], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, NODE_ENV: "test", ...environment },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let firstOutputAt;
+    const startedAt = Date.now();
+    child.stdout.on("data", (chunk) => {
+      if (firstOutputAt === undefined) firstOutputAt = Date.now();
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("close", (status) => resolve({
+      status,
+      stdout,
+      stderr,
+      startedAt,
+      firstOutputAt,
+      closedAt: Date.now(),
+    }));
   });
 }
 
@@ -72,9 +101,9 @@ function readInvocation(probe) {
   return JSON.parse(fs.readFileSync(probe.log, "utf8"));
 }
 
-function runTest(name, fn) {
+async function runTest(name, fn) {
   try {
-    fn();
+    await fn();
     console.log(`  ✓ ${name}`);
     return true;
   } catch (error) {
@@ -84,12 +113,12 @@ function runTest(name, fn) {
   }
 }
 
-function main() {
+async function main() {
   console.log("\n=== Testing ECC × Itô real CLI bridge ===\n");
 
   const tests = [
     ["forwards only the reviewed RFQ CLI surface to an explicit local executable", () => {
-      for (const command of ["auth", "find", "status"]) {
+      for (const command of ["login", "auth", "find", "status"]) {
         const probe = makeItoProbe();
         try {
           const result = runCli(["ito", command], {
@@ -101,6 +130,31 @@ function main() {
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
         }
+      }
+    }],
+    ["forwards the canonical login browser opt-out without performing browser automation", () => {
+      const probe = makeItoProbe();
+      try {
+        const result = runCli(["ito", "login", "--no-browser"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.deepStrictEqual(readInvocation(probe).argv, ["login", "--no-browser"]);
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
+      }
+    }],
+    ["rejects --no-browser on validation-only auth before spawning", () => {
+      const probe = makeItoProbe();
+      try {
+        const result = runCli(["ito", "auth", "--no-browser"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+        });
+        assert.notStrictEqual(result.status, 0);
+        assert.match(result.stderr, /--no-browser.*only.*login/i);
+        assert.ok(!fs.existsSync(probe.log));
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
       }
     }],
     ["normalizes JSON and forwards every RFQ constraint without interpretation", () => {
@@ -135,12 +189,15 @@ function main() {
         fs.rmSync(probe.directory, { recursive: true, force: true });
       }
     }],
-    ["passes only the required Itô runtime settings across the process boundary", () => {
+    ["login never inherits ITO_API_KEY but preserves secure token settings", () => {
       const probe = makeItoProbe();
       try {
-        const result = runCli(["ito", "auth"], {
+        const result = runCli(["ito", "login"], {
           ECC_ITO_CLI_EXECUTABLE: probe.executable,
-          ITO_API_KEY: "ito_test_key",
+          ITO_API_KEY: "must-not-cross-without-legacy-mode",
+          ITO_AUTH_MODE: "device",
+          ITO_ALLOW_FILE_TOKEN: "1",
+          ITO_TOKEN_FILE: "/tmp/ito-device-token",
           ITO_API_URL: "https://compute.example.test",
           ITO_INVENTORY_URL: "https://edge.example.test",
           AWS_SECRET_ACCESS_KEY: "must-not-cross",
@@ -149,13 +206,56 @@ function main() {
         });
         assert.strictEqual(result.status, 0, result.stderr);
         const childEnvironment = readInvocation(probe).env;
-        assert.strictEqual(childEnvironment.ITO_API_KEY, "ito_test_key");
+        assert.strictEqual(childEnvironment.ITO_API_KEY, undefined);
+        assert.strictEqual(childEnvironment.ITO_AUTH_MODE, "device");
+        assert.strictEqual(childEnvironment.ITO_ALLOW_FILE_TOKEN, "1");
+        assert.strictEqual(childEnvironment.ITO_TOKEN_FILE, "/tmp/ito-device-token");
         assert.strictEqual(childEnvironment.ITO_API_URL, "https://compute.example.test");
         assert.strictEqual(childEnvironment.ITO_INVENTORY_URL, "https://edge.example.test");
         assert.strictEqual(childEnvironment.AWS_SECRET_ACCESS_KEY, undefined);
         assert.strictEqual(childEnvironment.OPENAI_API_KEY, undefined);
         assert.strictEqual(childEnvironment.TEST_PASSWORD, undefined);
         assert.strictEqual(childEnvironment.ECC_ITO_CLI_EXECUTABLE, undefined);
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
+      }
+    }],
+    ["forwards ITO_API_KEY directly to auth, find, and status without legacy mode", () => {
+      for (const command of ["auth", "find", "status"]) {
+        const probe = makeItoProbe();
+        try {
+          const result = runCli(["ito", command], {
+            ECC_ITO_CLI_EXECUTABLE: probe.executable,
+            ITO_API_KEY: "ito_test_key",
+          });
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.strictEqual(readInvocation(probe).env.ITO_API_KEY, "ito_test_key");
+        } finally {
+          fs.rmSync(probe.directory, { recursive: true, force: true });
+        }
+      }
+    }],
+    ["streams device login output before completion and propagates its exit status", async () => {
+      const probe = makeItoProbe(7);
+      try {
+        fs.writeFileSync(
+          probe.executable,
+          [
+            '"use strict";',
+            'process.stdout.write("device-code-now\\n");',
+            'setTimeout(() => process.exit(7), 500);',
+            "",
+          ].join("\n")
+        );
+        const result = await runCliAndObserveFirstOutput(["ito", "login"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+        });
+        assert.strictEqual(result.status, 7, result.stderr);
+        assert.match(result.stdout, /device-code-now/);
+        assert.ok(
+          result.closedAt - result.firstOutputAt >= 350,
+          "login output was buffered until process completion",
+        );
       } finally {
         fs.rmSync(probe.directory, { recursive: true, force: true });
       }
@@ -176,6 +276,9 @@ function main() {
         ], {
           ECC_ITO_CLI_EXECUTABLE: probe.executable,
           ITO_API_KEY: "must-not-cross-into-node-qualification",
+          ITO_AUTH_MODE: "legacy",
+          ITO_ALLOW_FILE_TOKEN: "1",
+          ITO_TOKEN_FILE: "/tmp/must-not-cross-token-file",
           ITO_API_URL: "https://compute.example.test",
           ITO_INVENTORY_URL: "https://edge.example.test",
           ITO_ENABLE_SIXTYTWO_LIVE: "1",
@@ -201,6 +304,9 @@ function main() {
         assert.strictEqual(invocation.env.SIXTYTWO_TOKEN, "sixtytwo-legacy-test-token");
         assert.strictEqual(invocation.env.SSH_AUTH_SOCK, "/tmp/ecc-test-agent.sock");
         assert.strictEqual(invocation.env.ITO_API_KEY, undefined);
+        assert.strictEqual(invocation.env.ITO_AUTH_MODE, undefined);
+        assert.strictEqual(invocation.env.ITO_ALLOW_FILE_TOKEN, undefined);
+        assert.strictEqual(invocation.env.ITO_TOKEN_FILE, undefined);
         assert.strictEqual(invocation.env.ITO_API_URL, undefined);
         assert.strictEqual(invocation.env.ITO_INVENTORY_URL, undefined);
         assert.strictEqual(invocation.env.ITO_CLI_DEMO, undefined);
@@ -310,6 +416,14 @@ function main() {
       }
     }],
     ["classifies Itō child environments once and fails closed on unknown prefixes", () => {
+      assert.deepStrictEqual(ITO_RUNTIME_ENVIRONMENT_KEYS, [
+        "ITO_API_KEY",
+        "ITO_API_URL",
+        "ITO_INVENTORY_URL",
+        "ITO_AUTH_MODE",
+        "ITO_ALLOW_FILE_TOKEN",
+        "ITO_TOKEN_FILE",
+      ]);
       const safe = createSafeItoInvocationEnvironment(
         {
           PATH: process.env.PATH,
@@ -338,14 +452,14 @@ function main() {
       );
     }],
     ["rejects unsupported browser, paper, and execution operations before spawning", () => {
-      for (const command of ["rent", "lock", "run", "inference", "mcp"]) {
+      for (const command of ["rent", "lock", "purchase", "run", "inference", "mcp"]) {
         const probe = makeItoProbe();
         try {
           const result = runCli(["ito", command], {
             ECC_ITO_CLI_EXECUTABLE: probe.executable,
           });
           assert.notStrictEqual(result.status, 0, command);
-          assert.match(result.stderr, /only auth, find, status, and evals/i);
+          assert.match(result.stderr, /only login, auth, find, status, and evals/i);
           assert.ok(!fs.existsSync(probe.log), `${command} must not spawn the Itô CLI`);
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
@@ -510,13 +624,14 @@ function main() {
         fs.rmSync(probe.directory, { recursive: true, force: true });
       }
     }],
-    ["help exposes the truthful CLI and MCP surface without a browser path", () => {
+    ["help separates device login from auth validation", () => {
       const probe = makeItoProbe();
       try {
         const result = runCli(["ito", "--help"], {
           ECC_ITO_CLI_EXECUTABLE: probe.executable,
         });
         assert.strictEqual(result.status, 0, result.stderr);
+        assert.match(result.stdout, /ecc ito login \[--no-browser\]/);
         assert.match(result.stdout, /ecc ito auth/);
         assert.match(result.stdout, /ecc ito find/);
         assert.match(result.stdout, /ecc ito status/);
@@ -528,9 +643,15 @@ function main() {
         assert.match(result.stdout, new RegExp(CANONICAL_PACKAGE.replaceAll("/", "\\/")));
         assert.match(result.stdout, /unpublished/i);
         assert.match(result.stdout, /never discovers[^\n]*through PATH/i);
+        assert.match(result.stdout, /device authorization/i);
+        assert.match(result.stdout, /opens the Itô verification page by default/i);
+        assert.match(result.stdout, /macOS Keychain/i);
+        assert.match(result.stdout, /ECC itself performs no browser automation/i);
+        assert.match(result.stdout, /auth.*validat/i);
+        assert.match(result.stdout, /ITO_AUTH_MODE=legacy is not\s+required/i);
         assert.doesNotMatch(
           result.stdout,
-          /manual copy|open(?:s)? (?:a )?browser|ito_lock|ito_run|npm link|paper|simulat/i
+          /manual copy|ito_lock|ito_run|npm link|paper|simulat/i
         );
         assert.ok(!fs.existsSync(probe.log));
       } finally {
@@ -542,7 +663,7 @@ function main() {
   let passed = 0;
   let failed = 0;
   for (const [name, fn] of tests) {
-    if (runTest(name, fn)) passed += 1;
+    if (await runTest(name, fn)) passed += 1;
     else failed += 1;
   }
 

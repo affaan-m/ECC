@@ -80,6 +80,10 @@
 
 ## 最新动态
 
+### v2.2.0 — 引导式多 Harness 安装（2026年8月）
+
+新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
+
 ### v2.1.0 — 智能体 Harness 操作系统（2026年6月）
 
 2.0 主线稳定版：261 个技能、control-pane 基底（会话适配器 + MCP 清单）、worktree 生命周期服务，以及 [ECC Discord 社区](https://discord.gg/36yGMHGFbR)。

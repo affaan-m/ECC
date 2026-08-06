@@ -10,7 +10,7 @@ const {
   getInvocationCommand,
 } = require("./lib/ito-environment");
 
-const SUPPORTED_COMMANDS = Object.freeze(["auth", "find", "status", "evals"]);
+const SUPPORTED_COMMANDS = Object.freeze(["login", "auth", "find", "status", "evals"]);
 const CANONICAL_REPOSITORY = "https://github.com/Ito-Markets/ito-cloud-runtime.git";
 const CANONICAL_PACKAGE_PATH = "cli/ito-compute-cli";
 const CANONICAL_ENTRY_SEGMENTS = Object.freeze([
@@ -28,15 +28,20 @@ function showHelp() {
 ECC × Itô local CLI bridge
 
 Usage:
+  ecc ito login [--no-browser]
   ecc ito auth
   ecc ito find <all required RFQ options>
   ecc ito status
   ecc ito evals --cluster <id> --live-sixtytwo --nodes <list> --config-dir <dir>
-  ecc ito <auth|find|status|evals> --json
+  ecc ito <login|auth|find|status|evals> --json
 
 The bridge invokes the separately installed canonical Itô CLI and returns its
-real stdout, stderr, and exit code unchanged. It performs no browser navigation
-and adds no lock, workload, inference, or purchase path.
+real stdout, stderr, and exit code unchanged. "ecc ito login" delegates to the
+canonical CLI's device authorization. It opens the Itô verification page by default
+and persists its device token in macOS Keychain. Pass --no-browser to
+suppress that handoff. ECC itself performs no browser automation and adds no
+lock, workload, inference, or purchase path.
+"ecc ito auth" is validation-only and never starts device login.
 
 Important:
   - "find" reads live inventory and submits an authenticated RFQ.
@@ -67,9 +72,11 @@ The same package's MCP server exposes only:
 Configure the MCP command as "node" with this absolute argument:
   /absolute/path/to/ito-cloud-runtime/${CANONICAL_PACKAGE_PATH}/dist/bin/ito-mcp.js
 
-For auth, find, and status, inject ITO_API_KEY into the child process from
-1Password or the launching environment. Never put the key in arguments,
-tracked files, or chat.
+Device login never inherits ITO_API_KEY. The auth, find, and status commands
+forward ITO_API_KEY directly when configured; ITO_AUTH_MODE=legacy is not
+required. The canonical client stores device credentials in macOS Keychain by
+default; file-token fallback remains explicit and must use restrictive settings.
+Never put a key or token in arguments, tracked files, or chat.
 
 Live node qualification requires ITO_ENABLE_SIXTYTWO_LIVE=1,
 --live-sixtytwo, an explicit node list, and an existing absolute config
@@ -154,8 +161,11 @@ function parseArgs(argv, environment = process.env) {
   const command = withoutJson.shift();
   if (!SUPPORTED_COMMANDS.includes(command)) {
     throw new Error(
-      `Unsupported Itô command "${command || "(missing)"}"; ECC permits only auth, find, status, and evals.`
+      `Unsupported Itô command "${command || "(missing)"}"; ECC permits only login, auth, find, status, and evals.`
     );
+  }
+  if (command === "auth" && withoutJson.includes("--no-browser")) {
+    throw new Error("--no-browser is valid only for ecc ito login; auth is validation-only.");
   }
   if (command === "evals") {
     validateNodeQualificationArgs(withoutJson, environment);
@@ -255,12 +265,14 @@ function invokeIto(executable, args, environment = process.env) {
   const invocation = buildInvocation(executable, args);
   const command = getInvocationCommand(args);
   const isNodeQualification = command === "evals";
+  const isDeviceLogin = command === "login";
   const result = spawnSync(invocation.executable, invocation.args, {
     cwd: process.cwd(),
     encoding: "utf8",
     // Keep policy helpers immutable for callers, but give child-process
     // instrumentation its own mutable copy (for example NODE_V8_COVERAGE).
     env: { ...createSafeItoInvocationEnvironment(environment, args) },
+    stdio: isDeviceLogin ? "inherit" : ["pipe", "pipe", "pipe"],
     maxBuffer: MAX_OUTPUT_BYTES,
     timeout: isNodeQualification ? NODE_QUALIFICATION_TIMEOUT_MS : undefined,
     shell: false,

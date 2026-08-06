@@ -237,9 +237,11 @@ function main() {
       assert.ok(localModelPath.includes('assets/images/sponsors/moonshot.png'));
       assert.ok(localModelPath.includes('assets/images/community/ecc-tools-mark.svg'));
       assert.match(readme, /install\.sh --target kimi --profile minimal/);
-      assert.match(readme, /npx ecc doctor --target kimi/);
-      assert.match(readme, /\.kimi\/AGENTS\.md/);
-      assert.match(readme, /\.kimi\/skills\//);
+      assert.match(readme, /npx ecc-universal doctor --target kimi/);
+      assert.match(readme, /\.kimi-code\/AGENTS\.md/);
+      assert.match(readme, /\.kimi-code\/skills\//);
+      assert.match(readme, /~\/\.kimi-code\/config\.toml/);
+      assert.match(readme, /Kimi Code 0\.31/);
       assertExactHref(
         readme,
         'https://moonshotai.github.io/kimi-cli/en/configuration/providers.html'
@@ -293,6 +295,14 @@ function main() {
         assert.ok(relativeDestinations.every(destination => (
           !/^\.(?:claude|codex|cursor|gemini|hermes|opencode|openclaw|qwen|zed)\//.test(destination)
         )));
+        assert.ok(!plan.operations.some(operation => operation.moduleId === 'hooks-runtime'));
+
+        fs.mkdirSync(path.join(projectDir, '.kimi-code'), { recursive: true });
+        fs.writeFileSync(
+          path.join(projectDir, '.kimi-code', 'mcp.json'),
+          `${JSON.stringify({ mcpServers: { existing: { command: 'keep-me' } } }, null, 2)}\n`,
+          'utf8'
+        );
 
         const apply = spawnSync(
           process.execPath,
@@ -313,8 +323,17 @@ function main() {
         );
         assert.strictEqual(apply.status, 0, apply.stderr);
         assert.strictEqual(JSON.parse(apply.stdout).result.target, 'kimi');
-        assert.ok(fs.existsSync(path.join(projectDir, '.kimi', 'AGENTS.md')));
-        assert.ok(fs.readdirSync(path.join(projectDir, '.kimi', 'skills')).length > 0);
+        assert.strictEqual(targetRoot, path.join(fs.realpathSync(projectDir), '.kimi-code'));
+        assert.ok(fs.existsSync(path.join(projectDir, '.kimi-code', 'AGENTS.md')));
+        assert.ok(fs.readdirSync(path.join(projectDir, '.kimi-code', 'skills')).length > 0);
+        assert.ok(fs.existsSync(path.join(projectDir, '.kimi-code', 'mcp.json')));
+        const mcpConfig = JSON.parse(
+          fs.readFileSync(path.join(projectDir, '.kimi-code', 'mcp.json'), 'utf8')
+        );
+        assert.strictEqual(mcpConfig.mcpServers.existing.command, 'keep-me');
+        assert.ok(mcpConfig.mcpServers['chrome-devtools']);
+        assert.ok(!fs.existsSync(path.join(projectDir, '.kimi')));
+        assert.ok(!fs.existsSync(path.join(homeDir, '.kimi-code', 'config.toml')));
 
         const doctor = spawnSync(
           process.execPath,
