@@ -24,10 +24,12 @@ Row schema:
 | `timestamp` | ISO timestamp of the snapshot |
 | `session_id` | Claude Code session identifier |
 | `transcript_path` | Path to the session transcript |
-| `model` | Model used |
-| `input_tokens` / `output_tokens` | Token counts |
-| `cache_write_tokens` / `cache_read_tokens` | Prompt-cache token counts |
+| `model` | Model used by the main session |
+| `input_tokens` / `output_tokens` | Token counts, including subagent turns |
+| `cache_write_tokens` / `cache_read_tokens` | Prompt-cache token counts, including subagent turns |
 | `estimated_cost_usd` | Precomputed cumulative cost in USD for the session |
+| `subagent_transcripts` | Number of subagent transcripts folded in; `0` when the session never fanned out |
+| `models` | Per-model, per-speed-tier breakdown, most expensive first |
 
 Prefer `estimated_cost_usd` over hand-calculating pricing — model and cache
 prices change, and the tracker is the source of truth.
