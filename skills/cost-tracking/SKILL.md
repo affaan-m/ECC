@@ -25,6 +25,7 @@ Row schema:
 | `session_id` | Claude Code session identifier |
 | `transcript_path` | Path to the session transcript |
 | `model` | Model used |
+| `rate_bucket` | What produced the cost: a rate-table row (`haiku`, `haiku-legacy`, `sonnet`, `opus`, `opus-legacy`, `fable`, which Fable and Mythos share), `harness` when the harness's own total supplied it, or `sonnet-fallback` when the model ID matched nothing and sonnet rates were assumed |
 | `input_tokens` / `output_tokens` | Token counts |
 | `cache_write_tokens` / `cache_read_tokens` | Prompt-cache token counts |
 | `estimated_cost_usd` | Precomputed cumulative cost in USD for the session |

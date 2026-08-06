@@ -16,7 +16,13 @@ session**, so the report takes the **latest row per `session_id`** and sums
 across sessions (summing every row would multiply-count).
 
 Row schema:
-`{ timestamp, session_id, transcript_path, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost_usd }`
+`{ timestamp, session_id, transcript_path, model, rate_bucket, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost_usd }`
+
+`rate_bucket` names what produced `estimated_cost_usd`: a rate-table row
+(`haiku`, `haiku-legacy`, `sonnet`, `opus`, `opus-legacy`, `fable`), or
+`harness` when the statusline's authoritative `cost.total_cost_usd` supplied
+it. `sonnet-fallback` means the model ID matched no row and sonnet rates were
+assumed, so that row's cost is a guess worth flagging.
 
 ## What this command does
 
@@ -66,8 +72,8 @@ const fs=require("fs"),os=require("os"),path=require("path");
 const f=path.join(os.homedir(),".claude","metrics","costs.jsonl");
 if(!fs.existsSync(f)){console.error("no data");process.exit(0);}
 const rows=fs.readFileSync(f,"utf8").split(/\r?\n/).filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean).slice(-100);
-console.log("timestamp,session_id,model,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,estimated_cost_usd");
-for(const r of rows)console.log([r.timestamp,r.session_id,r.model,r.input_tokens,r.output_tokens,r.cache_write_tokens,r.cache_read_tokens,r.estimated_cost_usd].join(","));
+console.log("timestamp,session_id,model,rate_bucket,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,estimated_cost_usd");
+for(const r of rows)console.log([r.timestamp,r.session_id,r.model,r.rate_bucket,r.input_tokens,r.output_tokens,r.cache_write_tokens,r.cache_read_tokens,r.estimated_cost_usd].join(","));
 '
 ```
 

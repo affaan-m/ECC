@@ -68,19 +68,94 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
   }
 }
 
-// Approximate per-1M-token billing rates (USD).
-// Cache creation: 1.25x input rate. Cache read: 0.1x input rate.
+// Per-1M-token billing rates (USD). Cache write is 1.25x input and cache read
+// is 0.1x input in every row, for the default 5-minute cache TTL. The 1-hour
+// TTL bills writes at 2x input and is still not modelled here, as the header
+// notes.
+//
+// The previous table priced every `opus` model at $15/$75, which are Claude 3
+// Opus era rates. Opus 4.5 and later bill at $5/$25, so every current-
+// generation Opus session was reported at exactly 3x real spend (measured: a
+// session summing to 100,000,000 cache-read plus 500,000 output tokens on
+// `claude-opus-5` costs $62.50 and was reported as $187.50). Fable and Mythos
+// had no bucket at all, so they fell through to `sonnet` and were understated
+// 3.3x. The rate constants were the whole defect; the arithmetic that
+// consumes them is unchanged.
+//
+// The legacy rows exist so that correcting the current generation does not
+// reprice the old one. `haikuLegacy` is Claude 3.5 Haiku, for which the
+// previous $0.80/$4.00 was exactly right. Claude 3 Haiku ($0.25/$1.25) is
+// deliberately not modelled: Claude Code never ran it.
 const RATE_TABLE = {
-  haiku:  { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
-  sonnet: { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
-  opus:   { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
+  haiku:       { in: 1.00,  out: 5.0,  cacheWrite: 1.25,  cacheRead: 0.10 },
+  haikuLegacy: { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
+  sonnet:      { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
+  opus:        { in: 5.00,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
+  opusLegacy:  { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 },
+  fable:       { in: 10.00, out: 50.0, cacheWrite: 12.50, cacheRead: 1.00 }
 };
 
-function getRates(model) {
+// The only Opus models that really billed at $15/$75: Claude 3 Opus, Opus 4.0
+// and Opus 4.1. Every spelling of each has to match, alias and dated snapshot
+// alike, which is why the bare `opus-4-<date>` form is listed on its own:
+// Opus 4.0's snapshot is `claude-opus-4-20250514`, with no minor segment, so
+// an `opus-4-0` substring alone misses it and reprices a legacy session at a
+// third of its real cost. The `[-@]` covers Vertex AI, which joins the date
+// with `@` (`claude-opus-4@20250514`); Bedrock's
+// `anthropic.claude-3-opus-20240229-v1:0` is caught by the first alternative.
+//
+// Opus 4.5 through Opus 5 are $5/$25 and take the default bucket, which also
+// means a future Opus is assumed to be $5/$25. That assumption is the same
+// shape of silent staleness this change fixes, so if Opus is ever repriced
+// again, a new row belongs here rather than a rediscovery of this comment.
+const LEGACY_OPUS_RE = /claude-3-opus|opus-4-0(?!\d)|opus-4-1(?!\d)|opus-4[-@]\d{8}/;
+
+// Claude 3.5 Haiku, whose $0.80/$4.00 this table used to apply to all Haiku.
+const LEGACY_HAIKU_RE = /3-5-haiku|haiku-3-5/;
+
+// Recorded on the row, and warned about, when the model ID matched no bucket.
+// Returning sonnet rates anyway keeps this Stop hook fail-open, but an
+// unpriceable model used to yield a plausible number with no signal at all,
+// which is how the stale Opus rate survived unnoticed.
+const FALLBACK_BUCKET = 'sonnet-fallback';
+
+// Recorded instead when the harness's own `cost.total_cost_usd` supplied the
+// number, in which case no rate-table row was consulted at all.
+const HARNESS_BUCKET = 'harness';
+
+// `message.model` values that name no model. `<synthetic>` is what Claude Code
+// writes for interrupts, API errors and "no response requested"; it carries a
+// fully populated but all-zero `usage` block, so it clears the usage guard
+// below and, under last-model-wins, would overwrite the real model for the
+// whole session. Measured over 1,628 local transcripts: 60 `<synthetic>`
+// entries, and 10 transcripts END on one. That last case is the damaging one,
+// because the final row is exactly the cumulative row `/cost-report` reads
+// per session.
+const NON_MODEL_SENTINELS = new Set(['unknown', '<synthetic>']);
+
+/**
+ * Resolve billing rates for a model ID.
+ * @param {string} model
+ * @returns {{bucket: string, rates: object}} `bucket` is FALLBACK_BUCKET when
+ *   nothing matched and sonnet rates were assumed.
+ */
+function resolveRates(model) {
   const m = String(model || '').toLowerCase();
-  if (m.includes('haiku')) return RATE_TABLE.haiku;
-  if (m.includes('opus'))  return RATE_TABLE.opus;
-  return RATE_TABLE.sonnet;
+  if (m.includes('haiku')) {
+    return LEGACY_HAIKU_RE.test(m)
+      ? { bucket: 'haiku-legacy', rates: RATE_TABLE.haikuLegacy }
+      : { bucket: 'haiku',        rates: RATE_TABLE.haiku };
+  }
+  if (m.includes('fable') || m.includes('mythos')) {
+    return { bucket: 'fable', rates: RATE_TABLE.fable };
+  }
+  if (m.includes('opus')) {
+    return LEGACY_OPUS_RE.test(m)
+      ? { bucket: 'opus-legacy', rates: RATE_TABLE.opusLegacy }
+      : { bucket: 'opus',        rates: RATE_TABLE.opus };
+  }
+  if (m.includes('sonnet')) return { bucket: 'sonnet', rates: RATE_TABLE.sonnet };
+  return { bucket: FALLBACK_BUCKET, rates: RATE_TABLE.sonnet };
 }
 
 function toNumber(v) {
@@ -128,7 +203,7 @@ function sumUsageFromTranscript(transcriptPath) {
       : `__line_${++syntheticKey}`;
     usageById.set(key, msg.usage);
 
-    if (msg.model && msg.model !== 'unknown') model = msg.model;
+    if (msg.model && !NON_MODEL_SENTINELS.has(msg.model)) model = msg.model;
   }
 
   let inputTokens = 0;
@@ -191,7 +266,7 @@ process.stdin.on('end', () => {
       model = 'unknown'
     } = usageTotals || {};
 
-    const rates = getRates(model);
+    const { bucket: modelBucket, rates } = resolveRates(model);
     const transcriptCostUsd = Math.round((
       (inputTokens      / 1e6) * rates.in +
       (outputTokens     / 1e6) * rates.out +
@@ -209,6 +284,28 @@ process.stdin.on('end', () => {
       ? Math.round(harnessCost * 1e6) / 1e6
       : transcriptCostUsd;
 
+    // `rate_bucket` names what produced `estimated_cost_usd`, so it has to
+    // follow that choice: on the harness path no rate-table row was consulted,
+    // and reporting the model's bucket there would vouch for a number the
+    // table did not produce (or, worse, flag an authoritative number as a
+    // guess).
+    const rateBucket = harnessCost !== null ? HARNESS_BUCKET : modelBucket;
+
+    // Speak up when a guessed rate is what actually produced the recorded
+    // cost. Silent on the harness path by construction, and gated on a
+    // non-zero cost so a Stop that priced nothing stays quiet. `model` is
+    // skipped when it is the `unknown` sentinel: that means no assistant turn
+    // recorded a model, so naming it in the warning tells the reader nothing
+    // actionable, and the `sonnet-fallback` value on the row already carries
+    // the signal. Note this fires per Stop, and Stop fires per assistant
+    // response, so an unrecognized model warns once per turn by design: the
+    // row is the durable record, the line is the nudge.
+    if (rateBucket === FALLBACK_BUCKET && transcriptCostUsd > 0 && model !== 'unknown') {
+      process.stderr.write(
+        `[Hook] cost-tracker: unrecognized model "${model}"; priced at sonnet rates, cost may be wrong\n`
+      );
+    }
+
     const metricsDir = path.join(getClaudeDir(), 'metrics');
     ensureDir(metricsDir);
 
@@ -217,6 +314,7 @@ process.stdin.on('end', () => {
       session_id:         sessionId,
       transcript_path:    transcriptPath || '',
       model,
+      rate_bucket:        rateBucket,
       input_tokens:       inputTokens,
       output_tokens:      outputTokens,
       cache_write_tokens: cacheWriteTokens,
