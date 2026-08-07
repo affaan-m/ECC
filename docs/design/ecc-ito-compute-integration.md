@@ -106,6 +106,34 @@ adapter; the ECC bridge does not expose its paper fixture mode.
 Managed inference remains unavailable. ECC does not claim that Itô created a
 model endpoint, deployed a workload, reserved capacity, or moved funds.
 
+### Inference-serving contract
+
+`skills/ito-inference` is the only canonical serving skill; `ito-serve` is
+trigger language, not a second installed skill. The current ECC bridge has no
+`serve` verb and rejects it before resolving or spawning the canonical client.
+The canonical runtime documents `inference` only as an unsupported compatibility
+probe, and MCP remains limited to auth, find, and status. Serving requests
+therefore stop before login.
+
+A future `serve` operation is not releasable until it verifies a completed
+booking and fresh serving eligibility, accepts an immutable reviewed manifest,
+requires a short-lived single-use confirmation bound to account, action,
+manifest digest, and maximum cost, and atomically reserves a caller-provided
+idempotency key. CLI arguments carry only an opaque non-authorizing confirmation
+reference; bearer confirmation is resolved and consumed server-side.
+
+Manifest handling must canonicalize the path, reject symlinks, open a regular
+file without following links, validate ownership/permissions and bounded size,
+and hash bytes from the opened descriptor. The digest must match the value bound
+into confirmation before mutation, preventing path-swap and digest-mismatch
+attacks. Authentication alone is never workload authority.
+
+The same canonical client must expose structured, tenant-scoped status, logs,
+metrics, cancel, and cleanup with bounded timeouts and revocation-aware errors.
+After an ambiguous transport failure, callers reconcile by idempotency key
+before retrying. ECC must never replace that control plane with root SSH, local
+serving scripts, browser automation, or an unreviewed purchase endpoint.
+
 ## Skill and install shape
 
 `skills/ito-compute/SKILL.md` is an opt-in workflow installed through:
