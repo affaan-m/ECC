@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path');
 const readline = require('readline/promises');
 
 const {
@@ -339,6 +340,15 @@ async function main(argv = process.argv.slice(2), injected = {}) {
         + `${sanitizeTerminalText(result.failure.message)}\n`
         + `Retry with: ecc-universal install --guided ${retry}\n`
       );
+      // The usage bar is plain shell/TOML config and does not depend on the
+      // Codex plugin registration that just failed, but it is applied after
+      // it — so point at the standalone setup when that step cannot succeed.
+      if (result.failure.id === 'codex') {
+        errorOutput.write(
+          'The Codex usage bar was not configured. To set it up on its own:\n'
+          + `  node "${path.join(__dirname, 'codex', 'setup-codex-bar.js')}"\n`
+        );
+      }
     }
     return result.status === 'complete' ? 0 : 1;
   } catch (error) {
