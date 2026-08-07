@@ -112,6 +112,12 @@ function choicesText(values) {
   return values.join('|');
 }
 
+/** True when the shell locale already renders UTF-8, so no prompt is needed. */
+function shellLocaleIsUtf8(env = process.env) {
+  const locale = env.LC_ALL || env.LC_CTYPE || env.LANG || '';
+  return /utf-?8/i.test(locale);
+}
+
 async function askChoice(terminal, output, prompt, values, defaultValue) {
   output.write(`\n${prompt}\n`);
   values.forEach((value, index) => output.write(`  ${index + 1}. ${value}\n`));
@@ -167,11 +173,23 @@ async function collectInteractiveOptions(options, dependencies = {}) {
   const profile = includesKimi && !options.profile
     ? await askChoice(terminal, output, 'Which ECC content profile should Kimi receive?', [...VALID_PROFILES], 'core')
     : options.profile;
+  const includesCodex = normalizedHarnesses.includes('codex');
+  const codexUtf8 = includesCodex && options.codexUtf8 === undefined && !shellLocaleIsUtf8()
+    ? await askChoice(
+      terminal,
+      output,
+      'Your shell locale is not UTF-8, so the Codex usage bar cannot draw its\n'
+        + 'block characters. Set a UTF-8 locale in your shell config?',
+      ['yes', 'no'],
+      'yes'
+    ) === 'yes'
+    : options.codexUtf8;
   return {
     ...options,
     harnesses: normalizedHarnesses,
     claudeScope,
     claudeHooks,
+    codexUtf8,
     profile,
   };
 }

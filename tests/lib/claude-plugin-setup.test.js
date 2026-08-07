@@ -10,6 +10,7 @@ const fakeClaudeScript = path.join(repoRoot, 'tests', 'fixtures', 'fake-claude-p
 const {
   OFFICIAL_MARKETPLACE_URL,
   buildWindowsCommandLine,
+  ensureStatuslineDefault,
   isOfficialMarketplace,
   runClaude,
   setupClaudePlugin,
@@ -651,6 +652,37 @@ test('missing Claude executable reports an actionable recovery', () => {
     );
     assert.ok(!fs.existsSync(fixture.settingsPath));
   });
+});
+
+test('ensureStatuslineDefault configures statusLine when absent', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-statusline-default-'));
+  try {
+    const settingsPath = path.join(root, 'settings.json');
+    const result = ensureStatuslineDefault(settingsPath, root);
+    assert.strictEqual(result.action, 'configured');
+    assert.ok(fs.existsSync(result.launcherPath), 'launcher should be written');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.strictEqual(settings.statusLine.type, 'command');
+    assert.ok(settings.statusLine.command.includes('ecc-statusline.js'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ensureStatuslineDefault keeps an existing statusLine untouched', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-statusline-default-'));
+  try {
+    const settingsPath = path.join(root, 'settings.json');
+    const existing = { statusLine: { type: 'command', command: 'my-custom-bar' } };
+    fs.writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+    const result = ensureStatuslineDefault(settingsPath, root);
+    assert.strictEqual(result.action, 'kept-existing');
+    assert.ok(fs.existsSync(result.launcherPath), 'launcher still refreshed');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    assert.strictEqual(settings.statusLine.command, 'my-custom-bar');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

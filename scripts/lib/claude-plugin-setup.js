@@ -342,6 +342,62 @@ function writeClaudePluginOptions(settingsPath, hooks) {
   return settingsPath;
 }
 
+const STATUSLINE_LAUNCHER = `#!/usr/bin/env node
+// ECC statusline launcher — written by the ECC installer.
+// Resolves the active ecc plugin install and delegates to its statusline
+// script, so the settings.json command survives plugin version updates.
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+function resolveScript() {
+  const relative = path.join('scripts', 'hooks', 'ecc-statusline.js');
+  try {
+    const installed = JSON.parse(
+      fs.readFileSync(path.join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')
+    );
+    const entries = installed?.plugins?.['${CURRENT_PLUGIN_ID}'];
+    const entry = Array.isArray(entries) ? entries[0] : null;
+    if (entry?.installPath) {
+      const candidate = path.join(entry.installPath, relative);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch { /* fall through */ }
+  if (process.env.ECC_ROOT) {
+    const candidate = path.join(process.env.ECC_ROOT, relative);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+const script = resolveScript();
+if (script) require(script).runStatusline();
+`;
+
+/**
+ * Install the ECC usage bar as the default statusLine. Always refreshes the
+ * launcher script; never overwrites an existing statusLine setting (e.g. a
+ * user-configured bar) — reports 'kept-existing' instead.
+ */
+function ensureStatuslineDefault(settingsPath, configDir) {
+  try {
+    const launcherPath = path.join(configDir, 'ecc-statusline.js');
+    writeFileAtomic(launcherPath, STATUSLINE_LAUNCHER);
+    const settings = readSettings(settingsPath);
+    if (settings.statusLine) {
+      return { action: 'kept-existing', launcherPath };
+    }
+    const nextSettings = {
+      ...settings,
+      statusLine: { type: 'command', command: `node "${launcherPath}"` },
+    };
+    writeFileAtomic(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`);
+    return { action: 'configured', launcherPath };
+  } catch (error) {
+    return { action: 'skipped', error: error.message };
+  }
+}
+
 function currentEccPlugins(plugins) {
   return plugins.filter(plugin => plugin?.id === CURRENT_PLUGIN_ID);
 }
@@ -587,6 +643,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
       marketplaceAction: namedMarketplace ? 'would-update' : 'would-add',
       pluginId: CURRENT_PLUGIN_ID,
       scope: inventory.scope,
+      statusline: initialSettings.statusLine ? 'would-keep-existing' : 'would-configure',
     };
   }
 
@@ -612,6 +669,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
   if (options.hooks !== undefined || !inventory.installed) {
     writeClaudePluginOptions(settingsPath, hooks);
   }
+  const statusline = ensureStatuslineDefault(settingsPath, paths.configDir);
 
   return {
     action,
@@ -620,6 +678,7 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
     restartRequired: true,
     scope: inventory.scope,
     settingsPath,
+    statusline,
   };
 }
 
@@ -638,6 +697,7 @@ module.exports = {
   deriveHookMode,
   ensureOfficialMarketplace,
   ensurePluginAtScope,
+  ensureStatuslineDefault,
   hookOptions,
   inspectPluginInventory,
   isOfficialMarketplace,

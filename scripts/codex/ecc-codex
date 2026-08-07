@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# ecc-codex — run Codex CLI with a live ECC usage bar in the terminal.
+#
+# Codex's TUI owns the screen while it runs, so the bar is mirrored into
+# channels that stay visible around a full-screen TUI:
+#   - the window/tab title (OSC 2) — works in any terminal
+#   - a terminal user var `ecc_codex_bar` (OSC 1337 SetUserVar) — WezTerm and
+#     iTerm2 render this in their native status bar (snippet in docs/STATUSLINE.md)
+#
+# Usage: ecc-codex [codex args...]
+# Env:   ECC_CODEX_BAR=off          disable the bar (plain `codex` passthrough)
+#        ECC_CODEX_BAR_INTERVAL=15  refresh interval in seconds
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RENDERER="$SCRIPT_DIR/ecc-usage-bar-codex.js"
+
+if [ "${ECC_CODEX_BAR:-on}" = "off" ] || [ ! -t 1 ] || [ ! -e /dev/tty ] \
+  || ! command -v node >/dev/null 2>&1 || [ ! -f "$RENDERER" ]; then
+  exec codex "$@"
+fi
+
+INTERVAL="${ECC_CODEX_BAR_INTERVAL:-15}"
+
+# Write an escape sequence to the terminal. Inside tmux, wrap it in a DCS
+# passthrough (doubling any ESC bytes) so it reaches the outer terminal.
+emit() {
+  local seq="$1"
+  if [ -n "${TMUX:-}" ]; then
+    printf '\033Ptmux;%s\033\\' "${seq//$'\033'/$'\033\033'}" > /dev/tty
+  else
+    printf '%s' "$seq" > /dev/tty
+  fi
+}
+
+update_bar() {
+  local plain b64
+  plain="$(node "$RENDERER" --plain 2>/dev/null | tr -d '\n')" || return 0
+  [ -n "$plain" ] || return 0
+  emit "$(printf '\033]2;%s\007' "$plain")"
+  b64="$(printf '%s' "$plain" | base64 | tr -d '\n')"
+  emit "$(printf '\033]1337;SetUserVar=ecc_codex_bar=%s\007' "$b64")"
+}
+
+# Inside tmux, show the full three-line bar for the lifetime of this Codex run.
+# Options are session-scoped (no -g) and unset on exit, so nothing persists in
+# the user's tmux config and other sessions are untouched.
+in_tmux() {
+  [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1
+}
+
+tmux_bar_on() {
+  in_tmux || return 0
+  tmux set status 4 >/dev/null 2>&1 || return 0
+  tmux set status-interval 15 >/dev/null 2>&1
+  # bg=default keeps tmux's green status background out of the way so the bar
+  # blends into whatever terminal theme the user runs (Terminal.app, Windows
+  # Terminal, Linux terminals, WezTerm, iTerm2).
+  tmux set status-style 'bg=default,fg=default' >/dev/null 2>&1
+
+  # Block glyphs are used when either signal says UTF-8 is safe: the shell's
+  # locale (the installer exports one) or tmux's attached client. client_utf8
+  # is empty while detached, so it can only ever add confidence, never remove it.
+  local glyphs='ascii'
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *[Uu][Tt][Ff]*) glyphs='unicode' ;;
+  esac
+  if [ "$(tmux display -p '#{client_utf8}' 2>/dev/null)" = "1" ]; then
+    glyphs='unicode'
+  fi
+
+  local n
+  for n in 1 2 3; do
+    tmux set "status-format[$n]" \
+      "#[align=left,bg=default,fg=default]#(ECC_BAR_GLYPHS=$glyphs node \"$RENDERER\" --tmux --line $n)" \
+      >/dev/null 2>&1
+  done
+}
+
+# Session-scoped options are unset, so each falls back to the user's own
+# global tmux value rather than anything this wrapper invented.
+tmux_bar_off() {
+  in_tmux || return 0
+  local n
+  for n in 1 2 3; do
+    tmux set -u "status-format[$n]" >/dev/null 2>&1
+  done
+  tmux set -u status-interval >/dev/null 2>&1
+  tmux set -u status-style >/dev/null 2>&1
+  tmux set -u status >/dev/null 2>&1
+}
+
+cleanup() {
+  if [ -n "${UPDATER_PID:-}" ]; then
+    kill "$UPDATER_PID" 2>/dev/null || true
+  fi
+  tmux_bar_off
+  emit "$(printf '\033]2;\007')"
+  emit "$(printf '\033]1337;SetUserVar=ecc_codex_bar=\007')"
+}
+trap cleanup EXIT INT TERM
+
+tmux_bar_on
+
+update_bar
+(
+  while :; do
+    sleep "$INTERVAL"
+    update_bar
+  done
+) &
+UPDATER_PID=$!
+
+codex "$@"

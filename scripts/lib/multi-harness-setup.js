@@ -32,6 +32,12 @@ function normalizeGuidedInstallRequest(input = {}) {
     throw new Error('The managed install profile requires Kimi to be selected.');
   }
 
+  const includesCodex = harnesses.includes('codex');
+  if (!includesCodex && input.codexUtf8 !== undefined) {
+    throw new Error('The Codex UTF-8 preference requires Codex to be selected.');
+  }
+  const codexUtf8 = includesCodex ? input.codexUtf8 !== false : undefined;
+
   const claudeScope = includesClaude ? (input.claudeScope || 'user') : undefined;
   const claudeHooks = includesClaude ? (input.claudeHooks || 'standard') : undefined;
   const profile = includesKimi ? (input.profile || 'core') : undefined;
@@ -49,6 +55,7 @@ function normalizeGuidedInstallRequest(input = {}) {
     harnesses,
     ...(claudeHooks ? { claudeHooks } : {}),
     ...(claudeScope ? { claudeScope } : {}),
+    ...(codexUtf8 === undefined ? {} : { codexUtf8 }),
     dryRun: Boolean(input.dryRun),
     json: Boolean(input.json),
     ...(profile ? { profile } : {}),
@@ -354,7 +361,16 @@ function defaultDependencies(options = {}) {
     previewClaude: request => require('../setup').reconcileClaudePlugin(
       { dryRun: true, hooks: request.claudeHooks, scope: request.claudeScope }
     ),
-    previewCodex: () => require('./codex-plugin-setup').reconcileCodexPlugin({ dryRun: true }),
+    previewCodex: async () => {
+      const preview = await require('./codex-plugin-setup').reconcileCodexPlugin({ dryRun: true });
+      preview.shellAlias = require('./codex-shell-alias').aliasStatus().installed
+        ? 'would-refresh'
+        : 'would-configure';
+      preview.statusLine = require('./codex-status-line').statusLineStatus().installed
+        ? 'would-keep-existing'
+        : 'would-configure';
+      return preview;
+    },
     createManagedPlan: request => require('./install/runtime').createInstallPlanFromRequest(
       require('./install/request').normalizeInstallRequest({
         profileId: request.profile,
@@ -370,7 +386,15 @@ function defaultDependencies(options = {}) {
     applyClaude: request => require('../setup').reconcileClaudePlugin(
       { dryRun: false, hooks: request.claudeHooks, scope: request.claudeScope }
     ),
-    applyCodex: () => require('./codex-plugin-setup').reconcileCodexPlugin({ dryRun: false }),
+    applyCodex: async (request = {}) => {
+      const result = await require('./codex-plugin-setup').reconcileCodexPlugin({ dryRun: false });
+      // Declining UTF-8 means no locale export: the bar falls back to ASCII glyphs.
+      result.shellAlias = require('./codex-shell-alias').ensureCodexAliasDefault(
+        request.codexUtf8 === false ? { utf8Locale: '' } : {}
+      );
+      result.statusLine = require('./codex-status-line').ensureCodexStatusLineDefault();
+      return result;
+    },
     applyManaged: applyPreflightedManagedPlan,
   };
 }
