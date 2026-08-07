@@ -90,8 +90,11 @@ String sortDirection = request.descending() ? "DESC" : "ASC";
 ```
 
 ```xml
-<select id="findPage" resultMap="userResultMap">
-  SELECT id, display_name, status, created_at
+<select id="findPage" resultType="com.example.user.persistence.UserSummary">
+  SELECT id AS id,
+         display_name AS displayName,
+         status AS status,
+         created_at AS createdAt
   FROM users
   WHERE tenant_id = #{tenantId}
   ORDER BY ${sortColumn} ${sortDirection}
@@ -183,6 +186,25 @@ are user-controlled wildcards or escaped literal characters. Keep that choice
 out of the XML and use the database's documented escape syntax when literals
 are required.
 
+If `ids` is an optional filter, choose its empty-list behavior at the service
+boundary before invoking the mapper. This example treats an explicitly empty
+list as "no matches"; an application that treats it as "no ID filter" must
+normalize it to `null` deliberately instead:
+
+```java
+public List<UserSummary> search(UserSearchRequest request) {
+  if (request.ids() != null && request.ids().isEmpty()) {
+    return Collections.emptyList();
+  }
+  return userMapper.search(request);
+}
+```
+
+The mapper retains the `ids.size() > 0` guard as defense in depth, but callers
+must not rely on an empty `<foreach>` to define query semantics. The service
+boundary must ensure this query is reached only with a non-empty list or a
+deliberate `null` meaning "no ID filter".
+
 - Prefer `<where>`, `<set>`, `<trim>`, `<choose>`, and `<foreach>` to manual
   string concatenation.
 - Define the empty-list behavior in the service. Return no rows, skip the
@@ -204,22 +226,37 @@ Spring transaction so the changes commit or roll back together.
 public class UserService {
   private final UserMapper userMapper;
   private final AuditMapper auditMapper;
+  private final SecurityContext securityContext;
+  private final AuthorizationService authorization;
 
-  public UserService(UserMapper userMapper, AuditMapper auditMapper) {
+  public UserService(
+      UserMapper userMapper,
+      AuditMapper auditMapper,
+      SecurityContext securityContext,
+      AuthorizationService authorization) {
     this.userMapper = userMapper;
     this.auditMapper = auditMapper;
+    this.securityContext = securityContext;
+    this.authorization = authorization;
   }
 
   @Transactional
-  public void deactivate(long userId, long actorId) {
+  public void deactivate(long userId) {
+    AuthenticatedPrincipal actor = securityContext.requireAuthenticatedPrincipal();
+    authorization.requireCanDeactivate(actor, userId);
+
     int updated = userMapper.deactivate(userId);
     if (updated != 1) {
       throw new IllegalStateException("User was not updated");
     }
-    auditMapper.recordDeactivation(userId, actorId);
+    auditMapper.recordDeactivation(userId, actor.id());
   }
 }
 ```
+
+Never accept `actorId` from request data. For an authorized batch job, create an
+explicit trusted system principal server-side and pass that principal through
+the same authorization and audit path; do not use a caller-supplied identity.
 
 MyBatis-Spring coordinates a Spring-managed `SqlSession` with the configured
 transaction manager. Do not call `commit()`, `rollback()`, or `close()` on an
@@ -286,7 +323,7 @@ cause secret disclosure.
    non-production, read-only target. Check index use, estimated rows, sort
    operations, and join order.
 3. Do not run `EXPLAIN ANALYZE` by default because it executes the statement.
-   Require explicit approval and fail safe before `ANALYZE`, writes, migrations,
+   Require explicit approval and fail-safe before `ANALYZE`, writes, migrations,
    or arbitrary SQL execution.
 4. Select only the columns required by the use case; avoid `SELECT *` in stable
    application queries.
@@ -333,9 +370,14 @@ adding indexes without a measured query plan.
 - [ ] Values use `#{}`; every `${}` is removed or backed by an allowlist.
 - [ ] Result mappings are explicit where aliases, joins, or collections exist.
 - [ ] Empty filters and empty ID lists have defined behavior.
+- [ ] Empty ID lists are handled at the service boundary before the mapper;
+      an empty `<foreach>` cannot broaden the query.
 - [ ] Tenant scope comes from authenticated authorization context and is
       checked before the mapper runs; it is not trusted from request input.
 - [ ] Transaction boundaries belong to the service use case.
+- [ ] Mutating operations derive the actor from authenticated authorization
+      context, authorize the target, and use a trusted system principal for
+      authorized batch jobs.
 - [ ] Pagination has a stable order, a bounded page size, and a verified plan.
 - [ ] `EXPLAIN` runs only against an approved non-production, read-only target;
       `ANALYZE`, writes, migrations, and arbitrary SQL require explicit approval.
