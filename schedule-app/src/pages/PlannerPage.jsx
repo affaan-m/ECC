@@ -160,6 +160,35 @@ export default function PlannerPage() {
   const [templateName, setTemplateName] = useState('');
   const [dismissedConflicts, setDismissedConflicts] = useState(() => new Set());
 
+  // `cursor` is only ever set to today once, at mount — nothing advances it
+  // afterward. A session left open across a real midnight (backgrounded
+  // rather than reloaded, which is routine for a PWA) never notices, so
+  // "today" quietly drifts a day behind: new events would land on
+  // yesterday's date without any indication anything was wrong. Goals had
+  // the identical bug (day/weekStart, same fix — see GoalsPage.jsx) and it
+  // was confirmed there by simulating real usage without reloading between
+  // days; this is the same defect for the calendar's own idea of "today".
+  //
+  // `manualNavRef` distinguishes "still tracking today" from "the user
+  // deliberately went somewhere else" (chevron/swipe, a month/week cell,
+  // arriving to view a specific event, following a smart-add to another
+  // day) — only the former gets auto-corrected when the tab regains focus.
+  const manualNavRef = useRef(false);
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (manualNavRef.current) return;
+      const nowDay = todayISO();
+      setCursor((c) => (c === nowDay ? c : nowDay));
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
+    return () => {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+    };
+  }, []);
+
   const dayStartHour = state.settings?.timelineStartHour ?? DAY_START;
   const dayEndHour = state.settings?.timelineEndHour ?? DAY_END;
   const defaultDuration = state.settings?.defaultEventDuration ?? 60;
@@ -181,6 +210,7 @@ export default function PlannerPage() {
   // to happen after the day has rendered (see the effect on scrollNowNonce).
   const [scrollNowNonce, setScrollNowNonce] = useState(0);
   const jumpToNow = () => {
+    manualNavRef.current = false;
     setCursor(todayISO());
     setMode('day');
     setScrollNowNonce((n) => n + 1);
@@ -192,7 +222,10 @@ export default function PlannerPage() {
   // segmented control already exists to choose a view on purpose, and this
   // was overriding it. Only Day view has an actual clock/"now" to scroll
   // to, so there's nothing for Week/Month to do beyond moving the cursor.
-  const snapToToday = () => setCursor(todayISO());
+  const snapToToday = () => {
+    manualNavRef.current = false;
+    setCursor(todayISO());
+  };
   const todayTapAt = useRef(0);
   const TODAY_DOUBLE_TAP_MS = 350;
   // Single tap snaps the current view to today; a second tap within the
@@ -288,6 +321,7 @@ export default function PlannerPage() {
       const iso = location.state.openEventDate || todayISO();
       const occ = occurrencesFor(state.events, iso).find((o) => o.id === location.state.openEventId);
       if (occ) {
+        manualNavRef.current = true;
         setCursor(iso);
         setMode('day');
         setViewing(occ);
@@ -593,6 +627,7 @@ export default function PlannerPage() {
   // *current* day/week/month rather than replaying from whatever cursor
   // value existed when the closure was created.
   const step = (n) => {
+    manualNavRef.current = true;
     setCursor((c) => {
       if (mode === 'day') return toISODate(addDays(c, n));
       if (mode === 'week') return toISODate(addDays(c, n * 7));
@@ -623,6 +658,7 @@ export default function PlannerPage() {
     mode === 'day' ? (isToday(cursor) ? 'Today' : '') : mode === 'week' ? 'Week' : 'Month';
 
   const openDay = (iso) => {
+    manualNavRef.current = true;
     setCursor(iso);
     setMode('day');
   };
@@ -905,7 +941,10 @@ export default function PlannerPage() {
           // we follow it.
           if (kind === 'event') {
             const landed = parsed.date || cursor;
-            if (landed !== cursor) setCursor(landed);
+            if (landed !== cursor) {
+              manualNavRef.current = true;
+              setCursor(landed);
+            }
             if (mode === 'month') setMode('day');
           }
         }}
