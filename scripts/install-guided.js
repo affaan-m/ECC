@@ -112,10 +112,28 @@ function choicesText(values) {
   return values.join('|');
 }
 
-/** True when the shell locale already renders UTF-8, so no prompt is needed. */
-function shellLocaleIsUtf8(env = process.env) {
-  const locale = env.LC_ALL || env.LC_CTYPE || env.LANG || '';
-  return /utf-?8/i.test(locale);
+/**
+ * Ask any setup questions this ECC version introduced that the user has not
+ * answered yet, and record the answers so they are asked only once. Returns
+ * the answers keyed by their request option (for example `codexUtf8`).
+ */
+async function askPendingSetupPrompts(terminal, output, context = {}) {
+  const { pendingPrompts, recordAnswer } = require('./lib/setup-prompts');
+  const provided = context.provided || {};
+  const answers = {};
+  for (const prompt of pendingPrompts({ codexSelected: context.codexSelected })) {
+    if (prompt.optionKey && provided[prompt.optionKey] !== undefined) continue;
+    const answer = await askChoice(
+      terminal,
+      output,
+      prompt.question,
+      prompt.choices,
+      prompt.defaultChoice
+    );
+    recordAnswer(prompt.id, answer);
+    if (prompt.optionKey) answers[prompt.optionKey] = answer === 'yes';
+  }
+  return answers;
 }
 
 async function askChoice(terminal, output, prompt, values, defaultValue) {
@@ -173,23 +191,16 @@ async function collectInteractiveOptions(options, dependencies = {}) {
   const profile = includesKimi && !options.profile
     ? await askChoice(terminal, output, 'Which ECC content profile should Kimi receive?', [...VALID_PROFILES], 'core')
     : options.profile;
-  const includesCodex = normalizedHarnesses.includes('codex');
-  const codexUtf8 = includesCodex && options.codexUtf8 === undefined && !shellLocaleIsUtf8()
-    ? await askChoice(
-      terminal,
-      output,
-      'Your shell locale is not UTF-8, so the Codex usage bar cannot draw its\n'
-        + 'block characters. Set a UTF-8 locale in your shell config?',
-      ['yes', 'no'],
-      'yes'
-    ) === 'yes'
-    : options.codexUtf8;
+  const answered = await askPendingSetupPrompts(terminal, output, {
+    codexSelected: normalizedHarnesses.includes('codex'),
+    provided: options,
+  });
   return {
     ...options,
+    ...answered,
     harnesses: normalizedHarnesses,
     claudeScope,
     claudeHooks,
-    codexUtf8,
     profile,
   };
 }

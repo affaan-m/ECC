@@ -330,7 +330,36 @@ function printHuman(result) {
   console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'updated'}=${result.summary.updatedCount}, errors=${result.summary.errorCount}`);
 }
 
-function main() {
+/**
+ * Ask setup questions this ECC version introduced, so people who update rather
+ * than reinstall still get them. Silent when nothing is pending or when the
+ * update is not attached to a terminal.
+ */
+async function askPendingSetupPrompts() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+  const { pendingPrompts, recordAnswer } = require('./lib/setup-prompts');
+  const prompts = pendingPrompts();
+  if (prompts.length === 0) return;
+
+  const readline = require('readline/promises');
+  const terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    for (const prompt of prompts) {
+      console.log(`\n${prompt.question}`);
+      const choices = prompt.choices.join('/');
+      const answer = (await terminal.question(
+        `Choose ${choices} [Recommended: ${prompt.defaultChoice}]: `
+      )).trim().toLowerCase() || prompt.defaultChoice;
+      const selected = prompt.choices.includes(answer) ? answer : prompt.defaultChoice;
+      recordAnswer(prompt.id, selected);
+      prompt.apply(selected);
+    }
+  } finally {
+    terminal.close();
+  }
+}
+
+async function main() {
   try {
     const options = parseArgs(process.argv);
     if (options.help) {
@@ -352,6 +381,9 @@ function main() {
     }
 
     process.exitCode = result.summary.errorCount > 0 ? 1 : 0;
+    if (!options.json && !options.dryRun && process.exitCode === 0) {
+      await askPendingSetupPrompts();
+    }
   } catch (error) {
     console.error(`Error: ${error.message}`);
     process.exit(1);

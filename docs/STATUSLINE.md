@@ -217,6 +217,11 @@ node <ecc-root>/scripts/codex/setup-codex-bar.js          # alias + TUI status l
 node <ecc-root>/scripts/codex/setup-codex-bar.js status   # check what is configured
 ```
 
+Setup questions introduced by a new ECC version (currently the UTF-8 one) are
+also asked by `ecc auto-update`, so people who update rather than reinstall
+still see them. Answers are recorded in `<config>/ecc/setup-answers.json` and
+each question is asked once; see `scripts/lib/setup-prompts.js` to add another.
+
 Both paths are idempotent: rerunning refreshes the managed rc block in place
 (never a second copy), keeps an existing `tui.status_line`, and leaves a
 codex alias you wrote yourself untouched. Re-running `ecc install --guided`
