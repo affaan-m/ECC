@@ -13,6 +13,7 @@ import { geocodeAddress } from '../data/geocode.js';
 import { directionsTarget, openMaps } from '../data/maps.js';
 import { resolveMapStyle, MAP_STYLE_OPTIONS } from '../data/mapStyles.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
+import { ROUTE_PLANNER_ENABLED } from '../data/routePlannerConfig.js';
 import Icon from '../components/Icon.jsx';
 import AddressField from '../components/AddressField.jsx';
 
@@ -449,9 +450,23 @@ export default function MapPage() {
     <div className="map-page">
       <div ref={containerRef} className="map-canvas" />
 
-      {/* Corner controls (top-right) */}
+      {/* Corner controls (top-right). Map style is first — it used to live in
+          its own cluster on the left ("so it doesn't crowd the right-hand
+          stack"), but with Plan my day gone there's room for it here, and one
+          cluster reads as one control layer instead of one cluster and a
+          stray button. It still writes to the same `mapStyle` setting, so
+          Settings and this never disagree. */}
       {!pickMode && (
         <div className="map-corner">
+          <button
+            className={`map-round${layersOpen ? ' map-round--on' : ''}`}
+            onClick={() => setLayersOpen((v) => !v)}
+            aria-label="Map style"
+            aria-expanded={layersOpen}
+            title="Map style"
+          >
+            <LayersIcon />
+          </button>
           <button
             className={`map-round${filtersOpen ? ' map-round--on' : ''}`}
             onClick={() => setFiltersOpen((v) => !v)}
@@ -469,19 +484,21 @@ export default function MapPage() {
           <button className="map-round" onClick={locateMe} aria-label="My location" title="My location">
             <LocateIcon />
           </button>
-          <button
-            className="map-round"
-            onClick={() => (isPro ? navigate('/plan-day') : navigate('/pricing'))}
-            aria-label="Plan my day"
-            title="Plan my day"
-          >
-            <Icon name="compass" size={22} />
-            {!isPro && (
-              <span className="map-round-lock">
-                <Icon name="lock" size={12} />
-              </span>
-            )}
-          </button>
+          {ROUTE_PLANNER_ENABLED && (
+            <button
+              className="map-round"
+              onClick={() => (isPro ? navigate('/plan-day') : navigate('/pricing'))}
+              aria-label="Plan my day"
+              title="Plan my day"
+            >
+              <Icon name="compass" size={22} />
+              {!isPro && (
+                <span className="map-round-lock">
+                  <Icon name="lock" size={12} />
+                </span>
+              )}
+            </button>
+          )}
           {selected && (
             <button
               className="map-round map-round--go"
@@ -492,25 +509,6 @@ export default function MapPage() {
               <NavIcon />
             </button>
           )}
-        </div>
-      )}
-
-      {/* Basemap switcher (top-left). The style lived only in Settings, which
-          is a long way to go to answer "what does this look like as
-          satellite" — a question you ask while looking at the map. Left side
-          so it doesn't crowd the existing right-hand stack, and it writes to
-          the same `mapStyle` setting, so the two never disagree. */}
-      {!pickMode && (
-        <div className="map-corner map-corner--left">
-          <button
-            className={`map-round${layersOpen ? ' map-round--on' : ''}`}
-            onClick={() => setLayersOpen((v) => !v)}
-            aria-label="Map style"
-            aria-expanded={layersOpen}
-            title="Map style"
-          >
-            <LayersIcon />
-          </button>
         </div>
       )}
 

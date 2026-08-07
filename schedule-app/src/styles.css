@@ -3251,8 +3251,9 @@ textarea {
 /* --- Map pin filters ------------------------------------------------------ */
 .map-filters {
   position: absolute;
-  /* Below the corner stack: 3 buttons (46px) + gaps, plus a little air. */
-  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px);
+  /* Below the corner stack's first two buttons (map style, then this one):
+     2 × (46px button + 10px gap). */
+  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px + 46px + 10px);
   right: 12px;
   z-index: 500;
   width: 218px;
@@ -5448,25 +5449,20 @@ button.timeline-item {
   padding: 4px;
 }
 
-/* --- Map: basemap switcher ------------------------------------------------
-   Mirrors the right-hand control stack on the left, so the two clusters
-   read as one control layer rather than one cluster and one stray button. */
+/* --- Map: basemap switcher -------------------------------------------------
+   Now the first button in the right-hand corner stack (see .map-corner in
+   MapPage.jsx) rather than its own cluster on the left. */
 /* Leaflet puts its own zoom control top-left and doesn't know about the
    notch, so give it the inset before anything is stacked under it. */
 .leaflet-top.leaflet-left {
   margin-top: env(safe-area-inset-top, 0px);
 }
-/* Below the zoom control, not on top of it. Leaflet's stack is its own 10px
-   margin plus two 30px buttons = 70px tall, so this clears it with a gap. */
-.map-corner--left {
-  right: auto;
-  left: 12px;
-  top: calc(env(safe-area-inset-top, 0px) + 80px);
-}
 .map-layers {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 80px + 46px + 10px);
-  left: 12px;
+  /* Below the corner stack's first button (map style itself): one 46px
+     button + a 10px gap. */
+  top: calc(env(safe-area-inset-top, 0px) + 12px + 46px + 10px);
+  right: 12px;
   z-index: 500;
   width: 178px;
   display: flex;

@@ -11,6 +11,7 @@ import {
 import { mapsLinkProps, webTarget } from '../data/maps.js';
 import { eventPinIdentity } from '../data/pinLabel.js';
 import { todayISO, expandEventOnDay, formatTime } from '../data/helpers.js';
+import { ROUTE_PLANNER_ENABLED } from '../data/routePlannerConfig.js';
 import Icon from '../components/Icon.jsx';
 
 export default function RoutePlannerPage() {
@@ -18,8 +19,12 @@ export default function RoutePlannerPage() {
   const navigate = useNavigate();
   const isPro = !!state.settings?.isPro;
 
+  // Buried behind ROUTE_PLANNER_ENABLED (see routePlannerConfig.js) — the
+  // Map page's own entry point is already gone, but this also closes off
+  // the URL directly, the same way the Pro check below already does.
   useEffect(() => {
-    if (!isPro) navigate('/pricing', { replace: true });
+    if (!ROUTE_PLANNER_ENABLED) navigate('/map', { replace: true });
+    else if (!isPro) navigate('/pricing', { replace: true });
   }, [isPro, navigate]);
 
   const contactById = useMemo(
@@ -146,7 +151,7 @@ export default function RoutePlannerPage() {
     setPlanning(false);
   };
 
-  if (!isPro) return null;
+  if (!ROUTE_PLANNER_ENABLED || !isPro) return null;
 
   return (
     <div className="page">
