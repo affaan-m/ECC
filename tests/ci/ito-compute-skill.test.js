@@ -90,7 +90,11 @@ function main() {
       const modules = readJson("manifests/install-modules.json").modules;
       const module = modules.find((candidate) => candidate.id === "ito-compute");
       assert.ok(module, "ito-compute install module is missing");
-      assert.deepStrictEqual(module.paths, ["skills/ito-compute"]);
+      assert.deepStrictEqual(module.paths, [
+        "skills/ito-compute",
+        "skills/ito-inference",
+        "skills/ito-training",
+      ]);
       assert.deepStrictEqual(module.dependencies, ["platform-configs"]);
       assert.strictEqual(module.defaultInstall, false);
       assert.strictEqual(module.stability, "beta");
@@ -113,7 +117,9 @@ function main() {
     }],
     ["publishes the skill but never bundles the Itô CLI", () => {
       const packageJson = readJson("package.json");
-      assert.ok(packageJson.files.includes("skills/ito-compute/"));
+      for (const skill of ["ito-compute", "ito-inference", "ito-training"]) {
+        assert.ok(packageJson.files.includes(`skills/${skill}/`), `${skill} is missing from npm files`);
+      }
       assert.ok(!packageJson.dependencies?.["ito-compute-cli"]);
       assert.ok(!packageJson.optionalDependencies?.["ito-compute-cli"]);
       assert.ok(!packageJson.bin?.ito);
