@@ -200,6 +200,29 @@ Outside tmux the bar falls back to the title/user-var mirror described above.
 `⬢ ECC <version> │ plugins … │ dir`); `--plain` strips colors (used for
 title updates); `CODEX_HOME` overrides the default `~/.codex` location.
 
+## Upgrading an existing ECC install
+
+Nothing here requires redoing the full guided install.
+
+**Claude Code** — update the plugin as usual. If your `statusLine` already
+points at ECC's `scripts/hooks/ecc-statusline.js`, the three-line bar arrives
+with the update, no action needed. If you have no `statusLine` yet, run any
+`ecc install` (or copy the snippet from `examples/statusline.json`) to have
+one written; an existing statusLine of your own is never replaced.
+
+**Codex** — one command, no wizard:
+
+```bash
+node <ecc-root>/scripts/codex/setup-codex-bar.js          # alias + TUI status line
+node <ecc-root>/scripts/codex/setup-codex-bar.js status   # check what is configured
+```
+
+Both paths are idempotent: rerunning refreshes the managed rc block in place
+(never a second copy), keeps an existing `tui.status_line`, and leaves a
+codex alias you wrote yourself untouched. Re-running `ecc install --guided`
+is equally safe if you would rather answer the prompts — including the UTF-8
+step, which is skipped entirely when your locale is already UTF-8.
+
 ## Files
 
 - `scripts/hooks/ecc-statusline.js` — Claude Code statusLine entry point
