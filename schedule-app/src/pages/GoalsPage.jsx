@@ -95,6 +95,39 @@ export default function GoalsPage() {
     streakSeenRef.current = seen;
   }, [state.goals]);
 
+  // `day`/`weekStart` are only ever set once, at mount, to "today" — nothing
+  // advances them on its own after that. A page left open across a real
+  // midnight (backgrounded rather than fully reloaded, which mobile OSes do
+  // routinely rather than evicting the process) never notices: every tap
+  // keeps landing on the same now-stale day, silently piling progress onto
+  // one calendar entry instead of spreading it across the days it was
+  // actually logged on — confirmed by reproducing it directly (5 taps
+  // across 5 simulated real days, with no reload in between, all landed on
+  // day one: `{"<day-one-date>": 5}` instead of five separate dates).
+  //
+  // `manualNavRef` distinguishes "still tracking today" from "the user
+  // deliberately paged to some other day" — only the former should be
+  // auto-corrected when the tab regains focus; a deliberate look at last
+  // Tuesday shouldn't get yanked back to today just because the tab was
+  // backgrounded for a while.
+  const manualNavRef = useRef(false);
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (manualNavRef.current) return;
+      const nowDay = todayISO();
+      setDay((d) => (d === nowDay ? d : nowDay));
+      const nowWeek = startOfWeek(new Date());
+      setWeekStart((w) => (toISODate(w) === toISODate(nowWeek) ? w : nowWeek));
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
+    return () => {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+    };
+  }, []);
+
   const isDaily = period === 'daily';
   const ctx = isDaily ? fromISODate(day) : weekStart;
   const key = goalKey(period, ctx);
@@ -248,7 +281,19 @@ export default function GoalsPage() {
     setEditing(null);
   };
 
-  const stepDay = (n) => setDay(toISODate(addDays(day, n)));
+  const stepDay = (n) => {
+    manualNavRef.current = true;
+    setDay(toISODate(addDays(day, n)));
+  };
+  const stepWeek = (n) => {
+    manualNavRef.current = true;
+    setWeekStart(addDays(weekStart, n));
+  };
+  const goToCurrent = () => {
+    manualNavRef.current = false;
+    if (isDaily) setDay(todayISO());
+    else setWeekStart(startOfWeek(new Date()));
+  };
 
   return (
     <div className="page">
@@ -268,15 +313,12 @@ export default function GoalsPage() {
         <div className="week-nav">
           <button
             className="icon-btn"
-            onClick={() => (isDaily ? stepDay(-1) : setWeekStart(addDays(weekStart, -7)))}
+            onClick={() => (isDaily ? stepDay(-1) : stepWeek(-7))}
             aria-label="Previous"
           >
             <Chevron dir="left" />
           </button>
-          <button
-            className="week-label"
-            onClick={() => (isDaily ? setDay(todayISO()) : setWeekStart(startOfWeek(new Date())))}
-          >
+          <button className="week-label" onClick={goToCurrent}>
             {isDaily
               ? atCurrent
                 ? 'Today'
@@ -294,7 +336,7 @@ export default function GoalsPage() {
           </button>
           <button
             className="icon-btn"
-            onClick={() => (isDaily ? stepDay(1) : setWeekStart(addDays(weekStart, 7)))}
+            onClick={() => (isDaily ? stepDay(1) : stepWeek(7))}
             aria-label="Next"
           >
             <Chevron dir="right" />
