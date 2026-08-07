@@ -197,11 +197,22 @@ function canvasClientJs() {
     else document.documentElement.removeAttribute('data-theme');
     $('themeBtn').textContent = t === 'light' ? '\\u263E dark' : '\\u2600 light';
   }
-  let theme = localStorage.getItem(themeKey) || 'dark';
+  // Storage access throws outright when the browser blocks site data for this
+  // origin (loopback is a common trigger). Unguarded, that killed the whole
+  // client IIFE here, before the send button and Enter handlers bound below:
+  // every control rendered and stayed inert. sessionStorage is already guarded
+  // above and below; match it. See affaan-m/ECC#2702.
+  function readTheme() {
+    try { return localStorage.getItem(themeKey); } catch { return null; }
+  }
+  function writeTheme(v) {
+    try { localStorage.setItem(themeKey, v); } catch { /* site data blocked */ }
+  }
+  let theme = readTheme() || 'dark';
   applyTheme(theme);
   $('themeBtn').addEventListener('click', () => {
     theme = theme === 'light' ? 'dark' : 'light';
-    localStorage.setItem(themeKey, theme);
+    writeTheme(theme);
     applyTheme(theme);
   });
 
