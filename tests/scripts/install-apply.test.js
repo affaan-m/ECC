@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
@@ -53,6 +53,33 @@ function run(args = [], options = {}) {
   }
 }
 
+function runWithGuidedDispatcherFailure(failureMode) {
+  const root = createTempDir('install-apply-guided-failure-');
+  const preloadPath = path.join(root, 'preload.js');
+  const failureMessage = 'guided dispatcher failed\u001b[31m';
+  const replacement = failureMode === 'load'
+    ? `throw new Error(${JSON.stringify(failureMessage)});`
+    : `return { main: () => Promise.reject(new Error(${JSON.stringify(failureMessage)})) };`;
+  fs.writeFileSync(preloadPath, `
+    const Module = require('module');
+    const originalLoad = Module._load;
+    Module._load = function(request, parent, isMain) {
+      if (request === './install-guided' && /install-apply\\.js$/.test(parent?.filename || '')) {
+        ${replacement}
+      }
+      return originalLoad.call(this, request, parent, isMain);
+    };
+  `);
+  try {
+    return spawnSync(process.execPath, ['--require', preloadPath, SCRIPT, '--guided'], {
+      cwd: path.dirname(SCRIPT),
+      encoding: 'utf8',
+    });
+  } finally {
+    cleanup(root);
+  }
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -78,6 +105,15 @@ function runTests() {
     assert.ok(result.stdout.includes('--dry-run'));
     assert.ok(result.stdout.includes('--profile <name>'));
     assert.ok(result.stdout.includes('--modules <id,id,...>'));
+  })) passed++; else failed++;
+
+  if (test('guided dispatcher reports sanitized load and rejection failures', () => {
+    for (const failureMode of ['load', 'reject']) {
+      const result = runWithGuidedDispatcherFailure(failureMode);
+      assert.strictEqual(result.status, 1);
+      assert.strictEqual(result.stdout, '');
+      assert.strictEqual(result.stderr, 'Error: guided dispatcher failed\n');
+    }
   })) passed++; else failed++;
 
   if (test('rejects mixing legacy languages with manifest profile flags', () => {

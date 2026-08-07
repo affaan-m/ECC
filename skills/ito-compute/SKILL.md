@@ -8,8 +8,8 @@ metadata:
 # Itô Compute
 
 Use the canonical Itô compute CLI or MCP server. ECC does not implement a
-parallel client, browser handoff, local simulation, reservation, workload
-runner, or inference server.
+parallel client, local simulation, reservation, workload runner, or inference
+server. ECC itself does no browser automation.
 
 ## Install the canonical local package
 
@@ -30,20 +30,30 @@ Set `ECC_ITO_CLI_EXECUTABLE` to the explicit absolute built entry:
 ```
 
 ECC never discovers this credential-bearing client through `PATH`.
-Inject `ITO_API_KEY` through 1Password or the launching process environment.
-Never put it in arguments, tracked files, MCP results, logs, or chat.
+`ecc ito login` performs device authorization and never inherits `ITO_API_KEY`.
+The validation-only `auth`, plus `find` and `status`, forward `ITO_API_KEY`
+directly when configured; `ITO_AUTH_MODE=legacy` is not required. Never put a
+key or token in arguments, tracked files, MCP results, logs, or chat.
 
 ## CLI workflow
 
-1. Run `ecc ito auth` before the first operation.
-2. Before `ecc ito find`, obtain explicit buyer authority to submit an RFQ.
+1. Run `ecc ito login` before the first operation. ECC delegates this to the
+   canonical CLI's device authorization, which opens the Itô verification page
+   by default and persists a device token in macOS Keychain. Use
+   `ecc ito login --no-browser` to suppress the page handoff. ECC itself does no
+   browser automation.
+   Device tokens use macOS Keychain by default. File-token fallback is explicit
+   and its directory and token file must remain owner-only (0700 and 0600).
+2. Run `ecc ito auth` to validate existing credentials; it never starts login
+   and rejects `--no-browser`.
+3. Before `ecc ito find`, obtain explicit buyer authority to submit an RFQ.
    - Require `gpu`, `count`, whole `days`, `max-rate`, `nodes`,
      `gpus-per-node`, `storage-tb`, `start-window`, `form-factor`,
      `contract-type`, `fabric`, `region`, and the split-fill decision.
    - Require `count == nodes * gpus-per-node`; never derive topology.
    - Use `any` only when the buyer explicitly accepts any fabric or region.
    - Omitted `--allow-split` means false.
-3. Run the live RFQ command:
+4. Run the live RFQ command:
 
    ```sh
    ecc ito find \
@@ -61,7 +71,7 @@ Never put it in arguments, tracked files, MCP results, logs, or chat.
      --region us-east-1
    ```
 
-4. Run `ecc ito status` to inspect RFQs and procurement orders.
+5. Run `ecc ito status` to inspect RFQs and procurement orders.
    After an ambiguous transport failure, check status before repeating `find`.
 
 Inventory prices are indicative. An RFQ is not reserved capacity. Treat a rate
@@ -117,7 +127,8 @@ The server exposes only:
 - `ito_find`
 - `ito_status`
 
-Use `ito_auth`, gather explicit buyer authority and every hard constraint, call
+`ito_auth` validates existing credentials; it does not start device login. Use
+`ito_auth`, gather explicit buyer authority and every hard constraint, call
 `ito_find`, then poll with `ito_status` when needed.
 
 ## Unsupported operations
