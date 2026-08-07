@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COURSE_TITLE</title>
+
+  <!-- Fonts: Sora (display) · DM Sans (body) · JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Per-course accent. Pick one palette; only these four lines change.
+         ember    #D9542E / #BF4322 / #FCEDE7 / #E68A6F   (default)
+         teal     #2C7C9C / #225F77 / #E6F1F5 / #5F9DB8
+         plum     #7C6BB0 / #5F5193 / #EEEAF6 / #A89AD0
+         pine     #2E8B57 / #226B41 / #E7F4EC / #6BB089
+         amber    #C9912F / #A8761F / #FBF1DC / #DFBE74     -->
+  <style>
+    :root {
+      --color-accent:       ACCENT_COLOR;
+      --color-accent-hover: ACCENT_HOVER;
+      --color-accent-light: ACCENT_LIGHT;
+      --color-accent-muted: ACCENT_MUTED;
+    }
+  </style>
+
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="progress-bar" id="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div>
+    <div class="nav-inner">
+      <span class="nav-title">COURSE_TITLE</span>
+      <div class="nav-dots" id="nav-dots" role="tablist">
+        NAV_DOTS
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">

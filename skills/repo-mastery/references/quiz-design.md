@@ -1,0 +1,60 @@
+# Quiz Design — Principles (Test Application, Not Memory)
+
+> **Read in**: Phase 3, when posing quantitative questions. This principle is absorbed from docs-to-course's `content-philosophy.md`, adapted for "code understanding".
+
+## The iron rule: test application, not memory
+
+The value of a question is: **a wrong answer reveals "can't use / don't understand", not "didn't memorize"**. Definitions are the job of a glossary tooltip, not a quiz.
+
+**What to test (best first)**:
+1. **"What would you do" scenarios** — "to add feature X to this project, which extension point/module would you use?" Gold standard.
+2. **Tracing** — "which modules does this request pass through, from entry to storage?" Tests call-chain understanding.
+3. **Troubleshooting scenarios** — "startup fails with `ImportError: xxx` — most likely cause and first thing to check?"
+4. **Tradeoff/decision questions** — "for task Z, would you pick A or B? Why?" Tests design understanding.
+5. **"What is it / why"** — short definition + one why.
+
+**What NOT to test**:
+- ❌ Verbatum definitions (that's memory, and scrollable).
+- ❌ Exact flag/argument spelling (unless the point is explicitly a memory type).
+- ❌ Anything answerable by scrolling up.
+
+## Question formats (for code learning)
+
+| Form | Use for | Example |
+|---|---|---|
+| Multiple choice (with scenario) | fast grading, most memory/procedure | "which is the correct config-load precedence? A) … B) … C) …" |
+| Sequencing | call chains / flows | "arrange build → install → launch in the real order" |
+| Fill-in / short answer | procedure, must write it | "after `deeptutor kb create`, which command searches the KB?" |
+| Small code change | understanding a function's behavior | "change one line here to make it output X — which line?" |
+
+## Tone of grading and feedback
+
+- **Wrong answers get encouraging, teaching explanations**: "not quite — B is right here because A bypasses the config-loading layer…" Never punitive, no score anxiety.
+- Correct answers **reinforce the principle**, not just praise.
+- Quantity: 1–3 questions per point is enough to judge; don't inflate.
+
+## Option formatting: no clues (absorbed from the teach skill)
+
+- In multiple choice, keep **every option roughly equal in length** — don't let "the long one is right" leak the answer.
+- Avoid "all of the above / none of the above" cop-out distractors.
+- Distractors should look real — taken from genuinely confusable configs/modules/calls, not invented.
+
+## Retrieval practice first (absorbed from the teach skill)
+
+Grading should force **retrieval from memory**, not "recognizing the answer feels right":
+
+- Short-answer/fill-in > recognition multiple-choice: being able to write the call chain proves storage better than recognizing the right option.
+- Review turns especially use short-answer: the whole point of spaced review is retrieving after forgetting.
+- Frame multiple-choice as "scenario → what would you do", so the user forms the answer in their head before comparing options.
+
+## How grading drives mastery
+
+- Each attempt appends to that point's `quiz_attempts`.
+- `compute_mastery` recomputes (recency-weighted + confidence ceiling; see `mastery-policy.md`).
+- ≥ 0.9 advances; below → back to explain, then pose a **different question** (never the same one — avoid memorizing the answer).
+
+## When not to quiz
+
+- A point already has 2 correct attempts and mastery ≥ 0.9 → pose a harder "deepening" question or just advance.
+- The user explicitly wants to hear the explanation first → respect the pace, explain first.
+- A hands-on verification (procedure) already passed → it counts as evidence; no need to pile on a pointless question.
