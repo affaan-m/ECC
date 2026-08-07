@@ -183,9 +183,16 @@ export default function PlannerPage() {
     };
     document.addEventListener('visibilitychange', resync);
     window.addEventListener('focus', resync);
+    // Belt and suspenders — see the identical comment on GoalsPage.jsx's
+    // copy of this effect: visibilitychange/focus aren't guaranteed to fire
+    // on every platform (a screen timing out and back on is not reliably
+    // one of the events that does), so a low-cost interval check backs
+    // them up rather than depending on either firing.
+    const timer = setInterval(resync, 60000);
     return () => {
       document.removeEventListener('visibilitychange', resync);
       window.removeEventListener('focus', resync);
+      clearInterval(timer);
     };
   }, []);
 

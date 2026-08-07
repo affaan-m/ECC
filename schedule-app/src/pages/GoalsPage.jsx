@@ -122,9 +122,17 @@ export default function GoalsPage() {
     };
     document.addEventListener('visibilitychange', resync);
     window.addEventListener('focus', resync);
+    // Belt and suspenders: visibilitychange/focus cover the common case
+    // (switching apps, unlocking the phone) but aren't guaranteed on every
+    // platform — a screen simply timing out and back on doesn't reliably
+    // fire either event on every browser. A day is a long time to be wrong
+    // for, so a low-cost interval check closes that gap without depending
+    // on any one event actually firing.
+    const timer = setInterval(resync, 60000);
     return () => {
       document.removeEventListener('visibilitychange', resync);
       window.removeEventListener('focus', resync);
+      clearInterval(timer);
     };
   }, []);
 
