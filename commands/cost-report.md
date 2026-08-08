@@ -73,7 +73,8 @@ const f=path.join(os.homedir(),".claude","metrics","costs.jsonl");
 if(!fs.existsSync(f)){console.error("no data");process.exit(0);}
 const rows=fs.readFileSync(f,"utf8").split(/\r?\n/).filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean).slice(-100);
 console.log("timestamp,session_id,model,rate_bucket,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,estimated_cost_usd");
-for(const r of rows)console.log([r.timestamp,r.session_id,r.model,r.rate_bucket,r.input_tokens,r.output_tokens,r.cache_write_tokens,r.cache_read_tokens,r.estimated_cost_usd].join(","));
+const q=v=>{const t=v==null?"":String(v);return /[",\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+for(const r of rows)console.log([r.timestamp,r.session_id,r.model,r.rate_bucket,r.input_tokens,r.output_tokens,r.cache_write_tokens,r.cache_read_tokens,r.estimated_cost_usd].map(q).join(","));
 '
 ```
 
