@@ -198,24 +198,38 @@ export default function ContactsPage() {
       try {
         const imported = parseVCard(reader.result);
         if (imported.length === 0) return alert('No contacts found in that file.');
-        for (const c of imported) {
-          const contact = {
-            id: uid('c'),
-            name: c.name,
-            phone: c.phone,
-            email: c.email,
-            address: c.address,
-            photo: '',
-            statusId: state.statuses[0]?.id || '',
-            tags: [],
-            notes: c.notes,
-            lastContacted: '',
-            createdAt: todayISO(),
-          };
-          actions.addContact(contact);
-          if (contact.address) syncContactAddressPin(contact, state, actions);
-        }
-        alert(`Imported ${imported.length} contact${imported.length === 1 ? '' : 's'}.`);
+        const newContacts = imported.map((c) => ({
+          id: uid('c'),
+          name: c.name,
+          phone: c.phone,
+          email: c.email,
+          address: c.address,
+          photo: '',
+          statusId: state.statuses[0]?.id || '',
+          tags: [],
+          notes: c.notes,
+          lastContacted: '',
+          createdAt: todayISO(),
+        }));
+        newContacts.forEach((contact) => actions.addContact(contact));
+        alert(`Imported ${newContacts.length} contact${newContacts.length === 1 ? '' : 's'}.`);
+        // Geocoding pins one at a time in the background, a beat apart —
+        // Nominatim's public endpoint enforces roughly one request per
+        // second, and firing every contact's lookup at once (the previous
+        // behaviour) meant only the first one or two ever got served; the
+        // rest were silently rate-limited, and a failed geocode is
+        // deliberately a no-op rather than an error (see geocodeAddress),
+        // so importing a dozen contacts quietly auto-pinned just one of
+        // them with nothing on screen to explain why. Sequenced with a gap
+        // between requests, every address actually gets geocoded — just
+        // progressively rather than all at once.
+        (async () => {
+          for (const contact of newContacts) {
+            if (!contact.address) continue;
+            await syncContactAddressPin(contact, state, actions);
+            await new Promise((r) => setTimeout(r, 1100));
+          }
+        })();
       } catch {
         alert('That file could not be read as a vCard (.vcf) file.');
       }
