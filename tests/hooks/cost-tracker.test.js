@@ -429,6 +429,24 @@ function runTests() {
     assert.strictEqual(row.output_tokens, 100, 'A repeated message.id must be counted once, not twice');
   }) ? passed++ : failed++);
 
+  // 22b. Entries without a message.id fall back to a synthetic key, and that
+  //      key is scoped per file because the same ordinal line in two files
+  //      would otherwise collide and drop real usage. A regression to a shared
+  //      counter would silently under-count rather than fail, so pin it.
+  (test('keeps id-less entries from different files separate', () => {
+    const usage = { input_tokens: 1000, output_tokens: 100 };
+    const { row } = priceFanOut({
+      mainEntries: [assistant('msg_main', 'claude-sonnet-4-6', usage)],
+      subagentFiles: {
+        'agent-aaa.jsonl': [assistant(undefined, 'claude-sonnet-4-6', usage)],
+        'agent-bbb.jsonl': [assistant(undefined, 'claude-sonnet-4-6', usage)],
+      },
+    });
+    assert.strictEqual(row.subagent_transcripts, 2, 'Expected both subagent files to be folded in');
+    assert.strictEqual(row.input_tokens, 3000, 'Id-less entries in different files must each count');
+    assert.strictEqual(row.output_tokens, 300, 'Id-less entries in different files must each count');
+  }) ? passed++ : failed++);
+
   // 23. Subagents routinely run a different model than the parent (48 of 116
   //     local fan-out sessions, 41.4%). Pricing the whole session at the
   //     parent's rate would trade the under-count for an over-count, so each
@@ -514,6 +532,11 @@ function runTests() {
     });
     assert.strictEqual(row.input_tokens, 3000, 'Expected the readable files to still be counted');
     assert.strictEqual(row.output_tokens, 300, 'Expected the readable files to still be counted');
+    assert.strictEqual(
+      row.subagent_transcripts,
+      1,
+      'Expected only the parseable transcript to be reported as folded in'
+    );
   }) ? passed++ : failed++);
 
   // 26. `.meta.json` sidecars sit in the same directory and carry no usage.

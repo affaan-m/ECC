@@ -29,7 +29,7 @@ Row schema:
 | `cache_write_tokens` / `cache_read_tokens` | Prompt-cache token counts, including subagent turns |
 | `estimated_cost_usd` | Precomputed cumulative cost in USD for the session |
 | `subagent_transcripts` | Number of subagent transcripts folded in; `0` when the session never fanned out |
-| `models` | Per-model, per-speed-tier breakdown, most expensive first |
+| `models` | Per-model, per-speed-tier breakdown, most expensive first. Token counts always reconcile with the row totals. Costs sum to `estimated_cost_usd` unless the harness supplied that number directly, in which case `models` stays the transcript-derived estimate and the two need not agree |
 
 Prefer `estimated_cost_usd` over hand-calculating pricing — model and cache
 prices change, and the tracker is the source of truth.

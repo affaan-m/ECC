@@ -186,18 +186,23 @@ function toNumber(v) {
  *   every subagent transcript so one dedupe map covers the whole session.
  * @param {string} keyspace - disambiguates the synthetic keys below between
  *   files, which would otherwise collide and drop real usage.
- * @returns {{ok: boolean, model: string|null}} `model` is the last model this
- *   file named, or null if it named none.
+ * @returns {{ok: boolean, usageEntries: number, model: string|null}} `ok` is
+ *   false only when the file could not be read at all. `usageEntries` counts
+ *   the usage-bearing lines actually parsed out of it, which is what "folded
+ *   in" means: a readable file whose every line fails `JSON.parse` — or a
+ *   directory named `*.jsonl` — is `ok` but contributes nothing. `model` is
+ *   the last model this file named, or null if it named none.
  */
 function readUsageInto(filePath, usageById, keyspace) {
   let content;
   try {
     content = fs.readFileSync(filePath, 'utf8');
   } catch {
-    return { ok: false, model: null };
+    return { ok: false, usageEntries: 0, model: null };
   }
 
   let syntheticKey = 0;
+  let usageEntries = 0;
   let model = null;
 
   for (const line of content.split('\n')) {
@@ -217,11 +222,12 @@ function readUsageInto(filePath, usageById, keyspace) {
     // per-line behavior via a synthetic key.
     const key = typeof msg.id === 'string' && msg.id ? msg.id : `__line_${keyspace}_${++syntheticKey}`;
     usageById.set(key, { usage: msg.usage, model: msg.model });
+    usageEntries += 1;
 
     if (msg.model && msg.model !== 'unknown') model = msg.model;
   }
 
-  return { ok: true, model };
+  return { ok: true, usageEntries, model };
 }
 
 /**
@@ -253,9 +259,17 @@ function sumUsageFromTranscript(transcriptPath) {
   // the per-model breakdown.
   const model = main.model || 'unknown';
 
+  // Count the subagent files whose usage was actually read, not the ones that
+  // were merely discovered. `subagent_transcripts` is documented as the files
+  // that were folded in, and an unreadable file, a directory named `*.jsonl`,
+  // or a file whose every line fails JSON.parse folds in nothing. Token totals
+  // were always correct here; only this audit field over-reported.
   const subagentPaths = subagentTranscriptPaths(transcriptPath);
+  let subagentTranscripts = 0;
   for (const subagentPath of subagentPaths) {
-    readUsageInto(subagentPath, usageById, subagentPath);
+    if (readUsageInto(subagentPath, usageById, subagentPath).usageEntries > 0) {
+      subagentTranscripts += 1;
+    }
   }
 
   let inputTokens = 0;
@@ -306,7 +320,7 @@ function sumUsageFromTranscript(transcriptPath) {
     cacheReadTokens,
     model,
     buckets: [...buckets.values()],
-    subagentTranscripts: subagentPaths.length
+    subagentTranscripts
   };
 }
 
@@ -371,8 +385,17 @@ process.stdin.on('end', () => {
       estimated_cost_usd: priceBucket(bucket)
     }));
     // Most expensive first, so the breakdown reads as an attribution and the
-    // row is byte-for-byte deterministic for a given transcript.
-    pricedBuckets.sort((a, b) => b.estimated_cost_usd - a.estimated_cost_usd || a.model.localeCompare(b.model));
+    // row is byte-for-byte deterministic for a given transcript. The model
+    // comparison is a plain codepoint one rather than `localeCompare`, which
+    // reads the active ICU locale and would let two hosts order equal-cost
+    // buckets differently. `speed` breaks the remaining tie, so two buckets of
+    // one model at equal cost cannot fall back to Map insertion order.
+    pricedBuckets.sort(
+      (a, b) =>
+        b.estimated_cost_usd - a.estimated_cost_usd ||
+        (a.model < b.model ? -1 : a.model > b.model ? 1 : 0) ||
+        (a.speed < b.speed ? -1 : a.speed > b.speed ? 1 : 0)
+    );
 
     const transcriptCostUsd = Math.round(pricedBuckets.reduce((sum, b) => sum + b.estimated_cost_usd, 0) * 1e6) / 1e6;
 
