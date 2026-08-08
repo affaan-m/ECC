@@ -353,6 +353,49 @@ async function runTests() {
     assert.ok(eventTypes.includes('approval_requested'));
   })) passed += 1; else failed += 1;
 
+  // --- PowerShell: a second arbitrary-command shell, previously unwatched ---
+  //
+  // Before PowerShell joined SECURITY_RELEVANT_TOOLS, a command that bypassed
+  // the gateguard deny was also invisible to the audit trail. These cover the
+  // PowerShell entries in APPROVAL_COMMANDS and the elevated-privilege check.
+
+  if (await test('detectApprovalRequired flags PowerShell recursive deletes', async () => {
+    assert.ok(detectApprovalRequired('Remove-Item -Recurse -Force C:/tmp/demo').length > 0);
+    // PowerShell accepts any unambiguous parameter prefix.
+    assert.ok(detectApprovalRequired('Remove-Item -Rec C:/tmp/demo').length > 0);
+    assert.ok(detectApprovalRequired('rd -Recurse C:/tmp/demo').length > 0);
+  })) passed += 1; else failed += 1;
+
+  if (await test('detectApprovalRequired flags Clear-Content and Format-Volume', async () => {
+    assert.ok(detectApprovalRequired('Clear-Content C:/tmp/log.txt').length > 0);
+    assert.ok(detectApprovalRequired('Format-Volume -DriveLetter D').length > 0);
+  })) passed += 1; else failed += 1;
+
+  if (await test('detectApprovalRequired ignores benign PowerShell', async () => {
+    assert.strictEqual(detectApprovalRequired('Get-ChildItem C:/tmp').length, 0);
+    assert.strictEqual(detectApprovalRequired('Get-Date').length, 0);
+  })) passed += 1; else failed += 1;
+
+  if (await test('PowerShell tool raises approval_requested like Bash', async () => {
+    const events = analyzeForGovernanceEvents({
+      tool_name: 'PowerShell',
+      tool_input: { command: 'Remove-Item -Recurse -Force C:/tmp/demo' },
+    });
+    assert.ok(events.map(e => e.eventType).includes('approval_requested'));
+  })) passed += 1; else failed += 1;
+
+  if (await test('PowerShell elevated-privilege commands raise a security_finding', async () => {
+    for (const command of ['Start-Process -Verb RunAs cmd', 'Set-Acl -Path C:/x -AclObject $a', 'takeown /f C:/x']) {
+      const events = analyzeForGovernanceEvents(
+        { tool_name: 'PowerShell', tool_input: { command } },
+        { hookPhase: 'post' }
+      );
+      const finding = events.find(e => e.eventType === 'security_finding');
+      assert.ok(finding, `${command} should raise a security_finding`);
+      assert.strictEqual(finding.payload.reason, 'elevated_privilege_command');
+    }
+  })) passed += 1; else failed += 1;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
