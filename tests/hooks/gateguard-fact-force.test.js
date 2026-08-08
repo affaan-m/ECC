@@ -2456,6 +2456,233 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- PowerShell: the tool bypassed every destructive gate before this ---
+  //
+  // CLAUDE_CODE_USE_POWERSHELL_TOOL=1 makes PowerShell a second arbitrary-command
+  // shell. Its delete verbs share no syntax with POSIX `rm`, so the Bash
+  // tokenizer could not see them and unknown tool names hit the bare
+  // allow-fallthrough at the end of run().
+
+  function runPsHook(command, env = {}) {
+    clearState();
+    return runBashHook({ tool_name: 'PowerShell', tool_input: { command } }, env);
+  }
+
+  function expectPsDeny(command, label) {
+    const result = runPsHook(command);
+    assert.strictEqual(result.code, 0, `${label}: exit code should be 0`);
+    const output = parseOutput(result.stdout);
+    assert.ok(output, `${label}: should produce JSON output`);
+    assert.ok(output.hookSpecificOutput, `${label}: should not pass through ungated`);
+    assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${label}: should deny`);
+    assert.ok(
+      output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'),
+      `${label}: reason should mention "Destructive"`
+    );
+  }
+
+  function expectPsAllow(command, label) {
+    clearState();
+    writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+    const result = runBashHook({ tool_name: 'PowerShell', tool_input: { command } });
+    assert.strictEqual(result.code, 0, `${label}: exit code should be 0`);
+    const output = parseOutput(result.stdout);
+    if (output && output.hookSpecificOutput) {
+      assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${label}: should not deny`);
+    }
+  }
+
+  // The exact command pair that proved the bug: identical destructive intent,
+  // two tools. Both must now deny.
+  if (
+    test('denies PowerShell Remove-Item -Recurse -Force (the original bypass)', () => {
+      expectPsDeny('Remove-Item -Recurse -Force C:/tmp/demo', 'Remove-Item -Recurse -Force');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies PowerShell rm alias with PowerShell-style flags', () => {
+      expectPsDeny('rm -Recurse -Force C:/tmp/demo', 'rm -Recurse -Force');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // PowerShell accepts any unambiguous parameter prefix.
+  if (
+    test('denies abbreviated -Rec and -r parameter prefixes', () => {
+      expectPsDeny('Remove-Item -Rec -Force C:/tmp/demo', '-Rec');
+      expectPsDeny('Remove-Item -r C:/tmp/demo', '-r');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies Remove-Item aliases del/rd/rmdir/ri with -Recurse', () => {
+      expectPsDeny('del -Recurse C:/tmp/demo', 'del');
+      expectPsDeny('rd -Recurse C:/tmp/demo', 'rd');
+      expectPsDeny('rmdir -Recurse C:/tmp/demo', 'rmdir');
+      expectPsDeny('ri -Recurse C:/tmp/demo', 'ri');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies forced wildcard delete without -Recurse', () => {
+      expectPsDeny('Remove-Item -Force C:/build/*', '-Force with wildcard');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies destructive PowerShell in a later statement of a chain', () => {
+      expectPsDeny('Get-ChildItem C:/tmp; Remove-Item -Recurse -Force C:/tmp/demo', 'chained ;');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // Shell-agnostic phrases must still be caught when they arrive via PowerShell.
+  if (
+    test('denies git push --force and git reset --hard via PowerShell', () => {
+      expectPsDeny('git push --force origin main', 'PowerShell git push --force');
+      expectPsDeny('git reset --hard HEAD~1', 'PowerShell git reset --hard');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // -Force is gated even without -Recurse: unlike `rm -f`, PowerShell's
+  // `Remove-Item -Force <directory>` removes the whole tree, and a static
+  // string cannot tell a file target from a directory target.
+  if (
+    test('denies -Force without -Recurse (directory targets recurse in PowerShell)', () => {
+      expectPsDeny('Remove-Item -Force C:/tmp/some-directory', '-Force alone');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // A plain delete with no -Recurse/-Force stays ungated.
+  if (
+    test('allows a plain non-recursive PowerShell delete', () => {
+      expectPsAllow('Remove-Item C:/tmp/notes.txt', 'plain Remove-Item');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- Regression: bypasses found in security/code review of the first draft ---
+
+  if (
+    test('denies quoted-separator evasion of the segment splitter', () => {
+      expectPsDeny('Remove-Item -Force "C:/evil;dir/*"', 'quoted ; in path');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies the pipe-to-delete idiom carrying -Recurse upstream', () => {
+      expectPsDeny('Get-ChildItem C:/tmp -Recurse | Remove-Item -Force', 'GCI -Recurse | RI');
+      expectPsDeny('Get-ChildItem C:/tmp -Recurse | Remove-Item', 'GCI -Recurse | RI (no force)');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies the call operator with a quoted verb', () => {
+      expectPsDeny("& 'Remove-Item' -Recurse -Force C:/tmp/demo", '& call operator');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies backtick-obfuscated verbs and parameters', () => {
+      expectPsDeny('Rem`ove-Item -Recurse -Force C:/tmp/demo', 'backtick in verb');
+      expectPsDeny('Remove-Item -Rec`urse C:/tmp/demo', 'backtick in parameter');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies nested shell reinvocation', () => {
+      expectPsDeny('powershell -Command "Remove-Item -Recurse -Force C:/tmp/demo"', 'powershell -Command');
+      expectPsDeny('pwsh -c "Remove-Item -Recurse C:/tmp/demo"', 'pwsh -c');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies base64 -EncodedCommand payloads', () => {
+      const encoded = Buffer.from('Remove-Item -Recurse -Force C:/tmp/demo', 'utf16le').toString('base64');
+      expectPsDeny(`powershell -EncodedCommand ${encoded}`, '-EncodedCommand');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies cmd.exe recursive removal via cmd /c', () => {
+      expectPsDeny('cmd /c rd /s /q C:/tmp/demo', 'cmd /c rd /s /q');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies .NET directory deletion', () => {
+      expectPsDeny("[System.IO.Directory]::Delete('C:/tmp/demo', $true)", '.NET Directory::Delete');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies splatted delete parameters as opaque', () => {
+      expectPsDeny('Remove-Item @params', 'splatted parameters');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows read-only PowerShell commands', () => {
+      expectPsAllow('Get-ChildItem C:/tmp', 'Get-ChildItem');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // Regression guard: the routine gate is shared, so PowerShell must not get a
+  // second first-command gate after Bash has already satisfied it.
+  if (
+    test('shares the routine session gate with Bash', () => {
+      clearState();
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+      const result = runBashHook({ tool_name: 'PowerShell', tool_input: { command: 'Get-Date' } });
+      const output = parseOutput(result.stdout);
+      if (output && output.hookSpecificOutput) {
+        assert.notStrictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          'PowerShell should not re-trigger the routine gate Bash already satisfied'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
