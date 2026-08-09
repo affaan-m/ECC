@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-capabilities.schema.json",
+  "title": "ECC sandbox capability map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "host", "backends"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch"],
+      "properties": {
+        "os": { "enum": ["linux", "macos", "windows"] },
+        "arch": { "enum": ["arm64", "x86_64"] },
+        "cpus": { "type": "integer", "minimum": 1, "maximum": 1024 },
+        "inside_container": { "type": "boolean" },
+        "virtualization": { "enum": ["available", "unavailable", "unknown"] }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "srt": { "$ref": "#/definitions/backend" },
+        "podman": { "$ref": "#/definitions/backend" },
+        "microsandbox": { "$ref": "#/definitions/backend" },
+        "lume": { "$ref": "#/definitions/backend" },
+        "lima": { "$ref": "#/definitions/backend" },
+        "windows-sandbox": { "$ref": "#/definitions/backend" },
+        "hyper-v": { "$ref": "#/definitions/backend" },
+        "dockur-windows": { "$ref": "#/definitions/backend" },
+        "tart": { "$ref": "#/definitions/backend" },
+        "ci": { "$ref": "#/definitions/backend" }
+      }
+    }
+  },
+  "definitions": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch"],
+      "properties": {
+        "os": { "enum": ["linux", "macos", "windows"] },
+        "arch": { "enum": ["arm64", "x86_64"] }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "version": { "type": ["string", "null"], "maxLength": 200 },
+        "path": { "type": ["string", "null"], "maxLength": 4096 },
+        "state": {
+          "enum": ["ready", "stopped", "not-configured", "unavailable", "unknown"]
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/definitions/target" }
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["ios-simulator", "domain-network-policy"]
+          }
+        },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "fix": { "type": "string", "maxLength": 1000 }
+      }
+    }
+  }
+}

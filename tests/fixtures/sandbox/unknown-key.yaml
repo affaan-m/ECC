@@ -1,0 +1,15 @@
+name: invalid-unknown-key
+needs:
+  os: [linux]
+  capabilities: []
+  trust: first-party
+  native: false
+  backend: podman
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup: [node --version]
+  assert: [node --version]
+report: exit-only

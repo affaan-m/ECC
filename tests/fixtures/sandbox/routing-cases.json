@@ -1,0 +1,183 @@
+{
+  "baseManifest": {
+    "name": "routing-fixture",
+    "needs": {
+      "os": ["macos"],
+      "arch": ["arm64"],
+      "capabilities": [],
+      "trust": "first-party",
+      "native": false
+    },
+    "resources": {
+      "cpu": 2,
+      "memory": "2GB",
+      "timeout": 300
+    },
+    "steps": {
+      "setup": ["node --version"],
+      "assert": ["node --version"]
+    },
+    "report": "exit-only"
+  },
+  "cases": [
+    {
+      "name": "benign host process uses srt",
+      "backends": { "srt": { "available": true } },
+      "expected": ["srt"]
+    },
+    {
+      "name": "filesystem write remains tier zero",
+      "needs": { "capabilities": ["fs-write"] },
+      "backends": { "srt": { "available": true } },
+      "expected": ["srt"]
+    },
+    {
+      "name": "Linux package install uses Podman",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"]
+    },
+    {
+      "name": "clean home skips host process",
+      "needs": { "os": ["linux"], "capabilities": ["clean-home"] },
+      "backends": { "srt": { "available": true }, "podman": { "available": true } },
+      "expected": ["podman"]
+    },
+    {
+      "name": "untrusted Linux prefers Microsandbox",
+      "needs": { "os": ["linux"], "trust": "untrusted" },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": { "available": true }
+      },
+      "expected": ["microsandbox"]
+    },
+    {
+      "name": "untrusted Linux records Podman degradation",
+      "needs": { "os": ["linux"], "trust": "untrusted" },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"],
+      "notePattern": "degraded Podman"
+    },
+    {
+      "name": "open network prefers Microsandbox",
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": {
+          "available": true,
+          "capabilities": ["domain-network-policy"]
+        }
+      },
+      "expected": ["microsandbox"]
+    },
+    {
+      "name": "open network Podman fallback is explicit",
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": { "podman": { "available": true } },
+      "expected": ["podman"],
+      "notePattern": "unrestricted"
+    },
+    {
+      "name": "Tier one domain policy selects Microsandbox",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": {
+        "podman": { "available": true },
+        "microsandbox": {
+          "available": true,
+          "capabilities": ["domain-network-policy"]
+        }
+      },
+      "expected": ["microsandbox"]
+    },
+    {
+      "name": "Tier one domain policy fails closed",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": { "podman": { "available": true }, "ci": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "require.*microsandbox"
+    },
+    {
+      "name": "Microsandbox without domain policy fails closed",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install", "network:npmjs.org"] },
+      "backends": { "microsandbox": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "require.*microsandbox"
+    },
+    {
+      "name": "macOS services use Lume",
+      "needs": { "capabilities": ["services"] },
+      "backends": { "podman": { "available": true }, "lume": { "available": true } },
+      "expected": ["lume"]
+    },
+    {
+      "name": "Tart selection emits license notice",
+      "needs": { "capabilities": ["gui"] },
+      "backends": { "tart": { "available": true } },
+      "expected": ["tart"],
+      "notePattern": "Fair Source 100"
+    },
+    {
+      "name": "native Linux on macOS uses Lima",
+      "needs": { "os": ["linux"], "capabilities": ["services"], "native": true },
+      "backends": { "lima": { "available": true } },
+      "expected": ["lima"]
+    },
+    {
+      "name": "native Windows uses Windows Sandbox",
+      "host": { "os": "windows", "arch": "x86_64" },
+      "needs": { "os": ["windows"], "arch": ["x86_64"], "native": true },
+      "backends": { "windows-sandbox": { "available": true } },
+      "expected": ["windows-sandbox"]
+    },
+    {
+      "name": "unavailable Windows routes to CI",
+      "needs": { "os": ["windows"] },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": ["ci"]
+    },
+    {
+      "name": "all fans out independently",
+      "needs": { "os": ["all"] },
+      "backends": {
+        "srt": { "available": true },
+        "podman": { "available": true, "targets": [{ "os": "linux", "arch": "arm64" }] },
+        "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] }
+      },
+      "expected": ["podman", "srt", "ci"]
+    },
+    {
+      "name": "iOS Simulator routes to capable macOS CI",
+      "needs": { "capabilities": ["ios-simulator"] },
+      "backends": {
+        "lume": { "available": true },
+        "ci": {
+          "available": true,
+          "capabilities": ["ios-simulator"],
+          "targets": [{ "os": "macos", "arch": "arm64" }]
+        }
+      },
+      "expected": ["ci"]
+    },
+    {
+      "name": "local-only rejects unavailable OS",
+      "needs": { "os": ["windows"] },
+      "options": { "localOnly": true },
+      "backends": { "ci": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "no local backend"
+    },
+    {
+      "name": "architecture mismatch routes to CI",
+      "needs": { "arch": ["x86_64"] },
+      "backends": {
+        "srt": { "available": true },
+        "ci": { "available": true, "targets": [{ "os": "macos", "arch": "x86_64" }] }
+      },
+      "expected": ["ci"]
+    }
+  ]
+}

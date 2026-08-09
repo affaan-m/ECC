@@ -1,0 +1,298 @@
+'use strict';
+
+const os = require('os');
+const { validateCapabilities } = require('./contracts');
+
+const TARGET_OSES = ['linux', 'macos', 'windows'];
+const TIER_TWO_BACKENDS = {
+  linux: ['lima'],
+  macos: ['lume', 'tart'],
+  windows: ['windows-sandbox', 'hyper-v', 'dockur-windows'],
+};
+
+function normalizeOs(platform = process.platform) {
+  const values = {
+    darwin: 'macos',
+    linux: 'linux',
+    win32: 'windows',
+  };
+  return values[platform] || platform;
+}
+
+function normalizeArch(architecture = process.arch) {
+  const values = {
+    arm64: 'arm64',
+    x64: 'x86_64',
+  };
+  return values[architecture] || architecture;
+}
+
+function defaultHost() {
+  return {
+    os: normalizeOs(),
+    arch: normalizeArch(),
+    cpus: os.cpus().length,
+  };
+}
+
+function expandTargets(manifest, host) {
+  // DECISION: CONVENTIONS item 1 makes routing a deterministic shard plan.
+  const requestedOs = manifest.needs.os;
+  let osTargets;
+  if (requestedOs[0] === 'any') {
+    osTargets = [host.os];
+  } else if (requestedOs[0] === 'all') {
+    osTargets = TARGET_OSES;
+  } else {
+    osTargets = requestedOs;
+  }
+
+  const archTargets = manifest.needs.arch || [host.arch];
+  return osTargets.flatMap(targetOs => (
+    archTargets.map(arch => ({ os: targetOs, arch }))
+  ));
+}
+
+function backendEntry(capabilities, backend) {
+  return capabilities.backends?.[backend] || { available: false };
+}
+
+function targetMatches(target, shard) {
+  return target.os === shard.os && (target.arch === undefined || target.arch === shard.arch);
+}
+
+function backendSupports(capabilities, backend, shard, manifest) {
+  const entry = backendEntry(capabilities, backend);
+  if (!entry.available) return false;
+  const host = capabilities.host;
+  const hardConstraints = {
+    srt: shard.os === host.os && shard.arch === host.arch,
+    podman: shard.os === 'linux' && shard.arch === host.arch,
+    microsandbox: shard.os === 'linux' && shard.arch === host.arch,
+    lume: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
+    // DECISION: CONVENTIONS item 14 permits a real Lima Linux guest on macOS.
+    lima: ['linux', 'macos'].includes(host.os) && shard.os === 'linux' && shard.arch === host.arch,
+    tart: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
+    'windows-sandbox': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
+    'hyper-v': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
+    'dockur-windows': false,
+    ci: Array.isArray(entry.targets) && entry.targets.some(target => targetMatches(target, shard)),
+  };
+  if (!hardConstraints[backend]) return false;
+  if (Array.isArray(entry.targets) && !entry.targets.some(target => targetMatches(target, shard))) {
+    return false;
+  }
+  if (
+    manifest.needs.capabilities.includes('ios-simulator')
+    && !entry.capabilities?.includes('ios-simulator')
+  ) {
+    return false;
+  }
+  if (
+    networkNeeds(manifest).domainAllowlist
+    && !entry.capabilities?.includes('domain-network-policy')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function networkNeeds(manifest) {
+  const values = manifest.needs.capabilities.filter(value => value.startsWith('network:'));
+  return {
+    requested: values.length > 0,
+    open: values.includes('network:*'),
+    domainAllowlist: values.length > 0 && !values.includes('network:*'),
+  };
+}
+
+function hasAny(manifest, values) {
+  return values.some(value => manifest.needs.capabilities.includes(value));
+}
+
+function tierZeroEligible(manifest, shard, host) {
+  // DECISION: CONVENTIONS item 8 treats clean-home as environment isolation.
+  return (
+    shard.os === host.os
+    && shard.arch === host.arch
+    && manifest.needs.native === false
+    && !hasAny(manifest, [
+      'pkg-install',
+      'services',
+      'gui',
+      'clean-home',
+      'ios-simulator',
+    ])
+  );
+}
+
+function tierOneEligible(manifest, shard) {
+  // DECISION: CONVENTIONS item 2 keeps native service/GUI evidence out of containers.
+  return (
+    shard.os === 'linux'
+    && manifest.needs.native === false
+    && !hasAny(manifest, ['services', 'gui', 'ios-simulator'])
+  );
+}
+
+function tierOneCandidates(manifest) {
+  const network = networkNeeds(manifest);
+  // DECISION: CONVENTIONS item 9 fails closed on unenforced domain allowlists.
+  if (network.domainAllowlist) return ['microsandbox'];
+  if (manifest.needs.trust === 'untrusted' || network.open) {
+    return ['microsandbox', 'podman'];
+  }
+  return ['podman'];
+}
+
+function tierTwoCandidates(shard) {
+  return TIER_TWO_BACKENDS[shard.os] || [];
+}
+
+function firstSupported(candidates, capabilities, shard, manifest) {
+  return candidates.find(backend => backendSupports(capabilities, backend, shard, manifest)) || null;
+}
+
+function routeNotes(backend, manifest) {
+  const notes = [];
+  const network = networkNeeds(manifest);
+  if (
+    backend === 'podman'
+    && (manifest.needs.trust === 'untrusted' || network.open)
+  ) {
+    notes.push('microsandbox unavailable; using documented degraded Podman isolation');
+  }
+  if (backend === 'podman' && network.open) {
+    notes.push('Podman v1 network policy is unrestricted for network:*');
+  }
+  if (backend === 'tart') {
+    notes.push('Tart uses Fair Source 100 licensing; personal use is free, while some large organizational server installations require a paid license');
+  }
+  return notes;
+}
+
+function missingRoute(shard, manifest, capabilities, localOnly) {
+  const network = networkNeeds(manifest);
+  if (
+    network.domainAllowlist
+    && tierOneEligible(manifest, shard)
+    && !backendSupports(capabilities, 'microsandbox', shard, manifest)
+  ) {
+    return {
+      reason: 'strict domain allowlists require a probed microsandbox with domain-network-policy in Tier 1 v1',
+      fix: 'Install or update microsandbox: brew install superradcompany/tap/microsandbox',
+    };
+  }
+  if (network.domainAllowlist) {
+    return {
+      reason: `no ${shard.os}/${shard.arch} native or CI backend enforces strict domain allowlists in v1`,
+      fix: 'Target Linux with microsandbox, or remove native OS needs after reviewing the network policy',
+    };
+  }
+  if (!localOnly && !backendEntry(capabilities, 'ci').available) {
+    return {
+      reason: `no local backend satisfies ${shard.os}/${shard.arch}, and GitHub CLI authentication is unavailable`,
+      fix: 'Enable CI fallback: gh auth login',
+    };
+  }
+  if (localOnly) {
+    return {
+      reason: `no local backend satisfies ${shard.os}/${shard.arch}`,
+      fix: 'Remove --local-only or install the native backend reported by ecc-sandbox probe',
+    };
+  }
+  return {
+    reason: `no available backend satisfies ${shard.os}/${shard.arch}`,
+    fix: 'Run ecc-sandbox probe --refresh and enable one of the reported backend setup commands',
+  };
+}
+
+function resolveShard(manifest, capabilities, shard, options = {}) {
+  const host = capabilities.host;
+  const network = networkNeeds(manifest);
+
+  const rules = [
+    {
+      id: 'tier-0-process',
+      tier: 0,
+      eligible: () => tierZeroEligible(manifest, shard, host),
+      candidates: () => ['srt'],
+      reason: 'host-matching process isolation satisfies the declared needs',
+    },
+    {
+      id: 'tier-1-ephemeral',
+      tier: 1,
+      eligible: () => tierOneEligible(manifest, shard),
+      candidates: () => tierOneCandidates(manifest),
+      reason: 'an ephemeral Linux environment is the cheapest clean venue for the declared needs',
+    },
+    {
+      id: 'tier-2-native',
+      tier: 2,
+      eligible: () => !network.domainAllowlist,
+      candidates: () => tierTwoCandidates(shard),
+      reason: 'OS-native behavior requires a local full VM',
+    },
+    {
+      id: 'ci-fallback',
+      tier: 3,
+      eligible: () => !options.localOnly && !network.domainAllowlist,
+      candidates: () => ['ci'],
+      reason: 'the requested OS or native capability is unavailable locally',
+    },
+  ];
+
+  for (const rule of rules) {
+    if (!rule.eligible()) continue;
+    const candidates = rule.candidates();
+    const backend = firstSupported(candidates, capabilities, shard, manifest);
+    if (!backend) continue;
+    return {
+      os: shard.os,
+      arch: shard.arch,
+      backend,
+      tier: rule.tier,
+      rule: rule.id,
+      reason: rule.reason,
+      notes: routeNotes(backend, manifest),
+      result: 'routable',
+    };
+  }
+
+  return {
+    os: shard.os,
+    arch: shard.arch,
+    backend: null,
+    tier: null,
+    rule: null,
+    ...missingRoute(shard, manifest, capabilities, options.localOnly),
+    notes: [],
+    result: 'error',
+  };
+}
+
+function routeManifest(manifest, capabilities, options = {}) {
+  validateCapabilities(capabilities);
+  const routes = expandTargets(manifest, capabilities.host)
+    .map(shard => resolveShard(manifest, capabilities, shard, options));
+  return {
+    schema_version: 1,
+    manifest: options.manifestPath || null,
+    host: { ...capabilities.host },
+    routes,
+    result: routes.every(route => route.result === 'routable') ? 'routable' : 'error',
+  };
+}
+
+module.exports = {
+  TARGET_OSES,
+  TIER_TWO_BACKENDS,
+  defaultHost,
+  expandTargets,
+  networkNeeds,
+  normalizeArch,
+  normalizeOs,
+  resolveShard,
+  routeManifest,
+  tierOneCandidates,
+};

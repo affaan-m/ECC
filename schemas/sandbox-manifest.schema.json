@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-manifest.schema.json",
+  "title": "ECC sandbox manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "needs", "resources", "steps", "report"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "capabilities", "trust", "native"],
+      "properties": {
+        "os": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["linux", "macos", "windows", "any", "all"]
+          }
+        },
+        "arch": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["arm64", "x86_64"]
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {
+                "enum": [
+                  "fs-write",
+                  "pkg-install",
+                  "services",
+                  "gui",
+                  "clean-home",
+                  "ios-simulator"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^network:(?:\\*|(?:\\*\\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63})$"
+              }
+            ]
+          }
+        },
+        "trust": {
+          "enum": ["untrusted", "first-party"]
+        },
+        "native": {
+          "type": "boolean"
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "memory", "timeout"],
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "memory": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(?:MB|GB)$"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setup", "assert"],
+      "properties": {
+        "setup": {
+          "$ref": "#/definitions/commands"
+        },
+        "assert": {
+          "$ref": "#/definitions/commands"
+        }
+      }
+    },
+    "report": {
+      "enum": ["install-diff", "exit-only"]
+    }
+  },
+  "definitions": {
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 8192
+      }
+    }
+  }
+}

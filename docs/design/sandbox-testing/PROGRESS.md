@@ -56,9 +56,14 @@ combined tree.
 | 0 | dashboard | `npm run check` after adding ECC-017 | Pass |
 | 0 | official upstream sources | Verified SRT Apache-2.0 research preview, Podman Apache-2.0, microsandbox Apache-2.0 repo move, Lume MIT, Lima Apache-2.0, and dockur/windows MIT | Pass |
 | 0 | official upstream sources | Verified Tart's Fair Source status, Microsandbox disk-only snapshot semantics, Windows Sandbox CLI, Podman diff lifecycle, and CI dispatch constraints | Pass |
+| 1 | local contract fixtures | `npm run test:sandbox` | Pass, 36/36 across strict schemas, 20 routing cases, report semantics, and CLI JSON |
+| 1 | local package boundary | `node tests/scripts/npm-publish-surface.test.js` | Pass, 2/2; sandbox CLI is present in the packed runtime surface |
+| 1 | local dependency/tooling | Focused ESLint, Markdown lint, `yarn install --immutable`, and `git diff --check` | Pass |
+| 1 | independent review | Code and security review after adversarial capability/report fixes | Pass; no blocker/high finding remains |
 
 ## Current gate
 
-S0 is complete. No adapter implementation has started. Phase 1 is released for
-contract/schema/router implementation; adapter missions remain blocked until
-S1 passes its focused and cross-contract tests.
+S0 and S1 are complete. No adapter implementation has started. Phase 2 is
+released for capability probing; adapter missions remain blocked until the
+probe emits schema-valid cached/refresh output on the development host and its
+cross-platform mock matrix passes.

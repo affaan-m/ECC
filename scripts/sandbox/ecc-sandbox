@@ -1,0 +1,184 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const {
+  loadManifest,
+  readBoundedRegularFile,
+  validateCapabilities,
+  validateReport,
+} = require('./contracts');
+const { defaultHost, routeManifest } = require('./router');
+
+const COMMANDS = ['probe', 'run', 'report', 'escalate'];
+
+function writeJson(value) {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function help() {
+  return {
+    name: 'ecc-sandbox',
+    usage: [
+      'ecc-sandbox probe [--refresh]',
+      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>]',
+      'ecc-sandbox report <report.json>',
+      'ecc-sandbox escalate <report.json>',
+    ],
+    commands: COMMANDS,
+  };
+}
+
+function parseRunArgs(args) {
+  const options = {
+    manifestPath: null,
+    dryRun: false,
+    localOnly: false,
+    capabilitiesPath: null,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--local-only') {
+      options.localOnly = true;
+    } else if (arg === '--capabilities') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error('--capabilities requires a JSON file path');
+      }
+      options.capabilitiesPath = value;
+      index += 1;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown run argument: ${arg}`);
+    } else if (options.manifestPath === null) {
+      options.manifestPath = arg;
+    } else {
+      throw new Error(`Unexpected run argument: ${arg}`);
+    }
+  }
+
+  if (!options.manifestPath) {
+    throw new Error('run requires a sandbox manifest path');
+  }
+  return options;
+}
+
+function emptyCapabilityMap() {
+  return {
+    schema_version: 1,
+    host: defaultHost(),
+    backends: Object.fromEntries([
+      'srt',
+      'podman',
+      'microsandbox',
+      'lume',
+      'lima',
+      'windows-sandbox',
+      'hyper-v',
+      'dockur-windows',
+      'tart',
+      'ci',
+    ].map(backend => [backend, { available: false }])),
+  };
+}
+
+function defaultCapabilityCachePath() {
+  const cacheRoot = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
+  return path.join(cacheRoot, 'ecc', 'sandbox-capabilities.json');
+}
+
+function loadCapabilities(filePath) {
+  const candidate = filePath ? path.resolve(filePath) : defaultCapabilityCachePath();
+  if (!fs.existsSync(candidate)) return emptyCapabilityMap();
+  const capabilities = validateCapabilities(JSON.parse(
+    readBoundedRegularFile(candidate, 'Capability map')
+  ));
+  const host = defaultHost();
+  if (capabilities.host.os !== host.os || capabilities.host.arch !== host.arch) {
+    throw new Error(
+      `Capability map host ${capabilities.host.os}/${capabilities.host.arch} does not match current host ${host.os}/${host.arch}; run ecc-sandbox probe --refresh`
+    );
+  }
+  return capabilities;
+}
+
+function runDryRun(options) {
+  const manifestPath = path.resolve(options.manifestPath);
+  const manifest = loadManifest(manifestPath);
+  const capabilities = loadCapabilities(options.capabilitiesPath);
+  return routeManifest(manifest, capabilities, {
+    localOnly: options.localOnly,
+    manifestPath,
+  });
+}
+
+function runReport(args) {
+  if (args.length !== 1) {
+    throw new Error('report requires exactly one report JSON path');
+  }
+  const reportPath = path.resolve(args[0]);
+  const report = JSON.parse(readBoundedRegularFile(reportPath, 'Sandbox report'));
+  validateReport(report);
+  return {
+    result: 'valid',
+    report: reportPath,
+    report_result: report.result,
+  };
+}
+
+function main(argv = process.argv.slice(2)) {
+  const [command, ...args] = argv;
+  if (!command || command === '--help' || command === '-h' || command === 'help') {
+    writeJson(help());
+    return 0;
+  }
+  if (!COMMANDS.includes(command)) {
+    throw new Error(`Unknown command: ${command}`);
+  }
+  if (command === 'run') {
+    const options = parseRunArgs(args);
+    if (!options.dryRun) {
+      throw new Error('Sandbox execution is unavailable until adapter phases; use run --dry-run');
+    }
+    const decision = runDryRun(options);
+    writeJson(decision);
+    return decision.result === 'routable' ? 0 : 2;
+  }
+  if (command === 'report') {
+    writeJson(runReport(args));
+    return 0;
+  }
+  throw new Error(`${command} is unavailable until its implementation phase`);
+}
+
+if (require.main === module) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    writeJson({
+      result: 'error',
+      error: {
+        code: error.name === 'ContractValidationError' ? 'contract-invalid' : 'sandbox-cli-error',
+        message: error.message,
+        details: error.errors || [],
+      },
+    });
+    process.exitCode = 2;
+  }
+}
+
+module.exports = {
+  defaultCapabilityCachePath,
+  emptyCapabilityMap,
+  help,
+  loadCapabilities,
+  main,
+  parseRunArgs,
+  runDryRun,
+  runReport,
+  writeJson,
+};

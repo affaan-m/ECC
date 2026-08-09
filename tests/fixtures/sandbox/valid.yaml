@@ -1,0 +1,20 @@
+name: install-ecc-clean
+needs:
+  os: [linux]
+  arch: [arm64]
+  capabilities:
+    - clean-home
+    - fs-write
+    - network:npmjs.org
+  trust: first-party
+  native: false
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup:
+    - node --version
+  assert:
+    - node --version
+report: install-diff
