@@ -153,13 +153,25 @@ uses these decisions to preserve its stated safety and fidelity goals:
     closed because Podman and Docker cannot satisfy them. Microsandbox v0.6.8
     exposes no filesystem-diff API, so its report uses the truthful incomplete
     `install_diff.method: none` contract.
+26. `ci-native` is available only when the checked-in matrix workflow sets an
+    explicit gate on a GitHub-hosted runner. It represents the terminal CI
+    venue (`tier: 3`), runs native commands on that disposable VM, strips
+    credential-like environment variables, and never claims the preinstalled
+    runner is a blank machine. V1 enforces command timeout but cannot enforce
+    CPU, memory, install-diff, or egress isolation on this direct native path.
+27. Remote CI artifacts are correlated to one dispatch, bounded, schema
+    validated, and matched one-to-one to the requested OS/architecture shards.
+    Missing, duplicate, substituted, nested-too-deep, or symbolic-link reports
+    fail closed. A Linux verification job independently assembles the same
+    normalized aggregate used by the CLI; its artifact name stays outside the
+    adapter's per-shard download pattern.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
 internal contract contradictions or a missing clean-machine, write-scope, or
 evidence-integrity need and are therefore treated as that delegated authority.
-Items 20-25 record the corresponding Tier 1 containment, escalation, hardened
-backend, and evidence choices.
+Items 20-27 record the corresponding Tier 1 containment, escalation, hardened
+backend, CI-native, and evidence choices.
 They are surfaced here before code and in the user handoff rather than hidden
 in implementation. Every matching code departure from a written routing rule
 must include a `DECISION:` comment referring to the applicable item above.

@@ -111,10 +111,11 @@
             "windows-sandbox",
             "hyper-v",
             "dockur-windows",
-            "tart"
+            "tart",
+            "ci-native"
           ]
         },
-        "tier": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
         "os": { "enum": ["linux", "macos", "windows"] },
         "arch": { "enum": ["arm64", "x86_64"] },
         "execution_mode": { "enum": ["real", "mock"] },
@@ -171,6 +172,10 @@
               "os": { "const": "linux" }
             }
           }
+        },
+        {
+          "if": { "properties": { "backend": { "const": "ci-native" } } },
+          "then": { "properties": { "tier": { "const": 3 } } }
         },
         {
           "if": {

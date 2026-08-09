@@ -75,9 +75,38 @@ function buildSingleReport(options) {
   return validateReport(report);
 }
 
+function buildAggregateReport(options) {
+  const children = [...options.children].sort((left, right) => (
+    `${left.os}/${left.arch}/${left.backend}`.localeCompare(
+      `${right.os}/${right.arch}/${right.backend}`
+    )
+  ));
+  if (children.length === 0) throw new Error('aggregate reports require at least one child');
+  const modes = new Set(children.map(child => child.execution_mode));
+  const result = children.some(child => child.result === 'error')
+    ? 'error'
+    : (children.some(child => child.result === 'fail') ? 'fail' : 'pass');
+  return validateReport({
+    manifest: options.manifest,
+    backend: 'aggregate',
+    tier: null,
+    os: 'multiple',
+    arch: 'multiple',
+    venue: options.venue,
+    execution_mode: modes.size === 1 ? children[0].execution_mode : 'mixed',
+    started: options.started,
+    duration_ms: Math.max(0, Math.round(options.durationMs || 0)),
+    escalations: [],
+    children,
+    result,
+    notes: options.notes || [],
+  });
+}
+
 module.exports = {
   MAX_TAIL_CHARS,
   MAX_TAIL_LINES,
+  buildAggregateReport,
   buildSingleReport,
   emptyInstallDiff,
   inferResult,

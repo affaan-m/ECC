@@ -173,6 +173,8 @@ function main() {
         "scripts/sandbox/backends/srt.js",
         "scripts/sandbox/backends/podman.js",
         "scripts/sandbox/backends/microsandbox.js",
+        "scripts/sandbox/backends/ci-native.js",
+        "scripts/sandbox/backends/ci.js",
         "scripts/sandbox/mock.js",
         "images/sandbox/Containerfile.ubuntu",
         "images/sandbox/Containerfile.debian",

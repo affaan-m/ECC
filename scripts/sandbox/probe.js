@@ -202,6 +202,7 @@ function detectCi(run, platform) {
       { os: 'macos', arch: 'x86_64' },
       { os: 'macos', arch: 'arm64' },
       { os: 'windows', arch: 'x86_64' },
+      { os: 'windows', arch: 'arm64' },
     ] : [],
     capabilities: available ? ['ios-simulator'] : [],
     reason: available ? 'GitHub CLI authentication is ready' : 'GitHub CLI is not authenticated',
@@ -247,6 +248,21 @@ function detectMicrosandbox(run, platform, architecture, virtualization) {
     capabilities: ready ? ['domain-network-policy'] : [],
     reason: ready ? 'microsandbox doctor passed' : 'microsandbox doctor reported an unavailable runtime dependency',
     fix: ready ? undefined : 'Repair the checks reported by: msb doctor',
+  });
+}
+
+function detectCiNative(platform, architecture, environment) {
+  const ready = environment.GITHUB_ACTIONS === 'true'
+    && environment.ECC_SANDBOX_CI_NATIVE === '1';
+  return backend(ready, {
+    version: null,
+    state: ready ? 'ready' : 'unavailable',
+    targets: ready ? [{ os: platform, arch: architecture }] : [],
+    capabilities: ready && platform === 'macos' ? ['ios-simulator'] : [],
+    reason: ready
+      ? 'explicit GitHub-hosted native runner mode is enabled'
+      : 'ci-native is available only inside the sandbox matrix workflow',
+    fix: ready ? undefined : 'Dispatch through ecc-sandbox with an authenticated GitHub CLI: gh auth login',
   });
 }
 
@@ -443,6 +459,7 @@ function probeCapabilities(options = {}) {
         state: 'not-configured',
         reason: 'dockur/windows is detection-only in v1; use Windows Sandbox or CI',
       }),
+      'ci-native': detectCiNative(platform, architecture, probeEnv),
       ci: detectCi(run, platform),
     },
   };
@@ -473,6 +490,7 @@ module.exports = {
   PROBE_TIMEOUT_MS,
   commandVersion,
   detectInsideContainer,
+  detectCiNative,
   detectPodman,
   detectSrt,
   detectVirtualization,

@@ -37,6 +37,7 @@
         "hyper-v": { "$ref": "#/definitions/backend" },
         "dockur-windows": { "$ref": "#/definitions/backend" },
         "tart": { "$ref": "#/definitions/backend" },
+        "ci-native": { "$ref": "#/definitions/backend" },
         "ci": { "$ref": "#/definitions/backend" }
       }
     }

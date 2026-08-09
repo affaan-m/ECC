@@ -14,7 +14,7 @@ const {
   validateCapabilities,
   validateReport,
 } = require('../../scripts/sandbox/contracts');
-const { routeManifest } = require('../../scripts/sandbox/router');
+const { defaultHost, routeManifest } = require('../../scripts/sandbox/router');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const fixtureRoot = path.join(repoRoot, 'tests', 'fixtures', 'sandbox');
@@ -387,20 +387,21 @@ test('rejects malformed reports and more than one escalation', () => {
 test('CLI dry-run emits only a routable JSON decision on stdout', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-sandbox-contract-'));
   try {
+    const host = defaultHost();
     const capabilitiesPath = path.join(tempRoot, 'capabilities.json');
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
       schema_version: 1,
-      host: { os: 'macos', arch: 'arm64' },
+      host,
       backends: {
-        microsandbox: {
+        srt: {
           available: true,
-          capabilities: ['domain-network-policy'],
+          targets: [{ os: host.os, arch: host.arch }],
         },
       },
     }));
     const result = runCli([
       'run',
-      path.join(fixtureRoot, 'valid.yaml'),
+      path.join(fixtureRoot, 'srt-benign.yaml'),
       '--dry-run',
       '--capabilities',
       capabilitiesPath,
@@ -410,7 +411,7 @@ test('CLI dry-run emits only a routable JSON decision on stdout', () => {
     assert.strictEqual(result.stderr, '');
     const output = JSON.parse(result.stdout);
     assert.strictEqual(output.result, 'routable');
-    assert.strictEqual(output.routes[0].backend, 'microsandbox');
+    assert.strictEqual(output.routes[0].backend, 'srt');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

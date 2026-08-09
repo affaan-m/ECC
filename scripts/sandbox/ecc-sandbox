@@ -12,6 +12,8 @@ const {
 } = require('./contracts');
 const {
   defaultHost,
+  normalizeArch,
+  normalizeOs,
   resolveRuntimeEscalation,
   resolveTierOneFallback,
   routeManifest,
@@ -24,8 +26,10 @@ const {
 const { executeSrt } = require('./backends/srt');
 const { executeContainer } = require('./backends/podman');
 const { executeMicrosandbox } = require('./backends/microsandbox');
+const { executeCiNative } = require('./backends/ci-native');
+const { executeCi } = require('./backends/ci');
 const { loadMockScenario, mockRunner } = require('./mock');
-const { tailOutput } = require('./report');
+const { buildAggregateReport, tailOutput } = require('./report');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
 
@@ -38,7 +42,7 @@ function help() {
     name: 'ecc-sandbox',
     usage: [
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
-      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
+      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--shard <os/arch>] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
       'ecc-sandbox escalate <report.json> [--capabilities <file>] [--mock <file>]',
     ],
@@ -53,6 +57,7 @@ function parseRunArgs(args) {
     localOnly: false,
     capabilitiesPath: null,
     mockPath: null,
+    shard: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -61,12 +66,18 @@ function parseRunArgs(args) {
       options.dryRun = true;
     } else if (arg === '--local-only') {
       options.localOnly = true;
-    } else if (arg === '--capabilities' || arg === '--mock') {
+    } else if (arg === '--capabilities' || arg === '--mock' || arg === '--shard') {
       const value = args[index + 1];
       if (!value || value.startsWith('-')) {
-        throw new Error(`${arg} requires a JSON file path`);
+        throw new Error(`${arg} requires a value`);
       }
-      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      if (arg === '--shard') {
+        const match = value.match(/^(linux|macos|windows)\/(arm64|x86_64)$/);
+        if (!match) throw new Error('--shard must be linux|macos|windows/arm64|x86_64');
+        options.shard = { os: normalizeOs(match[1]), arch: normalizeArch(match[2]) };
+      } else {
+        options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      }
       index += 1;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown run argument: ${arg}`);
@@ -144,6 +155,7 @@ function emptyCapabilityMap() {
       'hyper-v',
       'dockur-windows',
       'tart',
+      'ci-native',
       'ci',
     ].map(backend => [backend, { available: false }])),
   };
@@ -176,6 +188,7 @@ function resolveRun(options) {
   const decision = routeManifest(manifest, capabilities, {
     localOnly: options.localOnly,
     manifestPath,
+    shard: options.shard,
   });
   return { capabilities, decision, manifest, manifestPath };
 }
@@ -185,7 +198,7 @@ function runDryRun(options) {
 }
 
 function executeRoute(resolved, route, executionOptions) {
-  if (!['srt', 'podman', 'docker', 'microsandbox'].includes(route.backend)) {
+  if (!['srt', 'podman', 'docker', 'microsandbox', 'ci-native'].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
   const adapterOptions = {
@@ -229,6 +242,15 @@ function executeRoute(resolved, route, executionOptions) {
     });
     return fallback;
   }
+  if (route.backend === 'ci-native') {
+    const platform = { linux: 'linux', macos: 'darwin', windows: 'win32' }[route.os];
+    return executeCiNative(resolved.manifest, {
+      ...adapterOptions,
+      env: process.env,
+      os: route.os,
+      platform,
+    });
+  }
   return executeContainer(resolved.manifest, {
     ...adapterOptions,
     image: process.env.ECC_SANDBOX_IMAGE,
@@ -258,23 +280,7 @@ function addEscalation(initial, destination) {
   return destination;
 }
 
-function runExecution(options) {
-  const resolved = resolveRun(options);
-  if (resolved.decision.result !== 'routable') {
-    const failed = resolved.decision.routes.find(route => route.result === 'error');
-    throw new Error(`${failed.reason}. ${failed.fix}`);
-  }
-  if (resolved.decision.routes.length !== 1) {
-    throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
-  }
-  const route = resolved.decision.routes[0];
-  let run;
-  let mock = false;
-  if (options.mockPath) {
-    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
-    mock = true;
-  }
-  const executionOptions = { mock, run };
+function executeWithEscalation(resolved, route, executionOptions) {
   const initial = executeRoute(resolved, route, executionOptions);
   if (route.backend !== 'srt' || !initial.denial?.installer) return initial;
 
@@ -297,6 +303,59 @@ function runExecution(options) {
     initial,
     executeRoute(resolved, escalationRoute, executionOptions)
   );
+}
+
+function runExecution(options) {
+  const resolved = resolveRun(options);
+  if (resolved.decision.result !== 'routable') {
+    const failed = resolved.decision.routes.find(route => route.result === 'error');
+    throw new Error(`${failed.reason}. ${failed.fix}`);
+  }
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), 'sandbox'));
+    mock = true;
+  }
+  const executionOptions = { mock, run };
+  const ciRoutes = resolved.decision.routes.filter(route => route.backend === 'ci');
+  const localRoutes = resolved.decision.routes.filter(route => route.backend !== 'ci');
+  if (ciRoutes.length === 0 && localRoutes.length === 1) {
+    return executeWithEscalation(resolved, localRoutes[0], executionOptions);
+  }
+
+  const orchestrationStartedMs = Date.now();
+  const started = new Date(orchestrationStartedMs).toISOString();
+  const children = localRoutes.map(route => (
+    executeWithEscalation(resolved, route, executionOptions).report
+  ));
+  const aggregateNotes = [];
+  if (ciRoutes.length > 0) {
+    const ci = executeCi(resolved.manifest, ciRoutes, {
+      ...executionOptions,
+      artifactDirectory: process.env.ECC_SANDBOX_CI_ARTIFACT_DIR,
+      cwd: process.cwd(),
+      gitRoot: process.env.ECC_SANDBOX_CI_GIT_ROOT,
+      manifestPath: resolved.manifestPath,
+      ref: process.env.ECC_SANDBOX_CI_REF,
+      repository: process.env.ECC_SANDBOX_CI_REPO,
+    });
+    children.push(...ci.report.children);
+    aggregateNotes.push(...ci.report.notes);
+  }
+  const venue = ciRoutes.length === 0 ? 'local' : (localRoutes.length === 0 ? 'ci' : 'mixed');
+  const report = buildAggregateReport({
+    manifest: resolved.manifestPath,
+    venue,
+    started,
+    durationMs: Date.now() - orchestrationStartedMs,
+    children,
+    notes: aggregateNotes,
+  });
+  return {
+    report,
+    exitCode: report.result === 'pass' ? 0 : (report.result === 'fail' ? 1 : 2),
+  };
 }
 
 function runProbe(options) {
@@ -450,6 +509,7 @@ module.exports = {
   runEscalation,
   runReport,
   executeRoute,
+  executeWithEscalation,
   addEscalation,
   writeJson,
 };

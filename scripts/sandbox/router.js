@@ -77,6 +77,7 @@ function backendSupports(capabilities, backend, shard, manifest) {
     'windows-sandbox': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
     'hyper-v': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
     'dockur-windows': false,
+    'ci-native': shard.os === host.os && shard.arch === host.arch,
     ci: Array.isArray(entry.targets) && entry.targets.some(target => targetMatches(target, shard)),
   };
   if (!hardConstraints[backend]) return false;
@@ -235,6 +236,16 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
       reason: 'an ephemeral Linux environment is the cheapest clean venue for the declared needs',
     },
     {
+      id: 'ci-native-runner',
+      tier: 3,
+      // DECISION: CONVENTIONS item 26 exposes the already-disposable hosted
+      // runner only behind an explicit workflow capability. Inside that
+      // workflow it must win over incidental VM tooling on the runner image.
+      eligible: () => !network.domainAllowlist,
+      candidates: () => ['ci-native'],
+      reason: 'the explicitly enabled disposable GitHub runner is native to the target OS',
+    },
+    {
       id: 'tier-2-native',
       tier: 2,
       eligible: () => !network.domainAllowlist,
@@ -348,7 +359,18 @@ function resolveRuntimeEscalation(manifest, capabilities, sourceRoute, options =
 
 function routeManifest(manifest, capabilities, options = {}) {
   validateCapabilities(capabilities);
-  const routes = expandTargets(manifest, capabilities.host)
+  let shards = expandTargets(manifest, capabilities.host);
+  if (options.shard) {
+    shards = shards.filter(shard => (
+      shard.os === options.shard.os && shard.arch === options.shard.arch
+    ));
+    if (shards.length !== 1) {
+      throw new Error(
+        `requested shard ${options.shard.os}/${options.shard.arch} is not declared by the manifest`
+      );
+    }
+  }
+  const routes = shards
     .map(shard => resolveShard(manifest, capabilities, shard, options));
   return {
     schema_version: 1,

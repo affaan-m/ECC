@@ -1,0 +1,16 @@
+name: native-ci-matrix-acceptance
+needs:
+  os: [all]
+  capabilities: []
+  trust: first-party
+  native: true
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 60
+steps:
+  setup:
+    - node --version
+  assert:
+    - node -e "const os={linux:'linux',darwin:'macos',win32:'windows'}[process.platform]; const arch={x64:'x86_64',arm64:'arm64'}[process.arch]; if (os !== process.env.ECC_SANDBOX_TARGET_OS || arch !== process.env.ECC_SANDBOX_TARGET_ARCH) process.exit(1)"
+report: exit-only

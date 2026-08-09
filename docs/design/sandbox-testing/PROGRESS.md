@@ -81,6 +81,9 @@ combined tree.
 | 5 | official v0.6.8 CLI contract and mocks | Exact `msb` version/doctor gate, restricted disk-snapshot seed/fork lifecycle, read-only source mount, explicit network policies, and Podman degradation | Pass; no real Microsandbox evidence claimed because this host has no `msb` |
 | 5 | local integration boundary | Full `npm test` (3,806/3,806), lint, publish-surface test, registry-signature audit, production vulnerability audit, and `git diff --check` | Pass; 225 package signatures, 32 attestations, and zero vulnerabilities |
 | 5 | independent functional and security review | Re-reviewed read-only mount grammar, cleanup-gated fallback, strict domain policy, bounded evidence, max-one escalation, and snapshot manifest-digest identity | Pass; both reviewers approve with no blocker/high finding |
+| 6 | local CI contract and orchestration suite | Native-runner gate, shard routing, shell/environment boundary, three-target mock dispatch, URL-less run discovery, remote-ref binding, adversarial artifacts, and aggregate failure propagation | Pass; 14 CI tests and 107/107 focused sandbox tests |
+| 6 | local integration boundary | Full `npm test` (3,816/3,816), then post-review focused suite, lint, workflow YAML parse, workflow-security validation, publish-surface test, and `git diff --check` | Pass |
+| 6 | independent functional review | Re-reviewed failed-shard aggregation, evidence upload ordering, remote-ref identity, URL-less dispatch discovery, and mock/real artifact separation | Pass; approved with no blocker/high finding |
 
 ## Current gate
 
