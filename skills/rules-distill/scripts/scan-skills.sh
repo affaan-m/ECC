@@ -61,23 +61,33 @@ scan_dir_to_json() {
   _scan_cleanup() { rm -rf "$_scan_tmpdir"; }
   trap _scan_cleanup RETURN
 
+  # Bash globstar instead of `find | sort`: AppLocker-hardened machines shim
+  # find/sort (silent-empty on GNU flags), and glob expansion is already
+  # lexicographically sorted with no external processes.
   local i=0
-  while IFS= read -r file; do
-    local name desc mtime dp
+  local file
+  shopt -s globstar nullglob
+  for file in "$dir"/**/SKILL.md; do
+    [[ -f "$file" ]] || continue
+    local name desc mtime dp fname
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
     mtime=$(get_mtime "$file")
     dp="${file/#$HOME/~}"
 
+    # Zero-pad so the later "$tmpdir"/*.json glob keeps insertion order past 9
+    # files (unpadded, 10.json sorts before 2.json lexicographically).
+    printf -v fname '%06d.json' "$i"
     jq -n \
       --arg path "$dp" \
       --arg name "$name" \
       --arg description "$desc" \
       --arg mtime "$mtime" \
       '{path:$path,name:$name,description:$description,mtime:$mtime}' \
-      > "$tmpdir/$i.json"
+      > "$tmpdir/$fname"
     i=$((i+1))
-  done < <(find "$dir" -name "SKILL.md" -type f 2>/dev/null | sort)
+  done
+  shopt -u globstar nullglob
 
   if [[ $i -eq 0 ]]; then
     echo "[]"
@@ -110,8 +120,10 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" ]]; then
   project_count=$(echo "$project_skills" | jq 'length')
 fi
 
-# Merge global + project skills into one array
-all_skills=$(jq -s 'add' <(echo "$global_skills") <(echo "$project_skills"))
+# Merge global + project skills into one array.
+# --argjson instead of process substitution: native Windows jq cannot open
+# MSYS /proc/<pid>/fd paths, which made this merge fail silently under 2>/dev/null.
+all_skills=$(jq -n --argjson g "$global_skills" --argjson p "$project_skills" '$g + $p')
 
 jq -n \
   --arg global_found "$global_found" \

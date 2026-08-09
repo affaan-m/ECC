@@ -53,18 +53,6 @@ date_ago() {
   date -u -d "${n} days ago" +%Y-%m-%dT%H:%M:%SZ
 }
 
-# Count observations matching a file path since a cutoff timestamp
-count_obs() {
-  local file="$1" cutoff="$2"
-  if [[ ! -f "$OBSERVATIONS" ]]; then
-    echo 0
-    return
-  fi
-  jq -r --arg p "$file" --arg c "$cutoff" \
-    'select(.tool=="Read" and .path==$p and .timestamp>=$c) | 1' \
-    "$OBSERVATIONS" 2>/dev/null | wc -l | tr -d ' '
-}
-
 # Scan a directory and produce a JSON array of skill objects
 scan_dir_to_json() {
   local dir="$1"
@@ -85,18 +73,27 @@ scan_dir_to_json() {
   local obs_7d_counts obs_30d_counts
   obs_7d_counts=""
   obs_30d_counts=""
+  # awk counting instead of `sort | uniq -c`: AppLocker-hardened machines shim
+  # sort (silent-empty on GNU flags); awk needs no sorted input and the
+  # "   N path" output shape is preserved for the $2-based parser below.
   if [[ -f "$OBSERVATIONS" ]]; then
     obs_7d_counts=$(jq -r --arg c "$c7" \
       'select(.tool=="Read" and .timestamp>=$c) | .path' \
-      "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
+      "$OBSERVATIONS" 2>/dev/null | awk '{c[$0]++} END {for (p in c) printf "%7d %s\n", c[p], p}')
     obs_30d_counts=$(jq -r --arg c "$c30" \
       'select(.tool=="Read" and .timestamp>=$c) | .path' \
-      "$OBSERVATIONS" 2>/dev/null | sort | uniq -c)
+      "$OBSERVATIONS" 2>/dev/null | awk '{c[$0]++} END {for (p in c) printf "%7d %s\n", c[p], p}')
   fi
 
+  # Bash globstar instead of `find | sort`: AppLocker-hardened machines shim
+  # find/sort (silent-empty on GNU flags), and glob expansion is already
+  # lexicographically sorted with no external processes.
   local i=0
-  while IFS= read -r file; do
-    local name desc mtime u7 u30 dp
+  local file
+  shopt -s globstar nullglob
+  for file in "$dir"/**/*.md; do
+    [[ -f "$file" ]] || continue
+    local name desc mtime u7 u30 dp fname
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
@@ -108,6 +105,9 @@ scan_dir_to_json() {
     u30="${u30:-0}"
     dp="${file/#$HOME/~}"
 
+    # Zero-pad so the later "$tmpdir"/*.json glob keeps insertion order past 9
+    # files (unpadded, 10.json sorts before 2.json lexicographically).
+    printf -v fname '%06d.json' "$i"
     jq -n \
       --arg path "$dp" \
       --arg name "$name" \
@@ -116,9 +116,10 @@ scan_dir_to_json() {
       --argjson use_7d "$u7" \
       --argjson use_30d "$u30" \
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
-      > "$tmpdir/$i.json"
+      > "$tmpdir/$fname"
     i=$((i+1))
-  done < <(find "$dir" -name "*.md" -type f 2>/dev/null | sort)
+  done
+  shopt -u globstar nullglob
 
   if [[ $i -eq 0 ]]; then
     echo "[]"
@@ -151,8 +152,10 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" ]]; then
   project_count=$(echo "$project_skills" | jq 'length')
 fi
 
-# Merge global + project skills into one array
-all_skills=$(jq -s 'add' <(echo "$global_skills") <(echo "$project_skills"))
+# Merge global + project skills into one array.
+# --argjson instead of process substitution: native Windows jq cannot open
+# MSYS /proc/<pid>/fd paths, which made this merge fail silently under 2>/dev/null.
+all_skills=$(jq -n --argjson g "$global_skills" --argjson p "$project_skills" '$g + $p')
 
 jq -n \
   --arg global_found "$global_found" \
