@@ -6,6 +6,7 @@ async function main() {
     buildDiscordPayload,
     findReleaseDiscussion,
     isAnnouncementDiscussion,
+    normalizeDiscordWebhookUrl,
     releaseMarker,
   } = await import('../../scripts/discord/announcement-core.mjs');
 
@@ -34,6 +35,12 @@ assert.equal(payload.embeds[0].footer.text, 'ecc:D_kw123');
 assert.equal(payload.embeds[0].url, 'https://github.com/affaan-m/ECC/discussions/3000');
 assert.equal(payload.enforce_nonce, true);
 assert.match(payload.nonce, /^ecc-[a-f0-9]{16}$/);
+
+assert.equal(
+  normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token'),
+  'https://discord.com/api/webhooks/123456789012345678/secret-token?wait=true',
+);
+assert.throws(() => normalizeDiscordWebhookUrl('https://evil.example/api/webhooks/123/token'), /invalid Discord webhook URL/);
 
   console.log('release announcement core: ok');
 }
