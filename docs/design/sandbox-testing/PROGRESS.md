@@ -37,7 +37,7 @@ an unavailable native OS with an actionable CI-auth error.
 | S3 report/Tier 0 | process owner | S1, S2 | reporter and srt adapter/tests | schema-valid benign and denial reports |
 | S4 Tier 1 | container owner | S1, S2 | images, Podman/microsandbox adapters/tests | real Podman lifecycle plus mock hardened path |
 | S5 escalation | integrator | S3, S4 | orchestration integration tests | exactly one recorded reroute |
-| S6 CI matrix | CI owner | S1, S2 | workflow, CI adapter/tests | secure mocked dispatch plus hosted probe evidence |
+| S6 CI matrix | CI owner | S1, S2 | workflow, CI adapter/tests | secure mocked dispatch plus three native reports and a hosted aggregate |
 | S7 Tier 2 | VM owner | S1, S2 | Lume/Lima/Windows/Tart adapters/tests | mock coverage; real available-host gate or explicit v1 redirect |
 | S8 agent surface | docs owner | S3–S7 | skill, hook, docs, demo | two-harness manifest/report interpretation evidence |
 | SF final train | integrator | S5–S8 | combined tree | focused tests, full suite, lint, real local pipeline |
@@ -84,9 +84,11 @@ combined tree.
 | 6 | local CI contract and orchestration suite | Native-runner gate, shard routing, shell/environment boundary, three-target mock dispatch, URL-less run discovery, remote-ref binding, adversarial artifacts, and aggregate failure propagation | Pass; 14 CI tests and 107/107 focused sandbox tests |
 | 6 | local integration boundary | Full `npm test` (3,816/3,816), then post-review focused suite, lint, workflow YAML parse, workflow-security validation, publish-surface test, and `git diff --check` | Pass |
 | 6 | independent functional review | Re-reviewed failed-shard aggregation, evidence upload ordering, remote-ref identity, URL-less dispatch discovery, and mock/real artifact separation | Pass; approved with no blocker/high finding |
+| 6 | independent security review | Reviewed workflow injection, least privilege, action pinning, native environment boundary, `gh` argv handling, ref identity, artifact integrity, and fail-closed behavior | Pass; approved with no blocker/high/medium finding |
+| 6 | hosted native and aggregate matrix | [PR #2734 run 31338814411](https://github.com/affaan-m/ECC/actions/runs/31338814411) on Ubuntu x86_64, macOS arm64, Windows x86_64, then Ubuntu aggregation | Pass; all four downloaded artifacts validate as real/pass, and the aggregate contains exactly the three requested passing children |
 
 ## Current gate
 
-S0 through S5 are complete. Phase 6 is released for CI dispatch, hosted native
-execution, artifact validation, and aggregate reporting. VM adapters and
-agent-facing surfaces remain blocked by their preceding phase gates.
+S0 through S6 are complete. Phase 7 is released for local VM adapters and real
+available-host evidence. Agent-facing surfaces remain blocked until that gate
+passes.
