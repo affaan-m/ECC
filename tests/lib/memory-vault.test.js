@@ -19,6 +19,7 @@ const {
   readMemoryById,
   readRegularTextFile,
   resolveVaultRoots,
+  sameFileIdentity,
   saveMemory,
   searchMemories,
   serializeMemoryDocument,
@@ -516,6 +517,47 @@ test('quarantines imported secrets and metadata that disagrees with its vault lo
   }
 });
 
+// Windows reports dev = 0 from path-based stat()/lstat() while fstat() on an open
+// handle reports the real volume serial number, so a strict dev comparison can never
+// match and every vault read/write is rejected. The stat pairs below are the values
+// measured on Node v22.15.0 / Windows 11 10.0.26200 reported in issue #2626.
+test('matches a Windows path-vs-handle stat pair where only dev differs', () => {
+  const openedByHandle = { dev: 1644385068, ino: 21110623254304612 };
+  const openedByPath = { dev: 0, ino: 21110623254304612 };
+  assert.strictEqual(sameFileIdentity(openedByPath, openedByHandle), true);
+});
+
+test('matches a Windows stat pair on a non-system volume', () => {
+  const openedByHandle = { dev: 3054669153, ino: 562949953451607 };
+  const openedByPath = { dev: 0, ino: 562949953451607 };
+  assert.strictEqual(sameFileIdentity(openedByPath, openedByHandle), true);
+});
+
+test('separates files that share an inode across two reported devices', () => {
+  const left = { dev: 16777232, ino: 42 };
+  const right = { dev: 16777233, ino: 42 };
+  assert.strictEqual(sameFileIdentity(left, right), false);
+});
+
+test('separates distinct inodes reported from the same device', () => {
+  const left = { dev: 16777232, ino: 42 };
+  const right = { dev: 16777232, ino: 43 };
+  assert.strictEqual(sameFileIdentity(left, right), false);
+});
+
+// Runs on every platform, but only the windows-latest CI leg exercises the
+// path-vs-handle dev divergence that issue #2626 reports.
+test('reads a regular file whose handle and path stats are compared', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-memory-identity-'));
+  const target = path.join(root, 'target.md');
+  try {
+    fs.writeFileSync(target, 'durable');
+    assert.strictEqual(readRegularTextFile(target, { maxBytes: 16 }), 'durable');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('opens regular text files without following a stable symlink', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-memory-file-'));
   const target = path.join(root, 'target.md');
@@ -572,6 +614,45 @@ test('opens a file descriptor before inspecting path metadata', () => {
     assert.strictEqual(readRegularTextFile(target, { maxBytes: 16 }), 'safe');
   } finally {
     fs.openSync = originalOpenSync;
+    fs.lstatSync = originalLstatSync;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Windows file IDs run past Number.MAX_SAFE_INTEGER, so two distinct files can
+// collapse to the same value in a number-valued Stats. On the libuv versions that
+// report dev = 0 the inode is the only identity signal left, so the stats have to
+// be requested as BigInt for the guard to hold. The stubs below mimic fs: BigInt
+// when { bigint: true } is requested, lossy numbers otherwise.
+test('detects a swapped file whose inode differs beyond Number precision', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-memory-bigint-ino-'));
+  const target = path.join(root, 'target.md');
+  const originalFstatSync = fs.fstatSync;
+  const originalLstatSync = fs.lstatSync;
+
+  const stat = (base, fileId, options) => Object.assign(
+    Object.create(Object.getPrototypeOf(base)),
+    base,
+    {
+      dev: options && options.bigint ? 0n : 0,
+      ino: options && options.bigint ? fileId : Number(fileId),
+      size: options && options.bigint ? BigInt(base.size) : base.size,
+    }
+  );
+
+  try {
+    fs.writeFileSync(target, 'safe');
+    fs.fstatSync = (descriptor, options) =>
+      stat(originalFstatSync(descriptor), 21110623254304612n, options);
+    fs.lstatSync = (filePath, options) =>
+      stat(originalLstatSync(filePath), 21110623254304613n, options);
+
+    assert.throws(
+      () => readRegularTextFile(target, { maxBytes: 16 }),
+      /must remain a regular, non-symlink file/
+    );
+  } finally {
+    fs.fstatSync = originalFstatSync;
     fs.lstatSync = originalLstatSync;
     fs.rmSync(root, { recursive: true, force: true });
   }
