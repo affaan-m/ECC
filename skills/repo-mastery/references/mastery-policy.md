@@ -52,9 +52,9 @@ Meaning:
 - **One lucky answer is not mastery** — the confidence ceiling keeps mastery below 0.9 until enough evidence accumulates.
 - The judgment is deterministic, recorded in `progress.json`, independent of tutor memory.
 
-## 3. Spaced-repetition scheduling
+## 3. Spaced-repetition scheduling (FSRS-inspired personalization)
 
-One interval sequence per type (days):
+Base interval sequence per type (days), as before:
 
 | type | interval sequence |
 |---|---|
@@ -63,13 +63,41 @@ One interval sequence per type (days):
 | `procedure` | `[3, 7, 14]` |
 | `design` | `[14, 28]` |
 
-**Scheduling rules** (`schedule_next`):
+**Personalization parameters** — each knowledge point carries two learned
+values (FSRS-inspired, simplified to pure deterministic math; see `ADOPTION.md` §6):
 
-- Correct: `consecutive_correct += 1`; if `consecutive_correct ≥ 2` → index +2; else +1.
-- Wrong: `consecutive_wrong += 1`; index steps back 1 (floor 0); if `consecutive_wrong ≥ 2` → reset the counter.
-- Index clamped to `[0, max_index]`; `next_review_at = now + interval[index]`.
+- `difficulty` (0.1–1.0, default 0.5): how hard this point is for the learner.
+- `stability` (1.0–5.0, default 1.0): how durable the memory is.
 
-**Priority**: knowledge points with **error records** (active/retrying status) get priority 1 (highest); otherwise by type `memory:2 / concept:3 / procedure:4 / design:5`. Due review tasks sort by priority.
+**Update rules** (`schedule_next`):
+
+- Correct:
+  - `consecutive_correct += 1`; if `≥ 2` → index +2; else +1.
+  - `difficulty = max(0.1, difficulty − 0.05)`.
+  - `stability = min(5.0, stability × (1 + 0.2 × min(consecutive_correct, 5)))`.
+- Wrong:
+  - `consecutive_wrong += 1`; index steps back 1 (floor 0); if `≥ 2` → reset.
+  - `difficulty = min(1.0, difficulty + 0.15)`.
+  - `stability = max(1.0, stability × 0.5)`.
+
+Index is clamped to `[0, max_index]`.
+
+**Effective interval** (replaces `next_review_at = now + interval[index]`):
+
+```text
+effective_days = base_days[interval_index] × stability × (1 − difficulty × 0.5)
+next_review_at = now + effective_days × 86400
+```
+
+- Higher `difficulty` → shorter interval (review sooner).
+- Higher `stability` → longer interval (defer).
+
+**Priority** (unchanged): error-record points get priority 1; else by type
+`memory:2 / concept:3 / procedure:4 / design:5`.
+
+**Interleaving** (`next_objective`): among due reviews of equal priority, a
+review whose `knowledge_type` differs from `progress.last_review_type` is picked
+first, so consecutive reviews interleave types instead of stacking one type.
 
 ## 4. What to learn next (`next_objective`)
 
@@ -105,6 +133,12 @@ Pass criteria for the Feynman check on concept/design points:
 - **concept**: the user can explain in their own words "what + why + relation to adjacent concepts". Can't → not passed → return to explanation, record the error type.
 - **design**: beyond the recital, add design-tradeoff follow-ups — "why not the alternative? in what scenario would it fail? where is the extension point?" Being able to answer the tradeoffs = mastery.
 
+**Causal questioning** (absorbed from RetainCraft): after the recital, push with
+causal probes to expose whether understanding is causal or merely associative —
+"why this design instead of X?", "if we swapped Y in, what would break and
+where?", "which single change flips this behavior?" Causal answers count as
+mastery evidence; vague recall does not.
+
 Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows full value once passed, but the judgment itself is a boolean, not a score.
 
 ## 7. Progress data structure (`progress.json`)
@@ -126,11 +160,14 @@ Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows 
                        "mastery_estimate": 0.0, "timestamp": 1754567890 } ],
   "error_records": [ { "id": "e1", "knowledge_point_id": "kp01-01",
                        "error_type": "deviation", "status": "active" } ],
-  "repetition_states": { "kp01-01": { "interval_index": 0, "next_review_at": 1754571490 } },
+  "repetition_states": { "kp01-01": { "interval_index": 0, "consecutive_correct": 0,
+                                       "consecutive_wrong": 0, "difficulty": 0.5,
+                                       "stability": 1.0, "next_review_at": 1754571490 } },
   "review_queue": [ { "id": "review_kp01-01", "knowledge_point_id": "kp01-01",
-                      "due_at": 1754571490, "priority": 1 } ],
+                      "knowledge_type": "procedure", "due_at": 1754571490, "priority": 1 } ],
   "pending_question": { "question_id": "q3", "knowledge_point_id": "kp01-01",
                         "prompt": "...", "question_type": "short", "expected_answer": "..." },
+  "last_review_type": "concept",
   "version": 1
 }
 ```
@@ -140,3 +177,6 @@ Key points:
 - `pending_question.expected_answer` **lives server-side (this file)** and never round-trips to the user — grading never drifts (DeepTutor's `PendingQuestion`).
 - All timestamps are Unix seconds.
 - Once the file exists, **write it back atomically** (temp file + rename) at the end of each turn to avoid corruption.
+- `repetition_states[].difficulty` / `stability` are FSRS-inspired personalization
+  parameters (default 0.5 / 1.0; missing → treated as defaults for old data).
+  `last_review_type` is updated on each attempt and used to interleave review types.

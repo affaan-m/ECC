@@ -6,6 +6,14 @@
 
 Before each learning session:
 
+0. **Recall warm-up** (absorbed from claude-teach-skill): pose **2–3 quick
+   recall questions** drawn from `review_queue` (due first, then soonest
+   `due_at`). Each answer goes through `record_attempt` (updates mastery /
+   difficulty / stability / schedule). A forgotten point → re-teach it before
+   anything new, and record the error. This forces retrieval from storage, not
+   recognition. A correct warm-up answer feeds `consecutive_correct` →
+   `stability`, so a good warm-up streak lengthens the next interval.
+
 1. **Read MISSION.md** — why the user wants to master this repo. Align every explanation, question, and Feynman follow-up to the Mission (learning to use it? to modify it? to teach it?). If the Mission isn't filled in, ask — don't guess.
 2. **Read `records/` + `progress.json`** — judge the user's **zone of proximal development (ZPD)**: the next thing to teach should be "just challenging enough". Don't re-teach what the user has proven; bridge missing prerequisites before leaping.
 3. Then enter the knowledge point selected by `next_objective`.
@@ -37,6 +45,10 @@ diagnostic (probe; includes test-out)
 - Follow the per-module arc absorbed from docs-to-course: *"why care" first (1–2 sentences of practical payoff) → concept + one fresh metaphor → look at the code / walk the call chain → recap (3–4 takeaways)*.
 - **Auto-note** after explaining (see `note-template.md`).
 - Control length: one knowledge point, one layer at a time — don't dump three concepts at once.
+- **Vivid encoding (optional, `memory`-type points)**: offer a memorable
+  hook — an exaggerated image, a color/action cue, a pun, an interaction
+  (SMASHIN-style: Senses, Movement, Action, Humor, Imagination, Numbers) — or let the learner ask for a mnemonic / mini memory-palace.
+  Encoding is a *suggested* aid, never graded.
 
 ## 3. feynman_check — qualitative gate (concept / design)
 
@@ -77,6 +89,9 @@ diagnostic (probe; includes test-out)
 - Pull due tasks by `scheduler`'s `next_review_at` (triggered by `/repo-mastery review`, or automatically when `next_objective` finds something due).
 - Review form: one question per due point (quantitative) or a quick recital (qualitative).
 - Results update `repetition_states` + `review_queue`.
+- **Interleave types**: when several reviews are due, alternate knowledge types
+  (memory → concept → procedure → design) instead of grinding one type; `next_objective`
+  already prefers a type different from `last_review_type`.
 
 ## 7. End of each turn (mandatory)
 
@@ -91,6 +106,7 @@ diagnostic (probe; includes test-out)
 - Explain from source, judge by engine — **never replace the gate with "do you feel you've got it?"**.
 - A stuck user is a diagnostic signal, not a teaching failure — guide self-attribution.
 - Keep momentum: close the loop on one point per turn where possible (judge + write back + note).
+- Ask **one question at a time** (batching is bewildering). When a decision is needed, offer your evidence-based recommendation with the question; assessment questions (quiz / Feynman) never carry a hint (absorbed from the grilling skill).
 
 ## Token-saving rules for large repos
 

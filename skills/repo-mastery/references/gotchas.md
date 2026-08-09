@@ -8,6 +8,8 @@
 - [ ] **Modules without evidence** — every module in the map points to a real file/dir. No evidence → cut it; better fewer than hollow.
 - [ ] **Skipping Phase 2 confirmation** — the user must approve/customize the map (with Mission). This is an explicit requirement; don't skip.
 - [ ] **Concluding too early in the pre-scan** — Phase 1 only maps; conclusions belong to the explanation phase.
+- [ ] **Batching confirmation questions** — ask one at a time (see `clarification-interview.md`); dumping the whole tree at once is bewildering.
+- [ ] **Blank-prompt decisions** — every decision question carries the tutor's evidence-based recommendation; assessment questions (Phase 3) never do.
 
 ## Learning-session phase
 
@@ -18,6 +20,8 @@
 - [ ] **Skipping error diagnosis** — answering the question directly without user self-attribution and an `error_records` entry corrupts review priority.
 - [ ] **Feynman that only asks "got it?"** — the qualitative gate must make the user actually recital; design type must probe tradeoffs.
 - [ ] **Cramming the whole repo into context** — read only the relevant files for the current point (locate via `code-map.json` in large repos).
+- [ ] **Substituting re-reading for retrieval** — rereading/summarizing creates an "illusion of learning" (recognition ≠ recall). Review must force recall (see `quiz-design.md`), never re-read.
+- [ ] **Consecutive same-type reviews** — interleave knowledge types in a review session; grinding one type trains discrimination poorly (`next_objective` prefers a different type from `last_review_type`).
 
 ## Hands-on phase
 

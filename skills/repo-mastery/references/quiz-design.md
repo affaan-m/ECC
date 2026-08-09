@@ -58,3 +58,30 @@ Grading should force **retrieval from memory**, not "recognizing the answer feel
 - A point already has 2 correct attempts and mastery ≥ 0.9 → pose a harder "deepening" question or just advance.
 - The user explicitly wants to hear the explanation first → respect the pace, explain first.
 - A hands-on verification (procedure) already passed → it counts as evidence; no need to pile on a pointless question.
+
+## Flashcard quality standards (absorbed from the flashcards skill)
+
+A quiz/review card is a **self-test, not a reading note**. These rules govern how to craft **`memory`-type and review cards**; the iron rule above still holds — application questions remain the gold standard for comprehension points. Quality rules:
+
+1. **Force recall, not recognition** — ask open questions where the answer must
+   be reconstructed, not recognized from options.
+2. **One card, one fact** — each card asks exactly one thing; keep it short.
+3. **One unambiguous answer** — the question has a single correct answer.
+4. **Answer ≤ 3 lines** — a too-long answer can't be retrieved.
+5. **Understanding before memorizing** — cover fundamentals first, then build up.
+6. **Elaborate and connect** — link the fact to something known, a vivid image, a
+   concrete example; extra retrieval paths make recall easier.
+7. **Context built into the question** — good: "What does `git stash pop`
+   restore?"; bad: "[Git] What does stash pop do?"
+8. **Break up lists** — split enumerations into single questions, or use
+   overlapping cards (A then B, B then C).
+9. **Distinguish similar concepts** — give confusable items distinguishing context.
+10. **Ask both directions** — A→B and B→A strengthen retention.
+11. **Timestamp perishable facts** — add "as of [year]" to current numbers.
+
+Avoid: trivial facts, answers longer than three or four lines, ambiguous
+questions, opinions instead of facts, lists as an answer.
+
+> Low-effectiveness techniques to avoid: summarizing, highlighting, and rereading
+> create **illusions of learning** (recognition ≠ recall). A tutor must never
+> substitute "re-read the summary" for a retrieval question.
