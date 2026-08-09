@@ -69,10 +69,17 @@ combined tree.
 | 3 | current SRT on Apple Silicon macOS | Temporary lifecycle-script-disabled install of `@anthropic-ai/sandbox-runtime@0.0.71`; benign and outside-workspace fixtures | Pass; benign report is schema-valid `real` evidence, denied write created no file, and the CLI returned 77 |
 | 3 | local integration boundary | Full `npm test`, focused ESLint/Markdown lint, workflow-security validation, publish-surface test, and `git diff --check` | Pass |
 | 3 | independent security review | Three adversarial review rounds over environment inheritance, mock evidence, Windows launch, and mutable control files | Pass; no blocker/high finding remains |
+| 4 | local contract and mock suite | `npm run test:sandbox` after containment, rootless, cleanup, diff-completeness, and immutable-image fixes | Pass, 77/77 |
+| 4 | local Apple Silicon container host | Built and executed digest-pinned Ubuntu, Debian, and Fedora images as uid/gid 1000 | Pass; Node/npm smoke succeeds in all three arm64 images |
+| 4 | local real Docker fallback | Two clean-user cowsay installs through the shared Tier 1 adapter | Pass; schema-valid real reports, complete 876-path layer diffs, cowsay/cowthink PATH changes, 85–108 ms starts, and no leaked containers |
+| 4 | hosted rootless Podman matrix | [PR #2734 run 31335855339](https://github.com/affaan-m/ECC/actions/runs/31335855339) | Pass; Ubuntu x86_64/arm64, Debian x86_64, and Fedora x86_64 images built and executed |
+| 4 | hosted real install evidence | Downloaded and schema-validated the run's two Ubuntu x86_64 report artifacts | Pass; real Podman, complete 876-path diffs, immutable image ID, cowsay/cowthink PATH changes, 88 ms then 81 ms starts, and workflow leak check passed |
+| 4 | local integration boundary | Full `npm test` (3,789/3,789), lint, workflow-security validation, publish-surface test, YAML parse, and `git diff --check`; focused gates repeated after hosted fixes | Pass |
+| 4 | independent security and functional review | Reviewed timeout containment, incomplete evidence, rootless enforcement, cleanup, portability matrix, and image-reference race | Pass; both reviewers approve with no blocker/high finding |
 
 ## Current gate
 
-S0 through S3 are complete. Phase 4 is released for pinned Linux images, the
-rootless Podman lifecycle, and normalized install-diff evidence. Escalation,
-hardened Tier 1, CI execution, VM adapters, and agent-facing surfaces remain
+S0 through S4 are complete. Phase 5 is released for the one-hop SRT-to-Podman
+escalation path and the hardened Microsandbox adapter with explicit Podman
+degradation. CI execution, VM adapters, and agent-facing surfaces remain
 blocked by their preceding phase gates.
