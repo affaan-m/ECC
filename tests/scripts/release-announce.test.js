@@ -52,7 +52,8 @@ const receiptMarker = discussionReceiptMarker('affaan-m/ECC:discussion:D_kw123')
 assert.match(receiptMarker, /^<!-- ecc-discord-receipt:[a-f0-9]{32} -->$/);
 assert.equal(findDiscussionReceipt([
   { id: 'forged', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'attacker' } },
-  { id: 'comment-1', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'github-actions[bot]' } },
+  { id: 'pending', body: `Discord delivery: pending.\n${receiptMarker}`, author: { login: 'github-actions' } },
+  { id: 'comment-1', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'github-actions' } },
 ], receiptMarker).id, 'comment-1');
 assert.equal(findDiscussionReceipt([{ id: 'comment-2', body: 'unrelated' }], receiptMarker), null);
 assert.equal(discussionReceiptStatus({ body: `Discord delivery: pending.\n${receiptMarker}` }), 'pending');
