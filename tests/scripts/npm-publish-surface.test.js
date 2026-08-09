@@ -175,6 +175,7 @@ function main() {
         "scripts/release-video-suite.js",
         "scripts/sandbox/ecc-sandbox",
         "scripts/sandbox/contracts.js",
+        "scripts/sandbox/probe.js",
         "scripts/sandbox/router.js",
         "scripts/work-items.js",
         "scripts/platform-audit.js",

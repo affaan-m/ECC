@@ -68,6 +68,7 @@ function backendSupports(capabilities, backend, shard, manifest) {
   const hardConstraints = {
     srt: shard.os === host.os && shard.arch === host.arch,
     podman: shard.os === 'linux' && shard.arch === host.arch,
+    docker: shard.os === 'linux' && shard.arch === host.arch,
     microsandbox: shard.os === 'linux' && shard.arch === host.arch,
     lume: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
     // DECISION: CONVENTIONS item 14 permits a real Lima Linux guest on macOS.
@@ -140,9 +141,9 @@ function tierOneCandidates(manifest) {
   // DECISION: CONVENTIONS item 9 fails closed on unenforced domain allowlists.
   if (network.domainAllowlist) return ['microsandbox'];
   if (manifest.needs.trust === 'untrusted' || network.open) {
-    return ['microsandbox', 'podman'];
+    return ['microsandbox', 'podman', 'docker'];
   }
-  return ['podman'];
+  return ['podman', 'docker'];
 }
 
 function tierTwoCandidates(shard) {
@@ -157,13 +158,17 @@ function routeNotes(backend, manifest) {
   const notes = [];
   const network = networkNeeds(manifest);
   if (
-    backend === 'podman'
+    ['podman', 'docker'].includes(backend)
     && (manifest.needs.trust === 'untrusted' || network.open)
   ) {
-    notes.push('microsandbox unavailable; using documented degraded Podman isolation');
+    const fallbackName = backend === 'podman' ? 'Podman' : 'Docker';
+    notes.push(`microsandbox unavailable; using documented degraded ${fallbackName} isolation`);
   }
-  if (backend === 'podman' && network.open) {
-    notes.push('Podman v1 network policy is unrestricted for network:*');
+  if (['podman', 'docker'].includes(backend) && network.open) {
+    notes.push('Tier 1 container v1 network policy is unrestricted for network:*');
+  }
+  if (backend === 'docker') {
+    notes.push('Podman unavailable; using an already-installed Docker fallback (Docker Desktop is never required or recommended)');
   }
   if (backend === 'tart') {
     notes.push('Tart uses Fair Source 100 licensing; personal use is free, while some large organizational server installations require a paid license');
@@ -180,7 +185,7 @@ function missingRoute(shard, manifest, capabilities, localOnly) {
   ) {
     return {
       reason: 'strict domain allowlists require a probed microsandbox with domain-network-policy in Tier 1 v1',
-      fix: 'Install or update microsandbox: brew install superradcompany/tap/microsandbox',
+      fix: 'Install or update microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
     };
   }
   if (network.domainAllowlist) {

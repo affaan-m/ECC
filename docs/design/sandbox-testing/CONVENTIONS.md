@@ -37,7 +37,9 @@ must mirror.
 
 ## Docker PR salvage boundary
 
-PR #2625 is the predecessor and this branch is stacked on its clean head.
+PR #2625 is the predecessor. Phase 0 began on its clean head; after that PR
+merged, the sandbox phase commits were rebased onto current `main` before the
+hosted probe gate.
 Retain its pinned Debian/Ubuntu image inputs, non-root uid/gid 1000 execution,
 read-only source mounts, private tmpfs workspaces, offline package preparation,
 bounded subprocesses, path confinement, network-off defaults, and truthful

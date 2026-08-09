@@ -60,10 +60,14 @@ combined tree.
 | 1 | local package boundary | `node tests/scripts/npm-publish-surface.test.js` | Pass, 2/2; sandbox CLI is present in the packed runtime surface |
 | 1 | local dependency/tooling | Focused ESLint, Markdown lint, `yarn install --immutable`, and `git diff --check` | Pass |
 | 1 | independent review | Code and security review after adversarial capability/report fixes | Pass; no blocker/high finding remains |
+| 2 | local mock matrix | `npm run test:sandbox` | Pass, 47/47 across contracts/router and macOS/Linux/Windows probe fixtures |
+| 2 | local Apple Silicon host | `ecc-sandbox probe --refresh` plus capability-schema validation | Pass; macOS/arm64 and HVF detected, Docker/CI ready, unavailable backends carry setup guidance |
+| 2 | local package/workflow boundary | Clean npm install, publish-surface test, focused ESLint, workflow-security validator, and `git diff --check` | Pass |
+| 2 | current-main integration | Rebased the three phase commits after PR #2625 merged; sandbox lock diff remains limited to exact `yaml@2.9.0` | Pass; current main's mutable `node-gyp@latest` prevents a repeatable immutable Yarn resolution without unrelated lock upgrades |
+| 2 | hosted runner matrix | `.github/workflows/sandbox-probe.yml` on Ubuntu, macOS, and Windows | Pending PR-hosted evidence; Phase 2 cannot close before all three artifacts validate |
 
 ## Current gate
 
-S0 and S1 are complete. No adapter implementation has started. Phase 2 is
-released for capability probing; adapter missions remain blocked until the
-probe emits schema-valid cached/refresh output on the development host and its
-cross-platform mock matrix passes.
+S0 and S1 are complete. Phase 2 is locally green and no adapter implementation
+has started. Adapter missions remain blocked until the probe-only workflow
+emits schema-valid artifacts on hosted Ubuntu, macOS, and Windows runners.

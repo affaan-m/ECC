@@ -1,0 +1,63 @@
+name: Sandbox capability probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sandbox-probe.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'schemas/sandbox-capabilities.schema.json'
+      - 'scripts/sandbox/**'
+      - 'tests/sandbox/probe.test.js'
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-probe-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run probe tests and capture host capabilities
+        shell: bash
+        run: |
+          node tests/sandbox/probe.test.js
+          node scripts/sandbox/ecc-sandbox probe \
+            --refresh \
+            --cache "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/ecc-sandbox-probe.json"
+          node -e "const fs = require('fs'); const { validateCapabilities } = require('./scripts/sandbox/contracts'); validateCapabilities(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')));" \
+            "$RUNNER_TEMP/ecc-sandbox-probe.json"
+
+      - name: Upload capability map
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-probe-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/ecc-sandbox-probe.json
+          if-no-files-found: error
+          retention-days: 7
