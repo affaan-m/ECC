@@ -54,6 +54,8 @@ function writeLegacySourceFixture(root) {
   writeFile(root, path.join('rules', 'common', 'nested', 'shared.md'), '# Shared\n');
   writeFile(root, path.join('rules', 'common', 'node_modules', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('rules', 'common', '.git', 'ignored.md'), '# Ignored\n');
+  writeFile(root, path.join('rules', 'common', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('rules', 'common', 'stray.pyc'), 'ignored\n');
   writeFile(root, path.join('rules', 'typescript', 'testing.md'), '# TS\n');
   writeFile(root, path.join('rules', 'python', 'testing.md'), '# Python\n');
 
@@ -111,6 +113,8 @@ function writeManifestSourceFixture(root) {
   writeFile(root, path.join('src', 'nested', 'feature.js'), 'console.log("feature");\n');
   writeFile(root, path.join('src', 'node_modules', 'ignored.js'), 'console.log("ignored");\n');
   writeFile(root, path.join('src', '.git', 'ignored.js'), 'console.log("ignored");\n');
+  writeFile(root, path.join('src', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('src', 'stray.pyc'), 'ignored\n');
   writeFile(root, path.join('src', 'nested', 'ecc-install-state.json'), '{}\n');
   writeFile(root, path.join('rules', 'common', 'coding-style.md'), '# Common\n');
   writeFile(root, path.join('skills', 'demo', 'SKILL.md'), '# Demo\n');
@@ -192,6 +196,8 @@ function runTests() {
       assert.ok(operationFor(plan, path.join('custom-rules', 'typescript', 'testing.md')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('node_modules')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('.git')));
+      assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('__pycache__')));
+      assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.endsWith('.pyc')));
       assert.deepStrictEqual(plan.statePreview.request.legacyLanguages, ['typescript', 'missing-lang', '../bad']);
       assert.strictEqual(plan.statePreview.request.legacyMode, true);
       assert.strictEqual(plan.statePreview.source.repoVersion, '9.8.7');
@@ -354,6 +360,8 @@ function runTests() {
       assert.ok(!normalizedSources.includes('src/nested/ecc-install-state.json'));
       assert.ok(!normalizedSources.some(source => source.includes('node_modules')));
       assert.ok(!normalizedSources.some(source => source.includes('.git')));
+      assert.ok(!normalizedSources.some(source => source.includes('__pycache__')));
+      assert.ok(!normalizedSources.some(source => source.endsWith('.pyc')));
       assert.ok(plan.operations.some(operation => (
         operation.sourceRelativePath === path.join('.claude-plugin', 'plugin.json')
         && operation.destinationPath === path.join(homeDir, '.claude', 'plugin.json')

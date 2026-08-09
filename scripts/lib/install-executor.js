@@ -80,7 +80,8 @@ function validateLegacyTarget(target) {
   throw new Error(`Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`);
 }
 
-const IGNORED_DIRECTORY_NAMES = new Set(['node_modules', '.git']);
+const IGNORED_DIRECTORY_NAMES = new Set(['node_modules', '.git', '__pycache__']);
+const IGNORED_FILE_EXTENSIONS = new Set(['.pyc', '.pyo', '.pyd']);
 
 function listFilesRecursive(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -101,6 +102,9 @@ function listFilesRecursive(dirPath) {
         files.push(path.join(entry.name, childFile));
       }
     } else if (entry.isFile()) {
+      if (IGNORED_FILE_EXTENSIONS.has(path.extname(entry.name))) {
+        continue;
+      }
       files.push(entry.name);
     }
   }
