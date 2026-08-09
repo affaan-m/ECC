@@ -79,6 +79,16 @@
       "expected": ["microsandbox"]
     },
     {
+      "name": "open network skips SRT because its allowlist cannot express it",
+      "host": { "os": "linux", "arch": "arm64" },
+      "needs": { "os": ["linux"], "capabilities": ["network:*"] },
+      "backends": {
+        "srt": { "available": true },
+        "microsandbox": { "available": true }
+      },
+      "expected": ["microsandbox"]
+    },
+    {
       "name": "open network Podman fallback is explicit",
       "needs": { "os": ["linux"], "capabilities": ["network:*"] },
       "backends": { "podman": { "available": true } },

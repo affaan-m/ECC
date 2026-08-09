@@ -16,6 +16,11 @@ const {
   readCapabilityCache,
   writeCapabilityCache,
 } = require('./probe');
+const {
+  executeSrt,
+  loadMockScenario,
+  mockRunner,
+} = require('./backends/srt');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
 
@@ -28,7 +33,7 @@ function help() {
     name: 'ecc-sandbox',
     usage: [
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
-      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>]',
+      'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
       'ecc-sandbox escalate <report.json>',
     ],
@@ -42,6 +47,7 @@ function parseRunArgs(args) {
     dryRun: false,
     localOnly: false,
     capabilitiesPath: null,
+    mockPath: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -50,12 +56,12 @@ function parseRunArgs(args) {
       options.dryRun = true;
     } else if (arg === '--local-only') {
       options.localOnly = true;
-    } else if (arg === '--capabilities') {
+    } else if (arg === '--capabilities' || arg === '--mock') {
       const value = args[index + 1];
       if (!value || value.startsWith('-')) {
-        throw new Error('--capabilities requires a JSON file path');
+        throw new Error(`${arg} requires a JSON file path`);
       }
-      options.capabilitiesPath = value;
+      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
       index += 1;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown run argument: ${arg}`);
@@ -68,6 +74,9 @@ function parseRunArgs(args) {
 
   if (!options.manifestPath) {
     throw new Error('run requires a sandbox manifest path');
+  }
+  if (options.dryRun && options.mockPath) {
+    throw new Error('--mock executes an adapter and cannot be combined with --dry-run');
   }
   return options;
 }
@@ -132,13 +141,50 @@ function loadCapabilities(filePath) {
   return capabilities;
 }
 
-function runDryRun(options) {
+function resolveRun(options) {
   const manifestPath = path.resolve(options.manifestPath);
   const manifest = loadManifest(manifestPath);
   const capabilities = loadCapabilities(options.capabilitiesPath);
-  return routeManifest(manifest, capabilities, {
+  const decision = routeManifest(manifest, capabilities, {
     localOnly: options.localOnly,
     manifestPath,
+  });
+  return { capabilities, decision, manifest, manifestPath };
+}
+
+function runDryRun(options) {
+  return resolveRun(options).decision;
+}
+
+function runExecution(options) {
+  const resolved = resolveRun(options);
+  if (resolved.decision.result !== 'routable') {
+    const failed = resolved.decision.routes.find(route => route.result === 'error');
+    throw new Error(`${failed.reason}. ${failed.fix}`);
+  }
+  if (resolved.decision.routes.length !== 1) {
+    throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
+  }
+  const route = resolved.decision.routes[0];
+  if (route.backend !== 'srt') {
+    throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
+  }
+
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath)));
+    mock = true;
+  }
+  return executeSrt(resolved.manifest, {
+    arch: route.arch,
+    cwd: process.cwd(),
+    enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
+    manifestPath: resolved.manifestPath,
+    mock,
+    os: route.os,
+    platform: process.platform,
+    run,
   });
 }
 
@@ -189,12 +235,14 @@ function main(argv = process.argv.slice(2)) {
   }
   if (command === 'run') {
     const options = parseRunArgs(args);
-    if (!options.dryRun) {
-      throw new Error('Sandbox execution is unavailable until adapter phases; use run --dry-run');
+    if (options.dryRun) {
+      const decision = runDryRun(options);
+      writeJson(decision);
+      return decision.result === 'routable' ? 0 : 2;
     }
-    const decision = runDryRun(options);
-    writeJson(decision);
-    return decision.result === 'routable' ? 0 : 2;
+    const outcome = runExecution(options);
+    writeJson(outcome.report);
+    return outcome.exitCode;
   }
   if (command === 'probe') {
     writeJson(runProbe(parseProbeArgs(args)));
@@ -231,6 +279,8 @@ module.exports = {
   main,
   parseRunArgs,
   parseProbeArgs,
+  resolveRun,
+  runExecution,
   runProbe,
   runDryRun,
   runReport,

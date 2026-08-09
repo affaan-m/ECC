@@ -63,6 +63,19 @@ function fakeRunner(platform, installed = {}) {
     if (executable === 'gh' && argv[0] === 'auth') {
       return installed.ghAuth ? result(0, '', 'authenticated') : result(1, '', 'not logged in');
     }
+    if (executable === 'cmd.exe' && command.includes('C:\\Tools\\srt.cmd --version')) {
+      return installed.srt ? result(0, 'srt 1.0.0\n') : missing('srt.cmd');
+    }
+    if (executable === 'cmd.exe' && command.includes('C:\\Tools\\srt.cmd -c echo ecc-srt-probe')) {
+      return installed.srtReady === false
+        ? result(1, '', 'Windows sandbox is not installed')
+        : result(0, 'ecc-srt-probe\n');
+    }
+    if (executable === 'srt' && argv[0] === '-c') {
+      return installed.srtReady === false
+        ? result(1, '', 'Windows sandbox is not installed')
+        : result(0, 'ecc-srt-probe\n');
+    }
     const aliases = {
       srt: 'srt 1.0.0',
       podman: 'podman version 6.0.0',
@@ -87,10 +100,14 @@ function commonOptions(platform, architecture, installed, extras = {}) {
     cpus: 8,
     now: new Date('2026-08-08T12:00:00.000Z'),
     run: fakeRunner(platform, installed),
-    fileExists: extras.fileExists || (() => false),
+    fileExists: extras.fileExists || (filePath => (
+      platform === 'win32'
+      && installed.srt
+      && filePath.toLowerCase() === 'c:\\tools\\srt.cmd'
+    )),
     readFile: extras.readFile || (() => ''),
     canAccess: extras.canAccess || (() => Boolean(installed.virtualization)),
-    env: extras.env || {},
+    env: extras.env || (platform === 'win32' ? { Path: 'C:\\Tools' } : {}),
   };
 }
 
@@ -187,6 +204,17 @@ test('probes Windows Sandbox, Hyper-V, WHP, and Podman machine state', () => {
   assert.strictEqual(capabilities.backends['hyper-v'].available, true);
   assert.strictEqual(capabilities.backends.microsandbox.available, true);
   assert.strictEqual(capabilities.backends.podman.state, 'ready');
+});
+
+test('requires the one-time Windows SRT provisioning before reporting ready', () => {
+  const capabilities = probeCapabilities(commonOptions('win32', 'x64', {
+    virtualization: true,
+    srt: true,
+    srtReady: false,
+  }));
+  assert.strictEqual(capabilities.backends.srt.available, false);
+  assert.strictEqual(capabilities.backends.srt.state, 'not-configured');
+  assert.match(capabilities.backends.srt.fix, /windows-install/);
 });
 
 test('reports actionable setup commands without recommending Docker', () => {

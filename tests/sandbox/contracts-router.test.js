@@ -65,6 +65,7 @@ function sampleSingleReport(overrides = {}) {
     tier: 1,
     os: 'linux',
     arch: 'arm64',
+    execution_mode: 'real',
     started: '2026-08-08T12:00:00.000Z',
     duration_ms: 42,
     escalations: [],
@@ -226,6 +227,13 @@ test('rejects unbounded memory and command collections', () => {
     }),
     error => error instanceof ContractValidationError && /more than 1000/.test(error.message)
   );
+  assert.throws(
+    () => validateManifest({
+      ...buildManifest({}),
+      steps: { setup: Array(600).fill('true'), assert: Array(401).fill('true') },
+    }),
+    error => error instanceof ContractValidationError && /1000 commands combined/.test(error.message)
+  );
 });
 
 for (const testCase of routingFixtures.cases) {
@@ -276,6 +284,7 @@ test('validates single and aggregate reports through one schema', () => {
     os: 'multiple',
     arch: 'multiple',
     venue: 'local',
+    execution_mode: 'real',
     started: '2026-08-08T12:00:00.000Z',
     duration_ms: 84,
     escalations: [],
@@ -322,6 +331,7 @@ test('rejects malformed reports and more than one escalation', () => {
       os: 'multiple',
       arch: 'multiple',
       venue: 'ci',
+      execution_mode: 'real',
       started: '2026-08-08T12:00:00.000Z',
       duration_ms: 84,
       escalations: [],
@@ -339,6 +349,7 @@ test('rejects malformed reports and more than one escalation', () => {
       os: 'multiple',
       arch: 'multiple',
       venue: 'local',
+      execution_mode: 'real',
       started: '2026-08-08T12:00:00.000Z',
       duration_ms: 84,
       escalations: [],
@@ -349,6 +360,27 @@ test('rejects malformed reports and more than one escalation', () => {
       notes: [],
     }),
     error => error instanceof ContractValidationError && /children\/0/.test(error.message)
+  );
+  assert.throws(
+    () => validateReport({
+      manifest: '/tmp/sandbox.yaml',
+      backend: 'aggregate',
+      tier: null,
+      os: 'multiple',
+      arch: 'multiple',
+      venue: 'mixed',
+      execution_mode: 'real',
+      started: '2026-08-08T12:00:00.000Z',
+      duration_ms: 84,
+      escalations: [],
+      children: [
+        sampleSingleReport(),
+        sampleSingleReport({ execution_mode: 'mock' }),
+      ],
+      result: 'pass',
+      notes: [],
+    }),
+    error => error instanceof ContractValidationError && /must be mixed/.test(error.message)
   );
 });
 

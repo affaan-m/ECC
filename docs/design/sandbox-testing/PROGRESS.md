@@ -65,10 +65,14 @@ combined tree.
 | 2 | local package/workflow boundary | Clean npm install, publish-surface test, focused ESLint, workflow-security validator, and `git diff --check` | Pass |
 | 2 | current-main integration | Rebased the three phase commits after PR #2625 merged; sandbox lock diff remains limited to exact `yaml@2.9.0` | Pass; current main's mutable `node-gyp@latest` prevents a repeatable immutable Yarn resolution without unrelated lock upgrades |
 | 2 | hosted runner matrix | [PR #2734 run 31326806345](https://github.com/affaan-m/ECC/actions/runs/31326806345) on Ubuntu, macOS, and Windows | Pass; downloaded Linux x64, Windows x64, and macOS arm64 artifacts all validate against the capability schema |
+| 3 | local contract and mock suite | `npm run test:sandbox` | Pass, 61/61 across contracts, routing, probe, reporter, SRT policy, Windows launch boundary, denial classification, and mock execution |
+| 3 | current SRT on Apple Silicon macOS | Temporary lifecycle-script-disabled install of `@anthropic-ai/sandbox-runtime@0.0.71`; benign and outside-workspace fixtures | Pass; benign report is schema-valid `real` evidence, denied write created no file, and the CLI returned 77 |
+| 3 | local integration boundary | Full `npm test`, focused ESLint/Markdown lint, workflow-security validation, publish-surface test, and `git diff --check` | Pass |
+| 3 | independent security review | Three adversarial review rounds over environment inheritance, mock evidence, Windows launch, and mutable control files | Pass; no blocker/high finding remains |
 
 ## Current gate
 
-S0, S1, and S2 are complete. The probe-only workflow emitted schema-valid
-artifacts on hosted Ubuntu, macOS, and Windows runners. Phase 3 is released for
-the normalized reporter and SRT adapter; later adapter missions remain blocked
-by their preceding phase gates.
+S0 through S3 are complete. Phase 4 is released for pinned Linux images, the
+rootless Podman lifecycle, and normalized install-diff evidence. Escalation,
+hardened Tier 1, CI execution, VM adapters, and agent-facing surfaces remain
+blocked by their preceding phase gates.

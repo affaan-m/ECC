@@ -113,10 +113,13 @@ function hasAny(manifest, values) {
 
 function tierZeroEligible(manifest, shard, host) {
   // DECISION: CONVENTIONS item 8 treats clean-home as environment isolation.
+  // DECISION: CONVENTIONS item 17 routes network:* around SRT because its
+  // current allowlist schema cannot express unrestricted egress.
   return (
     shard.os === host.os
     && shard.arch === host.arch
     && manifest.needs.native === false
+    && !networkNeeds(manifest).open
     && !hasAny(manifest, [
       'pkg-install',
       'services',

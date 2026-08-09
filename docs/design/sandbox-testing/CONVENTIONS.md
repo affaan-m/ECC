@@ -99,11 +99,32 @@ uses these decisions to preserve its stated safety and fidelity goals:
     probed architecture matches. This is a locally available real Linux guest,
     even though the host family differs; it preserves the Tier 2 purpose more
     faithfully than a remote CI redirect.
+15. `fs-write` grants Tier 0 writes only inside the invocation working
+    directory. The v1 manifest has no path-valued write capability, so allowing
+    arbitrary host paths would overgrant every request. Tests that need a
+    broader or clean filesystem route to Tier 1 or declare native needs.
+16. Tier 0 re-allows reads in the invocation working directory but denies the
+    rest of the current user's home and passes only a minimal locale, terminal,
+    temporary-directory, system-root, and executable-search environment
+    allowlist. The v1 manifest has no secret-injection or host-home-read
+    capability, so inheriting the host environment would silently expose
+    undeclared authority to first-party or untrusted commands.
+17. `network:*` skips SRT and starts at Tier 1. Current SRT accepts explicit
+    domain patterns but deliberately rejects a bare wildcard in
+    `allowedDomains`, so it cannot truthfully satisfy unrestricted egress.
+18. Every report identifies `execution_mode` as `real` or `mock`; aggregate
+    reports use `mixed` when their children differ. Mock reports remain useful
+    adapter-contract evidence, but cannot be mistaken for isolation evidence.
+19. On Windows, ECC resolves npm's `srt.cmd` only from absolute `PATH`
+    directories outside the tested workspace. Manifest commands are stored in
+    private temporary scripts that SRT may read but the sandbox may not write,
+    so neither repository shim lookup nor an outer `cmd.exe` parses untrusted
+    manifest text before isolation starts.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
-harness-agnostic option. Items 1, 2, 5, 8, and 9 resolve internal contract
-contradictions or a missing clean-machine need and are therefore treated as
-that delegated authority. They are surfaced here before code and in the user
-handoff rather than hidden in implementation. Every matching code departure
-from a written routing rule must include a `DECISION:` comment referring to the
-applicable item above.
+harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
+internal contract contradictions or a missing clean-machine, write-scope, or
+evidence-integrity need and are therefore treated as that delegated authority.
+They are surfaced here before code and in the user handoff rather than hidden
+in implementation. Every matching code departure from a written routing rule
+must include a `DECISION:` comment referring to the applicable item above.

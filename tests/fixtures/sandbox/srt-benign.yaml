@@ -1,0 +1,16 @@
+name: srt-benign-acceptance
+needs:
+  os: [any]
+  capabilities: []
+  trust: first-party
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 30
+steps:
+  setup:
+    - node -e "process.stdout.write('srt-benign\\n')"
+  assert:
+    - node --version
+report: exit-only

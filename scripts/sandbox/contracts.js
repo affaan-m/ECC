@@ -98,6 +98,11 @@ function semanticManifestErrors(manifest) {
     }
   }
 
+  const commandCount = manifest.steps.setup.length + manifest.steps.assert.length;
+  if (commandCount > 1000) {
+    errors.push('/steps setup and assert may contain at most 1000 commands combined');
+  }
+
   const memoryMatch = manifest.resources.memory.match(/^([1-9][0-9]*)(MB|GB)$/);
   if (memoryMatch) {
     const memoryMb = Number(memoryMatch[1]) * (memoryMatch[2] === 'GB' ? 1024 : 1);
@@ -164,6 +169,11 @@ function semanticReportErrors(report) {
       : (report.children.some(child => child.result === 'fail') ? 'fail' : 'pass');
     if (report.result !== expected) {
       errors.push(`/result aggregate result must be ${expected}`);
+    }
+    const childModes = new Set(report.children.map(child => child.execution_mode));
+    const expectedMode = childModes.size === 1 ? report.children[0].execution_mode : 'mixed';
+    if (report.execution_mode !== expectedMode) {
+      errors.push(`/execution_mode aggregate execution mode must be ${expectedMode}`);
     }
     return errors;
   }

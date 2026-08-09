@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { readBoundedRegularFile, validateCapabilities } = require('./contracts');
 const { normalizeArch, normalizeOs } = require('./router');
+const { resolveWindowsSrtShim } = require('./backends/srt');
 
 const PROBE_TIMEOUT_MS = 5_000;
 const MAX_PROBE_BUFFER = 1024 * 1024;
@@ -170,6 +171,68 @@ function detectCi(run, platform) {
   });
 }
 
+function detectSrt(
+  run,
+  platform,
+  architecture,
+  insideContainer,
+  allowNestedSrt,
+  options = {}
+) {
+  // npm exposes SRT as srt.cmd on Windows; fixed probe commands can safely use
+  // cmd.exe while adapter execution keeps manifest text out of the outer shell.
+  const windowsShim = platform === 'windows'
+    ? resolveWindowsSrtShim(options.env || {}, options.cwd, options.fileExists)
+    : null;
+  const invoke = argv => (platform === 'windows'
+    ? (windowsShim
+      ? run('cmd.exe', ['/d', '/s', '/c', windowsShim, ...argv])
+      : { status: null, stdout: '', stderr: '', error: new Error('trusted srt.cmd not found') })
+    : run('srt', argv));
+  const versionResult = invoke(['--version']);
+  const version = succeeded(versionResult)
+    ? firstLine(versionResult.stdout || versionResult.stderr)
+    : null;
+  if (!version) {
+    return backend(false, {
+      version: null,
+      state: 'unavailable',
+      targets: [],
+      reason: 'srt not found',
+      fix: 'Install SRT (current releases require Node 20.11+): npm install -g @anthropic-ai/sandbox-runtime',
+    });
+  }
+  if (insideContainer && !allowNestedSrt) {
+    return backend(false, {
+      version,
+      state: 'unavailable',
+      targets: [],
+      reason: 'srt nested mode is weaker and disabled by ECC',
+      fix: 'Use Tier 1, or explicitly accept weaker nesting: ECC_SANDBOX_ALLOW_NESTED_SRT=1 ecc-sandbox probe --refresh',
+    });
+  }
+  if (platform === 'windows') {
+    const readiness = invoke(['-c', 'echo ecc-srt-probe']);
+    if (!succeeded(readiness)) {
+      return backend(false, {
+        version,
+        state: 'not-configured',
+        targets: [],
+        reason: 'srt is installed but its Windows sandbox account/WFP fence is not ready',
+        fix: 'Provision SRT once from an elevated terminal: npx @anthropic-ai/sandbox-runtime windows-install',
+      });
+    }
+  }
+  return backend(true, {
+    version,
+    state: 'ready',
+    targets: [{ os: platform, arch: architecture }],
+    reason: insideContainer
+      ? 'srt weaker nested mode was explicitly enabled'
+      : 'srt is ready',
+  });
+}
+
 function detectWindowsFeatures(run, architecture) {
   const wsbVersion = commandVersion(run, 'wsb', ['--help']);
   const hyperv = run('powershell.exe', [
@@ -222,7 +285,6 @@ function probeCapabilities(options = {}) {
     || probeEnv.ECC_SANDBOX_ALLOW_NESTED_SRT === '1';
   const virtualization = detectVirtualization(platform, architecture, run, canAccess);
   const target = [{ os: 'linux', arch: architecture }];
-  const srtVersion = commandVersion(run, 'srt');
   const microsandboxVersion = commandVersion(run, 'msb');
   const lumeVersion = commandVersion(run, 'lume');
   const limaVersion = commandVersion(run, 'limactl');
@@ -256,22 +318,10 @@ function probeCapabilities(options = {}) {
       virtualization: virtualization ? 'available' : 'unavailable',
     },
     backends: {
-      srt: backend(Boolean(srtVersion) && (!insideContainer || allowNestedSrt), {
-        version: srtVersion,
-        state: srtVersion && (!insideContainer || allowNestedSrt) ? 'ready' : 'unavailable',
-        targets: srtVersion && (!insideContainer || allowNestedSrt)
-          ? [{ os: platform, arch: architecture }]
-          : [],
-        reason: insideContainer
-          ? (allowNestedSrt
-            ? 'srt weaker nested mode was explicitly enabled'
-            : 'srt nested mode is weaker and disabled by ECC')
-          : (srtVersion ? 'srt is ready' : 'srt not found'),
-        fix: !srtVersion
-          ? 'Install SRT: npm install -g @anthropic-ai/sandbox-runtime'
-          : (insideContainer && !allowNestedSrt
-            ? 'Use Tier 1, or explicitly accept weaker nesting: ECC_SANDBOX_ALLOW_NESTED_SRT=1 ecc-sandbox probe --refresh'
-            : undefined),
+      srt: detectSrt(run, platform, architecture, insideContainer, allowNestedSrt, {
+        cwd: options.cwd || process.cwd(),
+        env: probeEnv,
+        fileExists,
       }),
       podman: detectPodman(run, platform, architecture),
       docker: backend(Boolean(dockerVersion) && succeeded(dockerInfo), {
@@ -355,6 +405,7 @@ module.exports = {
   commandVersion,
   detectInsideContainer,
   detectPodman,
+  detectSrt,
   detectVirtualization,
   probeCapabilities,
   readCapabilityCache,
