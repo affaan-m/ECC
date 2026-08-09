@@ -1,36 +1,35 @@
-name: Release Announce
+name: Discussion Announce
 
 on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
+  discussion:
+    types: [created]
 
 permissions:
   contents: read
 
 concurrency:
-  group: discord-release-${{ github.event.workflow_run.id }}
+  group: discord-discussion-${{ github.event.discussion.node_id }}
   cancel-in-progress: false
 
 jobs:
   announce:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.discussion.category.name == 'Announcements'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      discussions: write
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - name: Create announcement and send it to Discord
+      - name: Send announcement to Discord
         run: node scripts/discord/release-announce.mjs
         env:
-          ANNOUNCEMENT_KIND: release
+          ANNOUNCEMENT_KIND: discussion
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_ANNOUNCE_CHANNEL_ID: ${{ secrets.DISCORD_ANNOUNCE_CHANNEL_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          DISCUSSION_TITLE: ${{ github.event.discussion.title }}
+          DISCUSSION_BODY: ${{ github.event.discussion.body }}
+          DISCUSSION_URL: ${{ github.event.discussion.html_url }}
+          DISCUSSION_CATEGORY: ${{ github.event.discussion.category.name }}
