@@ -6,9 +6,12 @@ import subprocess
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
+import json
+from pathlib import Path
+
 import pytest
 
-from scripts.runner import _setup_sandbox, run_scenario
+from scripts.runner import _parse_stream_json, _setup_sandbox, run_scenario
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,52 @@ class TestRunScenarioMaxTurnsTermination:
         with patch("scripts.runner.subprocess.run", return_value=fake_result):
             with pytest.raises(RuntimeError, match="claude -p failed"):
                 run_scenario(scenario, model="haiku")
+
+
+class TestParseStreamJsonRedactsHomePath:
+    """Observations feed grade() and then a written report (results/<skill>.md) —
+    a raw absolute path bakes the operator's username into every tool call
+    that touched anything under $HOME. --add-dir restricts the sandbox, but
+    scenario setup_commands or the model's own tool calls can still reference
+    $HOME directly (e.g. a Bash command using ~ expansion, or a scenario that
+    legitimately needs to read a dotfile). Redact to a portable placeholder
+    rather than persisting the raw path.
+    """
+
+    def _stream_json_for(self, tool_input: dict, output_text: str) -> str:
+        return (
+            '{"type":"assistant","message":{"content":[{"type":"tool_use",'
+            '"id":"tu1","name":"Read","input":' + json.dumps(tool_input) + "}]}}\n"
+            '{"type":"user","session_id":"s1","message":{"content":[{"type":'
+            '"tool_result","tool_use_id":"tu1","content":' + json.dumps(output_text) + "}]}}\n"
+        )
+
+    def test_input_home_path_redacted(self):
+        home = str(Path.home())
+        stdout = self._stream_json_for(
+            {"file_path": f"{home}/notes/secrets.env"}, "irrelevant output"
+        )
+        events = _parse_stream_json(stdout)
+        assert len(events) == 1
+        assert home not in events[0].input
+        assert "~/notes/secrets.env" in events[0].input
+
+    def test_output_home_path_redacted(self):
+        home = str(Path.home())
+        stdout = self._stream_json_for(
+            {"file_path": "irrelevant"}, f"wrote to {home}/notes/secrets.env"
+        )
+        events = _parse_stream_json(stdout)
+        assert len(events) == 1
+        assert home not in events[0].output
+        assert "~/notes/secrets.env" in events[0].output
+
+    def test_paths_outside_home_untouched(self):
+        stdout = self._stream_json_for(
+            {"file_path": "/tmp/skill-comply-sandbox/t1/file.txt"}, "ok"
+        )
+        events = _parse_stream_json(stdout)
+        assert "/tmp/skill-comply-sandbox/t1/file.txt" in events[0].input
 
 
 class TestRunScenarioErrorIncludesStdoutTail:

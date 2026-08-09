@@ -122,6 +122,22 @@ def _setup_sandbox(sandbox_dir: Path, scenario: Scenario) -> None:
             continue
 
 
+def _redact_home_path(text: str) -> str:
+    """Replace the operator's home directory with a portable placeholder.
+
+    Observations flow into grade() and then into a written report
+    (results/<skill>.md) that's meant to be read, diffed, and shared —
+    an absolute path bakes the operator's username into every tool call
+    that happened to touch anything under $HOME (including the sandbox
+    itself, which lives under a tempdir but scenario setup_commands or
+    an agent's own tool calls can still reference $HOME directly).
+    """
+    home = str(Path.home())
+    if home and home != "/" and home in text:
+        return text.replace(home, "~")
+    return text
+
+
 def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
     """Parse claude -p stream-json output into ObservationEvents.
 
@@ -154,7 +170,7 @@ def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
                     )
                     pending[tool_use_id] = {
                         "tool": block.get("name", "unknown"),
-                        "input": input_str,
+                        "input": _redact_home_path(input_str),
                         "order": event_counter,
                     }
                     event_counter += 1
@@ -178,7 +194,7 @@ def _parse_stream_json(stdout: str) -> list[ObservationEvent]:
                             tool=info["tool"],
                             session=msg.get("session_id", "unknown"),
                             input=info["input"],
-                            output=output_str,
+                            output=_redact_home_path(output_str),
                         ))
 
     for _tool_use_id, info in pending.items():
