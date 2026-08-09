@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: discord-release-${{ github.event.workflow_run.id }}
+  group: ecc-discord-announcement-delivery
   cancel-in-progress: false
 
 jobs:

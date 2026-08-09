@@ -72,5 +72,16 @@ export function discussionReceiptMarker(key) {
 }
 
 export function findDiscussionReceipt(comments, marker) {
-  return comments.find(comment => typeof comment?.body === 'string' && comment.body.includes(marker)) || null;
+  return comments.find(comment => (
+    comment?.author?.login === 'github-actions[bot]'
+    && typeof comment.body === 'string'
+    && comment.body.includes(marker)
+  )) || null;
+}
+
+export function discussionReceiptStatus(comment) {
+  const body = String(comment?.body || '');
+  if (body.includes('Discord delivery: complete')) return 'complete';
+  if (body.includes('Discord delivery: pending')) return 'pending';
+  return 'unknown';
 }

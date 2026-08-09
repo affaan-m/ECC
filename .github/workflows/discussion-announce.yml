@@ -15,7 +15,7 @@ permissions:
   discussions: write
 
 concurrency:
-  group: discord-discussion-${{ github.event.discussion.node_id || inputs.discussion_number }}
+  group: ecc-discord-announcement-delivery
   cancel-in-progress: false
 
 jobs:

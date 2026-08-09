@@ -5,6 +5,7 @@ import {
   announcementKey,
   buildDiscordPayload,
   discussionReceiptMarker,
+  discussionReceiptStatus,
   findDiscussionReceipt,
   findDiscordReceipt,
   findReleaseDiscussion,
@@ -105,7 +106,7 @@ async function findReceiptComment(discussionId, marker) {
   let cursor = null;
   for (let page = 0; page < 50; page += 1) {
     const data = await githubGraphql(
-      `query($id:ID!,$after:String){node(id:$id){... on Discussion{comments(first:100,after:$after){nodes{id body} pageInfo{hasNextPage endCursor}}}}}`,
+      `query($id:ID!,$after:String){node(id:$id){... on Discussion{comments(first:100,after:$after){nodes{id body author{login}} pageInfo{hasNextPage endCursor}}}}}`,
       { id: discussionId, after: cursor },
     );
     const comments = data.node?.comments;
@@ -154,16 +155,21 @@ async function deliver(discussion) {
   const key = announcementKey({ repository: env.GITHUB_REPOSITORY, discussionId: discussion.id });
   if (env.DISCORD_ANNOUNCE_WEBHOOK_URL) {
     if (!env.GITHUB_TOKEN) throw new Error('GitHub receipt configuration is missing');
+    const webhookUrl = normalizeDiscordWebhookUrl(env.DISCORD_ANNOUNCE_WEBHOOK_URL);
     const marker = discussionReceiptMarker(key);
-    if (await findReceiptComment(discussion.id, marker)) {
-      console.log('announcement already claimed or delivered');
-      return;
+    const existingReceipt = await findReceiptComment(discussion.id, marker);
+    if (existingReceipt) {
+      if (discussionReceiptStatus(existingReceipt) === 'complete') {
+        console.log('announcement already delivered');
+        return;
+      }
+      throw new Error('announcement has a pending receipt; inspect Discord before clearing it');
     }
     const claimId = await addReceiptComment(discussion.id, `${marker}\n\nDiscord delivery: pending.`);
     const payload = buildDiscordPayload({ title: discussion.title, body: discussion.body, url: discussion.url, key });
     delete payload.nonce;
     delete payload.enforce_nonce;
-    const response = await request(normalizeDiscordWebhookUrl(env.DISCORD_ANNOUNCE_WEBHOOK_URL), {
+    const response = await request(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
