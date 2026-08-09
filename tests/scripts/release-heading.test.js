@@ -42,7 +42,11 @@ function runHeadingUpdate(contents, version) {
   const file = path.join(dir, 'README.md');
   try {
     fs.writeFileSync(file, contents);
-    const result = spawnSync(process.execPath, ['-e', headingProgram, file, version], {
+    // release.sh passes the previous version as the helper's third argument.
+    // Derive it from the fixture so this harness exercises the real call shape;
+    // keep a deterministic value for fixtures intentionally missing a heading.
+    const oldVersion = contents.match(/^### v([^ ]+)/m)?.[1] || '2.0.0';
+    const result = spawnSync(process.execPath, ['-e', headingProgram, file, version, oldVersion], {
       encoding: 'utf8',
     });
     return {
@@ -105,7 +109,7 @@ function runTests() {
     assert.notStrictEqual(result.status, 0, 'a missing heading must be a hard failure');
     assert.match(
       result.stderr,
-      /could not update latest release heading/i,
+      /could not update release heading/i,
       'the failure should name the unmet expectation'
     );
     assert.strictEqual(

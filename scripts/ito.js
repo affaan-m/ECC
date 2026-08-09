@@ -10,7 +10,7 @@ const {
   getInvocationCommand,
 } = require("./lib/ito-environment");
 
-const SUPPORTED_COMMANDS = Object.freeze(["login", "auth", "find", "status", "evals"]);
+const SUPPORTED_COMMANDS = Object.freeze(["login", "logout", "auth", "find", "status", "evals"]);
 const CANONICAL_REPOSITORY = "https://github.com/Ito-Markets/ito-cloud-runtime.git";
 const CANONICAL_PACKAGE_PATH = "cli/ito-compute-cli";
 const CANONICAL_ENTRY_SEGMENTS = Object.freeze([
@@ -29,11 +29,12 @@ ECC × Itô local CLI bridge
 
 Usage:
   ecc ito login [--no-browser]
+  ecc ito logout
   ecc ito auth
   ecc ito find <all required RFQ options>
   ecc ito status
   ecc ito evals --cluster <id> --live-sixtytwo --nodes <list> --config-dir <dir>
-  ecc ito <login|auth|find|status|evals> --json
+  ecc ito <login|logout|auth|find|status|evals> --json
 
 The bridge invokes the separately installed canonical Itô CLI and returns its
 real stdout, stderr, and exit code unchanged. "ecc ito login" delegates to the
@@ -42,6 +43,8 @@ and persists its device token in macOS Keychain. Pass --no-browser to
 suppress that handoff. ECC itself performs no browser automation and adds no
 lock, workload, inference, or purchase path.
 "ecc ito auth" is validation-only and never starts device login.
+"ecc ito logout" asks the canonical CLI to revoke the current device credential
+and remove its local copy only after remote revocation is confirmed.
 
 Important:
   - "find" reads live inventory and submits an authenticated RFQ.
@@ -161,7 +164,7 @@ function parseArgs(argv, environment = process.env) {
   const command = withoutJson.shift();
   if (!SUPPORTED_COMMANDS.includes(command)) {
     throw new Error(
-      `Unsupported Itô command "${command || "(missing)"}"; ECC permits only login, auth, find, status, and evals.`
+      `Unsupported Itô command "${command || "(missing)"}"; ECC permits only login, logout, auth, find, status, and evals.`
     );
   }
   if (command === "auth" && withoutJson.includes("--no-browser")) {

@@ -164,6 +164,7 @@ Examples:
   ecc consult "security reviews"
   ecc control-pane --port 8765
   ecc ito login [--no-browser]
+  ecc ito logout
   ecc ito auth
   ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
   ecc ito status --json

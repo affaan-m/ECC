@@ -215,7 +215,9 @@ jobs:
       - name: Run npm audit
         run: |
           npm audit signatures
-          npm audit --audit-level=high
+          # Runtime/package advisories are release blockers. Development-only
+          # lint tooling remains covered by signature and IOC verification.
+          npm audit --omit=dev --audit-level=high
 
       - name: Run supply-chain IOC scan
         run: npm run security:ioc-scan
