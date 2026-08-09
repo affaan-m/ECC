@@ -29,9 +29,7 @@ jobs:
         run: node scripts/discord/release-announce.mjs
         env:
           ANNOUNCEMENT_KIND: release
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_ANNOUNCE_WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK_URL }}
-          DISCORD_ANNOUNCE_CHANNEL_ID: ${{ secrets.DISCORD_ANNOUNCE_CHANNEL_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}

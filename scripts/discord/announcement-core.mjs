@@ -57,7 +57,7 @@ export function normalizeDiscordWebhookUrl(value) {
   } catch {
     throw new Error('invalid Discord webhook URL');
   }
-  if (parsed.protocol !== 'https:' || parsed.hostname !== 'discord.com') {
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'discord.com' || parsed.port || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error('invalid Discord webhook URL');
   }
   if (!/^\/api\/webhooks\/\d{10,25}\/[A-Za-z0-9._-]{20,}$/.test(parsed.pathname)) {
@@ -65,4 +65,12 @@ export function normalizeDiscordWebhookUrl(value) {
   }
   parsed.search = '?wait=true';
   return parsed.toString();
+}
+
+export function discussionReceiptMarker(key) {
+  return `<!-- ecc-discord-receipt:${createHash('sha256').update(String(key)).digest('hex').slice(0, 32)} -->`;
+}
+
+export function findDiscussionReceipt(comments, marker) {
+  return comments.find(comment => typeof comment?.body === 'string' && comment.body.includes(marker)) || null;
 }

@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  discussions: write
 
 concurrency:
   group: discord-discussion-${{ github.event.discussion.node_id || inputs.discussion_number }}
@@ -32,8 +33,7 @@ jobs:
         env:
           ANNOUNCEMENT_KIND: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'discussion' }}
           DISCORD_ANNOUNCE_WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK_URL }}
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_ANNOUNCE_CHANNEL_ID: ${{ secrets.DISCORD_ANNOUNCE_CHANNEL_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DISCUSSION_ID: ${{ github.event.discussion.node_id }}
           DISCUSSION_TITLE: ${{ github.event.discussion.title }}
