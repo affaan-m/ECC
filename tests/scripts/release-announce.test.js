@@ -9,6 +9,7 @@ async function main() {
     normalizeDiscordWebhookUrl,
     discussionReceiptMarker,
     findDiscussionReceipt,
+    discussionReceiptStatus,
     releaseMarker,
   } = await import('../../scripts/discord/announcement-core.mjs');
 
@@ -49,8 +50,13 @@ assert.throws(() => normalizeDiscordWebhookUrl('https://discord.com/api/webhooks
 
 const receiptMarker = discussionReceiptMarker('affaan-m/ECC:discussion:D_kw123');
 assert.match(receiptMarker, /^<!-- ecc-discord-receipt:[a-f0-9]{32} -->$/);
-assert.equal(findDiscussionReceipt([{ id: 'comment-1', body: `delivered\n${receiptMarker}` }], receiptMarker).id, 'comment-1');
+assert.equal(findDiscussionReceipt([
+  { id: 'forged', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'attacker' } },
+  { id: 'comment-1', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'github-actions[bot]' } },
+], receiptMarker).id, 'comment-1');
 assert.equal(findDiscussionReceipt([{ id: 'comment-2', body: 'unrelated' }], receiptMarker), null);
+assert.equal(discussionReceiptStatus({ body: `Discord delivery: pending.\n${receiptMarker}` }), 'pending');
+assert.equal(discussionReceiptStatus({ body: `Discord delivery: complete (message 1).\n${receiptMarker}` }), 'complete');
 
   console.log('release announcement core: ok');
 }

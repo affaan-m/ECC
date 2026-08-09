@@ -10,6 +10,7 @@ const releaseWorkflow = fs.readFileSync(path.join(root, '.github/workflows/relea
 assert.match(discussionWorkflow, /discussion:\s*\n\s*types:\s*\[created\]/);
 assert.match(discussionWorkflow, /category\.name\s*==\s*'Announcements'/);
 assert.match(discussionWorkflow, /concurrency:/);
+assert.match(discussionWorkflow, /group:\s*ecc-discord-announcement-delivery/);
 assert.doesNotMatch(discussionWorkflow, /pull_request_target|workflow_run/);
 assert.match(discussionWorkflow, /persist-credentials:\s*false/);
 assert.match(discussionWorkflow, /ANNOUNCEMENT_KIND:.*'manual'.*'discussion'/);
@@ -25,6 +26,7 @@ assert.match(releaseAnnounceWorkflow, /conclusion\s*==\s*'success'/);
 assert.match(releaseAnnounceWorkflow, /ref:\s*\$\{\{ github\.event\.repository\.default_branch \}\}/);
 assert.match(releaseAnnounceWorkflow, /ANNOUNCEMENT_KIND:\s*release/);
 assert.match(releaseAnnounceWorkflow, /discussions:\s*write/);
+assert.match(releaseAnnounceWorkflow, /group:\s*ecc-discord-announcement-delivery/);
 assert.doesNotMatch(releaseAnnounceWorkflow, /DISCORD_BOT_TOKEN|DISCORD_ANNOUNCE_CHANNEL_ID/);
 assert.doesNotMatch(releaseWorkflow, /DISCORD_BOT_TOKEN|ANNOUNCEMENT_KIND/);
 
