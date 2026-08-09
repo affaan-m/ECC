@@ -1,0 +1,31 @@
+ARG BASE_IMAGE=debian:stable-slim@sha256:0d97731c59efdde181e19c4a5ec22d16e9eefcb73175598b9b7bae712c7214eb
+ARG NODE_IMAGE=node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+
+FROM ${NODE_IMAGE} AS node-runtime
+FROM ${BASE_IMAGE}
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      bash ca-certificates curl git libatomic1 sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && existing_group="$(getent group 1000 | cut -d: -f1 || true)" \
+    && if [ -n "${existing_group}" ] && [ "${existing_group}" != ecc ]; then groupmod --new-name ecc "${existing_group}"; elif [ -z "${existing_group}" ]; then groupadd --gid 1000 ecc; fi \
+    && existing_user="$(getent passwd 1000 | cut -d: -f1 || true)" \
+    && if [ -n "${existing_user}" ] && [ "${existing_user}" != ecc ]; then usermod --login ecc --home /home/ecc --move-home "${existing_user}"; elif [ -z "${existing_user}" ]; then useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ecc; fi \
+    && printf 'ecc ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/ecc \
+    && chmod 0440 /etc/sudoers.d/ecc
+
+COPY --from=node-runtime /usr/local/ /usr/local/
+
+RUN mkdir -p /workspace /home/ecc/.local \
+    && chown -R 1000:1000 /workspace /home/ecc
+
+ENV HOME=/home/ecc
+ENV NPM_CONFIG_PREFIX=/home/ecc/.local
+ENV PATH=/home/ecc/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+WORKDIR /workspace
+USER 1000:1000
+CMD ["sleep", "infinity"]
+
+LABEL org.opencontainers.image.title="ECC sandbox Debian stable snapshot"

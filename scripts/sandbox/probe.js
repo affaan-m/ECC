@@ -106,13 +106,30 @@ function detectPodman(run, platform, architecture) {
 
   if (platform === 'linux') {
     const info = run('podman', ['info', '--format', 'json']);
-    const ready = succeeded(info);
+    let rootless = false;
+    if (succeeded(info)) {
+      try {
+        const parsed = JSON.parse(info.stdout);
+        rootless = parsed?.host?.security?.rootless === true;
+      } catch {
+        rootless = false;
+      }
+    }
+    const ready = succeeded(info) && rootless;
     return backend(ready, {
       version,
-      state: ready ? 'ready' : 'not-configured',
+      state: ready ? 'ready' : (succeeded(info) ? 'unavailable' : 'not-configured'),
       targets: ready ? [{ os: 'linux', arch: architecture }] : [],
-      reason: ready ? 'rootless Podman is ready' : 'podman is installed but not usable by this user',
-      fix: ready ? undefined : 'Configure rootless Podman: podman system migrate',
+      reason: ready
+        ? 'rootless Podman is ready'
+        : (succeeded(info)
+          ? 'Podman is running as root; ECC requires rootless isolation'
+          : 'podman is installed but not usable by this user'),
+      fix: ready
+        ? undefined
+        : (succeeded(info)
+          ? "Run Podman as an unprivileged user; verify: podman info --format '{{.Host.Security.Rootless}}'"
+          : 'Configure rootless Podman: podman system migrate'),
     });
   }
 
@@ -128,6 +145,26 @@ function detectPodman(run, platform, architecture) {
       ));
     } catch {
       running = false;
+    }
+  }
+  if (running) {
+    const info = run('podman', ['info', '--format', 'json']);
+    let rootless = false;
+    if (succeeded(info)) {
+      try {
+        rootless = JSON.parse(info.stdout)?.host?.security?.rootless === true;
+      } catch {
+        rootless = false;
+      }
+    }
+    if (!rootless) {
+      return backend(false, {
+        version,
+        state: 'unavailable',
+        targets: [],
+        reason: 'Podman machine is rootful or its rootless state cannot be verified',
+        fix: 'Use a rootless Podman machine: podman machine set --rootful=false && podman machine stop && podman machine start',
+      });
     }
   }
   return backend(running, {

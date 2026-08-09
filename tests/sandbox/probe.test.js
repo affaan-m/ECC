@@ -55,7 +55,11 @@ function fakeRunner(platform, installed = {}) {
       return result(0, JSON.stringify([{ Running: Boolean(installed.podmanRunning) }]));
     }
     if (executable === 'podman' && argv[0] === 'info') {
-      return installed.podmanRunning ? result(0, '{}') : result(1, '', 'not ready');
+      return installed.podmanRunning
+        ? result(0, JSON.stringify({
+          host: { security: { rootless: installed.podmanRootless !== false } },
+        }))
+        : result(1, '', 'not ready');
     }
     if (executable === 'docker' && argv[0] === 'info') {
       return installed.docker ? result(0, '"27.0"') : missing(executable);
@@ -152,6 +156,19 @@ test('disables weaker nested SRT on a Linux container', () => {
   assert.match(capabilities.backends.srt.reason, /nested mode/);
   assert.strictEqual(capabilities.backends.podman.available, true);
   assert.strictEqual(capabilities.backends.microsandbox.available, true);
+});
+
+test('rejects rootful Podman on Linux', () => {
+  const capabilities = probeCapabilities(commonOptions('linux', 'x64', {
+    virtualization: true,
+    podman: true,
+    podmanRunning: true,
+    podmanRootless: false,
+  }));
+  assert.strictEqual(capabilities.backends.podman.available, false);
+  assert.strictEqual(capabilities.backends.podman.state, 'unavailable');
+  assert.match(capabilities.backends.podman.reason, /requires rootless/);
+  assert.match(capabilities.backends.podman.fix, /unprivileged user/);
 });
 
 test('enables weaker nested SRT only through an explicit opt-in', () => {
@@ -253,6 +270,18 @@ test('starts an existing stopped Podman machine without reinitializing it', () =
   }));
   assert.strictEqual(capabilities.backends.podman.available, false);
   assert.strictEqual(capabilities.backends.podman.fix, 'Start Podman: podman machine start');
+});
+
+test('rejects a rootful Podman machine', () => {
+  const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
+    virtualization: true,
+    podman: true,
+    podmanRunning: true,
+    podmanRootless: false,
+  }));
+  assert.strictEqual(capabilities.backends.podman.available, false);
+  assert.match(capabilities.backends.podman.reason, /rootful/);
+  assert.match(capabilities.backends.podman.fix, /rootful=false/);
 });
 
 test('writes and reads a private schema-valid capability cache', () => {

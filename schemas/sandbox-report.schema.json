@@ -58,7 +58,7 @@
         "dotfiles_touched"
       ],
       "properties": {
-        "method": { "enum": ["podman-layer", "scan", "none"] },
+        "method": { "enum": ["podman-layer", "docker-layer", "scan", "none"] },
         "complete": { "type": "boolean" },
         "files_added": { "$ref": "#/definitions/stringArray" },
         "files_changed": { "$ref": "#/definitions/stringArray" },

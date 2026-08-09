@@ -4,8 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { readBoundedRegularFile } = require('../contracts');
 const { buildSingleReport, normalizeStep } = require('../report');
+const { loadMockScenario, mockRunner, validateMockScenario } = require('../mock');
 
 const SRT_DENIAL_EXIT_CODE = 77;
 const MAX_EXEC_BUFFER = 1024 * 1024;
@@ -121,66 +121,6 @@ function isSrtDenial(execution) {
 
 function hasInstallerSignature(command) {
   return INSTALLER_PATTERN.test(command);
-}
-
-function validateMockScenario(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('SRT mock scenario must be an object');
-  }
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== 'results') {
-    throw new Error('SRT mock scenario permits only a results array');
-  }
-  if (!Array.isArray(value.results) || value.results.length < 1 || value.results.length > 1000) {
-    throw new Error('SRT mock results must contain 1-1000 entries');
-  }
-  return value.results.map((entry, index) => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new Error(`SRT mock result ${index} must be an object`);
-    }
-    const allowed = new Set(['status', 'stdout', 'stderr', 'error']);
-    const unknown = Object.keys(entry).filter(key => !allowed.has(key));
-    if (unknown.length > 0) {
-      throw new Error(`SRT mock result ${index} has unknown key: ${unknown[0]}`);
-    }
-    if (!Number.isInteger(entry.status) && entry.status !== null) {
-      throw new Error(`SRT mock result ${index} status must be an integer or null`);
-    }
-    for (const field of ['stdout', 'stderr', 'error']) {
-      if (entry[field] !== undefined && typeof entry[field] !== 'string') {
-        throw new Error(`SRT mock result ${index} ${field} must be a string`);
-      }
-    }
-    return {
-      status: entry.status,
-      stdout: entry.stdout || '',
-      stderr: entry.stderr || '',
-      error: entry.error ? new Error(entry.error) : null,
-    };
-  });
-}
-
-function loadMockScenario(filePath) {
-  return validateMockScenario(JSON.parse(
-    readBoundedRegularFile(filePath, 'SRT mock scenario')
-  ));
-}
-
-function mockRunner(results) {
-  let index = 0;
-  return () => {
-    if (index >= results.length) {
-      return {
-        status: null,
-        stdout: '',
-        stderr: '',
-        error: new Error('SRT mock scenario ran out of results'),
-      };
-    }
-    const result = results[index];
-    index += 1;
-    return result;
-  };
 }
 
 function executeSrt(manifest, options) {

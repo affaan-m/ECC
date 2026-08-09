@@ -120,11 +120,29 @@ uses these decisions to preserve its stated safety and fidelity goals:
     private temporary scripts that SRT may read but the sandbox may not write,
     so neither repository shim lookup nor an outer `cmd.exe` parses untrusted
     manifest text before isolation starts.
+20. Tier 1 mounts the invocation directory read-only at `/workspace/source`
+    and gives the test an otherwise disposable container filesystem rooted at
+    `/workspace`. Reports record both the requested image reference and its
+    inspected content ID so a mutable local tag cannot hide the snapshot that
+    actually ran.
+21. Every Podman run verifies rootless mode immediately before image creation,
+    drops all Linux capabilities, bounds processes/CPU/memory, and keeps the
+    source mount read-only. First-party tests retain passwordless `sudo` only
+    inside that rootless user namespace so package installers behave normally;
+    untrusted Podman fallback additionally enables `no-new-privileges` and is
+    explicitly reported as degraded from the preferred Microsandbox backend.
+22. Layer-diff reports include directory entries and cap every normalized list
+    at 1,000 paths. Executable and top-level home dotfile classifications include
+    deleted paths; `services_registered` includes only added/changed services,
+    while removed services remain explicit in `files_deleted`. Malformed or
+    truncated install evidence makes an `install-diff` run an error, never a
+    passing partial report.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
 internal contract contradictions or a missing clean-machine, write-scope, or
 evidence-integrity need and are therefore treated as that delegated authority.
+Items 20-22 record the corresponding Tier 1 containment and evidence choices.
 They are surfaced here before code and in the user handoff rather than hidden
 in implementation. Every matching code departure from a written routing rule
 must include a `DECISION:` comment referring to the applicable item above.

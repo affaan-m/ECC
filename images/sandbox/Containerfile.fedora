@@ -1,0 +1,34 @@
+ARG BASE_IMAGE=fedora:latest@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
+ARG NODE_IMAGE=node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+
+FROM ${NODE_IMAGE} AS node-runtime
+FROM ${BASE_IMAGE}
+
+RUN dnf install --assumeyes \
+      bash ca-certificates curl findutils git libatomic shadow-utils sudo \
+    && dnf clean all \
+    && existing_group="$(getent group 1000 | cut -d: -f1 || true)" \
+    && if [ -n "${existing_group}" ] && [ "${existing_group}" != ecc ]; then groupmod --new-name ecc "${existing_group}"; elif [ -z "${existing_group}" ]; then groupadd --gid 1000 ecc; fi \
+    && existing_user="$(getent passwd 1000 | cut -d: -f1 || true)" \
+    && if [ -n "${existing_user}" ] && [ "${existing_user}" != ecc ]; then usermod --login ecc --home /home/ecc --move-home "${existing_user}"; elif [ -z "${existing_user}" ]; then useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ecc; fi \
+    && printf 'ecc ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/ecc \
+    && chmod 0440 /etc/sudoers.d/ecc
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
+
+RUN mkdir -p /workspace /home/ecc/.local \
+    && ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
+    && chown -R 1000:1000 /workspace /home/ecc
+
+ENV HOME=/home/ecc
+ENV NPM_CONFIG_PREFIX=/home/ecc/.local
+ENV PATH=/home/ecc/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+WORKDIR /workspace
+USER 1000:1000
+CMD ["sleep", "infinity"]
+
+LABEL org.opencontainers.image.title="ECC sandbox Fedora latest snapshot"
