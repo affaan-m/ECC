@@ -16,11 +16,9 @@ const {
   readCapabilityCache,
   writeCapabilityCache,
 } = require('./probe');
-const {
-  executeSrt,
-  loadMockScenario,
-  mockRunner,
-} = require('./backends/srt');
+const { executeSrt } = require('./backends/srt');
+const { executeContainer } = require('./backends/podman');
+const { loadMockScenario, mockRunner } = require('./mock');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
 
@@ -166,25 +164,36 @@ function runExecution(options) {
     throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
   }
   const route = resolved.decision.routes[0];
-  if (route.backend !== 'srt') {
+  if (!['srt', 'podman', 'docker'].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
 
   let run;
   let mock = false;
   if (options.mockPath) {
-    run = mockRunner(loadMockScenario(path.resolve(options.mockPath)));
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
     mock = true;
   }
-  return executeSrt(resolved.manifest, {
+  const executionOptions = {
     arch: route.arch,
     cwd: process.cwd(),
-    enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
     manifestPath: resolved.manifestPath,
     mock,
-    os: route.os,
-    platform: process.platform,
+    notes: route.notes,
     run,
+  };
+  if (route.backend === 'srt') {
+    return executeSrt(resolved.manifest, {
+      ...executionOptions,
+      enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
+      os: route.os,
+      platform: process.platform,
+    });
+  }
+  return executeContainer(resolved.manifest, {
+    ...executionOptions,
+    image: process.env.ECC_SANDBOX_IMAGE,
+    runtime: route.backend,
   });
 }
 

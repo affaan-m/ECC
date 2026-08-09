@@ -41,6 +41,7 @@ function buildExpectedPublishPaths(repoRoot) {
 
   const extraPaths = [
     "manifests",
+    "images/sandbox",
     "scripts/ecc.js",
     "scripts/feedback.js",
     "scripts/catalog.js",
@@ -170,6 +171,11 @@ function main() {
         "scripts/sandbox/report.js",
         "scripts/sandbox/router.js",
         "scripts/sandbox/backends/srt.js",
+        "scripts/sandbox/backends/podman.js",
+        "scripts/sandbox/mock.js",
+        "images/sandbox/Containerfile.ubuntu",
+        "images/sandbox/Containerfile.debian",
+        "images/sandbox/Containerfile.fedora",
         "scripts/work-items.js",
         "scripts/platform-audit.js",
         "scripts/sync-ecc-to-codex.sh",

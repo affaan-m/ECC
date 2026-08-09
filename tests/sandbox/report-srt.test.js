@@ -21,8 +21,8 @@ const {
   isSrtDenial,
   resolveWindowsSrtShim,
   sanitizeEnvironment,
-  validateMockScenario,
 } = require('../../scripts/sandbox/backends/srt');
+const { validateMockScenario } = require('../../scripts/sandbox/mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const cliPath = path.join(repoRoot, 'scripts', 'sandbox', 'ecc-sandbox');
@@ -275,10 +275,10 @@ test('reports runner startup and timeout errors as error, not policy denial', ()
 
 test('rejects loose mock scenarios at the public boundary', () => {
   assert.throws(
-    () => validateMockScenario({ results: [{ status: 0, surprise: true }] }),
+    () => validateMockScenario({ results: [{ status: 0, surprise: true }] }, 'srt'),
     /unknown key/
   );
-  assert.throws(() => validateMockScenario({ results: [] }), /1-1000/);
+  assert.throws(() => validateMockScenario({ results: [] }, 'srt'), /1-1000/);
 });
 
 test('CLI mock mode emits only a schema-valid SRT report', () => {
