@@ -72,11 +72,12 @@ export function discussionReceiptMarker(key) {
 }
 
 export function findDiscussionReceipt(comments, marker) {
-  return comments.find(comment => (
-    comment?.author?.login === 'github-actions[bot]'
+  const trusted = comments.filter(comment => (
+    ['github-actions', 'github-actions[bot]'].includes(comment?.author?.login)
     && typeof comment.body === 'string'
     && comment.body.includes(marker)
-  )) || null;
+  ));
+  return trusted.find(comment => discussionReceiptStatus(comment) === 'complete') || trusted[0] || null;
 }
 
 export function discussionReceiptStatus(comment) {

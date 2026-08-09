@@ -127,13 +127,6 @@ async function addReceiptComment(discussionId, body) {
   return data.addDiscussionComment.comment.id;
 }
 
-async function updateReceiptComment(commentId, body) {
-  await githubGraphql(
-    `mutation($id:ID!,$body:String!){updateDiscussionComment(input:{commentId:$id,body:$body}){comment{id}}}`,
-    { id: commentId, body },
-  );
-}
-
 async function deleteReceiptComment(commentId) {
   await githubGraphql(
     `mutation($id:ID!){deleteDiscussionComment(input:{id:$id}){clientMutationId}}`,
@@ -179,7 +172,10 @@ async function deliver(discussion) {
       throw new Error(`Discord webhook request failed (${response.status})`);
     }
     const message = await response.json();
-    await updateReceiptComment(claimId, `${marker}\n\nDiscord delivery: complete (message ${message.id}).`);
+    await addReceiptComment(discussion.id, `${marker}\n\nDiscord delivery: complete (message ${message.id}).`);
+    await deleteReceiptComment(claimId).catch(() => {
+      console.warn('announcement delivered; pending receipt cleanup requires attention');
+    });
     console.log('announcement delivered by channel webhook');
     return;
   }
