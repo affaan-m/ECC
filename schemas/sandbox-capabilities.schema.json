@@ -29,6 +29,7 @@
       "properties": {
         "srt": { "$ref": "#/definitions/backend" },
         "podman": { "$ref": "#/definitions/backend" },
+        "docker": { "$ref": "#/definitions/backend" },
         "microsandbox": { "$ref": "#/definitions/backend" },
         "lume": { "$ref": "#/definitions/backend" },
         "lima": { "$ref": "#/definitions/backend" },

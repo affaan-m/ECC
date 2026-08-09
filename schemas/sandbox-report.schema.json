@@ -103,6 +103,7 @@
           "enum": [
             "srt",
             "podman",
+            "docker",
             "microsandbox",
             "lume",
             "lima",
@@ -142,7 +143,7 @@
           "then": { "properties": { "tier": { "const": 0 } } }
         },
         {
-          "if": { "properties": { "backend": { "enum": ["podman", "microsandbox"] } } },
+          "if": { "properties": { "backend": { "enum": ["podman", "docker", "microsandbox"] } } },
           "then": {
             "properties": {
               "tier": { "const": 1 },

@@ -11,6 +11,11 @@ const {
   validateReport,
 } = require('./contracts');
 const { defaultHost, routeManifest } = require('./router');
+const {
+  probeCapabilities,
+  readCapabilityCache,
+  writeCapabilityCache,
+} = require('./probe');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
 
@@ -22,7 +27,7 @@ function help() {
   return {
     name: 'ecc-sandbox',
     usage: [
-      'ecc-sandbox probe [--refresh]',
+      'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
       'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>]',
       'ecc-sandbox report <report.json>',
       'ecc-sandbox escalate <report.json>',
@@ -67,6 +72,26 @@ function parseRunArgs(args) {
   return options;
 }
 
+function parseProbeArgs(args) {
+  const options = { refresh: false, cachePath: null, mockPath: null };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--refresh') {
+      options.refresh = true;
+    } else if (arg === '--cache' || arg === '--mock') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`${arg} requires a file path`);
+      }
+      options[arg === '--cache' ? 'cachePath' : 'mockPath'] = value;
+      index += 1;
+    } else {
+      throw new Error(`Unknown probe argument: ${arg}`);
+    }
+  }
+  return options;
+}
+
 function emptyCapabilityMap() {
   return {
     schema_version: 1,
@@ -74,6 +99,7 @@ function emptyCapabilityMap() {
     backends: Object.fromEntries([
       'srt',
       'podman',
+      'docker',
       'microsandbox',
       'lume',
       'lima',
@@ -116,6 +142,28 @@ function runDryRun(options) {
   });
 }
 
+function runProbe(options) {
+  const cachePath = path.resolve(options.cachePath || defaultCapabilityCachePath());
+  if (options.mockPath) {
+    const mocked = readCapabilityCache(path.resolve(options.mockPath));
+    if (options.cachePath) writeCapabilityCache(cachePath, mocked);
+    return mocked;
+  }
+  if (!options.refresh && fs.existsSync(cachePath)) {
+    const cached = readCapabilityCache(cachePath);
+    const host = defaultHost();
+    if (cached.host.os !== host.os || cached.host.arch !== host.arch) {
+      throw new Error(
+        `Capability cache is for ${cached.host.os}/${cached.host.arch}; refresh it with ecc-sandbox probe --refresh`
+      );
+    }
+    return cached;
+  }
+  const capabilities = probeCapabilities();
+  writeCapabilityCache(cachePath, capabilities);
+  return capabilities;
+}
+
 function runReport(args) {
   if (args.length !== 1) {
     throw new Error('report requires exactly one report JSON path');
@@ -148,6 +196,10 @@ function main(argv = process.argv.slice(2)) {
     writeJson(decision);
     return decision.result === 'routable' ? 0 : 2;
   }
+  if (command === 'probe') {
+    writeJson(runProbe(parseProbeArgs(args)));
+    return 0;
+  }
   if (command === 'report') {
     writeJson(runReport(args));
     return 0;
@@ -178,6 +230,8 @@ module.exports = {
   loadCapabilities,
   main,
   parseRunArgs,
+  parseProbeArgs,
+  runProbe,
   runDryRun,
   runReport,
   writeJson,

@@ -237,6 +237,7 @@ for (const testCase of routingFixtures.cases) {
     const expectedTier = {
       srt: 0,
       podman: 1,
+      docker: 1,
       microsandbox: 1,
       lume: 2,
       lima: 2,

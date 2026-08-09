@@ -44,6 +44,13 @@
       "expected": ["podman"]
     },
     {
+      "name": "installed Docker is a fallback, never a requirement",
+      "needs": { "os": ["linux"], "capabilities": ["pkg-install"] },
+      "backends": { "docker": { "available": true } },
+      "expected": ["docker"],
+      "notePattern": "Docker fallback"
+    },
+    {
       "name": "untrusted Linux prefers Microsandbox",
       "needs": { "os": ["linux"], "trust": "untrusted" },
       "backends": {
