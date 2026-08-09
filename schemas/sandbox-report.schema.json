@@ -88,6 +88,7 @@
         "tier",
         "os",
         "arch",
+        "execution_mode",
         "started",
         "duration_ms",
         "escalations",
@@ -116,6 +117,7 @@
         "tier": { "type": "integer", "minimum": 0, "maximum": 2 },
         "os": { "enum": ["linux", "macos", "windows"] },
         "arch": { "enum": ["arm64", "x86_64"] },
+        "execution_mode": { "enum": ["real", "mock"] },
         "started": { "$ref": "#/definitions/timestamp" },
         "duration_ms": { "type": "integer", "minimum": 0 },
         "escalations": {
@@ -197,6 +199,7 @@
         "os",
         "arch",
         "venue",
+        "execution_mode",
         "started",
         "duration_ms",
         "escalations",
@@ -211,6 +214,7 @@
         "os": { "const": "multiple" },
         "arch": { "const": "multiple" },
         "venue": { "enum": ["local", "ci", "mixed"] },
+        "execution_mode": { "enum": ["real", "mock", "mixed"] },
         "started": { "$ref": "#/definitions/timestamp" },
         "duration_ms": { "type": "integer", "minimum": 0 },
         "escalations": {
