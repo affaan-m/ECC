@@ -7,6 +7,8 @@ async function main() {
     findReleaseDiscussion,
     isAnnouncementDiscussion,
     normalizeDiscordWebhookUrl,
+    discussionReceiptMarker,
+    findDiscussionReceipt,
     releaseMarker,
   } = await import('../../scripts/discord/announcement-core.mjs');
 
@@ -41,6 +43,14 @@ assert.equal(
   'https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough?wait=true',
 );
 assert.throws(() => normalizeDiscordWebhookUrl('https://evil.example/api/webhooks/123/token'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://user@discord.com/api/webhooks/123456789012345678/secret-token-long-enough'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://discord.com:444/api/webhooks/123456789012345678/secret-token-long-enough'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough?leak=1'), /invalid Discord webhook URL/);
+
+const receiptMarker = discussionReceiptMarker('affaan-m/ECC:discussion:D_kw123');
+assert.match(receiptMarker, /^<!-- ecc-discord-receipt:[a-f0-9]{32} -->$/);
+assert.equal(findDiscussionReceipt([{ id: 'comment-1', body: `delivered\n${receiptMarker}` }], receiptMarker).id, 'comment-1');
+assert.equal(findDiscussionReceipt([{ id: 'comment-2', body: 'unrelated' }], receiptMarker), null);
 
   console.log('release announcement core: ok');
 }

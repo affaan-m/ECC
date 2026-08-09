@@ -16,13 +16,16 @@ assert.match(discussionWorkflow, /ANNOUNCEMENT_KIND:.*'manual'.*'discussion'/);
 assert.match(discussionWorkflow, /workflow_dispatch:/);
 assert.match(discussionWorkflow, /discussion_number:/);
 assert.match(discussionWorkflow, /DISCORD_ANNOUNCE_WEBHOOK_URL:\s*\$\{\{ secrets\.DISCORD_ANNOUNCE_WEBHOOK_URL \}\}/);
-assert.doesNotMatch(discussionWorkflow, /GITHUB_TOKEN|discussions:\s*write/);
+assert.match(discussionWorkflow, /GITHUB_TOKEN/);
+assert.match(discussionWorkflow, /discussions:\s*write/);
+assert.doesNotMatch(discussionWorkflow, /DISCORD_BOT_TOKEN|DISCORD_ANNOUNCE_CHANNEL_ID/);
 assert.match(releaseAnnounceWorkflow, /workflow_run:/);
 assert.match(releaseAnnounceWorkflow, /workflows:\s*\[Release\]/);
 assert.match(releaseAnnounceWorkflow, /conclusion\s*==\s*'success'/);
 assert.match(releaseAnnounceWorkflow, /ref:\s*\$\{\{ github\.event\.repository\.default_branch \}\}/);
 assert.match(releaseAnnounceWorkflow, /ANNOUNCEMENT_KIND:\s*release/);
 assert.match(releaseAnnounceWorkflow, /discussions:\s*write/);
+assert.doesNotMatch(releaseAnnounceWorkflow, /DISCORD_BOT_TOKEN|DISCORD_ANNOUNCE_CHANNEL_ID/);
 assert.doesNotMatch(releaseWorkflow, /DISCORD_BOT_TOKEN|ANNOUNCEMENT_KIND/);
 
 console.log('release announcement workflow contract: ok');
