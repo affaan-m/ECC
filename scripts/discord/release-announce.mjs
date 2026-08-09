@@ -6,6 +6,7 @@ import {
   buildDiscordPayload,
   findDiscordReceipt,
   findReleaseDiscussion,
+  normalizeDiscordWebhookUrl,
   releaseMarker,
 } from './announcement-core.mjs';
 
@@ -87,6 +88,17 @@ function discussionFromEnvironment() {
   };
 }
 
+async function discussionFromGitHub() {
+  if (!/^\d+$/.test(env.DISCUSSION_NUMBER || '')) throw new Error('discussion number is invalid');
+  const response = await request(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/discussions/${env.DISCUSSION_NUMBER}`, {
+    headers: { Accept: 'application/vnd.github+json' },
+  });
+  if (!response.ok) throw new Error(`discussion lookup failed (${response.status})`);
+  const discussion = await response.json();
+  if (discussion.category?.name !== 'Announcements') throw new Error('discussion is not an Announcement');
+  return { id: discussion.node_id, title: discussion.title, body: discussion.body, url: discussion.html_url };
+}
+
 async function discord(method, path, body) {
   const response = await request(`https://discord.com/api/v10${path}`, {
     method,
@@ -98,10 +110,20 @@ async function discord(method, path, body) {
 }
 
 async function deliver(discussion) {
+  const key = announcementKey({ repository: env.GITHUB_REPOSITORY, discussionId: discussion.id });
+  if (env.DISCORD_ANNOUNCE_WEBHOOK_URL) {
+    const response = await request(normalizeDiscordWebhookUrl(env.DISCORD_ANNOUNCE_WEBHOOK_URL), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildDiscordPayload({ title: discussion.title, body: discussion.body, url: discussion.url, key })),
+    });
+    if (!response.ok) throw new Error(`Discord webhook request failed (${response.status})`);
+    console.log('announcement delivered by channel webhook');
+    return;
+  }
   if (!env.DISCORD_BOT_TOKEN || !/^\d{10,25}$/.test(env.DISCORD_ANNOUNCE_CHANNEL_ID || '')) {
     throw new Error('Discord announcement credentials are missing or invalid');
   }
-  const key = announcementKey({ repository: env.GITHUB_REPOSITORY, discussionId: discussion.id });
   const recent = await discord('GET', `/channels/${env.DISCORD_ANNOUNCE_CHANNEL_ID}/messages?limit=100`);
   const receipt = findDiscordReceipt(recent, key);
   if (receipt) {
@@ -124,7 +146,9 @@ async function main() {
   if (env.ANNOUNCEMENT_KIND === 'release' && !env.GITHUB_TOKEN) throw new Error('GitHub release configuration is missing');
   const discussion = env.ANNOUNCEMENT_KIND === 'release'
     ? await createOrFindReleaseDiscussion()
-    : discussionFromEnvironment();
+    : env.ANNOUNCEMENT_KIND === 'manual'
+      ? await discussionFromGitHub()
+      : discussionFromEnvironment();
   await deliver(discussion);
 }
 

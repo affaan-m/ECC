@@ -48,3 +48,21 @@ export function findDiscordReceipt(messages, key) {
   const discussionId = String(key).split(':').at(-1);
   return messages.find(message => message.embeds?.some(embed => embed.footer?.text === `ecc:${discussionId}`)) || null;
 }
+
+export function normalizeDiscordWebhookUrl(value) {
+  const raw = String(value || '').trim();
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('invalid Discord webhook URL');
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'discord.com') {
+    throw new Error('invalid Discord webhook URL');
+  }
+  if (!/^\/api\/webhooks\/\d{10,25}\/[A-Za-z0-9._-]{20,}$/.test(parsed.pathname)) {
+    throw new Error('invalid Discord webhook URL');
+  }
+  parsed.search = '?wait=true';
+  return parsed.toString();
+}

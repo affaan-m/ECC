@@ -37,8 +37,8 @@ assert.equal(payload.enforce_nonce, true);
 assert.match(payload.nonce, /^ecc-[a-f0-9]{16}$/);
 
 assert.equal(
-  normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token'),
-  'https://discord.com/api/webhooks/123456789012345678/secret-token?wait=true',
+  normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough'),
+  'https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough?wait=true',
 );
 assert.throws(() => normalizeDiscordWebhookUrl('https://evil.example/api/webhooks/123/token'), /invalid Discord webhook URL/);
 

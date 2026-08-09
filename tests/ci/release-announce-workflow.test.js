@@ -12,7 +12,7 @@ assert.match(discussionWorkflow, /category\.name\s*==\s*'Announcements'/);
 assert.match(discussionWorkflow, /concurrency:/);
 assert.doesNotMatch(discussionWorkflow, /pull_request_target|workflow_run/);
 assert.match(discussionWorkflow, /persist-credentials:\s*false/);
-assert.match(discussionWorkflow, /ANNOUNCEMENT_KIND:\s*discussion/);
+assert.match(discussionWorkflow, /ANNOUNCEMENT_KIND:.*'manual'.*'discussion'/);
 assert.match(discussionWorkflow, /workflow_dispatch:/);
 assert.match(discussionWorkflow, /discussion_number:/);
 assert.match(discussionWorkflow, /DISCORD_ANNOUNCE_WEBHOOK_URL:\s*\$\{\{ secrets\.DISCORD_ANNOUNCE_WEBHOOK_URL \}\}/);
