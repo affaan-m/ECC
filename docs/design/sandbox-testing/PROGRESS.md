@@ -64,10 +64,11 @@ combined tree.
 | 2 | local Apple Silicon host | `ecc-sandbox probe --refresh` plus capability-schema validation | Pass; macOS/arm64 and HVF detected, Docker/CI ready, unavailable backends carry setup guidance |
 | 2 | local package/workflow boundary | Clean npm install, publish-surface test, focused ESLint, workflow-security validator, and `git diff --check` | Pass |
 | 2 | current-main integration | Rebased the three phase commits after PR #2625 merged; sandbox lock diff remains limited to exact `yaml@2.9.0` | Pass; current main's mutable `node-gyp@latest` prevents a repeatable immutable Yarn resolution without unrelated lock upgrades |
-| 2 | hosted runner matrix | `.github/workflows/sandbox-probe.yml` on Ubuntu, macOS, and Windows | Pending PR-hosted evidence; Phase 2 cannot close before all three artifacts validate |
+| 2 | hosted runner matrix | [PR #2734 run 31326806345](https://github.com/affaan-m/ECC/actions/runs/31326806345) on Ubuntu, macOS, and Windows | Pass; downloaded Linux x64, Windows x64, and macOS arm64 artifacts all validate against the capability schema |
 
 ## Current gate
 
-S0 and S1 are complete. Phase 2 is locally green and no adapter implementation
-has started. Adapter missions remain blocked until the probe-only workflow
-emits schema-valid artifacts on hosted Ubuntu, macOS, and Windows runners.
+S0, S1, and S2 are complete. The probe-only workflow emitted schema-valid
+artifacts on hosted Ubuntu, macOS, and Windows runners. Phase 3 is released for
+the normalized reporter and SRT adapter; later adapter missions remain blocked
+by their preceding phase gates.
