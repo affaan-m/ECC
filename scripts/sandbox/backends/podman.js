@@ -34,6 +34,13 @@ function firstLine(value) {
   return String(value || '').trim().split(/\r?\n/, 1)[0] || null;
 }
 
+function normalizeImageId(value) {
+  const imageId = firstLine(value);
+  if (/^[a-f0-9]{64}$/i.test(imageId || '')) return `sha256:${imageId.toLowerCase()}`;
+  if (/^sha256:[a-f0-9]{64}$/i.test(imageId || '')) return imageId.toLowerCase();
+  return null;
+}
+
 function resultDetail(result) {
   return tailOutput([result.stderr, result.stdout, result.error?.message]
     .filter(Boolean)
@@ -193,7 +200,7 @@ function executeContainer(manifest, options = {}) {
   const imageResult = runtimeReady
     ? invoke(imageCheckArgs(runtime, image))
     : { status: null, stdout: '', stderr: '', error: null };
-  const imageId = firstLine(imageResult.stdout);
+  const imageId = normalizeImageId(imageResult.stdout);
   if (runtimeReady && (!succeeded(imageResult) || !imageId)) {
     executionError = true;
     notes.push(
@@ -336,6 +343,7 @@ module.exports = {
   executeContainer,
   hasOpenNetwork,
   imageBuildFix,
+  normalizeImageId,
   parseContainerDiff,
   podmanInfoIsRootless,
 };

@@ -11,11 +11,13 @@ const {
   DEFAULT_IMAGE,
   buildCreateArgs,
   executeContainer,
+  normalizeImageId,
   parseContainerDiff,
 } = require('../../scripts/sandbox/backends/podman');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const cliPath = path.join(repoRoot, 'scripts', 'sandbox', 'ecc-sandbox');
+const MOCK_IMAGE_ID = `sha256:${'a'.repeat(64)}`;
 let passed = 0;
 let failed = 0;
 
@@ -92,10 +94,17 @@ test('ships three digest-pinned non-root Linux snapshot definitions', () => {
       path.join(repoRoot, 'images', 'sandbox', `Containerfile.${distro}`),
       'utf8'
     );
-    assert.match(source, /^ARG BASE_IMAGE=[^\n]+@sha256:[a-f0-9]{64}$/m);
-    assert.match(source, /^ARG NODE_IMAGE=[^\n]+@sha256:[a-f0-9]{64}$/m);
+    assert.match(source, /^ARG BASE_IMAGE=docker\.io\/library\/[^\n]+@sha256:[a-f0-9]{64}$/m);
+    assert.match(source, /^ARG NODE_IMAGE=docker\.io\/library\/[^\n]+@sha256:[a-f0-9]{64}$/m);
     assert.match(source, /^USER 1000:1000$/m);
   }
+});
+
+test('normalizes Podman and Docker image IDs to one digest form', () => {
+  const digest = 'a'.repeat(64);
+  assert.strictEqual(normalizeImageId(`${digest}\n`), `sha256:${digest}`);
+  assert.strictEqual(normalizeImageId(`SHA256:${digest.toUpperCase()}`), `sha256:${digest}`);
+  assert.strictEqual(normalizeImageId('not-an-image-id'), null);
 });
 
 test('builds a bounded rootless create command with network off by default', () => {
@@ -151,7 +160,7 @@ test('normalizes Podman diff paths into install evidence', () => {
 
 test('executes create-start-steps-diff-remove and emits a valid report', () => {
   const { outcome, calls } = runDirect([
-    result(0, 'sha256:mock-image\n'),
+    result(0, `${MOCK_IMAGE_ID}\n`),
     result(0, 'container-id\n'),
     result(0),
     result(0, 'installed\n'),
@@ -169,14 +178,14 @@ test('executes create-start-steps-diff-remove and emits a valid report', () => {
   assert.ok(outcome.report.install_diff.files_added.includes('/home/ecc/.local/bin/cowsay'));
   assert.strictEqual(outcome.cleanup.pass, true);
   assert.match(outcome.report.notes.join('\n'), /container_start_ms=/);
-  assert.ok(outcome.report.notes.includes('image_id=sha256:mock-image'));
+  assert.ok(outcome.report.notes.includes(`image_id=${MOCK_IMAGE_ID}`));
   const createCall = calls.find(call => call.argv[0] === 'create');
-  assert.deepStrictEqual(createCall.argv.slice(-3), ['sha256:mock-image', 'sleep', 'infinity']);
+  assert.deepStrictEqual(createCall.argv.slice(-3), [MOCK_IMAGE_ID, 'sleep', 'infinity']);
 });
 
 test('still captures diff and removes the container after a failed step', () => {
   const { outcome, calls } = runDirect([
-    result(0, 'sha256:mock-image\n'), result(0), result(0),
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
     result(1, '', 'installer failed'),
     result(0, 'C /home/ecc/.npm/_logs/failure.log\n'),
     result(0),
@@ -190,7 +199,7 @@ test('still captures diff and removes the container after a failed step', () => 
 
 test('cleanup failure upgrades the report to error with a recovery command', () => {
   const { outcome } = runDirect([
-    result(0, 'sha256:mock-image\n'), result(0), result(0), result(0), result(0), result(0, ''),
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0), result(0), result(0), result(0, ''),
     result(1, '', 'container busy'),
   ]);
   assert.strictEqual(outcome.report.result, 'error');
@@ -200,7 +209,7 @@ test('cleanup failure upgrades the report to error with a recovery command', () 
 
 test('attempts cleanup even when create reports failure', () => {
   const { outcome, calls } = runDirect([
-    result(0, 'sha256:mock-image\n'),
+    result(0, `${MOCK_IMAGE_ID}\n`),
     result(1, '', 'create failed after allocating state'),
     result(1, '', 'no such container'),
   ]);
@@ -212,7 +221,7 @@ test('attempts cleanup even when create reports failure', () => {
 
 test('stops an indeterminate exec before collecting diff evidence', () => {
   const { outcome, calls } = runDirect([
-    result(0, 'sha256:mock-image\n'), result(0), result(0),
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
     result(null, '', '', new Error('ETIMEDOUT')),
     result(0),
     result(0, 'C /home/ecc/.npm/_logs/timeout.log\n'),
@@ -228,7 +237,7 @@ test('stops an indeterminate exec before collecting diff evidence', () => {
 test('incomplete diff evidence upgrades an otherwise passing run to error', () => {
   const oversized = '/tmp/' + 'x'.repeat(4_100);
   const { outcome } = runDirect([
-    result(0, 'sha256:mock-image\n'), result(0), result(0),
+    result(0, `${MOCK_IMAGE_ID}\n`), result(0), result(0),
     result(0), result(0), result(0, `A ${oversized}\n`), result(0),
   ]);
   assert.strictEqual(outcome.report.result, 'error');
@@ -238,7 +247,7 @@ test('incomplete diff evidence upgrades an otherwise passing run to error', () =
 
 test('bounds runtime diagnostics so error reports remain schema-valid', () => {
   const { outcome } = runDirect([
-    result(0, 'sha256:mock-image\n'),
+    result(0, `${MOCK_IMAGE_ID}\n`),
     result(1, '', 'failure '.repeat(2_000)),
     result(1, '', 'no such container'),
   ]);
@@ -301,7 +310,7 @@ test('CLI mock mode routes to Podman and emits only normalized JSON', () => {
     }));
     fs.writeFileSync(mockPath, JSON.stringify({ results: [
       { status: 0, stdout: '{"host":{"security":{"rootless":true}}}\n' },
-      { status: 0, stdout: 'sha256:mock-image\n' }, { status: 0 }, { status: 0 },
+      { status: 0, stdout: `${MOCK_IMAGE_ID}\n` }, { status: 0 }, { status: 0 },
       { status: 0, stdout: 'setup' }, { status: 0, stdout: 'assert' },
       { status: 0, stdout: 'A /home/ecc/.local/bin/demo\n' }, { status: 0 },
     ] }));
