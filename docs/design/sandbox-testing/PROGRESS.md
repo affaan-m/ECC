@@ -76,10 +76,14 @@ combined tree.
 | 4 | hosted real install evidence | Downloaded and schema-validated the run's two Ubuntu x86_64 report artifacts | Pass; real Podman, complete 876-path diffs, immutable image ID, cowsay/cowthink PATH changes, 88 ms then 81 ms starts, and workflow leak check passed |
 | 4 | local integration boundary | Full `npm test` (3,789/3,789), lint, workflow-security validation, publish-surface test, YAML parse, and `git diff --check`; focused gates repeated after hosted fixes | Pass |
 | 4 | independent security and functional review | Reviewed timeout containment, incomplete evidence, rootless enforcement, cleanup, portability matrix, and image-reference race | Pass; both reviewers approve with no blocker/high finding |
+| 5 | local contract and mock suite | `npm run test:sandbox` after escalation, manual-rerun, hardened-network, snapshot-provenance, and cleanup-fallback fixes | Pass, 93/93 |
+| 5 | local Apple Silicon host | Real SRT 1.0.0 denial followed by one automatic Docker-backed Tier 1 rerun of the offline install fixture | Pass; one recorded escalation, three destination steps pass, complete layer diff reports `/home/ecc/.local/bin/ecc-sandbox-demo`, denied host file is absent, and no container leaked |
+| 5 | official v0.6.8 CLI contract and mocks | Exact `msb` version/doctor gate, restricted disk-snapshot seed/fork lifecycle, read-only source mount, explicit network policies, and Podman degradation | Pass; no real Microsandbox evidence claimed because this host has no `msb` |
+| 5 | local integration boundary | Full `npm test` (3,806/3,806), lint, publish-surface test, registry-signature audit, production vulnerability audit, and `git diff --check` | Pass; 225 package signatures, 32 attestations, and zero vulnerabilities |
+| 5 | independent functional and security review | Re-reviewed read-only mount grammar, cleanup-gated fallback, strict domain policy, bounded evidence, max-one escalation, and snapshot manifest-digest identity | Pass; both reviewers approve with no blocker/high finding |
 
 ## Current gate
 
-S0 through S4 are complete. Phase 5 is released for the one-hop SRT-to-Podman
-escalation path and the hardened Microsandbox adapter with explicit Podman
-degradation. CI execution, VM adapters, and agent-facing surfaces remain
-blocked by their preceding phase gates.
+S0 through S5 are complete. Phase 6 is released for CI dispatch, hosted native
+execution, artifact validation, and aggregate reporting. VM adapters and
+agent-facing surfaces remain blocked by their preceding phase gates.

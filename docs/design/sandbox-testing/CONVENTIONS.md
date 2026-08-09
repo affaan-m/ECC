@@ -137,12 +137,29 @@ uses these decisions to preserve its stated safety and fidelity goals:
     while removed services remain explicit in `files_deleted`. Malformed or
     truncated install evidence makes an `install-diff` run an error, never a
     passing partial report.
+23. The hardened Tier 1 adapter pins the Microsandbox CLI contract to v0.6.8,
+    requires both the exact version and a passing `msb doctor`, and invokes the
+    CLI rather than its Node SDK so ECC retains its Node 18 baseline. Its reuse
+    primitive is an integrity-checked disk snapshot whose recorded manifest
+    digest matches the requested platform manifest, not a live memory fork.
+24. An eligible SRT installer/system-write denial permits exactly one Tier 1
+    rerun. The final report contains the destination steps, one escalation
+    record, the combined duration, and bounded initial-denial evidence in
+    `notes`. For `os: any`, the rerun may move from the host process to Linux;
+    the manual `escalate` command consumes the prior report without rerunning
+    SRT.
+25. A Microsandbox startup failure may fall back only to another eligible Tier
+    1 backend and must report degraded isolation. Strict domain allowlists fail
+    closed because Podman and Docker cannot satisfy them. Microsandbox v0.6.8
+    exposes no filesystem-diff API, so its report uses the truthful incomplete
+    `install_diff.method: none` contract.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
 internal contract contradictions or a missing clean-machine, write-scope, or
 evidence-integrity need and are therefore treated as that delegated authority.
-Items 20-22 record the corresponding Tier 1 containment and evidence choices.
+Items 20-25 record the corresponding Tier 1 containment, escalation, hardened
+backend, and evidence choices.
 They are surfaced here before code and in the user handoff rather than hidden
 in implementation. Every matching code departure from a written routing rule
 must include a `DECISION:` comment referring to the applicable item above.

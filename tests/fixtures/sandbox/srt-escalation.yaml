@@ -1,0 +1,17 @@
+name: srt-to-tier1-real-acceptance
+needs:
+  os: [any]
+  capabilities: []
+  trust: first-party
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 60
+steps:
+  setup:
+    - if [ -d /workspace/source ]; then mkdir -p /home/ecc/.local/bin && install -m 0755 /workspace/source/tests/fixtures/sandbox/ecc-demo-tool.sh /home/ecc/.local/bin/ecc-sandbox-demo; else install -m 0755 ./tests/fixtures/sandbox/ecc-demo-tool.sh ../.ecc-sandbox-demo; fi
+  assert:
+    - command -v ecc-sandbox-demo
+    - ecc-sandbox-demo | grep -q 'ECC sandbox demo tool'
+report: install-diff

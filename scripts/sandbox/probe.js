@@ -10,6 +10,7 @@ const { resolveWindowsSrtShim } = require('./backends/srt');
 
 const PROBE_TIMEOUT_MS = 5_000;
 const MAX_PROBE_BUFFER = 1024 * 1024;
+const MICROSANDBOX_VERSION = '0.6.8';
 
 function runCommand(executable, argv = []) {
   return spawnSync(executable, argv, {
@@ -49,9 +50,9 @@ function installFix(tool, platform) {
       windows: 'Install Podman: winget install --exact --id RedHat.Podman && podman machine init && podman machine start',
     },
     microsandbox: {
-      linux: 'Install microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
-      macos: 'Install microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
-      windows: 'Install microsandbox from https://github.com/superradcompany/microsandbox/releases',
+      linux: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
+      macos: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
+      windows: `Install pinned Microsandbox: cargo install microsandbox-cli --version ${MICROSANDBOX_VERSION} --locked`,
     },
     lima: {
       linux: 'Install Lima from https://lima-vm.io/docs/installation/',
@@ -208,6 +209,47 @@ function detectCi(run, platform) {
   });
 }
 
+function detectMicrosandbox(run, platform, architecture, virtualization) {
+  const version = commandVersion(run, 'msb');
+  if (!version) {
+    return backend(false, {
+      version: null,
+      state: 'unavailable',
+      targets: [],
+      reason: 'microsandbox not found',
+      fix: installFix('microsandbox', platform),
+    });
+  }
+  if (!new RegExp(`(?:^|\\s)${MICROSANDBOX_VERSION.replace(/\./g, '\\.')}\\b`).test(version)) {
+    return backend(false, {
+      version,
+      state: 'unavailable',
+      targets: [],
+      reason: `microsandbox ${version} is outside ECC's pinned ${MICROSANDBOX_VERSION} adapter contract`,
+      fix: installFix('microsandbox', platform),
+    });
+  }
+  if (!virtualization) {
+    return backend(false, {
+      version,
+      state: 'unavailable',
+      targets: [],
+      reason: 'microsandbox needs hardware virtualization',
+      fix: 'Enable KVM, Apple Virtualization.framework, or Windows Hypervisor Platform, then run: msb doctor',
+    });
+  }
+  const doctor = run('msb', ['doctor']);
+  const ready = succeeded(doctor);
+  return backend(ready, {
+    version,
+    state: ready ? 'ready' : 'not-configured',
+    targets: ready ? [{ os: 'linux', arch: architecture }] : [],
+    capabilities: ready ? ['domain-network-policy'] : [],
+    reason: ready ? 'microsandbox doctor passed' : 'microsandbox doctor reported an unavailable runtime dependency',
+    fix: ready ? undefined : 'Repair the checks reported by: msb doctor',
+  });
+}
+
 function detectSrt(
   run,
   platform,
@@ -322,7 +364,6 @@ function probeCapabilities(options = {}) {
     || probeEnv.ECC_SANDBOX_ALLOW_NESTED_SRT === '1';
   const virtualization = detectVirtualization(platform, architecture, run, canAccess);
   const target = [{ os: 'linux', arch: architecture }];
-  const microsandboxVersion = commandVersion(run, 'msb');
   const lumeVersion = commandVersion(run, 'lume');
   const limaVersion = commandVersion(run, 'limactl');
   const tartVersion = commandVersion(run, 'tart');
@@ -367,16 +408,7 @@ function probeCapabilities(options = {}) {
         targets: dockerVersion && succeeded(dockerInfo) ? target : [],
         reason: dockerVersion ? 'Docker fallback detected' : 'Docker fallback not detected',
       }),
-      microsandbox: backend(Boolean(microsandboxVersion) && Boolean(virtualization), {
-        version: microsandboxVersion,
-        state: microsandboxVersion && virtualization ? 'ready' : 'unavailable',
-        targets: microsandboxVersion && virtualization ? target : [],
-        capabilities: microsandboxVersion && virtualization ? ['domain-network-policy'] : [],
-        reason: microsandboxVersion
-          ? (virtualization ? 'microsandbox is ready' : 'microsandbox needs hardware virtualization')
-          : 'microsandbox not found',
-        fix: microsandboxVersion ? undefined : installFix('microsandbox', platform),
-      }),
+      microsandbox: detectMicrosandbox(run, platform, architecture, virtualization),
       lume: backend(lumeReady, {
         version: lumeVersion,
         state: lumeReady ? 'ready' : 'unavailable',

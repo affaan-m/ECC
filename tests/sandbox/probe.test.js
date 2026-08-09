@@ -84,7 +84,7 @@ function fakeRunner(platform, installed = {}) {
       srt: 'srt 1.0.0',
       podman: 'podman version 6.0.0',
       docker: 'Docker version 27.0.0',
-      msb: 'msb 0.9.0',
+      msb: installed.msbVersion || 'msb 0.6.8',
       lume: 'lume 0.3.0',
       limactl: 'limactl version 2.0.0',
       tart: '2.20.0',
@@ -258,8 +258,18 @@ test('reports host-appropriate setup commands', () => {
     virtualization: true,
   }));
   assert.match(linux.backends.podman.fix, /apt-get install podman/);
-  assert.match(linux.backends.microsandbox.fix, /install\.microsandbox\.dev/);
+  assert.match(linux.backends.microsandbox.fix, /microsandbox-cli --version 0\.6\.8/);
   assert.doesNotMatch(linux.backends.ci.fix, /brew/);
+});
+
+test('rejects Microsandbox versions outside the pinned adapter contract', () => {
+  const capabilities = probeCapabilities(commonOptions('linux', 'x64', {
+    virtualization: true,
+    msb: true,
+    msbVersion: 'msb 0.7.0',
+  }));
+  assert.strictEqual(capabilities.backends.microsandbox.available, false);
+  assert.match(capabilities.backends.microsandbox.reason, /pinned 0\.6\.8/);
 });
 
 test('starts an existing stopped Podman machine without reinitializing it', () => {

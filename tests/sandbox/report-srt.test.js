@@ -250,6 +250,7 @@ test('classifies a policy denial with the distinct escalation exit code', () => 
 
 test('marks installer/system-write denials as one-hop escalation eligible', () => {
   assert.strictEqual(hasInstallerSignature('npm install tiny-package'), true);
+  assert.strictEqual(hasInstallerSignature('install -m 0755 tool ../tool'), true);
   const outcome = runDirect(manifest({ setup: ['npm install tiny-package'] }), [
     execution(1, '', 'npm ERR! EACCES: permission denied, mkdir /usr/local/lib'),
   ]);

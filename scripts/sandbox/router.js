@@ -188,7 +188,7 @@ function missingRoute(shard, manifest, capabilities, localOnly) {
   ) {
     return {
       reason: 'strict domain allowlists require a probed microsandbox with domain-network-policy in Tier 1 v1',
-      fix: 'Install or update microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
+      fix: 'Install pinned Microsandbox: cargo install microsandbox-cli --version 0.6.8 --locked',
     };
   }
   if (network.domainAllowlist) {
@@ -279,6 +279,73 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
   };
 }
 
+function resolveTierOneFallback(manifest, capabilities, shard, options = {}) {
+  // DECISION: CONVENTIONS item 25 keeps startup fallback within Tier 1 and
+  // reuses the same table-driven eligibility and network-policy checks.
+  if (!tierOneEligible(manifest, shard)) {
+    return {
+      ...shard,
+      backend: null,
+      tier: null,
+      rule: null,
+      reason: 'the target is not eligible for a Tier 1 ephemeral environment',
+      fix: 'Declare Linux non-native needs, or enable the required native/CI backend',
+      notes: [],
+      result: 'error',
+    };
+  }
+  const excluded = new Set(options.exclude || []);
+  const candidates = tierOneCandidates(manifest).filter(backend => !excluded.has(backend));
+  const backend = firstSupported(candidates, capabilities, shard, manifest);
+  if (!backend) {
+    const missing = missingRoute(shard, manifest, capabilities, true);
+    return {
+      ...shard,
+      backend: null,
+      tier: null,
+      rule: null,
+      ...missing,
+      notes: [],
+      result: 'error',
+    };
+  }
+  return {
+    ...shard,
+    backend,
+    tier: 1,
+    rule: options.rule || 'tier-1-runtime-fallback',
+    reason: options.reason || 'the preferred Tier 1 backend could not start',
+    notes: routeNotes(backend, manifest),
+    result: 'routable',
+  };
+}
+
+function resolveRuntimeEscalation(manifest, capabilities, sourceRoute, options = {}) {
+  // DECISION: CONVENTIONS item 24 permits one SRT denial rerun; `any` may move
+  // from the native host process to a Linux ephemeral environment.
+  const shard = {
+    os: manifest.needs.os[0] === 'any' ? 'linux' : sourceRoute.os,
+    arch: sourceRoute.arch,
+  };
+  if (sourceRoute.backend !== 'srt') {
+    return {
+      ...shard,
+      backend: null,
+      tier: null,
+      rule: null,
+      reason: 'only a Tier 0 SRT result can escalate to Tier 1 in this phase',
+      fix: 'Correct the manifest needs or inspect the selected backend report',
+      notes: [],
+      result: 'error',
+    };
+  }
+  return resolveTierOneFallback(manifest, capabilities, shard, {
+    ...options,
+    rule: 'runtime-tier-1-escalation',
+    reason: 'an installer or system-write denial requires one ephemeral rerun',
+  });
+}
+
 function routeManifest(manifest, capabilities, options = {}) {
   validateCapabilities(capabilities);
   const routes = expandTargets(manifest, capabilities.host)
@@ -301,6 +368,8 @@ module.exports = {
   normalizeArch,
   normalizeOs,
   resolveShard,
+  resolveRuntimeEscalation,
+  resolveTierOneFallback,
   routeManifest,
   tierOneCandidates,
 };

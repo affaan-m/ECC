@@ -10,7 +10,12 @@ const {
   validateCapabilities,
   validateReport,
 } = require('./contracts');
-const { defaultHost, routeManifest } = require('./router');
+const {
+  defaultHost,
+  resolveRuntimeEscalation,
+  resolveTierOneFallback,
+  routeManifest,
+} = require('./router');
 const {
   probeCapabilities,
   readCapabilityCache,
@@ -18,7 +23,9 @@ const {
 } = require('./probe');
 const { executeSrt } = require('./backends/srt');
 const { executeContainer } = require('./backends/podman');
+const { executeMicrosandbox } = require('./backends/microsandbox');
 const { loadMockScenario, mockRunner } = require('./mock');
+const { tailOutput } = require('./report');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
 
@@ -33,7 +40,7 @@ function help() {
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
       'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
-      'ecc-sandbox escalate <report.json>',
+      'ecc-sandbox escalate <report.json> [--capabilities <file>] [--mock <file>]',
     ],
     commands: COMMANDS,
   };
@@ -99,6 +106,29 @@ function parseProbeArgs(args) {
   return options;
 }
 
+function parseEscalateArgs(args) {
+  const options = { reportPath: null, capabilitiesPath: null, mockPath: null };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--capabilities' || arg === '--mock') {
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`${arg} requires a JSON file path`);
+      }
+      options[arg === '--capabilities' ? 'capabilitiesPath' : 'mockPath'] = value;
+      index += 1;
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown escalate argument: ${arg}`);
+    } else if (options.reportPath === null) {
+      options.reportPath = arg;
+    } else {
+      throw new Error(`Unexpected escalate argument: ${arg}`);
+    }
+  }
+  if (!options.reportPath) throw new Error('escalate requires a sandbox report path');
+  return options;
+}
+
 function emptyCapabilityMap() {
   return {
     schema_version: 1,
@@ -154,6 +184,80 @@ function runDryRun(options) {
   return resolveRun(options).decision;
 }
 
+function executeRoute(resolved, route, executionOptions) {
+  if (!['srt', 'podman', 'docker', 'microsandbox'].includes(route.backend)) {
+    throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
+  }
+  const adapterOptions = {
+    ...executionOptions,
+    arch: route.arch,
+    cwd: process.cwd(),
+    manifestPath: resolved.manifestPath,
+    notes: route.notes,
+  };
+  if (route.backend === 'srt') {
+    return executeSrt(resolved.manifest, {
+      ...adapterOptions,
+      enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
+      os: route.os,
+      platform: process.platform,
+    });
+  }
+  if (route.backend === 'microsandbox') {
+    const microsandbox = executeMicrosandbox(resolved.manifest, {
+      ...adapterOptions,
+      image: process.env.ECC_SANDBOX_IMAGE,
+      snapshot: process.env.ECC_SANDBOX_MICROSANDBOX_SNAPSHOT,
+    });
+    if (!microsandbox.startupFailure) return microsandbox;
+    if (!microsandbox.cleanup.safe_for_fallback) return microsandbox;
+
+    const fallbackRoute = resolveTierOneFallback(
+      resolved.manifest,
+      resolved.capabilities,
+      { os: route.os, arch: route.arch },
+      { exclude: ['microsandbox'] }
+    );
+    if (fallbackRoute.result !== 'routable') return microsandbox;
+    const fallback = executeRoute(resolved, fallbackRoute, executionOptions);
+    fallback.report = validateReport({
+      ...fallback.report,
+      notes: [
+        ...fallback.report.notes,
+        `Microsandbox startup failed; fell back within Tier 1: ${tailOutput(microsandbox.report.notes.join('; '), 20, 3_000)}`,
+      ],
+    });
+    return fallback;
+  }
+  return executeContainer(resolved.manifest, {
+    ...adapterOptions,
+    image: process.env.ECC_SANDBOX_IMAGE,
+    runtime: route.backend,
+  });
+}
+
+function addEscalation(initial, destination) {
+  const failedStep = initial.report.steps.find(step => step.exit !== 0);
+  const initialEvidence = failedStep
+    ? tailOutput(failedStep.stderr_tail || failedStep.stdout_tail, 10, 2_000)
+    : 'policy denial detected without bounded step output';
+  destination.report = validateReport({
+    ...destination.report,
+    started: initial.report.started,
+    duration_ms: initial.report.duration_ms + destination.report.duration_ms,
+    escalations: [{
+      from: 'srt',
+      reason: 'installer or system-write policy denial',
+      to: destination.report.backend,
+    }],
+    notes: [
+      ...destination.report.notes,
+      `Initial SRT attempt denied before one-hop escalation: ${initialEvidence}`,
+    ],
+  });
+  return destination;
+}
+
 function runExecution(options) {
   const resolved = resolveRun(options);
   if (resolved.decision.result !== 'routable') {
@@ -164,37 +268,35 @@ function runExecution(options) {
     throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
   }
   const route = resolved.decision.routes[0];
-  if (!['srt', 'podman', 'docker'].includes(route.backend)) {
-    throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
-  }
-
   let run;
   let mock = false;
   if (options.mockPath) {
     run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
     mock = true;
   }
-  const executionOptions = {
-    arch: route.arch,
-    cwd: process.cwd(),
-    manifestPath: resolved.manifestPath,
-    mock,
-    notes: route.notes,
-    run,
-  };
-  if (route.backend === 'srt') {
-    return executeSrt(resolved.manifest, {
-      ...executionOptions,
-      enableWeakerNestedSandbox: process.env.ECC_SANDBOX_ALLOW_NESTED_SRT === '1',
-      os: route.os,
-      platform: process.platform,
+  const executionOptions = { mock, run };
+  const initial = executeRoute(resolved, route, executionOptions);
+  if (route.backend !== 'srt' || !initial.denial?.installer) return initial;
+
+  const escalationRoute = resolveRuntimeEscalation(
+    resolved.manifest,
+    resolved.capabilities,
+    route
+  );
+  if (escalationRoute.result !== 'routable') {
+    initial.report = validateReport({
+      ...initial.report,
+      notes: [
+        ...initial.report.notes,
+        `Automatic escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
+      ],
     });
+    return initial;
   }
-  return executeContainer(resolved.manifest, {
-    ...executionOptions,
-    image: process.env.ECC_SANDBOX_IMAGE,
-    runtime: route.backend,
-  });
+  return addEscalation(
+    initial,
+    executeRoute(resolved, escalationRoute, executionOptions)
+  );
 }
 
 function runProbe(options) {
@@ -233,6 +335,56 @@ function runReport(args) {
   };
 }
 
+function runEscalation(options) {
+  const reportPath = path.resolve(options.reportPath);
+  const sourceReport = validateReport(JSON.parse(
+    readBoundedRegularFile(reportPath, 'Sandbox report')
+  ));
+  if (sourceReport.backend !== 'srt' || sourceReport.tier !== 0) {
+    throw new Error('escalate accepts only a Tier 0 SRT report');
+  }
+  if (sourceReport.escalations.length !== 0) {
+    throw new Error('this report already contains its one permitted escalation');
+  }
+  if (
+    sourceReport.result === 'pass'
+    || !sourceReport.notes.some(note => (
+      note.includes('installer or system-write command is eligible for one-hop escalation')
+    ))
+  ) {
+    throw new Error('the SRT report does not record an eligible installer or system-write denial');
+  }
+
+  const manifestPath = path.isAbsolute(sourceReport.manifest)
+    ? sourceReport.manifest
+    : path.resolve(path.dirname(reportPath), sourceReport.manifest);
+  const resolved = {
+    capabilities: loadCapabilities(options.capabilitiesPath),
+    manifest: loadManifest(manifestPath),
+    manifestPath,
+  };
+  const route = resolveRuntimeEscalation(
+    resolved.manifest,
+    resolved.capabilities,
+    { backend: 'srt', os: sourceReport.os, arch: sourceReport.arch }
+  );
+  if (route.result !== 'routable') {
+    throw new Error(`${route.reason}. ${route.fix}`);
+  }
+  let run;
+  let mock = false;
+  if (options.mockPath) {
+    run = mockRunner(loadMockScenario(path.resolve(options.mockPath), route.backend));
+    mock = true;
+  }
+  // DECISION: CONVENTIONS item 24 makes manual escalation consume the prior
+  // denial report and execute only the one destination attempt.
+  return addEscalation(
+    { report: sourceReport },
+    executeRoute(resolved, route, { mock, run })
+  );
+}
+
 function main(argv = process.argv.slice(2)) {
   const [command, ...args] = argv;
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -261,7 +413,9 @@ function main(argv = process.argv.slice(2)) {
     writeJson(runReport(args));
     return 0;
   }
-  throw new Error(`${command} is unavailable until its implementation phase`);
+  const outcome = runEscalation(parseEscalateArgs(args));
+  writeJson(outcome.report);
+  return outcome.exitCode;
 }
 
 if (require.main === module) {
@@ -286,12 +440,16 @@ module.exports = {
   help,
   loadCapabilities,
   main,
+  parseEscalateArgs,
   parseRunArgs,
   parseProbeArgs,
   resolveRun,
   runExecution,
   runProbe,
   runDryRun,
+  runEscalation,
   runReport,
+  executeRoute,
+  addEscalation,
   writeJson,
 };
