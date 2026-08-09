@@ -93,6 +93,10 @@ uses these decisions to preserve its stated safety and fidelity goals:
 13. Mutable GitHub runner labels and images are recorded as observed runtime
     facts. CI is a fresh hosted VM with many preinstalled developer tools, not
     a blank consumer machine.
+14. A native Linux request may use Lima from a macOS or Linux host when its
+    probed architecture matches. This is a locally available real Linux guest,
+    even though the host family differs; it preserves the Tier 2 purpose more
+    faithfully than a remote CI redirect.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, and 9 resolve internal contract

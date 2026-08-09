@@ -127,6 +127,7 @@
     "scripts/repair.js",
     "scripts/setup.js",
     "scripts/welcome.js",
+    "scripts/sandbox/",
     "scripts/session-inspect.js",
     "scripts/sessions-cli.js",
     "scripts/setup-package-manager.js",
@@ -454,6 +455,7 @@
     "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
     "security:advisory-sources": "node scripts/ci/supply-chain-advisory-sources.js",
     "test:plugin-setup-platform": "node docker/plugin-setup/run-platform-tests.js",
+    "test:sandbox": "node tests/sandbox/contracts-router.test.js",
     "claw": "node scripts/claw.js",
     "orchestrate:status": "node scripts/orchestration-status.js",
     "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",
@@ -468,7 +470,8 @@
   "dependencies": {
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
-    "sql.js": "1.14.1"
+    "sql.js": "1.14.1",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
