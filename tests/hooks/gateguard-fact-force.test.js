@@ -2058,6 +2058,49 @@ function runTests() {
     passed++;
   else failed++;
 
+  clearState();
+  if (
+    test('GATEGUARD_SQL_CLIENTS adds a site-local client wrapper', () => {
+      const input = {
+        tool_name: 'Bash',
+        tool_input: { command: 'mysql-dev "truncate orders"' }
+      };
+      const result = runBashHook(input, { GATEGUARD_SQL_CLIENTS: 'mysql-dev,db-prod' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'custom client wrapper should be gated');
+      assert.ok(
+        output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'),
+        'should be the destructive deny, not the routine one'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('GATEGUARD_SQL_CLIENTS unset leaves a site-local wrapper ungated', () => {
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+      const input = {
+        tool_name: 'Bash',
+        tool_input: { command: 'mysql-dev "truncate orders"' }
+      };
+      const result = runBashHook(input);
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          'default-off: unknown wrapper is not a known client'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // GHSA-4v57-ph3x-gf55: quote/newline/wrapper bypasses of the classifier.
   if (
     test('denies rm -rf after a newline separator (GHSA-4v57)', () => {

@@ -350,6 +350,26 @@ const SQL_CLIENTS = new Set([
   'cqlsh',
 ]);
 
+// Operator-supplied additional client names (`GATEGUARD_SQL_CLIENTS`,
+// comma-separated). Teams commonly reach their database through a local
+// wrapper script — `mysql-dev "..."`, `db-prod "..."` — which the built-in
+// list cannot know about. Memoized keyed by the env value, same shape as
+// getExtraDestructiveRegex, so flipping the env between calls is honoured.
+let sqlClientsCacheKey = null;
+let sqlClientsCacheSet = null;
+function getSqlClients() {
+  const raw = process.env.GATEGUARD_SQL_CLIENTS || '';
+  if (raw === sqlClientsCacheKey && sqlClientsCacheSet) return sqlClientsCacheSet;
+  const merged = new Set(SQL_CLIENTS);
+  for (const name of raw.split(',')) {
+    const normalized = commandBasename(name.trim());
+    if (normalized) merged.add(normalized);
+  }
+  sqlClientsCacheKey = raw;
+  sqlClientsCacheSet = merged;
+  return merged;
+}
+
 /**
  * True when a quote-aware segment invokes a SQL client and carries a
  * destructive statement in one of its arguments, quoted or not.
@@ -364,7 +384,8 @@ const SQL_CLIENTS = new Set([
  * @returns {boolean}
  */
 function isDestructiveSqlClient(tokens) {
-  if (!tokens.some(token => SQL_CLIENTS.has(commandBasename(token)))) return false;
+  const clients = getSqlClients();
+  if (!tokens.some(token => clients.has(commandBasename(token)))) return false;
   const extra = getExtraDestructiveRegex();
   return tokens.some(token => DESTRUCTIVE_SQL_DD.test(token) || (extra && extra.test(token)));
 }
