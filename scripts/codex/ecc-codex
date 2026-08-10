@@ -107,23 +107,41 @@ region_on() {
   printf '\033[1;%dr\033[%d;1H' "$((rows - 3))" "$((rows - 3))" > /dev/tty
 }
 
-# Repaint the reserved rows. The scroll margins are re-asserted every time so a
-# window resize is picked up without tracking SIGWINCH: DECSTBM homes the
-# cursor, which is why the whole sequence is wrapped in DECSC/DECRC (\0337 and
-# \0338) and Codex never sees its cursor move.
-region_paint() {
+# Codex resets the scroll margins when it starts, and again whenever it
+# reinitialises the terminal, which wipes the reservation out from under us.
+# Rather than trying to detect that, the margins are re-asserted on a one
+# second cadence so the bar is never missing for longer than a blink.
+#
+# Re-asserting DECSTBM homes the cursor, so the whole sequence is wrapped in
+# DECSC/DECRC (\0337 and \0338) and Codex never sees its cursor move.
+REGION_L1=""
+REGION_L2=""
+REGION_L3=""
+
+# Rendering shells out to node, so it runs on the slow interval. Painting is a
+# single printf and runs every second.
+region_render() {
   [ "$REGION_ACTIVE" = 1 ] || return 0
-  local rows base l1 l2 l3
+  local l1="" l2="" l3=""
+  { IFS= read -r l1 || true; IFS= read -r l2 || true; IFS= read -r l3 || true; } \
+    < <(node "$RENDERER" --full 2>/dev/null)
+  [ -n "$l1" ] || return 0
+  REGION_L1="$l1"
+  REGION_L2="$l2"
+  REGION_L3="$l3"
+}
+
+region_draw() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  [ -n "$REGION_L1" ] || return 0
+  local rows base
   rows="$(term_rows)" || return 0
   [ "$rows" -gt 8 ] || return 0
   base=$((rows - 2))
 
-  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; } \
-    < <(node "$RENDERER" --full 2>/dev/null)
-
   printf '\0337\033[1;%dr\033[%d;1H%s\033[K\033[%d;1H%s\033[K\033[%d;1H%s\033[K\0338' \
     "$((rows - 3))" \
-    "$base" "${l1-}" "$((base + 1))" "${l2-}" "$((base + 2))" "${l3-}" \
+    "$base" "$REGION_L1" "$((base + 1))" "$REGION_L2" "$((base + 2))" "$REGION_L3" \
     > /dev/tty
 }
 
@@ -192,13 +210,20 @@ tmux_bar_on
 wezterm_bar_on
 region_on
 
-region_paint
-(
-  while :; do
-    sleep "$INTERVAL"
-    region_paint
-  done
-) &
-UPDATER_PID=$!
+# Only the reserved-region mode needs a loop here. tmux refreshes its own
+# status area, and the WezTerm pane runs its own renderer.
+if [ "$REGION_ACTIVE" = 1 ]; then
+  region_render
+  (
+    tick=0
+    while :; do
+      [ "$((tick % INTERVAL))" -eq 0 ] && region_render
+      region_draw
+      sleep 1
+      tick=$((tick + 1))
+    done
+  ) &
+  UPDATER_PID=$!
+fi
 
 codex "$@"

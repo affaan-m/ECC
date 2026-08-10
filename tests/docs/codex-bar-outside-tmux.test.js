@@ -174,6 +174,17 @@ test('plain terminals get the three lines in reserved bottom rows', () => {
     'the reserved region must yield to tmux and to the WezTerm pane'
   );
 
+
+  // Codex resets the scroll margins when it starts. The reservation only
+  // survives because it is re-asserted on a one second cadence, not once per
+  // refresh interval, which left the bar missing for up to 15 seconds.
+  const loop = wrapper.slice(wrapper.indexOf('if [ "$REGION_ACTIVE" = 1 ]; then'));
+  assert.ok(/\n      sleep 1\n/.test(loop), 'the region must repaint every second');
+  assert.ok(
+    loop.includes('tick % INTERVAL'),
+    'rendering must stay on the slow interval so node is not spawned every second'
+  );
+
   const cleanup = wrapper.slice(wrapper.indexOf('cleanup() {'), wrapper.indexOf('trap cleanup'));
   assert.ok(cleanup.includes('region_off'), 'cleanup must release the reserved rows');
 
