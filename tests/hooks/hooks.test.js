@@ -4830,7 +4830,11 @@ async function runTests() {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
       // Only user messages — no tool_use entries at all
-      const lines = ['{"type":"user","content":"How does authentication work?"}', '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}'];
+      const lines = [
+        '{"type":"user","content":"How does authentication work?"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}',
+        '{"type":"user","content":"Explain the token refresh path too"}'
+      ];
       fs.writeFileSync(transcriptPath, lines.join('\n'));
       const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
 
@@ -5204,8 +5208,11 @@ async function runTests() {
     await asyncTest('handles stdin exceeding MAX_STDIN (1MB) gracefully', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
-      // Create a minimal valid transcript so env var fallback works
-      fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'user', content: 'Overflow test' }) + '\n');
+      // Create a substantive valid transcript so env var fallback works
+      fs.writeFileSync(
+        transcriptPath,
+        [JSON.stringify({ type: 'user', content: 'Overflow test' }), JSON.stringify({ type: 'user', content: 'Verify fallback behavior' })].join('\n') + '\n'
+      );
 
       // Create stdin > 1MB: truncated JSON will be invalid → falls back to env var
       const oversizedPayload = '{"transcript_path":"' + 'x'.repeat(1048600) + '"}';
@@ -5822,6 +5829,8 @@ async function runTests() {
       const lines = [
         // Normal user message (string content) — should be included
         '{"type":"user","content":"Real user message"}',
+        // A second valid message keeps this fixture eligible for persistence
+        '{"type":"user","content":"Follow-up user message"}',
         // User message with numeric content — exercises the else: '' branch
         '{"type":"user","content":42}',
         // User message with boolean content — also hits the else branch

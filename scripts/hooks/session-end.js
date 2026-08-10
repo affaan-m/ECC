@@ -94,6 +94,10 @@ function extractSessionSummary(transcriptPath) {
   };
 }
 
+function isLowSubstanceTranscript(summary) {
+  return summary.totalMessages === 1 && summary.toolsUsed.length === 0 && summary.filesModified.length === 0;
+}
+
 // Read hook input from stdin (Claude Code provides transcript_path via stdin JSON)
 const MAX_STDIN = 1024 * 1024;
 let stdinData = '';
@@ -181,6 +185,24 @@ async function main() {
     }
   }
 
+  // Classify known transcripts before resolving session metadata or touching the
+  // session directory. Missing, unreadable, or unparseable transcript data keeps
+  // the established fallback behavior because it cannot be classified reliably.
+  let summary = null;
+  let transcriptExists = false;
+  if (transcriptPath) {
+    transcriptExists = fs.existsSync(transcriptPath);
+    if (transcriptExists) {
+      summary = extractSessionSummary(transcriptPath);
+      if (summary && isLowSubstanceTranscript(summary)) {
+        log('[SessionEnd] Skipped one-message session without tool or file activity');
+        return;
+      }
+    } else {
+      log(`[SessionEnd] Transcript not found: ${transcriptPath}`);
+    }
+  }
+
   const sessionsDir = getSessionsDir();
   const today = getDateString();
   // Derive shortId from transcript_path UUID when available, using the SAME
@@ -211,21 +233,10 @@ async function main() {
 
   const currentTime = getTimeString();
 
-  // Try to extract summary from transcript
-  let summary = null;
-
-  if (transcriptPath) {
-    if (fs.existsSync(transcriptPath)) {
-      summary = extractSessionSummary(transcriptPath);
-    } else {
-      log(`[SessionEnd] Transcript not found: ${transcriptPath}`);
-    }
-  }
-
   // Decide whether to call LLM for a richer summary.
   // Triggers: context remaining < 20%, or every 50 user messages as a baseline.
   let llmSummary = null;
-  if (transcriptPath && summary && fs.existsSync(transcriptPath)) {
+  if (transcriptPath && summary && transcriptExists) {
     const contextPct = getContextRemainingPct(transcriptPath);
     const isContextLow = contextPct !== null && contextPct < getContextThreshold();
     const interval = parseInt(process.env.ECC_LLM_SUMMARY_INTERVAL || '50', 10);
