@@ -596,6 +596,7 @@ __metadata:
     ecc-install: scripts/install-apply.js
     ecc-memory-mcp: scripts/memory-mcp.mjs
     ecc-plan-canvas: scripts/plan-canvas.js
+    ecc-sandbox: scripts/sandbox/ecc-sandbox
     ecc-universal: scripts/ecc.js
   languageName: unknown
   linkType: soft
