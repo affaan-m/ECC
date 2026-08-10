@@ -52,7 +52,7 @@ function run() {
   if (test('installs without lifecycle scripts and verifies registry signatures', () => {
     assert.match(source, /npm ci --ignore-scripts/);
     assert.match(source, /npm audit signatures/);
-    assert.match(source, /npm audit --audit-level=high/);
+    assert.match(source, /npm audit --omit=dev --audit-level=high/);
   })) passed++; else failed++;
 
   if (test('runs IOC fixtures, emits JSON report, and uploads the artifact', () => {

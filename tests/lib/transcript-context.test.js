@@ -188,6 +188,10 @@ test('recognizes claude-mythos-5 as a 1M window from the known-model table (#246
   assert.strictEqual(resolveContextWindowTokens(50000, 'claude-mythos-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
+test('recognizes claude-opus-5 as a 1M window from the known-model table', () => {
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+});
+
 test('recognizes dated/prefixed variants of known large-window model ids (#2461)', () => {
   assert.strictEqual(resolveContextWindowTokens(50000, 'us.anthropic.claude-fable-5-20260115-v1:0'), LARGE_CONTEXT_WINDOW_TOKENS);
 });

@@ -1,0 +1,43 @@
+name: Discussion Announce
+
+on:
+  discussion:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      discussion_number:
+        description: Existing Announcement discussion number to deliver
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  discussions: write
+
+concurrency:
+  group: ecc-discord-announcement-delivery
+  cancel-in-progress: false
+
+jobs:
+  announce:
+    if: github.event_name == 'workflow_dispatch' || github.event.discussion.category.name == 'Announcements'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Send announcement to Discord
+        run: node scripts/discord/release-announce.mjs
+        env:
+          ANNOUNCEMENT_KIND: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'discussion' }}
+          DISCORD_ANNOUNCE_WEBHOOK_URL: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          DISCUSSION_TITLE: ${{ github.event.discussion.title }}
+          DISCUSSION_BODY: ${{ github.event.discussion.body }}
+          DISCUSSION_URL: ${{ github.event.discussion.html_url }}
+          DISCUSSION_CATEGORY: ${{ github.event.discussion.category.name }}
+          DISCUSSION_NUMBER: ${{ inputs.discussion_number }}
