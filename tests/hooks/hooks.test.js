@@ -624,6 +624,9 @@ async function runTests() {
         USERPROFILE: isoHome,
         CLV2_HOMUNCULUS_DIR: homunculusDir,
         CLAUDE_PROJECT_DIR: projectRoot,
+        ECC_INSTINCT_RELEVANCE_RANKING: 'on',
+        ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.7',
+        ECC_MAX_INJECTED_INSTINCTS: '6',
       };
 
       try {
