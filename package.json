@@ -472,12 +472,12 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@opencode-ai/plugin": "1.17.3",
+    "@opencode-ai/plugin": "1.18.14",
     "@types/node": "25.9.2",
     "c8": "11.0.0",
-    "eslint": "10.6.0",
-    "globals": "17.4.0",
-    "markdownlint-cli": "0.48.0",
+    "eslint": "10.8.0",
+    "globals": "17.9.0",
+    "markdownlint-cli": "0.49.1",
     "typescript": "6.0.3"
   },
   "engines": {
