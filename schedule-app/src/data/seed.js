@@ -122,11 +122,14 @@ export function makeSeed() {
     },
   ];
 
+  // `kind` marks the interaction medium so the event detail view can
+  // reliably surface a linked contact's phone/email regardless of what the
+  // type gets renamed to (see EVENT_TYPE_KINDS in MorePage.jsx).
   const eventTypes = [
-    { id: 'et_personal', label: 'Personal', color: '#1f5f8b' },
-    { id: 'et_work', label: 'Work', color: '#8a5cd1' },
-    { id: 'et_health', label: 'Health', color: '#2e9e6b' },
-    { id: 'et_social', label: 'Social', color: '#e08a1e' },
+    { id: 'et_call', label: 'Call', color: '#2e9e6b', kind: 'call' },
+    { id: 'et_text', label: 'Text', color: '#1f5f8b', kind: 'text' },
+    { id: 'et_in_person', label: 'In Person', color: '#8a5cd1', kind: 'inPerson' },
+    { id: 'et_email', label: 'Email', color: '#e08a1e', kind: 'email' },
   ];
 
   const baseEvent = {

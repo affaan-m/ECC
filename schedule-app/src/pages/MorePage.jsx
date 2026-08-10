@@ -13,7 +13,7 @@ import {
   requestNotificationPermission,
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
-import { formatTime } from '../data/helpers.js';
+import { formatTime, EVENT_TYPE_KINDS } from '../data/helpers.js';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import SettingsGroup from '../components/SettingsGroup.jsx';
 import SettingsSection from '../components/SettingsSection.jsx';
@@ -287,8 +287,9 @@ export default function MorePage() {
   const saveType = () => {
     const label = editingType.label.trim();
     if (!label) return;
-    if (editingType.id) actions.updateEventType({ id: editingType.id, label, color: editingType.color });
-    else actions.addEventType({ label, color: editingType.color });
+    const kind = editingType.kind || 'other';
+    if (editingType.id) actions.updateEventType({ id: editingType.id, label, color: editingType.color, kind });
+    else actions.addEventType({ label, color: editingType.color, kind });
     setEditingType(null);
   };
 
@@ -777,16 +778,19 @@ export default function MorePage() {
           <span className="detail-label">Event types</span>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => setEditingType({ label: '', color: PRESET_COLORS[1] })}
+            onClick={() => setEditingType({ label: '', color: PRESET_COLORS[1], kind: 'other' })}
           >
             + Add
           </button>
         </div>
-        <p className="muted small">Color-coded categories for your calendar events.</p>
+        <p className="muted small">
+          What kind of contact interaction each event represents — a Call or Text event shows the
+          linked contact's phone number, an Email event shows their email.
+        </p>
         <ul className="status-list">
           {(state.eventTypes || []).map((t) => (
             <li key={t.id}>
-              <button className="status-item" onClick={() => setEditingType({ ...t })}>
+              <button className="status-item" onClick={() => setEditingType({ ...t, kind: t.kind || 'other' })}>
                 <span className="swatch" style={{ background: t.color }} />
                 <span>{t.label}</span>
                 <span className="muted count-tag">
@@ -1178,8 +1182,20 @@ export default function MorePage() {
                 autoFocus
                 value={editingType.label}
                 onChange={(e) => setEditingType({ ...editingType, label: e.target.value })}
-                placeholder="e.g. Work, Health"
+                placeholder="e.g. Call, Text, In Person"
               />
+            </label>
+            <label className="field">
+              <span>Kind</span>
+              <Select
+                value={editingType.kind || 'other'}
+                onChange={(v) => setEditingType({ ...editingType, kind: v })}
+                options={EVENT_TYPE_KINDS}
+              />
+              <span className="muted small">
+                Call/Text events show the linked contact's phone number; Email events show their
+                email address.
+              </span>
             </label>
             <div className="field">
               <span>Color</span>

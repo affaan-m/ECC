@@ -42,7 +42,6 @@ import {
   eventColor,
   makeContactColor,
 } from '../data/helpers.js';
-import { useEdgeFade } from '../data/useEdgeFade.js';
 import AddressField from '../components/AddressField.jsx';
 import Icon from '../components/Icon.jsx';
 import { findDayConflicts } from '../data/conflicts.js';
@@ -2482,6 +2481,25 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
               </button>
             </div>
           )}
+          {contact && (type?.kind === 'call' || type?.kind === 'text') && contact.phone && (
+            <div className="detail-field">
+              <span className="detail-label">Phone</span>
+              <a
+                className="detail-value detail-value--link"
+                href={`${type.kind === 'text' ? 'sms' : 'tel'}:${contact.phone}`}
+              >
+                {contact.phone}
+              </a>
+            </div>
+          )}
+          {contact && type?.kind === 'email' && contact.email && (
+            <div className="detail-field">
+              <span className="detail-label">Email</span>
+              <a className="detail-value detail-value--link" href={`mailto:${contact.email}`}>
+                {contact.email}
+              </a>
+            </div>
+          )}
           {(linkedGoal || linkedTask) && (
             <div className="detail-field">
               <span className="detail-label">Linked to</span>
@@ -2528,8 +2546,6 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
   const [scheduling, setScheduling] = useState(false);
-  const typeChipsRef = useRef(null);
-  const typeChipsFade = useEdgeFade(typeChipsRef, [eventTypes.length, draft?.typeId]);
   const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
 
   const key = editing ? `${editing.id || 'new'}|${editing.recDate || editing.date}|${editing.start}` : null;
@@ -2696,31 +2712,18 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         </label>
 
         {eventTypes.length > 0 && (
-          <div className="field">
+          <label className="field">
             <span>Type</span>
-            <div
-              ref={typeChipsRef}
-              className={`chips${typeChipsFade.left ? ' chips--fade-left' : ''}${typeChipsFade.right ? ' chips--fade-right' : ''}`}
-            >
-              <button className={`chip${!draft.typeId ? ' chip--on' : ''}`} onClick={() => setDraft({ ...draft, typeId: '' })}>
-                None
-              </button>
-              {eventTypes.map((t) => (
-                <button
-                  key={t.id}
-                  className={`chip${draft.typeId === t.id ? ' chip--on' : ''}`}
-                  style={
-                    draft.typeId === t.id
-                      ? { background: t.color, borderColor: t.color, color: '#fff' }
-                      : { borderColor: t.color, color: t.color }
-                  }
-                  onClick={() => setDraft({ ...draft, typeId: t.id })}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
+            <Select
+              value={draft.typeId || ''}
+              onChange={(v) => setDraft({ ...draft, typeId: v })}
+              placeholder="None"
+              options={[
+                { value: '', label: 'None' },
+                ...eventTypes.map((t) => ({ value: t.id, label: t.label, color: t.color })),
+              ]}
+            />
+          </label>
         )}
 
         <div className="field">

@@ -356,6 +356,18 @@ export function goalFreezesLeft(goal, isPro) {
 // real colour everywhere else.
 // `contactColor` is an optional (id) => color|undefined lookup — pages that
 // have the contact and status lists build it once with makeContactColor().
+// The interaction medium an event type represents. Kept separate from the
+// type's (renameable, freeform) label so "does this event have a call/text/
+// email type" can be answered reliably even after a user renames or
+// recolors their types.
+export const EVENT_TYPE_KINDS = [
+  { value: 'call', label: 'Call' },
+  { value: 'text', label: 'Text' },
+  { value: 'inPerson', label: 'In Person' },
+  { value: 'email', label: 'Email' },
+  { value: 'other', label: 'Other' },
+];
+
 export function eventColor(event, eventTypes, contactColor, fallback = 'var(--accent)') {
   if (event?.color) return event.color;
   const type = (eventTypes || []).find((t) => t.id === event?.typeId);
