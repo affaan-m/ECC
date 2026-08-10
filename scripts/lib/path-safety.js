@@ -10,14 +10,18 @@ const path = require('path');
  * (a cloned/forked repo can ship a crafted `.cursor/ecc-install-state.json`).
  * `repair`/`uninstall`/`auto-update` replay recorded operations, so every
  * write/delete destination MUST be confined to the adapter-derived trusted
- * root — never trusted from the state file itself (GHSA-hfpv-w6mp-5g95).
+ * root - never trusted from the state file itself (GHSA-hfpv-w6mp-5g95).
  */
 
-function safeRealpath(target) {
+function pathEntryExists(target) {
   try {
-    return fs.realpathSync(path.resolve(target));
-  } catch {
-    return path.resolve(target);
+    fs.lstatSync(target);
+    return true;
+  } catch (error) {
+    if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -29,7 +33,7 @@ function safeRealpath(target) {
 function realpathNearestExisting(target) {
   let current = path.resolve(target);
   const tail = [];
-  while (!fs.existsSync(current)) {
+  while (!pathEntryExists(current)) {
     const parent = path.dirname(current);
     if (parent === current) {
       break;
@@ -37,7 +41,7 @@ function realpathNearestExisting(target) {
     tail.unshift(path.basename(current));
     current = parent;
   }
-  const real = safeRealpath(current);
+  const real = fs.realpathSync(current);
   return tail.length > 0 ? path.join(real, ...tail) : real;
 }
 
@@ -45,17 +49,33 @@ function realpathNearestExisting(target) {
  * True when `target` resolves to `root` itself or a path beneath it, with
  * symlinks resolved on both sides.
  */
+function resolveContainment(target, root) {
+  const realRoot = realpathNearestExisting(root);
+  const realTarget = realpathNearestExisting(target);
+  const relativePath = path.relative(realRoot, realTarget);
+  const contained = relativePath === ''
+    || (
+      relativePath !== '..'
+      && !relativePath.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(relativePath)
+    );
+  return {
+    contained,
+    realRoot,
+    realTarget
+  };
+}
+
 function isWithinRoot(target, root) {
   if (!root) {
     return false;
   }
-  const realRoot = safeRealpath(root);
-  const realTarget = realpathNearestExisting(target);
-  if (realTarget === realRoot) {
-    return true;
+
+  try {
+    return resolveContainment(target, root).contained;
+  } catch {
+    return false;
   }
-  const rel = path.relative(realRoot, realTarget);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 /**
@@ -69,10 +89,17 @@ function assertWithinTrustedRoot(target, root, action = 'write') {
   if (!root) {
     throw new Error(`Refusing to ${action} '${target}': no trusted install root resolved.`);
   }
-  if (!isWithinRoot(target, root)) {
+
+  let containment;
+  try {
+    containment = resolveContainment(target, root);
+  } catch {
+    containment = null;
+  }
+  if (!containment || !containment.contained) {
     throw new Error(`Refusing to ${action} outside the install root: '${target}' is not within '${root}'.`);
   }
-  return realpathNearestExisting(target);
+  return containment.realTarget;
 }
 
 module.exports = {

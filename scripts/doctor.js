@@ -3,6 +3,7 @@
 const os = require('os');
 const { buildDoctorReport } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
+const { problemReportLines } = require('./lib/feedback-links');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -58,6 +59,7 @@ function statusLabel(status) {
 function printHuman(report) {
   if (report.results.length === 0) {
     console.log('No ECC install-state files found for the current home/project context.');
+    console.log(`\n${problemReportLines().join('\n')}`);
     return;
   }
 
@@ -78,6 +80,10 @@ function printHuman(report) {
   }
 
   console.log(`\nSummary: checked=${report.summary.checkedCount}, ok=${report.summary.okCount}, warnings=${report.summary.warningCount}, errors=${report.summary.errorCount}`);
+
+  if (report.summary.errorCount > 0 || report.summary.warningCount > 0) {
+    console.log(`\n${problemReportLines().join('\n')}`);
+  }
 }
 
 function main() {

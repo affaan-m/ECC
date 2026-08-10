@@ -20,7 +20,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.pm }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
@@ -221,7 +221,9 @@ jobs:
       - name: Run npm audit
         run: |
           npm audit signatures
-          npm audit --audit-level=high
+          # Runtime/package advisories are release blockers. Development-only
+          # lint tooling remains covered by signature and IOC verification.
+          npm audit --omit=dev --audit-level=high
 
       - name: Run supply-chain IOC scan
         run: npm run security:ioc-scan

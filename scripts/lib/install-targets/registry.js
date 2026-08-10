@@ -47,13 +47,16 @@ function getInstallTargetAdapter(targetOrAdapterId) {
 function planInstallTargetScaffold(options = {}) {
   const adapter = getInstallTargetAdapter(options.target);
   const modules = Array.isArray(options.modules) ? options.modules : [];
+  const exemptValidationCodes = new Set(Array.isArray(options.exemptValidationCodes) ? options.exemptValidationCodes : []);
   const planningInput = {
     repoRoot: options.repoRoot,
     projectRoot: options.projectRoot || options.repoRoot,
     homeDir: options.homeDir,
   };
   const validationIssues = adapter.validate(planningInput);
-  const blockingIssues = validationIssues.filter(issue => issue.severity === 'error');
+  const blockingIssues = validationIssues.filter(issue => (
+    issue.severity === 'error' && !exemptValidationCodes.has(issue.code)
+  ));
   if (blockingIssues.length > 0) {
     throw new Error(blockingIssues.map(issue => issue.message).join('; '));
   }

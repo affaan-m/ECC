@@ -63,6 +63,10 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, '\n');
+}
+
 function writeInstinct(filePath, id, confidence = 0.9) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(
@@ -115,6 +119,13 @@ function runGit(cwd, args) {
   });
   assert.strictEqual(result.status, 0, result.stderr);
   return result.stdout.trim();
+}
+
+function initGitProject(parentDir, name = 'repo') {
+  const repoDir = path.join(parentDir, name);
+  fs.mkdirSync(repoDir, { recursive: true });
+  runGit(repoDir, ['init']);
+  return repoDir;
 }
 
 function runCli(root, args, options = {}) {
@@ -327,6 +338,143 @@ test('status migrates legacy no-remote linked worktree project dirs to main work
   } finally {
     cleanupDir(root);
     cleanupDir(repoParent);
+  }
+});
+
+test('promote removes only the promoted instinct block from project source', () => {
+  const root = createTempDir();
+  const repoParent = createTempDir();
+  try {
+    const repoDir = initGitProject(repoParent);
+    const projectId = projectHash(runGit(repoDir, ['rev-parse', '--show-toplevel']));
+    const sourceFile = path.join(root, 'projects', projectId, 'instincts', 'personal', 'mixed.yaml');
+    const retainedBlock = [
+      '---',
+      'id: keep-me',
+      'trigger: "when value: contains colon"',
+      'confidence: 0.72',
+      'domain: workflow',
+      'tags: [alpha, beta]',
+      '---',
+      '',
+      'Keep this block exactly.',
+      '',
+    ].join('\n');
+    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+    fs.writeFileSync(
+      sourceFile,
+      [
+        '---',
+        'id: promote-me',
+        'trigger: "when promoting"',
+        'confidence: 0.91',
+        'domain: workflow',
+        '---',
+        '',
+        'Promote this block.',
+        '',
+        retainedBlock,
+      ].join('\n')
+    );
+
+    const result = runCli(root, ['promote', 'promote-me', '--force'], { cwd: repoDir });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(path.join(root, 'instincts', 'personal', 'promote-me.yaml')));
+    assert.strictEqual(normalizeLineEndings(fs.readFileSync(sourceFile, 'utf8')), retainedBlock);
+  } finally {
+    cleanupDir(root);
+    cleanupDir(repoParent);
+  }
+});
+
+test('promote deletes project source file when it only contained the promoted instinct', () => {
+  const root = createTempDir();
+  const repoParent = createTempDir();
+  try {
+    const repoDir = initGitProject(repoParent);
+    const projectId = projectHash(runGit(repoDir, ['rev-parse', '--show-toplevel']));
+    const sourceFile = path.join(root, 'projects', projectId, 'instincts', 'personal', 'single.yaml');
+    writeInstinct(sourceFile, 'promote-single', 0.93);
+
+    const result = runCli(root, ['promote', 'promote-single', '--force'], { cwd: repoDir });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(path.join(root, 'instincts', 'personal', 'promote-single.yaml')));
+    assert.ok(!fs.existsSync(sourceFile));
+  } finally {
+    cleanupDir(root);
+    cleanupDir(repoParent);
+  }
+});
+
+test('promote preserves malformed and foreign source blocks while removing target', () => {
+  const root = createTempDir();
+  const repoParent = createTempDir();
+  try {
+    const repoDir = initGitProject(repoParent);
+    const projectId = projectHash(runGit(repoDir, ['rev-parse', '--show-toplevel']));
+    const sourceFile = path.join(root, 'projects', projectId, 'instincts', 'personal', 'foreign.yaml');
+    const foreignContent = [
+      '---',
+      'title: foreign block without id',
+      '---',
+      '',
+      'Do not drop this content.',
+      '',
+      '---',
+      'id: keep-foreign-neighbor',
+      'trigger: "when nearby"',
+      'confidence: not-a-float',
+      '---',
+      '',
+      'This parse-tolerated block must also stay raw.',
+      '',
+    ].join('\n');
+    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+    fs.writeFileSync(
+      sourceFile,
+      [
+        foreignContent,
+        '---',
+        'id: promote-foreign',
+        'trigger: "when target appears"',
+        'confidence: 0.95',
+        'domain: workflow',
+        '---',
+        '',
+        'Only this block should be removed.',
+        '',
+      ].join('\n')
+    );
+
+    const result = runCli(root, ['promote', 'promote-foreign', '--force'], { cwd: repoDir });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(path.join(root, 'instincts', 'personal', 'promote-foreign.yaml')));
+    assert.strictEqual(normalizeLineEndings(fs.readFileSync(sourceFile, 'utf8')), `${foreignContent}\n`);
+  } finally {
+    cleanupDir(root);
+    cleanupDir(repoParent);
+  }
+});
+
+test('auto-promote removes promoted source copies from every contributing project', () => {
+  const root = createTempDir();
+  try {
+    const registryPath = path.join(root, 'projects.json');
+    const projectOne = seedProject(root, 'proj111', { personal: ['shared-auto'] });
+    const projectTwo = seedProject(root, 'proj222', { personal: ['shared-auto'] });
+    writeJson(registryPath, {
+      proj111: { name: 'one', root: '/repo/one', remote: '', last_seen: '2026-01-01T00:00:00Z' },
+      proj222: { name: 'two', root: '/repo/two', remote: '', last_seen: '2026-01-02T00:00:00Z' },
+    });
+
+    const result = runCli(root, ['promote', '--force'], { cwd: root });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Promoted 1 instincts to global scope/);
+    assert.ok(fs.existsSync(path.join(root, 'instincts', 'personal', 'shared-auto.yaml')));
+    assert.ok(!fs.existsSync(path.join(projectOne, 'instincts', 'personal', 'shared-auto.yaml')));
+    assert.ok(!fs.existsSync(path.join(projectTwo, 'instincts', 'personal', 'shared-auto.yaml')));
+  } finally {
+    cleanupDir(root);
   }
 });
 

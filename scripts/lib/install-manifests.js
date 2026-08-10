@@ -680,6 +680,7 @@ function resolveInstallPlan(options = {}) {
       projectRoot: targetPlanningInput.projectRoot,
       homeDir: targetPlanningInput.homeDir,
       modules: selectedModules,
+      exemptValidationCodes: options.exemptValidationCodes || [],
     })
     : null;
 

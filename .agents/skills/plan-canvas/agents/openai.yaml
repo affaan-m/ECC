@@ -1,0 +1,7 @@
+interface:
+  display_name: "Plan Canvas"
+  short_description: "Browser annotate-and-approve review for plan artifacts"
+  brand_color: "#6885E8"
+  default_prompt: "Use $plan-canvas to open a plan in the browser for annotate-and-approve review."
+policy:
+  allow_implicit_invocation: true

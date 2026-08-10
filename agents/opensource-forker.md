@@ -1,8 +1,8 @@
 ---
 name: opensource-forker
 description: Fork any project for open-sourcing. Copies files, strips secrets and credentials (20+ patterns), replaces internal references with placeholders, generates .env.example, and cleans git history. First stage of the opensource-pipeline skill.
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: sonnet
+tools: Read, Write, Edit, Bash, Grep, Glob
+model: haiku
 ---
 
 ## Prompt Defense Baseline

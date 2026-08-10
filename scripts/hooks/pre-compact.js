@@ -14,7 +14,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { getSessionsDir, getDateTimeString, getTimeString, findFiles, ensureDir, appendFile, readFile, writeFile, log } = require('../lib/utils');
+const { getSessionsDir, getDateTimeString, getTimeString, findFiles, ensureDir, appendFile, readFile, writeFile, getProjectName, log } = require('../lib/utils');
 const { generateSessionSummary } = require('../lib/llm-summary');
 
 const SUMMARY_START_MARKER = '<!-- ECC:SUMMARY:START -->';
@@ -24,22 +24,91 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Canonicalize a path (resolve symlinks); fall back to the input on failure.
+ * Mirrors session-start.js#normalizePath so worktree comparisons agree.
+ */
+function normalizePath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/**
+ * Pick the session file that belongs to the CURRENT worktree.
+ *
+ * The sessions dir is shared across every project/worktree, so the newest
+ * `*-session.tmp` is frequently a DIFFERENT project's session. Matching by
+ * mtime (`sessions[0]`) therefore writes the compaction summary into the wrong
+ * project. Match on the `**Worktree:**` header (written by session-end.js)
+ * against cwd, mirroring session-start.js#selectMatchingSession:
+ *   1. exact worktree (cwd) match — newest wins
+ *   2. truly legacy sessions with NO Worktree header: same **Project:** name
+ *   3. otherwise null — do NOT annotate a foreign worktree's session
+ * A present-but-blank Worktree header counts as non-legacy (never a project
+ * fallback), so a foreign session is not matched by name.
+ *
+ * @param {Array<{path: string}>} sessions - newest-first session list
+ * @param {string} cwd
+ * @param {string} currentProject
+ * @param {(p: string) => (string|null)} [readFn]
+ * @returns {string|null} path of the chosen session, or null if none match
+ */
+function selectActiveSessionPath(sessions, cwd, currentProject, readFn = readFile) {
+  if (!sessions || sessions.length === 0) return null;
+  const normalizedCwd = normalizePath(cwd);
+  let projectMatch = null;
+
+  for (const session of sessions) {
+    const content = readFn(session.path);
+    if (!content) continue;
+
+    // (.*) not (.+): an explicit but empty header (`**Worktree:**` / `**Worktree:**\n`)
+    // must still register as present (hasWorktreeHeader) so it does not fall back
+    // to project-name matching against a foreign session.
+    const worktreeMatch = content.match(/\*\*Worktree:\*\*\s*(.*)$/m);
+    const hasWorktreeHeader = Boolean(worktreeMatch);
+    const sessionWorktree = worktreeMatch ? worktreeMatch[1].trim() : '';
+
+    if (sessionWorktree && normalizePath(sessionWorktree) === normalizedCwd) {
+      return session.path;
+    }
+
+    // Project-name fallback only for truly legacy sessions with NO Worktree
+    // header at all — a present-but-blank header is not treated as legacy.
+    if (!projectMatch && currentProject && !hasWorktreeHeader) {
+      const projectFieldMatch = content.match(/\*\*Project:\*\*\s*(.+)$/m);
+      const sessionProject = projectFieldMatch ? projectFieldMatch[1].trim() : '';
+      if (sessionProject && sessionProject === currentProject) {
+        projectMatch = session.path;
+      }
+    }
+  }
+
+  return projectMatch;
+}
+
 const MAX_STDIN = 1024 * 1024;
 let stdinData = '';
-process.stdin.setEncoding('utf8');
 
-process.stdin.on('data', chunk => {
-  if (stdinData.length < MAX_STDIN) {
-    stdinData += chunk.substring(0, MAX_STDIN - stdinData.length);
-  }
-});
+if (require.main === module) {
+  process.stdin.setEncoding('utf8');
 
-process.stdin.on('end', () => {
-  main().catch(err => {
-    log(`[PreCompact] Error: ${err.message}`);
-    process.exit(0);
+  process.stdin.on('data', chunk => {
+    if (stdinData.length < MAX_STDIN) {
+      stdinData += chunk.substring(0, MAX_STDIN - stdinData.length);
+    }
   });
-});
+
+  process.stdin.on('end', () => {
+    main().catch(err => {
+      log(`[PreCompact] Error: ${err.message}`);
+      process.exit(0);
+    });
+  });
+}
 
 async function main() {
   let transcriptPath = null;
@@ -66,7 +135,14 @@ async function main() {
     process.exit(0);
   }
 
-  const activeSession = sessions[0].path;
+  // Select the session for THIS worktree, not merely the newest across all
+  // projects (the sessions dir is shared). Skip when none matches rather than
+  // writing the summary into a foreign project's session file.
+  const activeSession = selectActiveSessionPath(sessions, process.cwd(), getProjectName());
+  if (!activeSession) {
+    log('[PreCompact] No session matches the current worktree; skipping annotation');
+    process.exit(0);
+  }
   const timeStr = getTimeString();
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -98,3 +174,5 @@ async function main() {
 
   process.exit(0);
 }
+
+module.exports = { selectActiveSessionPath, normalizePath };
