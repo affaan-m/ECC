@@ -25,24 +25,14 @@ const {
   verifyDependenciesClosed,
 } = require('../../scripts/lib/github-coordination/state');
 
-function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    return true;
-  } catch (err) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    Error: ${err.message}`);
-    return false;
-  }
-}
+const { test, banner, section, summary } = require('./helpers/mini-test-runner');
 
 let passed = 0;
 let failed = 0;
 
-console.log('\n=== parsing.js — uncovered branches ===\n');
+banner('parsing.js — uncovered branches');
 
-console.log('normalizeBodyForComparison:');
+section('normalizeBodyForComparison:');
 
 if (test('handles null body (uses empty string fallback)', () => {
   const result = normalizeBodyForComparison(null);
@@ -61,7 +51,7 @@ if (test('normalizes lastSyncAt timestamps in body text', () => {
   assert.ok(!result.includes('2024-01-01'));
 })) passed++; else failed++;
 
-console.log('\nparseStringList:');
+section('parseStringList:');
 
 if (test('returns empty array for null', () => {
   assert.deepStrictEqual(parseStringList(null), []);
@@ -83,7 +73,7 @@ if (test('filters out empty parts from double-commas', () => {
   assert.deepStrictEqual(parseStringList('a,,b'), ['a', 'b']);
 })) passed++; else failed++;
 
-console.log('\nmergeIssueBody — empty body branch:');
+section('mergeIssueBody — empty body branch:');
 
 if (test('returns rendered state when issue body is empty string', () => {
   const state = { status: 'available', schemaVersion: 'v1', kind: 'epic', owner: null, branch: null, validation: 'pending', review: 'not-requested', project: { state: 'backlog', fields: {} }, dependencies: [], tasks: [], labels: [], lastAction: 'sync' };
@@ -97,9 +87,9 @@ if (test('returns rendered state when issue body is null', () => {
   assert.ok(result.includes('ecc-coordination:start'));
 })) passed++; else failed++;
 
-console.log('\n=== state.js — uncovered branches ===\n');
+banner('state.js — uncovered branches');
 
-console.log('buildIssueStateFromAction — options absent (false branches):');
+section('buildIssueStateFromAction — options absent (false branches):');
 
 const baseIssue = { number: 1, labels: [], body: '' };
 const baseState = {
@@ -133,7 +123,7 @@ if (test('buildIssueStateFromAction — currentState.tasks not array → re-extr
   assert.ok(Array.isArray(result.tasks));
 })) passed++; else failed++;
 
-console.log('\ndesiredLabelsForState — uncovered status/review/validation branches:');
+section('desiredLabelsForState — uncovered status/review/validation branches:');
 
 if (test('includes published label for status "published"', () => {
   const labels = desiredLabelsForState({ status: 'published' });
@@ -160,7 +150,7 @@ if (test('includes review-changes-requested label for review "changes-requested"
   assert.ok(labels.includes('coordination:review-changes-requested'));
 })) passed++; else failed++;
 
-console.log('\nmapStateToWorkItemStatus — uncovered switch cases:');
+section('mapStateToWorkItemStatus — uncovered switch cases:');
 
 if (test('"validated" → "in-progress"', () => {
   assert.strictEqual(mapStateToWorkItemStatus('validated'), 'in-progress');
@@ -182,7 +172,7 @@ if (test('"unknown-state" → "open" (default)', () => {
   assert.strictEqual(mapStateToWorkItemStatus('unknown-state'), 'open');
 })) passed++; else failed++;
 
-console.log('\nassertIssueClaimable:');
+section('assertIssueClaimable:');
 
 if (test('throws when issue is not open', () => {
   assert.throws(
@@ -204,7 +194,7 @@ if (test('does not throw for open, unclaimed issue', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nverifyDependenciesClosed:');
+section('verifyDependenciesClosed:');
 
 if (test('returns empty array when dependencyNumbers is not an array', () => {
   const result = verifyDependenciesClosed('r/r', null, {}, []);
@@ -240,7 +230,7 @@ if (test('warns via stderr and skips when dependency issue is not in allIssues l
   assert.ok(stderrOutput.includes('dependency issue #5 not found'), `expected stderr warning, got: ${stderrOutput}`);
 })) passed++; else failed++;
 
-console.log('\ndefaultCoordinationState — edge branches:');
+section('defaultCoordinationState — edge branches:');
 
 if (test('owner is null when issue has no author', () => {
   const result = defaultCoordinationState({ number: 1, labels: [] });
@@ -264,5 +254,4 @@ if (test('handles null issue', () => {
   assert.deepStrictEqual(result.tasks, []);
 })) passed++; else failed++;
 
-console.log(`\n  Results: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+summary(passed, failed);
