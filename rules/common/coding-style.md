@@ -36,7 +36,8 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 
 MANY SMALL FILES > FEW LARGE FILES:
 - High cohesion, low coupling
-- 200-400 lines typical, 800 max
+- 200-400 lines typical, with 800 lines as a soft maintainability ceiling for source files
+- Test, generated, and vendored files may exceed the ceiling when their size is justified by their role
 - Extract utilities from large modules
 - Organize by feature/domain, not by type
 
