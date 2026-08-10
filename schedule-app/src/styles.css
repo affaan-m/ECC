@@ -2177,8 +2177,18 @@ textarea {
   right: 0;
   height: 0;
   border-top: 2px solid var(--danger, #d1495b);
-  z-index: 4;
+  /* No explicit z-index (was 4): that put it above every event block,
+     which have none of their own (auto), so the line drew straight over
+     an event's title whenever "now" happened to fall inside it. Auto
+     stacking falls back to DOM order instead — the line renders before
+     .event-layer in the markup, so it now paints behind every event (and
+     task) block the same way, no explicit number needed. A block's own
+     opacity setting (Settings > Calendar > event block opacity) still
+     shows the line bleeding through faintly if it's turned down from the
+     100% default, which is exactly the point: still there, just no
+     longer sitting on top of the text. */
   pointer-events: none;
+  opacity: 0.85;
 }
 .now-line-dot {
   position: absolute;
