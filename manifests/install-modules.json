@@ -113,6 +113,7 @@
         ".cursor",
         ".gemini",
         ".opencode",
+        ".pi",
         ".qwen",
         ".zed",
         "mcp-configs",

@@ -50,6 +50,7 @@
     ".hermes/",
     ".kimi/",
     ".opencode/",
+    ".pi/",
     ".openclaw/",
     ".qwen/",
     ".zed/",
@@ -470,6 +471,17 @@
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
     "sql.js": "1.14.1"
+  },
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./commands"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

@@ -123,6 +123,39 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'pi',
+    harness: 'Pi',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Pi package manifest',
+      'canonical ECC skills (skills/)',
+      'canonical ECC commands as prompt templates (commands/)',
+      'session lifecycle hook adapter',
+      '/ecc-doctor diagnostics command',
+    ],
+    unsupported_surfaces: [
+      'Subagents, chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter',
+      'Pi has no MCP surface; MCP reference configs do not apply',
+    ],
+    install_or_onramp: ['`pi install git:github.com/affaan-m/ECC`', '`pi install /path/to/ECC` from a local checkout'],
+    verification_commands: [
+      '`node tests/pi/pi-package-manifest.test.js`',
+      '`node tests/pi/pi-extension-adapter.test.js`',
+      '`npm run harness:adapters -- --check`',
+    ],
+    risk_notes: [
+      'Pi extensions execute with full user permissions; hooks run without a shell and resolve from the installed package, not the user project.',
+      'Keep canonical skills and commands as the single source of truth; do not generate copies under .pi/.',
+    ],
+    last_verified_at: '2026-08-10',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.pi/extensions/index.ts',
+      '.pi/README.md',
+      'package.json',
+    ],
+  },
+  {
     id: 'cursor',
     harness: 'Cursor',
     state: 'Adapter-backed',
