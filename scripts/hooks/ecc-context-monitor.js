@@ -264,9 +264,11 @@ function run(rawInput) {
       return rawInput;
     }
 
-    warnState.lastSeverity = topSeverity;
-    warnState.lastKey = dedupeKey;
-    writeWarnState(sessionId, warnState);
+    writeWarnState(sessionId, {
+      ...warnState,
+      lastSeverity: topSeverity,
+      lastKey: dedupeKey,
+    });
 
     const output = {
       hookSpecificOutput: {
