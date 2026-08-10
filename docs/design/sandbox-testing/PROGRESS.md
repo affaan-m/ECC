@@ -86,9 +86,14 @@ combined tree.
 | 6 | independent functional review | Re-reviewed failed-shard aggregation, evidence upload ordering, remote-ref identity, URL-less dispatch discovery, and mock/real artifact separation | Pass; approved with no blocker/high finding |
 | 6 | independent security review | Reviewed workflow injection, least privilege, action pinning, native environment boundary, `gh` argv handling, ref identity, artifact integrity, and fail-closed behavior | Pass; approved with no blocker/high/medium finding |
 | 6 | hosted native and aggregate matrix | [PR #2734 run 31338814411](https://github.com/affaan-m/ECC/actions/runs/31338814411) on Ubuntu x86_64, macOS arm64, Windows x86_64, then Ubuntu aggregation | Pass; all four downloaded artifacts validate as real/pass, and the aggregate contains exactly the three requested passing children |
+| 7 | local VM contract and mock suite | Lume 0.5.1, Lima 2.2.0, optional Tart 2.32.1, Windows detection/CI redirect, seed validation, Apple lifecycle lock, bounded scans, deadlines, and cleanup tests | Pass; 22/22 focused VM adapter tests, including separate-PGID and launcher-crash helpers, process-collision controls, and a 1 ms ownership deadline |
+| 7 | local Apple Silicon Lume guest | Real unattended macOS Tahoe seed; `ecc-sandbox run tests/fixtures/sandbox/lume-real-pkg.yaml --local-only` | Pass; schema-valid real Tier 2 report, helper barrier verified, `.pkg` receipt assertion, scan-classified `/Library/LaunchDaemons/org.ecc.sandbox.phase7.plist`, 79.8-second final run, clone deleted, seed stopped, and zero attributable host helpers |
+| 7 | short-run process-tree gate | Real `exit-only` Lume run with immediate cleanup after one setup and one assertion | Pass in 25.4 seconds; helper barrier verified, launcher and descendants stopped, clone deleted, seed stopped, and zero attributable Lume/SSH helper processes remained |
+| 7 | Lume bootstrap compatibility | Tested the versioned Tahoe OCI pull and official Apple IPSW creation paths with Lume 0.5.1 | OCI reconstruction failed on the current 300-part image; verified unattended IPSW creation is the documented v1 seed path |
+| 7 | local integration boundary | Full `npm test`, sandbox suite, lint, publish-surface test, and `git diff --check` | Pass on the stable final tree; 3,845/3,845 repository tests, 132/132 sandbox tests, and 2/2 publish-surface tests |
+| 7 | independent functional and security review | Re-reviewed helper ancestry/PGID escape, launcher crash/reparent, PID/IP/executable collisions, deadline bounds, lock serialization, routing, and scan evidence | Pass; both reviewers approve with no blocker/high/medium finding |
 
 ## Current gate
 
-S0 through S6 are complete. Phase 7 is released for local VM adapters and real
-available-host evidence. Agent-facing surfaces remain blocked until that gate
-passes.
+S0 through S7 are complete. Phase 8 is released for the agent-facing skill,
+escalation hook, user guide, demo manifest, and two-harness interpretation gate.

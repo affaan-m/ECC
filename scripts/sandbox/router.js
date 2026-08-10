@@ -74,13 +74,20 @@ function backendSupports(capabilities, backend, shard, manifest) {
     // DECISION: CONVENTIONS item 14 permits a real Lima Linux guest on macOS.
     lima: ['linux', 'macos'].includes(host.os) && shard.os === 'linux' && shard.arch === host.arch,
     tart: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
-    'windows-sandbox': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
-    'hyper-v': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
+    // DECISION: CONVENTIONS item 12 keeps local Windows execution disabled in
+    // v1 even if a supplied capability map claims the detected tools are ready.
+    'windows-sandbox': false,
+    'hyper-v': false,
     'dockur-windows': false,
     'ci-native': shard.os === host.os && shard.arch === host.arch,
     ci: Array.isArray(entry.targets) && entry.targets.some(target => targetMatches(target, shard)),
   };
   if (!hardConstraints[backend]) return false;
+  const network = networkNeeds(manifest);
+  // DECISION: CONVENTIONS item 32 fails closed before local VM execution:
+  // none of the v1 adapters provides a complete no-network boundary, so
+  // unrestricted networking must be explicit rather than a post-run surprise.
+  if (['lume', 'lima', 'tart'].includes(backend) && !network.open) return false;
   if (Array.isArray(entry.targets) && !entry.targets.some(target => targetMatches(target, shard))) {
     return false;
   }
@@ -91,7 +98,7 @@ function backendSupports(capabilities, backend, shard, manifest) {
     return false;
   }
   if (
-    networkNeeds(manifest).domainAllowlist
+    network.domainAllowlist
     && !entry.capabilities?.includes('domain-network-policy')
   ) {
     return false;
@@ -182,6 +189,15 @@ function routeNotes(backend, manifest) {
 
 function missingRoute(shard, manifest, capabilities, localOnly) {
   const network = networkNeeds(manifest);
+  if (
+    !network.requested
+    && tierTwoCandidates(shard).some(backend => backendEntry(capabilities, backend).available)
+  ) {
+    return {
+      reason: `local ${shard.os}/${shard.arch} VM backends cannot enforce no-network isolation in v1`,
+      fix: 'Add network:* only after accepting unrestricted guest egress, or choose a venue with the required network boundary',
+    };
+  }
   if (
     network.domainAllowlist
     && tierOneEligible(manifest, shard)

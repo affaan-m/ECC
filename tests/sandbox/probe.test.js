@@ -10,6 +10,7 @@ const { defaultHost } = require('../../scripts/sandbox/router');
 const {
   probeCapabilities,
   readCapabilityCache,
+  reportsVersion,
   writeCapabilityCache,
 } = require('../../scripts/sandbox/probe');
 
@@ -85,9 +86,9 @@ function fakeRunner(platform, installed = {}) {
       podman: 'podman version 6.0.0',
       docker: 'Docker version 27.0.0',
       msb: installed.msbVersion || 'msb 0.6.8',
-      lume: 'lume 0.3.0',
-      limactl: 'limactl version 2.0.0',
-      tart: '2.20.0',
+      lume: installed.lumeVersion || 'lume 0.5.1',
+      limactl: installed.limaVersion || 'limactl version 2.2.0',
+      tart: installed.tartVersion || '2.32.1',
       gh: 'gh version 2.80.0',
       wsb: 'Windows Sandbox CLI',
     };
@@ -217,8 +218,10 @@ test('probes Windows Sandbox, Hyper-V, WHP, and Podman machine state', () => {
     ghAuth: true,
   }));
   assert.strictEqual(capabilities.host.os, 'windows');
-  assert.strictEqual(capabilities.backends['windows-sandbox'].available, true);
-  assert.strictEqual(capabilities.backends['hyper-v'].available, true);
+  assert.strictEqual(capabilities.backends['windows-sandbox'].available, false);
+  assert.strictEqual(capabilities.backends['windows-sandbox'].state, 'detected-redirect');
+  assert.strictEqual(capabilities.backends['hyper-v'].available, false);
+  assert.strictEqual(capabilities.backends['hyper-v'].state, 'detected-redirect');
   assert.strictEqual(capabilities.backends.microsandbox.available, true);
   assert.strictEqual(capabilities.backends.podman.state, 'ready');
 });
@@ -270,6 +273,30 @@ test('rejects Microsandbox versions outside the pinned adapter contract', () => 
   }));
   assert.strictEqual(capabilities.backends.microsandbox.available, false);
   assert.match(capabilities.backends.microsandbox.reason, /pinned 0\.6\.8/);
+});
+
+test('rejects Tier 2 CLI versions outside their pinned adapter contracts', () => {
+  const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
+    virtualization: true,
+    lume: true,
+    lumeVersion: 'lume 0.6.0',
+    limactl: true,
+    limaVersion: 'limactl version 2.3.0',
+    tart: true,
+    tartVersion: '2.33.0',
+  }));
+  for (const [backend, version] of [['lume', '0.5.1'], ['lima', '2.2.0'], ['tart', '2.32.1']]) {
+    assert.strictEqual(capabilities.backends[backend].available, false, backend);
+    assert.match(capabilities.backends[backend].reason, new RegExp(`pinned ${version.replace(/\./g, '\\.')}`));
+  }
+  assert.strictEqual(capabilities.backends.tart.fix, undefined);
+});
+
+test('exact version probes reject prerelease and extended version tokens', () => {
+  assert.strictEqual(reportsVersion('lume 0.5.1', '0.5.1'), true);
+  assert.strictEqual(reportsVersion('lume 0.5.1-rc.1', '0.5.1'), false);
+  assert.strictEqual(reportsVersion('limactl version 2.2.0-beta.0', '2.2.0'), false);
+  assert.strictEqual(reportsVersion('tart 2.32.1.1', '2.32.1'), false);
 });
 
 test('starts an existing stopped Podman machine without reinitializing it', () => {

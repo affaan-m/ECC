@@ -124,30 +124,42 @@
       "reasonPattern": "require.*microsandbox"
     },
     {
-      "name": "macOS services use Lume",
-      "needs": { "capabilities": ["services"] },
+      "name": "macOS services with explicit open network use Lume",
+      "needs": { "capabilities": ["services", "network:*"] },
       "backends": { "podman": { "available": true }, "lume": { "available": true } },
       "expected": ["lume"]
     },
     {
       "name": "Tart selection emits license notice",
-      "needs": { "capabilities": ["gui"] },
+      "needs": { "capabilities": ["gui", "network:*"] },
       "backends": { "tart": { "available": true } },
       "expected": ["tart"],
       "notePattern": "Fair Source 100"
     },
     {
-      "name": "native Linux on macOS uses Lima",
-      "needs": { "os": ["linux"], "capabilities": ["services"], "native": true },
+      "name": "native Linux with explicit open network on macOS uses Lima",
+      "needs": { "os": ["linux"], "capabilities": ["services", "network:*"], "native": true },
       "backends": { "lima": { "available": true } },
       "expected": ["lima"]
     },
     {
-      "name": "native Windows uses Windows Sandbox",
+      "name": "local VM without explicit network authorization fails closed",
+      "needs": { "capabilities": ["services"] },
+      "options": { "localOnly": true },
+      "backends": { "lume": { "available": true } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot enforce no-network"
+    },
+    {
+      "name": "detected Windows Sandbox still redirects to CI in v1",
       "host": { "os": "windows", "arch": "x86_64" },
       "needs": { "os": ["windows"], "arch": ["x86_64"], "native": true },
-      "backends": { "windows-sandbox": { "available": true } },
-      "expected": ["windows-sandbox"]
+      "backends": {
+        "windows-sandbox": { "available": true },
+        "ci": { "available": true, "targets": [{ "os": "windows", "arch": "x86_64" }] }
+      },
+      "expected": ["ci"]
     },
     {
       "name": "unavailable Windows routes to CI",

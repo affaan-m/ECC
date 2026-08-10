@@ -11,6 +11,9 @@ const { resolveWindowsSrtShim } = require('./backends/srt');
 const PROBE_TIMEOUT_MS = 5_000;
 const MAX_PROBE_BUFFER = 1024 * 1024;
 const MICROSANDBOX_VERSION = '0.6.8';
+const LUME_VERSION = '0.5.1';
+const LIMA_VERSION = '2.2.0';
+const TART_VERSION = '2.32.1';
 
 function runCommand(executable, argv = []) {
   return spawnSync(executable, argv, {
@@ -33,6 +36,13 @@ function firstLine(value) {
 function commandVersion(run, executable, argv = ['--version']) {
   const result = run(executable, argv);
   return succeeded(result) ? firstLine(result.stdout || result.stderr) : null;
+}
+
+function reportsVersion(value, expected) {
+  const escaped = expected.replace(/\./g, '\\.');
+  return new RegExp(`(?:^|[^0-9A-Za-z.+-])v?${escaped}(?:$|[^0-9A-Za-z.+-])`).test(
+    value || ''
+  );
 }
 
 function backend(available, values = {}) {
@@ -338,19 +348,23 @@ function detectWindowsFeatures(run, architecture) {
   ]);
   const hypervReady = succeeded(hyperv) && /enabled/i.test(hyperv.stdout);
   return {
-    'windows-sandbox': backend(Boolean(wsbVersion), {
+    'windows-sandbox': backend(false, {
       version: wsbVersion,
-      state: wsbVersion ? 'ready' : 'unavailable',
-      targets: wsbVersion ? [{ os: 'windows', arch: architecture }] : [],
-      reason: wsbVersion ? 'Windows Sandbox CLI is ready' : 'Windows Sandbox CLI is unavailable',
-      fix: wsbVersion ? undefined : 'Enable Windows Sandbox: Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All',
+      state: wsbVersion ? 'detected-redirect' : 'unavailable',
+      targets: [],
+      reason: wsbVersion
+        ? `Windows Sandbox CLI was detected for ${architecture}, but local Windows guest execution redirects to CI in v1`
+        : 'Windows Sandbox CLI is unavailable; local Windows guest execution redirects to CI in v1',
+      fix: 'Run without --local-only with GitHub authentication: gh auth login',
     }),
-    'hyper-v': backend(hypervReady, {
+    'hyper-v': backend(false, {
       version: null,
-      state: hypervReady ? 'ready' : 'unavailable',
-      targets: hypervReady ? [{ os: 'windows', arch: architecture }] : [],
-      reason: hypervReady ? 'Hyper-V is enabled' : 'Hyper-V is not enabled',
-      fix: hypervReady ? undefined : 'Enable Hyper-V: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -All',
+      state: hypervReady ? 'detected-redirect' : 'unavailable',
+      targets: [],
+      reason: hypervReady
+        ? 'Hyper-V is enabled, but ECC v1 redirects Windows guest execution to CI'
+        : 'Hyper-V is not enabled; ECC v1 redirects Windows guest execution to CI',
+      fix: 'Run without --local-only with GitHub authentication: gh auth login',
     }),
   };
 }
@@ -391,14 +405,17 @@ function probeCapabilities(options = {}) {
       'windows-sandbox': backend(false, { state: 'unavailable', reason: 'requires a Windows host' }),
       'hyper-v': backend(false, { state: 'unavailable', reason: 'requires a Windows host' }),
     };
+  const lumeVersionReady = reportsVersion(lumeVersion, LUME_VERSION);
+  const limaVersionReady = reportsVersion(limaVersion, LIMA_VERSION);
+  const tartVersionReady = reportsVersion(tartVersion, TART_VERSION);
   const lumeReady = Boolean(
-    lumeVersion && platform === 'macos' && architecture === 'arm64' && virtualization
+    lumeVersionReady && platform === 'macos' && architecture === 'arm64' && virtualization
   );
   const tartReady = Boolean(
-    tartVersion && platform === 'macos' && architecture === 'arm64' && virtualization
+    tartVersionReady && platform === 'macos' && architecture === 'arm64' && virtualization
   );
   const limaReady = Boolean(
-    limaVersion && ['macos', 'linux'].includes(platform) && virtualization
+    limaVersionReady && ['macos', 'linux'].includes(platform) && virtualization
   );
 
   const capabilities = {
@@ -430,10 +447,14 @@ function probeCapabilities(options = {}) {
         state: lumeReady ? 'ready' : 'unavailable',
         targets: lumeReady ? [{ os: 'macos', arch: 'arm64' }] : [],
         reason: platform === 'macos' && architecture === 'arm64'
-          ? (lumeVersion ? 'Lume requires hardware virtualization' : 'Lume not found')
+          ? (lumeVersion
+            ? (lumeVersionReady
+              ? (virtualization ? 'Lume is ready for macOS guests' : 'Lume requires hardware virtualization')
+              : `Lume ${lumeVersion} is outside ECC's pinned ${LUME_VERSION} adapter contract`)
+            : 'Lume not found')
           : 'Lume requires an Apple Silicon macOS host',
-        fix: !lumeVersion && platform === 'macos' && architecture === 'arm64'
-          ? '/bin/bash -c "$(curl -fsSL https://cua.ai/lume/install.sh)"'
+        fix: !lumeReady && platform === 'macos' && architecture === 'arm64'
+          ? `LUME_VERSION=${LUME_VERSION} /bin/bash -c "$(curl -fsSL https://cua.ai/lume/install.sh)" -- --no-background-service`
           : undefined,
       }),
       lima: backend(limaReady, {
@@ -442,16 +463,26 @@ function probeCapabilities(options = {}) {
         targets: limaReady ? target : [],
         reason: ['macos', 'linux'].includes(platform)
           ? (limaVersion
-            ? (virtualization ? 'Lima is ready for Linux guests' : 'Lima needs hardware virtualization')
+            ? (limaVersionReady
+              ? (virtualization ? 'Lima is ready for Linux guests' : 'Lima needs hardware virtualization')
+              : `Lima ${limaVersion} is outside ECC's pinned ${LIMA_VERSION} adapter contract`)
             : 'Lima not found')
           : 'Lima requires a macOS or Linux host',
-        fix: limaVersion ? undefined : installFix('lima', platform),
+        fix: limaReady ? undefined : installFix('lima', platform),
       }),
       tart: backend(tartReady, {
         version: tartVersion,
         state: tartReady ? 'ready' : 'unavailable',
         targets: tartReady ? [{ os: 'macos', arch: 'arm64' }] : [],
-        reason: tartVersion ? 'Optional Fair Source Tart backend detected' : 'Optional Tart backend not installed',
+        reason: platform === 'macos' && architecture === 'arm64'
+          ? (tartVersion
+            ? (tartVersionReady
+              ? (virtualization
+                ? 'Optional Fair Source Tart backend is ready'
+                : 'Tart requires hardware virtualization')
+              : `Tart ${tartVersion} is outside ECC's pinned ${TART_VERSION} adapter contract`)
+            : 'Optional Tart backend not installed')
+          : 'Tart requires an Apple Silicon macOS host',
       }),
       ...windows,
       'dockur-windows': backend(false, {
@@ -486,6 +517,9 @@ function readCapabilityCache(filePath) {
 }
 
 module.exports = {
+  LIMA_VERSION,
+  LUME_VERSION,
+  TART_VERSION,
   MAX_PROBE_BUFFER,
   PROBE_TIMEOUT_MS,
   commandVersion,
@@ -496,6 +530,7 @@ module.exports = {
   detectVirtualization,
   probeCapabilities,
   readCapabilityCache,
+  reportsVersion,
   runCommand,
   writeCapabilityCache,
 };

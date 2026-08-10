@@ -61,7 +61,7 @@
         "version": { "type": ["string", "null"], "maxLength": 200 },
         "path": { "type": ["string", "null"], "maxLength": 4096 },
         "state": {
-          "enum": ["ready", "stopped", "not-configured", "unavailable", "unknown"]
+          "enum": ["ready", "stopped", "not-configured", "detected-redirect", "unavailable", "unknown"]
         },
         "targets": {
           "type": "array",

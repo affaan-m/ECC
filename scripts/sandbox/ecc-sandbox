@@ -26,6 +26,9 @@ const {
 const { executeSrt } = require('./backends/srt');
 const { executeContainer } = require('./backends/podman');
 const { executeMicrosandbox } = require('./backends/microsandbox');
+const { executeLume } = require('./backends/lume');
+const { executeLima } = require('./backends/lima');
+const { executeTart } = require('./backends/tart');
 const { executeCiNative } = require('./backends/ci-native');
 const { executeCi } = require('./backends/ci');
 const { loadMockScenario, mockRunner } = require('./mock');
@@ -198,7 +201,9 @@ function runDryRun(options) {
 }
 
 function executeRoute(resolved, route, executionOptions) {
-  if (!['srt', 'podman', 'docker', 'microsandbox', 'ci-native'].includes(route.backend)) {
+  if (![
+    'srt', 'podman', 'docker', 'microsandbox', 'lume', 'lima', 'tart', 'ci-native',
+  ].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
   const adapterOptions = {
@@ -249,6 +254,24 @@ function executeRoute(resolved, route, executionOptions) {
       env: process.env,
       os: route.os,
       platform,
+    });
+  }
+  if (route.backend === 'lume') {
+    return executeLume(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_LUME_SEED,
+    });
+  }
+  if (route.backend === 'lima') {
+    return executeLima(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_LIMA_SEED,
+    });
+  }
+  if (route.backend === 'tart') {
+    return executeTart(resolved.manifest, {
+      ...adapterOptions,
+      seed: process.env.ECC_SANDBOX_TART_SEED,
     });
   }
   return executeContainer(resolved.manifest, {

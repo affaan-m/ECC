@@ -89,9 +89,10 @@ uses these decisions to preserve its stated safety and fidelity goals:
     `rm`. `run --rm` cannot preserve a stopped container for diff evidence.
 11. Microsandbox snapshots are disk-only. They accelerate repeated pristine
     starts but do not preserve memory, processes, or network state.
-12. Windows Sandbox CLI is the preferred local Windows v1 adapter when its
-    current Windows edition/version requirements are met. Hyper-V and
-    dockur/windows remain detected fallbacks or CI redirects.
+12. Windows Sandbox and Hyper-V are detected but redirect to CI in v1. Their
+    local lifecycle and diff surfaces are not portable enough to claim a
+    working adapter; dockur/windows remains detection-only. The probe says so
+    directly instead of routing a native Windows request to broken glue.
 13. Mutable GitHub runner labels and images are recorded as observed runtime
     facts. CI is a fresh hosted VM with many preinstalled developer tools, not
     a blank consumer machine.
@@ -165,13 +166,65 @@ uses these decisions to preserve its stated safety and fidelity goals:
     fail closed. A Linux verification job independently assembles the same
     normalized aggregate used by the CLI; its artifact name stays outside the
     adapter's per-shard download pattern.
+28. Lume execution pins CLI 0.5.1 and uses a stopped, SSH-ready, host-local
+    clone seed created from an Apple IPSW. Runs are display-free under an
+    ECC-owned launcher, share no host directory, bind cleanup to the launcher's
+    birth timestamp plus unique clone command, freeze it before recursively
+    capturing descendants, and bind each helper's PID, birth time, and exact
+    command before signaling it. This includes Foundation helpers that create
+    independent process groups. Runs verify Apple's two-running-macOS-guest
+    ceiling and always attempt stop and deletion. Lume combines remote stdout
+    and stderr, so the report records
+    that limitation. The seed is explicitly operator-trusted local state: ECC
+    verifies the tagged JSON identity as stopped macOS/arm64 state but does not
+    attest the guest disk. Lume and Tart share one stale-owner-aware host lock,
+    and each preflight counts the other backend's running Apple guests before
+    clone/start; ECC serializes its own macOS VM lifecycles to close the race.
+    The lifecycle lock is published by atomic rename with a random ownership
+    token. Stale locks fail closed for exact manual cleanup instead of being
+    automatically stolen, and release removes only the matching token.
+    Before executing manifest commands, ECC stores the clone's non-secret guest
+    address and requires two helper-free samples. The address marker keeps the
+    VNC-config SSH helper discoverable if a launcher crash reparents it to PID 1.
+29. Lima execution pins CLI 2.2.0 and clones only a stopped seed originally
+    created with `--plain`; the child reasserts `--plain` and `--mount-none`
+    before start. This preserves
+    a real Linux distribution while withholding the host home, workspace,
+    port forwarding, and containerd defaults from a simulated fresh user.
+30. Tart execution pins CLI 2.32.1 and is eligible only when already installed
+    on Apple Silicon. It clones a stopped guest-agent-enabled base image, runs
+    headlessly without host shares or clipboard, can use host-only networking
+    internally, and emits the Fair Source 100
+    notice on every selected route/report. ECC never recommends Tart as an
+    installation step.
+31. Tier 2 probes accept exact stable CLI version tokens only; prerelease,
+    build-suffixed, or extended tokens do not satisfy a pin. Guest seed JSON
+    must match the reported OS and architecture (plus Linux and `plain: true`
+    for Lima) before cloning. Readiness probes use only the manifest's remaining
+    deadline, and lifecycle cleanup plus host-lock release runs from `finally`.
+32. Tier 2 install diffs are bounded before/after scans of selected system and
+    user paths. They always report `method: scan` and `complete: false`. Lume
+    and Lima v1 cannot disable or restrict guest egress, while Tart host-only
+    mode still permits host reachability. All three are therefore eligible only
+    when the manifest explicitly authorizes `network:*`; otherwise local
+    routing fails closed before VM creation. Strict domain allowlists also fail
+    before Tier 2. Scan commands use fixed system-tool paths outside login
+    profiles. Malformed evidence makes the report an error; bounded truncation
+    is preserved as explicit partial evidence. The macOS scan excludes volatile
+    per-user `Library` trees except `LaunchAgents` so first-boot background
+    activity does not bury durable install surfaces.
+33. Lume 0.5.1's OCI pull path could not reconstruct the current 300-part
+    `macos-tahoe-cua:26.5.2` image during the real gate. ECC therefore directs
+    the operator to the supported unattended IPSW create path for the one-time
+    seed. Normal sandbox runs remain offline with respect to OS acquisition and
+    clone only that stopped local seed.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
 internal contract contradictions or a missing clean-machine, write-scope, or
 evidence-integrity need and are therefore treated as that delegated authority.
-Items 20-27 record the corresponding Tier 1 containment, escalation, hardened
-backend, CI-native, and evidence choices.
+Items 20-33 record the corresponding Tier 1 containment, escalation, hardened
+backend, CI-native, VM lifecycle, and evidence choices.
 They are surfaced here before code and in the user handoff rather than hidden
 in implementation. Every matching code departure from a written routing rule
 must include a `DECISION:` comment referring to the applicable item above.
