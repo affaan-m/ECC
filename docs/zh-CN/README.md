@@ -81,7 +81,11 @@
 
 ## 最新动态
 
-### v2.0.0 — 智能体 Harness 操作系统（2026年6月）
+### v2.2.0 — 引导式多 Harness 安装（2026年8月）
+
+新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
+
+### v2.1.0 — 智能体 Harness 操作系统（2026年6月）
 
 2.0 主线稳定版：261 个技能、control-pane 基底（会话适配器 + MCP 清单）、worktree 生命周期服务，以及 [ECC Discord 社区](https://discord.gg/36yGMHGFbR)。
 
@@ -163,6 +167,34 @@
 
 ***
 
+## 统一记忆库
+
+`ecc memory` 使用可检查的 `ecc.memory.v1` Markdown 文档，在 Claude、
+Codex、Hermes 等 harness 之间传递上下文。常规搜索只召回 `project` 和
+`team` 范围内状态为 active 的条目，按 ID 直接读取仍可用于检查非 active
+条目；`user` 范围必须显式请求。首个版本中的所有记忆都保持 unreviewed，
+接受后的知识应进入受治理的项目文档，
+而不是修改记忆的信任字段。召回内容始终是不可信数据，不能作为指令执行。
+
+可选的 `ecc-memory-mcp` 服务必须由操作者设置小写
+`ECC_MEMORY_HARNESS` 身份；工具调用方不能覆盖该身份。只有操作者另外设置
+`ECC_MEMORY_ALLOW_USER_SCOPE=1` 后，MCP 调用才能显式请求 `user` 范围。
+该服务默认不会启用。
+
+仅安装 skill、最小配置、手动复制或 Claude 插件不会把记忆库运行时加入
+`PATH`。请先单独安装 ECC npm 运行时：
+
+```bash
+npm install -g ecc-universal
+ecc memory --help
+command -v ecc-memory-mcp
+```
+
+如需启用 MCP，请从 `mcp-configs/mcp-servers.json` 复制
+`ecc-memory-vault` 配置到对应 harness，并为每个 harness 分别启动一个服务
+进程，例如 `ECC_MEMORY_HARNESS=codex ecc-memory-mcp`。不同 harness 可以共享
+同一个二进制文件和记忆库目录，但不能共用同一个服务进程。
+
 ## 快速开始
 
 在 2 分钟内启动并运行：
@@ -228,7 +260,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 67 个智能体、277 项技能和 93 个命令了。
+**搞定！** 你现在可以使用 68 个智能体、285 项技能和 94 个命令了。
 
 ***
 
@@ -1140,9 +1172,9 @@ opencode
 
 | 功能特性 | Claude Code   | OpenCode | 状态 |
 |---------|---------------|----------|--------|
-| 智能体 | PASS: 67 个    | PASS: 12 个 | **Claude Code 领先** |
-| 命令 | PASS: 93 个    | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 277 项   | PASS: 37 项 | **Claude Code 领先** |
+| 智能体 | PASS: 68 个    | PASS: 12 个 | **Claude Code 领先** |
+| 命令 | PASS: 94 个    | PASS: 35 个 | **Claude Code 领先** |
+| 技能 | PASS: 285 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
 | 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
 | MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
@@ -1248,11 +1280,11 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 
 | 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
 |---------|-----------------------|------------|-----------|----------|
-| **智能体** | 67                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
-| **命令** | 93                    | 共享 | 基于指令 | 35 |
-| **技能** | 277                   | 共享 | 10 (原生格式) | 37 |
-| **钩子事件** | 8 种类型                 | 15 种类型 | 暂无 | 11 种类型 |
-| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | N/A | 插件钩子 |
+| **智能体** | 68                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **命令** | 94                    | 共享 | 基于指令 | 35 |
+| **技能** | 285                   | 共享 | 10 (原生格式) | 37 |
+| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |
+| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |
 | **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |
 | **自定义工具** | 通过钩子                  | 通过钩子 | N/A | 6 个原生工具 |
 | **MCP 服务器** | 14                    | 共享 (mcp.json) | 4 (基于命令) | 完整 |
@@ -1260,14 +1292,14 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | **上下文文件** | CLAUDE.md + AGENTS.md | AGENTS.md | AGENTS.md | AGENTS.md |
 | **秘密检测** | 基于钩子                  | beforeSubmitPrompt 钩子 | 基于沙箱 | 基于钩子 |
 | **自动格式化** | PostToolUse 钩子        | afterFileEdit 钩子 | N/A | file.edited 钩子 |
-| **版本** | 插件 | 插件 | 参考配置 | 2.0.0 |
+| **版本** | 插件 | 插件 | 参考配置 | 2.2.0 |
 
 **关键架构决策：**
 
 * **AGENTS.md** 在根目录是通用的跨工具文件（所有 4 个工具都能读取）
 * **DRY 适配器模式** 让 Cursor 可以重用 Claude Code 的钩子脚本而无需重复
 * **技能格式**（带有 YAML 前言的 SKILL.md）在 Claude Code、Codex 和 OpenCode 中都能工作
-* Codex 缺少钩子功能，通过 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限来弥补
+* Codex 通过原生 `SessionStart` 引导钩子初始化 ECC；其余行为由 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限提供
 
 ***
 

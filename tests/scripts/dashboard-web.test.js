@@ -7,12 +7,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'dashboard-web.js');
 
 let testRoot;
 let testPassed = 0;
 let testFailed = 0;
+const asyncTests = [];
+const REQUEST_TIMEOUT_MS = 5000;
 
 function test(name, fn) {
   try {
@@ -28,6 +31,10 @@ function test(name, fn) {
   }
 }
 
+function asyncTest(name, fn) {
+  asyncTests.push({ name, fn });
+}
+
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -36,10 +43,148 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function withTempDir(prefix, fn) {
+  const dirPath = createTempDir(prefix);
+  try {
+    return fn(dirPath);
+  } finally {
+    cleanup(dirPath);
+  }
+}
+
+test('withTempDir removes temp directories when the callback throws', () => {
+  let createdDir = '';
+  assert.throws(() => {
+    withTempDir('ecc-test-', dirPath => {
+      createdDir = dirPath;
+      assert.ok(fs.existsSync(createdDir));
+      throw new Error('fixture failure');
+    });
+  }, /fixture failure/);
+
+  assert.ok(createdDir);
+  assert.ok(!fs.existsSync(createdDir));
+});
+
 function writeFile(rootDir, relativePath, content) {
   const targetPath = path.join(rootDir, relativePath);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, content);
+}
+
+function requestDashboard(port, options = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let request;
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback(value);
+    };
+    const timeout = setTimeout(() => {
+      const error = new Error(
+        `Dashboard request timed out after ${REQUEST_TIMEOUT_MS}ms`
+      );
+      if (request) request.destroy();
+      settle(reject, error);
+    }, REQUEST_TIMEOUT_MS);
+
+    request = http.request({
+      host: '127.0.0.1',
+      port,
+      method: options.method || 'GET',
+      path: options.path || '/',
+      headers: options.headers || {},
+      setHost: options.setHost !== false,
+    }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('error', error => settle(reject, error));
+      response.on('end', () => {
+        settle(resolve, {
+          body,
+          headers: response.headers,
+          statusCode: response.statusCode,
+        });
+      });
+    });
+    request.on('error', error => settle(reject, error));
+    request.end();
+  });
+}
+
+function requestDashboardWithoutHost(port) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    let raw = '';
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback(value);
+    };
+    const timeout = setTimeout(() => {
+      const error = new Error(
+        `Host-less request timed out after ${REQUEST_TIMEOUT_MS}ms`
+      );
+      socket.destroy();
+      settle(reject, error);
+    }, REQUEST_TIMEOUT_MS);
+
+    socket.setEncoding('utf8');
+    socket.on('connect', () => {
+      socket.write('GET / HTTP/1.0\r\n\r\n');
+    });
+    socket.on('data', (chunk) => {
+      raw += chunk;
+    });
+    socket.on('end', () => {
+      const [head, body = ''] = raw.split('\r\n\r\n');
+      const lines = head.split('\r\n');
+      const statusCode = Number.parseInt(lines[0].split(' ')[1], 10);
+      const headers = {};
+      for (const line of lines.slice(1)) {
+        const separator = line.indexOf(':');
+        if (separator < 1) continue;
+        headers[line.slice(0, separator).toLowerCase()] = line.slice(separator + 1).trim();
+      }
+      settle(resolve, { body, headers, statusCode });
+    });
+    socket.on('error', error => settle(reject, error));
+    socket.on('close', hadError => {
+      if (!hadError && !settled) {
+        settle(reject, new Error('Host-less request closed before completion'));
+      }
+    });
+  });
+}
+
+async function withDashboardServer(fn, serverOptions = {}) {
+  const { createDashboardServer } = require(SCRIPT);
+  const testServer = createDashboardServer({
+    host: '127.0.0.1',
+    ...serverOptions,
+  });
+  await new Promise((resolve, reject) => {
+    testServer.once('error', reject);
+    testServer.listen(0, '127.0.0.1', () => {
+      testServer.off('error', reject);
+      resolve();
+    });
+  });
+
+  try {
+    await fn(testServer.address().port);
+  } finally {
+    await new Promise((resolve, reject) => {
+      testServer.close(error => (error ? reject(error) : resolve()));
+    });
+  }
 }
 
 // ===================== parsePort =====================
@@ -125,6 +270,43 @@ test('readFrontmatter parses array tools field', () => {
   cleanup(testRoot);
 });
 
+test('readFrontmatter preserves scoped tools in legacy flow sequences', () => {
+  const { readFrontmatter } = require(SCRIPT);
+  withTempDir('ecc-test-', tempDir => {
+    writeFile(tempDir, 'agent.md', [
+      '---',
+      'name: scoped-agent',
+      'tools: [Agent(worker, researcher), Read, Bash(git commit:*, git status:*)]',
+      '---',
+      'body',
+    ].join('\n'));
+
+    const fm = readFrontmatter(path.join(tempDir, 'agent.md'));
+    assert.deepStrictEqual(fm.tools, [
+      'Agent(worker, researcher)',
+      'Read',
+      'Bash(git commit:*, git status:*)',
+    ]);
+  });
+});
+
+test('readFrontmatter normalizes comma-separated scalar tools to an array', () => {
+  const { readFrontmatter } = require(SCRIPT);
+  testRoot = createTempDir('ecc-test-');
+  writeFile(testRoot, 'agent.md', [
+    '---',
+    'name: test-agent',
+    'tools: Bash, Read, Write',
+    '---',
+    '# Body',
+  ].join('\n'));
+
+  const fm = readFrontmatter(path.join(testRoot, 'agent.md'));
+  assert.ok(Array.isArray(fm.tools));
+  assert.deepStrictEqual(fm.tools, ['Bash', 'Read', 'Write']);
+  cleanup(testRoot);
+});
+
 test('readFrontmatter handles quoted values', () => {
   const { readFrontmatter } = require(SCRIPT);
   testRoot = createTempDir('ecc-test-');
@@ -202,7 +384,7 @@ test('loadAgents loads agent markdown files', () => {
     'name: typescript-reviewer',
     'description: Reviews TypeScript code',
     'model: claude-sonnet-4-6',
-    'tools: [Bash, Read, Write, Grep]',
+    'tools: Bash, Read, Write, Grep',
     '---',
     '# TypeScript Reviewer',
     'You are a TypeScript code reviewer.',
@@ -212,7 +394,7 @@ test('loadAgents loads agent markdown files', () => {
     'name: python-reviewer',
     'description: Reviews Python code',
     'model: claude-opus-4-8',
-    'tools: [Bash, Read]',
+    'tools: Bash, Read',
     '---',
     '# Python Reviewer',
   ].join('\n'));
@@ -540,6 +722,18 @@ test('loadHooks loads hook definitions', () => {
   cleanup(testRoot);
 });
 
+test('loadHooks exposes consolidated PostToolUse child IDs', () => {
+  const { loadHooks } = require(SCRIPT);
+  const repoRoot = path.join(__dirname, '..', '..');
+  const hooks = loadHooks(repoRoot);
+
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:sync'));
+  assert.ok(hooks.some(hook => hook.id === 'post:dispatcher:async'));
+  assert.ok(hooks.some(hook => hook.id === 'post:quality-gate'));
+  assert.ok(hooks.some(hook => hook.id === 'post:edit:accumulator'));
+  assert.ok(hooks.some(hook => hook.id === 'post:ecc-context-monitor'));
+});
+
 test('loadHooks handles malformed JSON gracefully', () => {
   const { loadHooks } = require(SCRIPT);
   testRoot = createTempDir('ecc-test-');
@@ -649,49 +843,228 @@ test('renderHTML includes the dashboard title and footer', () => {
 
 // ===================== Server / HTTP =====================
 
-test('server returns HTML on GET /', (done) => {
-  const { server } = require(SCRIPT);
-  // Server may or may not be listening — we start it on a random port
-  const testServer = http.createServer(server._events.request);
-  testServer.listen(0, () => {
-    const port = testServer.address().port;
-    http.get(`http://localhost:${port}/`, (res) => {
-      assert.strictEqual(res.statusCode, 200);
-      assert.strictEqual(res.headers['content-type'], 'text/html; charset=utf-8');
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        assert.ok(body.includes('<!DOCTYPE html>'));
-        assert.ok(body.includes('ECC Capabilities'));
-        testServer.close();
-        done();
-      });
-    });
+test('resolveDashboardHost defaults to IPv4 loopback', () => {
+  const { resolveDashboardHost } = require(SCRIPT);
+  assert.strictEqual(resolveDashboardHost({}), '127.0.0.1');
+  assert.strictEqual(resolveDashboardHost({ ECC_DASHBOARD_HOST: '' }), '127.0.0.1');
+});
+
+test('resolveDashboardHost accepts only normalized loopback hosts', () => {
+  const { resolveDashboardHost } = require(SCRIPT);
+  assert.strictEqual(
+    resolveDashboardHost({ ECC_DASHBOARD_HOST: ' LOCALHOST ' }),
+    'localhost'
+  );
+  assert.strictEqual(
+    resolveDashboardHost({ ECC_DASHBOARD_HOST: '::1' }),
+    '::1'
+  );
+  assert.strictEqual(
+    resolveDashboardHost({ ECC_DASHBOARD_HOST: '[::1]' }),
+    '::1'
+  );
+});
+
+test('resolveDashboardHost rejects wildcard, LAN, and arbitrary hosts', () => {
+  const { resolveDashboardHost } = require(SCRIPT);
+  for (const host of ['0.0.0.0', '::', '192.168.1.10', 'dashboard.internal', '127.0.0.1:3456']) {
+    assert.throws(
+      () => resolveDashboardHost({ ECC_DASHBOARD_HOST: host }),
+      /ECC_DASHBOARD_HOST must be loopback-only/
+    );
+  }
+});
+
+test('listenDashboardServer always passes an explicit loopback host to listen', () => {
+  const { listenDashboardServer } = require(SCRIPT);
+  const calls = [];
+  const fakeServer = {
+    listen(...args) {
+      calls.push(args);
+      return this;
+    },
+  };
+  const onListening = () => {};
+
+  assert.strictEqual(
+    listenDashboardServer(fakeServer, {
+      host: '127.0.0.1',
+      onListening,
+      port: 3456,
+    }),
+    fakeServer
+  );
+  assert.deepStrictEqual(calls, [[3456, '127.0.0.1', onListening]]);
+  assert.throws(
+    () => listenDashboardServer(fakeServer, { host: '0.0.0.0', port: 3456 }),
+    /ECC_DASHBOARD_HOST must be loopback-only/
+  );
+  assert.strictEqual(calls.length, 1);
+});
+
+asyncTest('server returns no-store HTML on GET /', async () => {
+  await withDashboardServer(async (port) => {
+    const response = await requestDashboard(port);
+    assert.strictEqual(response.statusCode, 200);
+    assert.strictEqual(response.headers['content-type'], 'text/html; charset=utf-8');
+    assert.strictEqual(response.headers['cache-control'], 'no-store');
+    assert.ok(response.body.includes('<!DOCTYPE html>'));
+    assert.ok(response.body.includes('ECC Capabilities'));
   });
 });
 
-test('server returns JSON on GET /api/data', (done) => {
-  const { server } = require(SCRIPT);
-  const testServer = http.createServer(server._events.request);
-  testServer.listen(0, () => {
-    const port = testServer.address().port;
-    http.get(`http://localhost:${port}/api/data`, (res) => {
-      assert.strictEqual(res.statusCode, 200);
-      assert.strictEqual(res.headers['content-type'], 'application/json');
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        const parsed = JSON.parse(body);
-        assert.ok(Array.isArray(parsed.agents));
-        assert.ok(Array.isArray(parsed.skills));
-        assert.ok(Array.isArray(parsed.commands));
-        assert.ok(Array.isArray(parsed.rules));
-        assert.ok(Array.isArray(parsed.mcps));
-        assert.ok(Array.isArray(parsed.hooks));
-        testServer.close();
-        done();
-      });
+asyncTest('server returns no-store JSON on GET /api/data', async () => {
+  await withDashboardServer(async (port) => {
+    const response = await requestDashboard(port, { path: '/api/data' });
+    assert.strictEqual(response.statusCode, 200);
+    assert.strictEqual(response.headers['content-type'], 'application/json');
+    assert.strictEqual(response.headers['cache-control'], 'no-store');
+    const parsed = JSON.parse(response.body);
+    assert.ok(Array.isArray(parsed.agents));
+    assert.ok(Array.isArray(parsed.skills));
+    assert.ok(Array.isArray(parsed.commands));
+    assert.ok(Array.isArray(parsed.rules));
+    assert.ok(Array.isArray(parsed.mcps));
+    assert.ok(Array.isArray(parsed.hooks));
+  });
+});
+
+asyncTest('server returns a generic no-store 500 for data failures and remains usable', async () => {
+  let loadCount = 0;
+  const loggedErrors = [];
+  const emptyData = {
+    agents: [],
+    skills: [],
+    commands: [],
+    rules: [],
+    mcps: [],
+    hooks: [],
+  };
+
+  await withDashboardServer(async (port) => {
+    const failedResponse = await requestDashboard(port, { path: '/api/data' });
+    assert.strictEqual(failedResponse.statusCode, 500);
+    assert.strictEqual(failedResponse.headers['cache-control'], 'no-store');
+    assert.deepStrictEqual(JSON.parse(failedResponse.body), {
+      error: 'Internal server error',
     });
+    assert.ok(!failedResponse.body.includes('sensitive loader detail'));
+
+    const followUpResponse = await requestDashboard(port, { path: '/api/data' });
+    assert.strictEqual(followUpResponse.statusCode, 200);
+    assert.deepStrictEqual(JSON.parse(followUpResponse.body), emptyData);
+    assert.strictEqual(loggedErrors.length, 1);
+    assert.strictEqual(loggedErrors[0].error.message, 'sensitive loader detail');
+  }, {
+    loadData: () => {
+      loadCount++;
+      if (loadCount === 1) {
+        throw new Error('sensitive loader detail');
+      }
+      return emptyData;
+    },
+    reportError: (message, error) => {
+      loggedErrors.push({ error, message });
+    },
+  });
+});
+
+asyncTest('server returns a generic no-store 500 for render failures and remains usable', async () => {
+  const { renderHTML } = require(SCRIPT);
+  let renderCount = 0;
+  const loggedErrors = [];
+  const emptyData = {
+    agents: [],
+    skills: [],
+    commands: [],
+    rules: [],
+    mcps: [],
+    hooks: [],
+  };
+
+  await withDashboardServer(async (port) => {
+    const failedResponse = await requestDashboard(port);
+    assert.strictEqual(failedResponse.statusCode, 500);
+    assert.strictEqual(failedResponse.headers['cache-control'], 'no-store');
+    assert.strictEqual(
+      failedResponse.body,
+      '<!DOCTYPE html><p>Dashboard unavailable.</p>'
+    );
+    assert.ok(!failedResponse.body.includes('sensitive render detail'));
+
+    const followUpResponse = await requestDashboard(port);
+    assert.strictEqual(followUpResponse.statusCode, 200);
+    assert.ok(followUpResponse.body.includes('ECC Capabilities'));
+    assert.strictEqual(loggedErrors.length, 1);
+    assert.strictEqual(loggedErrors[0].error.message, 'sensitive render detail');
+  }, {
+    loadData: () => emptyData,
+    render: (data) => {
+      renderCount++;
+      if (renderCount === 1) {
+        throw new Error('sensitive render detail');
+      }
+      return renderHTML(data);
+    },
+    reportError: (message, error) => {
+      loggedErrors.push({ error, message });
+    },
+  });
+});
+
+asyncTest('server rejects a missing or DNS-rebinding Host before routing', async () => {
+  await withDashboardServer(async (port) => {
+    const missingHost = await requestDashboardWithoutHost(port);
+    assert.strictEqual(missingHost.statusCode, 421);
+    assert.strictEqual(missingHost.headers['cache-control'], 'no-store');
+
+    const reboundHost = await requestDashboard(port, {
+      headers: { Host: 'dashboard.attacker.example' },
+      path: '/api/data',
+    });
+    assert.strictEqual(reboundHost.statusCode, 421);
+    assert.strictEqual(reboundHost.headers['cache-control'], 'no-store');
+  });
+});
+
+asyncTest('server rejects an allowed hostname with an invalid port without crashing', async () => {
+  await withDashboardServer(async (port) => {
+    const response = await requestDashboard(port, {
+      headers: { Host: 'localhost:99999' },
+      path: '/api/data',
+    });
+    assert.strictEqual(response.statusCode, 421);
+    assert.strictEqual(response.headers['cache-control'], 'no-store');
+  });
+});
+
+asyncTest('server returns a generic no-store 400 for a malformed absolute request target and remains usable', async () => {
+  await withDashboardServer(async (port) => {
+    const malformedResponse = await requestDashboard(port, {
+      path: 'http://attacker.example:99999/',
+    });
+    assert.strictEqual(malformedResponse.statusCode, 400);
+    assert.strictEqual(malformedResponse.headers['cache-control'], 'no-store');
+    assert.deepStrictEqual(JSON.parse(malformedResponse.body), {
+      error: 'Bad request',
+    });
+
+    const followUpResponse = await requestDashboard(port, {
+      path: '/api/data',
+    });
+    assert.strictEqual(followUpResponse.statusCode, 200);
+    assert.strictEqual(followUpResponse.headers['cache-control'], 'no-store');
+  });
+});
+
+asyncTest('server rejects cross-origin requests before routing', async () => {
+  await withDashboardServer(async (port) => {
+    const response = await requestDashboard(port, {
+      headers: { Origin: 'https://attacker.example' },
+      path: '/api/data',
+    });
+    assert.strictEqual(response.statusCode, 403);
+    assert.strictEqual(response.headers['cache-control'], 'no-store');
   });
 });
 
@@ -781,5 +1154,21 @@ test('loadMcps handles empty mcp-configs directory', () => {
 
 // ===================== Results =====================
 
-console.log(`\nResults: Passed: ${testPassed}, Failed: ${testFailed}`);
-process.exit(testFailed > 0 ? 1 : 0);
+async function runAsyncTests() {
+  for (const { name, fn } of asyncTests) {
+    try {
+      await fn();
+      console.log(`  ✓ ${name}`);
+      testPassed++;
+    } catch (error) {
+      console.log(`  ✗ ${name}`);
+      console.log(`    Error: ${error.message}`);
+      testFailed++;
+    }
+  }
+
+  console.log(`\nResults: Passed: ${testPassed}, Failed: ${testFailed}`);
+  process.exitCode = testFailed > 0 ? 1 : 0;
+}
+
+runAsyncTests();

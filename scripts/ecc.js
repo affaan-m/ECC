@@ -3,11 +3,21 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { listAvailableLanguages } = require('./lib/install-executor');
+const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
+const { createSafeItoInvocationEnvironment, getInvocationCommand } = require('./lib/ito-environment');
 
 const COMMANDS = {
+  setup: {
+    script: 'setup.js',
+    description: 'Install or update the Claude plugin with guided scope and hook choices',
+  },
+  welcome: {
+    script: 'welcome.js',
+    description: 'Show the ECC welcome artwork and community links',
+  },
   install: {
     script: 'install-apply.js',
-    description: 'Install ECC content into a supported target',
+    description: 'Install ECC content, including the guided multi-harness wizard',
   },
   plan: {
     script: 'install-plan.js',
@@ -25,6 +35,14 @@ const COMMANDS = {
     script: 'control-pane.js',
     description: 'Run the local ECC2 operator control pane',
   },
+  ito: {
+    script: 'ito.js',
+    description: 'Invoke the separately installed canonical Itô compute CLI',
+  },
+  memory: {
+    script: 'memory.js',
+    description: 'Share durable context across Claude, Codex, Hermes, and other harnesses',
+  },
   'install-plan': {
     script: 'install-plan.js',
     description: 'Alias for plan',
@@ -36,6 +54,10 @@ const COMMANDS = {
   doctor: {
     script: 'doctor.js',
     description: 'Diagnose missing or drifted ECC-managed files',
+  },
+  feedback: {
+    script: 'feedback.js',
+    description: 'Open the shortest path to report a problem, feedback, or an idea',
   },
   repair: {
     script: 'repair.js',
@@ -80,13 +102,18 @@ const COMMANDS = {
 };
 
 const PRIMARY_COMMANDS = [
+  'setup',
+  'welcome',
   'install',
   'plan',
   'catalog',
   'consult',
   'control-pane',
+  'ito',
+  'memory',
   'list-installed',
   'doctor',
+  'feedback',
   'repair',
   'auto-update',
   'status',
@@ -100,7 +127,7 @@ const PRIMARY_COMMANDS = [
 ];
 
 function showHelp(exitCode = 0) {
-  console.log(`
+  process.stdout.write(`
 ECC selective-install CLI
 
 Usage:
@@ -119,7 +146,15 @@ Compatibility:
 Global Flags:
   --dry-run          Preview actions without executing (sets ECC_DRY_RUN=1)
 
+Compute:
+  ${getComputeSponsorCopy()}
+
 Examples:
+  ecc setup
+  ecc setup --mode claude-plugin --scope user --hooks standard --yes
+  ecc welcome
+  ecc install --guided
+  ecc install --guided --harness claude --harness codex --harness kimi
   ecc typescript
   ecc install --profile developer --target claude
   ecc plan --profile core --target cursor
@@ -128,8 +163,18 @@ Examples:
   ecc catalog show framework:nextjs
   ecc consult "security reviews"
   ecc control-pane --port 8765
+  ecc ito login [--no-browser]
+  ecc ito logout
+  ecc ito auth
+  ecc ito find --gpu h200 --count 8 --nodes 1 --gpus-per-node 8 --days 30 --storage-tb 1 --start-window 2099-08-15 --max-rate 3.00 --form-factor bare_metal --contract-type reservation --fabric infiniband --region us-east-1
+  ecc ito status --json
+  ecc ito evals --cluster clu_prod_example --live-sixtytwo --nodes gpu-01,gpu-02 --config-dir /absolute/path/to/qualification-config
+  ecc memory init
+  ecc memory handoff --from codex --target claude --title "Continue migration" --stdin
+  ecc memory search "migration blockers" --target-harness hermes
   ecc list-installed --json
   ecc doctor --target cursor
+  ecc feedback
   ecc repair --dry-run
   ecc auto-update --dry-run
   ecc status --json
@@ -213,13 +258,24 @@ function runCommand(commandName, args) {
   if (!command) {
     throw new Error(`Unknown command: ${commandName}`);
   }
-
+  const isItoLogin = commandName === 'ito' && getInvocationCommand(args) === 'login';
   const result = spawnSync(
     process.execPath,
     [path.join(__dirname, command.script), ...args],
     {
       cwd: process.cwd(),
-      env: process.env,
+      env: commandName === 'ito'
+        ? {
+          ...createSafeItoInvocationEnvironment(process.env, args, {
+            includeControls: true,
+          }),
+        }
+        : process.env,
+      stdio: isItoLogin || commandName === 'setup' || commandName === 'install'
+        ? 'inherit'
+        : commandName === 'memory'
+          ? ['inherit', 'pipe', 'pipe']
+          : ['pipe', 'pipe', 'pipe'],
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
     }

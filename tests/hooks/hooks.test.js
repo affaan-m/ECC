@@ -1247,7 +1247,9 @@ async function runTests() {
 
       // Create an active .tmp session file
       const sessionFile = path.join(sessionsDir, '2026-02-11-test-session.tmp');
-      fs.writeFileSync(sessionFile, '# Session: 2026-02-11\n**Started:** 10:00\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('**Started:** 10:00', {
+        title: '# Session: 2026-02-11'
+      }));
 
       try {
         await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -2476,23 +2478,29 @@ async function runTests() {
   else failed++;
 
   if (
-    test('hooks.json consolidates Bash hooks into one pre and one post dispatcher', () => {
+    test('hooks.json consolidates PreToolUse Bash and all PostToolUse hooks', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
 
       const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
-      const postBash = hooks.hooks.PostToolUse.filter(entry => entry.matcher === 'Bash');
+      const postEntries = hooks.hooks.PostToolUse;
 
       assert.strictEqual(preBash.length, 1, 'Should have exactly one PreToolUse Bash dispatcher');
-      assert.strictEqual(postBash.length, 1, 'Should have exactly one PostToolUse Bash dispatcher');
       assert.strictEqual(preBash[0].id, 'pre:bash:dispatcher');
-      assert.strictEqual(postBash[0].id, 'post:bash:dispatcher');
+      assert.deepStrictEqual(
+        postEntries.map(entry => entry.id),
+        ['post:dispatcher:sync', 'post:dispatcher:async'],
+        'PostToolUse should have one sync and one async dispatcher'
+      );
+      assert.ok(postEntries.every(entry => entry.matcher === '*'));
 
       const preCommand = Array.isArray(preBash[0].hooks[0].command) ? preBash[0].hooks[0].command.join(' ') : preBash[0].hooks[0].command;
-      const postCommand = Array.isArray(postBash[0].hooks[0].command) ? postBash[0].hooks[0].command.join(' ') : postBash[0].hooks[0].command;
 
       assert.ok(preCommand.includes('pre-bash-dispatcher.js'), 'PreToolUse Bash hook should use the pre dispatcher');
-      assert.ok(postCommand.includes('post-bash-dispatcher.js'), 'PostToolUse Bash hook should use the post dispatcher');
+      assert.ok(postEntries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));
+      assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
+      assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
+      assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
     })
   )
     passed++;
@@ -2643,8 +2651,9 @@ async function runTests() {
             if (hook.type === 'command' && commandText.includes('scripts/hooks/')) {
               const usesInlineResolver = commandStart.startsWith('node -e') && commandText.includes('run-with-flags.js');
               const usesPluginBootstrap = commandStart.startsWith('node -e') && commandText.includes('plugin-hook-bootstrap.js');
+              const usesDirectPostDispatcher = commandStart.startsWith('node -e') && commandText.includes('posttooluse-dispatcher.js') && commandText.includes('resolve-ecc-root');
               assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), `Script paths should not depend on raw shell placeholder expansion: ${commandText.substring(0, 80)}...`);
-              assert.ok(usesInlineResolver || usesPluginBootstrap, `Script paths should use the inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
+              assert.ok(usesInlineResolver || usesPluginBootstrap || usesDirectPostDispatcher, `Script paths should use the inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
             }
           }
         }
@@ -3163,6 +3172,40 @@ async function runTests() {
       assert.ok(/\bseq 1 \d+\b/.test(startObserverSource), 'start-observer.sh should bound PID-file polling to a finite iteration count');
       assert.ok(/\[ -f "\$PID_FILE" \] && break/.test(startObserverSource), 'start-observer.sh should exit polling as soon as $PID_FILE appears');
       assert.ok(/sleep 0\.\d+/.test(startObserverSource), 'start-observer.sh should poll at sub-second intervals so healthy startups do not pay multi-second latency');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer scripts only call homunculus resolvers the shared lib defines (#2452)', () => {
+      const skillRoot = path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2');
+      const libSource = fs.readFileSync(path.join(skillRoot, 'scripts', 'lib', 'homunculus-dir.sh'), 'utf8');
+      const definedResolvers = new Set([...libSource.matchAll(/^([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\(\)/gm)].map((m) => m[1]));
+      assert.ok(definedResolvers.size > 0, 'homunculus-dir.sh should define a homunculus resolver function');
+
+      const callers = [
+        ['agents', 'start-observer.sh'],
+        ['hooks', 'observe.sh'],
+        ['scripts', 'detect-project.sh'],
+        ['scripts', 'migrate-homunculus.sh']
+      ];
+      for (const rel of callers) {
+        const callerSource = fs.readFileSync(path.join(skillRoot, ...rel), 'utf8');
+        for (const match of callerSource.matchAll(/([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\b/g)) {
+          assert.ok(definedResolvers.has(match[1]), `${rel.join('/')} calls ${match[1]}, which homunculus-dir.sh does not define (stale name breaks daemon boot under set -e)`);
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer-loop closes stdin on the backgrounded claude analysis call (#2452)', () => {
+      const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
+
+      assert.ok(observerLoopSource.includes('-p "$prompt_content" < /dev/null'), 'observer-loop should close stdin on the backgrounded claude call so Git Bash children do not hang on inherited stdin and exit 1');
     })
   )
     passed++;
@@ -3720,7 +3763,7 @@ async function runTests() {
       // Create a session .tmp file and a non-session .tmp file
       const sessionFile = path.join(sessionsDir, '2026-02-11-abc-session.tmp');
       const otherTmpFile = path.join(sessionsDir, 'other-data.tmp');
-      fs.writeFileSync(sessionFile, '# Session\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', { title: '# Session' }));
       fs.writeFileSync(otherTmpFile, 'some other data\n');
 
       try {
@@ -4227,9 +4270,15 @@ async function runTests() {
   console.log('\nRound 29: post-edit-console-warn.js (extension and exit):');
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
-      const cwSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-console-warn.js'), 'utf8');
-      assert.ok(cwSource.includes('process.exit(0)'), 'Should call process.exit(0)');
+    await asyncTest('exports a require-safe run function', async () => {
+      const consoleWarn = require(path.join(scriptsDir, 'post-edit-console-warn.js'));
+      const stdinJson = JSON.stringify({ tool_input: { file_path: '/test.py' } });
+      assert.strictEqual(typeof consoleWarn.run, 'function');
+      assert.deepStrictEqual(consoleWarn.run(stdinJson), {
+        stdout: stdinJson,
+        stderr: '',
+        exitCode: 0,
+      });
     })
   )
     passed++;
@@ -4629,11 +4678,11 @@ async function runTests() {
     passed++;
   else failed++;
 
-  // Round 41: pre-compact.js (multiple session files)
+  // Round 41: pre-compact.js (multiple sessions for the current worktree)
   console.log('\nRound 41: pre-compact.js (multiple session files):');
 
   if (
-    await asyncTest('annotates only the newest session file when multiple exist', async () => {
+    await asyncTest('annotates only the newest session when multiple match the current worktree', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
@@ -4641,11 +4690,12 @@ async function runTests() {
       // Create two session files with different mtimes
       const olderSession = path.join(sessionsDir, '2026-01-01-older-session.tmp');
       const newerSession = path.join(sessionsDir, '2026-02-11-newer-session.tmp');
-      fs.writeFileSync(olderSession, '# Older Session\n');
+      const olderContent = buildSessionStartFixture('', { title: '# Older Session' });
+      fs.writeFileSync(olderSession, olderContent);
       // Small delay to ensure different mtime
       const now = Date.now();
       fs.utimesSync(olderSession, new Date(now - 60000), new Date(now - 60000));
-      fs.writeFileSync(newerSession, '# Newer Session\n');
+      fs.writeFileSync(newerSession, buildSessionStartFixture('', { title: '# Newer Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -4655,11 +4705,11 @@ async function runTests() {
         assert.strictEqual(result.code, 0);
 
         const newerContent = fs.readFileSync(newerSession, 'utf8');
-        const olderContent = fs.readFileSync(olderSession, 'utf8');
+        const updatedOlderContent = fs.readFileSync(olderSession, 'utf8');
 
-        // findFiles sorts by mtime newest first, so sessions[0] is the newest
+        // findFiles sorts matches by mtime, so the newest matching worktree wins.
         assert.ok(newerContent.includes('Compaction occurred'), 'Should annotate the newest session file');
-        assert.strictEqual(olderContent, '# Older Session\n', 'Should NOT annotate older session files');
+        assert.strictEqual(updatedOlderContent, olderContent, 'Should NOT annotate older session files');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -6161,7 +6211,9 @@ Some random content without the expected ### Context to Load section
 
       // Create a minimal session .tmp file
       const sessionFile = path.join(sessionsDir, '2026-01-01-test-session.tmp');
-      fs.writeFileSync(sessionFile, '# Session: 2026-01-01\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', {
+        title: '# Session: 2026-01-01'
+      }));
 
       // Create a minimal transcript with one user message
       const transcriptPath = path.join(testDir, 'transcript.jsonl');

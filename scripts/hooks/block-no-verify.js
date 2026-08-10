@@ -248,7 +248,25 @@ function getCommitShortValueOption(value) {
 }
 
 function isCommitNoVerifyShortFlag(value) {
-  return value === '-n' || /^-n[a-zA-Z]/.test(value);
+  if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
+    return false;
+  }
+
+  // Short options cluster, so -n need not lead: `git commit -an` is -a plus -n
+  // and bypasses the hooks just as `-n` does. Anchoring on the first character
+  // let -an, -sn and -vn through.
+  //
+  // Scanning stops at a value-taking option because that option swallows the
+  // rest of the cluster as its inline value — the n in `-mn` is message text,
+  // not a flag.
+  const options = value.slice(1);
+  for (let i = 0; i < options.length; i++) {
+    const option = options.charAt(i);
+    if (option === 'n') return true;
+    if (COMMIT_SHORT_OPTIONS_WITH_VALUE.has(option)) return false;
+  }
+
+  return false;
 }
 
 /**

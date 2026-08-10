@@ -2,6 +2,9 @@
 
 This supplements the root `AGENTS.md` with Codex-specific guidance.
 
+For repo navigation, surface ownership, and PR diff packet guidance, read
+`docs/CODEX-NAVIGATION-GUIDE.md` after this supplement.
+
 ## Model Recommendations
 
 | Task Type | Recommended Model |

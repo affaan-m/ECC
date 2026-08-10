@@ -43,7 +43,10 @@ const PACKAGE_MANAGERS = {
   },
   bun: {
     name: 'bun',
-    lockFile: 'bun.lockb',
+    lockFile: 'bun.lock',
+    // Bun switched its default lockfile from the binary bun.lockb to the
+    // text-based bun.lock. Keep recognizing the legacy file too.
+    lockFileAliases: ['bun.lockb'],
     installCmd: 'bun install',
     runCmd: 'bun run',
     execCmd: 'bunx',
@@ -92,9 +95,9 @@ function saveConfig(config) {
 function detectFromLockFile(projectDir = process.cwd()) {
   for (const pmName of DETECTION_PRIORITY) {
     const pm = PACKAGE_MANAGERS[pmName];
-    const lockFilePath = path.join(projectDir, pm.lockFile);
+    const lockFileNames = [pm.lockFile, ...(pm.lockFileAliases || [])];
 
-    if (fs.existsSync(lockFilePath)) {
+    if (lockFileNames.some(lockFileName => fs.existsSync(path.join(projectDir, lockFileName)))) {
       return pmName;
     }
   }
