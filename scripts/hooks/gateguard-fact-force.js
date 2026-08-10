@@ -333,10 +333,47 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
+// Database clients whose arguments are executed as SQL. Real-world destructive
+// SQL is virtually always quoted (`mysql -e "drop table t"`), so the
+// quote-stripping path in isDestructiveBash never sees it. Scoping the
+// quote-aware SQL check to these command words catches that without gating
+// harmless prose such as `git commit -m "explain the drop table gate"`.
+const SQL_CLIENTS = new Set([
+  'mysql',
+  'mysqldump',
+  'mariadb',
+  'psql',
+  'sqlite',
+  'sqlite3',
+  'clickhouse-client',
+  'mongosh',
+  'cqlsh',
+]);
+
+/**
+ * True when a quote-aware segment invokes a SQL client and carries a
+ * destructive statement in one of its arguments, quoted or not.
+ *
+ * Matching a client token anywhere in the segment keeps prefixed forms such as
+ * `sudo mysql -e "..."` and `docker exec db mysql -e "..."` covered. It does
+ * not misfire on a statement merely *described* in an unrelated argument:
+ * quote-aware tokenization keeps `git commit -m "mysql -e 'drop table t'"` as
+ * one argument token, whose basename is not a client name.
+ *
+ * @param {string[]} tokens
+ * @returns {boolean}
+ */
+function isDestructiveSqlClient(tokens) {
+  if (!tokens.some(token => SQL_CLIENTS.has(commandBasename(token)))) return false;
+  const extra = getExtraDestructiveRegex();
+  return tokens.some(token => DESTRUCTIVE_SQL_DD.test(token) || (extra && extra.test(token)));
+}
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
- * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
- * the quote-stripping path (GHSA-4v57-ph3x-gf55).
+ * separators, quoted `find -exec`, quoted destructive SQL passed to a database
+ * client, and `sh -c`/`bash -c` wrappers that evade the quote-stripping path
+ * (GHSA-4v57-ph3x-gf55).
  *
  * @param {string} raw
  * @param {number} [depth] recursion guard for shell -c wrappers
@@ -349,6 +386,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
+    if (isDestructiveSqlClient(tokens)) return true;
     const base = commandBasename(tokens[0]);
     if (SHELL_WRAPPERS.has(base)) {
       const ci = tokens.indexOf('-c');

@@ -2003,6 +2003,61 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- destructive SQL passed to a database client inside quotes ---
+
+  if (
+    test('denies mysql -e with double-quoted drop table', () => {
+      expectDestructiveDeny('mysql -e "drop table users"', 'double-quoted drop table');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies mysql -e with single-quoted drop table', () => {
+      expectDestructiveDeny("mysql -e 'drop table users'", 'single-quoted drop table');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies psql -c with quoted truncate', () => {
+      expectDestructiveDeny('psql -c "truncate orders"', 'quoted truncate');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies mysql --execute=<quoted delete from> (attached value)', () => {
+      expectDestructiveDeny('mysql --execute="delete from users"', 'attached-value delete from');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies quoted destructive SQL inside sh -c', () => {
+      expectDestructiveDeny(`sh -c "mysql -e 'drop table t'"`, 'sh -c wrapped quoted SQL');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows quoted SQL keywords that are not handed to a database client', () => {
+      expectAllow('git commit -m "docs: explain the drop table gate"', 'SQL phrase in commit message');
+      expectAllow('grep -r "delete from" docs/', 'SQL phrase as a grep pattern');
+      expectAllow(
+        `git commit -m "fix: gate mysql -e 'drop table t'"`,
+        'whole client invocation quoted inside a commit message'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
   // GHSA-4v57-ph3x-gf55: quote/newline/wrapper bypasses of the classifier.
   if (
     test('denies rm -rf after a newline separator (GHSA-4v57)', () => {
