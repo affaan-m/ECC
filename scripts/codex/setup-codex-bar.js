@@ -8,7 +8,10 @@
  *   node scripts/codex/setup-codex-bar.js status     # show current state
  *
  * Installing writes a managed block to ~/.zshrc and/or ~/.bashrc so plain
- * `codex [args...]` runs through scripts/codex/ecc-codex. Runtime opt-outs:
+ * `codex [args...]` runs through scripts/codex/ecc-codex. Codex's own
+ * `[tui] status_line` widgets are left alone: the ECC bar already shows that
+ * information, and configuring both stacks two status lines under the
+ * composer. Runtime opt-outs:
  * ECC_CODEX_ALIAS=off (skip the alias) or ECC_CODEX_BAR=off (alias without bar).
  */
 
@@ -19,10 +22,6 @@ const {
   removeCodexAlias,
   aliasStatus,
 } = require('../lib/codex-shell-alias');
-const {
-  ensureCodexStatusLineDefault,
-  statusLineStatus,
-} = require('../lib/codex-status-line');
 
 function main() {
   const action = process.argv[2] || 'install';
@@ -36,10 +35,6 @@ function main() {
     console.log(status.installed
       ? '\n`codex` runs through the ECC usage bar in new shells.'
       : '\nECC codex alias is not installed.');
-    const tui = statusLineStatus();
-    console.log(tui.installed
-      ? 'Codex TUI status_line: configured.'
-      : 'Codex TUI status_line: not configured.');
     return;
   }
 
@@ -62,9 +57,6 @@ function main() {
     process.exitCode = 1;
     return;
   }
-
-  const tui = ensureCodexStatusLineDefault();
-  console.log(`  ${tui.action}: codex TUI status_line${tui.configPath ? ` (${tui.configPath})` : ''}`);
 
   const result = ensureCodexAliasDefault();
   if (result.action === 'configured' || result.action === 'kept-existing') {

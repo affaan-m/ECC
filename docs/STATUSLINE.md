@@ -65,151 +65,15 @@ installer, or point it at the launcher yourself:
 
 ## Codex CLI
 
-Codex's TUI status line only supports built-in widgets, so ECC covers Codex in
-three layers. None of them require tmux: the three-line bar renders in tmux's
-status lines under tmux, in a dedicated bottom pane under WezTerm, and in
-reserved rows at the bottom of the window in a plain terminal such as
-Terminal.app.
+Codex offers no custom status-line API, so ECC gives the bar three rows of its
+own that Codex cannot scroll over. Which mechanism does that depends on the
+terminal, and none of them need tmux:
 
-| Surface | Needs | Where it shows |
-| --- | --- | --- |
-| Native widgets | nothing, written at install time | under Codex's input composer |
-| Title mirror | the `ecc-codex` wrapper | window or tab title, any terminal |
-| User var | the wrapper, plus a one-line terminal config | WezTerm and iTerm2 status bars |
-| Three-line bar | the wrapper, in tmux, WezTerm, or any VT100 terminal | tmux status lines, a bottom pane in WezTerm, or reserved rows at the bottom of the window |
-
-**1. Native widgets (in the TUI)** — the bar under Codex's input composer.
-Codex has no API for custom status-line commands, so ECC configures Codex's
-own `status_line` widgets. The installer (and `setup-codex-bar.js`) writes
-this into `~/.codex/config.toml` when no `status_line` exists — an existing
-one is never overwritten:
-
-```toml
-[tui]
-status_line = ["model-with-reasoning", "context-remaining", "five-hour-limit", "weekly-limit", "used-tokens", "git-branch"]
-status_line_use_colors = true
-```
-
-The key must live in the `[tui]` table — a top-level `status_line` is
-silently ignored by Codex (verified by capturing the rendered TUI).
-`status_line_use_colors` renders the widgets in Codex's warm truecolor
-palette, the closest in-TUI match to the ECC bar; fully custom colors and
-segments are not possible until Codex exposes a custom status-line API.
-
-**2. ECC-branded bar (in the terminal, while Codex runs)** — the `ecc-codex`
-wrapper launches Codex and keeps a live bar visible around the TUI. The ECC
-installer makes this the default: it writes a managed alias block to your
-`~/.zshrc`/`~/.bashrc` so plain `codex [args...]` runs through the wrapper
-(arguments pass through untouched — aliases don't expand inside scripts, so
-there is no recursion). It can also be run standalone, no agent involved:
-
-```bash
-node <ecc-root>/scripts/codex/setup-codex-bar.js           # install (default)
-node <ecc-root>/scripts/codex/setup-codex-bar.js status    # inspect
-node <ecc-root>/scripts/codex/setup-codex-bar.js remove    # uninstall
-```
-
-Turning it off, from lightest to heaviest:
-
-- `ECC_CODEX_BAR=off` — keep the alias, hide the bar (plain codex passthrough)
-- `ECC_CODEX_ALIAS=off` — the rc block defines no alias at all
-- `setup-codex-bar.js remove` — delete the managed block entirely
-
-If you already have your own `codex` alias or function (e.g.
-`alias codex="codex --yolo"`), the installer reports `kept-existing` and
-leaves it alone. To combine, point your alias at the wrapper — your flags pass
-through: `alias codex='bash "<ecc-root>/scripts/codex/ecc-codex" --yolo'`.
-
-While Codex owns the screen, the wrapper re-renders the bar from the newest
-`~/.codex/sessions/**/rollout-*.jsonl` token_count event every 15 seconds
-(`ECC_CODEX_BAR_INTERVAL`) and mirrors it into:
-
-- the **window/tab title** (OSC 2) — visible in any terminal, including
-  through tmux (sequences are passthrough-wrapped automatically)
-- a **terminal user var** `ecc_codex_bar` (OSC 1337 SetUserVar) — WezTerm and
-  iTerm2 can pin this in their native status bar
-
-```text
-⬢ codex 7d ██████ 100% ↻1d │ ctx 28% │ 150.4M tok
-```
-
-Neither channel involves tmux. The title mirror needs no configuration at all,
-and the terminals below get more.
-
-**WezTerm**: nothing to configure. Running `ecc-codex` outside tmux in WezTerm
-opens a three-line pane across the bottom of the window, the same bar tmux
-users get, and closes it when Codex exits. The pane is created with
-`--top-level`, so it spans the whole window instead of subdividing whichever
-pane Codex is in, and focus returns to Codex immediately. It also watches the
-wrapper's process and closes itself if Codex is killed without unwinding, so a
-crashed run cannot strand a bar pane in your window.
-
-A pane is needed because WezTerm's only status area is the tab bar: a single
-line, shared with the tab strip, which cannot hold three lines and cannot be
-detached from the tabs.
-
-Set `ECC_CODEX_PANE=off` to keep the window intact and fall back to the
-reserved-rows mode described below. For a compact one-liner in the tab bar instead of a pane, copy
-[`examples/wezterm-ecc-bar.lua`](../examples/wezterm-ecc-bar.lua) next to your
-`wezterm.lua` and require it:
-
-```lua
-require("wezterm-ecc-bar").apply()
-```
-
-It reads the user var on WezTerm's own `update-status` tick, so there is no
-polling and no subprocess. Pass your own palette with
-`apply({ colors = { dim = "#...", five_hour = "#...", seven_day = "#...", critical = "#..." } })`.
-WezTerm allows several `update-status` handlers, so this composes with an
-existing one unless that handler also calls `set_right_status`.
-
-If you would rather inline the logic than copy the file, split the bar with a
-plain `find`, never a Lua character class: `[^│]` matches *bytes*, and `│`
-(`e2 94 82`) shares its leading `e2` with `⬢`, `█`, `░` and `↻`, so a
-class-based split cuts those glyphs in half and emits invalid UTF-8.
-
-**Terminal.app and other plain terminals**: nothing to configure. The wrapper
-reserves the bottom three rows of the window and paints the bar there, so it
-sits directly under Codex's input composer, and releases them on exit.
-
-This is possible because Codex draws inline rather than on the alternate
-screen. Setting the DECSTBM scroll margins to rows 1 to H-3 means Codex cannot
-scroll into the last three rows, so the bar holds while Codex redraws above it.
-The margins are re-asserted on every repaint, which picks up window resizes
-without tracking `SIGWINCH`, and the whole sequence is wrapped in DECSC/DECRC
-so Codex never sees its cursor move. Windows shorter than nine rows are left
-alone rather than losing a third of the screen. `ECC_CODEX_REGION=off` disables
-it.
-
-**iTerm2**: enable the status bar under Settings, Profiles, Session, then
-Configure Status Bar, and drag in an **Interpolated String** component with:
-
-```text
-\(user.ecc_codex_bar)
-```
-
-iTerm2 exposes any OSC 1337 user var as `user.<name>`, so the bar appears the
-moment Codex starts and clears when it exits.
-
-Set `ECC_CODEX_BAR=off` to make the wrapper a plain `codex` passthrough. The
-bar is intentionally not drawn into the scroll region — a full-screen TUI
-would overwrite it and redraws would corrupt Codex's rendering.
-
-**3. tmux / standalone renderer** — the same renderer works anywhere:
-
-```bash
-# tmux status bar (refreshes with status-interval)
-set -g status-right '#(node <ecc-root>/scripts/codex/ecc-usage-bar-codex.js --tmux)'
-
-# any terminal — --full renders the Claude-style three-line bar
-watch -c -n 30 "node <ecc-root>/scripts/codex/ecc-usage-bar-codex.js --full"
-```
-
-**Three lines while Codex runs (tmux)** — no configuration needed. When
-`ecc-codex` starts inside tmux it sets a 4-line status bar for that session
-(line 0 keeps the normal window list, lines 1-3 are the ECC bar) and restores
-the previous status on exit. The options are session-scoped, so other tmux
-sessions and `~/.tmux.conf` are never touched:
+| Terminal | Where the bar goes |
+| --- | --- |
+| tmux | three lines of the session's status area |
+| WezTerm | a three-row pane across the bottom of the window |
+| Terminal.app and other VT100 terminals | the bottom three rows, reserved with DECSTBM margins |
 
 ```text
 ⚡ 7d ██░░░░ 25% ↻9h50m │ cache 97%
@@ -217,9 +81,73 @@ sessions and `~/.tmux.conf` are never touched:
 ⬢ ECC 2.2.0 │ plugins ecc │ myproject
 ```
 
+All three appear when Codex starts and are given back when it exits.
+
+ECC does not touch Codex's own `[tui] status_line` widgets. Those render their
+own line under the composer covering the same model, context and rate-limit
+ground, so configuring both stacks two status lines on top of each other. If
+you want the native widgets instead of the ECC bar, set them yourself in
+`~/.codex/config.toml` and run the wrapper with `ECC_CODEX_BAR=off`. Note that
+the key must live inside the `[tui]` table: a top-level `status_line` is
+silently ignored by Codex.
+
+### The wrapper
+
+`ecc-codex` launches Codex with the bar around it. The ECC installer makes this
+the default by writing a managed alias block to your `~/.zshrc`/`~/.bashrc`, so
+plain `codex [args...]` runs through the wrapper. Arguments pass through
+untouched, and aliases do not expand inside scripts, so there is no recursion.
+
+```bash
+node <ecc-root>/scripts/codex/setup-codex-bar.js           # install (default)
+node <ecc-root>/scripts/codex/setup-codex-bar.js status    # inspect
+node <ecc-root>/scripts/codex/setup-codex-bar.js remove    # uninstall
+```
+
+If you already have your own `codex` alias or function (e.g.
+`alias codex="codex --yolo"`), the installer reports `kept-existing` and leaves
+it alone. To combine, point your alias at the wrapper and your flags still pass
+through: `alias codex='bash "<ecc-root>/scripts/codex/ecc-codex" --yolo'`.
+
+| Variable | Effect |
+| --- | --- |
+| `ECC_CODEX_BAR=off` | Keep the alias, run plain `codex` with no bar |
+| `ECC_CODEX_ALIAS=off` | The rc block defines no alias at all |
+| `ECC_CODEX_BAR_INTERVAL=15` | Refresh seconds |
+| `ECC_CODEX_PANE=off` | No WezTerm pane; use reserved rows instead |
+| `ECC_CODEX_REGION=off` | No reserved rows |
+| `ECC_BAR_GLYPHS=ascii\|unicode` | Force the glyph set |
+
+`setup-codex-bar.js remove` deletes the managed block entirely.
+
+### How each surface works
+
+**tmux** needs no configuration. `ecc-codex` sets a 4-line status bar for the
+session (line 0 keeps the normal window list, lines 1-3 are the bar) and
+restores the previous status on exit. The options are session-scoped, so other
+sessions and `~/.tmux.conf` are never touched. It also sets
+`status-style bg=default,fg=default`, so the bar inherits the terminal's own
+colors instead of tmux's green.
+
+**WezTerm** gets a pane, because WezTerm's only status area is the tab bar: one
+line, shared with the tab strip, which can neither hold three lines nor be
+detached from the tabs. The pane is created with `--top-level`, so it spans the
+whole window rather than subdividing whichever pane Codex is in, and focus
+returns to Codex immediately. It pins itself back to three rows if a window
+resize stretches it, and watches the wrapper's process so a Codex run killed
+without unwinding its traps cannot strand a pane in your window.
+
+**Plain terminals** get the bottom three rows reserved with DECSTBM scroll
+margins set to rows 1 to H-3, which stops Codex scrolling over them. This is
+possible only because Codex draws inline rather than on the alternate screen.
+The margins are re-asserted on every repaint, so a window resize needs no
+`SIGWINCH` handling, and the sequence is wrapped in DECSC/DECRC so Codex never
+sees its cursor move. Windows shorter than nine rows are left alone rather than
+losing a third of the screen.
+
 **Glyphs**: block bars and symbols need a UTF-8 locale and a font that has
-them. When `LANG`/`LC_ALL`/`LC_CTYPE` is not UTF-8 the bar automatically
-switches to an ASCII set so it never renders as underscores:
+them. When `LANG`/`LC_ALL`/`LC_CTYPE` is not UTF-8 the bar switches to an ASCII
+set so it never renders as underscores:
 
 ```text
 * 7d |||||| 100% ~8h47m | cache 99%
@@ -227,22 +155,8 @@ switches to an ASCII set so it never renders as underscores:
 # ECC 2.2.0 | plugins ecc | myproject
 ```
 
-Force either set with `ECC_BAR_GLYPHS=ascii` or `ECC_BAR_GLYPHS=unicode` —
-useful when the locale is UTF-8 but the terminal font lacks `⬢`/`✳`.
-
-The bar sets `status-style bg=default,fg=default`, so it inherits the
-terminal's own background and foreground instead of tmux's default green
-status bar — it blends into any theme, light or dark. Segment colors use
-256-color codes supported by Terminal.app, Windows Terminal, WezTerm,
-iTerm2, and mainstream Linux terminals.
-
-tmux is optional. Without it you still get the native TUI widgets, the title
-mirror, the iTerm2 status bar, the same three lines in a WezTerm bottom pane,
-and the same three lines in reserved rows in a plain terminal.
-
-`--full` renders the Claude-style two-line bar (usage bars, then
-`⬢ ECC <version> │ plugins … │ dir`); `--plain` strips colors (used for
-title updates); `CODEX_HOME` overrides the default `~/.codex` location.
+`--full` renders the three lines for any consumer; `CODEX_HOME` overrides the
+default `~/.codex` location.
 
 ## Upgrading an existing ECC install
 
@@ -267,8 +181,8 @@ still see them. Answers are recorded in `<config>/ecc/setup-answers.json` and
 each question is asked once; see `scripts/lib/setup-prompts.js` to add another.
 
 Both paths are idempotent: rerunning refreshes the managed rc block in place
-(never a second copy), keeps an existing `tui.status_line`, and leaves a
-codex alias you wrote yourself untouched. Re-running `ecc install --guided`
+(never a second copy) and leaves a codex alias you wrote yourself untouched.
+Codex's own `tui.status_line` is never written or removed either way. Re-running `ecc install --guided`
 is equally safe if you would rather answer the prompts — including the UTF-8
 step, which is skipped entirely when your locale is already UTF-8.
 
@@ -277,7 +191,8 @@ step, which is skipped entirely when your locale is already UTF-8.
 - `scripts/hooks/ecc-statusline.js` — Claude Code statusLine entry point
 - `scripts/lib/statusline-render.js` — shared rendering (colors, bars, segments)
 - `scripts/codex/ecc-usage-bar-codex.js` — Codex session-file renderer
-- `scripts/codex/ecc-codex` — Codex wrapper (live bar in title / terminal status bar)
+- `scripts/codex/ecc-codex` — Codex wrapper (reserves the bar's rows)
+- `scripts/codex/ecc-codex-bar-pane` — draws the bar in WezTerm's bottom pane
 - `scripts/codex/setup-codex-bar.js` — install/remove the default `codex` alias
 - `scripts/lib/codex-shell-alias.js` — managed rc-block editing for the alias
 - `examples/statusline.json` — manual registration example

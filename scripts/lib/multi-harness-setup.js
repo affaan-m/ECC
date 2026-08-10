@@ -366,9 +366,6 @@ function defaultDependencies(options = {}) {
       preview.shellAlias = require('./codex-shell-alias').aliasStatus().installed
         ? 'would-refresh'
         : 'would-configure';
-      preview.statusLine = require('./codex-status-line').statusLineStatus().installed
-        ? 'would-keep-existing'
-        : 'would-configure';
       return preview;
     },
     createManagedPlan: request => require('./install/runtime').createInstallPlanFromRequest(
@@ -392,7 +389,6 @@ function defaultDependencies(options = {}) {
       result.shellAlias = require('./codex-shell-alias').ensureCodexAliasDefault(
         request.codexUtf8 === false ? { utf8Locale: '' } : {}
       );
-      result.statusLine = require('./codex-status-line').ensureCodexStatusLineDefault();
       return result;
     },
     applyManaged: applyPreflightedManagedPlan,

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ecc-codex — run Codex CLI with a live ECC usage bar in the terminal.
 #
-# Codex's TUI owns the screen while it runs, so the bar is mirrored into
-# channels that stay visible around a full-screen TUI:
-#   - the window/tab title (OSC 2) — works in any terminal
-#   - a terminal user var `ecc_codex_bar` (OSC 1337 SetUserVar) — WezTerm and
-#     iTerm2 render this in their native status bar (snippet in docs/STATUSLINE.md)
+# Codex draws inline, so the bar is given three rows of its own that Codex
+# cannot scroll over, in whichever form the terminal supports:
+#   - tmux: three lines of the session's status area
+#   - WezTerm: a three-row pane across the bottom of the window
+#   - anything else: the bottom three rows, reserved with DECSTBM margins
 #
 # Usage: ecc-codex [codex args...]
 # Env:   ECC_CODEX_BAR=off          disable the bar (plain `codex` passthrough)
@@ -25,26 +25,6 @@ if [ "${ECC_CODEX_BAR:-on}" = "off" ] || [ ! -t 1 ] || [ ! -e /dev/tty ] \
 fi
 
 INTERVAL="${ECC_CODEX_BAR_INTERVAL:-15}"
-
-# Write an escape sequence to the terminal. Inside tmux, wrap it in a DCS
-# passthrough (doubling any ESC bytes) so it reaches the outer terminal.
-emit() {
-  local seq="$1"
-  if [ -n "${TMUX:-}" ]; then
-    printf '\033Ptmux;%s\033\\' "${seq//$'\033'/$'\033\033'}" > /dev/tty
-  else
-    printf '%s' "$seq" > /dev/tty
-  fi
-}
-
-update_bar() {
-  local plain b64
-  plain="$(node "$RENDERER" --plain 2>/dev/null | tr -d '\n')" || return 0
-  [ -n "$plain" ] || return 0
-  emit "$(printf '\033]2;%s\007' "$plain")"
-  b64="$(printf '%s' "$plain" | base64 | tr -d '\n')"
-  emit "$(printf '\033]1337;SetUserVar=ecc_codex_bar=%s\007' "$b64")"
-}
 
 # Inside tmux, show the full three-line bar for the lifetime of this Codex run.
 # Options are session-scoped (no -g) and unset on exit, so nothing persists in
@@ -205,8 +185,6 @@ cleanup() {
   tmux_bar_off
   wezterm_bar_off
   region_off
-  emit "$(printf '\033]2;\007')"
-  emit "$(printf '\033]1337;SetUserVar=ecc_codex_bar=\007')"
 }
 trap cleanup EXIT INT TERM
 
@@ -214,12 +192,10 @@ tmux_bar_on
 wezterm_bar_on
 region_on
 
-update_bar
 region_paint
 (
   while :; do
     sleep "$INTERVAL"
-    update_bar
     region_paint
   done
 ) &

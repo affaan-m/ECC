@@ -20,7 +20,6 @@ const path = require('path');
 const repoRoot = path.resolve(__dirname, '..', '..');
 
 const WRAPPER = 'scripts/codex/ecc-codex';
-const EXAMPLE = 'examples/wezterm-ecc-bar.lua';
 const PANE = 'scripts/codex/ecc-codex-bar-pane';
 const DOC = 'docs/STATUSLINE.md';
 const SEP = '│';
@@ -60,100 +59,51 @@ function stripLuaComments(source) {
 
 console.log('\n=== Testing the Codex bar outside tmux ===\n');
 
-test('wrapper emits OSC sequences outside tmux, not only inside it', () => {
+test('the redundant surfaces are gone, not merely undocumented', () => {
   const wrapper = read(WRAPPER);
+  const doc = read(DOC);
 
-  // emit() must keep a non-tmux branch that writes straight to the terminal.
+  // The bar now owns three rows everywhere, so the title and user-var copies
+  // were duplicate information, and the tab-bar Lua example duplicated them
+  // again in one line.
+  assert.ok(!wrapper.includes('SetUserVar'), 'the user-var mirror must be gone');
+  assert.ok(!/\\033\]2;/.test(wrapper), 'the window-title mirror must be gone');
   assert.ok(
-    wrapper.includes(`printf '%s' "$seq" > /dev/tty`),
-    'emit() lost its plain (non-tmux) branch'
-  );
-  assert.ok(
-    wrapper.includes('\\033Ptmux;'),
-    'emit() lost the tmux passthrough branch'
-  );
-});
-
-test('title and user var are mirrored regardless of tmux', () => {
-  const wrapper = read(WRAPPER);
-
-  assert.ok(wrapper.includes('\\033]2;%s\\007'), 'missing OSC 2 title mirror');
-  assert.ok(
-    wrapper.includes('SetUserVar=ecc_codex_bar=%s'),
-    'missing OSC 1337 user var mirror'
-  );
-
-  // update_bar must run unconditionally. If it were only reachable from
-  // tmux_bar_on(), a plain terminal would get nothing.
-  const body = wrapper.slice(wrapper.indexOf('tmux_bar_on\n'));
-  assert.ok(
-    /^update_bar$/m.test(body),
-    'update_bar is no longer called unconditionally at startup'
-  );
-
-  const tmuxOn = wrapper.slice(
-    wrapper.indexOf('tmux_bar_on() {'),
-    wrapper.indexOf('tmux_bar_off() {')
+    !fs.existsSync(path.join(repoRoot, 'examples/wezterm-ecc-bar.lua')),
+    'the tab-bar Lua example must be gone'
   );
   assert.ok(
-    !tmuxOn.includes('update_bar'),
-    'the terminal mirror must not be gated behind the tmux path'
+    !doc.includes('user.ecc_codex_bar'),
+    'docs must not still advertise the iTerm2 user var'
   );
-});
 
-test('the WezTerm example ships and splits the bar safely', () => {
-  const example = read(EXAMPLE);
-
+  // ECC must no longer write Codex's native widget line: it renders the same
+  // information directly under the composer, stacked against the ECC bar.
   assert.ok(
-    !stripLuaComments(example).includes(`[^${SEP}]`),
-    'the example uses a byte-wise character class to split the bar'
+    !fs.existsSync(path.join(repoRoot, 'scripts/lib/codex-status-line.js')),
+    'the native status_line writer must be gone'
   );
-  assert.ok(
-    example.includes('find(SEP, 1, true)') && example.includes('find(SEP, pos, true)'),
-    'the example must split with a plain find so multibyte glyphs survive'
-  );
-  assert.ok(example.includes('ecc_codex_bar'), 'the example must read the user var');
-  assert.ok(
-    example.includes('function M.apply'),
-    'the example must expose apply() as documented'
-  );
-});
-
-test('no Lua snippet in the docs splits the bar with a character class', () => {
-  for (const block of luaBlocks(read(DOC))) {
+  for (const f of ['scripts/codex/setup-codex-bar.js', 'scripts/lib/multi-harness-setup.js']) {
     assert.ok(
-      !stripLuaComments(block).includes(`[^${SEP}]`),
-      `a Lua snippet still splits on [^${SEP}], which mangles ⬢ █ ░ ↻`
+      !read(f).includes('codex-status-line'),
+      `${f} must not configure Codex's native status_line`
     );
   }
 });
 
-test('docs route WezTerm and iTerm2 users to a working setup', () => {
+test('docs give every terminal a home for the three lines', () => {
   const doc = read(DOC);
 
-  assert.ok(doc.includes(EXAMPLE), 'docs must link the shipped WezTerm example');
-  assert.ok(
-    doc.includes('require("wezterm-ecc-bar").apply()'),
-    'docs must show how to load the example'
-  );
-  assert.ok(
-    doc.includes('\\(user.ecc_codex_bar)'),
-    'docs must show the iTerm2 interpolated string'
-  );
-});
-
-test('docs state that tmux is optional', () => {
-  const doc = read(DOC);
-
-  assert.ok(doc.includes('tmux is optional'), 'docs must say tmux is optional');
-  assert.ok(
-    /Three-line bar \| the wrapper, in tmux, WezTerm, or any VT100 terminal/.test(doc),
-    'the surface table must offer the three-line bar outside tmux too'
-  );
-  assert.ok(
-    doc.includes('ECC_CODEX_PANE=off'),
-    'docs must document how to opt out of the WezTerm pane'
-  );
+  assert.ok(doc.includes('none of them need tmux'), 'docs must say tmux is optional');
+  for (const row of [
+    /\| tmux \| three lines of the session's status area \|/,
+    /\| WezTerm \| a three-row pane across the bottom of the window \|/,
+    /\| Terminal\.app and other VT100 terminals \| the bottom three rows/,
+  ]) {
+    assert.ok(row.test(doc), `the surface table is missing a row: ${row}`);
+  }
+  assert.ok(doc.includes('ECC_CODEX_REGION=off'), 'docs must document the region opt-out');
+  assert.ok(doc.includes('ECC_CODEX_PANE=off'), 'docs must document the pane opt-out');
 });
 
 test('WezTerm gets the three-line bar in a pane of its own', () => {
