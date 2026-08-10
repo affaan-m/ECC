@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const os = require('os');
@@ -133,6 +134,20 @@ function resolveOperationSourcePath(repoRoot, operation) {
 function areFilesEqual(leftPath, rightPath) {
   try {
     return readFileNoFollow(leftPath).equals(readFileNoFollow(rightPath));
+  } catch (_error) {
+    return false;
+  }
+}
+
+function hasContentDigest(filePath, expectedDigest) {
+  if (!/^[a-f0-9]{64}$/i.test(String(expectedDigest || ''))) {
+    return false;
+  }
+
+  try {
+    return crypto.createHash('sha256')
+      .update(readFileNoFollow(filePath))
+      .digest('hex') === expectedDigest.toLowerCase();
   } catch (_error) {
     return false;
   }
@@ -871,7 +886,9 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation) {
       };
     }
 
-    if (!areFilesEqual(copySourcePath, inspectedPath)) {
+    const matchesRecordedContent = hasContentDigest(inspectedPath, operation.contentSha256);
+    const matchesSourceContent = !operation.contentSha256 && areFilesEqual(copySourcePath, inspectedPath);
+    if (!matchesRecordedContent && !matchesSourceContent) {
       return {
         status: 'drifted',
         operation,

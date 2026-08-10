@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -1454,6 +1455,40 @@ function runTests() {
       assert.strictEqual(report.results.length, 1);
       assert.strictEqual(report.results[0].status, 'warning');
       assert.ok(report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor accepts rewritten copy-file content recorded in install-state', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const destinationPath = path.join(targetRoot, 'rules', 'rewritten.md');
+      const installedContent = '[rules](../ecc/rules.md)\n';
+      const contentSha256 = crypto.createHash('sha256').update(installedContent).digest('hex');
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(destinationPath, installedContent);
+
+      writeCursorState(projectRoot, {
+        operations: [managedOperation('copy-file', destinationPath, {
+          sourceRelativePath: 'rules/common/coding-style.md',
+          contentSha256,
+        })],
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results[0].status, 'ok');
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
