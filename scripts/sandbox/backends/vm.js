@@ -139,16 +139,19 @@ function acquireRunLock(name) {
   const lockPath = path.join(lockRoot, `${name}.lock`);
   fs.mkdirSync(lockRoot, { recursive: true, mode: 0o700 });
   const token = crypto.randomBytes(16).toString('hex');
-  const candidatePath = path.join(lockRoot, `${name}.${process.pid}.${token}.candidate`);
-  fs.mkdirSync(candidatePath, { mode: 0o700 });
-  fs.writeFileSync(
-    path.join(candidatePath, 'owner.json'),
-    JSON.stringify({ pid: process.pid, token }),
-    { encoding: 'utf8', mode: 0o600, flag: 'wx' }
-  );
+  const ownerPayload = JSON.stringify({ pid: process.pid, token });
+  let created = false;
 
   try {
-    fs.renameSync(candidatePath, lockPath);
+    // DECISION: CONVENTIONS item 28 uses an exclusive owner file because it is
+    // atomic on Windows and POSIX; directory rename reports EPERM on Windows.
+    const descriptor = fs.openSync(lockPath, 'wx', 0o600);
+    created = true;
+    try {
+      fs.writeFileSync(descriptor, ownerPayload, { encoding: 'utf8' });
+    } finally {
+      fs.closeSync(descriptor);
+    }
     let released = false;
     return {
       pass: true,
@@ -158,27 +161,26 @@ function acquireRunLock(name) {
         released = true;
         let owner = null;
         try {
-          owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
+          owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
         } catch {
           owner = null;
         }
         if (owner?.token === token) {
-          fs.rmSync(lockPath, { recursive: true, force: true });
+          fs.rmSync(lockPath, { force: true });
         }
       },
     };
   } catch (error) {
-    if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) {
-      fs.rmSync(candidatePath, { recursive: true, force: true });
+    if (error.code !== 'EEXIST') {
+      if (created) fs.rmSync(lockPath, { force: true });
       throw error;
     }
     let owner = null;
     try {
-      owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
+      owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
     } catch {
       owner = null;
     }
-    fs.rmSync(candidatePath, { recursive: true, force: true });
     const live = owner && pidIsAlive(owner.pid);
     return {
       pass: false,
@@ -186,7 +188,7 @@ function acquireRunLock(name) {
       stale: !live,
       note: live
         ? 'another ECC macOS guest run is active'
-        : `the stale lifecycle lock must be reviewed and removed manually: rm -R -- '${lockPath}'`,
+        : `the stale lifecycle lock must be reviewed and removed manually: rm -f -- '${lockPath}'`,
       release: () => {},
     };
   }

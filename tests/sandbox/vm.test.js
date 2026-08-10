@@ -340,11 +340,11 @@ test('serializes ECC Apple VM lifecycles through one cross-backend lock', () => 
 test('refuses stale lock takeover and never releases another owner token', () => {
   const lockName = `apple-macos-guests-stale-${process.pid}`;
   const lockPath = path.join(os.tmpdir(), 'ecc-sandbox-locks', `${lockName}.lock`);
-  fs.mkdirSync(lockPath, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(lockPath, 'owner.json'), JSON.stringify({
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(lockPath, JSON.stringify({
     pid: 2_147_483_647,
     token: 'stale',
-  }));
+  }), { mode: 0o600 });
   const refused = acquireRunLock(lockName);
   try {
     assert.strictEqual(refused.pass, false);
@@ -352,18 +352,18 @@ test('refuses stale lock takeover and never releases another owner token', () =>
     assert.match(refused.note, /removed manually/);
     assert.strictEqual(fs.existsSync(lockPath), true);
   } finally {
-    fs.rmSync(lockPath, { recursive: true, force: true });
+    fs.rmSync(lockPath, { force: true });
   }
 
   const owned = acquireRunLock(lockName);
   assert.strictEqual(owned.pass, true);
-  fs.writeFileSync(path.join(lockPath, 'owner.json'), JSON.stringify({
+  fs.writeFileSync(lockPath, JSON.stringify({
     pid: process.pid,
     token: 'replacement',
   }));
   owned.release();
   assert.strictEqual(fs.existsSync(lockPath), true);
-  fs.rmSync(lockPath, { recursive: true, force: true });
+  fs.rmSync(lockPath, { force: true });
 });
 
 test('executes clone-configure-start-scan-steps-stop-delete through Lume', () => {

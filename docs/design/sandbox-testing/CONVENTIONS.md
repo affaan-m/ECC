@@ -120,7 +120,9 @@ uses these decisions to preserve its stated safety and fidelity goals:
     directories outside the tested workspace. Manifest commands are stored in
     private temporary scripts that SRT may read but the sandbox may not write,
     so neither repository shim lookup nor an outer `cmd.exe` parses untrusted
-    manifest text before isolation starts.
+    manifest text before isolation starts. Mock mode may use an inert shim name
+    because its injected runner launches no process; real mode never falls back
+    to a workspace or relative shim.
 20. Tier 1 mounts the invocation directory read-only at `/workspace/source`
     and gives the test an otherwise disposable container filesystem rooted at
     `/workspace`. Reports record both the requested image reference and its
@@ -180,9 +182,10 @@ uses these decisions to preserve its stated safety and fidelity goals:
     attest the guest disk. Lume and Tart share one stale-owner-aware host lock,
     and each preflight counts the other backend's running Apple guests before
     clone/start; ECC serializes its own macOS VM lifecycles to close the race.
-    The lifecycle lock is published by atomic rename with a random ownership
-    token. Stale locks fail closed for exact manual cleanup instead of being
-    automatically stolen, and release removes only the matching token.
+    The lifecycle lock is published as an atomically exclusive owner file with
+    a random token, which is portable across Windows and POSIX. Stale locks fail
+    closed for exact manual cleanup instead of being automatically stolen, and
+    release removes only the matching token.
     Before executing manifest commands, ECC stores the clone's non-secret guest
     address and requires two helper-free samples. The address marker keeps the
     VNC-config SSH helper discoverable if a launcher crash reparents it to PID 1.

@@ -156,12 +156,15 @@ function executeSrt(manifest, options) {
   let denial = null;
   let executionError = false;
 
-  if (platform === 'win32' && !windowsSrtShim) {
+  if (platform === 'win32' && !windowsSrtShim && !options.mock) {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     throw new Error(
       'trusted srt.cmd not found outside the workspace — npm install -g @anthropic-ai/sandbox-runtime'
     );
   }
+  // DECISION: CONVENTIONS item 19 permits this inert mock-only fallback;
+  // real Windows runs still require a trusted absolute external shim.
+  const effectiveWindowsSrtShim = windowsSrtShim || 'srt.cmd';
 
   if (manifest.report === 'install-diff') {
     notes.push('Tier 0 does not provide install-diff evidence; install_diff.method is none');
@@ -198,7 +201,7 @@ function executeSrt(manifest, options) {
           '/d',
           '/s',
           '/c',
-          windowsSrtShim,
+          effectiveWindowsSrtShim,
           '--settings',
           settingsPath,
           '-c',
