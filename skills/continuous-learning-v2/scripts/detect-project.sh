@@ -105,11 +105,23 @@ _clv2_detect_project() {
     return 0
   fi
 
-  # 1. Try CLAUDE_PROJECT_DIR env var
-  if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ] && command -v git &>/dev/null; then
-    project_root=$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
-    if [ -n "$project_root" ]; then
-      source_hint="env"
+  # 1. Try CLAUDE_PROJECT_DIR env var (explicit override)
+  if [ -n "$CLAUDE_PROJECT_DIR" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+    if command -v git &>/dev/null; then
+      project_root=$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
+      if [ -n "$project_root" ]; then
+        source_hint="env"
+      fi
+    fi
+    # Non-git directory explicitly pointed at by CLAUDE_PROJECT_DIR: honor it as
+    # a project root (path-hash identity) rather than collapsing to the shared
+    # `global` bucket. Gated on the explicit env var so an arbitrary non-git cwd
+    # never becomes a "project" — priority 2 below stays git-only on purpose.
+    if [ -z "$project_root" ]; then
+      project_root=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd -P)
+      if [ -n "$project_root" ]; then
+        source_hint="env-nogit"
+      fi
     fi
   fi
 

@@ -37,6 +37,16 @@ const {
 
 const VERSION = require('../package.json').version;
 
+const SAFE_REQUEST_PATHS = new Set([
+  '/',
+  '/health',
+  '/shutdown',
+  '/api/await',
+  '/api/sessions',
+  '/api/end'
+]);
+const SESSION_REPLY_PATH = /^\/api\/session\/[a-f0-9]{12}\/(reply|typing)$/;
+
 function usage() {
   return [
     'Plan Canvas - review plans and HTML artifacts in the browser',
@@ -45,6 +55,8 @@ function usage() {
     '  node scripts/plan-canvas.js                      Show server status and sessions',
     '  node scripts/plan-canvas.js open <file>          Open (or resume) a review session',
     '  node scripts/plan-canvas.js await <file>         Block until the human sends feedback',
+    '  node scripts/plan-canvas.js pending              Show feedback queued for no listener',
+    '  node scripts/plan-canvas.js typing <file>        Show a thinking/typing indicator in chat',
     '  node scripts/plan-canvas.js end <file>           End a session as the agent',
     '  node scripts/plan-canvas.js stop                 Shut down the canvas server',
     '  node scripts/plan-canvas.js server               Run the server in the foreground',
@@ -54,6 +66,7 @@ function usage() {
     '         --reopen       Reopen a session the user ended from the browser',
     '  await: --reply <msg>  Show an agent reply in the canvas chat before waiting',
     '         --timeout-ms <n>  Return {status:"waiting"} after n ms (tests/debug only)',
+    '  typing: --state <thinking|typing|idle>  Defaults to typing',
     '  server: --port <n> --host <h>',
     '',
     'Environment: ECC_PLAN_CANVAS_PORT, ECC_PLAN_CANVAS_STATE_DIR, ECC_PLAN_CANVAS_IDLE_MS'
@@ -77,19 +90,51 @@ function readServerInfo(stateDir) {
   }
 }
 
+function validatePort(port) {
+  const value = Number(port);
+  if (!Number.isInteger(value) || value < 0 || value > 65535) {
+    throw new Error(`invalid plan-canvas server port: ${port}`);
+  }
+  return value;
+}
+
+function validateRequestPath(requestPath) {
+  if (typeof requestPath !== 'string' || !requestPath.startsWith('/')) {
+    throw new Error('plan-canvas request path must be root-relative');
+  }
+  const url = new URL(requestPath, `http://${DEFAULT_HOST}`);
+  if (url.hostname !== DEFAULT_HOST) {
+    throw new Error('plan-canvas request path must stay on the loopback server');
+  }
+  if (!SAFE_REQUEST_PATHS.has(url.pathname) && !SESSION_REPLY_PATH.test(url.pathname)) {
+    throw new Error(`unsupported plan-canvas request path: ${url.pathname}`);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function requestOptions(port, method, requestPath, headers) {
+  return {
+    host: DEFAULT_HOST,
+    port: validatePort(port),
+    method,
+    path: validateRequestPath(requestPath),
+    agent: false,
+    headers
+  };
+}
+
 function request(port, method, requestPath, body = null) {
   return new Promise((resolve, reject) => {
     const payload = body === null ? null : JSON.stringify(body);
     const req = http.request(
-      {
-        host: DEFAULT_HOST,
+      requestOptions(
         port,
         method,
-        path: requestPath,
-        headers: payload
+        requestPath,
+        payload
           ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
           : {}
-      },
+      ),
       res => {
         let data = '';
         res.on('data', chunk => {
@@ -197,12 +242,13 @@ async function cmdOpen(file, args, { stateDir, port }) {
   };
 }
 
-function awaitRequest(port, file, timeoutMs) {
-  const params = new URLSearchParams({ file });
+function awaitRequest(port, key, timeoutMs) {
+  if (!/^[a-f0-9]{12}$/.test(key)) throw new Error('invalid plan-canvas session key');
+  const params = new URLSearchParams({ key });
   if (timeoutMs !== null) params.set('timeoutMs', String(timeoutMs));
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: DEFAULT_HOST, port, method: 'GET', path: `/api/await?${params}` },
+      requestOptions(port, 'GET', `/api/await?${params}`, {}),
       res => {
         let data = '';
         res.on('data', chunk => {
@@ -236,7 +282,7 @@ async function cmdAwait(file, args, { stateDir, port }) {
   const timeoutRaw = valueAfter(args, '--timeout-ms');
   const timeoutMs = timeoutRaw === null ? null : Number.parseInt(timeoutRaw, 10) || 0;
   process.stderr.write('[plan-canvas] waiting for human feedback... leave this running (re-run if interrupted; queued feedback is never lost)\n');
-  const result = await awaitRequest(port, path.resolve(file), timeoutMs);
+  const result = await awaitRequest(port, sessionKeyFor(canonicalizeArtifactPath(file)), timeoutMs);
   if (result.status === 'feedback') {
     result.next_step = result.sessionEnded
       ? 'The user sent this feedback and ended the session. Address it and report in chat; do not reopen the canvas uninvited.'
@@ -248,6 +294,35 @@ async function cmdAwait(file, args, { stateDir, port }) {
         : 'Session ended. Stop polling.';
   }
   return result;
+}
+
+// Show the human an activity indicator in the canvas chat. Cheap and
+// fire-and-forget: a failed signal must never derail the actual work.
+async function cmdTyping(file, args, { port }) {
+  if (!file) throw new Error('typing requires a file path');
+  const state = valueAfter(args, '--state') || 'typing';
+  if (!(await healthCheck(port))) return { status: 'no-server' };
+  const key = sessionKeyFor(canonicalizeArtifactPath(file));
+  const res = await request(port, 'POST', `/api/session/${key}/typing`, { state });
+  if (res.statusCode !== 200) throw new Error(res.body.error || `typing failed (HTTP ${res.statusCode})`);
+  return { status: 'ok', state, presence: res.body.presence };
+}
+
+// Report feedback the human sent that no agent has picked up yet. Reads state
+// directly so it answers even when the server has idled out.
+function cmdPending({ stateDir }) {
+  const store = createSessionStore({ stateDir });
+  const waiting = store
+    .list()
+    .filter(session => session.status !== 'ended' && session.pending > 0)
+    .map(session => ({ file: session.file, pending: session.pending, updatedAt: session.updatedAt }));
+  return {
+    status: waiting.length ? 'pending' : 'clear',
+    sessions: waiting,
+    next_step: waiting.length
+      ? 'Run `ecc-plan-canvas await <file>` for each file above to receive the messages.'
+      : 'No canvas feedback is waiting.'
+  };
 }
 
 async function cmdEnd(file, { port }) {
@@ -316,6 +391,8 @@ async function main(argv = process.argv.slice(2)) {
     if (command === null) output(await cmdStatus(context));
     else if (command === 'open') output(await cmdOpen(args[0], args, context));
     else if (command === 'await') output(await cmdAwait(args[0], args, context));
+    else if (command === 'pending') output(cmdPending(context));
+    else if (command === 'typing') output(await cmdTyping(args[0], args, context));
     else if (command === 'end') output(await cmdEnd(args[0], context));
     else if (command === 'stop') output(await cmdStop(context));
     else if (command === 'server') await cmdServer(args, context);

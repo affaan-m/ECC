@@ -15,8 +15,12 @@ function parseHostHeader(value) {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const match = trimmed.match(/^(\[[^\]]+\]|[^:]+)(?::\d+)?$/);
+  const match = trimmed.match(/^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/);
   if (!match) return null;
+  if (match[2] !== undefined) {
+    const port = Number(match[2]);
+    if (!Number.isInteger(port) || port > 65535) return null;
+  }
   return match[1].toLowerCase();
 }
 

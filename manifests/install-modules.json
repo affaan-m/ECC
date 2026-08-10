@@ -154,6 +154,7 @@
         "skills/backend-patterns",
         "skills/coding-standards",
         "skills/compose-multiplatform-patterns",
+        "skills/contract-first",
         "skills/csharp-testing",
         "skills/fsharp-testing",
         "skills/cpp-coding-standards",
@@ -272,9 +273,39 @@
       "stability": "stable"
     },
     {
+      "id": "skill-unified-memory",
+      "kind": "skills",
+      "description": "Single-skill unified-memory guidance; requires the separately installed ecc-universal CLI runtime.",
+      "paths": [
+        "skills/unified-memory"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "workflow-quality",
       "kind": "skills",
-      "description": "Evaluation, TDD, verification, compaction, and learning skills, including the legacy continuous-learning v1 path.",
+      "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory skills, including the legacy continuous-learning v1 path. The unified-memory workflow requires the separately installed ecc-universal CLI runtime.",
       "paths": [
         "skills/agent-sort",
         "skills/agent-introspection-debugging",
@@ -313,6 +344,7 @@
         "skills/growth-log",
         "skills/inherit-legacy-style",
         "skills/intent-driven-development",
+        "skills/living-docs-governance",
         "skills/loop-design-check",
         "skills/product-lens",
         "skills/repo-scan",
@@ -336,7 +368,7 @@
         "kimi"
       ],
       "dependencies": [
-        "platform-configs"
+        "skill-unified-memory"
       ],
       "defaultInstall": true,
       "cost": "medium",
@@ -572,6 +604,38 @@
       "stability": "beta"
     },
     {
+      "id": "ito-compute",
+      "kind": "skills",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "paths": [
+        "skills/ito-compute",
+        "skills/ito-inference",
+        "skills/ito-training"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "social-distribution",
       "kind": "skills",
       "description": "Social publishing and distribution skills.",
@@ -758,6 +822,7 @@
         "skills/cisco-ios-patterns",
         "skills/deployment-patterns",
         "skills/docker-patterns",
+        "skills/terminal-opener",
         "skills/homelab-network-readiness",
         "skills/homelab-network-setup",
         "skills/netmiko-ssh-automation",

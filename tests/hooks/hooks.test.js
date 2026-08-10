@@ -1247,7 +1247,9 @@ async function runTests() {
 
       // Create an active .tmp session file
       const sessionFile = path.join(sessionsDir, '2026-02-11-test-session.tmp');
-      fs.writeFileSync(sessionFile, '# Session: 2026-02-11\n**Started:** 10:00\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('**Started:** 10:00', {
+        title: '# Session: 2026-02-11'
+      }));
 
       try {
         await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -3175,6 +3177,40 @@ async function runTests() {
     passed++;
   else failed++;
 
+  if (
+    test('observer scripts only call homunculus resolvers the shared lib defines (#2452)', () => {
+      const skillRoot = path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2');
+      const libSource = fs.readFileSync(path.join(skillRoot, 'scripts', 'lib', 'homunculus-dir.sh'), 'utf8');
+      const definedResolvers = new Set([...libSource.matchAll(/^([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\(\)/gm)].map((m) => m[1]));
+      assert.ok(definedResolvers.size > 0, 'homunculus-dir.sh should define a homunculus resolver function');
+
+      const callers = [
+        ['agents', 'start-observer.sh'],
+        ['hooks', 'observe.sh'],
+        ['scripts', 'detect-project.sh'],
+        ['scripts', 'migrate-homunculus.sh']
+      ];
+      for (const rel of callers) {
+        const callerSource = fs.readFileSync(path.join(skillRoot, ...rel), 'utf8');
+        for (const match of callerSource.matchAll(/([A-Za-z_][A-Za-z0-9_]*_resolve_homunculus_dir)\b/g)) {
+          assert.ok(definedResolvers.has(match[1]), `${rel.join('/')} calls ${match[1]}, which homunculus-dir.sh does not define (stale name breaks daemon boot under set -e)`);
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('observer-loop closes stdin on the backgrounded claude analysis call (#2452)', () => {
+      const observerLoopSource = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'continuous-learning-v2', 'agents', 'observer-loop.sh'), 'utf8');
+
+      assert.ok(observerLoopSource.includes('-p "$prompt_content" < /dev/null'), 'observer-loop should close stdin on the backgrounded claude call so Git Bash children do not hang on inherited stdin and exit 1');
+    })
+  )
+    passed++;
+  else failed++;
+
   if (SKIP_BASH) {
     console.log('  ⊘ detect-project exports the resolved Python command (skipped on Windows)');
     passed++;
@@ -3727,7 +3763,7 @@ async function runTests() {
       // Create a session .tmp file and a non-session .tmp file
       const sessionFile = path.join(sessionsDir, '2026-02-11-abc-session.tmp');
       const otherTmpFile = path.join(sessionsDir, 'other-data.tmp');
-      fs.writeFileSync(sessionFile, '# Session\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', { title: '# Session' }));
       fs.writeFileSync(otherTmpFile, 'some other data\n');
 
       try {
@@ -4642,11 +4678,11 @@ async function runTests() {
     passed++;
   else failed++;
 
-  // Round 41: pre-compact.js (multiple session files)
+  // Round 41: pre-compact.js (multiple sessions for the current worktree)
   console.log('\nRound 41: pre-compact.js (multiple session files):');
 
   if (
-    await asyncTest('annotates only the newest session file when multiple exist', async () => {
+    await asyncTest('annotates only the newest session when multiple match the current worktree', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-compact-multi-'));
       const sessionsDir = getCanonicalSessionsDir(isoHome);
       fs.mkdirSync(sessionsDir, { recursive: true });
@@ -4654,11 +4690,12 @@ async function runTests() {
       // Create two session files with different mtimes
       const olderSession = path.join(sessionsDir, '2026-01-01-older-session.tmp');
       const newerSession = path.join(sessionsDir, '2026-02-11-newer-session.tmp');
-      fs.writeFileSync(olderSession, '# Older Session\n');
+      const olderContent = buildSessionStartFixture('', { title: '# Older Session' });
+      fs.writeFileSync(olderSession, olderContent);
       // Small delay to ensure different mtime
       const now = Date.now();
       fs.utimesSync(olderSession, new Date(now - 60000), new Date(now - 60000));
-      fs.writeFileSync(newerSession, '# Newer Session\n');
+      fs.writeFileSync(newerSession, buildSessionStartFixture('', { title: '# Newer Session' }));
 
       try {
         const result = await runScript(path.join(scriptsDir, 'pre-compact.js'), '', {
@@ -4668,11 +4705,11 @@ async function runTests() {
         assert.strictEqual(result.code, 0);
 
         const newerContent = fs.readFileSync(newerSession, 'utf8');
-        const olderContent = fs.readFileSync(olderSession, 'utf8');
+        const updatedOlderContent = fs.readFileSync(olderSession, 'utf8');
 
-        // findFiles sorts by mtime newest first, so sessions[0] is the newest
+        // findFiles sorts matches by mtime, so the newest matching worktree wins.
         assert.ok(newerContent.includes('Compaction occurred'), 'Should annotate the newest session file');
-        assert.strictEqual(olderContent, '# Older Session\n', 'Should NOT annotate older session files');
+        assert.strictEqual(updatedOlderContent, olderContent, 'Should NOT annotate older session files');
       } finally {
         fs.rmSync(isoHome, { recursive: true, force: true });
       }
@@ -6174,7 +6211,9 @@ Some random content without the expected ### Context to Load section
 
       // Create a minimal session .tmp file
       const sessionFile = path.join(sessionsDir, '2026-01-01-test-session.tmp');
-      fs.writeFileSync(sessionFile, '# Session: 2026-01-01\n');
+      fs.writeFileSync(sessionFile, buildSessionStartFixture('', {
+        title: '# Session: 2026-01-01'
+      }));
 
       // Create a minimal transcript with one user message
       const transcriptPath = path.join(testDir, 'transcript.jsonl');

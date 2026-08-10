@@ -118,9 +118,14 @@ function createStatePreview(options) {
   return createInstallState(options);
 }
 
-function applyInstallPlan(plan) {
+function applyInstallPlan(plan, dependencies = {}) {
   const { applyInstallPlan: applyPlan } = require('./install/apply');
-  return applyPlan(plan);
+  return applyPlan(plan, dependencies);
+}
+
+function previewInstallPlan(plan) {
+  const { previewInstallPlan: previewPlan } = require('./install/apply');
+  return previewPlan(plan);
 }
 
 function buildCopyFileOperation({ moduleId, sourcePath, sourceRelativePath, destinationPath, strategy }) {
@@ -802,6 +807,7 @@ module.exports = {
   SUPPORTED_INSTALL_TARGETS,
   LEGACY_INSTALL_TARGETS,
   applyInstallPlan,
+  previewInstallPlan,
   createLegacyCompatInstallPlan,
   createManifestInstallPlan,
   createLegacyInstallPlan,

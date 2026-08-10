@@ -757,16 +757,13 @@ cp -r rules/golang ~/.claude/rules/ecc/
 cp -r rules/php ~/.claude/rules/ecc/
 cp -r rules/arkts ~/.claude/rules/ecc/
 
-# Copiar skills primero (superficie principal de flujo de trabajo)
-# Recomendado (nuevos usuarios): solo skills generales/básicas
-mkdir -p ~/.claude/skills/ecc
-cp -r .agents/skills/* ~/.claude/skills/ecc/
-cp -r skills/search-first ~/.claude/skills/ecc/
+# Instalar skills con el instalador consciente de migraciones.
+# Conserva skills del usuario, informa conflictos y evita sobrescribirlos.
+node scripts/install-apply.js --target claude --modules workflow-quality
 
-# Opcional: añadir skills específicas de framework solo cuando las necesites
-# for s in django-patterns django-tdd laravel-patterns springboot-patterns quarkus-patterns; do
-# cp -r skills/$s ~/.claude/skills/ecc/
-# done
+# Opcional: instalar skills concretas solo cuando las necesites.
+node scripts/install-apply.js --target claude --skills search-first
+# node scripts/install-apply.js --target claude --skills django-patterns,django-tdd
 
 # Opcional: mantener compatibilidad con entradas slash durante la migración
 mkdir -p ~/.claude/commands
