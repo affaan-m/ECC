@@ -1,0 +1,40 @@
+name: Feature idea
+description: Describe the outcome you need and your current workaround.
+title: "[Idea] "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a public GitHub issue. Do not include secrets, prompts, customer data, private repository details, or unredacted paths.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What outcome do you need?
+      description: Describe the job to be done, not an implementation if you do not have one in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do today?
+      description: Optional. A workaround helps us understand urgency and scope.
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Which harness is affected?
+      options:
+        - All harnesses
+        - Claude Code
+        - Codex
+        - Cursor
+        - OpenCode
+        - GitHub Copilot
+        - Another harness
+  - type: textarea
+    id: success
+    attributes:
+      label: What would success look like?
+      description: Optional acceptance criteria or a small example.

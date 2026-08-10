@@ -109,6 +109,8 @@ function runTests() {
       });
       assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
       assert.ok(uninstallResult.stdout.includes('Uninstall summary'));
+      assert.ok(uninstallResult.stdout.includes('quick-feedback.yml'));
+      assert.ok(uninstallResult.stdout.includes('public GitHub issue'));
       assert.ok(!fs.existsSync(managedPath));
       assert.ok(!fs.existsSync(statePath));
       assert.ok(fs.existsSync(unrelatedPath));

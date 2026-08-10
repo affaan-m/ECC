@@ -240,14 +240,14 @@ function parseArgs(argv) {
 
 function commandFor(kind, id, target) {
   if (kind === 'profile') {
-    return `npx ecc install --profile ${id} --target ${target}`;
+    return `npx ecc-universal install --profile ${id} --target ${target}`;
   }
 
-  return `npx ecc install --profile minimal --target ${target} --with ${id}`;
+  return `npx ecc-universal install --profile minimal --target ${target} --with ${id}`;
 }
 
 function planCommandFor(componentId, target) {
-  return `npx ecc plan --profile minimal --target ${target} --with ${componentId}`;
+  return `npx ecc-universal plan --profile minimal --target ${target} --with ${componentId}`;
 }
 
 function buildSearchCorpus(parts) {
@@ -421,7 +421,7 @@ function buildConsultation(options) {
         `Install it: ${matches[0].installCommand}`,
       ]
       : [
-        'Run `npx ecc catalog components` to browse all components.',
+        'Run `npx ecc-universal catalog components` to browse all components.',
         'Try a more specific query such as "security review", "Next.js", or "operator workflows".',
       ],
   };
@@ -437,7 +437,7 @@ function formatText(payload) {
 
   if (payload.matches.length === 0) {
     lines.push('No strong component matches found.');
-    lines.push('Try: npx ecc catalog components');
+    lines.push('Try: npx ecc-universal catalog components');
   } else {
     lines.push('Recommended components:');
     payload.matches.forEach((match, index) => {

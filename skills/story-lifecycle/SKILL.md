@@ -77,9 +77,11 @@ Two more rules apply to every sub-command:
   collision, re-planning an existing sprint, reassigning a story to a different sprint),
   show the user what would change and get explicit approval before writing.
 
-Use the harness's native file tools (Read, Write, Edit, Glob) for all `.stories/` access —
-not shell commands — so behavior is identical on Windows, macOS, Linux, and non-shell
-harnesses. Write creates parent directories, so no separate `mkdir` step is needed.
+Use the active harness's native filesystem capabilities for all `.stories/` access —
+not POSIX shell commands. Before the first write, create and verify the exact `.stories/`,
+`.stories/epics/`, and `.stories/sprints/` directories with a portable native directory
+operation. If the harness cannot create directories, stop and ask the user to create those
+exact paths; do not silently fall back to a platform-specific shell command.
 
 ## Commands
 
@@ -91,7 +93,8 @@ Invoke this skill with one of these sub-commands:
 | `create-stories <epic-slug>` | Break an epic into user stories |
 | `plan-sprint <n>` | Assign ready stories to a sprint |
 | `implement <story-id>` | Drive implementation of a single story |
-| `status` | Reconcile and print a summary of all epics and story states |
+| `status` | Detect drift and print the authoritative story-state summary |
+| `status --fix` | Preview and, after approval, reconcile derived epic/sprint tables |
 
 If no sub-command is given, run `status` first and ask which action to take.
 
@@ -99,9 +102,11 @@ If no sub-command is given, run `status` first and ask which action to take.
 
 The **story file is the single authoritative record** of a story's status. The stories
 tables in epic and sprint files are derived summaries — convenient to read, never
-authoritative. Whenever a story status changes, and whenever `status` runs, regenerate
-the matching rows in the epic file and (if the story is assigned) the sprint file from
-the story files. On any disagreement, the story file wins.
+authoritative. Whenever a user-approved story transition changes status, regenerate the
+matching rows in the epic file and (if the story is assigned) the sprint file from the
+story files as part of that same approved operation. Plain `status` is read-only: on any
+disagreement, the story file wins, but show the proposed table diff and require explicit
+approval (or `status --fix` plus confirmation) before writing the reconciliation.
 
 Story status moves strictly forward, one step at a time:
 
@@ -202,10 +207,10 @@ unverified — it stays in `review`. If a review or verification fails, the stor
 
 ### 0. Bootstrap (run once per project)
 
-`create-epic` creates `.stories/epics/` and `.stories/sprints/` implicitly on first
-write (harness file tools create parent directories). All other sub-commands check for
-`.stories/` first (via Glob) and fail with a clear message if it is missing: "Run
-`story-lifecycle create-epic` first to initialise the .stories/ layout."
+`create-epic` first creates and verifies `.stories/`, `.stories/epics/`, and
+`.stories/sprints/` through the portable native directory operation described above.
+All other sub-commands check for `.stories/` first and fail with a clear message if it is
+missing: "Run `story-lifecycle create-epic` first to initialise the .stories/ layout."
 
 ### 1. create-epic
 
@@ -263,7 +268,8 @@ When decomposing:
 ### 5. status
 
 1. Read every story file under `.stories/` (story files are authoritative)
-2. Regenerate the stories tables in epic and sprint files if they disagree
+2. Compare the derived epic and sprint tables without writing; if they disagree, show the
+   proposed diff. Write it only after explicit approval or a confirmed `status --fix`.
 3. Print:
 
 ```

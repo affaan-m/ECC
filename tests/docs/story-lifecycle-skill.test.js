@@ -43,6 +43,9 @@ function runTests() {
   if (test('epic and sprint tables are derived, regenerated on transitions', () => {
     const derivedMarkers = body.match(/Derived from story files/g) || [];
     assert.ok(derivedMarkers.length >= 2, 'epic and sprint tables must be marked derived');
+    assert.ok(/Plain `status` is read-only/i.test(body), 'status must not silently mutate files');
+    assert.ok(/show the proposed table diff and require explicit\s+approval/i.test(body),
+      'status reconciliation must require approval');
   })) passed++; else failed++;
 
   if (test('done requires confirmed merge to main; review gate before done', () => {
@@ -79,7 +82,11 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('uses harness-native file operations, no POSIX-only shell bootstrap', () => {
-    assert.ok(/native file tools/i.test(body), 'missing harness-native rule');
+    assert.ok(/native filesystem capabilities/i.test(body), 'missing harness-native rule');
+    assert.ok(/portable native directory\s+operation/i.test(body),
+      'missing portable directory-creation contract');
+    assert.ok(/cannot create directories, stop and ask the user/i.test(body),
+      'missing fail-closed directory fallback');
     assert.ok(!body.includes('test -d'), 'POSIX test -d must not appear');
     assert.ok(!body.includes('mkdir -p'), 'POSIX mkdir -p must not appear');
   })) passed++; else failed++;
