@@ -905,6 +905,17 @@ function getFullDenialBudget() {
   return DEFAULT_FULL_DENIALS;
 }
 
+// Edit/Write fact forcing can be capped per session instead of denying every
+// new path forever. Keep the existing behavior when unset; hosts can opt in
+// to a session-wide ceiling without weakening the destructive-Bash gate.
+function getMaxDenialBudget() {
+  const raw = Number.parseInt(process.env.GATEGUARD_FACT_FORCE_MAX_DENIALS || '', 10);
+  if (Number.isInteger(raw) && raw >= 0) {
+    return raw;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 function getDenialCount(state) {
   const n = Number(state && state.fact_force_denials);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -1204,6 +1215,9 @@ function run(rawInput) {
       if (!ok) {
         return allowWithStateWarning();
       }
+      if (denials > getMaxDenialBudget()) {
+        return rawInput;
+      }
       if (denials > getFullDenialBudget()) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
@@ -1226,6 +1240,9 @@ function run(rawInput) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();
+        }
+        if (denials > getMaxDenialBudget()) {
+          return rawInput;
         }
         if (denials > getFullDenialBudget()) {
           return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
