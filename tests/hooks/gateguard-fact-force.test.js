@@ -2222,6 +2222,38 @@ function runTests() {
 
   clearState();
   if (
+    test('allows new paths after the session-wide denial budget', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: '/src/after-budget.js' } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      assert.strictEqual(result.code, 0);
+      const output = parseOutput(result.stdout);
+      assert.ok(!output || !output.hookSpecificOutput, 'paths after the budget should pass through');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('MultiEdit allows new paths after the session-wide denial budget', () => {
+      writeState({ checked: [], last_active: Date.now(), fact_force_denials: 3 });
+      const result = runHook(
+        { tool_name: 'MultiEdit', tool_input: { edits: [{ file_path: '/src/after-multi-budget.js', old_string: 'a', new_string: 'b' }] } },
+        { GATEGUARD_FACT_FORCE_MAX_DENIALS: '3' }
+      );
+      assert.strictEqual(result.code, 0);
+      const output = parseOutput(result.stdout);
+      assert.ok(!output || !output.hookSpecificOutput, 'MultiEdit paths after the budget should pass through');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
     test('malformed denial counter in state is treated as zero (full block, no crash)', () => {
       writeState({ checked: [], last_active: Date.now(), fact_force_denials: 'garbage' });
       const result = runHook({ tool_name: 'Edit', tool_input: { file_path: '/src/damp-malformed.js' } });
