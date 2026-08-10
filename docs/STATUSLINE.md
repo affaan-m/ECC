@@ -66,7 +66,15 @@ installer, or point it at the launcher yourself:
 ## Codex CLI
 
 Codex's TUI status line only supports built-in widgets, so ECC covers Codex in
-two layers:
+three layers. Only the last one involves tmux, and it is the only one that
+does; everything else works in a plain terminal window:
+
+| Surface | Needs | Where it shows |
+| --- | --- | --- |
+| Native widgets | nothing, written at install time | under Codex's input composer |
+| Title mirror | the `ecc-codex` wrapper | window or tab title, any terminal |
+| User var | the wrapper, plus a one-line terminal config | WezTerm and iTerm2 status bars |
+| Three-line bar | the wrapper, inside tmux | tmux status lines |
 
 **1. Native widgets (in the TUI)** — the bar under Codex's input composer.
 Codex has no API for custom status-line commands, so ECC configures Codex's
@@ -123,31 +131,37 @@ While Codex owns the screen, the wrapper re-renders the bar from the newest
 ⬢ codex 7d ██████ 100% ↻1d │ ctx 28% │ 150.4M tok
 ```
 
-WezTerm users: add this to `~/.wezterm.lua` for an always-visible amber bar in
-the tab bar's right status:
+Neither channel involves tmux. The title mirror needs no configuration at all,
+and the two terminals below can pin the user var in their own status bar.
+
+**WezTerm**: copy [`examples/wezterm-ecc-bar.lua`](../examples/wezterm-ecc-bar.lua)
+next to your `wezterm.lua` and require it, for an always-visible bar in the tab
+bar's right status:
 
 ```lua
-wezterm.on('update-status', function(window, pane)
-  local ok, vars = pcall(function() return pane:get_user_vars() end)
-  local bar = ok and vars.ecc_codex_bar or nil
-  if not bar or #bar == 0 then
-    window:set_right_status('')
-    return
-  end
-  local parts = {}
-  for seg in string.gmatch(bar, '[^│]+') do
-    local color = '#9a9183'                                -- dim taupe
-    if seg:find('5h') then color = '#F59E0B'               -- ECC amber
-    elseif seg:find('7d') then color = '#E07856'           -- ECC terracotta
-    elseif seg:find('⬢') then color = '#E07856' end
-    if seg:find('9%d%%') or seg:find('100%%') then color = '#e05656' end
-    parts[#parts + 1] = { Foreground = { Color = color } }
-    parts[#parts + 1] = { Text = seg }
-  end
-  parts[#parts + 1] = { Text = '  ' }
-  window:set_right_status(wezterm.format(parts))
-end)
+require("wezterm-ecc-bar").apply()
 ```
+
+It reads the user var on WezTerm's own `update-status` tick, so there is no
+polling and no subprocess. Pass your own palette with
+`apply({ colors = { dim = "#...", five_hour = "#...", seven_day = "#...", critical = "#..." } })`.
+WezTerm allows several `update-status` handlers, so this composes with an
+existing one unless that handler also calls `set_right_status`.
+
+If you would rather inline the logic than copy the file, split the bar with a
+plain `find`, never a Lua character class: `[^│]` matches *bytes*, and `│`
+(`e2 94 82`) shares its leading `e2` with `⬢`, `█`, `░` and `↻`, so a
+class-based split cuts those glyphs in half and emits invalid UTF-8.
+
+**iTerm2**: enable the status bar under Settings, Profiles, Session, then
+Configure Status Bar, and drag in an **Interpolated String** component with:
+
+```text
+\(user.ecc_codex_bar)
+```
+
+iTerm2 exposes any OSC 1337 user var as `user.<name>`, so the bar appears the
+moment Codex starts and clears when it exits.
 
 Set `ECC_CODEX_BAR=off` to make the wrapper a plain `codex` passthrough. The
 bar is intentionally not drawn into the scroll region — a full-screen TUI
@@ -194,7 +208,10 @@ status bar — it blends into any theme, light or dark. Segment colors use
 256-color codes supported by Terminal.app, Windows Terminal, WezTerm,
 iTerm2, and mainstream Linux terminals.
 
-Outside tmux the bar falls back to the title/user-var mirror described above.
+tmux is optional. Without it you still get the native TUI widgets, the title
+mirror, and the WezTerm or iTerm2 status bar described above; tmux only adds
+the three-line variant, because a multi-line status bar is the one thing a
+plain terminal cannot give a full-screen TUI.
 
 `--full` renders the Claude-style two-line bar (usage bars, then
 `⬢ ECC <version> │ plugins … │ dir`); `--plain` strips colors (used for
