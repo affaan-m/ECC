@@ -5,7 +5,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const {
+  applyInstallPlan,
+  buildInstallStateStoreRecord,
+} = require('../../scripts/lib/install/apply');
 const { readInstallState, writeInstallState } = require('../../scripts/lib/install-state');
 const { uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 
@@ -164,6 +167,26 @@ function runTests() {
   console.log('\n=== Testing Claude flat-skill migration ===\n');
   let passed = 0;
   let failed = 0;
+
+  if (test('projects the final install state for the status store', () => {
+    const fixture = createFixture();
+    try {
+      const records = [];
+      applyInstallPlan(fixture.plan, {
+        upsertInstallState: record => records.push(record),
+      });
+      assert.strictEqual(records.length, 1);
+      assert.deepStrictEqual(records[0], buildInstallStateStoreRecord(
+        readInstallState(fixture.installStatePath)
+      ));
+      assert.strictEqual(records[0].targetId, 'claude-home');
+      assert.strictEqual(records[0].targetRoot, fixture.targetRoot);
+      assert.deepStrictEqual(records[0].modules, ['workflow-quality']);
+      assert.strictEqual(records[0].operations.length, fixture.operations.length);
+    } finally {
+      cleanup(fixture.tempDir);
+    }
+  })) passed++; else failed++;
 
   for (const target of ['claude', 'claude-project']) {
     if (test(`migrates state-managed nested skills for ${target} without deleting untracked files`, () => {

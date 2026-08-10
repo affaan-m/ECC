@@ -73,6 +73,22 @@ function stateWithContentDigests(state) {
   };
 }
 
+// Keep the SQLite install-state projection in sync with the install-state
+// file. The file remains the source of truth; this projection is consumed by
+// `ecc status` and is intentionally limited to the fields represented by the
+// install_state table.
+function buildInstallStateStoreRecord(state) {
+  return {
+    targetId: state.target.id,
+    targetRoot: state.target.root,
+    profile: state.request.profile,
+    modules: state.resolution.selectedModules,
+    operations: state.operations,
+    installedAt: state.installedAt,
+    sourceVersion: state.source.repoVersion,
+  };
+}
+
 function cloneJsonValue(value) {
   if (value === undefined) {
     return undefined;
@@ -225,6 +241,7 @@ function previewInstallPlan(plan) {
 
 function applyInstallPlan(plan, dependencies = {}) {
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const persistInstallStateStore = dependencies.upsertInstallState;
   const beforeOperationWrite = dependencies.beforeOperationWrite;
   const beforeInstallStateWrite = dependencies.beforeInstallStateWrite;
   const migration = prepareClaudeSkillMigration(plan);
@@ -330,6 +347,9 @@ function applyInstallPlan(plan, dependencies = {}) {
     beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
   }
   persistInstallState(plan.installStatePath, finalState);
+  if (typeof persistInstallStateStore === 'function') {
+    persistInstallStateStore(buildInstallStateStoreRecord(finalState));
+  }
 
   return {
     ...plan,
@@ -348,5 +368,6 @@ function applyInstallPlan(plan, dependencies = {}) {
 module.exports = {
   applyInstallPlan,
   assertSafeInstallOperation,
+  buildInstallStateStoreRecord,
   previewInstallPlan,
 };

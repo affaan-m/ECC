@@ -134,7 +134,8 @@ function printHumanPlan(plan, dryRun) {
   console.log('\nCompute: ' + getComputeSponsorCopy());
 }
 
-function main() {
+async function main() {
+  let stateStore;
   try {
     const options = parseInstallArgs(process.argv);
 
@@ -177,13 +178,25 @@ function main() {
       return;
     }
 
-    const result = applyInstallPlan(rawPlan);
+    // Keep the status database projection synchronized with the install-state
+    // file written by the plan. The store is opened only for real installs so
+    // dry-runs remain side-effect free.
+    const { createStateStore } = require('./lib/state-store');
+    stateStore = await createStateStore({
+      homeDir: process.env.HOME || os.homedir(),
+    });
+    const result = applyInstallPlan(rawPlan, {
+      upsertInstallState: installState => stateStore.upsertInstallState(installState),
+    });
+    stateStore.close();
+    stateStore = undefined;
     if (options.json) {
       console.log(JSON.stringify({ dryRun: false, result }, null, 2));
     } else {
       printHumanPlan(result, false);
     }
   } catch (error) {
+    stateStore?.close();
     process.stderr.write(`Error: ${error.message}${getHelpText()}`);
     process.exit(1);
   }
