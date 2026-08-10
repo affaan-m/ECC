@@ -585,6 +585,9 @@ textarea {
   z-index: 700;
   animation: toastIn 0.22s ease;
   transition: opacity 0.22s ease, transform 0.22s ease;
+  /* Draggable away in any direction (see data/toast.jsx) — without this, a
+     vertical drag on the toast also scrolls the page underneath it. */
+  touch-action: none;
 }
 .toast--closing {
   opacity: 0;
