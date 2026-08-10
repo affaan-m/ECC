@@ -44,7 +44,7 @@
     {
       "id": "baseline:workflow",
       "family": "baseline",
-      "description": "Evaluation, TDD, verification, and compaction workflow support.",
+      "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory workflow support.",
       "modules": [
         "workflow-quality"
       ]
@@ -189,9 +189,17 @@
     {
       "id": "capability:prediction-markets",
       "family": "capability",
-      "description": "Public, non-advisory prediction-market and Itô basket research workflows with gated Itô API access.",
+      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
       "modules": [
         "prediction-market-skills"
+      ]
+    },
+    {
+      "id": "capability:ito-compute",
+      "family": "capability",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "modules": [
+        "ito-compute"
       ]
     },
     {
@@ -460,6 +468,14 @@
       "description": "Browser review canvas for plan artifacts: annotate, chat, approve or request changes.",
       "modules": [
         "workflow-quality"
+      ]
+    },
+    {
+      "id": "skill:unified-memory",
+      "family": "skill",
+      "description": "Cross-harness memory guidance that requires the separately installed ecc-universal CLI runtime.",
+      "modules": [
+        "skill-unified-memory"
       ]
     },
     {

@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertWithinTrustedRoot } = require('./path-safety');
 
 const AGENT_DATA_HOME_ENV = 'ECC_AGENT_DATA_HOME';
 const DEFAULT_CLAUDE_DIR_NAME = '.claude';
@@ -94,6 +95,41 @@ function getDefaultClaudeAgentDataHome() {
   return path.join(getHomeDirFromEnv(), DEFAULT_CLAUDE_DIR_NAME);
 }
 
+function warnUnsafeProjectConfig() {
+  console.error(
+    '[ECC] Ignoring unsafe agent data project config: agentDataHome must stay ' +
+    'within the default Cursor or Claude data directories. Use ' +
+    'ECC_AGENT_DATA_HOME for an explicit trusted override.'
+  );
+}
+
+function isSafeProjectConfigSyntax(candidate) {
+  const trimmed = candidate.trim();
+  const isUserAnchored = trimmed.startsWith('~') || path.isAbsolute(trimmed);
+  const hasParentTraversal = trimmed.split(/[/\\]+/).includes('..');
+  return isUserAnchored && !hasParentTraversal;
+}
+
+function resolveAllowedProjectConfigHome(candidate) {
+  const allowedRoots = [
+    getDefaultCursorAgentDataHome(),
+    getDefaultClaudeAgentDataHome(),
+  ];
+
+  for (const allowedRoot of allowedRoots) {
+    try {
+      return assertWithinTrustedRoot(
+        candidate,
+        allowedRoot,
+        'use project agent data home'
+      );
+    } catch {
+      // Try the next explicitly allowed default root.
+    }
+  }
+  return null;
+}
+
 function readProjectConfigAt(configPath) {
   if (!configPath || typeof configPath !== 'string') return null;
   if (!fs.existsSync(configPath)) return null;
@@ -103,8 +139,18 @@ function readProjectConfigAt(configPath) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const candidate = parsed.agentDataHome || parsed.ECC_AGENT_DATA_HOME;
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
+    if (!isSafeProjectConfigSyntax(candidate)) {
+      warnUnsafeProjectConfig();
+      return null;
+    }
     const projectRoot = resolveProjectRootFromConfigPath(configPath);
-    return expandHomePath(candidate, projectRoot);
+    const resolved = expandHomePath(candidate, projectRoot);
+    const allowedHome = resolveAllowedProjectConfigHome(resolved);
+    if (!allowedHome) {
+      warnUnsafeProjectConfig();
+      return null;
+    }
+    return allowedHome;
   } catch (error) {
     console.error(
       `[ECC] Failed to read or parse agent data config at ${configPath}: ${error.message}`

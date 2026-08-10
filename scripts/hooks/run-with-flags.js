@@ -46,17 +46,26 @@ function writeStderr(stderr) {
 }
 
 /**
- * Write stdout fully, then exit. `process.exit()` immediately after
- * `process.stdout.write()` drops anything beyond the ~64KB pipe buffer,
- * which cut large pass-through payloads mid-JSON and made the harness
- * treat the hook as failed (#2222). The write callback fires only after
- * the chunk is flushed to the pipe.
+ * Exit only after stdout and any previously queued stderr have drained.
+ * `process.exit()` immediately after a stream write drops anything beyond
+ * the OS pipe buffer, which cut large hook output mid-payload and made the
+ * harness treat the hook as failed (#2222).
  */
 function exitWithStdout(text, exitCode) {
-  if (typeof text !== 'string' || text.length === 0) {
-    process.exit(exitCode);
+  process.exitCode = exitCode;
+  let pendingWrites = 1;
+  const exitWhenFlushed = () => {
+    pendingWrites -= 1;
+    if (pendingWrites === 0) {
+      process.exit(exitCode);
+    }
+  };
+
+  if (typeof text === 'string' && text.length > 0) {
+    pendingWrites += 1;
+    process.stdout.write(text, exitWhenFlushed);
   }
-  process.stdout.write(text, () => process.exit(exitCode));
+  process.stderr.write('', exitWhenFlushed);
 }
 
 function resolveHookResult(raw, output) {
@@ -169,8 +178,8 @@ async function main() {
   if (isDryRun()) {
     const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
     process.stderr.write(preview);
-    process.stdout.write(raw);
-    process.exit(0);
+    exitWithStdout(sanitizeEcho(raw), 0);
+    return;
   }
 
   const pluginRoot = getPluginRoot();
@@ -211,7 +220,11 @@ async function main() {
 
   if (hookModule && typeof hookModule.run === 'function') {
     try {
-      const output = hookModule.run(raw, {
+      // Awaited so a hook may export `async run()`. Without this an async hook
+      // hands back a pending Promise, which resolveHookResult reads as "no
+      // opinion" and silently degrades to pass-through. Synchronous hooks are
+      // unaffected: awaiting a plain value just costs a microtask.
+      const output = await hookModule.run(raw, {
         hookId,
         pluginRoot,
         scriptPath,

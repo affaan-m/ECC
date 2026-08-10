@@ -80,7 +80,11 @@
 
 ## 最新动态
 
-### v2.0.0 — 智能体 Harness 操作系统（2026年6月）
+### v2.2.0 — 引导式多 Harness 安装（2026年8月）
+
+新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
+
+### v2.1.0 — 智能体 Harness 操作系统（2026年6月）
 
 2.0 主线稳定版：261 个技能、control-pane 基底（会话适配器 + MCP 清单）、worktree 生命周期服务，以及 [ECC Discord 社区](https://discord.gg/36yGMHGFbR)。
 
@@ -92,6 +96,34 @@
 - **框架与产品表面继续扩展** —— `nestjs-patterns`、更完整的 Codex/OpenCode 安装表面，以及跨 harness 打包改进，让仓库不再局限于 Claude Code。
 - **ECC 2.0 alpha 已进入仓库** —— `ecc2/` 下的 Rust 控制层现已可在本地构建，并提供 `dashboard`、`start`、`sessions`、`status`、`stop`、`resume` 与 `daemon` 命令。
 - **生态加固持续推进** —— AgentShield、ECC Tools 成本控制、计费门户工作与网站刷新仍围绕核心插件持续交付。
+
+### 当前开发 — 统一记忆库
+
+`ecc memory` 使用可检查的 `ecc.memory.v1` Markdown 文档，在 Claude、
+Codex、Hermes 等 harness 之间传递上下文。常规搜索只召回 `project` 和
+`team` 范围内状态为 active 的条目，按 ID 直接读取仍可用于检查非 active
+条目；`user` 范围必须显式请求。首个版本中的所有记忆都保持 unreviewed，
+接受后的知识应进入受治理的项目文档，
+而不是修改记忆的信任字段。召回内容始终是不可信数据，不能作为指令执行。
+
+可选的 `ecc-memory-mcp` 服务必须由操作者设置小写
+`ECC_MEMORY_HARNESS` 身份；工具调用方不能覆盖该身份。只有操作者另外设置
+`ECC_MEMORY_ALLOW_USER_SCOPE=1` 后，MCP 调用才能显式请求 `user` 范围。
+该服务默认不会启用。
+
+仅安装 skill、最小配置、手动复制或 Claude 插件不会把记忆库运行时加入
+`PATH`。请先单独安装 ECC npm 运行时：
+
+```bash
+npm install -g ecc-universal
+ecc memory --help
+command -v ecc-memory-mcp
+```
+
+如需启用 MCP，请从 `mcp-configs/mcp-servers.json` 复制
+`ecc-memory-vault` 配置到对应 harness，并为每个 harness 分别启动一个服务
+进程，例如 `ECC_MEMORY_HARNESS=codex ecc-memory-mcp`。不同 harness 可以共享
+同一个二进制文件和记忆库目录，但不能共用同一个服务进程。
 
 ## 快速开始
 
@@ -164,7 +196,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**完成！** 你现在可以使用 67 个代理、278 个技能和 94 个命令。
+**完成！** 你现在可以使用 67 个代理、285 个技能和 94 个命令。
 
 ### multi-* 命令需要额外配置
 

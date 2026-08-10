@@ -17,6 +17,7 @@ const {
 const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
+  readInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
 
@@ -634,6 +635,190 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('Claude repair and dry-run preserve user-owned flat skills during legacy migration', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+      const flatSkillPath = path.join(targetRoot, 'skills', 'tdd-workflow', 'SKILL.md');
+      const legacySkillPath = path.join(
+        targetRoot,
+        'skills',
+        'ecc',
+        'tdd-workflow',
+        'SKILL.md'
+      );
+      fs.mkdirSync(path.dirname(flatSkillPath), { recursive: true });
+      fs.mkdirSync(path.dirname(legacySkillPath), { recursive: true });
+      fs.writeFileSync(flatSkillPath, '# User-owned flat skill\n');
+      fs.writeFileSync(legacySkillPath, '# Previously managed nested skill\n');
+
+      writeState(installStatePath, {
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        targetRoot,
+        installStatePath,
+        request: {
+          profile: null,
+          modules: ['workflow-quality'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs', 'workflow-quality'],
+          skippedModules: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'workflow-quality',
+          sourcePath: path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          sourceRelativePath: path.join('skills', 'tdd-workflow', 'SKILL.md'),
+          destinationPath: legacySkillPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const dryRun = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+        dryRun: true,
+      });
+      assert.ok(!dryRun.results[0].plannedRepairs.includes(flatSkillPath));
+      assert.ok(dryRun.results[0].warnings.some(warning => warning.includes('user-owned')));
+      assert.strictEqual(fs.readFileSync(flatSkillPath, 'utf8'), '# User-owned flat skill\n');
+      assert.strictEqual(
+        fs.readFileSync(legacySkillPath, 'utf8'),
+        '# Previously managed nested skill\n'
+      );
+
+      const repaired = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(repaired.results[0].status, 'repaired');
+      assert.ok(repaired.results[0].warnings.some(warning => warning.includes('user-owned')));
+      assert.strictEqual(fs.readFileSync(flatSkillPath, 'utf8'), '# User-owned flat skill\n');
+      assert.strictEqual(
+        fs.readFileSync(legacySkillPath, 'utf8'),
+        fs.readFileSync(
+          path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          'utf8'
+        )
+      );
+      const repairedState = JSON.parse(fs.readFileSync(installStatePath, 'utf8'));
+      assert.ok(repairedState.operations.some(operation => (
+        operation.destinationPath === legacySkillPath
+      )));
+      assert.ok(!repairedState.operations.some(operation => (
+        operation.destinationPath === flatSkillPath
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude repair migration derives roots from the adapter and removes only the managed legacy file', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const adapterStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+      const recordedStatePath = path.join(outsideRoot, 'recorded-state.json');
+      const flatSkillPath = path.join(targetRoot, 'skills', 'tdd-workflow', 'SKILL.md');
+      const legacySkillPath = path.join(
+        targetRoot,
+        'skills',
+        'ecc',
+        'tdd-workflow',
+        'SKILL.md'
+      );
+      fs.mkdirSync(path.dirname(legacySkillPath), { recursive: true });
+      fs.writeFileSync(legacySkillPath, '# Previously managed nested skill\n');
+
+      writeState(adapterStatePath, {
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        targetRoot: outsideRoot,
+        installStatePath: recordedStatePath,
+        request: {
+          profile: null,
+          modules: ['workflow-quality'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs', 'workflow-quality'],
+          skippedModules: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'workflow-quality',
+          sourcePath: path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          sourceRelativePath: path.join('skills', 'tdd-workflow', 'SKILL.md'),
+          destinationPath: legacySkillPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+      fs.writeFileSync(recordedStatePath, 'outside sentinel\n');
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      assert.strictEqual(
+        fs.readFileSync(flatSkillPath, 'utf8'),
+        fs.readFileSync(
+          path.join(REPO_ROOT, 'skills', 'tdd-workflow', 'SKILL.md'),
+          'utf8'
+        )
+      );
+      assert.ok(!fs.existsSync(legacySkillPath));
+      assert.strictEqual(fs.readFileSync(recordedStatePath, 'utf8'), 'outside sentinel\n');
+      const refreshedState = readInstallState(adapterStatePath);
+      assert.strictEqual(refreshedState.target.root, targetRoot);
+      assert.strictEqual(refreshedState.target.installStatePath, adapterStatePath);
+      assert.ok(refreshedState.operations.some(operation => (
+        operation.destinationPath === flatSkillPath
+      )));
+      assert.ok(!refreshedState.operations.some(operation => (
+        operation.destinationPath === legacySkillPath
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('repair copies missing managed files from recorded source paths', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -661,6 +846,47 @@ function runTests() {
       assert.strictEqual(result.results[0].status, 'repaired');
       assert.ok(fs.readFileSync(destinationPath).equals(fs.readFileSync(sourcePath)));
     } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair reads source content and mode from one no-follow descriptor', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const sourcePath = path.join(REPO_ROOT, 'rules', 'common', 'coding-style.md');
+    const originalStatSync = fs.statSync;
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const destinationPath = path.join(targetRoot, 'rules', 'coding-style.md');
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, {
+            sourceRelativePath: 'rules/common/coding-style.md',
+            strategy: 'copy-file',
+          }),
+        ],
+      });
+
+      fs.statSync = function rejectSeparateSourceMetadataLookup(candidatePath, ...args) {
+        if (path.resolve(candidatePath) === path.resolve(sourcePath)) {
+          throw new Error('source metadata must come from the opened descriptor');
+        }
+        return originalStatSync.call(fs, candidatePath, ...args);
+      };
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'repaired');
+      assert.ok(fs.readFileSync(destinationPath).equals(fs.readFileSync(sourcePath)));
+    } finally {
+      fs.statSync = originalStatSync;
       cleanup(homeDir);
       cleanup(projectRoot);
     }
@@ -1017,6 +1243,162 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('repair rejects absolute and parent-relative source metadata outside the repository', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const outsideRoot = createTempDir('install-lifecycle-source-outside-');
+    const outsideSourcePath = path.join(outsideRoot, 'secret.txt');
+    fs.writeFileSync(outsideSourcePath, 'outside secret\n');
+
+    try {
+      const unsafeSources = [
+        outsideSourcePath,
+        path.relative(REPO_ROOT, outsideSourcePath),
+      ];
+
+      for (const sourceRelativePath of unsafeSources) {
+        const projectRoot = createTempDir('install-lifecycle-project-');
+        try {
+          const destinationPath = path.join(projectRoot, '.cursor', 'copied-secret.txt');
+          writeCursorState(projectRoot, {
+            operations: [
+              managedOperation('copy-file', destinationPath, {
+                sourceRelativePath,
+                strategy: 'copy-file',
+              }),
+            ],
+          });
+
+          const doctor = buildDoctorReport({
+            repoRoot: REPO_ROOT,
+            homeDir,
+            projectRoot,
+            targets: ['cursor'],
+          });
+          const result = repairInstalledStates({
+            repoRoot: REPO_ROOT,
+            homeDir,
+            projectRoot,
+            targets: ['cursor'],
+          });
+
+          assert.strictEqual(doctor.results[0].status, 'error');
+          assert.ok(
+            doctor.results[0].issues.some(
+              issue => issue.code === 'unsafe-repair-source'
+            )
+          );
+          assert.strictEqual(result.results[0].status, 'error');
+          assert.ok(result.results[0].error.includes('unsafe repair source metadata'));
+          assert.ok(!result.results[0].error.includes(outsideSourcePath));
+          assert.ok(!fs.existsSync(destinationPath));
+        } finally {
+          cleanup(projectRoot);
+        }
+      }
+    } finally {
+      cleanup(homeDir);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor and repair reject unsafe destinations before health inspection reads them', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const outsideRoot = createTempDir('install-lifecycle-destination-outside-');
+    const copySource = fs.readFileSync(
+      path.join(REPO_ROOT, 'rules', 'common', 'coding-style.md'),
+      'utf8'
+    );
+    const cases = [
+      {
+        name: 'matching copy',
+        kind: 'copy-file',
+        content: copySource,
+        overrides: { strategy: 'copy-file' },
+      },
+      {
+        name: 'drifted copy',
+        kind: 'copy-file',
+        content: 'outside drift\n',
+        overrides: { strategy: 'copy-file' },
+      },
+      {
+        name: 'rendered template',
+        kind: 'render-template',
+        content: 'managed template\n',
+        overrides: {
+          renderedContent: 'managed template\n',
+          strategy: 'render-template',
+        },
+      },
+      {
+        name: 'merged JSON',
+        kind: 'merge-json',
+        content: '{"managed":true,"outside":"sentinel"}\n',
+        overrides: {
+          mergePayload: { managed: true },
+          strategy: 'merge-json',
+        },
+      },
+    ];
+
+    try {
+      for (const testCase of cases) {
+        const projectRoot = createTempDir('install-lifecycle-project-');
+        const destinationPath = path.join(outsideRoot, `${testCase.name}.txt`);
+        const originalExistsSync = fs.existsSync;
+
+        try {
+          fs.writeFileSync(destinationPath, testCase.content);
+          writeCursorState(projectRoot, {
+            operations: [
+              managedOperation(testCase.kind, destinationPath, testCase.overrides),
+            ],
+          });
+
+          fs.existsSync = function existsSyncWithoutOutsideInspection(candidatePath) {
+            if (path.resolve(candidatePath) === path.resolve(destinationPath)) {
+              throw new Error(`unsafe destination inspected: ${testCase.name}`);
+            }
+            return originalExistsSync.call(fs, candidatePath);
+          };
+
+          const doctor = buildDoctorReport({
+            repoRoot: REPO_ROOT,
+            homeDir,
+            projectRoot,
+            targets: ['cursor'],
+          });
+          const repair = repairInstalledStates({
+            repoRoot: REPO_ROOT,
+            homeDir,
+            projectRoot,
+            targets: ['cursor'],
+          });
+
+          assert.strictEqual(doctor.results[0].status, 'error');
+          assert.ok(
+            doctor.results[0].issues.some(
+              issue => issue.code === 'unsafe-managed-destination'
+            )
+          );
+          assert.strictEqual(repair.results[0].status, 'error');
+          assert.ok(repair.results[0].error.includes('unsafe managed destination'));
+          assert.strictEqual(
+            originalExistsSync.call(fs, destinationPath),
+            true,
+            `${testCase.name} destination should remain untouched`
+          );
+        } finally {
+          fs.existsSync = originalExistsSync;
+          cleanup(projectRoot);
+        }
+      }
+    } finally {
+      cleanup(homeDir);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('doctor reports drifted managed files as a warning', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -1317,6 +1699,293 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('repair rejects a symlink inserted while creating a missing destination parent', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+    const targetRoot = path.join(projectRoot, '.cursor');
+    const destinationParent = path.join(targetRoot, 'late-parent');
+    const destinationPath = path.join(destinationParent, 'managed.md');
+    const outsideDestinationPath = path.join(outsideRoot, 'managed.md');
+    const originalMkdirSync = fs.mkdirSync;
+    let canonicalDestinationParent;
+    let insertedSymlink = false;
+    let result;
+
+    try {
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+      canonicalDestinationParent = path.join(
+        fs.realpathSync(targetRoot),
+        path.basename(destinationParent)
+      );
+
+      fs.mkdirSync = function mkdirSyncWithLateSymlink(directoryPath, options) {
+        if (!insertedSymlink && path.resolve(directoryPath) === canonicalDestinationParent) {
+          originalMkdirSync.call(fs, path.dirname(canonicalDestinationParent), { recursive: true });
+          fs.symlinkSync(
+            outsideRoot,
+            canonicalDestinationParent,
+            process.platform === 'win32' ? 'junction' : 'dir'
+          );
+          insertedSymlink = true;
+          return undefined;
+        }
+        return originalMkdirSync.call(fs, directoryPath, options);
+      };
+
+      result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+    } finally {
+      fs.mkdirSync = originalMkdirSync;
+    }
+
+    try {
+      assert.strictEqual(insertedSymlink, true);
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.ok(result.results[0].error.includes('outside the install root'));
+      assert.ok(!fs.existsSync(outsideDestinationPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair rejects an in-root final symlink without overwriting its victim', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const victimPath = path.join(targetRoot, 'victim.md');
+      const destinationPath = path.join(targetRoot, 'managed.md');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(victimPath, 'victim sentinel\n');
+      try {
+        fs.symlinkSync(victimPath, destinationPath);
+      } catch {
+        console.log('    (symlink unsupported on this platform; skipping)');
+        return;
+      }
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('render-template', destinationPath, {
+            renderedContent: 'managed replacement\n',
+            strategy: 'render-template',
+          }),
+        ],
+      });
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.ok(result.results[0].error.includes('final symlink'));
+      assert.strictEqual(fs.readFileSync(victimPath, 'utf8'), 'victim sentinel\n');
+      assert.strictEqual(fs.lstatSync(destinationPath).isSymbolicLink(), true);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair uses no-follow writes when a final destination becomes a symlink', () => {
+    if (!fs.constants.O_NOFOLLOW) {
+      console.log('    (O_NOFOLLOW unsupported on this platform; skipping)');
+      return;
+    }
+
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+    const targetRoot = path.join(projectRoot, '.cursor');
+    const destinationPath = path.join(targetRoot, 'managed.md');
+    const outsideDestinationPath = path.join(outsideRoot, 'managed.md');
+    const originalOpenSync = fs.openSync;
+    let canonicalDestinationPath;
+    let insertedSymlink = false;
+    let result;
+
+    try {
+      fs.writeFileSync(outsideDestinationPath, 'outside sentinel\n');
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+      canonicalDestinationPath = path.join(
+        fs.realpathSync(targetRoot),
+        path.basename(destinationPath)
+      );
+
+      fs.openSync = function openSyncWithLateSymlink(filePath, flags, mode) {
+        if (!insertedSymlink && path.resolve(filePath) === canonicalDestinationPath) {
+          fs.symlinkSync(outsideDestinationPath, canonicalDestinationPath);
+          insertedSymlink = true;
+        }
+        return originalOpenSync.call(fs, filePath, flags, mode);
+      };
+
+      result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+    } finally {
+      fs.openSync = originalOpenSync;
+    }
+
+    try {
+      assert.strictEqual(insertedSymlink, true);
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.strictEqual(
+        fs.readFileSync(outsideDestinationPath, 'utf8'),
+        'outside sentinel\n'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair revalidates a pinned write before a swapped parent can truncate outside files', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+    const targetRoot = path.join(projectRoot, '.cursor');
+    const destinationParent = path.join(targetRoot, 'late-parent');
+    const backupParent = path.join(targetRoot, 'late-parent-backup');
+    const destinationPath = path.join(destinationParent, 'managed.md');
+    const outsideDestinationPath = path.join(outsideRoot, 'managed.md');
+    const originalOpenSync = fs.openSync;
+    let canonicalDestinationPath;
+    let insertedSymlink = false;
+    let result;
+
+    const symlinkProbe = path.join(targetRoot, 'parent-symlink-probe');
+    try {
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.symlinkSync(
+        outsideRoot,
+        symlinkProbe,
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+      fs.rmSync(symlinkProbe, { force: true });
+    } catch {
+      console.log('    (symlink unsupported on this platform; skipping)');
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+      return;
+    }
+
+    try {
+      fs.mkdirSync(destinationParent, { recursive: true });
+      fs.writeFileSync(destinationPath, 'drifted managed content\n');
+      fs.writeFileSync(outsideDestinationPath, 'outside sentinel\n');
+      canonicalDestinationPath = fs.realpathSync(destinationPath);
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+
+      fs.openSync = function openSyncWithLateParentSwap(filePath, flags, mode) {
+        const isDestinationWrite = path.resolve(filePath) === canonicalDestinationPath
+          && typeof flags === 'number'
+          && (flags & fs.constants.O_WRONLY) === fs.constants.O_WRONLY;
+        if (!insertedSymlink && isDestinationWrite) {
+          fs.renameSync(destinationParent, backupParent);
+          fs.symlinkSync(
+            outsideRoot,
+            destinationParent,
+            process.platform === 'win32' ? 'junction' : 'dir'
+          );
+          insertedSymlink = true;
+        }
+        return originalOpenSync.call(fs, filePath, flags, mode);
+      };
+
+      result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+    } finally {
+      fs.openSync = originalOpenSync;
+    }
+
+    try {
+      assert.strictEqual(insertedSymlink, true);
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.strictEqual(
+        fs.readFileSync(outsideDestinationPath, 'utf8'),
+        'outside sentinel\n'
+      );
+      assert.strictEqual(
+        fs.readFileSync(path.join(backupParent, 'managed.md'), 'utf8'),
+        'drifted managed content\n'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair refreshes only the adapter-derived install-state path', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const adapterStatePath = path.join(targetRoot, 'ecc-install-state.json');
+      const recordedStatePath = path.join(outsideRoot, 'recorded-state.json');
+      const stateOptions = createCursorStateOptions(projectRoot, {
+        installStatePath: recordedStatePath,
+      });
+      writeState(adapterStatePath, stateOptions);
+      fs.writeFileSync(recordedStatePath, 'outside sentinel\n');
+
+      const result = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'ok');
+      assert.ok(fs.existsSync(adapterStatePath));
+      assert.strictEqual(
+        fs.readFileSync(recordedStatePath, 'utf8'),
+        'outside sentinel\n'
+      );
+      const refreshedState = readInstallState(adapterStatePath);
+      assert.strictEqual(refreshedState.target.root, targetRoot);
+      assert.strictEqual(refreshedState.target.installStatePath, adapterStatePath);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('uninstall restores JSON merged files from recorded previous content', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -1565,6 +2234,40 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('uninstall removes only the adapter-derived install-state path', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const adapterStatePath = path.join(targetRoot, 'ecc-install-state.json');
+      const recordedStatePath = path.join(outsideRoot, 'recorded-state.json');
+      const stateOptions = createCursorStateOptions(projectRoot, {
+        installStatePath: recordedStatePath,
+      });
+      writeState(adapterStatePath, stateOptions);
+      fs.writeFileSync(recordedStatePath, 'outside sentinel\n');
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.ok(!fs.existsSync(adapterStatePath));
+      assert.strictEqual(
+        fs.readFileSync(recordedStatePath, 'utf8'),
+        'outside sentinel\n'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('uninstall removes copied files and cleans empty parent directories', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -1594,6 +2297,42 @@ function runTests() {
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall cleanup stops at the adapter-derived target root', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const cleanupBoundaryRoot = createTempDir('install-lifecycle-boundary-');
+    const projectRoot = path.join(cleanupBoundaryRoot, 'project');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const adapterStatePath = path.join(targetRoot, 'ecc-install-state.json');
+      const destinationPath = path.join(targetRoot, 'rules', 'nested', 'managed.md');
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(destinationPath, 'managed\n');
+      const stateOptions = createCursorStateOptions(projectRoot, {
+        targetRoot: cleanupBoundaryRoot,
+        installStatePath: adapterStatePath,
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+      writeState(adapterStatePath, stateOptions);
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.ok(fs.existsSync(projectRoot));
+      assert.ok(fs.existsSync(targetRoot));
+      assert.ok(!fs.existsSync(destinationPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(cleanupBoundaryRoot);
     }
   })) passed++; else failed++;
 
@@ -1799,6 +2538,107 @@ function runTests() {
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall removes an in-root final symlink without deleting its victim', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const victimPath = path.join(targetRoot, 'victim.md');
+      const destinationPath = path.join(targetRoot, 'managed.md');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(victimPath, 'victim sentinel\n');
+      try {
+        fs.symlinkSync(victimPath, destinationPath);
+      } catch {
+        console.log('    (symlink unsupported on this platform; skipping)');
+        return;
+      }
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.ok(!fs.existsSync(destinationPath));
+      assert.strictEqual(fs.readFileSync(victimPath, 'utf8'), 'victim sentinel\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall rejects a symlink inserted after initial destination validation', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+    const targetRoot = path.join(projectRoot, '.cursor');
+    const destinationParent = path.join(targetRoot, 'late-parent');
+    const backupParent = path.join(targetRoot, 'late-parent-backup');
+    const destinationPath = path.join(destinationParent, 'managed.md');
+    const outsideDestinationPath = path.join(outsideRoot, 'managed.md');
+    const originalExistsSync = fs.existsSync;
+    let canonicalDestinationParent;
+    let canonicalDestinationPath;
+    let insertedSymlink = false;
+    let result;
+
+    try {
+      fs.mkdirSync(destinationParent, { recursive: true });
+      fs.writeFileSync(destinationPath, 'managed\n');
+      fs.writeFileSync(outsideDestinationPath, 'outside sentinel\n');
+      writeCursorState(projectRoot, {
+        operations: [
+          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+        ],
+      });
+      canonicalDestinationPath = fs.realpathSync(destinationPath);
+      canonicalDestinationParent = path.dirname(canonicalDestinationPath);
+
+      fs.existsSync = function existsSyncWithLateSymlink(candidatePath) {
+        if (!insertedSymlink && path.resolve(candidatePath) === canonicalDestinationPath) {
+          fs.renameSync(canonicalDestinationParent, backupParent);
+          fs.symlinkSync(
+            outsideRoot,
+            canonicalDestinationParent,
+            process.platform === 'win32' ? 'junction' : 'dir'
+          );
+          insertedSymlink = true;
+        }
+        return originalExistsSync.call(fs, candidatePath);
+      };
+
+      result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+    } finally {
+      fs.existsSync = originalExistsSync;
+    }
+
+    try {
+      assert.strictEqual(insertedSymlink, true);
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.ok(result.results[0].error.includes('outside the install root'));
+      assert.strictEqual(
+        fs.readFileSync(outsideDestinationPath, 'utf8'),
+        'outside sentinel\n'
+      );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
     }
   })) passed++; else failed++;
 

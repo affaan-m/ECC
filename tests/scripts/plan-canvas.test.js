@@ -118,7 +118,8 @@ async function main() {
   const htmlArtifact = path.join(tmp, 'report.html');
   fs.writeFileSync(htmlArtifact, '<!DOCTYPE html><html><body><h1>Report</h1></body></html>');
   fs.writeFileSync(path.join(tmp, 'style.css'), 'body { color: red }');
-  fs.writeFileSync(path.join(os.tmpdir(), 'plan-canvas-outside.txt'), 'secret');
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-canvas-outside-'));
+  fs.writeFileSync(path.join(outsideDir, 'secret.txt'), 'secret');
 
   const store = createSessionStore({ stateDir: path.join(tmp, 'state') });
   let idleFired = false;
@@ -209,7 +210,7 @@ async function main() {
     const ok = await request(port, 'GET', `/artifact/${key}/style.css`);
     assert.strictEqual(ok.statusCode, 200);
     assert.ok(ok.body.includes('color: red'));
-    const escape = await request(port, 'GET', `/artifact/${key}/..%2Fplan-canvas-outside.txt`);
+    const escape = await request(port, 'GET', `/artifact/${key}/..%2F${path.basename(outsideDir)}%2Fsecret.txt`);
     assert.strictEqual(escape.statusCode, 403);
   })) passed++; else failed++;
 
@@ -252,9 +253,118 @@ async function main() {
     assert.strictEqual(result.items[0].anchor.selector, 'h2:nth-of-type(1)');
     assert.strictEqual(result.items[1].verdict, 'request-changes');
 
-    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'working'));
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'thinking'));
     await waitFor(() => sse.received.some(e => e.event === 'chat-sync' && e.data.chat.length === 2));
     sse.close();
+  })) passed++; else failed++;
+
+  // Regression: feedback sent with nobody parked on `await` used to leave the
+  // pill claiming "agent working" while the message sat undelivered forever.
+  if (await test('feedback with no listener reports queued, not working', async () => {
+    const queuedArtifact = path.join(tmp, 'queued.plan.md');
+    fs.writeFileSync(queuedArtifact, '# Plan: Queued\n');
+    const opened = jsonBody(await request(port, 'POST', '/api/sessions', { body: { file: queuedArtifact } }));
+    const sse = openSse(port, opened.key);
+    await sse.ready;
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'waiting'));
+
+    const post = await request(port, 'POST', `/api/session/${opened.key}/feedback`, {
+      body: { items: [{ kind: 'chat', text: 'anyone there?' }] }
+    });
+    assert.strictEqual(jsonBody(post).presence, 'queued');
+    assert.strictEqual(canvas.presenceFor(opened.key), 'queued');
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'queued'));
+
+    // Draining it hands the batch over and flips the indicator to thinking.
+    const drained = jsonBody(await request(port, 'GET', `/api/await?key=${opened.key}&timeoutMs=0`));
+    assert.strictEqual(drained.status, 'feedback');
+    assert.strictEqual(canvas.presenceFor(opened.key), 'thinking');
+    sse.close();
+  })) passed++; else failed++;
+
+  if (await test('typing endpoint drives the indicator and reply clears it', async () => {
+    const typingArtifact = path.join(tmp, 'typing.plan.md');
+    fs.writeFileSync(typingArtifact, '# Plan: Typing\n');
+    const opened = jsonBody(await request(port, 'POST', '/api/sessions', { body: { file: typingArtifact } }));
+    const sse = openSse(port, opened.key);
+    await sse.ready;
+
+    const typing = await request(port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'typing' } });
+    assert.strictEqual(jsonBody(typing).presence, 'typing');
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'typing'));
+
+    const thinking = await request(port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
+    assert.strictEqual(jsonBody(thinking).presence, 'thinking');
+
+    const bad = await request(port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'dancing' } });
+    assert.strictEqual(bad.statusCode, 400);
+
+    // A landed reply must take the bubble down, not leave it spinning.
+    await request(port, 'POST', `/api/session/${opened.key}/reply`, { body: { text: 'done' } });
+    assert.strictEqual(canvas.presenceFor(opened.key), 'waiting');
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'waiting'));
+    sse.close();
+  })) passed++; else failed++;
+
+  if (await test('thinking and typing states expire instead of sticking', async () => {
+    const staleArtifact = path.join(tmp, 'stale.plan.md');
+    fs.writeFileSync(staleArtifact, '# Plan: Stale\n');
+    const staleStore = createSessionStore({ stateDir: path.join(tmp, 'stale-state') });
+    const staleCanvas = createPlanCanvasServer({
+      store: staleStore,
+      version: '9.9.9-test',
+      idleTimeoutMs: 0,
+      thinkingStaleMs: 40,
+      typingExpiryMs: 20,
+      presenceSweepMs: 0
+    });
+    const bound = await staleCanvas.listen(0);
+    const opened = jsonBody(await request(bound.port, 'POST', '/api/sessions', { body: { file: staleArtifact } }));
+
+    await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'typing' } });
+    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'typing');
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'waiting');
+
+    // An abandoned agent decays to queued so the human is never told a
+    // stalled session is still being worked on.
+    await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
+    await request(bound.port, 'POST', `/api/session/${opened.key}/feedback`, {
+      body: { items: [{ kind: 'chat', text: 'still there?' }] }
+    });
+    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'thinking');
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.strictEqual(staleCanvas.presenceFor(opened.key), 'queued');
+    await staleCanvas.close();
+  })) passed++; else failed++;
+
+  // The stuck pill only self-heals if the decay is pushed to an idle browser
+  // that is not making any requests of its own.
+  if (await test('presence sweep pushes the decayed state to an idle browser', async () => {
+    const sweepArtifact = path.join(tmp, 'sweep.plan.md');
+    fs.writeFileSync(sweepArtifact, '# Plan: Sweep\n');
+    const sweepStore = createSessionStore({ stateDir: path.join(tmp, 'sweep-state') });
+    const sweepCanvas = createPlanCanvasServer({
+      store: sweepStore,
+      version: '9.9.9-test',
+      idleTimeoutMs: 0,
+      thinkingStaleMs: 50,
+      presenceSweepMs: 20
+    });
+    const bound = await sweepCanvas.listen(0);
+    const opened = jsonBody(await request(bound.port, 'POST', '/api/sessions', { body: { file: sweepArtifact } }));
+    const sse = openSse(bound.port, opened.key);
+    await sse.ready;
+
+    await request(bound.port, 'POST', `/api/session/${opened.key}/typing`, { body: { state: 'thinking' } });
+    await waitFor(() => sse.received.some(e => e.event === 'presence' && e.data.state === 'thinking'));
+
+    const before = sse.received.length;
+    await waitFor(() =>
+      sse.received.slice(before).some(e => e.event === 'presence' && e.data.state === 'waiting')
+    );
+    sse.close();
+    await sweepCanvas.close();
   })) passed++; else failed++;
 
   if (await test('long-poll heartbeat whitespace arrives before the payload', async () => {
@@ -359,7 +469,7 @@ async function main() {
   })) passed++; else failed++;
 
   fs.rmSync(tmp, { recursive: true, force: true });
-  fs.rmSync(path.join(os.tmpdir(), 'plan-canvas-outside.txt'), { force: true });
+  fs.rmSync(outsideDir, { recursive: true, force: true });
 
   console.log('\n' + '='.repeat(40));
   console.log(`Passed: ${passed}`);

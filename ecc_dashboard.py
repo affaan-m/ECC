@@ -656,10 +656,17 @@ Usage: This skill is automatically activated when working with related technolog
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Populate
-        for i, cmd in enumerate(self.commands, 1):
-            self.command_tree.insert('', tk.END, text=str(i), 
+        self.populate_commands(self.commands)
+
+    def populate_commands(self, commands: List[Dict]):
+        """Populate commands list"""
+        for item in self.command_tree.get_children():
+            self.command_tree.delete(item)
+
+        for i, cmd in enumerate(commands, 1):
+            self.command_tree.insert('', tk.END, text=str(i),
                                    values=('/' + cmd['name'], cmd['description']))
-    
+
     # =========================================================================
     # RULES TAB
     # =========================================================================
@@ -868,6 +875,8 @@ Project: github.com/affaan-m/ECC"""
         # Repopulate
         self.populate_agents(self.agents)
         self.populate_skills(self.skills)
+        self.populate_commands(self.commands)
+        self.populate_rules(self.rules)
         
         # Update status
         self.status_label.config(
