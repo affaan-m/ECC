@@ -88,6 +88,13 @@ function backendSupports(capabilities, backend, shard, manifest) {
   // none of the v1 adapters provides a complete no-network boundary, so
   // unrestricted networking must be explicit rather than a post-run surprise.
   if (['lume', 'lima', 'tart'].includes(backend) && !network.open) return false;
+  // DECISION: CONVENTIONS item 37 keeps hosted native execution fail-closed:
+  // v1 cannot preserve disabled/domain-only egress, and its report boundary is
+  // intentionally unavailable to untrusted commands.
+  if (
+    ['ci', 'ci-native'].includes(backend)
+    && (!network.open || manifest.needs.trust !== 'first-party')
+  ) return false;
   if (Array.isArray(entry.targets) && !entry.targets.some(target => targetMatches(target, shard))) {
     return false;
   }
@@ -214,6 +221,22 @@ function missingRoute(shard, manifest, capabilities, localOnly) {
       fix: 'Target Linux with microsandbox, or remove native OS needs after reviewing the network policy',
     };
   }
+  if (
+    !localOnly
+    && backendEntry(capabilities, 'ci').available
+    && manifest.needs.trust === 'untrusted'
+  ) {
+    return {
+      reason: 'CI-native v1 cannot produce trustworthy evidence for untrusted commands',
+      fix: 'Target an available local hardened backend, or keep the untrusted test on Linux Tier 1',
+    };
+  }
+  if (!localOnly && backendEntry(capabilities, 'ci').available && !network.open) {
+    return {
+      reason: 'CI-native v1 cannot enforce disabled egress',
+      fix: 'Add network:* only after accepting hosted-runner egress, or use a local backend that preserves the requested boundary',
+    };
+  }
   if (!localOnly && !backendEntry(capabilities, 'ci').available) {
     return {
       reason: `no local backend satisfies ${shard.os}/${shard.arch}, and GitHub CLI authentication is unavailable`,
@@ -238,16 +261,26 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
 
   const rules = [
     {
+      id: 'ci-native-forced',
+      tier: 3,
+      // DECISION: CONVENTIONS item 36 makes the checked-in sandbox matrix force its native
+      // runner so an under-declared command that escalated from Tier 1 cannot
+      // be routed straight back into another container on the hosted runner.
+      eligible: () => options.forceCiNative === true && !network.domainAllowlist,
+      candidates: () => ['ci-native'],
+      reason: 'the sandbox matrix explicitly requires execution on its native hosted runner',
+    },
+    {
       id: 'tier-0-process',
       tier: 0,
-      eligible: () => tierZeroEligible(manifest, shard, host),
+      eligible: () => options.forceCiNative !== true && tierZeroEligible(manifest, shard, host),
       candidates: () => ['srt'],
       reason: 'host-matching process isolation satisfies the declared needs',
     },
     {
       id: 'tier-1-ephemeral',
       tier: 1,
-      eligible: () => tierOneEligible(manifest, shard),
+      eligible: () => options.forceCiNative !== true && tierOneEligible(manifest, shard),
       candidates: () => tierOneCandidates(manifest),
       reason: 'an ephemeral Linux environment is the cheapest clean venue for the declared needs',
     },
@@ -257,21 +290,25 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
       // DECISION: CONVENTIONS item 26 exposes the already-disposable hosted
       // runner only behind an explicit workflow capability. Inside that
       // workflow it must win over incidental VM tooling on the runner image.
-      eligible: () => !network.domainAllowlist,
+      eligible: () => options.forceCiNative !== true && !network.domainAllowlist,
       candidates: () => ['ci-native'],
       reason: 'the explicitly enabled disposable GitHub runner is native to the target OS',
     },
     {
       id: 'tier-2-native',
       tier: 2,
-      eligible: () => !network.domainAllowlist,
+      eligible: () => options.forceCiNative !== true && !network.domainAllowlist,
       candidates: () => tierTwoCandidates(shard),
       reason: 'OS-native behavior requires a local full VM',
     },
     {
       id: 'ci-fallback',
       tier: 3,
-      eligible: () => !options.localOnly && !network.domainAllowlist,
+      eligible: () => (
+        options.forceCiNative !== true
+        && !options.localOnly
+        && !network.domainAllowlist
+      ),
       candidates: () => ['ci'],
       reason: 'the requested OS or native capability is unavailable locally',
     },
@@ -291,6 +328,29 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
       reason: rule.reason,
       notes: routeNotes(backend, manifest),
       result: 'routable',
+    };
+  }
+
+  if (options.forceCiNative === true) {
+    let forcedReason = 'the sandbox matrix forced native execution but ci-native is unavailable';
+    let forcedFix = 'Run only inside the checked-in sandbox matrix with GITHUB_ACTIONS=true and ECC_SANDBOX_CI_NATIVE=1';
+    if (manifest.needs.trust === 'untrusted') {
+      forcedReason = 'the sandbox matrix refuses untrusted CI-native execution in v1';
+      forcedFix = 'Run untrusted code in a local hardened Tier 1 backend';
+    } else if (!network.open) {
+      forcedReason = 'the sandbox matrix requires explicit network:* because its native runner cannot disable egress';
+      forcedFix = 'Add network:* only after accepting hosted-runner egress';
+    }
+    return {
+      os: shard.os,
+      arch: shard.arch,
+      backend: null,
+      tier: null,
+      rule: null,
+      reason: forcedReason,
+      fix: forcedFix,
+      notes: [],
+      result: 'error',
     };
   }
 
@@ -350,27 +410,73 @@ function resolveTierOneFallback(manifest, capabilities, shard, options = {}) {
 function resolveRuntimeEscalation(manifest, capabilities, sourceRoute, options = {}) {
   // DECISION: CONVENTIONS item 24 permits one SRT denial rerun; `any` may move
   // from the native host process to a Linux ephemeral environment.
+  // DECISION: CONVENTIONS item 36 permits one cleanup-gated container rerun on
+  // a native local guest or the forced-native hosted runner.
   const shard = {
     os: manifest.needs.os[0] === 'any' ? 'linux' : sourceRoute.os,
     arch: sourceRoute.arch,
   };
-  if (sourceRoute.backend !== 'srt') {
+  if (sourceRoute.backend === 'srt') {
+    return resolveTierOneFallback(manifest, capabilities, shard, {
+      ...options,
+      rule: 'runtime-tier-1-escalation',
+      reason: 'an installer or system-write denial requires one ephemeral rerun',
+    });
+  }
+
+  if (['podman', 'docker', 'microsandbox'].includes(sourceRoute.backend)) {
+    const nativeBackend = firstSupported(
+      tierTwoCandidates(shard),
+      capabilities,
+      shard,
+      manifest
+    );
+    if (nativeBackend) {
+      return {
+        ...shard,
+        backend: nativeBackend,
+        tier: 2,
+        rule: 'runtime-tier-2-escalation',
+        reason: 'a high-confidence container failure requires native OS behavior',
+        notes: routeNotes(nativeBackend, manifest),
+        result: 'routable',
+      };
+    }
+
+    if (!options.localOnly && backendSupports(capabilities, 'ci', shard, manifest)) {
+      return {
+        ...shard,
+        backend: 'ci',
+        tier: 3,
+        rule: 'runtime-ci-escalation',
+        reason: 'native OS behavior is unavailable locally and requires hosted CI',
+        notes: [],
+        result: 'routable',
+      };
+    }
+
+    const missing = missingRoute(shard, manifest, capabilities, options.localOnly === true);
     return {
       ...shard,
       backend: null,
       tier: null,
       rule: null,
-      reason: 'only a Tier 0 SRT result can escalate to Tier 1 in this phase',
-      fix: 'Correct the manifest needs or inspect the selected backend report',
+      ...missing,
       notes: [],
       result: 'error',
     };
   }
-  return resolveTierOneFallback(manifest, capabilities, shard, {
-    ...options,
-    rule: 'runtime-tier-1-escalation',
-    reason: 'an installer or system-write denial requires one ephemeral rerun',
-  });
+
+  return {
+    ...shard,
+    backend: null,
+    tier: null,
+    rule: null,
+    reason: 'only a Tier 0 SRT or Tier 1 container result can escalate',
+    fix: 'Correct the manifest needs or inspect the selected backend report',
+    notes: [],
+    result: 'error',
+  };
 }
 
 function routeManifest(manifest, capabilities, options = {}) {

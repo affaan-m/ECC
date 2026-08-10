@@ -218,13 +218,45 @@ uses these decisions to preserve its stated safety and fidelity goals:
     the operator to the supported unattended IPSW create path for the one-time
     seed. Normal sandbox runs remain offline with respect to OS acquisition and
     clone only that stopped local seed.
+34. The agent surface remains a skill plus CLI contract. The Claude-specific
+    failure hook is optional, non-blocking, and advisory only; it never runs a
+    sandbox, widens permissions, or replaces report parsing. It inspects bounded
+    failure output rather than command input, stays silent on truncated input,
+    and leaves other harnesses on the same skill/CLI path. Hook guidance resolves
+    the CLI only from its trusted absolute installed location; a content-only
+    managed install instead names the one-time `ecc-universal` runtime command.
+    Tier 1's read-only source mount is explicitly not a confidentiality boundary,
+    so untrusted code with egress must start from a sanitized staging directory.
+35. The shipped demo installs the current checkout's minimal Codex profile into
+    a disposable Tier 1 home with networking disabled. This exercises the real
+    managed installer and produces a complete bounded layer diff without
+    depending on an unpublished npm version or weakening the read-only source
+    mount.
+36. A failed Tier 1 container may consume the run's single escalation only when
+    the failed command and bounded output jointly match a high-confidence
+    systemd, Windows registry, or GUI/native-display signature and container
+    cleanup succeeded. Routing prefers a satisfying local Tier 2 guest, then CI;
+    `--local-only` forbids the latter. The matrix preserves the original manifest
+    but forces its explicitly gated disposable runner to `ci-native`, rejects
+    child artifacts that already escalated, and records the Tier 1-to-native
+    transition only in the final report. This prevents a retry loop back into a
+    hosted container and keeps the one-escalation contract global.
+37. CI-native v1 accepts only `trust: first-party` manifests that explicitly
+    declare `network:*`. Hosted runners cannot preserve disabled or domain-only
+    egress, and commands execute inside the runner evidence boundary, so
+    untrusted code must remain in a local hardened environment. CI artifacts
+    bind to a deterministic manifest digest and the exact allowed command
+    transcript; the separately checked-out aggregation job rejects child
+    escalations and substituted evidence. One mutable orchestration budget and
+    aggregate-report semantic validation enforce at most one escalation across
+    every shard, not one per child.
 
 The plan explicitly delegates uncovered decisions to the free, lightweight,
 harness-agnostic option. Items 1, 2, 5, 8, 9, 15, 16, 17, 18, and 19 resolve
 internal contract contradictions or a missing clean-machine, write-scope, or
 evidence-integrity need and are therefore treated as that delegated authority.
-Items 20-33 record the corresponding Tier 1 containment, escalation, hardened
-backend, CI-native, VM lifecycle, and evidence choices.
+Items 20-37 record the corresponding Tier 1 containment, escalation, hardened
+backend, CI-native, VM lifecycle, evidence, and agent-surface choices.
 They are surfaced here before code and in the user handoff rather than hidden
 in implementation. Every matching code departure from a written routing rule
 must include a `DECISION:` comment referring to the applicable item above.

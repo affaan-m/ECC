@@ -154,7 +154,7 @@
     {
       "name": "detected Windows Sandbox still redirects to CI in v1",
       "host": { "os": "windows", "arch": "x86_64" },
-      "needs": { "os": ["windows"], "arch": ["x86_64"], "native": true },
+      "needs": { "os": ["windows"], "arch": ["x86_64"], "capabilities": ["network:*"], "native": true },
       "backends": {
         "windows-sandbox": { "available": true },
         "ci": { "available": true, "targets": [{ "os": "windows", "arch": "x86_64" }] }
@@ -163,23 +163,45 @@
     },
     {
       "name": "unavailable Windows routes to CI",
-      "needs": { "os": ["windows"] },
+      "needs": { "os": ["windows"], "capabilities": ["network:*"] },
       "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
       "expected": ["ci"]
     },
     {
+      "name": "CI without explicit open network fails closed",
+      "needs": { "os": ["windows"] },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot enforce disabled egress"
+    },
+    {
+      "name": "untrusted CI native evidence fails closed",
+      "needs": { "os": ["windows"], "capabilities": ["network:*"], "trust": "untrusted" },
+      "backends": { "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] } },
+      "expected": [null],
+      "result": "error",
+      "reasonPattern": "cannot produce trustworthy evidence"
+    },
+    {
       "name": "all fans out independently",
-      "needs": { "os": ["all"] },
+      "needs": { "os": ["all"], "capabilities": ["network:*"] },
       "backends": {
         "srt": { "available": true },
         "podman": { "available": true, "targets": [{ "os": "linux", "arch": "arm64" }] },
-        "ci": { "available": true, "targets": [{ "os": "windows", "arch": "arm64" }] }
+        "ci": {
+          "available": true,
+          "targets": [
+            { "os": "macos", "arch": "arm64" },
+            { "os": "windows", "arch": "arm64" }
+          ]
+        }
       },
-      "expected": ["podman", "srt", "ci"]
+      "expected": ["podman", "ci", "ci"]
     },
     {
       "name": "iOS Simulator routes to capable macOS CI",
-      "needs": { "capabilities": ["ios-simulator"] },
+      "needs": { "capabilities": ["ios-simulator", "network:*"] },
       "backends": {
         "lume": { "available": true },
         "ci": {
@@ -201,7 +223,7 @@
     },
     {
       "name": "architecture mismatch routes to CI",
-      "needs": { "arch": ["x86_64"] },
+      "needs": { "arch": ["x86_64"], "capabilities": ["network:*"] },
       "backends": {
         "srt": { "available": true },
         "ci": { "available": true, "targets": [{ "os": "macos", "arch": "x86_64" }] }

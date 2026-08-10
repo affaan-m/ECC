@@ -12,7 +12,11 @@ const {
   resolveTierOneFallback,
 } = require('../../scripts/sandbox/router');
 const { buildSingleReport } = require('../../scripts/sandbox/report');
-const { executeRoute } = require('../../scripts/sandbox/ecc-sandbox');
+const {
+  containerNativeFailure,
+  executeRoute,
+  executeWithEscalation,
+} = require('../../scripts/sandbox/ecc-sandbox');
 const {
   MICROSANDBOX_VERSION,
   executeMicrosandbox,
@@ -178,6 +182,262 @@ test('runtime escalation reuses hardened Tier 1 preference and any-to-Linux mapp
   assert.strictEqual(route.result, 'routable');
   assert.strictEqual(route.os, 'linux');
   assert.strictEqual(route.backend, 'microsandbox');
+});
+
+test('recognizes only paired high-confidence native command and failure signatures', () => {
+  const report = (cmd, stderr) => buildSingleReport({
+    manifest: '/repo/sandbox.yaml',
+    backend: 'podman',
+    tier: 1,
+    os: 'linux',
+    arch: 'arm64',
+    executionMode: 'mock',
+    started: '2026-08-08T12:00:00.000Z',
+    durationMs: 1,
+    steps: [{ cmd, exit: 1, stdout_tail: '', stderr_tail: stderr }],
+    assertions: [],
+    notes: [],
+  });
+  assert.strictEqual(
+    containerNativeFailure(report(
+      'systemctl start ecc-demo',
+      'System has not been booted with systemd as init system'
+    )).family,
+    'systemd'
+  );
+  assert.strictEqual(
+    containerNativeFailure(report('reg.exe add HKLM\\Software\\ECC', "'reg.exe' is not recognized")).family,
+    'registry'
+  );
+  assert.strictEqual(
+    containerNativeFailure(report('xdg-open installer.desktop', 'cannot open display')).family,
+    'gui'
+  );
+  assert.strictEqual(
+    containerNativeFailure(report(
+      'printf preparing\nsystemctl start ecc-demo',
+      'Failed to connect to bus: No such file or directory'
+    )).family,
+    'systemd'
+  );
+  assert.strictEqual(containerNativeFailure(report('printf ok', 'cannot open display')), null);
+  assert.strictEqual(containerNativeFailure(report('systemctl start demo', 'ordinary exit 1')), null);
+  assert.strictEqual(containerNativeFailure(report(
+    "printf 'systemctl start demo'",
+    'System has not been booted with systemd as init system'
+  )), null);
+});
+
+test('container native escalation prefers local Tier 2 and honors local-only', () => {
+  const testManifest = manifest({
+    capabilities: ['clean-home', 'network:*'],
+    trust: 'first-party',
+  });
+  const host = { os: 'macos', arch: 'arm64' };
+  const base = {
+    schema_version: 1,
+    host,
+    backends: {
+      lima: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+      ci: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+    },
+  };
+  const local = resolveRuntimeEscalation(testManifest, base, {
+    backend: 'podman', os: 'linux', arch: 'arm64',
+  });
+  assert.strictEqual(local.backend, 'lima');
+  assert.strictEqual(local.tier, 2);
+
+  const ciOnly = { ...base, backends: { ci: base.backends.ci } };
+  const remote = resolveRuntimeEscalation(testManifest, ciOnly, {
+    backend: 'podman', os: 'linux', arch: 'arm64',
+  });
+  assert.strictEqual(remote.backend, 'ci');
+  const localOnly = resolveRuntimeEscalation(testManifest, ciOnly, {
+    backend: 'podman', os: 'linux', arch: 'arm64',
+  }, { localOnly: true });
+  assert.strictEqual(localOnly.result, 'error');
+  assert.match(localOnly.reason, /no local backend/);
+});
+
+test('container native escalation cannot widen trust or network authority through CI', () => {
+  const capabilities = {
+    schema_version: 1,
+    host: { os: 'macos', arch: 'arm64' },
+    backends: {
+      ci: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+    },
+  };
+  const source = { backend: 'microsandbox', os: 'linux', arch: 'arm64' };
+  const offline = resolveRuntimeEscalation(manifest({
+    capabilities: ['clean-home'],
+    trust: 'first-party',
+  }), capabilities, source);
+  assert.strictEqual(offline.result, 'error');
+  assert.match(offline.reason, /cannot enforce disabled egress/);
+
+  const untrusted = resolveRuntimeEscalation(manifest({
+    capabilities: ['clean-home', 'network:*'],
+    trust: 'untrusted',
+  }), capabilities, source);
+  assert.strictEqual(untrusted.result, 'error');
+  assert.match(untrusted.reason, /cannot produce trustworthy evidence/);
+});
+
+test('executes exactly one Podman-to-Lima native escalation and records it', () => {
+  const testManifest = manifest({
+    capabilities: ['clean-home', 'network:*'],
+    trust: 'first-party',
+    report: 'exit-only',
+    setup: ['systemctl start ecc-demo'],
+    assert: ['systemctl is-active ecc-demo'],
+  });
+  const capabilities = {
+    schema_version: 1,
+    host: { os: 'macos', arch: 'arm64' },
+    backends: {
+      podman: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+      lima: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+    },
+  };
+  const calls = [];
+  const outcome = executeWithEscalation({
+    manifest: testManifest,
+    manifestPath: '/repo/sandbox.yaml',
+    capabilities,
+  }, {
+    backend: 'podman', os: 'linux', arch: 'arm64', notes: [],
+  }, {
+    localOnly: false,
+    mock: true,
+    run: sequenceRunner([
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, PODMAN_IMAGE_ID),
+      result(0), result(0),
+      result(1, '', 'System has not been booted with systemd as init system'),
+      result(0),
+      result(0, JSON.stringify([{
+        status: 'Stopped', arch: 'aarch64',
+        config: { os: 'Linux', arch: 'aarch64', plain: true },
+      }])),
+      result(0), result(0), result(0), result(0),
+      result(0, 'started'), result(0, 'active'),
+      result(0), result(0),
+    ], calls),
+  });
+  assert.strictEqual(validateReport(outcome.report), outcome.report);
+  assert.strictEqual(outcome.report.backend, 'lima');
+  assert.strictEqual(outcome.report.result, 'pass');
+  assert.deepStrictEqual(outcome.report.escalations, [{
+    from: 'podman',
+    reason: 'container systemd failure requires native OS behavior',
+    to: 'lima',
+  }]);
+  assert.strictEqual(calls.filter(call => call.executable === 'podman').length, 6);
+  assert.strictEqual(calls.filter(call => call.executable === 'limactl').length, 9);
+});
+
+test('local-only leaves a native container failure local when no Tier 2 backend exists', () => {
+  const testManifest = manifest({
+    capabilities: ['clean-home', 'network:*'],
+    trust: 'first-party',
+    report: 'exit-only',
+    setup: ['systemctl start ecc-demo'],
+  });
+  const calls = [];
+  const outcome = executeWithEscalation({
+    manifest: testManifest,
+    manifestPath: '/repo/sandbox.yaml',
+    capabilities: {
+      schema_version: 1,
+      host: { os: 'macos', arch: 'arm64' },
+      backends: {
+        podman: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+        ci: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+      },
+    },
+  }, {
+    backend: 'podman', os: 'linux', arch: 'arm64', notes: [],
+  }, {
+    localOnly: true,
+    mock: true,
+    run: sequenceRunner([
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, PODMAN_IMAGE_ID),
+      result(0), result(0),
+      result(1, '', 'System has not been booted with systemd as init system'),
+      result(0),
+    ], calls),
+  });
+  assert.strictEqual(outcome.report.backend, 'podman');
+  assert.strictEqual(outcome.report.result, 'fail');
+  assert.deepStrictEqual(outcome.report.escalations, []);
+  assert.deepStrictEqual([...new Set(calls.map(call => call.executable))], ['podman']);
+  assert.match(outcome.report.notes.join('\n'), /Automatic native escalation unavailable/);
+  assert.match(outcome.report.notes.join('\n'), /no local backend/);
+});
+
+test('shares one escalation budget across an orchestration run', () => {
+  const testManifest = manifest({
+    capabilities: ['clean-home', 'network:*'],
+    trust: 'first-party',
+    report: 'exit-only',
+    setup: ['systemctl start ecc-demo'],
+  });
+  const capabilities = {
+    schema_version: 1,
+    host: { os: 'macos', arch: 'arm64' },
+    backends: {
+      podman: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+      lima: { available: true, targets: [{ os: 'linux', arch: 'arm64' }] },
+    },
+  };
+  const resolved = {
+    manifest: testManifest,
+    manifestPath: '/repo/sandbox.yaml',
+    capabilities,
+  };
+  const route = { backend: 'podman', os: 'linux', arch: 'arm64', notes: [] };
+  const escalationBudget = { remaining: 1 };
+  const first = executeWithEscalation(resolved, route, {
+    escalationBudget,
+    localOnly: true,
+    mock: true,
+    run: sequenceRunner([
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, PODMAN_IMAGE_ID),
+      result(0), result(0),
+      result(1, '', 'System has not been booted with systemd as init system'),
+      result(0),
+      result(0, JSON.stringify([{
+        status: 'Stopped', arch: 'aarch64',
+        config: { os: 'Linux', arch: 'aarch64', plain: true },
+      }])),
+      result(0), result(0), result(0), result(0),
+      result(0, 'started'),
+      result(0), result(0),
+    ], []),
+  });
+  assert.strictEqual(first.report.escalations.length, 1);
+  assert.strictEqual(escalationBudget.remaining, 0);
+
+  const secondCalls = [];
+  const second = executeWithEscalation(resolved, route, {
+    escalationBudget,
+    localOnly: true,
+    mock: true,
+    run: sequenceRunner([
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, PODMAN_IMAGE_ID),
+      result(0), result(0),
+      result(1, '', 'System has not been booted with systemd as init system'),
+      result(0),
+    ], secondCalls),
+  });
+  assert.strictEqual(second.report.backend, 'podman');
+  assert.deepStrictEqual(second.report.escalations, []);
+  assert.match(second.report.notes.join('\n'), /run-wide one-escalation budget/);
+  assert.deepStrictEqual([...new Set(secondCalls.map(call => call.executable))], ['podman']);
 });
 
 test('Microsandbox startup fallback fails closed for a domain allowlist', () => {

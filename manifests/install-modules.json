@@ -305,7 +305,7 @@
     {
       "id": "workflow-quality",
       "kind": "skills",
-      "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory skills, including the legacy continuous-learning v1 path. The unified-memory workflow requires the separately installed ecc-universal CLI runtime.",
+      "description": "Evaluation, TDD, verification, compaction, learning, sandbox testing, and cross-harness memory skills, including the legacy continuous-learning v1 path. The unified-memory and sandbox-testing workflows require the separately installed ecc-universal CLI runtime.",
       "paths": [
         "skills/agent-sort",
         "skills/agent-introspection-debugging",
@@ -348,8 +348,11 @@
         "skills/product-lens",
         "skills/repo-scan",
         "skills/rules-distill",
+        "skills/sandbox-testing",
         "skills/santa-method",
-        "skills/git-workflow"
+        "skills/git-workflow",
+        "docs/sandbox-testing.md",
+        "examples/sandbox"
       ],
       "targets": [
         "claude",

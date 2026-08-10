@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { readBoundedRegularFile, validateReport } = require('../contracts');
+const { contractDigest, readBoundedRegularFile, validateReport } = require('../contracts');
 const { buildAggregateReport, buildSingleReport, tailOutput } = require('../report');
 
 const CI_WORKFLOW = 'sandbox-matrix.yml';
@@ -88,6 +88,35 @@ function targetKey(target) {
   return `${target.os}/${target.arch}`;
 }
 
+function validateCiTranscript(report, manifest) {
+  const expectedCommands = [...manifest.steps.setup, ...manifest.steps.assert];
+  const actualCommands = report.steps.map(step => step.cmd);
+  if (
+    actualCommands.length > expectedCommands.length
+    || actualCommands.some((command, index) => command !== expectedCommands[index])
+  ) {
+    throw new Error('CI report command transcript does not match the manifest prefix');
+  }
+  const firstFailure = report.steps.findIndex(step => step.exit !== 0);
+  if (firstFailure !== -1 && firstFailure !== report.steps.length - 1) {
+    throw new Error('CI report contains commands after its first failed step');
+  }
+  if (report.result === 'pass' && actualCommands.length !== expectedCommands.length) {
+    throw new Error('passing CI report omitted manifest commands');
+  }
+
+  const assertionSteps = report.steps.slice(manifest.steps.setup.length);
+  if (
+    report.assertions.length !== assertionSteps.length
+    || report.assertions.some((assertion, index) => (
+      assertion.cmd !== assertionSteps[index].cmd
+      || assertion.pass !== (assertionSteps[index].exit === 0)
+    ))
+  ) {
+    throw new Error('CI report assertion evidence does not match its command transcript');
+  }
+}
+
 function syntheticErrorChild(target, options, note) {
   return buildSingleReport({
     manifest: options.manifestPath,
@@ -125,6 +154,10 @@ function reportFiles(root) {
 }
 
 function collectCiReports(directory, expectedTargets, options) {
+  if (!options.expectedManifest) {
+    throw new Error('CI artifact validation requires the expected manifest contract');
+  }
+  const expectedManifestDigest = contractDigest(options.expectedManifest);
   const expected = new Map(expectedTargets.map(target => [targetKey(target), target]));
   const reports = new Map();
   const notes = [];
@@ -135,15 +168,24 @@ function collectCiReports(directory, expectedTargets, options) {
         readBoundedRegularFile(reportPath, 'CI sandbox report')
       ));
       const key = targetKey(report);
+      const manifestNotes = report.notes.filter(note => note.startsWith('manifest_sha256='));
       if (
         report.backend !== 'ci-native'
         || report.tier !== 3
         || report.execution_mode !== options.executionMode
+        || (options.requireNoEscalations === true && report.escalations.length !== 0)
         || !expected.has(key)
         || reports.has(key)
       ) {
         throw new Error(`unexpected or duplicate CI report target: ${key}`);
       }
+      if (
+        manifestNotes.length !== 1
+        || manifestNotes[0] !== `manifest_sha256=${expectedManifestDigest}`
+      ) {
+        throw new Error(`CI report manifest digest mismatch for ${key}`);
+      }
+      validateCiTranscript(report, options.expectedManifest);
       reports.set(key, validateReport({ ...report, manifest: options.manifestPath }));
     }
   } catch (error) {
@@ -201,6 +243,7 @@ function executeCi(manifest, targets, options = {}) {
     ...options,
     clock,
     executionMode,
+    expectedManifest: manifest,
     started,
   };
   const fail = note => buildOutcome(
@@ -289,6 +332,7 @@ function executeCi(manifest, targets, options = {}) {
     }
   }
   const correlation = options.correlation || `ecc-${crypto.randomBytes(12).toString('hex')}`;
+  const manifestSha256 = contractDigest(manifest);
   const osTargets = [...new Set(targets.map(target => target.os))].sort();
   const targetInputs = targets.map(targetKey).sort();
   const dispatch = run('gh', [
@@ -299,6 +343,7 @@ function executeCi(manifest, targets, options = {}) {
     '-f', `os=${JSON.stringify(osTargets)}`,
     '-f', `targets=${JSON.stringify(targetInputs)}`,
     '-f', `correlation=${correlation}`,
+    '-f', `manifest_sha256=${manifestSha256}`,
   ], { cwd: gitRoot });
   if (!succeeded(dispatch)) {
     return fail(`CI workflow dispatch failed: ${commandDetail(dispatch)}`);
@@ -363,6 +408,7 @@ function executeCi(manifest, targets, options = {}) {
     `ci_run_id=${runId}`,
     `ci_repository=${repository}`,
     `ci_ref=${ref}`,
+    'ci_execution=forced-native',
     ...(refSha ? [`ci_ref_sha=${refSha}`] : []),
     ...collected.notes,
   ];
@@ -396,4 +442,5 @@ module.exports = {
   reportFiles,
   syntheticErrorChild,
   targetKey,
+  validateCiTranscript,
 };

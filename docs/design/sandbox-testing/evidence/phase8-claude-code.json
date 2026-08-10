@@ -1,0 +1,13 @@
+{
+  "manifest_yaml": "name: install-acme-cli\nneeds:\n  os: [linux]\n  capabilities:\n    - clean-home\n    - pkg-install\n    - network:*\n  trust: first-party\n  native: false\nresources:\n  cpu: 2\n  memory: 2GB\n  timeout: 300\nsteps:\n  setup:\n    - npm install --global acme-cli@3.1.4\n  assert:\n    - command -v acme\n    - acme --version | grep -q '^3\\.1\\.4$'\nreport: install-diff\n",
+  "interpretation": {
+    "result": "fail",
+    "backend": "podman",
+    "tier": 1,
+    "execution_mode": "real",
+    "first_failure": "acme --version | grep -q '^3.1.4$' exited 1 with empty bounded output; it is the first nonzero step and matching failed assertion.",
+    "escalation": "One recorded transition: srt -> podman at Tier 1 after pkg-install denial.",
+    "install_diff_complete": true,
+    "evidence_claim": "Real Tier 1 Podman evidence has a complete layer diff, but the version assertion failed. Isolation was degraded because Microsandbox was unavailable; this is not native or cross-platform evidence."
+  }
+}

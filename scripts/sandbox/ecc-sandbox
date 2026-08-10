@@ -35,6 +35,26 @@ const { loadMockScenario, mockRunner } = require('./mock');
 const { buildAggregateReport, tailOutput } = require('./report');
 
 const COMMANDS = ['probe', 'run', 'report', 'escalate'];
+const CONTAINER_BACKENDS = new Set(['podman', 'docker', 'microsandbox']);
+// DECISION: CONVENTIONS item 36 requires paired command/output evidence before
+// a cleaned-up Tier 1 attempt can consume the run's single escalation.
+const NATIVE_FAILURE_SIGNATURES = [
+  {
+    family: 'systemd',
+    command: /(?:^|[;&|\n])\s*(?:sudo\s+)?(?:\/usr\/bin\/)?systemctl(?:\s|$)/i,
+    output: /(?:system has not been booted with systemd|failed to connect to bus|running in chroot|systemd is not running)/i,
+  },
+  {
+    family: 'registry',
+    command: /(?:^|[;&|\n])\s*(?:reg(?:\.exe)?\s+(?:add|delete|import)|(?:new|set)-itemproperty\b[^\n]*(?:HKLM:|Registry::))/i,
+    output: /(?:reg(?:\.exe)?: (?:command not found|not found)|'reg(?:\.exe)?' is not recognized|registry editing has been disabled|unable to find the specified registry|access is denied)/i,
+  },
+  {
+    family: 'gui',
+    command: /(?:^|[;&|\n])\s*(?:(?:\/usr\/bin\/)?(?:open|xdg-open)|gio\s+open|start-process)\s+/i,
+    output: /(?:cannot open display|failed to (?:connect to|open) (?:the )?display|no display (?:name|server)|DISPLAY (?:is )?not set|no method available for opening|headless (?:environment|session))/i,
+  },
+];
 
 function writeJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -189,11 +209,42 @@ function resolveRun(options) {
   const manifest = loadManifest(manifestPath);
   const capabilities = loadCapabilities(options.capabilitiesPath);
   const decision = routeManifest(manifest, capabilities, {
+    forceCiNative: (
+      process.env.GITHUB_ACTIONS === 'true'
+      && process.env.ECC_SANDBOX_CI_NATIVE === '1'
+      && process.env.ECC_SANDBOX_CI_FORCE_NATIVE === '1'
+    ),
     localOnly: options.localOnly,
     manifestPath,
     shard: options.shard,
   });
   return { capabilities, decision, manifest, manifestPath };
+}
+
+function containerNativeFailure(report) {
+  if (
+    !report
+    || report.result !== 'fail'
+    || report.escalations.length !== 0
+    || !CONTAINER_BACKENDS.has(report.backend)
+  ) {
+    return null;
+  }
+  for (const step of report.steps) {
+    if (step.exit === 0) continue;
+    const output = `${step.stderr_tail}\n${step.stdout_tail}`;
+    const signature = NATIVE_FAILURE_SIGNATURES.find(candidate => (
+      candidate.command.test(step.cmd) && candidate.output.test(output)
+    ));
+    if (signature) {
+      return {
+        family: signature.family,
+        step,
+        reason: `container ${signature.family} failure requires native OS behavior`,
+      };
+    }
+  }
+  return null;
 }
 
 function runDryRun(options) {
@@ -281,51 +332,138 @@ function executeRoute(resolved, route, executionOptions) {
   });
 }
 
-function addEscalation(initial, destination) {
-  const failedStep = initial.report.steps.find(step => step.exit !== 0);
+function addEscalation(initial, destination, options = {}) {
+  const failedStep = options.failedStep
+    || initial.report.steps.find(step => step.exit !== 0);
   const initialEvidence = failedStep
     ? tailOutput(failedStep.stderr_tail || failedStep.stdout_tail, 10, 2_000)
     : 'policy denial detected without bounded step output';
+  const from = options.from || 'srt';
+  const reason = options.reason || 'installer or system-write policy denial';
+  const to = options.to || destination.report.backend;
+  const notePrefix = options.notePrefix || 'Initial SRT attempt denied before one-hop escalation';
   destination.report = validateReport({
     ...destination.report,
     started: initial.report.started,
     duration_ms: initial.report.duration_ms + destination.report.duration_ms,
     escalations: [{
-      from: 'srt',
-      reason: 'installer or system-write policy denial',
-      to: destination.report.backend,
+      from,
+      reason,
+      to,
     }],
     notes: [
       ...destination.report.notes,
-      `Initial SRT attempt denied before one-hop escalation: ${initialEvidence}`,
+      `${notePrefix}: ${initialEvidence}`,
     ],
   });
   return destination;
 }
 
+function executeCiRoutes(resolved, routes, executionOptions = {}) {
+  return executeCi(resolved.manifest, routes, {
+    mock: executionOptions.mock,
+    run: executionOptions.run,
+    artifactDirectory: process.env.ECC_SANDBOX_CI_ARTIFACT_DIR,
+    cwd: process.cwd(),
+    gitRoot: process.env.ECC_SANDBOX_CI_GIT_ROOT,
+    manifestPath: resolved.manifestPath,
+    ref: process.env.ECC_SANDBOX_CI_REF,
+    repository: process.env.ECC_SANDBOX_CI_REPO,
+    ...(executionOptions.ciOptions || {}),
+    requireNoEscalations: true,
+  });
+}
+
 function executeWithEscalation(resolved, route, executionOptions) {
   const initial = executeRoute(resolved, route, executionOptions);
-  if (route.backend !== 'srt' || !initial.denial?.installer) return initial;
+  const escalationBudget = executionOptions.escalationBudget || { remaining: 1 };
+  if (route.backend === 'srt' && initial.denial?.installer) {
+    const escalationRoute = resolveRuntimeEscalation(
+      resolved.manifest,
+      resolved.capabilities,
+      route
+    );
+    if (escalationRoute.result !== 'routable') {
+      initial.report = validateReport({
+        ...initial.report,
+        notes: [
+          ...initial.report.notes,
+          `Automatic escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
+        ],
+      });
+      return initial;
+    }
+    if (escalationBudget.remaining < 1) {
+      initial.report = validateReport({
+        ...initial.report,
+        notes: [
+          ...initial.report.notes,
+          'Automatic escalation skipped: the run-wide one-escalation budget is already consumed',
+        ],
+      });
+      return initial;
+    }
+    escalationBudget.remaining -= 1;
+    return addEscalation(
+      initial,
+      executeRoute(resolved, escalationRoute, executionOptions)
+    );
+  }
 
+  const nativeFailure = containerNativeFailure(initial.report);
+  if (!nativeFailure || initial.cleanup?.pass !== true) return initial;
   const escalationRoute = resolveRuntimeEscalation(
     resolved.manifest,
     resolved.capabilities,
-    route
+    { ...route, backend: initial.report.backend },
+    { localOnly: executionOptions.localOnly === true }
   );
   if (escalationRoute.result !== 'routable') {
     initial.report = validateReport({
       ...initial.report,
       notes: [
         ...initial.report.notes,
-        `Automatic escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
+        `Automatic native escalation unavailable: ${escalationRoute.reason}. ${escalationRoute.fix}`,
       ],
     });
     return initial;
   }
+  if (escalationBudget.remaining < 1) {
+    initial.report = validateReport({
+      ...initial.report,
+      notes: [
+        ...initial.report.notes,
+        'Automatic native escalation skipped: the run-wide one-escalation budget is already consumed',
+      ],
+    });
+    return initial;
+  }
+  escalationBudget.remaining -= 1;
+  const destination = escalationRoute.backend === 'ci'
+    ? executeCiRoutes(resolved, [escalationRoute], executionOptions)
+    : executeRoute(resolved, escalationRoute, executionOptions);
   return addEscalation(
     initial,
-    executeRoute(resolved, escalationRoute, executionOptions)
+    destination,
+    {
+      failedStep: nativeFailure.step,
+      from: initial.report.backend,
+      reason: nativeFailure.reason,
+      to: escalationRoute.backend,
+      notePrefix: `Initial Tier 1 ${nativeFailure.family} failure before one-hop escalation`,
+    }
   );
+}
+
+function appendExecutionReport(report, aggregate) {
+  if (report.backend === 'aggregate') {
+    aggregate.children.push(...report.children);
+    aggregate.escalations.push(...report.escalations);
+    aggregate.notes.push(...report.notes);
+    aggregate.usedCi ||= ['ci', 'mixed'].includes(report.venue);
+    return;
+  }
+  aggregate.children.push(report);
 }
 
 function runExecution(options) {
@@ -340,7 +478,12 @@ function runExecution(options) {
     run = mockRunner(loadMockScenario(path.resolve(options.mockPath), 'sandbox'));
     mock = true;
   }
-  const executionOptions = { mock, run };
+  const executionOptions = {
+    escalationBudget: { remaining: 1 },
+    localOnly: options.localOnly,
+    mock,
+    run,
+  };
   const ciRoutes = resolved.decision.routes.filter(route => route.backend === 'ci');
   const localRoutes = resolved.decision.routes.filter(route => route.backend !== 'ci');
   if (ciRoutes.length === 0 && localRoutes.length === 1) {
@@ -349,31 +492,33 @@ function runExecution(options) {
 
   const orchestrationStartedMs = Date.now();
   const started = new Date(orchestrationStartedMs).toISOString();
-  const children = localRoutes.map(route => (
-    executeWithEscalation(resolved, route, executionOptions).report
-  ));
-  const aggregateNotes = [];
-  if (ciRoutes.length > 0) {
-    const ci = executeCi(resolved.manifest, ciRoutes, {
-      ...executionOptions,
-      artifactDirectory: process.env.ECC_SANDBOX_CI_ARTIFACT_DIR,
-      cwd: process.cwd(),
-      gitRoot: process.env.ECC_SANDBOX_CI_GIT_ROOT,
-      manifestPath: resolved.manifestPath,
-      ref: process.env.ECC_SANDBOX_CI_REF,
-      repository: process.env.ECC_SANDBOX_CI_REPO,
-    });
-    children.push(...ci.report.children);
-    aggregateNotes.push(...ci.report.notes);
+  const aggregate = {
+    children: [],
+    escalations: [],
+    notes: [],
+    usedCi: ciRoutes.length > 0,
+  };
+  for (const route of localRoutes) {
+    appendExecutionReport(
+      executeWithEscalation(resolved, route, executionOptions).report,
+      aggregate
+    );
   }
-  const venue = ciRoutes.length === 0 ? 'local' : (localRoutes.length === 0 ? 'ci' : 'mixed');
+  if (ciRoutes.length > 0) {
+    const ci = executeCiRoutes(resolved, ciRoutes, executionOptions);
+    appendExecutionReport(ci.report, aggregate);
+  }
+  const venue = aggregate.usedCi
+    ? (localRoutes.length === 0 ? 'ci' : 'mixed')
+    : 'local';
   const report = buildAggregateReport({
     manifest: resolved.manifestPath,
     venue,
     started,
     durationMs: Date.now() - orchestrationStartedMs,
-    children,
-    notes: aggregateNotes,
+    children: aggregate.children,
+    escalations: aggregate.escalations,
+    notes: aggregate.notes,
   });
   return {
     report,
@@ -532,7 +677,10 @@ module.exports = {
   runEscalation,
   runReport,
   executeRoute,
+  executeCiRoutes,
   executeWithEscalation,
   addEscalation,
+  appendExecutionReport,
+  containerNativeFailure,
   writeJson,
 };

@@ -92,8 +92,15 @@ combined tree.
 | 7 | Lume bootstrap compatibility | Tested the versioned Tahoe OCI pull and official Apple IPSW creation paths with Lume 0.5.1 | OCI reconstruction failed on the current 300-part image; verified unattended IPSW creation is the documented v1 seed path |
 | 7 | local integration boundary | Full `npm test`, sandbox suite, lint, publish-surface test, and `git diff --check` | Pass on the stable final tree; 3,845/3,845 repository tests, 132/132 sandbox tests, and 2/2 publish-surface tests |
 | 7 | independent functional and security review | Re-reviewed helper ancestry/PGID escape, launcher crash/reparent, PID/IP/executable collisions, deadline bounds, lock serialization, routing, and scan evidence | Pass; both reviewers approve with no blocker/high/medium finding |
+| 8 | local agent surface | Skill initializer/validator, strict skill metadata, capability workflow, user guide, optional denial hint, install module/package surface, and schema-valid eval fixtures | Pass; skill validator, 9 skill tests, 9 hook tests, catalog, manifest, and publish-surface gates pass |
+| 8 | local real Tier 1 demo | `ecc-sandbox run examples/sandbox/install-ecc-clean-user.yaml` on Apple Silicon through the Docker fallback | Pass in 0.7 seconds; minimal Codex profile installed into a disposable Linux home, sandbox skill and install state asserted, complete 398-path layer diff, networking disabled, and container removed |
+| 8 | fresh Claude Code harness | Customization-disabled, no-session structured-output run given only the skill, task, and schema-valid failing report | Pass; generated manifest validates against the production schema and correctly identified fail/Podman/Tier 1/real, version assertion, SRT-to-Podman transition, complete diff, and degraded isolation |
+| 8 | fresh Codex harness | Ephemeral, rules-disabled, read-only run in an empty temporary directory given the same skill/task/report | Pass; portable structured output and generated manifest validate, with the same correct bounded interpretation and no repository context or tool use |
+| 8 | escalation and CI integrity hardening | Paired Tier 1 native signatures, cleanup gate, run-wide one-hop budget, first-party/open-network CI gate, forced-native execution, canonical manifest digest, exact transcript/assertion validation, and flattened multi-shard aggregates | Pass; 145/145 sandbox tests cover local Tier 2, CI, fail-closed trust/network boundaries, artifact substitution, transcript forgery, and mixed aggregation |
+| 8 | independent functional and security review | Re-reviewed agent runtime trust, source confidentiality, escalation authority, CI artifact integrity, global budget, and multi-shard aggregation after fixes | Pass; both reviewers approve with no blocker/high/medium/low finding |
+| final | local integration train | Full `npm test`, sandbox suite, lint, skill validator, workflow-security validation, catalog/registry/install-manifest checks, npm package tests, real Tier 1 demo, and `git diff --check` | Pass; 3,858/3,858 repository tests, 145/145 sandbox tests, 9/9 skill tests, 9/9 hook tests, and 2/2 publish-surface tests |
 
 ## Current gate
 
-S0 through S7 are complete. Phase 8 is released for the agent-facing skill,
-escalation hook, user guide, demo manifest, and two-harness interpretation gate.
+S0 through S8 are complete. The final integration train is released for full
+tests, lint, package/manifest checks, independent review, and PR evidence.

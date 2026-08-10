@@ -1,7 +1,7 @@
 name: native-ci-matrix-acceptance
 needs:
   os: [all]
-  capabilities: []
+  capabilities: ["network:*"]
   trust: first-party
   native: true
 resources:

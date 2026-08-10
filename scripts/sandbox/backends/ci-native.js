@@ -2,6 +2,7 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { contractDigest } = require('../contracts');
 const { buildSingleReport, normalizeStep } = require('../report');
 
 const MAX_EXEC_BUFFER = 1024 * 1024;
@@ -125,6 +126,7 @@ function executeCiNative(manifest, options = {}) {
   notes.push('CI-native runs on a disposable GitHub-hosted VM with preinstalled developer tools');
   notes.push('CI-native v1 enforces the manifest timeout; cpu and memory requests are advisory');
   notes.push('CI-native v1 cannot enforce per-domain or network-disabled egress');
+  notes.push(`manifest_sha256=${contractDigest(manifest)}`);
   if (manifest.report === 'install-diff') {
     notes.push('CI-native v1 provides no install diff; install_diff.method is none');
   }

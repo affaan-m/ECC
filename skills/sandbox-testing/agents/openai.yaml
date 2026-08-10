@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sandbox Testing"
+  short_description: "Route clean-user tests through ECC sandboxes"
+  default_prompt: "Use $sandbox-testing to write and run a sandbox manifest, then interpret the JSON report."

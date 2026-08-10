@@ -188,7 +188,7 @@ test('rejects forged capability maps before routing', () => {
 
 test('hard backend constraints reject impossible local target claims', () => {
   const manifest = validateManifest(buildManifest({
-    needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services'] },
+    needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services', 'network:*'] },
   }));
   const capabilities = {
     schema_version: 1,
@@ -296,6 +296,34 @@ test('validates single and aggregate reports through one schema', () => {
 });
 
 test('rejects malformed reports and more than one escalation', () => {
+  assert.throws(
+    () => validateReport({
+      manifest: '/tmp/sandbox.yaml',
+      backend: 'aggregate',
+      tier: null,
+      os: 'multiple',
+      arch: 'multiple',
+      venue: 'local',
+      execution_mode: 'real',
+      started: '2026-08-08T12:00:00.000Z',
+      duration_ms: 84,
+      escalations: [],
+      children: [
+        sampleSingleReport({
+          escalations: [{ from: 'srt', reason: 'denied', to: 'podman' }],
+        }),
+        sampleSingleReport({
+          backend: 'lume',
+          tier: 2,
+          os: 'macos',
+          escalations: [{ from: 'podman', reason: 'native', to: 'lume' }],
+        }),
+      ],
+      result: 'pass',
+      notes: [],
+    }),
+    error => error instanceof ContractValidationError && /at most one escalation in total/.test(error.message)
+  );
   assert.throws(
     () => validateReport(sampleSingleReport({ unexpected: true })),
     error => error instanceof ContractValidationError && /additional properties/.test(error.message)

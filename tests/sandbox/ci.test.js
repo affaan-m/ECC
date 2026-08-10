@@ -5,7 +5,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { validateManifest, validateReport } = require('../../scripts/sandbox/contracts');
+const {
+  contractDigest,
+  loadManifest,
+  validateManifest,
+  validateReport,
+} = require('../../scripts/sandbox/contracts');
 const { probeCapabilities } = require('../../scripts/sandbox/probe');
 const { defaultHost, routeManifest } = require('../../scripts/sandbox/router');
 const { buildAggregateReport, buildSingleReport } = require('../../scripts/sandbox/report');
@@ -15,6 +20,10 @@ const {
   sanitizeCiEnvironment,
 } = require('../../scripts/sandbox/backends/ci-native');
 const { collectCiReports, executeCi } = require('../../scripts/sandbox/backends/ci');
+const {
+  appendExecutionReport,
+  executeWithEscalation,
+} = require('../../scripts/sandbox/ecc-sandbox');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const cliPath = path.join(repoRoot, 'scripts', 'sandbox', 'ecc-sandbox');
@@ -38,8 +47,8 @@ function manifest(overrides = {}) {
     name: 'ci-test',
     needs: {
       os: overrides.os || ['linux'],
-      capabilities: overrides.capabilities || [],
-      trust: 'first-party',
+      capabilities: overrides.capabilities || ['network:*'],
+      trust: overrides.trust || 'first-party',
       native: overrides.native ?? true,
     },
     resources: { cpu: 1, memory: '256MB', timeout: 30 },
@@ -55,7 +64,7 @@ function result(status, stdout = '', stderr = '', error = null) {
   return { status, stdout, stderr, error };
 }
 
-function childReport(target, manifestPath, executionMode = 'mock') {
+function childReport(target, manifestPath, executionMode = 'mock', expectedManifest = manifest()) {
   return buildSingleReport({
     manifest: manifestPath,
     backend: 'ci-native',
@@ -65,9 +74,12 @@ function childReport(target, manifestPath, executionMode = 'mock') {
     executionMode,
     started: '2026-08-08T12:00:00.000Z',
     durationMs: 10,
-    steps: [{ cmd: 'node --version', exit: 0, stdout_tail: 'v20', stderr_tail: '' }],
-    assertions: [],
-    notes: [],
+    steps: [
+      { cmd: expectedManifest.steps.setup[0], exit: 0, stdout_tail: 'setup', stderr_tail: '' },
+      { cmd: expectedManifest.steps.assert[0], exit: 0, stdout_tail: 'assert', stderr_tail: '' },
+    ],
+    assertions: [{ cmd: expectedManifest.steps.assert[0], pass: true }],
+    notes: [`manifest_sha256=${contractDigest(expectedManifest)}`],
   });
 }
 
@@ -139,6 +151,44 @@ test('prefers the gated CI runner over incidental VM tools on its image', () => 
   assert.strictEqual(decision.routes[0].backend, 'ci-native');
 });
 
+test('forced matrix routing bypasses Tier 1 without changing a non-native manifest', () => {
+  const testManifest = manifest({
+    capabilities: ['clean-home', 'network:*'],
+    native: false,
+    setup: ['systemctl start ecc-demo'],
+    assert: ['systemctl is-active ecc-demo'],
+  });
+  const capabilities = {
+    schema_version: 1,
+    host: { os: 'linux', arch: 'x86_64' },
+    backends: {
+      podman: { available: true, targets: [{ os: 'linux', arch: 'x86_64' }] },
+      'ci-native': {
+        available: true,
+        targets: [{ os: 'linux', arch: 'x86_64' }],
+      },
+    },
+  };
+  assert.strictEqual(
+    routeManifest(testManifest, capabilities, { localOnly: true }).routes[0].backend,
+    'podman'
+  );
+  const forced = routeManifest(testManifest, capabilities, {
+    forceCiNative: true,
+    localOnly: true,
+  });
+  assert.strictEqual(forced.routes[0].backend, 'ci-native');
+  assert.deepStrictEqual(testManifest.steps, {
+    setup: ['systemctl start ecc-demo'],
+    assert: ['systemctl is-active ecc-demo'],
+  });
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github', 'workflows', 'sandbox-matrix.yml'),
+    'utf8'
+  );
+  assert.match(workflow, /ECC_SANDBOX_CI_FORCE_NATIVE: '1'/);
+});
+
 test('shard selection runs exactly one declared target and rejects an undeclared target', () => {
   const testManifest = manifest({ os: ['all'] });
   const capabilities = {
@@ -185,6 +235,7 @@ test('executes declared commands through the native shell with a sanitized envir
   });
   assert.strictEqual(validateReport(outcome.report), outcome.report);
   assert.strictEqual(outcome.report.result, 'pass');
+  assert.ok(outcome.report.notes.includes(`manifest_sha256=${contractDigest(manifest())}`));
   assert.deepStrictEqual(calls.map(call => call.executable), ['/bin/bash', '/bin/bash']);
   assert.strictEqual(calls[0].options.env.CUSTOM_FLAG, undefined);
   assert.strictEqual(calls[0].options.env.DEMO_SECRET_TOKEN, undefined);
@@ -233,6 +284,53 @@ test('builds and validates one deterministic aggregate report', () => {
   assert.strictEqual(aggregate.result, 'pass');
 });
 
+test('run aggregation flattens a container-to-CI result and lifts its escalation', () => {
+  const nested = buildAggregateReport({
+    manifest: '/repo/sandbox.yaml',
+    venue: 'ci',
+    started: '2026-08-08T12:00:00.000Z',
+    durationMs: 20,
+    escalations: [{
+      from: 'podman',
+      reason: 'container systemd failure requires native OS behavior',
+      to: 'ci',
+    }],
+    children: [childReport({ os: 'linux', arch: 'x86_64' }, '/runner/sandbox.yaml')],
+    notes: ['nested-ci-note'],
+  });
+  const local = buildSingleReport({
+    manifest: '/repo/sandbox.yaml',
+    backend: 'srt',
+    tier: 0,
+    os: 'macos',
+    arch: 'arm64',
+    executionMode: 'mock',
+    started: '2026-08-08T12:00:00.000Z',
+    durationMs: 1,
+    steps: [{ cmd: 'printf local', exit: 0, stdout_tail: 'local', stderr_tail: '' }],
+    assertions: [],
+    notes: [],
+  });
+  const state = { children: [], escalations: [], notes: [], usedCi: false };
+  appendExecutionReport(nested, state);
+  appendExecutionReport(local, state);
+  const outer = buildAggregateReport({
+    manifest: '/repo/sandbox.yaml',
+    venue: state.usedCi ? 'mixed' : 'local',
+    started: '2026-08-08T12:00:00.000Z',
+    durationMs: 21,
+    children: state.children,
+    escalations: state.escalations,
+    notes: state.notes,
+  });
+  assert.strictEqual(validateReport(outer), outer);
+  assert.strictEqual(outer.venue, 'mixed');
+  assert.strictEqual(outer.children.length, 2);
+  assert.ok(outer.children.every(child => child.backend !== 'aggregate'));
+  assert.strictEqual(outer.escalations.length, 1);
+  assert.ok(outer.notes.includes('nested-ci-note'));
+});
+
 test('collects expected reports and synthesizes a missing-target error', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ci-artifacts-'));
   try {
@@ -243,6 +341,7 @@ test('collects expected reports and synthesizes a missing-target error', () => {
     writeArtifact(tempRoot, targets[0], childReport(targets[0], '/runner/sandbox.yaml'));
     const collected = collectCiReports(tempRoot, targets, {
       executionMode: 'mock',
+      expectedManifest: manifest(),
       manifestPath: '/repo/sandbox.yaml',
       started: '2026-08-08T12:00:00.000Z',
     });
@@ -258,6 +357,7 @@ test('fails closed on substituted, duplicate, or symbolic-link artifacts', () =>
   const expected = [{ os: 'linux', arch: 'x86_64' }];
   const options = {
     executionMode: 'mock',
+    expectedManifest: manifest(),
     manifestPath: '/repo/sandbox.yaml',
     started: '2026-08-08T12:00:00.000Z',
   };
@@ -296,6 +396,7 @@ test('rejects a mock report when real CI evidence is required', () => {
     writeArtifact(tempRoot, target, childReport(target, '/runner/sandbox.yaml', 'mock'));
     const collected = collectCiReports(tempRoot, [target], {
       executionMode: 'real',
+      expectedManifest: manifest(),
       manifestPath: '/repo/sandbox.yaml',
       started: '2026-08-08T12:00:00.000Z',
     });
@@ -304,6 +405,73 @@ test('rejects a mock report when real CI evidence is required', () => {
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('rejects a forced-native artifact that already records an escalation', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ci-double-escalation-'));
+  try {
+    const target = { os: 'linux', arch: 'x86_64' };
+    const report = childReport(target, '/runner/sandbox.yaml');
+    report.escalations = [{ from: 'srt', reason: 'unexpected retry', to: 'podman' }];
+    writeArtifact(tempRoot, target, report);
+    const collected = collectCiReports(tempRoot, [target], {
+      executionMode: 'mock',
+      expectedManifest: manifest(),
+      manifestPath: '/repo/sandbox.yaml',
+      requireNoEscalations: true,
+      started: '2026-08-08T12:00:00.000Z',
+    });
+    assert.strictEqual(collected.children[0].result, 'error');
+    assert.match(collected.notes[0], /failed closed/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('binds CI artifacts to one manifest digest and exact command transcript', () => {
+  const target = { os: 'linux', arch: 'x86_64' };
+  const expectedManifest = manifest();
+  const variants = {
+    'missing digest': report => { report.notes = []; },
+    'duplicate digest': report => { report.notes.push(report.notes[0]); },
+    'substituted digest': report => { report.notes[0] = `manifest_sha256=${'0'.repeat(64)}`; },
+    'reordered commands': report => { report.steps.reverse(); },
+    'appended command': report => {
+      report.steps.push({ cmd: 'printf forged', exit: 0, stdout_tail: '', stderr_tail: '' });
+    },
+    'omitted passing command': report => {
+      report.steps.pop();
+      report.assertions = [];
+    },
+    'relabeled assertion': report => { report.assertions[0].cmd = 'printf forged'; },
+  };
+  for (const [name, mutate] of Object.entries(variants)) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ci-binding-'));
+    try {
+      const report = childReport(target, '/runner/sandbox.yaml', 'mock', expectedManifest);
+      mutate(report);
+      writeArtifact(tempRoot, target, report);
+      const collected = collectCiReports(tempRoot, [target], {
+        executionMode: 'mock',
+        expectedManifest,
+        manifestPath: '/repo/sandbox.yaml',
+        requireNoEscalations: true,
+        started: '2026-08-08T12:00:00.000Z',
+      });
+      assert.strictEqual(collected.children[0].result, 'error', name);
+      assert.match(collected.notes[0], /failed closed/, name);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }
+
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github', 'workflows', 'sandbox-matrix.yml'),
+    'utf8'
+  );
+  assert.match(workflow, /manifest_sha256/);
+  assert.match(workflow, /expectedManifest: loadManifest/);
+  assert.match(workflow, /requireNoEscalations: true/);
 });
 
 test('refuses to dispatch when the remote ref differs from local HEAD', () => {
@@ -415,12 +583,19 @@ test('CLI mock dispatch downloads and merges three target reports', () => {
     const capabilitiesPath = path.join(tempRoot, 'capabilities.json');
     const mockPath = path.join(tempRoot, 'mock.json');
     const artifactRoot = path.join(tempRoot, 'artifacts');
+    const matrixManifest = loadManifest(path.join(
+      repoRoot,
+      'tests',
+      'fixtures',
+      'sandbox',
+      'ci-matrix.yaml'
+    ));
     fs.mkdirSync(artifactRoot);
     for (const target of targets) {
       writeArtifact(
         artifactRoot,
         target,
-        childReport(target, '/runner/tests/fixtures/sandbox/ci-matrix.yaml')
+        childReport(target, '/runner/tests/fixtures/sandbox/ci-matrix.yaml', 'mock', matrixManifest)
       );
     }
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
@@ -458,6 +633,97 @@ test('CLI mock dispatch downloads and merges three target reports', () => {
     assert.strictEqual(report.execution_mode, 'mock');
     assert.strictEqual(report.children.length, 3);
     assert.ok(report.notes.includes('ci_run_id=123456'));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('executes one Podman-to-CI native escalation with unchanged commands', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-ci-native-escalation-'));
+  try {
+    const manifestPath = path.join(
+      repoRoot,
+      'tests',
+      'fixtures',
+      'sandbox',
+      'container-native-escalation.yaml'
+    );
+    const testManifest = loadManifest(manifestPath);
+    const target = { os: 'linux', arch: 'arm64' };
+    const artifact = buildSingleReport({
+      manifest: manifestPath,
+      backend: 'ci-native',
+      tier: 3,
+      os: target.os,
+      arch: target.arch,
+      executionMode: 'mock',
+      started: '2026-08-08T12:00:00.000Z',
+      durationMs: 10,
+      steps: [
+        { cmd: testManifest.steps.setup[0], exit: 0, stdout_tail: '', stderr_tail: '' },
+        { cmd: testManifest.steps.assert[0], exit: 0, stdout_tail: 'active', stderr_tail: '' },
+      ],
+      assertions: [{ cmd: testManifest.steps.assert[0], pass: true }],
+      notes: [`manifest_sha256=${contractDigest(testManifest)}`],
+    });
+    writeArtifact(tempRoot, target, artifact);
+    const calls = [];
+    const mockResults = [
+      result(0, '{"host":{"security":{"rootless":true}}}'),
+      result(0, `sha256:${'b'.repeat(64)}`),
+      result(0), result(0),
+      result(1, '', 'System has not been booted with systemd as init system'),
+      result(0),
+      result(0),
+      result(0, 'https://github.com/example/ecc/actions/runs/123456\n'),
+      result(0), result(0),
+    ];
+    let index = 0;
+    const outcome = executeWithEscalation({
+      manifest: testManifest,
+      manifestPath,
+      capabilities: {
+        schema_version: 1,
+        host: { os: 'macos', arch: 'arm64' },
+        backends: {
+          podman: { available: true, targets: [target] },
+          ci: { available: true, targets: [target] },
+        },
+      },
+    }, {
+      backend: 'podman', os: target.os, arch: target.arch, notes: [],
+    }, {
+      localOnly: false,
+      mock: true,
+      run: (executable, argv, options) => {
+        calls.push({ executable, argv, options });
+        return mockResults[index++] || result(null, '', '', new Error('mock exhausted'));
+      },
+      ciOptions: {
+        artifactDirectory: tempRoot,
+        gitRoot: repoRoot,
+        ref: 'feat/test',
+        repository: 'example/ecc',
+      },
+    });
+    assert.strictEqual(validateReport(outcome.report), outcome.report);
+    assert.strictEqual(outcome.report.backend, 'aggregate');
+    assert.strictEqual(outcome.report.venue, 'ci');
+    assert.strictEqual(outcome.report.result, 'pass');
+    assert.deepStrictEqual(outcome.report.escalations, [{
+      from: 'podman',
+      reason: 'container systemd failure requires native OS behavior',
+      to: 'ci',
+    }]);
+    assert.deepStrictEqual(
+      outcome.report.children[0].steps.map(step => step.cmd),
+      [...testManifest.steps.setup, ...testManifest.steps.assert]
+    );
+    const dispatch = calls.find(call => call.executable === 'gh' && call.argv[0] === 'workflow');
+    assert.ok(dispatch);
+    assert.ok(dispatch.argv.includes(`manifest=tests/fixtures/sandbox/container-native-escalation.yaml`));
+    assert.ok(dispatch.argv.includes(`manifest_sha256=${contractDigest(testManifest)}`));
+    assert.strictEqual(index, mockResults.length);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

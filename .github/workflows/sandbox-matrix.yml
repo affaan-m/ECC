@@ -34,6 +34,10 @@ on:
         required: true
         default: ecc-manual-run
         type: string
+      manifest_sha256:
+        description: Canonical SHA-256 emitted by ecc-sandbox dispatch
+        required: true
+        type: string
   repository_dispatch:
     types: [sandbox-matrix]
 
@@ -55,8 +59,12 @@ jobs:
         target: ${{ fromJSON(inputs.targets || github.event.client_payload.targets || '["linux/x86_64","macos/arm64","windows/x86_64"]') }}
     env:
       ECC_SANDBOX_CI_NATIVE: '1'
+      # Preserve the manifest but bypass Tier 0/1 routing on the native runner.
+      ECC_SANDBOX_CI_FORCE_NATIVE: '1'
       MATRIX_CORRELATION: ${{ inputs.correlation || github.event.client_payload.correlation || format('ecc-pr-{0}', github.run_id) }}
+      MATRIX_EVENT: ${{ github.event_name }}
       MATRIX_MANIFEST: ${{ inputs.manifest || github.event.client_payload.manifest || 'tests/fixtures/sandbox/ci-matrix.yaml' }}
+      MATRIX_MANIFEST_SHA256: ${{ inputs.manifest_sha256 || github.event.client_payload.manifest_sha256 || '' }}
       MATRIX_OS: ${{ inputs.os || github.event.client_payload.os || '["linux","macos","windows"]' }}
       MATRIX_TARGET: ${{ matrix.target }}
 
@@ -81,7 +89,7 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const path = require('path');
-          const { loadManifest } = require('./scripts/sandbox/contracts');
+          const { contractDigest, loadManifest } = require('./scripts/sandbox/contracts');
           const allowed = new Set([
             'linux/x86_64', 'linux/arm64',
             'macos/x86_64', 'macos/arm64',
@@ -102,7 +110,15 @@ jobs:
           }
           const stat = fs.lstatSync(manifest);
           if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('manifest must be a regular file');
-          loadManifest(manifest);
+          const loadedManifest = loadManifest(manifest);
+          const actualDigest = contractDigest(loadedManifest);
+          const suppliedDigest = process.env.MATRIX_MANIFEST_SHA256;
+          if (process.env.MATRIX_EVENT !== 'pull_request' && !/^[0-9a-f]{64}$/.test(suppliedDigest)) {
+            throw new Error('manifest_sha256 is required for remote dispatch');
+          }
+          if (suppliedDigest && suppliedDigest !== actualDigest) {
+            throw new Error('manifest_sha256 does not match the checked-out manifest');
+          }
           const actualOs = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];
           const actualArch = { x64: 'x86_64', arm64: 'arm64' }[process.arch];
           if (`${actualOs}/${actualArch}` !== process.env.MATRIX_TARGET) {
@@ -180,6 +196,7 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           const { collectCiReports } = require('./scripts/sandbox/backends/ci');
+          const { loadManifest } = require('./scripts/sandbox/contracts');
           const { buildAggregateReport } = require('./scripts/sandbox/report');
           const targets = JSON.parse(process.env.MATRIX_TARGETS).map(value => {
             const [os, arch, extra] = value.split('/');
@@ -192,7 +209,9 @@ jobs:
             targets,
             {
               executionMode: 'real',
+              expectedManifest: loadManifest(process.env.MATRIX_MANIFEST),
               manifestPath: process.env.MATRIX_MANIFEST,
+              requireNoEscalations: true,
               started,
             }
           );

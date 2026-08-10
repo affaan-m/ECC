@@ -96,7 +96,7 @@ function buildAggregateReport(options) {
     execution_mode: modes.size === 1 ? children[0].execution_mode : 'mixed',
     started: options.started,
     duration_ms: Math.max(0, Math.round(options.durationMs || 0)),
-    escalations: [],
+    escalations: options.escalations || [],
     children,
     result,
     notes: options.notes || [],
