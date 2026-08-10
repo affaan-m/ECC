@@ -66,15 +66,16 @@ installer, or point it at the launcher yourself:
 ## Codex CLI
 
 Codex's TUI status line only supports built-in widgets, so ECC covers Codex in
-three layers. Only the last one involves tmux, and it is the only one that
-does; everything else works in a plain terminal window:
+three layers. None of them require tmux: the three-line bar renders in tmux's
+status lines when you use tmux, and in a dedicated bottom pane when you use
+WezTerm without it.
 
 | Surface | Needs | Where it shows |
 | --- | --- | --- |
 | Native widgets | nothing, written at install time | under Codex's input composer |
 | Title mirror | the `ecc-codex` wrapper | window or tab title, any terminal |
 | User var | the wrapper, plus a one-line terminal config | WezTerm and iTerm2 status bars |
-| Three-line bar | the wrapper, inside tmux | tmux status lines |
+| Three-line bar | the wrapper, in tmux or WezTerm | tmux status lines, or a pane at the bottom of the WezTerm window |
 
 **1. Native widgets (in the TUI)** — the bar under Codex's input composer.
 Codex has no API for custom status-line commands, so ECC configures Codex's
@@ -132,11 +133,24 @@ While Codex owns the screen, the wrapper re-renders the bar from the newest
 ```
 
 Neither channel involves tmux. The title mirror needs no configuration at all,
-and the two terminals below can pin the user var in their own status bar.
+and the terminals below get more.
 
-**WezTerm**: copy [`examples/wezterm-ecc-bar.lua`](../examples/wezterm-ecc-bar.lua)
-next to your `wezterm.lua` and require it, for an always-visible bar in the tab
-bar's right status:
+**WezTerm**: nothing to configure. Running `ecc-codex` outside tmux in WezTerm
+opens a three-line pane across the bottom of the window, the same bar tmux
+users get, and closes it when Codex exits. The pane is created with
+`--top-level`, so it spans the whole window instead of subdividing whichever
+pane Codex is in, and focus returns to Codex immediately. It also watches the
+wrapper's process and closes itself if Codex is killed without unwinding, so a
+crashed run cannot strand a bar pane in your window.
+
+A pane is needed because WezTerm's only status area is the tab bar: a single
+line, shared with the tab strip, which cannot hold three lines and cannot be
+detached from the tabs.
+
+Set `ECC_CODEX_PANE=off` to keep the window intact and fall back to the title
+and user var. For a compact one-liner in the tab bar instead of a pane, copy
+[`examples/wezterm-ecc-bar.lua`](../examples/wezterm-ecc-bar.lua) next to your
+`wezterm.lua` and require it:
 
 ```lua
 require("wezterm-ecc-bar").apply()
@@ -209,9 +223,10 @@ status bar — it blends into any theme, light or dark. Segment colors use
 iTerm2, and mainstream Linux terminals.
 
 tmux is optional. Without it you still get the native TUI widgets, the title
-mirror, and the WezTerm or iTerm2 status bar described above; tmux only adds
-the three-line variant, because a multi-line status bar is the one thing a
-plain terminal cannot give a full-screen TUI.
+mirror, the iTerm2 status bar, and, in WezTerm, the same three lines in a
+bottom pane. Only terminals with neither tmux nor a scriptable status area
+fall back to the title alone, because a full-screen TUI leaves nowhere else
+to draw.
 
 `--full` renders the Claude-style two-line bar (usage bars, then
 `⬢ ECC <version> │ plugins … │ dir`); `--plain` strips colors (used for

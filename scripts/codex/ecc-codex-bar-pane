@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# ecc-codex-bar-pane: draw the three-line usage bar in a dedicated pane.
+#
+# WezTerm has no second status bar. Its only status area is the tab bar, which
+# fits one line and sits alongside the tabs, so the three-line bar needs a real
+# pane of its own. ecc-codex creates that pane at the bottom of the window and
+# runs this script in it.
+#
+# The script watches the PID of the ecc-codex process that spawned it and exits
+# when that goes away. The pane closes with it, so a Codex run that dies without
+# unwinding its traps cannot strand a bar pane in the window.
+#
+# Usage: ecc-codex-bar-pane <renderer.js> <watch-pid> [interval-seconds]
+
+set -u
+
+RENDERER="${1:?renderer path required}"
+WATCH_PID="${2:?pid to watch required}"
+INTERVAL="${3:-15}"
+
+# A status pane has no use for a cursor, and leaving it visible parks a block
+# on whichever line drew last.
+printf '\033[?25l'
+trap 'printf "\033[?25h"' EXIT INT TERM
+
+draw() {
+  local line
+  # Home the cursor and clear each line as it is rewritten rather than clearing
+  # the whole pane first, which would flash on every refresh.
+  printf '\033[H'
+  while IFS= read -r line; do
+    printf '%s\033[K\n' "$line"
+  done < <(node "$RENDERER" --full 2>/dev/null)
+  # Drop anything a previously longer render left behind.
+  printf '\033[J'
+}
+
+while kill -0 "$WATCH_PID" 2>/dev/null; do
+  draw
+  # Sleep in one-second steps so the pane closes promptly when Codex exits
+  # instead of lingering for the rest of the refresh interval.
+  for _ in $(seq "$INTERVAL"); do
+    kill -0 "$WATCH_PID" 2>/dev/null || break 2
+    sleep 1
+  done
+done

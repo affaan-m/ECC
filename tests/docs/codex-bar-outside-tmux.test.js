@@ -21,6 +21,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 
 const WRAPPER = 'scripts/codex/ecc-codex';
 const EXAMPLE = 'examples/wezterm-ecc-bar.lua';
+const PANE = 'scripts/codex/ecc-codex-bar-pane';
 const DOC = 'docs/STATUSLINE.md';
 const SEP = '│';
 
@@ -146,8 +147,49 @@ test('docs state that tmux is optional', () => {
 
   assert.ok(doc.includes('tmux is optional'), 'docs must say tmux is optional');
   assert.ok(
-    /Three-line bar \| the wrapper, inside tmux/.test(doc),
-    'the surface table must scope tmux to the three-line bar'
+    /Three-line bar \| the wrapper, in tmux or WezTerm/.test(doc),
+    'the surface table must offer the three-line bar outside tmux too'
+  );
+  assert.ok(
+    doc.includes('ECC_CODEX_PANE=off'),
+    'docs must document how to opt out of the WezTerm pane'
+  );
+});
+
+test('WezTerm gets the three-line bar in a pane of its own', () => {
+  const wrapper = read(WRAPPER);
+  const pane = read(PANE);
+
+  // The pane is the only way to show three lines in WezTerm, so the wrapper
+  // must open one and, critically, tear it down again.
+  assert.ok(wrapper.includes('wezterm_bar_on'), 'wrapper must open the bar pane');
+  const cleanup = wrapper.slice(wrapper.indexOf('cleanup() {'), wrapper.indexOf('trap cleanup'));
+  assert.ok(
+    cleanup.includes('wezterm_bar_off'),
+    'cleanup must close the bar pane or it outlives Codex'
+  );
+
+  // --top-level spans the window instead of subdividing Codex's own pane.
+  assert.ok(wrapper.includes('--top-level'), 'the pane must span the whole window');
+  assert.ok(wrapper.includes('--cells 3'), 'the pane must be three lines tall');
+  assert.ok(
+    wrapper.includes('activate-pane'),
+    'focus must return to Codex after the split'
+  );
+  assert.ok(
+    /\[ -z "\$\{TMUX:-\}" \]/.test(wrapper),
+    'the pane must not open inside tmux, which already draws the bar'
+  );
+
+  // A wrapper killed with SIGKILL never runs its trap, so the pane has to be
+  // able to close itself.
+  assert.ok(
+    pane.includes('kill -0 "$WATCH_PID"'),
+    'the pane must exit when the process it was opened for goes away'
+  );
+  assert.ok(
+    pane.includes('--full'),
+    'the pane must render all three lines'
   );
 });
 
