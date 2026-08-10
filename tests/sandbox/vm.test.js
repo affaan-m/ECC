@@ -496,7 +496,9 @@ test('cleanup failure upgrades an otherwise passing VM run to error', () => {
   assert.match(outcome.report.notes.join('\n'), /cleanup failed/);
 });
 
-test('CLI mock mode routes to Lume and emits one schema-valid report', () => {
+test('CLI mock mode routes to Lume on Apple Silicon and emits one schema-valid report', () => {
+  const hostArch = process.arch === 'x64' ? 'x86_64' : process.arch;
+  if (process.platform !== 'darwin' || hostArch !== 'arm64') return;
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-vm-cli-'));
   try {
     const capabilitiesPath = path.join(tempRoot, 'capabilities.json');
