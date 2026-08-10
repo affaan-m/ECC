@@ -20,6 +20,16 @@ const DEBOUNCE_MS = 550;
 
 export default function AddressField({ value, onChange, placeholder, autoFocus, onSubmit }) {
   const [suggestions, setSuggestions] = useState([]);
+  // The exact text `suggestions` was fetched for. Typing further while a
+  // fetch is in flight used to leave the previous keystroke's results on
+  // screen — fully clickable — for the whole 550ms debounce plus network
+  // time, so tapping the visible (but stale) top result could silently pick
+  // an address for text you'd already moved past rather than what you'd
+  // actually finished typing. Gating the list on this match, rather than
+  // clearing it outright on every keystroke, keeps it from also flashing
+  // empty while you're mid-edit of an address it already has real results
+  // for.
+  const [suggestionsFor, setSuggestionsFor] = useState('');
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   // Set when the current text came from a picked suggestion, so we don't
@@ -46,6 +56,7 @@ export default function AddressField({ value, onChange, placeholder, autoFocus, 
       const found = await suggestAddresses(q, { signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       setSuggestions(found);
+      setSuggestionsFor(q);
       setLoading(false);
       if (found.length) setOpen(true);
     }, DEBOUNCE_MS);
@@ -81,7 +92,7 @@ export default function AddressField({ value, onChange, placeholder, autoFocus, 
         autoComplete="off"
       />
       {loading && <span className="address-field-hint muted small">Looking up…</span>}
-      {open && suggestions.length > 0 && (
+      {open && suggestions.length > 0 && suggestionsFor === (value || '').trim() && (
         <ul className="address-suggestions">
           {suggestions.map((s) => (
             <li key={`${s.lat},${s.lng}`}>

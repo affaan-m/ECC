@@ -142,6 +142,8 @@ export default function ContactsPage() {
       phone: '',
       email: '',
       address: '',
+      addressLat: null,
+      addressLng: null,
       photo: '',
       statusId: state.statuses[0]?.id || '',
       tagsText: '',
@@ -170,6 +172,13 @@ export default function ContactsPage() {
       phone: adding.phone.trim(),
       email: adding.email.trim(),
       address,
+      // Carried from AddressField when the address came from a picked
+      // suggestion, not typed free text — dropped here before, so a
+      // disambiguated pick (exactly the reason to offer suggestions at all)
+      // was silently thrown away and the address re-geocoded blind on save,
+      // same one-shot "first hit" lookup a free-typed address falls back to.
+      addressLat: adding.addressLat ?? null,
+      addressLng: adding.addressLng ?? null,
       photo: adding.photo || '',
       statusId: adding.statusId,
       tags: adding.tagsText
