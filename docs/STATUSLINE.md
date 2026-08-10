@@ -67,15 +67,16 @@ installer, or point it at the launcher yourself:
 
 Codex's TUI status line only supports built-in widgets, so ECC covers Codex in
 three layers. None of them require tmux: the three-line bar renders in tmux's
-status lines when you use tmux, and in a dedicated bottom pane when you use
-WezTerm without it.
+status lines under tmux, in a dedicated bottom pane under WezTerm, and in
+reserved rows at the bottom of the window in a plain terminal such as
+Terminal.app.
 
 | Surface | Needs | Where it shows |
 | --- | --- | --- |
 | Native widgets | nothing, written at install time | under Codex's input composer |
 | Title mirror | the `ecc-codex` wrapper | window or tab title, any terminal |
 | User var | the wrapper, plus a one-line terminal config | WezTerm and iTerm2 status bars |
-| Three-line bar | the wrapper, in tmux or WezTerm | tmux status lines, or a pane at the bottom of the WezTerm window |
+| Three-line bar | the wrapper, in tmux, WezTerm, or any VT100 terminal | tmux status lines, a bottom pane in WezTerm, or reserved rows at the bottom of the window |
 
 **1. Native widgets (in the TUI)** — the bar under Codex's input composer.
 Codex has no API for custom status-line commands, so ECC configures Codex's
@@ -147,8 +148,8 @@ A pane is needed because WezTerm's only status area is the tab bar: a single
 line, shared with the tab strip, which cannot hold three lines and cannot be
 detached from the tabs.
 
-Set `ECC_CODEX_PANE=off` to keep the window intact and fall back to the title
-and user var. For a compact one-liner in the tab bar instead of a pane, copy
+Set `ECC_CODEX_PANE=off` to keep the window intact and fall back to the
+reserved-rows mode described below. For a compact one-liner in the tab bar instead of a pane, copy
 [`examples/wezterm-ecc-bar.lua`](../examples/wezterm-ecc-bar.lua) next to your
 `wezterm.lua` and require it:
 
@@ -166,6 +167,19 @@ If you would rather inline the logic than copy the file, split the bar with a
 plain `find`, never a Lua character class: `[^│]` matches *bytes*, and `│`
 (`e2 94 82`) shares its leading `e2` with `⬢`, `█`, `░` and `↻`, so a
 class-based split cuts those glyphs in half and emits invalid UTF-8.
+
+**Terminal.app and other plain terminals**: nothing to configure. The wrapper
+reserves the bottom three rows of the window and paints the bar there, so it
+sits directly under Codex's input composer, and releases them on exit.
+
+This is possible because Codex draws inline rather than on the alternate
+screen. Setting the DECSTBM scroll margins to rows 1 to H-3 means Codex cannot
+scroll into the last three rows, so the bar holds while Codex redraws above it.
+The margins are re-asserted on every repaint, which picks up window resizes
+without tracking `SIGWINCH`, and the whole sequence is wrapped in DECSC/DECRC
+so Codex never sees its cursor move. Windows shorter than nine rows are left
+alone rather than losing a third of the screen. `ECC_CODEX_REGION=off` disables
+it.
 
 **iTerm2**: enable the status bar under Settings, Profiles, Session, then
 Configure Status Bar, and drag in an **Interpolated String** component with:
@@ -223,10 +237,8 @@ status bar — it blends into any theme, light or dark. Segment colors use
 iTerm2, and mainstream Linux terminals.
 
 tmux is optional. Without it you still get the native TUI widgets, the title
-mirror, the iTerm2 status bar, and, in WezTerm, the same three lines in a
-bottom pane. Only terminals with neither tmux nor a scriptable status area
-fall back to the title alone, because a full-screen TUI leaves nowhere else
-to draw.
+mirror, the iTerm2 status bar, the same three lines in a WezTerm bottom pane,
+and the same three lines in reserved rows in a plain terminal.
 
 `--full` renders the Claude-style two-line bar (usage bars, then
 `⬢ ECC <version> │ plugins … │ dir`); `--plain` strips colors (used for

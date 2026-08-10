@@ -11,6 +11,7 @@
 # Env:   ECC_CODEX_BAR=off          disable the bar (plain `codex` passthrough)
 #        ECC_CODEX_BAR_INTERVAL=15  refresh interval in seconds
 #        ECC_CODEX_PANE=off         no WezTerm bottom pane (title/user var only)
+#        ECC_CODEX_REGION=off       no reserved bottom rows in plain terminals
 
 set -euo pipefail
 
@@ -91,6 +92,71 @@ wezterm_bar_off() {
   WEZTERM_BAR_PANE=""
 }
 
+# Plain terminals (Terminal.app and friends) get the three lines in a reserved
+# region at the bottom of the window.
+#
+# This works only because Codex draws inline rather than on the alternate
+# screen (verified: tmux reports alternate_on=0 for a running Codex). Setting
+# the DECSTBM scroll margins to rows 1..H-3 means Codex physically cannot
+# scroll into the last three rows, so the bar stays put while Codex redraws
+# above it.
+REGION_ACTIVE=0
+
+in_plain_terminal() {
+  [ "${ECC_CODEX_REGION:-on}" != "off" ] \
+    && [ -z "${TMUX:-}" ] \
+    && [ -z "$WEZTERM_BAR_PANE" ]
+}
+
+term_rows() {
+  local rows
+  rows="$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')"
+  case "$rows" in
+    '' | 0 | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$rows"
+}
+
+region_on() {
+  in_plain_terminal || return 0
+  local rows
+  rows="$(term_rows)" || return 0
+  # Refuse to carve three rows out of a window too short to spare them.
+  [ "$rows" -gt 8 ] || return 0
+  REGION_ACTIVE=1
+  printf '\033[1;%dr\033[%d;1H' "$((rows - 3))" "$((rows - 3))" > /dev/tty
+}
+
+# Repaint the reserved rows. The scroll margins are re-asserted every time so a
+# window resize is picked up without tracking SIGWINCH: DECSTBM homes the
+# cursor, which is why the whole sequence is wrapped in DECSC/DECRC (\0337 and
+# \0338) and Codex never sees its cursor move.
+region_paint() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  local rows base l1 l2 l3
+  rows="$(term_rows)" || return 0
+  [ "$rows" -gt 8 ] || return 0
+  base=$((rows - 2))
+
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; } \
+    < <(node "$RENDERER" --full 2>/dev/null)
+
+  printf '\0337\033[1;%dr\033[%d;1H%s\033[K\033[%d;1H%s\033[K\033[%d;1H%s\033[K\0338' \
+    "$((rows - 3))" \
+    "$base" "${l1-}" "$((base + 1))" "${l2-}" "$((base + 2))" "${l3-}" \
+    > /dev/tty
+}
+
+region_off() {
+  [ "$REGION_ACTIVE" = 1 ] || return 0
+  local rows
+  REGION_ACTIVE=0
+  rows="$(term_rows)" || return 0
+  # Drop the margins first, then wipe the rows the bar was using so the shell
+  # prompt does not land on top of a stale bar.
+  printf '\033[r\0337\033[%d;1H\033[J\0338' "$((rows - 2))" > /dev/tty
+}
+
 tmux_bar_on() {
   in_tmux || return 0
   tmux set status 4 >/dev/null 2>&1 || return 0
@@ -138,6 +204,7 @@ cleanup() {
   fi
   tmux_bar_off
   wezterm_bar_off
+  region_off
   emit "$(printf '\033]2;\007')"
   emit "$(printf '\033]1337;SetUserVar=ecc_codex_bar=\007')"
 }
@@ -145,12 +212,15 @@ trap cleanup EXIT INT TERM
 
 tmux_bar_on
 wezterm_bar_on
+region_on
 
 update_bar
+region_paint
 (
   while :; do
     sleep "$INTERVAL"
     update_bar
+    region_paint
   done
 ) &
 UPDATER_PID=$!

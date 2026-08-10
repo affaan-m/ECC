@@ -2,9 +2,9 @@
 # ecc-codex-bar-pane: draw the three-line usage bar in a dedicated pane.
 #
 # WezTerm has no second status bar. Its only status area is the tab bar, which
-# fits one line and sits alongside the tabs, so the three-line bar needs a real
-# pane of its own. ecc-codex creates that pane at the bottom of the window and
-# runs this script in it.
+# fits one line and sits alongside the tabs, so the three-line bar needs a pane
+# of its own. ecc-codex creates that pane at the bottom of the window and runs
+# this script in it.
 #
 # The script watches the PID of the ecc-codex process that spawned it and exits
 # when that goes away. The pane closes with it, so a Codex run that dies without
@@ -18,25 +18,73 @@ RENDERER="${1:?renderer path required}"
 WATCH_PID="${2:?pid to watch required}"
 INTERVAL="${3:-15}"
 
-# A status pane has no use for a cursor, and leaving it visible parks a block
-# on whichever line drew last.
-printf '\033[?25l'
-trap 'printf "\033[?25h"' EXIT INT TERM
+LINES_WANTED=3
+
+# The alternate screen has no scrollback, so nothing this pane draws can ever
+# accumulate into history, and leaving it restores whatever was there before.
+printf '\033[?1049h\033[?25l'
+trap 'printf "\033[?25h\033[?1049l"' EXIT INT TERM
+
+# Ask the controlling terminal directly. `tput lines` is the obvious choice and
+# the wrong one: it trusts a stale $LINES and falls back to a terminfo default
+# when stderr is redirected, and a wrong reading here resizes the pane.
+pane_height() {
+  local rows
+  rows="$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')"
+  case "$rows" in
+    '' | 0 | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$rows"
+}
+
+# A WezTerm window resize redistributes rows across panes proportionally, which
+# would leave the bar taller than it needs or, worse, too short to show all
+# three lines. Nudge it back whenever it drifts.
+pin_height() {
+  local height="$1" delta
+  [ -n "${WEZTERM_PANE:-}" ] || return 0
+  command -v wezterm >/dev/null 2>&1 || return 0
+  [ "$height" -ne "$LINES_WANTED" ] || return 0
+
+  delta=$((LINES_WANTED - height))
+  # A real resize drifts the pane by a few rows. A large delta means the height
+  # reading is not trustworthy, and acting on it would collapse the pane.
+  [ "${delta#-}" -le 10 ] || return 0
+
+  if [ "$delta" -gt 0 ]; then
+    wezterm cli adjust-pane-size --pane-id "$WEZTERM_PANE" Up --amount "$delta" \
+      >/dev/null 2>&1 || true
+  else
+    wezterm cli adjust-pane-size --pane-id "$WEZTERM_PANE" Down --amount "$((-delta))" \
+      >/dev/null 2>&1 || true
+  fi
+}
 
 draw() {
-  local line
-  # Home the cursor and clear each line as it is rewritten rather than clearing
-  # the whole pane first, which would flash on every refresh.
-  printf '\033[H'
-  while IFS= read -r line; do
-    printf '%s\033[K\n' "$line"
-  done < <(node "$RENDERER" --full 2>/dev/null)
-  # Drop anything a previously longer render left behind.
-  printf '\033[J'
+  local height="$1" l1 l2 l3
+
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; } \
+    < <(node "$RENDERER" --full 2>/dev/null)
+
+  # Address each row absolutely and never emit a newline. A newline written on
+  # the last row of the pane scrolls it, which is what pushed copies of line 1
+  # into the scrollback and left the bar drifting out of view.
+  printf '\033[1;1H%s\033[K\033[2;1H%s\033[K\033[3;1H%s\033[K' \
+    "${l1-}" "${l2-}" "${l3-}"
+
+  # Only clear below the bar when there is actually a row below it. On a pane
+  # of exactly three rows the cursor address would clamp back onto line 3 and
+  # the erase would wipe it.
+  if [ "$height" -gt "$LINES_WANTED" ]; then
+    printf '\033[%d;1H\033[J' "$((LINES_WANTED + 1))"
+  fi
 }
 
 while kill -0 "$WATCH_PID" 2>/dev/null; do
-  draw
+  height="$(pane_height)" || height="$LINES_WANTED"
+  pin_height "$height"
+  draw "$height"
+
   # Sleep in one-second steps so the pane closes promptly when Codex exits
   # instead of lingering for the rest of the refresh interval.
   for _ in $(seq "$INTERVAL"); do
