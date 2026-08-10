@@ -45,7 +45,7 @@ const SAFE_REQUEST_PATHS = new Set([
   '/api/sessions',
   '/api/end'
 ]);
-const SESSION_REPLY_PATH = /^\/api\/session\/[a-f0-9]{12}\/reply$/;
+const SESSION_REPLY_PATH = /^\/api\/session\/[a-f0-9]{12}\/(reply|typing)$/;
 
 function usage() {
   return [
@@ -55,6 +55,8 @@ function usage() {
     '  node scripts/plan-canvas.js                      Show server status and sessions',
     '  node scripts/plan-canvas.js open <file>          Open (or resume) a review session',
     '  node scripts/plan-canvas.js await <file>         Block until the human sends feedback',
+    '  node scripts/plan-canvas.js pending              Show feedback queued for no listener',
+    '  node scripts/plan-canvas.js typing <file>        Show a thinking/typing indicator in chat',
     '  node scripts/plan-canvas.js end <file>           End a session as the agent',
     '  node scripts/plan-canvas.js stop                 Shut down the canvas server',
     '  node scripts/plan-canvas.js server               Run the server in the foreground',
@@ -64,6 +66,7 @@ function usage() {
     '         --reopen       Reopen a session the user ended from the browser',
     '  await: --reply <msg>  Show an agent reply in the canvas chat before waiting',
     '         --timeout-ms <n>  Return {status:"waiting"} after n ms (tests/debug only)',
+    '  typing: --state <thinking|typing|idle>  Defaults to typing',
     '  server: --port <n> --host <h>',
     '',
     'Environment: ECC_PLAN_CANVAS_PORT, ECC_PLAN_CANVAS_STATE_DIR, ECC_PLAN_CANVAS_IDLE_MS'
@@ -293,6 +296,35 @@ async function cmdAwait(file, args, { stateDir, port }) {
   return result;
 }
 
+// Show the human an activity indicator in the canvas chat. Cheap and
+// fire-and-forget: a failed signal must never derail the actual work.
+async function cmdTyping(file, args, { port }) {
+  if (!file) throw new Error('typing requires a file path');
+  const state = valueAfter(args, '--state') || 'typing';
+  if (!(await healthCheck(port))) return { status: 'no-server' };
+  const key = sessionKeyFor(canonicalizeArtifactPath(file));
+  const res = await request(port, 'POST', `/api/session/${key}/typing`, { state });
+  if (res.statusCode !== 200) throw new Error(res.body.error || `typing failed (HTTP ${res.statusCode})`);
+  return { status: 'ok', state, presence: res.body.presence };
+}
+
+// Report feedback the human sent that no agent has picked up yet. Reads state
+// directly so it answers even when the server has idled out.
+function cmdPending({ stateDir }) {
+  const store = createSessionStore({ stateDir });
+  const waiting = store
+    .list()
+    .filter(session => session.status !== 'ended' && session.pending > 0)
+    .map(session => ({ file: session.file, pending: session.pending, updatedAt: session.updatedAt }));
+  return {
+    status: waiting.length ? 'pending' : 'clear',
+    sessions: waiting,
+    next_step: waiting.length
+      ? 'Run `ecc-plan-canvas await <file>` for each file above to receive the messages.'
+      : 'No canvas feedback is waiting.'
+  };
+}
+
 async function cmdEnd(file, { port }) {
   if (!file) throw new Error('end requires a file path');
   if (!(await healthCheck(port))) return { status: 'no-server' };
@@ -359,6 +391,8 @@ async function main(argv = process.argv.slice(2)) {
     if (command === null) output(await cmdStatus(context));
     else if (command === 'open') output(await cmdOpen(args[0], args, context));
     else if (command === 'await') output(await cmdAwait(args[0], args, context));
+    else if (command === 'pending') output(cmdPending(context));
+    else if (command === 'typing') output(await cmdTyping(args[0], args, context));
     else if (command === 'end') output(await cmdEnd(args[0], context));
     else if (command === 'stop') output(await cmdStop(context));
     else if (command === 'server') await cmdServer(args, context);

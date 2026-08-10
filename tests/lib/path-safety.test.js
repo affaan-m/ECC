@@ -87,7 +87,9 @@ try {
         )
       );
     } finally {
-      fs.rmSync(linkedParent, { force: true });
+      // Unlink the directory symlink itself. Node 24 rejects rmSync() here
+      // with EISDIR even though older supported runtimes accepted it.
+      fs.unlinkSync(linkedParent);
       fs.rmSync(realParent, { recursive: true, force: true });
     }
   });

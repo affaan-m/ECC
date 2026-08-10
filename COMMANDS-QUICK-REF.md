@@ -152,6 +152,20 @@ executable instructions or policy.
 
 ---
 
+## Install Health & Feedback CLI
+
+These lifecycle commands are also available through the `ecc` CLI.
+
+| Command | What it does |
+|---------|-------------|
+| `ecc list-installed` | Show installs recorded in ECC's managed state |
+| `ecc doctor` | Diagnose missing or drifted managed files and point failures to the short problem form |
+| `ecc repair` | Restore missing or drifted managed files |
+| `ecc uninstall` | Remove only install-state-managed files and optionally show the 20-second exit-feedback route |
+| `ecc feedback` | Show the public problem, quick-feedback, and feature routes without reading files or uploading diagnostics |
+
+---
+
 ## Learning & Improvement
 
 | Command | What it does |
