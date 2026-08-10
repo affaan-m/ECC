@@ -175,8 +175,9 @@ uses these decisions to preserve its stated safety and fidelity goals:
     capturing descendants, and bind each helper's PID, birth time, and exact
     command before signaling it. This includes Foundation helpers that create
     independent process groups. Runs verify Apple's two-running-macOS-guest
-    ceiling and always attempt stop and deletion. Lume combines remote stdout
-    and stderr, so the report records
+    ceiling, stop the owned launcher tree, explicitly stop the guest, and only
+    then attempt deletion. Lume combines remote stdout and stderr, so the report
+    records
     that limitation. The seed is explicitly operator-trusted local state: ECC
     verifies the tagged JSON identity as stopped macOS/arm64 state but does not
     attest the guest disk. Lume and Tart share one stale-owner-aware host lock,

@@ -496,6 +496,43 @@ test('cleanup failure upgrades an otherwise passing VM run to error', () => {
   assert.match(outcome.report.notes.join('\n'), /cleanup failed/);
 });
 
+test('stops a managed Lume guest after its launcher exits and before deletion', () => {
+  const calls = [];
+  let alive = true;
+  const child = {
+    pid: 71_000,
+    forceStop: () => { alive = false; return true; },
+    isAlive: () => alive,
+    isOwned: () => alive,
+    prepareStop: () => true,
+    signalOwned: () => { alive = false; },
+    unref() {},
+  };
+  const exitOnly = manifest();
+  exitOnly.report = 'exit-only';
+  const outcome = executeLume(exitOnly, {
+    arch: 'arm64',
+    manifestPath: '/repo/managed-launcher.yaml',
+    mock: true,
+    run: (executable, argv) => {
+      calls.push(argv);
+      if (argv[0] === 'get') return result(0, lumeSeedJson);
+      if (argv[0] === 'ls') return result(0, '[]');
+      return result(0);
+    },
+    seed: 'ecc-macos-seed',
+    sleep: () => {},
+    start: () => ({ ...result(0), child }),
+    vmName: 'ecc-lume-managed-launcher-test',
+  });
+  const stopIndex = calls.findIndex(argv => argv[0] === 'stop');
+  const deleteIndex = calls.findIndex(argv => argv[0] === 'delete');
+  assert.strictEqual(outcome.report.result, 'pass');
+  assert.strictEqual(outcome.cleanup.pass, true);
+  assert.ok(stopIndex >= 0);
+  assert.ok(deleteIndex > stopIndex);
+});
+
 test('CLI mock mode routes to Lume on Apple Silicon and emits one schema-valid report', () => {
   const hostArch = process.arch === 'x64' ? 'x86_64' : process.arch;
   if (process.platform !== 'darwin' || hostArch !== 'arm64') return;
