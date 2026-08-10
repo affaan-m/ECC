@@ -428,7 +428,10 @@ function executeVm(manifest, options) {
     if (startedVm) {
       try {
         const stop = invoke(driver.stopArgs(vmName), MAX_EXEC_BUFFER, CLEANUP_TIMEOUT_MS);
-        if (!succeeded(stop)) notes.push(`${driver.backend} stop failed before forced deletion: ${resultDetail(stop)}`);
+        if (!succeeded(stop)) {
+          executionError = true;
+          notes.push(`${driver.backend} stop failed before forced deletion: ${resultDetail(stop)}`);
+        }
       } catch (error) {
         executionError = true;
         notes.push(`${driver.backend} stop raised an adapter error: ${error.message}`);

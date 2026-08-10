@@ -533,6 +533,28 @@ test('stops a managed Lume guest after its launcher exits and before deletion', 
   assert.ok(deleteIndex > stopIndex);
 });
 
+test('reports an error when VM stop fails even if forced deletion succeeds', () => {
+  const exitOnly = manifest();
+  exitOnly.report = 'exit-only';
+  const outcome = executeLume(exitOnly, {
+    arch: 'arm64',
+    manifestPath: '/repo/stop-failure.yaml',
+    mock: true,
+    run: (executable, argv) => {
+      if (argv[0] === 'get') return result(0, lumeSeedJson);
+      if (argv[0] === 'ls') return result(0, '[]');
+      if (argv[0] === 'stop') return result(1, '', 'guest still running');
+      return result(0);
+    },
+    seed: 'ecc-macos-seed',
+    sleep: () => {},
+    vmName: 'ecc-lume-stop-failure-test',
+  });
+  assert.strictEqual(outcome.report.result, 'error');
+  assert.strictEqual(outcome.cleanup.pass, true);
+  assert.match(outcome.report.notes.join('\n'), /stop failed before forced deletion/);
+});
+
 test('CLI mock mode routes to Lume on Apple Silicon and emits one schema-valid report', () => {
   const hostArch = process.arch === 'x64' ? 'x86_64' : process.arch;
   if (process.platform !== 'darwin' || hostArch !== 'arm64') return;
