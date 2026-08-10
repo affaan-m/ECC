@@ -5,6 +5,12 @@
 - **Code, commits, PR/MR**: English
 - **Conversation with user**: Korean
 
+## Model Delegation
+
+For all coding tasks, use your judgment to decide an appropriate
+lower-power model (e.g. sonnet/haiku) and run the task in a subagent
+with that model, reserving the top-tier model for planning and review.
+
 ## Before Writing Code
 
 Read the affected area first and match the project's existing
