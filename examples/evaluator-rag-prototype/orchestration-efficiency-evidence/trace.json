@@ -18,7 +18,7 @@
       "evidence": [
         "skills/context-budget/SKILL.md",
         "node tests/lib/orchestration-session.test.js",
-        "contributed orchestration smoke evidence pinned to commit 527296f"
+        "https://github.com/Phelan164/codex-howto/blob/527296fa7d9ba1828d639ec000e0543c42ee2739/examples/measurements/incident-orchestration-smoke-2026-08-11.md"
       ]
     },
     {

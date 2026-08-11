@@ -453,6 +453,7 @@ test('orchestration efficiency scenario rejects intuition-only parallelism claim
   assert.strictEqual(rejected.decision, 'rejected');
   assert.strictEqual(verifier.promoted_candidate_id, accepted.candidate_id);
   assert.ok(rejected.reasons.join('\n').includes('no matched accepted single-agent baseline'));
+  assert.ok(JSON.stringify(trace).includes(scenario.sources.find(source => source.kind === 'external_experiment').url));
   assert.ok(playbook.includes('total tokens or cost across controller, every worker, and retries'));
   assert.ok(playbook.includes('At least three sequential pairs with alternated order'));
 });
