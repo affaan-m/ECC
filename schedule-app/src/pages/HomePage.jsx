@@ -499,15 +499,20 @@ export default function HomePage() {
     [state.settings?.homeBlocks]
   );
   const visibleBlocks = useMemo(() => homeBlocks.filter((b) => b.enabled), [homeBlocks]);
-  const emptyHomeMessage = useMemo(
-    () => EMPTY_HOME_MESSAGES[Math.floor(Math.random() * EMPTY_HOME_MESSAGES.length)],
-    []
-  );
+  const isEmptyHome = !editMode && visibleBlocks.length === 0;
+  const emptyHomeMsgIndex = state.settings?.emptyHomeMsgIndex ?? 0;
+  const emptyHomeMessage = EMPTY_HOME_MESSAGES[emptyHomeMsgIndex % EMPTY_HOME_MESSAGES.length];
+  useEffect(() => {
+    if (isEmptyHome) {
+      actions.setSettings({ emptyHomeMsgIndex: (emptyHomeMsgIndex + 1) % EMPTY_HOME_MESSAGES.length });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEmptyHome]);
   const recap = useMemo(() => computeWeeklyRecap(state), [state]);
   const nudges = useMemo(() => computeNudges(state), [state]);
 
   return (
-    <div className={!editMode && visibleBlocks.length === 0 ? 'page page-fill' : 'page'}>
+    <div className={isEmptyHome ? 'page page-fill' : 'page'}>
       <header className="page-head">
         <div className="page-head-row">
           <Brand>Home</Brand>
@@ -542,7 +547,7 @@ export default function HomePage() {
             onChange={(next) => actions.setSettings({ homeBlocks: next })}
           />
         </section>
-      ) : visibleBlocks.length === 0 ? (
+      ) : isEmptyHome ? (
         <div className="home-empty-state">
           <DesertEmptyState />
           <p className="muted">{emptyHomeMessage}</p>

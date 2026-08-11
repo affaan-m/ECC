@@ -1,10 +1,23 @@
-// A little animated desert scene — cactus, cow skull, and a tumbleweed
-// rolling past — shown on Home when every tile has been toggled off.
-// Drawn in the app's icon house style (stroke-only, currentColor, no
-// fill) so it themes for free instead of carrying its own palette.
-// Plain inline SVG + CSS keyframes rather than a video/lottie asset, so
-// it costs nothing offline (see .desert-* rules in styles.css).
+// A little desert scene — styled after Chrome's offline "dino game" —
+// shown on Home when every tile has been toggled off: a couple of
+// blocky cacti (hollow, outline-only) on a bumpy ground line, plus a
+// tumbleweed that blows by left to right on a loop. Sun or moon
+// depends on the active theme. Drawn in currentColor, matching the
+// app's icon house style, so it costs nothing offline and themes for
+// free.
 const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+const SOLID = { fill: 'currentColor', stroke: 'none' };
+
+function Cactus({ x, h, left, right }) {
+  const tw = 2.5;
+  return (
+    <g className="desert-cactus" transform={`translate(${x},96)`}>
+      <rect {...S} x={-tw} y={-h} width={tw * 2} height={h} rx={tw} />
+      {left && <rect {...S} x={-tw - left.w} y={left.y} width={left.w} height={left.h} rx={left.w / 2} />}
+      {right && <rect {...S} x={tw} y={right.y} width={right.w} height={right.h} rx={right.w / 2} />}
+    </g>
+  );
+}
 
 export default function DesertEmptyState() {
   return (
@@ -12,52 +25,32 @@ export default function DesertEmptyState() {
       className="desert-empty-svg"
       viewBox="0 0 200 120"
       role="img"
-      aria-label="An empty desert scene with a cactus, a cow skull, and a tumbleweed rolling by"
+      aria-label="An empty desert scene with a couple of cacti and a tumbleweed blowing by"
     >
-      <circle className="desert-sun" cx="168" cy="22" r="12" {...S} />
-      <line className="desert-ground" x1="4" y1="96" x2="196" y2="96" {...S} />
-
-      <g className="desert-cactus" transform="translate(44,96)">
-        <path
-          className="desert-cactus-part"
-          d="M0,0 V-44 M0,-20 C-13,-20 -15,-26 -15,-37 M0,-12 C11,-12 13,-17 13,-26
-             M-3,-6 L-6,-8 M3,-6 L6,-8
-             M-3,-27 L-6,-29 M3,-27 L6,-29
-             M-3,-34 L-6,-36 M3,-34 L6,-36
-             M-3,-41 L-6,-43 M3,-41 L6,-43
-             M-15,-33 L-19,-34 M-15,-33 L-18,-30
-             M13,-22 L17,-23 M13,-22 L16,-19"
-          {...S}
-        />
+      <g className="desert-sun-icon">
+        <circle cx="168" cy="20" r="11" {...S} />
+      </g>
+      <g className="desert-moon-icon" transform="translate(148,3)">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" {...SOLID} />
       </g>
 
-      <g className="desert-skull" transform="translate(148,90) rotate(-16)">
-        <path
-          className="desert-skull-bone"
-          d="M-14,5 C-16,-7 -9,-17 0,-19 C9,-17 16,-7 14,5 C13,9 8,11 8,11 L6,17 L3,11 L-3,11 L-6,17 L-8,11 C-8,11 -13,9 -14,5 Z"
-          {...S}
-        />
-        <path className="desert-skull-horn" d="M-13,-9 C-27,-15 -35,-9 -35,3 C-35,9 -31,13 -27,13" {...S} />
-        <path className="desert-skull-horn" d="M13,-9 C27,-15 35,-9 35,3 C35,9 31,13 27,13" {...S} />
-        <circle className="desert-skull-socket" cx="-6" cy="-3" r="2.4" {...S} />
-        <circle className="desert-skull-socket" cx="6" cy="-3" r="2.4" {...S} />
-      </g>
+      <path className="desert-ground" d="M4,96 L36,96 L40,94 L58,96 L96,96 L100,94 L134,96 L164,96 L168,94 L196,96" {...S} strokeWidth={1.5} />
+
+      <Cactus x={34} h={38} left={{ y: -26, h: 16, w: 4 }} right={{ y: -32, h: 12, w: 4 }} />
+      <Cactus x={56} h={24} right={{ y: -18, h: 10, w: 3.5 }} />
+      <Cactus x={118} h={15} />
 
       <g className="desert-tumbleweed-track">
-        <g className="desert-tumbleweed-bounce">
-          <g className="desert-tumbleweed-frame-a">
-            <path
-              d="M0,0 L-8,-9 M0,0 L-3,-11 M0,0 L4,-10 M0,0 L9,-6 M0,0 L-10,2 M0,0 L10,3 M0,0 L-7,9 M0,0 L1,11 M0,0 L7,8"
-              {...S}
-              strokeWidth={1.4}
-            />
-          </g>
-          <g className="desert-tumbleweed-frame-b">
-            <circle cx="0" cy="0" r="9" {...S} />
-            <path d="M-6,-8 C0,-2 -2,4 -8,6" {...S} />
-            <path d="M8,-6 C2,-2 4,4 -2,8" {...S} />
-            <path d="M-8,2 C-2,-4 4,-6 8,2" {...S} />
-          </g>
+        <g className="desert-tumbleweed-spin">
+          <circle cx="0" cy="0" r="10" {...S} />
+          <path d="M-6,-8 C0,-2 -2,4 -8,6" {...S} />
+          <path d="M8,-6 C2,-2 4,4 -2,8" {...S} />
+          <path d="M-8,2 C-2,-4 4,-6 8,2" {...S} />
+          <path d="M0,-10 L0,-13 M0,-10 L-2,-12.5" {...S} />
+          <path d="M8.6,-4.9 L11.6,-6.2 M8.6,-4.9 L11,-3.2" {...S} />
+          <path d="M5.3,8.3 L6.7,11.1 M5.3,8.3 L3.5,10.7" {...S} />
+          <path d="M-8.6,4.9 L-11.4,6.5 M-8.6,4.9 L-10.3,3" {...S} />
+          <path d="M-6.7,-7.5 L-9.4,-9.3 M-6.7,-7.5 L-8.9,-6" {...S} />
         </g>
       </g>
     </svg>

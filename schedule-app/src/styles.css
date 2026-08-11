@@ -485,19 +485,21 @@ textarea {
   height: auto;
   overflow: visible;
 }
+.desert-moon-icon {
+  display: none;
+}
+[data-theme='dark'] .desert-sun-icon {
+  display: none;
+}
+[data-theme='dark'] .desert-moon-icon {
+  display: block;
+}
 .desert-tumbleweed-track {
   animation: desertTumbleRoll 5s linear infinite;
 }
-.desert-tumbleweed-bounce {
-  animation: desertTumbleBounce 0.625s ease-in-out infinite;
-}
-.desert-tumbleweed-frame-a,
-.desert-tumbleweed-frame-b {
+.desert-tumbleweed-spin {
   transform-origin: 0 0;
-  animation: desertTumbleFrameA 1.25s ease-in-out infinite;
-}
-.desert-tumbleweed-frame-b {
-  animation-name: desertTumbleFrameB;
+  animation: desertTumbleSpin 1.6s linear infinite;
 }
 @keyframes desertTumbleRoll {
   0% {
@@ -507,46 +509,17 @@ textarea {
     transform: translate(216px, 88px);
   }
 }
-@keyframes desertTumbleBounce {
-  0%,
-  100% {
-    transform: translateY(0) rotate(0deg);
+@keyframes desertTumbleSpin {
+  from {
+    transform: rotate(0deg);
   }
-  50% {
-    transform: translateY(-9px) rotate(180deg);
-  }
-}
-@keyframes desertTumbleFrameA {
-  0%,
-  35% {
-    opacity: 1;
-  }
-  50%,
-  85% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-@keyframes desertTumbleFrameB {
-  0%,
-  35% {
-    opacity: 0;
-  }
-  50%,
-  85% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
+  to {
+    transform: rotate(360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .desert-tumbleweed-track,
-  .desert-tumbleweed-bounce,
-  .desert-tumbleweed-frame-a,
-  .desert-tumbleweed-frame-b {
+  .desert-tumbleweed-spin {
     animation: none;
   }
 }
