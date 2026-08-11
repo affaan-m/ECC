@@ -34,12 +34,11 @@ const {
 } = require('../lib/utils');
 const {
   readLatestContextTokens,
-  resolveContextWindowTokens,
+  resolveContextWindow,
   resolveContextThreshold,
   resolveContextInterval,
   computeContextBucket,
-  formatWindowLabel,
-  isContextWindowInferred
+  formatWindowLabel
 } = require('../lib/transcript-context');
 
 const COUNTER_FILE_PREFIX = 'claude-tool-count-';
@@ -172,7 +171,7 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     const usage = readLatestContextTokens(transcriptPath);
     if (!usage) return null;
 
-    const windowTokens = resolveContextWindowTokens(usage.tokens, usage.model);
+    const { windowTokens, inferred } = resolveContextWindow(usage.tokens, usage.model);
     const threshold = resolveContextThreshold(env, windowTokens);
     if (threshold <= 0) return null; // COMPACT_CONTEXT_THRESHOLD=0 disables
 
@@ -189,7 +188,7 @@ function buildContextSuggestion(transcriptPath, bucketFile, env) {
     // Only quote a percentage when the window size was actually detected.
     // Against an assumed 200k default the denominator is a guess, and a
     // "97% of 200k window" line on a 1M session triggers needless compaction.
-    const scale = isContextWindowInferred(usage.tokens, usage.model)
+    const scale = inferred
       ? ''
       : ` (${Math.round((usage.tokens / windowTokens) * 100)}% of ${formatWindowLabel(windowTokens)} window)`;
     return `[StrategicCompact] Context ~${approxTokens} tokens${scale} - consider /compact at the next logical boundary`;
