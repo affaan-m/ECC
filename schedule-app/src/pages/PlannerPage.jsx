@@ -2473,7 +2473,7 @@ function EventDetailView({ occ, contacts, goals, tasks, isPro, onClose, onEdit, 
               </button>
             </div>
           )}
-          {contact && (occ.kind === 'call' || occ.kind === 'text') && contact.phone && (
+          {contact && contact.phone && (
             <div className="detail-field">
               <span className="detail-label">Phone</span>
               <a
