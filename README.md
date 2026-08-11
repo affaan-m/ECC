@@ -129,17 +129,17 @@ Access to 68 agents, 285 skills, and 94 legacy command shims, plus hooks, rules,
 
 ## Install ECC
 
-> [!NOTE]
-> The guided commands below require `ecc-universal` 2.2.0 or newer. If npm
-> still resolves 2.1.0, use the provider-native instructions below until the
-> 2.2.0 package is published.
+> [!IMPORTANT]
+> Guided package setup is coming in `ecc-universal` 2.2.0. The current npm
+> release, 2.1.0, does not include the guided setup commands. Use the
+> provider-native instructions below until 2.2.0 is published.
 
 ### Pick one path only (per harness)
 
 You can use ECC with Claude Code, Codex, and other harnesses at the same time. Choose one install method for each harness:
 
-- **Recommended default:** run the guided Claude plugin setup with `npx ecc-universal setup`
-- **Recommended for multiple harnesses:** run `npx ecc-universal install --guided`
+- **Recommended today for Claude Code:** use the native plugin commands below
+- **Coming in 2.2.0:** guided setup with `npx ecc-universal setup` and `npx ecc-universal install --guided`
 - **Works:** Claude Code plugin + Codex native plugin
 - **Works:** Claude Code plugin + the legacy Codex sync flow
 - **Avoid:** Claude Code plugin + full Claude manual install
@@ -151,7 +151,22 @@ If you already layered multiple installs and things look duplicated, skip straig
 
 **Install trouble?** Open the short [install or runtime problem form](https://github.com/affaan-m/ECC/issues/new?template=install-problem.yml), or run `ecc feedback`. ECC never uploads diagnostics automatically.
 
-### Guided setup (recommended)
+### Claude Code (available now)
+
+Run these commands inside Claude Code:
+
+```text
+/plugin marketplace add https://github.com/affaan-m/ECC
+/plugin install ecc@ecc
+```
+
+That installs ECC's skills, agents, commands, and plugin-managed hooks. If you choose this path, stop there. Do not also run a full manual install into Claude Code.
+
+### Guided setup (coming in 2.2.0)
+
+> [!WARNING]
+> Do not run the guided commands in this section until npm publishes 2.2.0.
+> They are documented here as a preview of the next release.
 
 For Claude Code plugin setup, updates, scope changes, and hook-profile changes:
 
@@ -204,16 +219,9 @@ npx ecc-universal install --profile core --target kimi --dry-run
 
 ECC also ships advanced managed adapters for `cursor`, `antigravity`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
 
-### Claude Code
+### Claude Code details
 
-Use Claude Code's built-in marketplace commands only when you specifically want the native path or cannot run the package wizard:
-
-```text
-/plugin marketplace add https://github.com/affaan-m/ECC
-/plugin install ecc@ecc
-```
-
-That installs ECC's skills, agents, commands, and plugin-managed hooks. Claude Code owns these built-in commands, including their errors when a marketplace, plugin, or conflicting scope already exists. ECC cannot intercept that parser. If either command reports an existing install or scope conflict, run `npx ecc-universal setup`; the ECC-owned flow inspects the current state and chooses install, update, or verified scope migration instead of blindly adding a duplicate.
+Claude Code owns these built-in commands, including their errors when a marketplace, plugin, or conflicting scope already exists. ECC cannot intercept that parser. If either native command reports an existing install or scope conflict, wait for the 2.2.0 guided setup or resolve the conflicting Claude plugin scope before retrying; do not layer a manual install on top.
 
 After ECC is installed, `/ecc:configure-ecc` is the namespaced in-Claude reconfiguration skill. It delegates to the same safe setup flow, but it is available only after the plugin is installed and cannot replace Claude Code's built-in `/plugin` command during a first install.
 

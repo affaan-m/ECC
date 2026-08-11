@@ -30,14 +30,18 @@ function runTests() {
   const readme = fs.readFileSync(README, 'utf8');
   const rulesReadme = fs.readFileSync(RULES_README, 'utf8');
 
-  if (test('README marks one default path and warns against stacked installs', () => {
+  if (test('README marks the available native path as default and warns against stacked installs', () => {
     assert.ok(
       readme.includes('### Pick one path only'),
       'README should surface a top-level install decision section'
     );
     assert.ok(
-      readme.includes('**Recommended default:** run the guided Claude plugin setup'),
-      'README should name guided setup as the recommended default install path'
+      readme.includes('**Recommended today for Claude Code:** use the native plugin commands below'),
+      'README should name the currently available native plugin path as the default'
+    );
+    assert.ok(
+      readme.includes('**Coming in 2.2.0:** guided setup'),
+      'README should gate guided setup behind the unpublished 2.2.0 release'
     );
     assert.ok(
       readme.includes('**Do not stack install methods.**'),
@@ -49,10 +53,17 @@ function runTests() {
     );
   })) passed++; else failed++;
 
-  if (test('README leads with the idempotent guided plugin setup path', () => {
+  if (test('README leads with native Claude setup while the guided path is gated', () => {
+    const nativeIndex = readme.indexOf('### Claude Code (available now)');
+    const guidedIndex = readme.indexOf('### Guided setup (coming in 2.2.0)');
+
     assert.ok(
-      readme.includes('npx ecc-universal setup'),
-      'README should lead new users to the package-name setup command'
+      nativeIndex > -1 && guidedIndex > nativeIndex,
+      'README should show the available native path before the unreleased guided path'
+    );
+    assert.ok(
+      readme.includes('Do not run the guided commands in this section until npm publishes 2.2.0'),
+      'README should explicitly prevent users from running the unreleased commands'
     );
     assert.ok(
       readme.includes('installs, updates, or safely moves `ecc@ecc`'),
