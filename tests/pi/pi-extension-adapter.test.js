@@ -28,6 +28,16 @@
  * regression is caught even if the behavioral mirror still passes) plus a
  * real behavioral test wherever the fix is about runtime behavior rather
  * than pure control flow.
+ *
+ * Group 4 covers the adapter's injection of ECC's canonical engineering rules
+ * into Pi's system prompt (`PORTABLE_RULE_FILES`, `loadPortableRules`,
+ * `isDisabledByEnv`, and the expanded `before_agent_start` handler). The core
+ * constraint under test is that rules are read at RUNTIME from the canonical
+ * `rules/common/` directory of the installed package — nothing is copied or
+ * generated into `.pi/`. Each test pairs a source-text assertion (so a
+ * regression in the real adapter fails even if a behavioral mirror still
+ * passes) with either a real-filesystem check against this repo's actual
+ * `rules/common/` files or a hand-copied mirror of the adapter's own logic.
  */
 
 const assert = require("assert")
@@ -171,6 +181,105 @@ function readInstalledPackageNames(settingsFile) {
     // Missing or unreadable settings are simply "nothing installed here".
   }
   return names
+}
+
+/**
+ * Parses the `PORTABLE_RULE_FILES` array literal out of `.pi/extensions/index.ts`
+ * by text, so the real-filesystem-existence test and the `loadPortableRules`
+ * behavioral mirror below follow the constant instead of hardcoding the file
+ * list and silently drifting from it.
+ */
+function parsePortableRuleFiles(source) {
+  const constStart = source.indexOf("const PORTABLE_RULE_FILES")
+  if (constStart === -1) {
+    return []
+  }
+  const constEnd = source.indexOf("]", constStart)
+  if (constEnd === -1) {
+    return []
+  }
+  const constBody = source.slice(constStart, constEnd + 1)
+  return Array.from(constBody.matchAll(/["'`]([\w.-]+\.md)["'`]/g)).map(match => match[1])
+}
+
+/**
+ * Parses the numeric value of `MAX_RULES_BYTES` (e.g. `32 * 1024`) out of
+ * `.pi/extensions/index.ts`, so the cap assertion in the `loadPortableRules`
+ * behavioral mirror below follows the real constant instead of a hardcoded
+ * number. The captured expression is validated against a digits/operators
+ * whitelist before evaluation, so this never executes arbitrary source text.
+ */
+function parseMaxRulesBytes(source) {
+  const match = source.match(/const\s+MAX_RULES_BYTES\s*=\s*([0-9_ \t*/+-]+)/)
+  if (!match) {
+    return undefined
+  }
+  const expression = match[1].trim()
+  if (!expression || !/^[0-9_ \t*+]+$/.test(expression)) {
+    return undefined
+  }
+
+  // Evaluate sums of products directly instead of through Function(): the
+  // constant is only ever a literal like `32 * 1024`, and a test helper has no
+  // business compiling code at runtime.
+  const total = expression
+    .replace(/_/g, "")
+    .split("+")
+    .reduce((sum, term) => {
+      const product = term.split("*").reduce((acc, factor) => acc * Number(factor.trim()), 1)
+      return sum + product
+    }, 0)
+
+  return Number.isFinite(total) ? total : undefined
+}
+
+/**
+ * Mirror of the adapter's `loadPortableRules` (same file, same
+ * read-trim-skip-cap-join loop over `rules/common/<file>`, same
+ * `"\n\n---\n\n"` join). Deliberately omits the `ECC_PI_RULES` disable check
+ * and the `cachedRules` memoization, which are exercised separately (the
+ * disable check via `isDisabledByEnv` below; memoization is pure control
+ * flow with no behavior to mirror). This copy proves the *behavior* below is
+ * correct, but a copy cannot detect the real adapter's guards drifting out
+ * from under it. The source-text assertions in the "PORTABLE_RULE_FILES ..."
+ * and "engineering rules are read from rules/common ..." tests below read the
+ * real constant, the real `rules/common` path, and the real `MAX_RULES_BYTES`
+ * value out of `.pi/extensions/index.ts` and pin them directly, so that kind
+ * of drift fails those tests instead of passing silently against this mirror.
+ */
+function loadPortableRulesMirror(rootDir, ruleFiles, maxBytes) {
+  const sections = []
+  let total = 0
+  for (const file of ruleFiles) {
+    let text
+    try {
+      text = fs.readFileSync(path.join(rootDir, "rules", "common", file), "utf8").trim()
+    } catch {
+      continue
+    }
+    if (!text) {
+      continue
+    }
+    if (total + text.length > maxBytes) {
+      break
+    }
+    total += text.length
+    sections.push(text)
+  }
+  return sections.length > 0 ? sections.join("\n\n---\n\n") : null
+}
+
+/**
+ * Mirror of the adapter's `isDisabledByEnv` (same `DISABLED_VALUES` set, same
+ * trim + lowercase normalization). This copy proves the *behavior* below is
+ * correct, but a copy cannot detect the real adapter's guard drifting out
+ * from under it. The source-text assertion in the "isDisabledByEnv ..." test
+ * below reads the real function and the real `ECC_PI_RULES` env var name out
+ * of `.pi/extensions/index.ts` and pins them directly.
+ */
+const DISABLED_VALUES_MIRROR = new Set(["0", "false", "off", "none", "disabled"])
+function isDisabledByEnvMirror(value) {
+  return typeof value === "string" && DISABLED_VALUES_MIRROR.has(value.trim().toLowerCase())
 }
 
 async function main() {
@@ -678,13 +787,17 @@ async function main() {
       const beforeAgentStartSource = stripComments(
         extensionSource.slice(beforeAgentStartIdx, sessionShutdownIdx)
       )
-      const captureIdx = beforeAgentStartSource.indexOf("const context = pendingContext")
+      // Pin the guarantee (read the value, then clear it, then return) rather
+      // than one particular spelling of it. The handler injects the context
+      // inline inside its <ecc-session-context> block instead of copying it to
+      // a local first; both orders are equivalent in a synchronous handler.
+      const captureIdx = beforeAgentStartSource.indexOf("<ecc-session-context>")
       const clearIdx2 = beforeAgentStartSource.indexOf("pendingContext = undefined")
       const returnIdx = beforeAgentStartSource.indexOf("return {")
       assert.ok(
         captureIdx !== -1,
-        "expected the before_agent_start handler in .pi/extensions/index.ts to capture " +
-          "pendingContext into a local variable before clearing it"
+        "expected the before_agent_start handler in .pi/extensions/index.ts to read " +
+          "pendingContext into an <ecc-session-context> block before clearing it"
       )
       assert.ok(
         clearIdx2 !== -1,
@@ -699,7 +812,7 @@ async function main() {
       )
       assert.ok(
         captureIdx < clearIdx2,
-        "expected pendingContext to be captured into a local variable BEFORE being " +
+        "expected pendingContext to be read into the injected block BEFORE being " +
           "cleared in before_agent_start; clearing first would lose the value before " +
           "it can be injected into the system prompt"
       )
@@ -875,6 +988,254 @@ async function main() {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true })
       }
+    }],
+
+    // ---- Group 4: engineering-rules injection -------------------------
+
+    ["PORTABLE_RULE_FILES lists exactly ECC's 7 Pi-portable rule files and excludes the 3 Claude-Code-only ones", () => {
+      const ruleFiles = parsePortableRuleFiles(extensionSource)
+      assert.ok(
+        ruleFiles.length > 0,
+        "expected to find and parse a PORTABLE_RULE_FILES array literal in .pi/extensions/index.ts"
+      )
+
+      assert.deepStrictEqual(
+        ruleFiles,
+        [
+          "coding-style.md",
+          "testing.md",
+          "security.md",
+          "git-workflow.md",
+          "patterns.md",
+          "development-workflow.md",
+          "code-review.md",
+        ],
+        "expected PORTABLE_RULE_FILES in .pi/extensions/index.ts to contain exactly these " +
+          `7 files (got: ${ruleFiles.join(", ")}); a drift here silently changes which ECC ` +
+          "engineering rules get injected into Pi's system prompt"
+      )
+
+      for (const excluded of ["agents.md", "hooks.md", "performance.md"]) {
+        assert.ok(
+          !ruleFiles.includes(excluded),
+          `found ${excluded} in PORTABLE_RULE_FILES in .pi/extensions/index.ts; ${excluded} ` +
+            "describes Claude Code primitives Pi does not have (Task/TodoWrite delegation, " +
+            "Claude Code hook event types, or thinking-budget toggles like Option+T), so " +
+            "injecting it into Pi's system prompt would instruct the model to use tools " +
+            "and behaviors that do not exist in Pi"
+        )
+      }
+    }],
+
+    ["engineering rules are read from rules/common/ joined onto the package root at runtime, and nothing is copied into .pi/", () => {
+      const withoutComments = stripComments(extensionSource)
+      assert.ok(
+        /path\.join\(\s*ECC_ROOT\s*,\s*["'`]rules["'`]\s*,\s*["'`]common["'`]/.test(withoutComments),
+        "expected .pi/extensions/index.ts to build the rules directory via " +
+          'path.join(ECC_ROOT, "rules", "common", ...); rules must be read at runtime from ' +
+          "the canonical rules/common/ directory of the installed ECC package, which is " +
+          "the entire point of this adapter feature, not from a path baked in some other way"
+      )
+
+      const piDir = path.join(repoRoot, ".pi")
+      assert.ok(
+        fs.existsSync(piDir),
+        `expected a .pi/ directory to exist at ${piDir} for this check to be meaningful`
+      )
+      const piRulesDir = path.join(piDir, "rules")
+      assert.ok(
+        !fs.existsSync(piRulesDir),
+        `found ${piRulesDir} on disk; ECC's engineering rules must be read at runtime from ` +
+          "the canonical rules/common/ directory and never copied or generated into .pi/ -- " +
+          "a rules/ directory under .pi/ means that core constraint has been violated"
+      )
+    }],
+
+    ["every file named in PORTABLE_RULE_FILES actually exists under rules/common/ in this repo", () => {
+      const ruleFiles = parsePortableRuleFiles(extensionSource)
+      assert.ok(
+        ruleFiles.length > 0,
+        "expected to find and parse a PORTABLE_RULE_FILES array literal in .pi/extensions/index.ts"
+      )
+
+      const rulesCommonDir = path.join(repoRoot, "rules", "common")
+      for (const file of ruleFiles) {
+        const fullPath = path.join(rulesCommonDir, file)
+        assert.ok(
+          fs.existsSync(fullPath),
+          `expected ${fullPath} to exist because it is listed in PORTABLE_RULE_FILES; a ` +
+            "missing rule file makes loadPortableRules() silently skip it via its " +
+            "try/catch, so the adapter would inject less engineering-rule coverage into " +
+            "Pi's system prompt than intended, with no error or warning to notice it by"
+        )
+      }
+    }],
+
+    ["loadPortableRules() behavioral mirror: concatenates the real rules/common/ files, stays under the cap, and contains markers from several rule files", () => {
+      // Mirror of loadPortableRules() (read-trim-skip-cap-join loop), guarded by the
+      // source-text assertions in the two tests above (PORTABLE_RULE_FILES contents
+      // and the rules/common path) and by the parsed MAX_RULES_BYTES cap below, so a
+      // drift in the real function's shape fails those tests even if this mirror,
+      // run here against this repo's actual rule files, still looks correct.
+      const ruleFiles = parsePortableRuleFiles(extensionSource)
+      const maxRulesBytes = parseMaxRulesBytes(extensionSource)
+      assert.ok(
+        typeof maxRulesBytes === "number" && maxRulesBytes > 0,
+        "expected to parse a positive numeric MAX_RULES_BYTES constant out of .pi/extensions/index.ts"
+      )
+
+      const result = loadPortableRulesMirror(repoRoot, ruleFiles, maxRulesBytes)
+
+      assert.ok(
+        typeof result === "string" && result.length > 0,
+        "expected loadPortableRules() to return a non-empty string when run against this " +
+          "repo's real rules/common/ files; an empty result means the <ecc-engineering-rules> " +
+          "block would be silently omitted from Pi's system prompt on every turn"
+      )
+      assert.ok(
+        result.length < maxRulesBytes,
+        `expected the concatenated rules text (${result.length} chars) to stay under ` +
+          `MAX_RULES_BYTES (${maxRulesBytes} bytes); exceeding the cap means the ` +
+          "concatenation loop's stop-before-exceeding-cap guard is not doing its job, and a " +
+          "large rule-file edit could flood Pi's system prompt"
+      )
+
+      for (const marker of ["Immutability", "Minimum Test Coverage", "Secret Management"]) {
+        assert.ok(
+          result.includes(marker),
+          `expected the concatenated rules text to contain "${marker}" (a marker from one ` +
+            "of the real rules/common/ files); its absence means that file was skipped " +
+            "(missing, empty, or cut off by the cap) or its content changed in a way that " +
+            "dropped the section entirely"
+        )
+      }
+    }],
+
+    ["leakage guard: the text loadPortableRules() would inject contains no Claude-Code-only primitives Pi cannot use", () => {
+      const ruleFiles = parsePortableRuleFiles(extensionSource)
+      const maxRulesBytes = parseMaxRulesBytes(extensionSource)
+      const result = loadPortableRulesMirror(repoRoot, ruleFiles, maxRulesBytes)
+      assert.ok(
+        typeof result === "string" && result.length > 0,
+        "expected a non-empty mirrored rules result for this leakage check to be meaningful"
+      )
+
+      for (const leaked of ["TodoWrite", "Option+T", "PostToolUse", "alwaysThinkingEnabled"]) {
+        assert.ok(
+          !result.includes(leaked),
+          `found "${leaked}" in the text loadPortableRules() would inject into Pi's system ` +
+            "prompt; this is a Claude-Code-only primitive (a tool, hook event type, or " +
+            "thinking-budget toggle) that would instruct Pi's model to use something that " +
+            "does not exist in Pi -- exactly the leakage excluding agents.md/hooks.md/" +
+            "performance.md from PORTABLE_RULE_FILES exists to prevent"
+        )
+      }
+    }],
+
+    ["isDisabledByEnv() behavioral mirror: recognizes 0/false/off/none/disabled case- and whitespace-insensitively, and the real function reads ECC_PI_RULES", () => {
+      for (const disabledValue of ["0", "false", "off", "none", "disabled"]) {
+        assert.strictEqual(
+          isDisabledByEnvMirror(disabledValue),
+          true,
+          `expected isDisabledByEnv("${disabledValue}") to be true`
+        )
+        assert.strictEqual(
+          isDisabledByEnvMirror(disabledValue.toUpperCase()),
+          true,
+          `expected isDisabledByEnv to be case-insensitive for "${disabledValue.toUpperCase()}"`
+        )
+        assert.strictEqual(
+          isDisabledByEnvMirror(`  ${disabledValue}  `),
+          true,
+          `expected isDisabledByEnv to ignore surrounding whitespace for "  ${disabledValue}  "`
+        )
+      }
+
+      assert.strictEqual(
+        isDisabledByEnvMirror("  OFF  "),
+        true,
+        'expected isDisabledByEnv("  OFF  ") to be true (mixed case AND surrounding whitespace ' +
+          "at once); a user pasting ECC_PI_RULES=\"  OFF  \" into a shell profile must still " +
+          "disable injection"
+      )
+
+      for (const enabledValue of [undefined, "", "1", "true", "on", "yes", "TRUE ISH"]) {
+        assert.strictEqual(
+          isDisabledByEnvMirror(enabledValue),
+          false,
+          `expected isDisabledByEnv(${JSON.stringify(enabledValue)}) to be false; treating an ` +
+            "unrecognized value as disabled would silently turn off rule injection for anyone " +
+            "who sets ECC_PI_RULES to something other than the 5 documented off-values"
+        )
+      }
+
+      const withoutComments = stripComments(extensionSource)
+      assert.ok(
+        withoutComments.includes("process.env.ECC_PI_RULES"),
+        "expected .pi/extensions/index.ts to read process.env.ECC_PI_RULES as the env var " +
+          "that turns rule injection off; a different or renamed env var would silently break " +
+          "anyone's existing ECC_PI_RULES=off configuration"
+      )
+    }],
+
+    ["before_agent_start wraps rules and context in their tags, consumes pendingContext but never the rules, and returns early with no override when there is nothing to add", () => {
+      const beforeAgentStartIdx = extensionSource.indexOf('pi.on("before_agent_start"')
+      assert.ok(
+        beforeAgentStartIdx !== -1,
+        "expected .pi/extensions/index.ts to register a before_agent_start handler via pi.on(...)"
+      )
+      const sessionShutdownIdx = extensionSource.indexOf('pi.on("session_shutdown"', beforeAgentStartIdx)
+      assert.ok(
+        sessionShutdownIdx !== -1 && sessionShutdownIdx > beforeAgentStartIdx,
+        "expected a session_shutdown handler registered after before_agent_start in .pi/extensions/index.ts"
+      )
+
+      const handlerSource = stripComments(extensionSource.slice(beforeAgentStartIdx, sessionShutdownIdx))
+
+      assert.ok(
+        handlerSource.includes("<ecc-engineering-rules>"),
+        "expected the before_agent_start handler in .pi/extensions/index.ts to wrap " +
+          "injected rules in an <ecc-engineering-rules> tag"
+      )
+      assert.ok(
+        handlerSource.includes("<ecc-session-context>"),
+        "expected the before_agent_start handler in .pi/extensions/index.ts to wrap the " +
+          "session context in an <ecc-session-context> tag"
+      )
+
+      const contextPushIdx = handlerSource.indexOf("<ecc-session-context>")
+      const clearIdx = handlerSource.indexOf("pendingContext = undefined", contextPushIdx)
+      assert.ok(
+        contextPushIdx !== -1 && clearIdx !== -1 && clearIdx > contextPushIdx,
+        "expected before_agent_start to clear pendingContext = undefined after using it to " +
+          "build the <ecc-session-context> block; without this, the same one-shot session " +
+          "context would be replayed into every later agent turn instead of being consumed once"
+      )
+
+      assert.ok(
+        !/\bcachedRules\s*=\s*(undefined|null)/.test(handlerSource) &&
+          !/\brules\s*=\s*(undefined|null)/.test(handlerSource),
+        "found code in the before_agent_start handler that resets the loaded rules value; " +
+          "engineering rules describe standing policy and must be re-applied on EVERY turn " +
+          "(unlike the one-shot pendingContext), so nothing in this handler may consume or " +
+          "clear them the way pendingContext is consumed"
+      )
+
+      assert.ok(
+        /if\s*\(\s*additions\.length\s*===\s*0\s*\)\s*\{\s*return\s*\}/.test(handlerSource),
+        "expected before_agent_start to return early with a bare `return` (no systemPrompt " +
+          "override) when there is nothing to add; without this guard, a turn with no rules " +
+          "and no pending context would still return a rebuilt systemPrompt instead of " +
+          "leaving Pi's original systemPrompt untouched"
+      )
+
+      const earlyReturnIdx = handlerSource.indexOf("if (additions.length === 0)")
+      const overrideReturnIdx = handlerSource.indexOf("return { systemPrompt")
+      assert.ok(
+        earlyReturnIdx !== -1 && overrideReturnIdx !== -1 && earlyReturnIdx < overrideReturnIdx,
+        "expected the early-return-when-nothing-to-add guard to appear before the " +
+          "systemPrompt-override return in before_agent_start"
+      )
     }],
   ]
 

@@ -13,6 +13,9 @@ This adapter contains **only the integration logic**. No copies, no duplication.
 
 - **ECC's skills** from `./skills/` — available in Pi as `/skill:<name>`
 - **ECC's commands** from `./commands/` — available in Pi as `/<name>`
+- **ECC's engineering rules** from `./rules/common/` — injected into Pi's system
+  prompt on every turn, so coding style, testing, security, git workflow, and
+  code-review standards apply in Pi as they do in other harnesses
 - **Session lifecycle hooks** — ECC's SessionStart and SessionEnd hooks, run through ECC's own
   `run-with-flags.js`, so `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` keep working under Pi
 - **Session context injection** — whatever ECC's SessionStart hook returns as
@@ -75,12 +78,21 @@ The `extensions/index.ts` file handles:
    (`scripts/hooks/session-start.js`) and Pi's `session_shutdown` to ECC's `session:end:marker`
    hook (`scripts/hooks/session-end-marker.js`), both invoked through
    `scripts/hooks/run-with-flags.js` so ECC's profile and disable flags are honored
-3. **Context injection** — Parses `hookSpecificOutput.additionalContext` from the SessionStart
+3. **Rule injection** — Reads ECC's portable engineering rules from the canonical
+   `rules/common/` directory at runtime and appends them to the system prompt inside an
+   `<ecc-engineering-rules>` block on every turn. Nothing is copied into `.pi/`.
+   `agents.md`, `hooks.md`, and `performance.md` are excluded on purpose: they describe
+   Claude Code primitives Pi does not have (Task/TodoWrite delegation, Claude hook event
+   types, thinking-budget toggles), so injecting them would point the model at tools that
+   are not there. Language-specific rules under `rules/<language>/` are not injected in this
+   first adapter. Set `ECC_PI_RULES` to `0`, `false`, `off`, `none`, or `disabled` to turn
+   injection off; `/ecc-doctor` reports the current state and the injected size
+4. **Context injection** — Parses `hookSpecificOutput.additionalContext` from the SessionStart
    hook and appends it to the system prompt on the next `before_agent_start`, wrapped in an
    `<ecc-session-context>` block. Non-JSON hook output is tolerated, not treated as an error
-4. **Hook isolation** — Failing, missing, or slow hooks degrade to a warning and never
+5. **Hook isolation** — Failing, missing, or slow hooks degrade to a warning and never
    terminate the Pi session. Hook execution is bounded by a timeout and an output limit
-5. **Package resolution** — Resolves hook scripts from the installed package via `__dirname`,
+6. **Package resolution** — Resolves hook scripts from the installed package via `__dirname`,
    never from `process.cwd()`, so a global install works from any project directory. Hooks
    still *run* in the user's project directory, so project detection stays correct
 

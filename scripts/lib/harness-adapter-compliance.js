@@ -130,6 +130,7 @@ const ADAPTER_RECORDS = Object.freeze([
       'Pi package manifest',
       'canonical ECC skills (skills/)',
       'canonical ECC commands as prompt templates (commands/)',
+      'canonical ECC engineering rules (rules/common/) injected into the system prompt',
       'session lifecycle hook adapter',
       '/ecc-doctor diagnostics command',
     ],

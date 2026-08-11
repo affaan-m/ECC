@@ -110,6 +110,31 @@ const HOOK_TIMEOUT_MS = 30_000
 const MAX_HOOK_OUTPUT_BYTES = 1024 * 1024
 
 /**
+ * ECC rules injected into Pi's system prompt, read from the canonical
+ * `rules/common/` directory at runtime. Nothing is copied or generated.
+ *
+ * Excluded on purpose: `agents.md`, `hooks.md`, and `performance.md`. Those
+ * describe Claude Code primitives Pi does not have (Task/TodoWrite delegation,
+ * Claude hook event types, thinking-budget toggles), so injecting them would
+ * instruct the model to use tools that are not there.
+ */
+const PORTABLE_RULE_FILES = [
+  "coding-style.md",
+  "testing.md",
+  "security.md",
+  "git-workflow.md",
+  "patterns.md",
+  "development-workflow.md",
+  "code-review.md",
+] as const
+
+/** Upper bound on injected rule text, so a large edit cannot flood the prompt. */
+const MAX_RULES_BYTES = 32 * 1024
+
+/** Values ECC treats as "off" across its existing environment switches. */
+const DISABLED_VALUES = new Set(["0", "false", "off", "none", "disabled"])
+
+/**
  * Optional Pi companion packages. ECC works without every one of these; they
  * are reported by `/ecc-doctor` so users can see which extras are available.
  */
@@ -299,6 +324,57 @@ function extractAdditionalContext(stdout: string): string | undefined {
   }
 }
 
+function isDisabledByEnv(value: string | undefined): boolean {
+  return typeof value === "string" && DISABLED_VALUES.has(value.trim().toLowerCase())
+}
+
+/** Memoized so the rule files are read once per session, not once per turn. */
+let cachedRules: string | null | undefined
+
+/**
+ * ECC's portable engineering rules, concatenated from the canonical
+ * `rules/common/` directory of the installed package.
+ *
+ * Returns null when disabled via `ECC_PI_RULES` or when no rule file could be
+ * read, so a partial install degrades to "no rules" instead of failing.
+ */
+function loadPortableRules(): string | null {
+  if (cachedRules !== undefined) {
+    return cachedRules
+  }
+
+  if (isDisabledByEnv(process.env.ECC_PI_RULES)) {
+    cachedRules = null
+    return cachedRules
+  }
+
+  const sections: string[] = []
+  let total = 0
+
+  for (const file of PORTABLE_RULE_FILES) {
+    let text: string
+    try {
+      text = fs.readFileSync(path.join(ECC_ROOT, "rules", "common", file), "utf8").trim()
+    } catch {
+      continue
+    }
+
+    if (!text) {
+      continue
+    }
+
+    if (total + text.length > MAX_RULES_BYTES) {
+      break
+    }
+
+    total += text.length
+    sections.push(text)
+  }
+
+  cachedRules = sections.length > 0 ? sections.join("\n\n---\n\n") : null
+  return cachedRules
+}
+
 /**
  * Pi's config directory, honoring the documented `PI_CODING_AGENT_DIR` override.
  */
@@ -392,6 +468,19 @@ function readEccVersion(): string {
   }
 }
 
+function describeRulesStatus(): string {
+  if (isDisabledByEnv(process.env.ECC_PI_RULES)) {
+    return "disabled via ECC_PI_RULES"
+  }
+
+  const rules = loadPortableRules()
+  if (!rules) {
+    return `NOT FOUND (${path.join(ECC_ROOT, "rules", "common")})`
+  }
+
+  return `${PORTABLE_RULE_FILES.length} rule file(s), ${rules.length} chars, from rules/common/`
+}
+
 function buildDoctorReport(ctx: ExtensionContext): string {
   const skillsDir = path.join(ECC_ROOT, "skills")
   const commandsDir = path.join(ECC_ROOT, "commands")
@@ -408,6 +497,9 @@ function buildDoctorReport(ctx: ExtensionContext): string {
     "Canonical resources",
     `  skills/        ${skillCount > 0 ? `${skillCount} skill(s)` : "NOT FOUND"} (${skillsDir})`,
     `  commands/      ${commandCount > 0 ? `${commandCount} command(s)` : "NOT FOUND"} (${commandsDir})`,
+    "",
+    "Engineering rules (injected into the system prompt)",
+    `  ${describeRulesStatus()}`,
     "",
     "Hook runner",
     `  ${fs.existsSync(HOOK_RUNNER) ? "found" : "NOT FOUND"} (${HOOK_RUNNER})`,
@@ -476,16 +568,25 @@ export default function (pi: ExtensionAPI): void {
   })
 
   pi.on("before_agent_start", event => {
-    if (!pendingContext) {
+    const additions: string[] = []
+
+    // Rules describe standing engineering policy, so they are re-applied on
+    // every turn. The session context is a one-shot handoff and is consumed.
+    const rules = loadPortableRules()
+    if (rules) {
+      additions.push(`<ecc-engineering-rules>\n${rules}\n</ecc-engineering-rules>`)
+    }
+
+    if (pendingContext) {
+      additions.push(`<ecc-session-context>\n${pendingContext}\n</ecc-session-context>`)
+      pendingContext = undefined
+    }
+
+    if (additions.length === 0) {
       return
     }
 
-    const context = pendingContext
-    pendingContext = undefined
-
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n<ecc-session-context>\n${context}\n</ecc-session-context>`,
-    }
+    return { systemPrompt: [event.systemPrompt, ...additions].join("\n\n") }
   })
 
   pi.on("session_shutdown", async (event, ctx) => {
