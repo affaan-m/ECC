@@ -427,7 +427,27 @@ export default function PlannerPage() {
     const repeat = master.repeat || 'none';
     const prevDone = repeat === 'none' ? !!master.done : (master.doneDates || []).includes(pl.recDate);
     if (repeat === 'none') {
-      actions.updateEvent({ ...master, ...pl.fields, date: pl.date, done: !!pl.done });
+      // The event wasn't recurring before this save, but the editor may
+      // have just turned it into one (setting Repeat away from "Does not
+      // repeat") — pl.repeat carries that, separately from pl.fields, so it
+      // has to be applied explicitly here rather than relying on ...master
+      // to still be right.
+      const recurring = pl.repeat && pl.repeat !== 'none';
+      const next = {
+        ...master,
+        ...pl.fields,
+        date: pl.date,
+        repeat: pl.repeat || 'none',
+        repeatUntil: recurring ? pl.repeatUntil || '' : '',
+        repeatDays: pl.repeat === 'custom' ? pl.repeatDays || [] : [],
+      };
+      if (recurring) {
+        next.done = false;
+        next.doneDates = pl.done ? [pl.date] : [];
+      } else {
+        next.done = !!pl.done;
+      }
+      actions.updateEvent(next);
     } else if (pl.scope === 'all') {
       const recurring = pl.repeat && pl.repeat !== 'none';
       const next = {
