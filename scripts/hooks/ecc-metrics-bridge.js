@@ -47,7 +47,11 @@ function hashToolCall(toolName, toolInput) {
   const name = String(toolName || '');
   let key = '';
   if (name === 'Bash') {
-    key = String(toolInput?.command || '').slice(0, 160);
+    // Hash the FULL command (digest, not a prefix slice): taking the first
+    // 160 chars collided distinct long commands that share a common prefix
+    // (heredocs, long one-liners), so consecutive DIFFERENT Bash calls looked
+    // like a stuck loop and triggered false LOOP WARNINGs.
+    key = crypto.createHash('sha256').update(String(toolInput?.command || '')).digest('hex');
   } else if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(name)) {
     // Fingerprint the actual change, not just the path. Hashing on file_path
     // alone made every distinct edit to the same file collide, so a few normal
