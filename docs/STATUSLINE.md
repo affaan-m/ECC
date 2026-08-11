@@ -81,10 +81,12 @@ terminal, and none of them need tmux:
 ⬢ ECC 2.2.0 │ plugins ecc │ myproject
 ```
 
-All three appear when Codex starts and are given back when it exits.
-The conversation label comes from the active thread's local Codex `name` or
-`title`, is collapsed to one line, and is shortened to fit the bar. It is
-omitted when Codex's read-only local state is unavailable.
+All three appear when Codex starts and are given back when it exits. The
+conversation label stays empty until the current run writes its own session,
+so a fresh chat never inherits the previous chat's label. It then prefers the
+real Codex chat name set by `/rename`; for an unrenamed chat, it derives a
+compact task label from the opening prompt without making a network request.
+It is omitted when Codex's read-only local state is unavailable.
 
 ECC does not touch Codex's own `[tui] status_line` widgets. Those render their
 own line under the composer covering the same model, context and rate-limit

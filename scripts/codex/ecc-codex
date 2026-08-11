@@ -25,6 +25,8 @@ if [ "${ECC_CODEX_BAR:-on}" = "off" ] || [ ! -t 1 ] || [ ! -e /dev/tty ] \
 fi
 
 INTERVAL="${ECC_CODEX_BAR_INTERVAL:-15}"
+ECC_CODEX_RUN_STARTED_AT_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
+export ECC_CODEX_RUN_STARTED_AT_MS
 
 # Inside tmux, show the full three-line bar for the lifetime of this Codex run.
 # Options are session-scoped (no -g) and unset on exit, so nothing persists in
@@ -55,6 +57,7 @@ wezterm_bar_on() {
   local pane
   pane="$(wezterm cli split-pane --bottom --top-level --cells 3 \
     --pane-id "$WEZTERM_PANE" -- \
+    env ECC_CODEX_RUN_STARTED_AT_MS="$ECC_CODEX_RUN_STARTED_AT_MS" \
     bash "$PANE_RENDERER" "$RENDERER" "$$" "$INTERVAL" 2>/dev/null)" || return 0
 
   pane="${pane//[$'\r\n\t ']/}"
@@ -178,7 +181,7 @@ tmux_bar_on() {
   local n
   for n in 1 2 3; do
     tmux set "status-format[$n]" \
-      "#[align=left,bg=default,fg=default]#(ECC_BAR_GLYPHS=$glyphs node \"$RENDERER\" --tmux --line $n)" \
+      "#[align=left,bg=default,fg=default]#(ECC_CODEX_RUN_STARTED_AT_MS=$ECC_CODEX_RUN_STARTED_AT_MS ECC_BAR_GLYPHS=$glyphs node \"$RENDERER\" --tmux --line $n)" \
       >/dev/null 2>&1
   done
 }

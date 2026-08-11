@@ -172,6 +172,46 @@ test('prefers the Codex thread name over its fallback title', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+test('derives a compact task label from an unrenamed opening prompt', () => {
+  const { deriveConversationTitle, readConversationTitle } = require('../../scripts/codex/ecc-usage-bar-codex');
+  assert.strictEqual(
+    deriveConversationTitle('Some context first. I would like the conversation title to be next to the cache percentage usage.'),
+    'Conversation title next cache percentage usage'
+  );
+  assert.strictEqual(
+    deriveConversationTitle('Unfortunately it is stale. Ensure it updates after the user sends their first prompt.'),
+    'Update after user sends their first prompt'
+  );
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
+  try {
+    fs.writeFileSync(path.join(tmpDir, 'state_5.sqlite'), 'fixture');
+    const session = path.join(tmpDir, 'rollout-test-019ff263-bfe1-77e3-b7ad-ce4bc6fac389.jsonl');
+    fs.writeFileSync(session, `${JSON.stringify({ type: 'session_meta', payload: { id: '019ff263-bfe1-77e3-b7ad-ce4bc6fac389' } })}\n`);
+    const title = readConversationTitle(tmpDir, session, (_database, _id, field) => (
+      field === 'name' ? '' : 'Can you fix the authentication redirect loop and add tests?'
+    ));
+    assert.strictEqual(title, 'Fix authentication redirect loop and add tests');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+test('rejects the previous transcript until this wrapper run writes a session', () => {
+  const { isCurrentRunSession } = require('../../scripts/codex/ecc-usage-bar-codex');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
+  try {
+    const session = path.join(tmpDir, 'rollout-test.jsonl');
+    fs.writeFileSync(session, '{}\n');
+    const startedAt = Date.now() + 1000;
+    assert.strictEqual(isCurrentRunSession(session, startedAt), false);
+    const active = new Date(startedAt + 1000);
+    fs.utimesSync(session, active, active);
+    assert.strictEqual(isCurrentRunSession(session, startedAt), true);
+    assert.strictEqual(isCurrentRunSession(session, ''), true, 'manual renderer use remains compatible');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
 test('finds newest session and reads last token_count', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
   try {

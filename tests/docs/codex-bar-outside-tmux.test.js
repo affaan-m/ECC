@@ -126,6 +126,22 @@ test('WezTerm gets the three-line bar in a pane of its own', () => {
     pane.includes('--full'),
     'the pane must render all three lines'
   );
+  assert.ok(
+    wrapper.includes('env ECC_CODEX_RUN_STARTED_AT_MS='),
+    'the pane must know when this wrapper run started'
+  );
+});
+
+test('conversation labels are scoped to this Codex run on every surface', () => {
+  const wrapper = read(WRAPPER);
+  assert.ok(
+    wrapper.includes('export ECC_CODEX_RUN_STARTED_AT_MS'),
+    'plain-terminal renderers must inherit the wrapper start time'
+  );
+  assert.ok(
+    wrapper.includes('#(ECC_CODEX_RUN_STARTED_AT_MS='),
+    'tmux renderers must receive the wrapper start time explicitly'
+  );
 });
 
 test('plain terminals get the three lines in reserved bottom rows', () => {

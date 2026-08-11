@@ -177,15 +177,71 @@ function formatConversationTitle(value, maxChars = TITLE_MAX_CHARS) {
   return `${prefix.slice(0, cut).trimEnd()}…`;
 }
 
+/** Turn an opening prompt into a compact task label without calling a model. */
+function deriveConversationTitle(value, maxChars = TITLE_MAX_CHARS) {
+  const clean = String(value || '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+
+  const sentences = clean.match(/[^.!?]+[.!?]?/g) || [clean];
+  const requestPatterns = [
+    /\b(?:can|could|would|will)\s+you\s+(.+)/i,
+    /\bi(?:'d| would)\s+like\s+(?:you\s+to\s+)?(.+)/i,
+    /\bi\s+(?:want|need)\s+(?:you\s+)?to\s+(.+)/i,
+    /\bplease\s+(.+)/i,
+    /\b((?:ensure|fix|add|update|show|display|implement|remove|prevent|debug|investigate|review|build|create|change|move|rename|install|test|explain|find)\b.*)/i,
+  ];
+  let candidate = '';
+  for (const sentence of sentences) {
+    for (const pattern of requestPatterns) {
+      const match = sentence.match(pattern);
+      if (match?.[1]) {
+        candidate = match[1];
+        break;
+      }
+    }
+    if (candidate) break;
+  }
+  if (!candidate) candidate = sentences[0];
+  candidate = candidate.replace(/^ensure\s+it\s+updates?\s+/i, 'Update ');
+
+  const stopWords = new Set([
+    'a', 'an', 'the', 'i', "i'd", "i'm", 'im', 'me', 'my', 'we', 'our',
+    'you', 'your', 'it', 'its', 'this', 'that', 'these', 'those', 'is', 'are',
+    'was', 'were', 'be', 'been', 'being', 'to', 'of', 'for', 'on', 'in', 'with',
+    'from', 'do', 'does', 'did', 'would', 'could', 'should', 'can', 'will',
+    'just', 'really', 'please', 'also', 'both', 'like', 'there', 'here',
+  ]);
+  const words = [];
+  for (const rawWord of candidate.trim().split(/\s+/)) {
+    const word = rawWord.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}+#./-]+$/gu, '');
+    if (!word || stopWords.has(word.toLocaleLowerCase('en-US'))) continue;
+    if (words.length >= 8 || Array.from([...words, word].join(' ')).length > maxChars) break;
+    words.push(word);
+  }
+  const title = words.join(' ').replace(/[.!?]+$/u, '');
+  return title ? title[0].toLocaleUpperCase('en-US') + title.slice(1) : formatConversationTitle(candidate, maxChars);
+}
+
+/** Whether this transcript has been written since the current wrapper began. */
+function isCurrentRunSession(sessionFile, startedAtMs) {
+  const startedAt = Number(startedAtMs);
+  if (!Number.isFinite(startedAt) || startedAt <= 0) return true;
+  try {
+    return fs.statSync(sessionFile).mtimeMs > startedAt;
+  } catch {
+    return false;
+  }
+}
+
 /** Codex thread name/title from its read-only local state database. */
 function readConversationTitle(codexHome, sessionFile, query = queryThreadField) {
   const threadId = readSessionId(sessionFile);
   if (!threadId) return '';
   for (const database of stateDatabases(codexHome)) {
-    for (const field of ['name', 'title']) {
-      const title = formatConversationTitle(query(database, threadId, field));
-      if (title) return title;
-    }
+    const name = formatConversationTitle(query(database, threadId, 'name'));
+    if (name) return name;
+    const title = deriveConversationTitle(query(database, threadId, 'title'));
+    if (title) return title;
   }
   return '';
 }
@@ -388,7 +444,10 @@ function main() {
   const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   const sessionFile = findNewestSession(codexHome);
   const tokenCount = sessionFile ? readLastTokenCount(sessionFile) : null;
-  const conversationTitle = sessionFile ? readConversationTitle(codexHome, sessionFile) : '';
+  const conversationTitle = sessionFile
+    && isCurrentRunSession(sessionFile, process.env.ECC_CODEX_RUN_STARTED_AT_MS)
+    ? readConversationTitle(codexHome, sessionFile)
+    : '';
   const tmux = process.argv.includes('--tmux');
   const mode = process.argv.includes('--plain') ? 'plain' : tmux ? 'tmux' : 'ansi';
 
@@ -410,6 +469,6 @@ function main() {
   }) + '\n');
 }
 
-module.exports = { findNewestSession, readLastTokenCount, readSessionId, formatConversationTitle, readConversationTitle, windowLabel, renderBar, readCodexPlugins, readCodexHooks, buildCodexEccLine, readCodexModel, buildFullLines };
+module.exports = { findNewestSession, readLastTokenCount, readSessionId, formatConversationTitle, deriveConversationTitle, isCurrentRunSession, readConversationTitle, windowLabel, renderBar, readCodexPlugins, readCodexHooks, buildCodexEccLine, readCodexModel, buildFullLines };
 
 if (require.main === module) main();
