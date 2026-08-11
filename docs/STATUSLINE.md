@@ -77,11 +77,14 @@ terminal, and none of them need tmux:
 
 ```text
 ⚡ 7d ██░░░░ 25% ↻9h50m │ cache 97%
-✳ gpt-5.6-sol │ ctx ███░░░░░░░ 26% 258K │ 96.4M tok
+✳ gpt-5.6-sol │ ctx ███░░░░░░░ 26% 258K │ chat Add usage titles… │ 96.4M tok
 ⬢ ECC 2.2.0 │ plugins ecc │ myproject
 ```
 
 All three appear when Codex starts and are given back when it exits.
+The conversation label comes from the active thread's local Codex `name` or
+`title`, is collapsed to one line, and is shortened to fit the bar. It is
+omitted when Codex's read-only local state is unavailable.
 
 ECC does not touch Codex's own `[tui] status_line` widgets. Those render their
 own line under the composer covering the same model, context and rate-limit

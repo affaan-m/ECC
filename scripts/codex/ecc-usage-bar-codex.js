@@ -20,9 +20,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { buildBar, formatCountdown, buildEccLine, G } = require('../lib/statusline-render');
 
 const TAIL_BYTES = 256 * 1024;
+const TITLE_MAX_CHARS = 48;
 
 /** Color wrappers keyed by role: 'ansi' (default), 'tmux', or 'plain'. */
 function palette(mode) {
@@ -108,6 +110,86 @@ function readLastTokenCount(sessionFile) {
   }
 }
 
+/** Thread UUID from session_meta, with a filename fallback for torn files. */
+function readSessionId(sessionFile) {
+  let fd;
+  try {
+    fd = fs.openSync(sessionFile, 'r');
+    const buffer = Buffer.alloc(Math.min(fs.fstatSync(fd).size, 64 * 1024));
+    fs.readSync(fd, buffer, 0, buffer.length, 0);
+    for (const line of buffer.toString('utf8').split('\n')) {
+      if (!line.includes('"session_meta"')) continue;
+      try {
+        const event = JSON.parse(line);
+        const id = event?.payload?.id;
+        if (/^[0-9a-f-]{36}$/i.test(id || '')) return id;
+      } catch { /* torn line in the read boundary */ }
+    }
+  } catch { /* try the filename */
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  return path.basename(sessionFile || '').match(/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.jsonl$/i)?.[1] || '';
+}
+
+function stateDatabases(codexHome) {
+  try {
+    return fs.readdirSync(codexHome)
+      .filter(name => /^state_\d+\.sqlite$/.test(name))
+      .sort((a, b) => Number(b.match(/\d+/)[0]) - Number(a.match(/\d+/)[0]))
+      .map(name => path.join(codexHome, name));
+  } catch {
+    return [];
+  }
+}
+
+/** Read one scalar without adding a runtime dependency. */
+function queryThreadField(database, threadId, field) {
+  if (!['name', 'title'].includes(field) || !/^[0-9a-f-]{36}$/i.test(threadId)) return '';
+  const sql = `SELECT ${field} FROM threads WHERE id = '${threadId}' LIMIT 1;`;
+  const cli = spawnSync('sqlite3', ['-readonly', database, sql], {
+    encoding: 'utf8',
+    timeout: 1000,
+    windowsHide: true,
+  });
+  if (cli.status === 0) return cli.stdout.trim();
+
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(database, { readOnly: true });
+    try {
+      return db.prepare(sql).get()?.[field] || '';
+    } finally {
+      db.close();
+    }
+  } catch {
+    return '';
+  }
+}
+
+function formatConversationTitle(value, maxChars = TITLE_MAX_CHARS) {
+  const clean = String(value || '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim();
+  const chars = Array.from(clean);
+  if (chars.length <= maxChars) return clean;
+  const prefix = chars.slice(0, maxChars - 1).join('');
+  const wordBreak = prefix.lastIndexOf(' ');
+  const cut = wordBreak >= Math.floor(maxChars * 0.6) ? wordBreak : prefix.length;
+  return `${prefix.slice(0, cut).trimEnd()}…`;
+}
+
+/** Codex thread name/title from its read-only local state database. */
+function readConversationTitle(codexHome, sessionFile, query = queryThreadField) {
+  const threadId = readSessionId(sessionFile);
+  if (!threadId) return '';
+  for (const database of stateDatabases(codexHome)) {
+    for (const field of ['name', 'title']) {
+      const title = formatConversationTitle(query(database, threadId, field));
+      if (title) return title;
+    }
+  }
+  return '';
+}
+
 /** "5h" / "7d" / "12h" from a window length in minutes. */
 function windowLabel(windowMinutes) {
   if (!windowMinutes) return '';
@@ -148,6 +230,9 @@ function renderBar(tokenCount, options = {}) {
     const ctxPct = Math.min(100, Math.round((used / info.model_context_window) * 100));
     const paint = ctxPct >= 90 ? p.crit : ctxPct >= 75 ? p.warn : p.dim;
     parts.push(`${p.dim('ctx')} ${paint(`${ctxPct}%`)}`);
+    if (options.conversationTitle) {
+      parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(options.conversationTitle))}`);
+    }
   }
   const total = info.total_token_usage?.total_tokens;
   if (total) {
@@ -231,7 +316,7 @@ function readCodexModel(codexHome) {
  * @param {'ansi'|'tmux'|'plain'} mode
  * @returns {string[]}
  */
-function buildFullLines(tokenCount, codexHome, mode = 'ansi') {
+function buildFullLines(tokenCount, codexHome, mode = 'ansi', conversationTitle = '') {
   const p = palette(mode);
   const sep = ` ${p.dim(`${G.sep}`)} `;
   const info = tokenCount?.info || {};
@@ -260,6 +345,9 @@ function buildFullLines(tokenCount, codexHome, mode = 'ansi') {
       ? '1M'
       : `${Math.round(info.model_context_window / 1000)}K`;
     l2parts.push(`${p.dim('ctx')} ${paint(`${buildBar(ctxPct, 10)} ${ctxPct}%`)} ${p.dim(window)}`);
+    if (conversationTitle) {
+      l2parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(conversationTitle))}`);
+    }
   }
   const total = info.total_token_usage?.total_tokens;
   if (total) {
@@ -295,26 +383,28 @@ function main() {
   const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   const sessionFile = findNewestSession(codexHome);
   const tokenCount = sessionFile ? readLastTokenCount(sessionFile) : null;
+  const conversationTitle = sessionFile ? readConversationTitle(codexHome, sessionFile) : '';
   const tmux = process.argv.includes('--tmux');
   const mode = process.argv.includes('--plain') ? 'plain' : tmux ? 'tmux' : 'ansi';
 
   const lineFlag = process.argv.indexOf('--line');
   if (lineFlag !== -1) {
     const n = Number(process.argv[lineFlag + 1]);
-    const lines = buildFullLines(tokenCount, codexHome, mode);
+    const lines = buildFullLines(tokenCount, codexHome, mode, conversationTitle);
     process.stdout.write((lines[n - 1] || '') + '\n');
     return;
   }
   if (process.argv.includes('--full')) {
-    process.stdout.write(buildFullLines(tokenCount, codexHome, mode).join('\n') + '\n');
+    process.stdout.write(buildFullLines(tokenCount, codexHome, mode, conversationTitle).join('\n') + '\n');
     return;
   }
   process.stdout.write(renderBar(tokenCount, {
     tmux,
     plain: process.argv.includes('--plain'),
+    conversationTitle,
   }) + '\n');
 }
 
-module.exports = { findNewestSession, readLastTokenCount, windowLabel, renderBar, readCodexPlugins, readCodexHooks, buildCodexEccLine, readCodexModel, buildFullLines };
+module.exports = { findNewestSession, readLastTokenCount, readSessionId, formatConversationTitle, readConversationTitle, windowLabel, renderBar, readCodexPlugins, readCodexHooks, buildCodexEccLine, readCodexModel, buildFullLines };
 
 if (require.main === module) main();

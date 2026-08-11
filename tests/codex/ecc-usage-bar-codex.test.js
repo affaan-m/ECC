@@ -63,11 +63,12 @@ test('renders primary window, context, and token total', () => {
       primary: { used_percent: 42, window_minutes: 10080, resets_at: Date.now() / 1000 + 86400 },
       secondary: null,
     },
-  });
+  }, { conversationTitle: 'Add conversation titles' });
   assert.ok(bar.includes('7d'), 'expected 7d label');
   assert.ok(bar.includes('42%'), 'expected usage percentage');
   assert.ok(bar.includes('50%'), 'expected context percentage');
   assert.ok(bar.includes('1.5M tok'), 'expected token total');
+  assert.ok(bar.includes('chat') && bar.includes('Add conversation titles'), 'expected conversation title next to context');
   assert.ok(bar.includes('↻'), 'expected reset countdown');
 });
 test('plain mode strips all color codes', () => {
@@ -102,10 +103,11 @@ test('renders three Claude-style lines in tmux mode without ANSI', () => {
         model_context_window: 200000,
       },
       rate_limits: { primary: { used_percent: 42, window_minutes: 10080 } },
-    }, tmpDir, 'tmux');
+    }, tmpDir, 'tmux', 'Show the Codex conversation title');
     assert.strictEqual(lines.length, 3);
     assert.ok(lines[0].includes('7d') && lines[0].includes('cache'), 'line 1 usage + cache');
     assert.ok(lines[1].includes('gpt-5.6') && lines[1].includes('ctx'), 'line 2 model + ctx');
+    assert.ok(lines[1].includes('chat') && lines[1].includes('Show the Codex conversation title'), 'line 2 title');
     assert.ok(lines[2].includes('ECC'), 'line 3 ECC identity');
     assert.ok(!lines.join('').includes('\x1b['), 'no raw ANSI in tmux mode');
   } finally {
@@ -138,6 +140,37 @@ test('parses enabled plugins from config.toml, ecc first', () => {
 });
 
 console.log('\nsession file parsing:');
+test('reads the session id and formats a bounded single-line title', () => {
+  const { readSessionId, formatConversationTitle } = require('../../scripts/codex/ecc-usage-bar-codex');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
+  try {
+    const session = path.join(tmpDir, 'rollout-test-019ff263-bfe1-77e3-b7ad-ce4bc6fac389.jsonl');
+    fs.writeFileSync(session, `${JSON.stringify({ type: 'session_meta', payload: { id: '019ff263-bfe1-77e3-b7ad-ce4bc6fac389' } })}\n`);
+    assert.strictEqual(readSessionId(session), '019ff263-bfe1-77e3-b7ad-ce4bc6fac389');
+    assert.strictEqual(formatConversationTitle('  First line\n second   line  ', 24), 'First line second line');
+    assert.strictEqual(formatConversationTitle('A deliberately long conversation title for the status bar', 32), 'A deliberately long…');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+test('prefers the Codex thread name over its fallback title', () => {
+  const { readConversationTitle } = require('../../scripts/codex/ecc-usage-bar-codex');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
+  try {
+    fs.writeFileSync(path.join(tmpDir, 'state_5.sqlite'), 'fixture');
+    const session = path.join(tmpDir, 'rollout-test-019ff263-bfe1-77e3-b7ad-ce4bc6fac389.jsonl');
+    fs.writeFileSync(session, `${JSON.stringify({ type: 'session_meta', payload: { id: '019ff263-bfe1-77e3-b7ad-ce4bc6fac389' } })}\n`);
+    const queried = [];
+    const title = readConversationTitle(tmpDir, session, (_database, _id, field) => {
+      queried.push(field);
+      return field === 'name' ? 'Usage bar title work' : 'Fallback prompt';
+    });
+    assert.strictEqual(title, 'Usage bar title work');
+    assert.deepStrictEqual(queried, ['name']);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
 test('finds newest session and reads last token_count', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-bar-'));
   try {
