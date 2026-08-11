@@ -1,6 +1,6 @@
 ---
 description: Fix Rust build errors and borrow checker issues
-agent: everything-claude-code:rust-build-resolver
+agent: rust-build-resolver
 subtask: true
 ---
 

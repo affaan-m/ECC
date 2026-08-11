@@ -227,6 +227,49 @@ async function runTests() {
   else failed++;
 
   if (
+    await test('serves the 3D agent-airspace page and the proximity JSON feed', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-proximity-'));
+      const dbPath = path.join(tempDir, 'ecc2.db');
+
+      try {
+        await writeMinimalDatabase(dbPath);
+        const app = await createControlPaneServer({
+          host: '127.0.0.1',
+          port: 0,
+          dbPath,
+          repoRoot: REPO_ROOT,
+          allowActions: false
+        });
+
+        await app.listen();
+        try {
+          // The Enterprise/Pro 3D observability view: a self-contained HTML page.
+          const page = await fetchLocal(`${app.url}/proximity`);
+          assert.strictEqual(page.status, 200);
+          assert.ok((page.headers.get('content-type') || '').includes('text/html'));
+          const html = await page.text();
+          assert.ok(html.includes('Agent Airspace'), 'page is titled Agent Airspace');
+          assert.ok(html.includes('<canvas'), 'page renders a canvas');
+          assert.ok(html.includes('/api/proximity'), 'page polls the proximity feed');
+
+          // The feed the page polls: shape must carry the airspace arrays.
+          const prox = await fetchLocal(`${app.url}/api/proximity`).then(r => r.json());
+          assert.ok(Array.isArray(prox.positions), 'positions array present');
+          assert.ok(Array.isArray(prox.links), 'links array present');
+          assert.ok(Array.isArray(prox.advisories), 'advisories array present');
+          assert.ok(prox.counts && typeof prox.counts === 'object', 'counts present');
+        } finally {
+          await app.close();
+        }
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await test('serves health, asset, not-found, invalid body, and read-only action responses', async () => {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-control-pane-routes-'));
 

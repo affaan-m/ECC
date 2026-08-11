@@ -118,9 +118,14 @@ function createStatePreview(options) {
   return createInstallState(options);
 }
 
-function applyInstallPlan(plan) {
+function applyInstallPlan(plan, dependencies = {}) {
   const { applyInstallPlan: applyPlan } = require('./install/apply');
-  return applyPlan(plan);
+  return applyPlan(plan, dependencies);
+}
+
+function previewInstallPlan(plan) {
+  const { previewInstallPlan: previewPlan } = require('./install/apply');
+  return previewPlan(plan);
 }
 
 function buildCopyFileOperation({ moduleId, sourcePath, sourceRelativePath, destinationPath, strategy }) {
@@ -688,6 +693,32 @@ function materializeScaffoldOperation(sourceRoot, operation) {
   });
 }
 
+function dedupeCopyFileOperations(operations) {
+  // A `copy-file` operation fully overwrites its destination, so when several
+  // of them target the same path (e.g. a generic `commands/<name>.md` shadowed
+  // by an OpenCode `.opencode/commands/<name>.md` override) only the last one
+  // actually determines the installed content. Recording the shadowed earlier
+  // writes in install-state makes `doctor` report perpetual drift and drives
+  // `repair` to clobber the override with the generic source (issue #2414).
+  // Keep only the last `copy-file` per destination - matching the sequential
+  // apply order in applyInstallPlan - and leave every other operation kind
+  // (e.g. accumulating `merge-json` writes into a shared config) untouched and
+  // in order.
+  const lastCopyIndexByDestination = new Map();
+  operations.forEach((operation, index) => {
+    if (operation.kind === 'copy-file' && operation.destinationPath) {
+      lastCopyIndexByDestination.set(operation.destinationPath, index);
+    }
+  });
+
+  return operations.filter((operation, index) => {
+    if (operation.kind !== 'copy-file' || !operation.destinationPath) {
+      return true;
+    }
+    return lastCopyIndexByDestination.get(operation.destinationPath) === index;
+  });
+}
+
 function createManifestInstallPlan(options = {}) {
   const sourceRoot = options.sourceRoot || getSourceRoot();
   const projectRoot = options.projectRoot || process.cwd();
@@ -713,10 +744,13 @@ function createManifestInstallPlan(options = {}) {
     moduleIds: options.moduleIds || [],
     includeComponentIds: options.includeComponentIds || [],
     excludeComponentIds: options.excludeComponentIds || [],
-    target
+    target,
+    exemptValidationCodes: options.exemptValidationCodes || [],
   });
   const adapter = getInstallTargetAdapter(target);
-  const operations = plan.operations.flatMap(operation => materializeScaffoldOperation(sourceRoot, operation));
+  const operations = dedupeCopyFileOperations(
+    plan.operations.flatMap(operation => materializeScaffoldOperation(sourceRoot, operation))
+  );
   const source = {
     repoVersion: getPackageVersion(sourceRoot),
     repoCommit: getRepoCommit(sourceRoot),
@@ -773,9 +807,11 @@ module.exports = {
   SUPPORTED_INSTALL_TARGETS,
   LEGACY_INSTALL_TARGETS,
   applyInstallPlan,
+  previewInstallPlan,
   createLegacyCompatInstallPlan,
   createManifestInstallPlan,
   createLegacyInstallPlan,
+  dedupeCopyFileOperations,
   getSourceRoot,
   listAvailableLanguages,
   parseInstallArgs

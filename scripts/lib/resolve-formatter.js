@@ -9,6 +9,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // ── Caches (per-process, cleared on next hook invocation) ───────────
@@ -58,8 +59,12 @@ const FORMATTER_PACKAGES = {
 function findProjectRoot(startDir) {
   if (projectRootCache.has(startDir)) return projectRootCache.get(startDir);
 
+  const homeDir = os.homedir();
   let dir = startDir;
   while (dir !== path.dirname(dir)) {
+    // Stop before checking the home directory to avoid treating global
+    // dotfiles (e.g. ~/.prettierrc) as a project root marker.
+    if (dir === homeDir) break;
     for (const marker of PROJECT_ROOT_MARKERS) {
       if (fs.existsSync(path.join(dir, marker))) {
         projectRootCache.set(startDir, dir);

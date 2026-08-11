@@ -5,6 +5,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -14,8 +15,10 @@ const {
   createLegacyCompatInstallPlan,
   createLegacyInstallPlan,
   createManifestInstallPlan,
+  dedupeCopyFileOperations,
   listAvailableLanguages,
 } = require('../../scripts/lib/install-executor');
+const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -361,7 +364,7 @@ function runTests() {
       )));
       assert.ok(plan.operations.some(operation => (
         operation.sourceRelativePath === path.join('skills', 'demo', 'SKILL.md')
-        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'ecc', 'demo', 'SKILL.md')
+        && operation.destinationPath === path.join(homeDir, '.claude', 'skills', 'demo', 'SKILL.md')
       )));
       assert.deepStrictEqual(plan.warnings, ['fixture warning']);
       assert.strictEqual(plan.statePreview.request.profile, 'minimal');
@@ -415,16 +418,256 @@ function runTests() {
 
       assert.strictEqual(applied.applied, true);
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'rules', 'ecc', 'common', 'coding-style.md')));
-      assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'ecc', 'demo', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'demo', 'SKILL.md')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'src', 'app.js')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'standalone.txt')));
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'plugin.json')));
       const state = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json'), 'utf8'));
       assert.strictEqual(state.request.profile, 'minimal');
       assert.deepStrictEqual(state.resolution.selectedModules, ['fixture-core']);
+      for (const operation of state.operations) {
+        assert.strictEqual(
+          operation.contentSha256,
+          crypto.createHash('sha256')
+            .update(fs.readFileSync(operation.destinationPath))
+            .digest('hex')
+        );
+      }
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('per-operation guard runs after mkdir and immediately before a copy write', () => {
+    const tempDir = createTempDir('install-executor-write-guard-');
+    try {
+      const targetRoot = path.join(tempDir, 'target');
+      const sourcePath = writeFile(tempDir, path.join('source', 'security.md'), 'ecc\n');
+      const destinationPath = path.join(targetRoot, 'rules', 'security.md');
+      const plan = {
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'core',
+          sourcePath,
+          sourceRelativePath: 'rules/security.md',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+        statePreview: { operations: [] },
+        target: 'kimi',
+        targetRoot,
+      };
+      const events = [];
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, {
+          beforeOperationWrite({ operation }) {
+            events.push(operation.destinationPath);
+            assert.strictEqual(fs.existsSync(path.dirname(destinationPath)), true);
+            assert.strictEqual(fs.existsSync(destinationPath), false);
+            writeFile(targetRoot, path.join('rules', 'security.md'), 'user\n');
+            throw new Error('late unowned collision');
+          },
+          writeInstallState() {},
+        }),
+        /late unowned collision/
+      );
+      assert.deepStrictEqual(events, [destinationPath]);
+      assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), 'user\n');
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('dedupeCopyFileOperations keeps the last writer per destination (issue #2414)', () => {
+    // Mirrors the OpenCode command scenario: a generic commands/<name>.md source
+    // (preserve-relative-path) and an override .opencode/commands/<name>.md source
+    // (sync-root-children) both write the same destination. Before the fix both
+    // ops were recorded, so `doctor` reported perpetual drift and `repair`
+    // clobbered the override. Only the last writer (the override) should survive.
+    const dest = '/home/.opencode/commands/build-fix.md';
+    const operations = [
+      { kind: 'copy-file', sourceRelativePath: 'commands/build-fix.md', destinationPath: dest, strategy: 'preserve-relative-path' },
+      { kind: 'copy-file', sourceRelativePath: '.opencode/commands/build-fix.md', destinationPath: dest, strategy: 'sync-root-children' },
+      { kind: 'copy-file', sourceRelativePath: 'commands/other.md', destinationPath: '/home/.opencode/commands/other.md', strategy: 'preserve-relative-path' },
+    ];
+
+    const deduped = dedupeCopyFileOperations(operations);
+
+    const destinations = deduped
+      .filter(operation => operation.kind === 'copy-file')
+      .map(operation => operation.destinationPath);
+    assert.deepStrictEqual(
+      destinations,
+      [dest, '/home/.opencode/commands/other.md'],
+      'each copy-file destination must appear exactly once'
+    );
+    const survivor = deduped.find(operation => operation.destinationPath === dest);
+    assert.strictEqual(
+      survivor.sourceRelativePath,
+      '.opencode/commands/build-fix.md',
+      'the last writer (override) must win, not the generic source'
+    );
+  })) passed++; else failed++;
+
+  if (test('dedupeCopyFileOperations leaves non copy-file operations and order intact', () => {
+    // merge-json operations legitimately accumulate into a shared config file, so
+    // multiple writes to one destination must be preserved; only redundant
+    // copy-file writes are collapsed, and surviving ops keep their relative order.
+    const mergeDest = '/home/.opencode/opencode.json';
+    const operations = [
+      { kind: 'merge-json', sourceRelativePath: 'a.json', destinationPath: mergeDest },
+      { kind: 'copy-file', sourceRelativePath: 'src/x.md', destinationPath: '/home/x.md' },
+      { kind: 'merge-json', sourceRelativePath: 'b.json', destinationPath: mergeDest },
+      { kind: 'copy-file', sourceRelativePath: 'other/x.md', destinationPath: '/home/x.md' },
+      { kind: 'remove', destinationPath: '/home/legacy.md' },
+    ];
+
+    const deduped = dedupeCopyFileOperations(operations);
+
+    assert.deepStrictEqual(
+      deduped.map(operation => `${operation.kind}:${operation.sourceRelativePath || operation.destinationPath}`),
+      ['merge-json:a.json', 'merge-json:b.json', 'copy-file:other/x.md', 'remove:/home/legacy.md'],
+      'both merge-json writes and the remove op survive; only the shadowed copy-file is dropped, order preserved'
+    );
+  })) passed++; else failed++;
+
+  if (test('applyInstallPlan refuses generic install writes outside the target root', () => {
+    const tempDir = createTempDir('install-executor-safety-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'project', '.kimi-code');
+      const outsidePath = path.join(tempDir, 'outside.txt');
+      const sourcePath = writeFile(sourceRoot, 'skills/demo/SKILL.md', '# Demo\n');
+      const plan = {
+        mode: 'manifest',
+        target: 'kimi',
+        adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc-install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'kimi',
+          adapter: { id: 'kimi-project', target: 'kimi', kind: 'project' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [
+          {
+            kind: 'copy-file',
+            moduleId: 'fixture',
+            sourcePath,
+            sourceRelativePath: 'skills/demo/SKILL.md',
+            destinationPath: outsidePath,
+            strategy: 'preserve-relative-path',
+            ownership: 'managed',
+            scaffoldOnly: false,
+          },
+        ],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState: () => {} }),
+        /outside the install root/
+      );
+      assert.strictEqual(fs.existsSync(outsidePath), false);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude install without hooks-runtime leaves an existing hooks config untouched', () => {
+    const tempDir = createTempDir('install-executor-no-hooks-');
+    try {
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const hooksPath = writeFile(
+        targetRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[{"command":"$CLAUDE_PLUGIN_ROOT/original.js"}]}}\n'
+      );
+      const before = fs.readFileSync(hooksPath, 'utf8');
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot: path.join(tempDir, 'source'),
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [],
+      };
+
+      applyInstallPlanDirect(plan, { writeInstallState() {} });
+      assert.strictEqual(fs.readFileSync(hooksPath, 'utf8'), before);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude hooks install refuses a symlinked hooks destination', () => {
+    if (process.platform === 'win32') return;
+
+    const tempDir = createTempDir('install-executor-hooks-symlink-');
+    try {
+      const sourceRoot = path.join(tempDir, 'source');
+      const targetRoot = path.join(tempDir, 'home', '.claude');
+      const outsideRoot = path.join(tempDir, 'outside');
+      const sourcePath = writeFile(
+        sourceRoot,
+        'hooks/hooks.json',
+        '{"hooks":{"SessionStart":[]}}\n'
+      );
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.mkdirSync(outsideRoot, { recursive: true });
+      fs.symlinkSync(outsideRoot, path.join(targetRoot, 'hooks'), 'dir');
+      const plan = {
+        mode: 'manifest',
+        target: 'claude',
+        adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+        sourceRoot,
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
+        warnings: [],
+        statePreview: {
+          target: 'claude',
+          adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+          root: targetRoot,
+          operations: [],
+        },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'hooks-runtime',
+          sourcePath,
+          sourceRelativePath: 'hooks/hooks.json',
+          destinationPath: path.join(targetRoot, 'hooks', 'hooks.json'),
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+        }],
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan, { writeInstallState() {} }),
+        /outside the install root|symlinked path/
+      );
+      assert.strictEqual(fs.existsSync(path.join(outsideRoot, 'hooks.json')), false);
+    } finally {
+      cleanup(tempDir);
     }
   })) passed++; else failed++;
 

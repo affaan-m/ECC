@@ -375,7 +375,7 @@ test('observe.sh creates counter file and increments on each call', () => {
     path.join(scriptsLibDir, 'homunculus-dir.sh'),
     [
       '#!/bin/bash',
-      '_ecc_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
+      '_clv2_resolve_homunculus_dir() { printf "%s\\n" "$HOME/.local/share/ecc-homunculus"; }',
       ''
     ].join('\n')
   );
@@ -454,8 +454,13 @@ test('claude invocation still includes ECC_SKIP_OBSERVE and ECC_HOOK_PROFILE gua
   const content = fs.readFileSync(observerLoopPath, 'utf8');
   // Find the claude execution line(s)
   const lines = content.split('\n');
-  const claudeLine = lines.find(l => l.includes('claude --model haiku'));
-  assert.ok(claudeLine, 'Should find claude --model haiku invocation line');
+  const claudeLine = lines.find(l => l.includes('claude --model'));
+  assert.ok(claudeLine, 'Should find claude --model invocation line');
+  // Model is configurable via ECC_OBSERVER_MODEL but must still default to haiku.
+  assert.ok(
+    claudeLine.includes('${ECC_OBSERVER_MODEL:-haiku}'),
+    `claude --model should default to haiku and honor ECC_OBSERVER_MODEL, got: ${claudeLine}`
+  );
   // The env vars are on the same line as the claude command
   const claudeLineIndex = lines.indexOf(claudeLine);
   const fullCommand = lines.slice(Math.max(0, claudeLineIndex - 1), claudeLineIndex + 3).join(' ');

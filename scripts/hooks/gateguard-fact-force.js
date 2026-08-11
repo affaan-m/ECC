@@ -94,6 +94,46 @@ function getExtraDestructiveRegex() {
   return extraDestructiveCacheRegex;
 }
 
+// Operator-supplied path exemptions. Comma-separated globs (`GATEGUARD_EXEMPT_GLOBS`)
+// matched against the normalized (forward-slash, lowercased) file path. First-touch
+// fact-forcing is skipped for a matching Edit/Write/MultiEdit target — intended for
+// low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports
+// this / what schema" carries no signal. Memoized on the env value; fail-open (a
+// malformed pattern is dropped, never throws). `*` matches within a path segment,
+// `**` across segments, `?` a single char.
+let exemptCacheKey = null;
+let exemptCacheRegexes = null;
+function getExemptMatchers() {
+  const raw = process.env.GATEGUARD_EXEMPT_GLOBS || '';
+  if (raw === exemptCacheKey) {
+    return exemptCacheRegexes;
+  }
+  exemptCacheKey = raw;
+  exemptCacheRegexes = raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(glob => {
+      const source = glob
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
+        .split('**')                           // ** boundaries (cross-segment)
+        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
+        .join('.*');                           // ** -> across segments
+      try {
+        return new RegExp(source);
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  return exemptCacheRegexes;
+}
+
+function isExemptPath(filePath) {
+  const norm = normalizeForMatch(filePath);
+  return getExemptMatchers().some(re => re.test(norm));
+}
+
 function isRoutineBashGateDisabled() {
   return ECC_ENABLE_VALUES.has(normalizeEnvValue(process.env.GATEGUARD_BASH_ROUTINE_DISABLED));
 }
@@ -942,25 +982,6 @@ function isClaudeSettingsPath(filePath) {
   return /(^|\/)\.claude\/settings(?:\.[^/]+)?\.json$/.test(normalized);
 }
 
-/**
- * Scratch/non-project paths the fact-forcing Edit/Write gate should skip:
- *   - System temp dirs (/tmp, /var/tmp, /private/tmp, /private/var/tmp) —
- *     ephemeral working files, never project source.
- *   - Claude auto-memory scratch (~/.claude/projects/<proj>/memory/) — the
- *     agent's own index/topic notes, not callable code with importers.
- * The gate still fires for every real repository file. Narrowing it here
- * removes friction on scratch writes without weakening enforcement on code.
- *
- * @param {string} filePath
- * @returns {boolean}
- */
-function isScratchPath(filePath) {
-  const normalized = normalizeForMatch(filePath);
-  if (/^\/+(?:private\/)?(?:var\/)?tmp\//.test(normalized)) return true;
-  if (/\/\.claude\/projects\/[^/]+\/memory\//.test(normalized)) return true;
-  return false;
-}
-
 function isReadOnlyGitIntrospection(command) {
   const trimmed = String(command || '').trim();
   if (!trimmed || /[\r\n;&|><`$()]/.test(trimmed)) {
@@ -1039,7 +1060,7 @@ function editGateMsg(filePath) {
     '',
     `Before editing ${safe}, present these facts:`,
     '',
-    '1. List ALL files that import/require this file (use Grep)',
+    '1. List ALL files that import/require this file (search the tree — Glob/Grep, or find/grep via Bash)',
     '2. List the public functions/classes affected by this change',
     '3. If this file reads/writes data files, show field names, structure, and date format (use redacted or synthetic values, not raw production data)',
     "4. Quote the user's current instruction verbatim",
@@ -1170,7 +1191,7 @@ function run(rawInput) {
 
   if (toolName === 'Edit' || toolName === 'Write') {
     const filePath = toolInput.file_path || '';
-    if (!filePath || isClaudeSettingsPath(filePath) || isScratchPath(filePath)) {
+    if (!filePath || isClaudeSettingsPath(filePath) || isExemptPath(filePath)) {
       return rawInput; // allow
     }
 
@@ -1201,7 +1222,7 @@ function run(rawInput) {
     const edits = toolInput.edits || [];
     for (const edit of edits) {
       const filePath = edit.file_path || '';
-      if (filePath && !isClaudeSettingsPath(filePath) && !isScratchPath(filePath) && !isChecked(filePath)) {
+      if (filePath && !isClaudeSettingsPath(filePath) && !isExemptPath(filePath) && !isChecked(filePath)) {
         const { ok, denials } = markCheckedAndCountDenial(filePath);
         if (!ok) {
           return allowWithStateWarning();

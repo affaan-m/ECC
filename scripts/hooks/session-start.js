@@ -24,11 +24,16 @@ const { resolveProjectContext, writeSessionLease, resolveSessionId, getHomunculu
 const { getPackageManager, getSelectionPrompt } = require('../lib/package-manager');
 const { listAliases } = require('../lib/session-aliases');
 const { detectProjectType } = require('../lib/project-detect');
+const {
+  isRelevanceRankingEnabled,
+  detectStackKeywords,
+  computeRelevanceBoost,
+} = require('../lib/instinct-relevance');
 const path = require('path');
 const fs = require('fs');
 
-const INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
-const MAX_INJECTED_INSTINCTS = 6;
+const DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD = 0.7;
+const DEFAULT_MAX_INJECTED_INSTINCTS = 6;
 const MAX_INJECTED_LEARNED_SKILLS = 6;
 const MAX_LEARNED_SKILL_SUMMARY_CHARS = 220;
 const DEFAULT_SESSION_START_CONTEXT_MAX_CHARS = 8000;
@@ -114,6 +119,52 @@ function getSessionStartMaxContextChars() {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_SESSION_START_CONTEXT_MAX_CHARS;
+}
+
+/**
+ * Resolve the minimum confidence an instinct needs to be injected at
+ * SessionStart. Overridable via `ECC_INSTINCT_CONFIDENCE_THRESHOLD`
+ * (a number in [0, 1]); falsy or out-of-range values fall back to
+ * {@link DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD}.
+ *
+ * @returns {number} The confidence floor for injected instincts.
+ */
+function getInstinctConfidenceThreshold() {
+  const raw = process.env.ECC_INSTINCT_CONFIDENCE_THRESHOLD;
+  if (!raw) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+
+  // Require a plain decimal (e.g. "0.7", "1", "0.95") so trailing junk
+  // ("0.7x") and non-decimal numeric syntax like "0x1" (hex) or "1e2"
+  // (exponent) are rejected whole rather than silently accepted by Number().
+  const normalized = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
+    ? parsed
+    : DEFAULT_INSTINCT_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Resolve the maximum number of instincts injected at SessionStart.
+ * Overridable via `ECC_MAX_INJECTED_INSTINCTS` (a positive integer);
+ * falsy or invalid values fall back to
+ * {@link DEFAULT_MAX_INJECTED_INSTINCTS}.
+ *
+ * @returns {number} The cap on injected instincts.
+ */
+function getMaxInjectedInstincts() {
+  const raw = process.env.ECC_MAX_INJECTED_INSTINCTS;
+  if (!raw) return DEFAULT_MAX_INJECTED_INSTINCTS;
+
+  // Require a plain non-negative integer so "3.9", "6abc", "0x1" (hex),
+  // and "1e2" (exponent) are rejected whole and fall back to the default,
+  // rather than parseInt truncating or Number() accepting alternate syntax.
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) return DEFAULT_MAX_INJECTED_INSTINCTS;
+
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_INJECTED_INSTINCTS;
 }
 
 function getSessionStartMode(rawInput) {
@@ -373,9 +424,26 @@ function summarizeActiveInstincts(observerContext) {
     ...globalDirs.flatMap(({ dir, scope }) => readInstinctsFromDir(dir, scope)),
   ];
 
+  const confidenceThreshold = getInstinctConfidenceThreshold();
+  const maxInjected = getMaxInjectedInstincts();
+
+  // Relevance ranking (issue #2371 part b): at SessionStart there is no user
+  // task yet, so relevance is location/stack based. Project-scoped and
+  // stack-matching instincts get a small additive boost over their confidence.
+  // Gated by ECC_INSTINCT_RELEVANCE_RANKING (default on); when off, or when no
+  // stack is detected and nothing is project-scoped, every boost is 0 and the
+  // ranking collapses to confidence-only (unchanged behaviour).
+  // Detect the stack from the real project source tree (projectRoot), not the
+  // homunculus state dir (projectDir). In a global session projectRoot is empty,
+  // so detectStackKeywords falls back to process.cwd().
+  const relevanceEnabled = isRelevanceRankingEnabled();
+  const stackKeywords = relevanceEnabled
+    ? detectStackKeywords(observerContext.projectRoot || undefined)
+    : new Set();
+
   const deduped = new Map();
   for (const instinct of scopedInstincts) {
-    if (!instinct.id || instinct.confidence < INSTINCT_CONFIDENCE_THRESHOLD) continue;
+    if (!instinct.id || instinct.confidence < confidenceThreshold) continue;
     const existing = deduped.get(instinct.id);
     if (!existing || (existing._scopeLabel !== 'project' && instinct._scopeLabel === 'project')) {
       deduped.set(instinct.id, instinct);
@@ -386,14 +454,21 @@ function summarizeActiveInstincts(observerContext) {
     .map(instinct => ({
       ...instinct,
       action: extractInstinctAction(instinct.content),
+      _relevance: relevanceEnabled ? computeRelevanceBoost(instinct, stackKeywords) : 0,
     }))
     .filter(instinct => instinct.action)
     .sort((left, right) => {
-      if (right.confidence !== left.confidence) return right.confidence - left.confidence;
+      // Primary: combined confidence + relevance. When relevance is off every
+      // _relevance is 0, so this reduces to the prior confidence-only ordering.
+      // Tie-breaks on a genuinely equal combined score: project scope first,
+      // then id (deterministic).
+      const leftScore = left.confidence + left._relevance;
+      const rightScore = right.confidence + right._relevance;
+      if (rightScore !== leftScore) return rightScore - leftScore;
       if (left._scopeLabel !== right._scopeLabel) return left._scopeLabel === 'project' ? -1 : 1;
       return String(left.id).localeCompare(String(right.id));
     })
-    .slice(0, MAX_INJECTED_INSTINCTS);
+    .slice(0, maxInjected);
 
   if (ranked.length === 0) {
     return '';

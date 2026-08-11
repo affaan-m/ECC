@@ -27,6 +27,8 @@ import ipaddress
 import socket
 import urllib.parse
 import urllib.request
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
@@ -297,10 +299,19 @@ def detect_project() -> dict:
             "observations_file": GLOBAL_OBSERVATIONS_FILE,
         }
 
-    # 1. CLAUDE_PROJECT_DIR env var
+    # 1. CLAUDE_PROJECT_DIR env var (explicit override)
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_dir and os.path.isdir(env_dir):
         project_root = _git_repo_root(env_dir)
+        # Non-git directory explicitly pointed at by CLAUDE_PROJECT_DIR: honor it
+        # as a project root (path-hash identity) rather than collapsing to the
+        # shared `global` bucket. Mirrors detect-project.sh so the observer
+        # (shell) and this CLI agree on the project id for the same directory;
+        # os.path.realpath matches the shell's `cd ... && pwd -P`. Gated on the
+        # explicit env var so an arbitrary non-git cwd (priority 2) never
+        # becomes a "project".
+        if not project_root:
+            project_root = os.path.realpath(env_dir)
 
     # 2. git repo root
     if not project_root:
@@ -394,33 +405,67 @@ def detect_project() -> dict:
     }
 
 
+@contextmanager
+def _registry_lock():
+    """Serialize registry read-modify-write across concurrent sessions.
+
+    Acquires the same advisory lock for every registry writer (``_update_registry``
+    and ``_write_registry``) so ``projects delete/gc/merge`` cannot interleave with
+    a concurrent observe-time update and corrupt ``projects.json``. No-op on
+    platforms without ``fcntl`` (Windows).
+    """
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
+    lock_fd = None
+    try:
+        if _HAS_FCNTL:
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+
 def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
     """Update the projects.json registry.
 
     Uses file locking (where available) to prevent concurrent sessions from
     overwriting each other's updates.
     """
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.lock"
-    lock_fd = None
-
-    try:
-        # Acquire advisory lock to serialize read-modify-write
-        if _HAS_FCNTL:
-            lock_fd = open(lock_path, "w")
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-
+    with _registry_lock():
         try:
             with open(REGISTRY_FILE, encoding="utf-8") as f:
                 registry = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             registry = {}
+        # A registry that is valid JSON but not a mapping (e.g. a list from a
+        # corrupt projects.json) must not crash the update before the per-entry
+        # guard below: fall back to an empty dict so the whole file is healed.
+        if not isinstance(registry, dict):
+            registry = {}
 
+        # Mirror the shell counterpart in detect-project.sh: the entry carries
+        # "id" and "created_at" alongside the other fields so a projects.json
+        # record has the same shape regardless of which path (Python CLI or
+        # shell hook) last wrote it. "created_at" is preserved from any
+        # existing entry; only "last_seen" advances on update.
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        existing = registry.get(pid, {})
+        # A malformed registry (e.g. a non-dict value for this id) must not
+        # crash the update: fall back to an empty dict so the corrupt entry is
+        # healed by the rewrite, matching the old unconditional-overwrite
+        # behavior.
+        if not isinstance(existing, dict):
+            existing = {}
         registry[pid] = {
+            "id": pid,
             "name": pname,
             "root": proot,
             "remote": premote,
-            "last_seen": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "created_at": existing.get("created_at", now),
+            "last_seen": now,
         }
 
         tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
@@ -429,10 +474,6 @@ def _update_registry(pid: str, pname: str, proot: str, premote: str) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_file, REGISTRY_FILE)
-    finally:
-        if lock_fd is not None:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
 
 
 def load_registry() -> dict:
@@ -445,15 +486,19 @@ def load_registry() -> dict:
 
 
 def _write_registry(registry: dict) -> None:
-    """Write the project registry atomically."""
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(registry, f, indent=2)
-        f.write("\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_file, REGISTRY_FILE)
+    """Write the project registry atomically.
+
+    Holds the same advisory lock as ``_update_registry`` so concurrent
+    ``projects delete/gc/merge`` and observe-time updates cannot corrupt the file.
+    """
+    with _registry_lock():
+        tmp_file = REGISTRY_FILE.parent / f".{REGISTRY_FILE.name}.tmp.{os.getpid()}"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(registry, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, REGISTRY_FILE)
 
 
 def _validate_project_id(project_id: str) -> bool:
@@ -573,7 +618,14 @@ def _project_counts(project_id: str) -> dict:
 
 
 def _remove_project_storage(project_id: str) -> None:
-    project_dir = PROJECTS_DIR / project_id
+    # Defense-in-depth: resolve and confirm the target is contained within
+    # PROJECTS_DIR before recursively deleting, even though callers validate the
+    # project id. A relaxed validator or a future caller must never be able to
+    # turn this into an arbitrary-directory delete.
+    projects_root = PROJECTS_DIR.resolve()
+    project_dir = (PROJECTS_DIR / project_id).resolve()
+    if project_dir == projects_root or projects_root not in project_dir.parents:
+        raise ValueError(f"refusing to remove {project_dir}: escapes {projects_root}")
     if project_dir.exists():
         shutil.rmtree(project_dir)
 
@@ -1093,6 +1145,163 @@ def cmd_export(args) -> int:
 # Evolve Command
 # ─────────────────────────────────────────────
 
+# Words carrying no topical signal in a trigger sentence.
+TRIGGER_STOP_WORDS = {
+    'when', 'while', 'the', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with',
+    'that', 'this', 'from', 'into', 'at', 'by', 'as', 'is', 'are', 'be', 'it',
+    'its', 'they', 'them', 'their', 'you', 'your', 'new', 'any', 'all', 'about',
+    'after', 'before', 'over', 'via', 'use', 'using', 'need', 'needs', 'not',
+}
+
+# Overlap coefficient (shared / smaller set) two triggers need to cluster.
+# Jaccard is the wrong metric here: trigger keyword sets average ~7 words, so
+# even clearly-related pairs top out near 0.33 and nothing ever groups.
+TRIGGER_SIMILARITY_THRESHOLD = 0.5
+
+# Guard against one incidental shared word pulling unrelated instincts together.
+TRIGGER_MIN_SHARED_KEYWORDS = 2
+
+
+# Evolved artefact slugs are trimmed to keep file names short. The cut has to
+# land on a word boundary: a hard slice produced names like
+# "investigating-comple" and "learning-about-compl", which read as typos.
+EVOLVED_SKILL_SLUG_LENGTH = 30
+EVOLVED_COMMAND_SLUG_LENGTH = 20
+EVOLVED_AGENT_SLUG_LENGTH = 20
+
+
+def _truncate_slug(slug: str, max_length: int) -> str:
+    """Trim a slug to max_length without splitting a word.
+
+    Falls back to a hard cut only when the first word is already longer than
+    the limit, because then there is no boundary left to retreat to.
+    """
+    if len(slug) <= max_length:
+        return slug
+    head = slug[:max_length]
+    # The cut can already land on a separator, in which case head is a whole
+    # sequence of words and dropping one more would lose a word for nothing.
+    if slug[max_length] == '-':
+        return head.rstrip('-')
+    boundary = head.rfind('-')
+    if boundary > 0:
+        return head[:boundary]
+    return head.strip('-')
+
+
+def _evolved_skill_name(trigger: str) -> str:
+    """Slug used for a generated skill directory. Shared by preview and writer."""
+    return _truncate_slug(
+        re.sub(r'[^a-z0-9]+', '-', str(trigger or '').lower()).strip('-'),
+        EVOLVED_SKILL_SLUG_LENGTH,
+    )
+
+
+def _evolved_command_name(trigger: str) -> str:
+    """Slug used for a generated command file. Shared by preview and writer."""
+    stripped = str(trigger or 'unknown').lower().replace('when ', '').replace('implementing ', '')
+    return _truncate_slug(
+        re.sub(r'[^a-z0-9]+', '-', stripped).strip('-'),
+        EVOLVED_COMMAND_SLUG_LENGTH,
+    )
+
+
+def _evolved_agent_name(trigger: str) -> str:
+    """Slug used for a generated agent file. Shared by preview and writer."""
+    return _truncate_slug(
+        re.sub(r'[^a-z0-9]+', '-', str(trigger or '').lower()).strip('-'),
+        EVOLVED_AGENT_SLUG_LENGTH,
+    )
+
+
+# How many candidates of each kind the analysis prints before summarising the
+# rest. The preview is a sample, never the whole set, so it always says so.
+PREVIEW_LIMIT = 5
+
+
+def _print_preview_remainder(total: int, shown: int, noun: str) -> None:
+    """State how many candidates the preview left out.
+
+    Without this the truncated list reads as the complete set.
+    """
+    if total > shown:
+        print(f"  ... and {total - shown} more {noun} not shown\n")
+
+
+def _assign_unique_slugs(items: list, slug_fn) -> list:
+    """Pair every item with a collision-free slug, preserving input order.
+
+    Word-boundary trimming makes collisions more likely because two triggers
+    can now share a whole prefix, and a collision previously meant one
+    generated file silently overwriting another. Preview and writer both call
+    this over the same ordered list, so the names shown and the names written
+    stay identical.
+    """
+    used = set()
+    assigned = []
+    for item in items:
+        base = slug_fn(item)
+        if not base:
+            assigned.append((item, ''))
+            continue
+        name = base
+        suffix = 2
+        while name in used:
+            name = f"{base}-{suffix}"
+            suffix += 1
+        used.add(name)
+        assigned.append((item, name))
+    return assigned
+
+
+def _trigger_keywords(trigger: str) -> set:
+    """Reduce a trigger sentence to the words that carry its topic."""
+    words = re.findall(r'[a-z0-9]+', str(trigger or '').lower())
+    return {w for w in words if len(w) > 2 and w not in TRIGGER_STOP_WORDS}
+
+
+def _cluster_by_keyword_overlap(instincts: list) -> dict:
+    """Group instincts whose triggers share enough keywords.
+
+    Triggers are free-form sentences, so grouping on the whole normalized
+    string puts every instinct in its own bucket and no skill or agent
+    candidate is ever produced. Greedy clustering on keyword overlap groups
+    the near-duplicate instincts that accumulate in a project.
+    """
+    clusters = []  # [(shared_keywords, [instincts])]
+
+    for inst in instincts:
+        keywords = _trigger_keywords(inst.get('trigger', ''))
+        if not keywords:
+            continue
+
+        best_index, best_score, best_shared = -1, 0.0, 0
+        for index, (cluster_keywords, _members) in enumerate(clusters):
+            shared = len(keywords & cluster_keywords)
+            smaller = min(len(keywords), len(cluster_keywords))
+            score = shared / smaller if smaller else 0.0
+            if score > best_score:
+                best_index, best_score, best_shared = index, score, shared
+
+        if (best_index >= 0
+                and best_score >= TRIGGER_SIMILARITY_THRESHOLD
+                and best_shared >= TRIGGER_MIN_SHARED_KEYWORDS):
+            cluster_keywords, members = clusters[best_index]
+            members.append(inst)
+            # Keep the shared core so a cluster stays on one topic.
+            clusters[best_index] = (cluster_keywords & keywords, members)
+        else:
+            clusters.append((keywords, [inst]))
+
+    grouped = {}
+    for cluster_keywords, members in clusters:
+        label = ' '.join(sorted(cluster_keywords)[:4]) or 'general'
+        while label in grouped:
+            label += ' +'
+        grouped[label] = members
+    return grouped
+
+
 def cmd_evolve(args) -> int:
     """Analyze instincts and suggest evolutions to skills/commands/agents."""
     project = detect_project()
@@ -1123,14 +1332,7 @@ def cmd_evolve(args) -> int:
     print(f"High confidence instincts (>=80%): {len(high_conf)}")
 
     # Find clusters (instincts with similar triggers)
-    trigger_clusters = defaultdict(list)
-    for inst in instincts:
-        trigger = inst.get('trigger', '')
-        # Normalize trigger
-        trigger_key = trigger.lower()
-        for keyword in ['when', 'creating', 'writing', 'adding', 'implementing', 'testing']:
-            trigger_key = trigger_key.replace(keyword, '').strip()
-        trigger_clusters[trigger_key].append(inst)
+    trigger_clusters = _cluster_by_keyword_overlap(instincts)
 
     # Find clusters with 2+ instincts (good skill candidates)
     skill_candidates = []
@@ -1151,8 +1353,8 @@ def cmd_evolve(args) -> int:
     print(f"\nPotential skill clusters found: {len(skill_candidates)}")
 
     if skill_candidates:
-        print(f"\n## SKILL CANDIDATES\n")
-        for i, cand in enumerate(skill_candidates[:5], 1):
+        print(f"\n## SKILL CANDIDATES ({len(skill_candidates)})\n")
+        for i, cand in enumerate(skill_candidates[:PREVIEW_LIMIT], 1):
             scope_info = ', '.join(cand['scopes'])
             print(f"{i}. Cluster: \"{cand['trigger']}\"")
             print(f"   Instincts: {len(cand['instincts'])}")
@@ -1163,37 +1365,51 @@ def cmd_evolve(args) -> int:
             for inst in cand['instincts'][:3]:
                 print(f"     - {inst.get('id')} [{inst.get('scope', '?')}]")
             print()
+        _print_preview_remainder(len(skill_candidates), PREVIEW_LIMIT, 'skill clusters')
 
     # Command candidates (workflow instincts with high confidence)
     workflow_instincts = [i for i in instincts if i.get('domain') == 'workflow' and i.get('confidence', 0) >= 0.7]
     if workflow_instincts:
         print(f"\n## COMMAND CANDIDATES ({len(workflow_instincts)})\n")
-        for inst in workflow_instincts[:5]:
-            trigger = inst.get('trigger', 'unknown')
-            cmd_name = trigger.replace('when ', '').replace('implementing ', '').replace('a ', '')
-            cmd_name = cmd_name.replace(' ', '-')[:20]
+        # Slugs come from the same helper the writer uses, over the same ordered
+        # list, or the preview advertises names that differ from the files
+        # --generate actually writes.
+        for inst, cmd_name in _assign_unique_slugs(
+            workflow_instincts,
+            lambda i: _evolved_command_name(i.get('trigger', 'unknown')),
+        )[:PREVIEW_LIMIT]:
             print(f"  /{cmd_name}")
             print(f"    From: {inst.get('id')} [{inst.get('scope', '?')}]")
             print(f"    Confidence: {inst.get('confidence', 0.5):.0%}")
             print()
+        _print_preview_remainder(len(workflow_instincts), PREVIEW_LIMIT, 'command candidates')
 
     # Agent candidates (complex multi-step patterns)
     agent_candidates = [c for c in skill_candidates if len(c['instincts']) >= 3 and c['avg_confidence'] >= 0.75]
     if agent_candidates:
         print(f"\n## AGENT CANDIDATES ({len(agent_candidates)})\n")
-        for cand in agent_candidates[:3]:
-            agent_name = cand['trigger'].replace(' ', '-')[:20] + '-agent'
+        for cand, agent_name in _assign_unique_slugs(
+            agent_candidates,
+            lambda c: _evolved_agent_name(str(c.get('trigger', '')).strip()),
+        )[:PREVIEW_LIMIT]:
             print(f"  {agent_name}")
             print(f"    Covers {len(cand['instincts'])} instincts")
             print(f"    Avg confidence: {cand['avg_confidence']:.0%}")
             print()
+        _print_preview_remainder(len(agent_candidates), PREVIEW_LIMIT, 'agent candidates')
 
     # Promotion candidates (project instincts that could be global)
     _show_promotion_candidates(project)
 
     if args.generate:
         evolved_dir = project["evolved_dir"] if project["id"] != "global" else GLOBAL_EVOLVED_DIR
-        generated = _generate_evolved(skill_candidates, workflow_instincts, agent_candidates, evolved_dir)
+        generated = _generate_evolved(
+            skill_candidates,
+            workflow_instincts,
+            agent_candidates,
+            evolved_dir,
+            limit=max(0, getattr(args, 'limit', 0) or 0),
+        )
         if generated:
             print(f"\nGenerated {len(generated)} evolved structures:")
             for path in generated:
@@ -1272,6 +1488,106 @@ def _show_promotion_candidates(project: dict) -> None:
         print(f"  Run `instinct-cli.py promote` to promote these to global scope.\n")
 
 
+def _frontmatter_scalar(lines: list[str], key: str) -> Optional[str]:
+    """Extract a simple scalar value from frontmatter lines."""
+    for line in lines:
+        if ':' not in line:
+            continue
+        parsed_key, value = line.split(':', 1)
+        if parsed_key.strip() != key:
+            continue
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            return value[1:-1].replace('\\"', '"').replace('\\\\', '\\')
+        if value.startswith("'") and value.endswith("'"):
+            return value[1:-1].replace("''", "'")
+        return value
+    return None
+
+
+def _remove_instinct_blocks(content: str, instinct_id: str) -> tuple[str, int]:
+    """Remove raw frontmatter blocks with a matching instinct ID."""
+    lines = content.splitlines(keepends=True)
+    retained = []
+    removed = 0
+    index = 0
+
+    while index < len(lines):
+        if lines[index].strip() != '---':
+            retained.append(lines[index])
+            index += 1
+            continue
+
+        block_start = index
+        frontmatter_end = index + 1
+        while frontmatter_end < len(lines) and lines[frontmatter_end].strip() != '---':
+            frontmatter_end += 1
+
+        if frontmatter_end >= len(lines):
+            retained.extend(lines[block_start:])
+            break
+
+        next_block_start = frontmatter_end + 1
+        while next_block_start < len(lines) and lines[next_block_start].strip() != '---':
+            next_block_start += 1
+
+        block_id = _frontmatter_scalar(lines[block_start + 1:frontmatter_end], 'id')
+        if block_id == instinct_id:
+            removed += 1
+        else:
+            retained.extend(lines[block_start:next_block_start])
+        index = next_block_start
+
+    return ''.join(retained), removed
+
+
+def _write_text_atomic(file_path: Path, content: str) -> None:
+    """Replace a text file via same-directory temp file."""
+    temp_fd, temp_name = tempfile.mkstemp(
+        prefix=f".{file_path.name}.",
+        suffix=".tmp",
+        dir=file_path.parent,
+        text=True,
+    )
+    temp_file = Path(temp_name)
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, file_path)
+    finally:
+        try:
+            temp_file.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _remove_instinct_from_source(source_file_str: str, instinct_id: str) -> None:
+    """Strip promoted instinct blocks from the project-scoped source file."""
+    source_file = Path(source_file_str)
+    if not source_file.exists():
+        return
+
+    try:
+        content = source_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"Warning: Failed to read promoted instinct source {source_file}: {exc}", file=sys.stderr)
+        return
+
+    remaining_content, removed = _remove_instinct_blocks(content, instinct_id)
+    if removed == 0:
+        return
+
+    try:
+        if remaining_content:
+            _write_text_atomic(source_file, remaining_content)
+        else:
+            source_file.unlink()
+    except OSError as exc:
+        print(f"Warning: Failed to remove promoted instinct from {source_file}: {exc}", file=sys.stderr)
+
+
 def cmd_promote(args) -> int:
     """Promote project-scoped instincts to global scope."""
     project = detect_project()
@@ -1334,6 +1650,9 @@ def _promote_specific(project: dict, instinct_id: str, force: bool, dry_run: boo
     output_content += target.get('content', '') + "\n"
 
     output_file.write_text(output_content, encoding="utf-8")
+    source_file = target.get('_source_file')
+    if source_file:
+        _remove_instinct_from_source(source_file, instinct_id)
     print(f"\nPromoted '{instinct_id}' to global scope.")
     print(f"  Saved to: {output_file}")
     return 0
@@ -1407,6 +1726,10 @@ def _promote_auto(project: dict, force: bool, dry_run: bool) -> int:
         output_content += inst.get('content', '') + "\n"
 
         output_file.write_text(output_content, encoding="utf-8")
+        for _, _, entry_inst in cand['entries']:
+            entry_source = entry_inst.get('_source_file')
+            if entry_source:
+                _remove_instinct_from_source(entry_source, cand['id'])
         promoted += 1
 
     print(f"\nPromoted {promoted} instincts to global scope.")
@@ -1611,17 +1934,33 @@ def _cmd_projects_merge(args) -> int:
 # Generate Evolved Structures
 # ─────────────────────────────────────────────
 
-def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path) -> list[str]:
-    """Generate skill/command/agent files from analyzed instinct clusters."""
+def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_candidates: list, evolved_dir: Path, limit: int = 0) -> list[str]:
+    """Generate skill/command/agent files from analyzed instinct clusters.
+
+    ``limit`` caps how many candidates of each kind are written; 0 writes them
+    all. Anything a cap leaves out is reported, because the previous fixed
+    caps (5 skills, 5 commands, 3 agents) discarded most candidates without
+    saying a word — 35 command candidates produced 5 files and no warning.
+    """
     generated = []
 
-    # Generate skills from top candidates
-    for cand in skill_candidates[:5]:
+    def bounded(assigned: list, kind: str) -> list:
+        if limit and len(assigned) > limit:
+            print(f"\nNote: writing {limit} of {len(assigned)} {kind} candidates "
+                  f"(--limit {limit}); {len(assigned) - limit} skipped.")
+            return assigned[:limit]
+        return assigned
+
+    # Generate skills from candidate clusters
+    for cand, name in bounded(
+        _assign_unique_slugs(
+            skill_candidates,
+            lambda c: _evolved_skill_name(str(c.get('trigger', '')).strip()),
+        ),
+        'skill',
+    ):
         trigger = cand['trigger'].strip()
-        if not trigger:
-            continue
-        name = re.sub(r'[^a-z0-9]+', '-', trigger.lower()).strip('-')[:30]
-        if not name:
+        if not trigger or not name:
             continue
 
         skill_dir = evolved_dir / "skills" / name
@@ -1643,10 +1982,13 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
         generated.append(str(skill_dir / "SKILL.md"))
 
     # Generate commands from workflow instincts
-    for inst in workflow_instincts[:5]:
-        trigger = inst.get('trigger', 'unknown')
-        cmd_name = re.sub(r'[^a-z0-9]+', '-', trigger.lower().replace('when ', '').replace('implementing ', ''))
-        cmd_name = cmd_name.strip('-')[:20]
+    for inst, cmd_name in bounded(
+        _assign_unique_slugs(
+            workflow_instincts,
+            lambda i: _evolved_command_name(i.get('trigger', 'unknown')),
+        ),
+        'command',
+    ):
         if not cmd_name:
             continue
 
@@ -1660,9 +2002,13 @@ def _generate_evolved(skill_candidates: list, workflow_instincts: list, agent_ca
         generated.append(str(cmd_file))
 
     # Generate agents from complex clusters
-    for cand in agent_candidates[:3]:
-        trigger = cand['trigger'].strip()
-        agent_name = re.sub(r'[^a-z0-9]+', '-', trigger.lower()).strip('-')[:20]
+    for cand, agent_name in bounded(
+        _assign_unique_slugs(
+            agent_candidates,
+            lambda c: _evolved_agent_name(str(c.get('trigger', '')).strip()),
+        ),
+        'agent',
+    ):
         if not agent_name:
             continue
 
@@ -1859,6 +2205,8 @@ def main() -> int:
     # Evolve
     evolve_parser = subparsers.add_parser('evolve', help='Analyze and evolve instincts')
     evolve_parser.add_argument('--generate', action='store_true', help='Generate evolved structures')
+    evolve_parser.add_argument('--limit', type=int, default=0, metavar='N',
+                               help='Max candidates of each kind to generate (default: 0 = all)')
 
     # Promote (new in v2.1)
     promote_parser = subparsers.add_parser('promote', help='Promote project instincts to global scope')

@@ -1,13 +1,13 @@
 {
   "name": "ecc",
-  "version": "2.0.0",
-  "description": "Harness-native ECC plugin for engineering teams - 67 agents, 279 skills, 92 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
+  "version": "2.2.0",
+  "description": "Harness-native ECC plugin for engineering teams - 68 agents, 286 skills, 94 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
   "author": {
     "name": "Affaan Mustafa",
     "url": "https://x.com/affaanmustafa"
   },
   "homepage": "https://ecc.tools",
-  "repository": "https://github.com/marlon-costa-dc/ECC",
+  "repository": "https://github.com/affaan-m/ECC",
   "license": "MIT",
   "keywords": [
     "claude-code",
@@ -22,6 +22,20 @@
     "automation",
     "best-practices"
   ],
+  "userConfig": {
+    "hooks_enabled": {
+      "type": "boolean",
+      "title": "Enable ECC hooks",
+      "description": "Run ECC's local lifecycle, quality, and safety automation. Disable this to keep skills and commands without local hook automation.",
+      "default": true
+    },
+    "hook_profile": {
+      "type": "string",
+      "title": "ECC hook profile",
+      "description": "Choose minimal, standard, or strict. Invalid values safely fall back to standard.",
+      "default": "standard"
+    }
+  },
   "mcpServers": {},
   "skills": [
     "./skills/"

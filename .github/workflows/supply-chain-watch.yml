@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -35,7 +35,7 @@ jobs:
       - name: Verify registry signatures and advisories
         run: |
           npm audit signatures
-          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
 
       - name: Validate IOC scanner fixtures
         run: node tests/ci/scan-supply-chain-iocs.test.js

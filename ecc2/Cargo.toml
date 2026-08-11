@@ -47,7 +47,7 @@ libc = "0.2"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.16"
+cron = "0.17"
 
 # UUID for session IDs
 uuid = { version = "1", features = ["v4"] }

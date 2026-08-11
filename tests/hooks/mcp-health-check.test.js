@@ -1121,6 +1121,77 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  // Windows-only: when a .cmd shim is probed via shell:true, args that contain
+  // spaces (e.g. paths under "C:\Program Files") must be passed as a single
+  // quoted token, not split by cmd.exe at every space boundary.
+  if (process.platform === 'win32') {
+    if (await asyncTest('windows: .cmd probe preserves space-containing args as single tokens', async () => {
+      const tempDir = createTempDir();
+      const binDir = path.join(tempDir, 'bin');
+      const configPath = path.join(tempDir, 'claude.json');
+      const statePath = path.join(tempDir, 'mcp-health.json');
+
+      fs.mkdirSync(binDir, { recursive: true });
+
+      // This .cmd script writes its first argument verbatim to stderr and then
+      // keeps running so the probe can time out (= healthy). We inspect stderr
+      // to verify cmd.exe received the spaced path as one argument, not split.
+      const cmdPath = path.join(binDir, 'spacedarg.cmd');
+      fs.writeFileSync(
+        cmdPath,
+        ['@echo off', 'echo ARG1=[%1] 1>&2', 'node -e "setInterval(()=>{},1000)"', ''].join('\r\n')
+      );
+
+      // A path containing a space — the canonical trigger for the DEP0190 bug.
+      const spacedPath = 'C:\\Program Files\\Some Server\\server.exe';
+
+      try {
+        writeConfig(configPath, {
+          mcpServers: {
+            spacedarg: {
+              command: 'spacedarg',
+              args: ['--codesys-path', spacedPath]
+            }
+          }
+        });
+
+        const input = { tool_name: 'mcp__spacedarg__ping', tool_input: {} };
+        const result = runHook(input, {
+          CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+          ECC_MCP_CONFIG_PATH: configPath,
+          ECC_MCP_HEALTH_STATE_PATH: statePath,
+          ECC_MCP_HEALTH_TIMEOUT_MS: '800',
+          PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`
+        });
+
+        assert.strictEqual(
+          result.code,
+          0,
+          `Expected .cmd probe with spaced arg to succeed: ${hookFailureDetails(result, statePath)}`
+        );
+
+        const state = readState(statePath);
+        assert.strictEqual(
+          state.servers.spacedarg.status,
+          'healthy',
+          'Expected server with space-containing arg to be marked healthy'
+        );
+
+        // The .cmd echo writes its first positional (%1). If the path was split
+        // at the space, %1 would be "C:\Program" (no quotes, no "Files" part).
+        // If properly quoted, %1 is the full quoted path.
+        assert.ok(
+          !result.stderr.includes('ARG1=[C:\\Program]'),
+          `Space-containing arg was split by cmd.exe (DEP0190 bug still present). stderr: ${result.stderr}`
+        );
+      } finally {
+        cleanupTempDir(tempDir);
+      }
+    })) passed++; else failed++;
+  } else {
+    console.log('  - skipped: windows: .cmd probe preserves space-containing args as single tokens (non-Windows)');
+  }
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

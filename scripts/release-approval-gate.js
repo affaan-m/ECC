@@ -5,13 +5,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const RELEASE = '2.0.0-rc.1';
-const RELEASE_DIR = `docs/releases/${RELEASE}`;
 const SCHEMA_VERSION = 'ecc.release-approval-gate.v1';
 const SCRIPT_PATH = 'scripts/release-approval-gate.js';
-const OWNER_PACKET_PATH = `${RELEASE_DIR}/owner-approval-packet-2026-05-19.md`;
-const URL_LEDGER_PATH = `${RELEASE_DIR}/release-url-ledger-2026-05-19.md`;
-const PREVIEW_MANIFEST_PATH = `${RELEASE_DIR}/preview-pack-manifest.md`;
 const REQUIRED_COMMAND = 'npm run release:approval-gate -- --format json';
 
 const REQUIRED_DECISIONS = [
@@ -87,20 +82,19 @@ const REQUIRED_URL_SURFACES = [
   },
 ];
 
-const ANNOUNCEMENT_FILES = [
-  `${RELEASE_DIR}/release-notes.md`,
-  `${RELEASE_DIR}/x-thread.md`,
-  `${RELEASE_DIR}/linkedin-post.md`,
-  `${RELEASE_DIR}/article-outline.md`,
-  `${RELEASE_DIR}/partner-sponsor-talks-pack.md`,
-  'docs/business/social-launch-copy.md',
+const ANNOUNCEMENT_FILE_NAMES = [
+  'release-notes.md',
+  'x-thread.md',
+  'linkedin-post.md',
+  'article-outline.md',
+  'partner-sponsor-talks-pack.md',
 ];
 
 function usage() {
   console.log([
     'Usage: node scripts/release-approval-gate.js [--format <text|json>] [--root <dir>]',
     '',
-    'Final approval gate for ECC 2.0 rc.1 publication and outbound actions.',
+    'Final approval gate for the release version declared by package.json.',
     '',
     'Options:',
     '  --format <text|json>  Output format (default: text)',
@@ -193,6 +187,32 @@ function safeParseJson(text) {
   } catch (_error) {
     return null;
   }
+}
+
+function resolveRelease(packageJson, options = {}) {
+  if (typeof options.release === 'string' && options.release.trim()) {
+    return options.release.trim();
+  }
+
+  return typeof packageJson.version === 'string' ? packageJson.version.trim() : '';
+}
+
+function releaseDirFor(release) {
+  return `docs/releases/${release}`;
+}
+
+function releasePathsFor(release) {
+  const releaseDir = releaseDirFor(release);
+
+  return {
+    ownerPacketPath: `${releaseDir}/owner-approval-packet-2026-05-19.md`,
+    urlLedgerPath: `${releaseDir}/release-url-ledger-2026-05-19.md`,
+    previewManifestPath: `${releaseDir}/preview-pack-manifest.md`,
+    announcementFiles: [
+      ...ANNOUNCEMENT_FILE_NAMES.map(fileName => `${releaseDir}/${fileName}`),
+      'docs/business/social-launch-copy.md',
+    ],
+  };
 }
 
 function normalizeLabel(value) {
@@ -366,11 +386,13 @@ function topActionsForChecks(checks) {
 function buildReport(options = {}) {
   const rootDir = path.resolve(options.root || process.cwd());
   const packageJson = safeParseJson(readText(rootDir, 'package.json')) || {};
+  const release = resolveRelease(packageJson, options);
+  const releasePaths = releasePathsFor(release);
   const packageScripts = packageJson.scripts || {};
   const packageFiles = Array.isArray(packageJson.files) ? packageJson.files : [];
-  const ownerPacket = readText(rootDir, OWNER_PACKET_PATH);
-  const ledger = readText(rootDir, URL_LEDGER_PATH);
-  const manifest = readText(rootDir, PREVIEW_MANIFEST_PATH);
+  const ownerPacket = readText(rootDir, releasePaths.ownerPacketPath);
+  const ledger = readText(rootDir, releasePaths.urlLedgerPath);
+  const manifest = readText(rootDir, releasePaths.previewManifestPath);
   const decisions = parseDecisionRegister(ownerPacket);
 
   const missingDecisions = [];
@@ -388,11 +410,11 @@ function buildReport(options = {}) {
     .filter(surface => !ledger.includes(surface.label))
     .map(surface => surface.label);
   const urlBlockers = ledgerBlockers(ledger);
-  const announcementOffenders = findAnnouncementOffenders(rootDir, ANNOUNCEMENT_FILES);
+  const announcementOffenders = findAnnouncementOffenders(rootDir, releasePaths.announcementFiles);
   const commandListedIn = [
-    ownerPacket.includes(REQUIRED_COMMAND) ? OWNER_PACKET_PATH : '',
-    ledger.includes(REQUIRED_COMMAND) ? URL_LEDGER_PATH : '',
-    manifest.includes(REQUIRED_COMMAND) ? PREVIEW_MANIFEST_PATH : '',
+    ownerPacket.includes(REQUIRED_COMMAND) ? releasePaths.ownerPacketPath : '',
+    ledger.includes(REQUIRED_COMMAND) ? releasePaths.urlLedgerPath : '',
+    manifest.includes(REQUIRED_COMMAND) ? releasePaths.previewManifestPath : '',
   ].filter(Boolean);
 
   const checks = [
@@ -440,7 +462,7 @@ function buildReport(options = {}) {
       'announcement-copy-finalized',
       announcementOffenders.length === 0 ? 'pass' : 'fail',
       announcementOffenders.length === 0
-        ? `${ANNOUNCEMENT_FILES.length} launch/outbound copy files have no placeholders or private paths`
+        ? `${releasePaths.announcementFiles.length} launch/outbound copy files have no placeholders or private paths`
         : `offenders: ${announcementOffenders.map(item => `${item.path}:${item.line}`).join(', ')}`,
       'Replace placeholders with live URLs and remove private local paths from launch/outbound copy.'
     ),
@@ -465,7 +487,7 @@ function buildReport(options = {}) {
 
   return {
     schema_version: SCHEMA_VERSION,
-    release: RELEASE,
+    release,
     ready: failed.length === 0,
     digest,
     summary: {
@@ -543,11 +565,12 @@ if (require.main === module) {
 }
 
 module.exports = {
-  ANNOUNCEMENT_FILES,
+  ANNOUNCEMENT_FILE_NAMES,
   REQUIRED_COMMAND,
   REQUIRED_DECISIONS,
   REQUIRED_URL_SURFACES,
   buildReport,
+  releasePathsFor,
   parseArgs,
   renderText,
 };

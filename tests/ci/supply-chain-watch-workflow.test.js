@@ -43,7 +43,7 @@ function run() {
   if (test('uses read-only permissions and non-persisting checkout credentials', () => {
     assert.match(source, /permissions:\r?\n\s+contents: read/);
     assert.doesNotMatch(source, /^\s+[A-Za-z-]+:\s*write\b/m);
-    assert.match(source, /uses: actions\/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10/);
+    assert.match(source, /uses: actions\/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0/);
     assert.match(source, /persist-credentials: false/);
     assert.doesNotMatch(source, /id-token:\s*write/);
     assert.doesNotMatch(source, /actions\/cache@/);
@@ -52,7 +52,7 @@ function run() {
   if (test('installs without lifecycle scripts and verifies registry signatures', () => {
     assert.match(source, /npm ci --ignore-scripts/);
     assert.match(source, /npm audit signatures/);
-    assert.match(source, /npm audit --audit-level=high/);
+    assert.match(source, /npm audit --omit=dev --audit-level=high/);
   })) passed++; else failed++;
 
   if (test('runs IOC fixtures, emits JSON report, and uploads the artifact', () => {

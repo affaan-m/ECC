@@ -1,8 +1,8 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 67 specialized agents, 279 skills, 92 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 68 specialized agents, 286 skills, 94 commands, and automated hook workflows for software development.
 
-**Version:** 2.0.0
+**Version:** 2.2.0
 
 ## Core Principles
 
@@ -53,6 +53,7 @@ Tools must be **invoked**, not described. When any skill, agent, or context inst
 | rust-build-resolver | Rust build errors | Rust build failures |
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
+| rag-pipeline-reviewer | RAG pipeline review | Retrieval quality, chunking, reranking, RAGAS evaluation coverage |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
 
 ## Agent Orchestration
@@ -65,6 +66,7 @@ Use agents proactively without user prompt:
 - Security-sensitive code → **security-reviewer**
 - Autonomous loops / loop monitoring → **loop-operator**
 - Harness config reliability and cost → **harness-optimizer**
+- RAG/retrieval pipeline changes → **rag-pipeline-reviewer**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
@@ -157,9 +159,9 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 67 specialized subagents
-skills/          — 279 workflow skills and domain knowledge
-commands/        — 92 slash commands
+agents/          — 68 specialized subagents
+skills/          — 286 workflow skills and domain knowledge
+commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)
 scripts/         — Cross-platform Node.js utilities

@@ -6,6 +6,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
 
+const SHELL_PROBE_TIMEOUT_MS = 2000;
+
 function readStdinRaw() {
   try {
     return fs.readFileSync(0, 'utf8');
@@ -58,28 +60,82 @@ function resolveTarget(rootDir, relPath) {
   return resolvedTarget;
 }
 
+let _cachedShell = undefined;
+let _cachedBash = undefined;
+
+function isPowerShellBin(bin) {
+  const base = path.basename(bin).toLowerCase();
+  return base === 'pwsh.exe' || base === 'pwsh' || base === 'powershell.exe' || base === 'powershell';
+}
+
 function findShellBinary() {
+  if (_cachedShell !== undefined) return _cachedShell;
+
   const candidates = [];
+
+  // Explicit override always wins — check before any platform probing.
+  // Warning: setting BASH to a bash binary on Windows bypasses the PowerShell
+  // preference and may reintroduce bash.exe zombie accumulation.
   if (process.env.BASH && process.env.BASH.trim()) {
     candidates.push(process.env.BASH.trim());
   }
 
   if (process.platform === 'win32') {
-    candidates.push('bash.exe', 'bash');
+    // Prefer PowerShell on Windows — it is native and does not leave zombie
+    // bash.exe / conhost.exe processes the way MSYS2/Git Bash does.
+    // Note: PowerShell is only suitable for .ps1 scripts; callers that need
+    // to run .sh scripts (e.g. observe-runner.js) must not use this function.
+    candidates.push('pwsh.exe', 'powershell.exe', 'bash.exe', 'bash');
   } else {
     candidates.push('bash', 'sh');
   }
+
+  const psProbeArgs = ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'];
+  const shProbeArgs = ['-c', ':'];
+
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, isPowerShellBin(candidate) ? psProbeArgs : shProbeArgs, {
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: SHELL_PROBE_TIMEOUT_MS,
+    });
+    // A candidate is only usable if it both spawns AND exits cleanly. The
+    // Windows System32 bash.exe WSL launcher spawns without error but exits
+    // non-zero when no distro is installed, so !probe.error alone is not enough.
+    if (!probe.error && probe.status === 0) {
+      _cachedShell = candidate;
+      return _cachedShell;
+    }
+  }
+
+  _cachedShell = null;
+  return null;
+}
+
+function findBashBinary() {
+  if (_cachedBash !== undefined) return _cachedBash;
+
+  const candidates = [];
+  if (process.env.BASH && process.env.BASH.trim() && !isPowerShellBin(process.env.BASH.trim())) {
+    candidates.push(process.env.BASH.trim());
+  }
+  candidates.push('bash.exe', 'bash');
 
   for (const candidate of candidates) {
     const probe = spawnSync(candidate, ['-c', ':'], {
       stdio: 'ignore',
       windowsHide: true,
+      timeout: SHELL_PROBE_TIMEOUT_MS,
     });
-    if (!probe.error) {
-      return candidate;
+    // Require a clean exit, not just a successful spawn: the Windows System32
+    // bash.exe WSL stub spawns fine but exits non-zero with no distro installed.
+    if (!probe.error && probe.status === 0) {
+      _cachedBash = candidate;
+      return _cachedBash;
     }
   }
 
+  _cachedBash = null;
   return null;
 }
 
@@ -100,6 +156,10 @@ function spawnNode(rootDir, relPath, raw, args) {
   });
 }
 
+// spawnShell is not used by any hook in the shipped hooks.json configuration
+// (all hooks use 'node' mode). It is provided for third-party plugins that
+// register shell-backed hooks. Plugins should supply .ps1 scripts on Windows
+// and .sh scripts on Unix; mixing them will produce a skip with a stderr warning.
 function spawnShell(rootDir, relPath, raw, args) {
   const shell = findShellBinary();
   if (!shell) {
@@ -116,7 +176,37 @@ function spawnShell(rootDir, relPath, raw, args) {
     CLAUDE_PLUGIN_ROOT: rootDir,
     ECC_PLUGIN_ROOT: rootDir,
   };
-  return spawnSync(shell, [resolveTarget(rootDir, relPath), ...args], {
+  const scriptPath = resolveTarget(rootDir, relPath);
+  const isPs = isPowerShellBin(shell);
+
+  // PowerShell cannot interpret bash scripts — fall back to a bash candidate
+  // rather than silently failing the hook.
+  if (isPs && scriptPath.endsWith('.sh')) {
+    const bash = findBashBinary();
+    if (!bash) {
+      return {
+        status: 0,
+        stdout: '',
+        stderr: '[Hook] .sh script requested but no bash binary found on Windows; skipping\n',
+      };
+    }
+    return spawnSync(bash, [scriptPath, ...args], {
+      input: raw,
+      encoding: 'utf8',
+      env: hookEnv,
+      cwd: process.cwd(),
+      timeout: 30000,
+      windowsHide: true,
+    });
+  }
+
+  const shellArgs = isPs
+    // -ExecutionPolicy Bypass: default Windows policy (Restricted) blocks -File
+    // execution of .ps1 scripts; Bypass scopes only to this child process.
+    ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]
+    : [scriptPath, ...args];
+
+  return spawnSync(shell, shellArgs, {
     input: raw,
     encoding: 'utf8',
     env: hookEnv,

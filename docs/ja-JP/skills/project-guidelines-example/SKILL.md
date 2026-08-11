@@ -1,3 +1,10 @@
+---
+name: project-guidelines-example
+description: Project-specific skill template covering architecture, patterns, testing, and deployment guidance.
+metadata:
+  origin: ECC
+---
+
 # プロジェクトガイドラインスキル（例）
 
 これはプロジェクト固有のスキルの例です。自分のプロジェクトのテンプレートとして使用してください。
