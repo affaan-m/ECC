@@ -98,7 +98,7 @@ if (!hasUv) {
     assert.ok(res2.stdout.includes('SKIP'), 'expected SKIP on second run');
     assert.strictEqual(fs.readFileSync(config, 'utf8'), before, 'file changed on no-op run');
     const backups = fs.readdirSync(dir).filter((f) => f.includes('.bak.'));
-    assert.strictEqual(backups.length, 1, 'no-op run must not create a backup');
+    assert.strictEqual(backups.length, 0, 'fresh + no-op runs must not create a backup');
   });
 }
 

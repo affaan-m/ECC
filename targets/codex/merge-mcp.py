@@ -27,12 +27,21 @@ def main() -> int:
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
 
-    servers = json.loads(args.servers.read_text())['mcpServers']
-    doc = (
-        tomlkit.parse(args.config.read_text())
-        if args.config.exists()
-        else tomlkit.document()
-    )
+    try:
+        servers = json.loads(args.servers.read_text())['mcpServers']
+    except (OSError, json.JSONDecodeError, KeyError) as e:
+        print(f'ERROR: cannot read MCP servers from {args.servers}: {e}', file=sys.stderr)
+        return 1
+
+    try:
+        doc = (
+            tomlkit.parse(args.config.read_text())
+            if args.config.exists()
+            else tomlkit.document()
+        )
+    except (OSError, tomlkit.exceptions.ParseError) as e:
+        print(f'ERROR: cannot parse {args.config}: {e}', file=sys.stderr)
+        return 1
     if 'mcp_servers' not in doc:
         doc['mcp_servers'] = tomlkit.table(True)
     table = doc['mcp_servers']
@@ -53,14 +62,11 @@ def main() -> int:
     if args.dry_run or not added:
         return 0
 
+    args.config.parent.mkdir(parents=True, exist_ok=True)
     if args.config.exists():
         backup = args.config.with_name(f'{args.config.name}.bak.{int(time.time())}')
         shutil.copy2(args.config, backup)
-    else:
-        backup = args.config.with_name(f'{args.config.name}.bak.{int(time.time())}')
-        backup.write_text('')
-    print(f'BACKUP {backup}')
-    args.config.parent.mkdir(parents=True, exist_ok=True)
+        print(f'BACKUP {backup}')
     args.config.write_text(tomlkit.dumps(doc))
     return 0
 
