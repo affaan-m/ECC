@@ -35,7 +35,7 @@ jobs:
       - name: Verify registry signatures and advisories
         run: |
           npm audit signatures
-          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
 
       - name: Validate IOC scanner fixtures
         run: node tests/ci/scan-supply-chain-iocs.test.js

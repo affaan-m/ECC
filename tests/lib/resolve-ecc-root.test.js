@@ -363,6 +363,37 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('custom probe skips a qualifying root that lacks the probed script (auto-update)', () => {
+    // The surviving failure shape after #2544/#2577: a partial install can
+    // carry full resolver evidence (script tree + sentinel ECC skill) yet
+    // still lack the top-level script that auto-update will execute. The
+    // default probe rightly accepts such a root; a caller probing for the
+    // script it runs must skip it and reach the complete plugin root.
+    const homeDir = createTempDir();
+    try {
+      const claudeDir = setupStandardInstall(homeDir);
+      const marketplaceRoot = setupLegacyPluginInstall(homeDir, ['marketplaces', 'ecc']);
+      fs.writeFileSync(path.join(marketplaceRoot, 'scripts', 'auto-update.js'), '// stub');
+
+      assert.strictEqual(
+        resolveEccRoot({ envRoot: '', homeDir }),
+        claudeDir,
+        'default probe accepts a root with full resolver evidence'
+      );
+      assert.strictEqual(
+        resolveEccRoot({
+          envRoot: '',
+          homeDir,
+          probe: path.join('scripts', 'auto-update.js'),
+        }),
+        marketplaceRoot,
+        'auto-update probe must skip roots that lack the script it will execute'
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // ─── INLINE_RESOLVE ───
 
   if (test('INLINE_RESOLVE is a non-empty string', () => {

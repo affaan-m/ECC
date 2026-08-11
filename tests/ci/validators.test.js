@@ -498,7 +498,7 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
-  if (test('fails when README parity table counts drift', () => {
+  if (test('does not require obsolete cross-harness parity counts in README', () => {
     const testDir = createTestDir();
     const {
       readmePath,
@@ -526,11 +526,7 @@ function runTests() {
       MARKETPLACE_JSON_PATH: marketplaceJsonPath,
     });
 
-    assert.strictEqual(result.code, 1, 'Should fail when README parity table drifts');
-    assert.ok(
-      (result.stdout + result.stderr).includes('README.md parity table'),
-      'Should mention the README parity table mismatch'
-    );
+    assert.strictEqual(result.code, 0, 'Catalog counts should be validated from inventory surfaces, not parity claims');
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
@@ -622,7 +618,7 @@ function runTests() {
     assert.ok(readme.includes('|-- agents/           # 1 specialized subagents for delegation'), 'Should sync README project tree agents count');
     assert.ok(readme.includes('| Agents | PASS: 1 agents |'), 'Should sync README comparison table');
     assert.ok(readme.includes('| Skills | 16 | .agents/skills/ |'), 'Should not rewrite unrelated README tables');
-    assert.ok(readme.includes('| **Agents** | 1 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 |'), 'Should sync README parity table');
+    assert.ok(readme.includes('| **Agents** | 7 | Shared (AGENTS.md) | Shared (AGENTS.md) | 12 |'), 'Should leave obsolete parity prose untouched');
     assert.ok(agentsDoc.includes('providing 1 specialized agents, 1 skills, 1 commands'), 'Should sync AGENTS summary');
     assert.ok(agentsDoc.includes('skills/          — 1 workflow skills and domain knowledge'), 'Should sync AGENTS structure');
     assert.ok(zhRootReadme.includes('你现在可以使用 1 个代理、1 个技能和 1 个命令'), 'Should sync README.zh-CN quick-start summary');

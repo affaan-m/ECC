@@ -75,24 +75,45 @@ function main() {
       assert.match(result.stdout, /work-items/);
       assert.match(result.stdout, /platform-audit/);
       assert.match(result.stdout, /security-ioc-scan/);
+      assert.match(result.stdout, /feedback/);
     }],
     ['delegates explicit install command', () => {
-      const result = runCli(['install', '--dry-run', '--json', 'typescript']);
-      assert.strictEqual(result.status, 0, result.stderr);
-      const payload = parseJson(result.stdout);
-      assert.strictEqual(payload.dryRun, true);
-      assert.strictEqual(payload.plan.mode, 'legacy-compat');
-      assert.deepStrictEqual(payload.plan.legacyLanguages, ['typescript']);
-      assert.ok(payload.plan.selectedModuleIds.includes('framework-language'));
+      const homeDir = createTempDir('ecc-cli-install-home-');
+      try {
+        const result = runCli(['install', '--dry-run', '--json', 'typescript'], {
+          env: {
+            CLAUDE_CONFIG_DIR: path.join(homeDir, '.claude'),
+            HOME: homeDir,
+          },
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const payload = parseJson(result.stdout);
+        assert.strictEqual(payload.dryRun, true);
+        assert.strictEqual(payload.plan.mode, 'legacy-compat');
+        assert.deepStrictEqual(payload.plan.legacyLanguages, ['typescript']);
+        assert.ok(payload.plan.selectedModuleIds.includes('framework-language'));
+      } finally {
+        fs.rmSync(homeDir, { force: true, recursive: true });
+      }
     }],
     ['routes implicit top-level args to install', () => {
-      const result = runCli(['--dry-run', '--json', 'typescript']);
-      assert.strictEqual(result.status, 0, result.stderr);
-      const payload = parseJson(result.stdout);
-      assert.strictEqual(payload.dryRun, true);
-      assert.strictEqual(payload.plan.mode, 'legacy-compat');
-      assert.deepStrictEqual(payload.plan.legacyLanguages, ['typescript']);
-      assert.ok(payload.plan.selectedModuleIds.includes('framework-language'));
+      const homeDir = createTempDir('ecc-cli-install-home-');
+      try {
+        const result = runCli(['--dry-run', '--json', 'typescript'], {
+          env: {
+            CLAUDE_CONFIG_DIR: path.join(homeDir, '.claude'),
+            HOME: homeDir,
+          },
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const payload = parseJson(result.stdout);
+        assert.strictEqual(payload.dryRun, true);
+        assert.strictEqual(payload.plan.mode, 'legacy-compat');
+        assert.deepStrictEqual(payload.plan.legacyLanguages, ['typescript']);
+        assert.ok(payload.plan.selectedModuleIds.includes('framework-language'));
+      } finally {
+        fs.rmSync(homeDir, { force: true, recursive: true });
+      }
     }],
     ['delegates plan command', () => {
       const result = runCli(['plan', '--list-profiles', '--json']);
@@ -195,6 +216,13 @@ function main() {
       const result = runCli(['help', 'repair']);
       assert.strictEqual(result.status, 0, result.stderr);
       assert.match(result.stdout, /Usage: node scripts\/repair\.js/);
+    }],
+    ['delegates feedback command', () => {
+      const result = runCli(['feedback', '--json']);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const payload = parseJson(result.stdout);
+      assert.strictEqual(payload.schemaVersion, 'ecc.feedback.v1');
+      assert.strictEqual(payload.diagnosticsUploaded, false);
     }],
     ['supports help for the auto-update subcommand', () => {
       const result = runCli(['help', 'auto-update']);
