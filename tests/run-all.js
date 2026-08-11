@@ -21,7 +21,8 @@ const testFiles = [
   'ci/scan-supply-chain-iocs.test.js',
   'ci/supply-chain-advisory-sources.test.js',
   'scripts/setup-package-manager.test.js',
-  'scripts/skill-create-output.test.js'
+  'scripts/skill-create-output.test.js',
+  'scripts/install-dispatcher.test.js'
 ];
 
 const BOX_W = 58; // inner width between delimiters
