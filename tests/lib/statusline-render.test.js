@@ -11,6 +11,7 @@ const path = require('path');
 
 const {
   C,
+  G,
   pctColor,
   buildBar,
   formatCountdown,
@@ -44,19 +45,19 @@ function runTests() {
 
   console.log('buildBar:');
   t('0% renders all empty blocks', () => {
-    assert.strictEqual(buildBar(0, 8), '░'.repeat(8));
+    assert.strictEqual(buildBar(0, 8), G.empty.repeat(8));
   });
   t('100% renders all full blocks', () => {
-    assert.strictEqual(buildBar(100, 8), '█'.repeat(8));
+    assert.strictEqual(buildBar(100, 8), G.full.repeat(8));
   });
   t('50% renders half full', () => {
-    assert.strictEqual(buildBar(50, 8), '████░░░░');
+    assert.strictEqual(buildBar(50, 8), G.full.repeat(4) + G.empty.repeat(4));
   });
   t('clamps values beyond 100', () => {
-    assert.strictEqual(buildBar(250, 4), '████');
+    assert.strictEqual(buildBar(250, 4), G.full.repeat(4));
   });
   t('clamps negative values', () => {
-    assert.strictEqual(buildBar(-10, 4), '░░░░');
+    assert.strictEqual(buildBar(-10, 4), G.empty.repeat(4));
   });
 
   console.log('\nglyphSet:');
@@ -155,7 +156,7 @@ function runTests() {
     assert.ok(line.includes('7d'), 'expected 7d label');
     assert.ok(line.includes('71%'), 'expected 5h percentage');
     assert.ok(line.includes('23%'), 'expected 7d percentage');
-    assert.ok(line.includes('↻'), 'expected reset countdown');
+    assert.ok(line.includes(G.reset), 'expected reset countdown');
   });
   t('renders a single window when only one exists', () => {
     const line = buildUsageLine({ five_hour: { used_percentage: 5 } }, null);

@@ -141,7 +141,15 @@ function runGuidedPtyFixture(answers) {
   await test('interactive prompts keep spacing, recommended defaults, and one visible confirmation', async () => {
     const output = capture();
     const terminal = fakeTerminal(['all', '1', '3', '2']);
-    const options = await collectInteractiveOptions(parseArgs([]), { output, terminal });
+    const previousLcAll = process.env.LC_ALL;
+    process.env.LC_ALL = 'C.UTF-8';
+    let options;
+    try {
+      options = await collectInteractiveOptions(parseArgs([]), { output, terminal });
+    } finally {
+      if (previousLcAll === undefined) delete process.env.LC_ALL;
+      else process.env.LC_ALL = previousLcAll;
+    }
     assert.deepStrictEqual(options.harnesses, ['claude', 'codex', 'kimi']);
     assert.match(output.read(), /Advanced adapters[^\n]+\.\n\n\nWhere should Claude/);
     assert.deepStrictEqual(terminal.prompts, [

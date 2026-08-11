@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { G } = require('../../scripts/lib/statusline-render');
 
 const {
   findNewestSession,
@@ -70,7 +71,7 @@ test('renders primary window, context, and token total', () => {
   assert.ok(bar.includes('1.5M tok'), 'expected token total');
   assert.ok(bar.indexOf('cache') < bar.indexOf('chat'), 'expected conversation title after cache');
   assert.ok(bar.includes('Add conversation titles'), 'expected conversation title');
-  assert.ok(bar.includes('↻'), 'expected reset countdown');
+  assert.ok(bar.includes(G.reset), 'expected reset countdown');
 });
 test('plain mode strips all color codes', () => {
   const bar = renderBar({
