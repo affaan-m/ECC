@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../../scripts/lib/common.sh
+source "${REPO_ROOT}/scripts/lib/common.sh"
 
 usage() {
     local available
@@ -93,14 +93,6 @@ global_claude="${CONTENT_ROOT}/instructions/global.md"
 if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     remove_file "${CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
-
-    # Also remove Codex AGENTS.md when Codex is installed/configured.
-    if codex_is_available; then
-        remove_file "${CODEX_DIR}/AGENTS.md" "$(codex_agents_label)"
-        cleanup_empty_dir "$CODEX_DIR" "$(dirname "$(codex_agents_label)")/"
-    else
-        log_info "Codex not detected; skipping Codex AGENTS.md"
-    fi
     echo ""
 fi
 
