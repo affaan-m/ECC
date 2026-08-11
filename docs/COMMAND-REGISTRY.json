@@ -338,7 +338,7 @@
     },
     {
       "command": "governance-retro",
-      "description": "复盘 PROJECT_LOG.md——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为\"该下沉成 lint/测试\"的候选清单。LOG 从流水账变资产。",
+      "description": "复盘项目历史角色——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为\"该下沉成 lint/测试\"的候选清单。让历史流水账变成资产。",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
