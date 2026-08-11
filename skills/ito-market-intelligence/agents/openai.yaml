@@ -1,0 +1,4 @@
+interface:
+  display_name: "Itô Market Intelligence"
+  short_description: "Source-grounded prediction-market intelligence"
+  default_prompt: "Use $ito-market-intelligence to create a current, source-grounded prediction-market brief with provenance and freshness caveats."
