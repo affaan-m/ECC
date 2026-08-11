@@ -235,6 +235,40 @@ if (test('blocks commits with staged secret patterns across checkable files', ()
   });
 })) passed++; else failed++;
 
+if (test('blocks commits with an unquoted API key assignment', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'config.py', [
+      'API_KEY=sk_live_1234567890abcdef',
+      ''
+    ].join('\n'));
+
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix: unquoted key"' } });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.output, input);
+    assert.strictEqual(result.exitCode, 2);
+    assert.ok(stderr.includes('Potential API key'), `expected unquoted API key warning, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
+if (test('does not flag ordinary unquoted apiKey code references', () => {
+  inTempRepo(repoDir => {
+    writeAndStage(repoDir, 'index.js', [
+      'const apiKey = getApiKeyFromVault();',
+      'this.apiKey = options.apiKey;',
+      'const apiKey2 = process.env.API_KEY;',
+      ''
+    ].join('\n'));
+
+    const input = JSON.stringify({ tool_input: { command: 'git commit -m "fix: no secret here"' } });
+    const { result, stderr } = captureConsoleError(() => hook.evaluate(input));
+
+    assert.strictEqual(result.output, input);
+    assert.strictEqual(result.exitCode, 0, `expected exit 0 (no secrets), got ${result.exitCode}: ${stderr}`);
+    assert.ok(!stderr.includes('Potential API key'), `should not flag ordinary code as a secret, got: ${stderr}`);
+  });
+})) passed++; else failed++;
+
 if (test('reports eslint pylint and golint failures from staged files', () => {
   inTempRepo(repoDir => {
     writeAndStage(repoDir, 'index.js', 'const lint = true;\n');
@@ -289,6 +323,53 @@ if (test('stdin entry point truncates oversized input and preserves pass-through
   assert.ok(result.stdout.length <= 1024 * 1024, 'expected stdout to stay within hook input limit');
   assert.strictEqual(result.stdout, oversized.slice(0, result.stdout.length));
   assert.ok(result.stderr.includes('[Hook] Error:'), 'truncated JSON should be logged and allowed');
+})) passed++; else failed++;
+
+// --- Secret-scanner placeholder exclusion (false-positive fix, no false-negative) ---
+
+if (test('isPlaceholderSecret suppresses obvious non-secret placeholders', () => {
+  for (const v of ['process.env.API_KEY', '${API_KEY}', '<YOUR_KEY>', 'REPLACE_ME', 'CHANGEME', 'YOUR_API_KEY', '']) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), true, `should suppress placeholder: ${JSON.stringify(v)}`);
+  }
+})) passed++; else failed++;
+
+if (test('isPlaceholderSecret does NOT suppress real high-entropy secrets', () => {
+  for (const v of [
+    'sk-live-abcdef0123456789ABCDEF',          // prefixed
+    '9F8A7B6C5D4E3F2A1B0C9D8E7F6A5B4C',          // uppercase hex
+    'JBSWY3DPEHPK3PXP',                           // base32 TOTP/HMAC seed
+    '1234567890123456',                          // digit-only token
+    'PROD_7F3A9C2E_LIVE_8821',                    // uppercase-with-underscore token
+    'AbCd1234EfGh5678'                            // mixed token
+  ]) {
+    assert.strictEqual(hook.isPlaceholderSecret(v), false, `must NOT suppress real secret: ${v}`);
+  }
+})) passed++; else failed++;
+
+// --- Quote-aware commit-message extraction (truncation fix) ---
+
+if (test('captures full double-quoted -m message containing an apostrophe', () => {
+  const res = hook.validateCommitMessage(`git commit -m "fix: don't crash on empty input"`);
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, "fix: don't crash on empty input");
+})) passed++; else failed++;
+
+if (test('captures full single-quoted -m message containing a double quote', () => {
+  const res = hook.validateCommitMessage(`git commit -m 'fix: handle the "edge" case'`);
+  assert.strictEqual(res.message, 'fix: handle the "edge" case');
+})) passed++; else failed++;
+
+if (test('captures full double-quoted -m message with escaped inner quotes (not truncated)', () => {
+  const res = hook.validateCommitMessage('git commit -m "fix: say \\"hello\\" to the user"');
+  assert.ok(res, 'expected a validation result');
+  assert.strictEqual(res.message, 'fix: say \\"hello\\" to the user');
+})) passed++; else failed++;
+
+if (test('measures length of the full message past an apostrophe (not the truncated prefix)', () => {
+  const subject = "fix: it's a deliberately long commit subject that comfortably exceeds seventy-two chars";
+  const res = hook.validateCommitMessage(`git commit -m "${subject}"`);
+  assert.strictEqual(res.message, subject);
+  assert.ok(res.issues.some(i => i.type === 'length'), 'full (>72) message should trigger a length issue');
 })) passed++; else failed++;
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

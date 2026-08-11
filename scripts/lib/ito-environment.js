@@ -27,6 +27,9 @@ const ITO_RUNTIME_ENVIRONMENT_KEYS = Object.freeze([
   "ITO_API_KEY",
   "ITO_API_URL",
   "ITO_INVENTORY_URL",
+  "ITO_AUTH_MODE",
+  "ITO_ALLOW_FILE_TOKEN",
+  "ITO_TOKEN_FILE",
 ]);
 
 const ITO_EVAL_ENVIRONMENT_KEYS = Object.freeze([
@@ -42,7 +45,7 @@ const ECC_ITO_CONTROL_KEYS = Object.freeze([
   "ECC_ITO_CLI_EXECUTABLE",
   "NODE_ENV",
 ]);
-const ITO_RUNTIME_COMMANDS = new Set(["auth", "find", "status"]);
+const ITO_RUNTIME_COMMANDS = new Set(["login", "logout", "auth", "find", "status"]);
 
 function copyDefined(source, target, key) {
   if (typeof source[key] === "string") {
@@ -61,6 +64,7 @@ function createSafeItoEnvironment(source = process.env, options = {}) {
 
   if (options.includeItoRuntime) {
     for (const key of ITO_RUNTIME_ENVIRONMENT_KEYS) {
+      if (key === "ITO_API_KEY" && options.includeItoApiKey !== true) continue;
       copyDefined(source, safe, key);
     }
   }
@@ -93,6 +97,7 @@ function createSafeItoInvocationEnvironment(
   return createSafeItoEnvironment(source, {
     includeControls: options.includeControls === true,
     includeItoRuntime: ITO_RUNTIME_COMMANDS.has(command),
+    includeItoApiKey: ["auth", "find", "status"].includes(command),
     includeItoEvals: command === "evals",
   });
 }

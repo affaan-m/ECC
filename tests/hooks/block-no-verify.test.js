@@ -115,6 +115,28 @@ if (test('allows -n after combined -am message option', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Short options cluster, so -n need not lead ---
+
+if (test('blocks -n clustered after -a', () => {
+  const r = runHook({ tool_input: { command: 'git commit -an -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks -n clustered after -s', () => {
+  const r = runHook({ tool_input: { command: 'git commit -sn -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks -n clustered after -v', () => {
+  const r = runHook({ tool_input: { command: 'git commit -vn -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows -mn, where n is the inline message and not a flag', () => {
+  const r = runHook({ tool_input: { command: 'git commit -mn' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 if (test('allows core.hooksPath discussed in a quoted commit message', () => {
   const r = runHook({ tool_input: { command: 'git commit -m "doc: explain core.hooksPath= setting"' } });
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
