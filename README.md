@@ -153,7 +153,7 @@ Access to 68 agents, 285 skills, and 94 legacy command shims, plus hooks, rules,
 You can use ECC with Claude Code, Codex, and other harnesses at the same time. Choose one install method for each harness:
 
 - **Recommended today for Claude Code:** use the [native plugin commands above](#install-with-claude-code)
-- **Coming in 2.2.0:** guided setup with `npx ecc-universal setup` and `npx ecc-universal install --guided`
+- **Coming in release 2.2:** guided package setup for Claude Code, Codex, and Kimi Code; see the preview at the bottom of this install area
 - **Works:** Claude Code plugin + Codex native plugin
 - **Works:** Claude Code plugin + the legacy Codex sync flow
 - **Avoid:** Claude Code plugin + full Claude manual install
@@ -164,63 +164,6 @@ You can use ECC with Claude Code, Codex, and other harnesses at the same time. C
 If you already layered multiple installs and things look duplicated, skip straight to [Reset / Uninstall ECC](#reset--uninstall-ecc).
 
 **Install trouble?** Open the short [install or runtime problem form](https://github.com/affaan-m/ECC/issues/new?template=install-problem.yml), or run `ecc feedback`. ECC never uploads diagnostics automatically.
-
-### Guided setup (coming in 2.2.0)
-
-> [!WARNING]
-> Do not run the guided commands in this section until npm publishes 2.2.0.
-> They are documented here as a preview of the next release.
-
-For Claude Code plugin setup, updates, scope changes, and hook-profile changes:
-
-```bash
-npx ecc-universal setup
-```
-
-The same published package works with modern package runners:
-
-| Package runner | Guided setup command |
-|---|---|
-| npm / npx | `npx ecc-universal setup` |
-| pnpm | `pnpm dlx ecc-universal setup` |
-| Yarn 2+ | `yarn dlx ecc-universal setup` |
-| Bun | `bunx ecc-universal setup` |
-
-Yarn Classic 1 does not provide `yarn dlx`; use `npx`, install the package globally, or upgrade Yarn for a temporary one-shot run.
-
-The wizard inventories the official marketplace and every native Claude install scope before making changes, then installs, updates, or safely moves `ecc@ecc` to the scope you choose. Rerun the same command whenever you want to update ECC, change scope, or change its hook profile. This setup wizard currently configures the Claude Code plugin; use the multi-harness wizard below for Codex or Kimi Code.
-
-To configure more than one coding agent in one reviewed flow, use the multi-harness wizard:
-
-```bash
-npx ecc-universal install --guided
-```
-
-It lets you select any combination of Claude Code, Codex, and Kimi Code, shows each install channel and destination, preflights every selection before the first write, and asks for one final confirmation.
-
-| Harness | Guided install behavior |
-|---|---|
-| Claude Code | Native `ecc@ecc` plugin with one `user`, `project`, or `local` scope and an ECC hook profile |
-| Codex | Native Codex marketplace/plugin lifecycle; hook review and trust remain Codex-owned |
-| Kimi Code | Managed project files under `./.kimi-code`; ECC hooks, model/provider settings, and authentication are not configured |
-
-For automation, make every provider-specific choice explicit:
-
-```bash
-npx ecc-universal install --guided \
-  --harness claude --harness codex --harness kimi \
-  --claude-scope local --claude-hooks standard \
-  --profile core --yes
-```
-
-Verify the native guided Codex path and managed Kimi path without writing first:
-
-```bash
-npx ecc-universal install --guided --harness codex --dry-run
-npx ecc-universal install --profile core --target kimi --dry-run
-```
-
-ECC also ships advanced managed adapters for `cursor`, `antigravity`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
 
 ### Claude Code details
 
@@ -354,8 +297,6 @@ Use this when you want ECC's rules, agents, commands, platform config, and core 
 
 ```bash
 ./install.sh --profile minimal --target claude
-# or, without cloning first
-npx ecc-install --profile minimal --target claude
 ```
 
 Windows:
@@ -389,7 +330,7 @@ Add the hook runtime later only if you want it:
 Ask the packaged advisor which components match your work:
 
 ```bash
-npx ecc-universal consult "security reviews" --target claude
+node scripts/ecc.js consult "security reviews" --target claude
 ```
 
 It returns matching components, related profiles, and preview/install commands. Use the preview command before installing if you want to inspect the exact file plan.
@@ -398,7 +339,7 @@ You can also install explicit skills or capabilities:
 
 ```bash
 ./install.sh --target claude --skills tdd-workflow,security-review
-npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
+node scripts/ecc.js install --profile minimal --target claude --with capability:machine-learning
 ```
 
 Manual component-by-component copying also works. Each component is fully independent:
@@ -567,7 +508,7 @@ Configure the endpoint with Kimi Code's <a href="https://moonshotai.github.io/ki
 
 ```bash
 bash ./install.sh --target kimi --profile minimal
-npx ecc-universal doctor --target kimi
+node scripts/ecc.js doctor --target kimi
 kimi
 ```
 
@@ -614,6 +555,75 @@ If you stacked methods, clean up in this order:
 3. Delete any extra rule folders you copied manually and no longer want.
 4. Reinstall once, using a single path.
 </details>
+
+## Coming soon: guided setup in release 2.2
+
+> [!WARNING]
+> These ECC package-runner commands are not available in the current npm
+> release, 2.1.0. Do not run them until `ecc-universal` 2.2.0 is published.
+
+The earlier README description—**Recommended default:** run the guided Claude plugin setup—was published too soon. That recommendation is withdrawn until release 2.2.
+
+For Claude Code plugin setup, updates, scope changes, and hook-profile changes:
+
+```bash
+npx ecc-universal setup
+```
+
+Release 2.2 will support the same guided setup through modern package runners:
+
+| Package runner | Guided setup command |
+|---|---|
+| npm / npx | `npx ecc-universal setup` |
+| pnpm | `pnpm dlx ecc-universal setup` |
+| Yarn 2+ | `yarn dlx ecc-universal setup` |
+| Bun | `bunx ecc-universal setup` |
+
+Yarn Classic 1 does not provide `yarn dlx`; use `npx`, install the package globally, or upgrade Yarn for a temporary one-shot run after 2.2 is published.
+
+The wizard inventories the official marketplace and every native Claude install scope before making changes, then installs, updates, or safely moves `ecc@ecc` to the scope you choose. Rerun the same command whenever you want to update ECC, change scope, or change its hook profile. This setup wizard currently configures the Claude Code plugin; use the multi-harness wizard below for Codex or Kimi Code.
+
+To configure more than one coding agent in one reviewed flow, use the multi-harness wizard:
+
+```bash
+npx ecc-universal install --guided
+```
+
+It lets you select any combination of Claude Code, Codex, and Kimi Code, shows each install channel and destination, preflights every selection before the first write, and asks for one final confirmation.
+
+| Harness | Guided install behavior |
+|---|---|
+| Claude Code | Native `ecc@ecc` plugin with one `user`, `project`, or `local` scope and an ECC hook profile |
+| Codex | Native Codex marketplace/plugin lifecycle; hook review and trust remain Codex-owned |
+| Kimi Code | Managed project files under `./.kimi-code`; ECC hooks, model/provider settings, and authentication are not configured |
+
+For automation, make every provider-specific choice explicit:
+
+```bash
+npx ecc-universal install --guided \
+  --harness claude --harness codex --harness kimi \
+  --claude-scope local --claude-hooks standard \
+  --profile core --yes
+```
+
+Verify the native guided Codex path and managed Kimi path without writing first:
+
+```bash
+npx ecc-universal install --guided --harness codex --dry-run
+npx ecc-universal install --profile core --target kimi --dry-run
+```
+
+Additional package-name commands will also become available through the 2.2 alias:
+
+```bash
+npx ecc-universal consult "security reviews" --target claude
+npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal doctor --target kimi
+```
+
+Do not use `npx ecc-install --profile minimal --target claude`: `ecc-install` is a binary name inside `ecc-universal`, not a separately published npm package.
+
+ECC also ships advanced managed adapters for `cursor`, `antigravity`, `gemini`, `opencode`, `codebuddy`, `joycode`, `qwen`, `zed`, `hermes`, and `openclaw`. Those targets still use their documented `ecc install --target ...` paths until each adapter has passed the guided collision, update, repair, and uninstall lifecycle matrix. Neither wizard silently installs into every detected harness.
 
 ## Start Using ECC
 
@@ -1940,7 +1950,7 @@ Security references:
 <details>
 <summary><strong>ECC appears twice or hooks fire twice</strong></summary>
 
-The usual cause is installing the Claude plugin and then running `install.sh --profile full` or `npx ecc-install --profile full` on top of it.
+The usual cause is installing the Claude plugin and then running `./install.sh --profile full` on top of it.
 
 1. Remove the Claude Code plugin install.
 2. Run `node scripts/ecc.js uninstall --dry-run` from the ECC checkout.

@@ -30,18 +30,14 @@ function runTests() {
   const readme = fs.readFileSync(README, 'utf8');
   const rulesReadme = fs.readFileSync(RULES_README, 'utf8');
 
-  if (test('README marks the available native path as default and warns against stacked installs', () => {
+  if (test('README marks one default path and warns against stacked installs', () => {
     assert.ok(
       readme.includes('### Pick one path only'),
       'README should surface a top-level install decision section'
     );
     assert.ok(
-      readme.includes('**Recommended today for Claude Code:** use the [native plugin commands above]'),
-      'README should name the currently available native plugin path as the default'
-    );
-    assert.ok(
-      readme.includes('**Coming in 2.2.0:** guided setup'),
-      'README should gate guided setup behind the unpublished 2.2.0 release'
+      readme.includes('**Recommended default:** run the guided Claude plugin setup'),
+      'README should name guided setup as the recommended default install path'
     );
     assert.ok(
       readme.includes('**Do not stack install methods.**'),
@@ -53,18 +49,10 @@ function runTests() {
     );
   })) passed++; else failed++;
 
-  if (test('README leads with native Claude setup while the guided path is gated', () => {
-    const nativeIndex = readme.indexOf('## Install with Claude Code');
-    const overviewIndex = readme.indexOf('\n# ECC\n');
-    const guidedIndex = readme.indexOf('### Guided setup (coming in 2.2.0)');
-
+  if (test('README leads with the idempotent guided plugin setup path', () => {
     assert.ok(
-      nativeIndex > -1 && nativeIndex < overviewIndex && guidedIndex > overviewIndex,
-      'README should put the available Claude plugin install above the product overview and unreleased guided path'
-    );
-    assert.ok(
-      readme.includes('Do not run the guided commands in this section until npm publishes 2.2.0'),
-      'README should explicitly prevent users from running the unreleased commands'
+      readme.includes('npx ecc-universal setup'),
+      'README should lead new users to the package-name setup command'
     );
     assert.ok(
       readme.includes('installs, updates, or safely moves `ecc@ecc`'),
