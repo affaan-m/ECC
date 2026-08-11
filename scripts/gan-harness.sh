@@ -11,9 +11,9 @@
 # Environment Variables:
 #   GAN_MAX_ITERATIONS  — Max generator-evaluator cycles (default: 15)
 #   GAN_PASS_THRESHOLD  — Weighted score to pass, 1-10 (default: 7.0)
-#   GAN_PLANNER_MODEL   — Model for planner (default: opus)
-#   GAN_GENERATOR_MODEL — Model for generator (default: opus)
-#   GAN_EVALUATOR_MODEL — Model for evaluator (default: opus)
+#   GAN_PLANNER_MODEL   — Model for planner (default: sonnet)
+#   GAN_GENERATOR_MODEL — Model for generator (default: sonnet)
+#   GAN_EVALUATOR_MODEL — Model for evaluator (default: sonnet)
 #   GAN_DEV_SERVER_PORT — Port for live app (default: 3000)
 #   GAN_DEV_SERVER_CMD  — Command to start dev server (default: "npm run dev")
 #   GAN_PROJECT_DIR     — Working directory (default: current dir)
@@ -27,9 +27,9 @@ set -euo pipefail
 BRIEF="${1:?Usage: ./scripts/gan-harness.sh \"description of what to build\"}"
 MAX_ITERATIONS="${GAN_MAX_ITERATIONS:-15}"
 PASS_THRESHOLD="${GAN_PASS_THRESHOLD:-7.0}"
-PLANNER_MODEL="${GAN_PLANNER_MODEL:-opus}"
-GENERATOR_MODEL="${GAN_GENERATOR_MODEL:-opus}"
-EVALUATOR_MODEL="${GAN_EVALUATOR_MODEL:-opus}"
+PLANNER_MODEL="${GAN_PLANNER_MODEL:-sonnet}"
+GENERATOR_MODEL="${GAN_GENERATOR_MODEL:-sonnet}"
+EVALUATOR_MODEL="${GAN_EVALUATOR_MODEL:-sonnet}"
 DEV_PORT="${GAN_DEV_SERVER_PORT:-3000}"
 DEV_CMD="${GAN_DEV_SERVER_CMD:-npm run dev}"
 PROJECT_DIR="${GAN_PROJECT_DIR:-.}"
