@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../../scripts/lib/common.sh
+source "${REPO_ROOT}/scripts/lib/common.sh"
 
 usage() {
     local available
@@ -175,17 +175,6 @@ if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     copy_file "$global_claude" "${CLAUDE_DIR}/CLAUDE.md" \
         "content/instructions/global.md" "CLAUDE.md"
-
-    # Also install as Codex AGENTS.md when Codex is installed/configured.
-    if codex_is_available; then
-        if ! $DRY_RUN; then
-            mkdir -p "$CODEX_DIR"
-        fi
-        copy_file "$global_claude" "${CODEX_DIR}/AGENTS.md" \
-            "content/instructions/global.md" "$(codex_agents_label)"
-    else
-        log_info "Codex not detected; skipping Codex AGENTS.md"
-    fi
     echo ""
 fi
 
@@ -371,5 +360,5 @@ if $has_project_hooks && ! $DRY_RUN; then
     echo ""
     echo -e "${CYAN}Project hooks installed as templates.${NC}"
     echo -e "To initialize a project, run:"
-    echo -e "  ${GREEN}$(dirname "$0")/init-project.sh${NC} [language]"
+    echo -e "  ${GREEN}${REPO_ROOT}/scripts/init-project.sh${NC} [language]"
 fi
