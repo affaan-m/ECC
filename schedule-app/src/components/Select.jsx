@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 // An app-styled replacement for the native <select>, so dropdowns look and
 // feel consistent everywhere instead of the browser's default picker UI.
 // options: [{ value, label, color? }]
-export default function Select({ value, onChange, options, placeholder = 'Choose…', disabled }) {
+// `searchable`: adds a filter box at the top of the sheet — worth it once a
+// list is long enough that scanning beats scrolling (e.g. picking a contact
+// out of dozens), not worth the extra tap for a handful of fixed options.
+export default function Select({ value, onChange, options, placeholder = 'Choose…', disabled, searchable }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const current = options.find((o) => o.value === value);
   // When the sheet closes because an option was picked, the trigger button
   // is left sitting right under the finger/cursor — some browsers deliver a
@@ -21,6 +25,7 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
 
   useEffect(() => {
     if (!open) return;
+    setQuery('');
     const onKey = (e) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -29,6 +34,12 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
       document.body.style.overflow = '';
     };
   }, [open]);
+
+  const visibleOptions = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const q = query.trim().toLowerCase();
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, searchable, query]);
 
   return (
     <>
@@ -54,8 +65,19 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
             <div className="select-grip">
               <span className="modal-handle" />
             </div>
+            {searchable && (
+              <div className="select-search">
+                <input
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search…"
+                />
+              </div>
+            )}
             <div className="select-options">
-              {options.map((o) => (
+              {visibleOptions.map((o) => (
                 <button
                   key={o.value}
                   type="button"
@@ -72,6 +94,9 @@ export default function Select({ value, onChange, options, placeholder = 'Choose
                   {o.value === value && <CheckIcon />}
                 </button>
               ))}
+              {searchable && visibleOptions.length === 0 && (
+                <p className="muted small select-no-results">No matches.</p>
+              )}
             </div>
           </div>
         </div>

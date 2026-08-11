@@ -125,6 +125,12 @@ export default function MapPage() {
   const [pickLatLng, setPickLatLng] = useState(null);
   const [pickQuery, setPickQuery] = useState('');
   const [pickSearching, setPickSearching] = useState(false);
+  // Kept current every render (not just at mount) so the async geolocation
+  // check and the debounced view-save in the map-init effect below can tell
+  // whether picking mode is active *at the time they actually run*, not
+  // just when the effect was created.
+  const pickModeRef = useRef(pickMode);
+  pickModeRef.current = pickMode;
 
   const selected = pins.find((p) => p.id === selectedId) || null;
   pinsRef.current = pins;
@@ -259,13 +265,42 @@ export default function MapPage() {
     // here, so changing the style doesn't tear down and rebuild the map
     // (which would lose the current pan/zoom).
 
-    const initial = pinsRef.current;
-    if (initial.length === 1) {
-      map.setView([initial[0].lat, initial[0].lng], 14);
-    } else if (initial.length > 1) {
-      map.fitBounds(L.latLngBounds(initial.map((p) => [p.lat, p.lng])).pad(0.3));
-    } else {
-      map.setView(DEFAULT_VIEW, 12);
+    // Where to open, in priority order: the user's current location (if
+    // permission was already granted — never prompting just for opening
+    // the tab), else wherever they last left the map, else centered on
+    // whatever pins exist, else a reasonably zoomed-in default rather than
+    // a whole-city view.
+    const lastView = state.settings?.mapLastView;
+    if (!pickModeRef.current) {
+      if (lastView) {
+        map.setView([lastView.lat, lastView.lng], lastView.zoom || 15);
+      } else {
+        const initial = pinsRef.current;
+        if (initial.length === 1) {
+          map.setView([initial[0].lat, initial[0].lng], 15);
+        } else if (initial.length > 1) {
+          map.fitBounds(L.latLngBounds(initial.map((p) => [p.lat, p.lng])).pad(0.3));
+        } else {
+          map.setView(DEFAULT_VIEW, 13);
+        }
+      }
+    }
+
+    // Silently adopt the current location if geolocation permission was
+    // already granted in a past session — this only fires without a
+    // permission prompt; if it's still undecided or was denied, the view
+    // above (last-viewed spot, or pins) stands.
+    if (!pickModeRef.current && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          if (status.state !== 'granted' || !mapRef.current) return;
+          navigator.geolocation.getCurrentPosition(
+            (pos) => mapRef.current?.setView([pos.coords.latitude, pos.coords.longitude], 15),
+            () => {} // denied/unavailable at the OS level after all — keep the fallback view
+          );
+        })
+        .catch(() => {});
     }
 
     layerRef.current = L.layerGroup().addTo(map);
@@ -275,6 +310,19 @@ export default function MapPage() {
     // Leaflet's own drag/zoom gestures starting is a reliable extra signal
     // that this was a pan, not a hold — cancel our timer either way.
     map.on('dragstart zoomstart', () => handlersRef.current.onPressEnd?.());
+    // Remember where the map was left, debounced, so the next time this
+    // page opens (and there's no fresh geolocation fix to prefer) it picks
+    // up where the user actually was rather than resetting to San
+    // Francisco or re-fitting to pins that may no longer be what matters.
+    let saveViewTimer = null;
+    map.on('moveend zoomend', () => {
+      if (pickModeRef.current) return;
+      clearTimeout(saveViewTimer);
+      saveViewTimer = setTimeout(() => {
+        const c = map.getCenter();
+        actions.setSettings({ mapLastView: { lat: c.lat, lng: c.lng, zoom: map.getZoom() } });
+      }, 500);
+    });
     mapRef.current = map;
 
     // Native Pointer Events directly on the DOM element (see note above the
@@ -592,7 +640,7 @@ export default function MapPage() {
             </button>
           </div>
           <div className="map-pick-footer">
-            <p className="muted small center-pad">
+            <p className="muted small map-pick-hint">
               {pickLatLng ? 'Drag the pin, or tap elsewhere to move it.' : 'Tap the map to drop a pin, or search above.'}
             </p>
             <button className="btn btn-primary full" disabled={!pickLatLng} onClick={confirmPick}>
@@ -820,7 +868,11 @@ export default function MapPage() {
                 value={editing.contactId || ''}
                 onChange={(v) => setEditing({ ...editing, contactId: v })}
                 placeholder="No one"
-                options={[{ value: '', label: 'No one' }, ...state.contacts.map((c) => ({ value: c.id, label: c.name }))]}
+                searchable
+                options={[
+                  { value: '', label: 'No one' },
+                  ...[...state.contacts].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.id, label: c.name })),
+                ]}
               />
             </label>
             <label className="field">

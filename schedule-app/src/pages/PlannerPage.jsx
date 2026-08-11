@@ -2858,7 +2858,11 @@ function EventEditor({ editing, events, contacts, goals, tasks, settings, onClos
             value={draft.contactId || ''}
             onChange={(v) => setDraft({ ...draft, contactId: v })}
             placeholder="No one linked"
-            options={[{ value: '', label: 'No one linked' }, ...contacts.map((c) => ({ value: c.id, label: c.name }))]}
+            searchable
+            options={[
+              { value: '', label: 'No one linked' },
+              ...[...contacts].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.id, label: c.name })),
+            ]}
           />
         </label>
 

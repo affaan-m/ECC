@@ -1841,6 +1841,14 @@ textarea {
   justify-content: center;
   padding: 10px 0 4px;
 }
+.select-search {
+  flex: none;
+  padding: 2px 12px 10px;
+}
+.select-no-results {
+  text-align: center;
+  padding: 20px 12px;
+}
 .select-options {
   overflow-y: auto;
   padding: 4px 8px 12px;
@@ -3466,6 +3474,13 @@ textarea {
 .map-pick-footer p {
   margin: 0 0 10px;
 }
+/* .center-pad's 32px padding is meant for full-page empty states — reusing
+   it here (a small footer card, not a page) is what made this box look
+   oversized despite the footer's own padding being modest. */
+.map-pick-hint {
+  text-align: center;
+  padding: 0;
+}
 
 .pin-card {
   position: absolute;
@@ -4530,6 +4545,13 @@ textarea {
 }
 .color-dot--on {
   border-color: var(--text);
+}
+/* Note colors are fixed light pastels regardless of theme, so the usual
+   var(--text) ring (near-white in dark mode) all but disappears against
+   them — a dark ring reads clearly against every pastel in the set, in
+   either theme. */
+.note-color-grid .color-dot--on {
+  border-color: rgba(0, 0, 0, 0.55);
 }
 .color-dot--clear {
   background: var(--surface-2);

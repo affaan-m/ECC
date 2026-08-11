@@ -31,6 +31,20 @@ import AnimatedNumber from '../components/AnimatedNumber.jsx';
 import Icon from '../components/Icon.jsx';
 import AddressField from '../components/AddressField.jsx';
 
+// Shown when every home block has been toggled off in Customize mode —
+// picked once at random per visit rather than always the same line, since
+// you might land on this blank screen more than once.
+const EMPTY_HOME_MESSAGES = [
+  "It's looking pretty empty in here.",
+  'Tumbleweeds. Just tumbleweeds.',
+  'This home screen is on a diet.',
+  'Nothing to see here... all your tiles are hiding.',
+  'Peak minimalism achieved.',
+  'Your tiles took the day off.',
+  'Home screen: still under construction (by you).',
+  "It's quiet. Too quiet.",
+];
+
 // Fixed pale tints rather than theme colours — a tinted note forces dark
 // text (see .note-card--tinted), so every swatch has to stay light enough to
 // read against in either theme.
@@ -484,6 +498,10 @@ export default function HomePage() {
     [state.settings?.homeBlocks]
   );
   const visibleBlocks = useMemo(() => homeBlocks.filter((b) => b.enabled), [homeBlocks]);
+  const emptyHomeMessage = useMemo(
+    () => EMPTY_HOME_MESSAGES[Math.floor(Math.random() * EMPTY_HOME_MESSAGES.length)],
+    []
+  );
   const recap = useMemo(() => computeWeeklyRecap(state), [state]);
   const nudges = useMemo(() => computeNudges(state), [state]);
 
@@ -523,6 +541,8 @@ export default function HomePage() {
             onChange={(next) => actions.setSettings({ homeBlocks: next })}
           />
         </section>
+      ) : visibleBlocks.length === 0 ? (
+        <p className="muted center-pad">{emptyHomeMessage}</p>
       ) : (
         visibleBlocks.map((b) => {
           if (b.id === 'goals') {
@@ -826,7 +846,7 @@ export default function HomePage() {
 
             <div className="field">
               <span>Color</span>
-              <div className="color-grid">
+              <div className="color-grid note-color-grid">
                 {NOTE_COLORS.map((c) => (
                   <button
                     key={c || 'none'}
