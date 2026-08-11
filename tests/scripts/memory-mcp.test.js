@@ -136,6 +136,7 @@ async function withClient(fn, options = {}) {
       'tools/call',
       { name, arguments: toolArguments }
     ),
+    callToolRaw: params => request('tools/call', params),
   };
 
   try {
@@ -177,6 +178,40 @@ async function main() {
       assert.ok(!JSON.stringify(save.inputSchema).includes('sourceHarness'));
       assert.ok(!JSON.stringify(search.inputSchema).includes('targetHarness'));
       assert.strictEqual(save.inputSchema.properties.body.minLength, 1);
+    });
+  });
+
+  await test('accepts the reserved _meta param on tools/call and rejects malformed values', async () => {
+    await withClient(async client => {
+      // A valid `_meta` object (e.g. progressToken) must not block the tool call.
+      const withMeta = await client.callToolRaw({
+        name: 'memory_doctor',
+        arguments: {},
+        _meta: { progressToken: 'progress-123' },
+      });
+      assert.ok(Array.isArray(withMeta.content));
+
+      // Baseline: no `_meta` still works.
+      const withoutMeta = await client.callToolRaw({
+        name: 'memory_doctor',
+        arguments: {},
+      });
+      assert.ok(Array.isArray(withoutMeta.content));
+
+      // A malformed `_meta` (null, array, or scalar) must be rejected.
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.callToolRaw({ name: 'memory_doctor', arguments: {}, _meta: badMeta }),
+          /-32602/,
+          `expected _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      // Unrelated top-level params must still be rejected.
+      await assert.rejects(
+        client.callToolRaw({ name: 'memory_doctor', arguments: {}, unexpected: true }),
+        /-32602/
+      );
     });
   });
 

@@ -19,17 +19,7 @@ const {
   DEFAULT_SECTION_MARKER,
 } = require('../../scripts/lib/github-coordination/policy');
 
-function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    return true;
-  } catch (err) {
-    console.log(`  ✗ ${name}`);
-    console.log(`    Error: ${err.message}`);
-    return false;
-  }
-}
+const { test, banner, section, summary } = require('./helpers/mini-test-runner');
 
 function withTempDir(fn) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-policy-test-'));
@@ -51,9 +41,9 @@ function writeConfig(tmpDir, content) {
 let passed = 0;
 let failed = 0;
 
-console.log('\n=== Testing github-coordination/policy.js ===\n');
+banner('Testing github-coordination/policy.js');
 
-console.log('loadPolicy — no config file:');
+section('loadPolicy — no config file:');
 
 if (test('returns default policy when no config file exists in rootDir', () => {
   withTempDir(tmpDir => {
@@ -74,7 +64,7 @@ if (test('returns default policy when custom configPath does not exist', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — configPath argument:');
+section('loadPolicy — configPath argument:');
 
 if (test('uses configPath when explicitly provided', () => {
   withTempDir(tmpDir => {
@@ -95,7 +85,7 @@ if (test('falls back to rootDir config file when configPath is null', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — invalid JSON:');
+section('loadPolicy — invalid JSON:');
 
 if (test('throws on invalid JSON', () => {
   withTempDir(tmpDir => {
@@ -104,7 +94,7 @@ if (test('throws on invalid JSON', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — non-object JSON:');
+section('loadPolicy — non-object JSON:');
 
 if (test('throws when top-level JSON is null', () => {
   withTempDir(tmpDir => {
@@ -127,7 +117,7 @@ if (test('throws when top-level JSON is a string', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — labels merging:');
+section('loadPolicy — labels merging:');
 
 if (test('merges labels when parsed.labels is a plain object', () => {
   withTempDir(tmpDir => {
@@ -162,7 +152,7 @@ if (test('falls back to empty labels when parsed.labels is a string', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — review merging:');
+section('loadPolicy — review merging:');
 
 if (test('merges review when parsed.review is a plain object', () => {
   withTempDir(tmpDir => {
@@ -197,7 +187,7 @@ if (test('falls back when parsed.review is an array', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — validation merging:');
+section('loadPolicy — validation merging:');
 
 if (test('merges validation when parsed.validation is a plain object', () => {
   withTempDir(tmpDir => {
@@ -215,7 +205,7 @@ if (test('falls back when parsed.validation is not an object', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — branchModel merging:');
+section('loadPolicy — branchModel merging:');
 
 if (test('merges branchModel when parsed.branchModel is a plain object', () => {
   withTempDir(tmpDir => {
@@ -234,7 +224,7 @@ if (test('falls back when parsed.branchModel is not an object', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — project merging:');
+section('loadPolicy — project merging:');
 
 if (test('merges project when parsed.project is a plain object', () => {
   withTempDir(tmpDir => {
@@ -261,7 +251,7 @@ if (test('falls back when parsed.project is null', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — project.fieldNames merging:');
+section('loadPolicy — project.fieldNames merging:');
 
 if (test('merges fieldNames when project.fieldNames is a plain object', () => {
   withTempDir(tmpDir => {
@@ -296,7 +286,7 @@ if (test('falls back when project.fieldNames is an array', () => {
   });
 })) passed++; else failed++;
 
-console.log('\nloadPolicy — sourcePath:');
+section('loadPolicy — sourcePath:');
 
 if (test('sets sourcePath to the resolved config file path', () => {
   withTempDir(tmpDir => {
@@ -306,5 +296,4 @@ if (test('sets sourcePath to the resolved config file path', () => {
   });
 })) passed++; else failed++;
 
-console.log(`\n  Results: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+summary(passed, failed);

@@ -321,6 +321,7 @@
         "skills/continuous-learning",
         "skills/continuous-learning-v2",
         "skills/council",
+        "skills/dev-team",
         "skills/e2e-testing",
         "skills/error-handling",
         "skills/eval-harness",
@@ -350,6 +351,7 @@
         "skills/growth-log",
         "skills/inherit-legacy-style",
         "skills/intent-driven-development",
+        "skills/living-docs-governance",
         "skills/loop-design-check",
         "skills/product-lens",
         "skills/repo-scan",
@@ -612,9 +614,11 @@
     {
       "id": "ito-compute",
       "kind": "skills",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "paths": [
-        "skills/ito-compute"
+        "skills/ito-compute",
+        "skills/ito-inference",
+        "skills/ito-training"
       ],
       "targets": [
         "claude",
@@ -827,6 +831,7 @@
         "skills/cisco-ios-patterns",
         "skills/deployment-patterns",
         "skills/docker-patterns",
+        "skills/terminal-opener",
         "skills/homelab-network-readiness",
         "skills/homelab-network-setup",
         "skills/netmiko-ssh-automation",

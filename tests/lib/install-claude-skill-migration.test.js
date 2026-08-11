@@ -725,7 +725,7 @@ function runTests() {
 
       assert.throws(
         () => applyInstallPlan(fixture.plan),
-        /symlinked Claude skill path/
+        /outside the install root|symlinked Claude skill path/
       );
       assert.deepStrictEqual(fs.readdirSync(outsideRoot), []);
       assert.ok(!fs.existsSync(fixture.installStatePath));
@@ -764,7 +764,7 @@ function runTests() {
 
       assert.throws(
         () => applyInstallPlan(fixture.plan, { writeInstallState() {} }),
-        /symlinked Claude skill path/
+        /outside the install root|symlinked Claude skill path/
       );
       assert.strictEqual(injectedSymlink, true);
       assert.deepStrictEqual(fs.readdirSync(outsideRoot), []);

@@ -237,6 +237,26 @@ function runTests() {
   else failed++;
 
   if (
+    test('Claude plugin hooks_enabled=false suppresses both dispatcher phases', () => {
+      for (const mode of ['sync', 'async']) {
+        const result = runDispatcher(mode, 'Edit', {
+          ECC_DRY_RUN: '1',
+          ECC_HOOKS_ENABLED: undefined,
+          CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: 'false'
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.deepStrictEqual(
+          previewedIds(result.stderr),
+          [],
+          `${mode} dispatcher must not select child hooks when plugin hooks are off`
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('public dispatcher IDs disable their complete phase', () => {
       const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
       const raw = JSON.stringify({

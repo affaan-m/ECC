@@ -3,6 +3,7 @@
 const os = require('os');
 const { uninstallInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
+const { exitFeedbackLines } = require('./lib/feedback-links');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -64,6 +65,10 @@ function printHuman(result) {
   }
 
   console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, errors=${result.summary.errorCount}`);
+
+  if (!result.dryRun) {
+    console.log(`\n${exitFeedbackLines().join('\n')}`);
+  }
 }
 
 function main() {

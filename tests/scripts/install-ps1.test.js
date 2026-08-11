@@ -52,7 +52,7 @@ function run(powerShellCommand, args = [], options = {}) {
       env,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 10000,
+      timeout: 30000,
     });
 
     return { code: 0, stdout, stderr: '' };
