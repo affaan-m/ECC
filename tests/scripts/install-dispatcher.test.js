@@ -74,5 +74,18 @@ test('--target codex without codex fails', () => {
   assert.ok((res.stdout + res.stderr).includes('Codex not detected'));
 });
 
+test('uninstall --target codex dry-run plans removals but not config.toml', () => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-un-'));
+  const uninstallSh = path.join(repoRoot, 'scripts', 'uninstall.sh');
+  const env = { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-h-')), CODEX_HOME: codexHome, PATH: '/usr/bin:/bin' };
+  const res = spawnSync('bash', [uninstallSh, '-n', '--target', 'codex', 'common'], { env, encoding: 'utf8' });
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.ok(res.stdout.includes('AGENTS.md'));
+  assert.ok(res.stdout.includes('instructions/coding-style.md'));
+  assert.ok(res.stdout.includes('mcp_servers'), 'expected manual-removal INFO for MCP');
+  assert.ok(!res.stdout.includes('RM') || !res.stdout.includes('config.toml'),
+    'config.toml must never be removed');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
