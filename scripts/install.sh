@@ -3,36 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLAUDE_DIR="${HOME}/.claude"
-CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
-CATEGORIES=(agents skills commands rules)
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-copied=0
-skipped=0
-
-# Discover available languages from directory structure
-discover_languages() {
-    local -A seen
-    for cat in "${CATEGORIES[@]}" hooks; do
-        local cat_dir="${REPO_ROOT}/${cat}"
-        [[ -d "$cat_dir" ]] || continue
-        for dir in "$cat_dir"/*/; do
-            [[ -d "$dir" ]] || continue
-            local name
-            name=$(basename "$dir")
-            [[ "$name" == .* ]] && continue
-            seen["$name"]=1
-        done
-    done
-    echo "${!seen[@]}" | tr ' ' '\n' | sort
-}
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 usage() {
     local available
@@ -65,91 +38,6 @@ Examples:
   $(basename "$0") -f python node go    # Force install multiple languages
   $(basename "$0") -n python node       # Preview what would be installed
 EOF
-}
-
-log_copy() { echo -e "  ${GREEN}COPY${NC}  $1 → $2"; }
-log_skip() { echo -e "  ${YELLOW}SKIP${NC}  $1 (already exists, use -f to overwrite)"; }
-log_dry()  { echo -e "  ${CYAN}DRY${NC}   $1 → $2"; }
-log_info() { echo -e "  ${CYAN}INFO${NC}  $1"; }
-log_warn() { echo -e "  ${RED}WARN${NC}  $1"; }
-
-codex_agents_label() {
-    if [[ -n "${CODEX_HOME:-}" ]]; then
-        echo "${CODEX_DIR}/AGENTS.md"
-    else
-        echo "~/.codex/AGENTS.md"
-    fi
-}
-
-codex_is_available() {
-    [[ -n "${CODEX_HOME:-}" ]] || [[ -d "$CODEX_DIR" ]] || command -v codex &>/dev/null
-}
-
-# Copy a single file
-copy_file() {
-    local src="$1" dest="$2" label_src="$3" label_dest="$4"
-
-    if $DRY_RUN; then
-        log_dry "$label_src" "$label_dest"
-        copied=$((copied + 1))
-        return
-    fi
-
-    if [[ -f "$dest" ]] && ! $FORCE; then
-        log_skip "$label_dest"
-        skipped=$((skipped + 1))
-    else
-        cp "$src" "$dest"
-        log_copy "$label_src" "$label_dest"
-        copied=$((copied + 1))
-    fi
-}
-
-# Copy a single file with ${CLAUDE_PLUGIN_ROOT} substitution
-copy_file_subst() {
-    local src="$1" dest="$2" label_src="$3" label_dest="$4"
-
-    if $DRY_RUN; then
-        log_dry "$label_src" "$label_dest"
-        copied=$((copied + 1))
-        return
-    fi
-
-    if [[ -f "$dest" ]] && ! $FORCE; then
-        log_skip "$label_dest"
-        skipped=$((skipped + 1))
-    else
-        local content
-        content=$(cat "$src")
-        content="${content//\$\{CLAUDE_PLUGIN_ROOT\}/$CLAUDE_DIR}"
-        echo "$content" > "$dest"
-        log_copy "$label_src" "$label_dest"
-        copied=$((copied + 1))
-    fi
-}
-
-# Copy a directory recursively
-copy_dir() {
-    local src="$1" dest="$2" label_src="$3" label_dest="$4"
-
-    if $DRY_RUN; then
-        log_dry "$label_src" "$label_dest"
-        copied=$((copied + 1))
-        return
-    fi
-
-    if [[ -d "$dest" ]] && ! $FORCE; then
-        log_skip "$label_dest"
-        skipped=$((skipped + 1))
-    else
-        # Copy directory *contents* so a force-reinstall overlays the existing
-        # destination instead of nesting a copy inside it (cp -r src dest with
-        # an existing dest creates dest/src-name/).
-        mkdir -p "$dest"
-        cp -r "$src"/. "$dest"/
-        log_copy "$label_src" "$label_dest"
-        copied=$((copied + 1))
-    fi
 }
 
 # jq filter for merging hooks (single line to avoid multiline quoting issues)

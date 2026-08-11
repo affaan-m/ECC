@@ -3,36 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLAUDE_DIR="${HOME}/.claude"
-CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
-CATEGORIES=(agents skills commands rules)
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-removed=0
-not_found=0
-
-# Discover available languages from directory structure
-discover_languages() {
-    local -A seen
-    for cat in "${CATEGORIES[@]}" hooks; do
-        local cat_dir="${REPO_ROOT}/${cat}"
-        [[ -d "$cat_dir" ]] || continue
-        for dir in "$cat_dir"/*/; do
-            [[ -d "$dir" ]] || continue
-            local name
-            name=$(basename "$dir")
-            [[ "$name" == .* ]] && continue
-            seen["$name"]=1
-        done
-    done
-    echo "${!seen[@]}" | tr ' ' '\n' | sort
-}
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 usage() {
     local available
@@ -62,84 +35,6 @@ Examples:
   $(basename "$0") node                  # Remove Node.js configs
   $(basename "$0") -n python node       # Preview what would be removed
 EOF
-}
-
-log_rm()       { echo -e "  ${RED}RM${NC}    $1"; }
-log_dry()      { echo -e "  ${CYAN}DRY${NC}   $1"; }
-log_info()     { echo -e "  ${CYAN}INFO${NC}  $1"; }
-log_not_found() { echo -e "  ${YELLOW}MISS${NC}  $1 (not installed)"; }
-
-codex_agents_label() {
-    if [[ -n "${CODEX_HOME:-}" ]]; then
-        echo "${CODEX_DIR}/AGENTS.md"
-    else
-        echo "~/.codex/AGENTS.md"
-    fi
-}
-
-codex_is_available() {
-    [[ -n "${CODEX_HOME:-}" ]] || [[ -d "$CODEX_DIR" ]] || command -v codex &>/dev/null
-}
-
-# Remove a single file
-remove_file() {
-    local target="$1" label="$2"
-
-    if $DRY_RUN; then
-        if [[ -f "$target" ]]; then
-            log_dry "$label"
-            removed=$((removed + 1))
-        else
-            log_not_found "$label"
-            not_found=$((not_found + 1))
-        fi
-        return
-    fi
-
-    if [[ -f "$target" ]]; then
-        rm "$target"
-        log_rm "$label"
-        removed=$((removed + 1))
-    else
-        log_not_found "$label"
-        not_found=$((not_found + 1))
-    fi
-}
-
-# Remove a directory recursively
-remove_dir() {
-    local target="$1" label="$2"
-
-    if $DRY_RUN; then
-        if [[ -d "$target" ]]; then
-            log_dry "$label"
-            removed=$((removed + 1))
-        else
-            log_not_found "$label"
-            not_found=$((not_found + 1))
-        fi
-        return
-    fi
-
-    if [[ -d "$target" ]]; then
-        rm -r "$target"
-        log_rm "$label"
-        removed=$((removed + 1))
-    else
-        log_not_found "$label"
-        not_found=$((not_found + 1))
-    fi
-}
-
-# Remove empty directory if it exists
-cleanup_empty_dir() {
-    local dir="$1" label="$2"
-    if ! $DRY_RUN && [[ -d "$dir" ]]; then
-        if [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
-            rmdir "$dir"
-            echo -e "  ${YELLOW}RMDIR${NC} ${label} (empty)"
-        fi
-    fi
 }
 
 # Parse options
@@ -332,7 +227,7 @@ if $has_hooks; then
         log_not_found "settings.json"
         not_found=$((not_found + 1))
     elif $DRY_RUN; then
-        log_dry "settings.json (hooks key only)"
+        log_dry_rm "settings.json (hooks key only)"
         removed=$((removed + 1))
     elif command -v jq &>/dev/null; then
         settings_content=$(jq 'del(.hooks)' "$settings_file")
