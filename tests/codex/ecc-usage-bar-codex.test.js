@@ -190,6 +190,8 @@ test('finds newest session and reads last token_count', () => {
     });
     fs.writeFileSync(older, `${tokenEvent(5)}\n`);
     fs.writeFileSync(newer, `{"type":"session_meta"}\n${tokenEvent(11)}\n${tokenEvent(23)}\n`);
+    const future = new Date(Date.now() + 60000);
+    fs.utimesSync(newer, future, future);
 
     const found = findNewestSession(tmpDir);
     assert.strictEqual(found, newer);
