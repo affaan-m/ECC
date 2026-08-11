@@ -45,6 +45,25 @@ function main() {
       assert.strictEqual(result.status, 0, result.stderr)
       assert.ok(fs.existsSync(distEntry), ".opencode/dist/index.js should exist after build")
     }],
+    ["built OpenCode entry exports only the plugin function", () => {
+      const check = `
+        const assert = require("assert")
+        const { pathToFileURL } = require("url")
+        const file = process.argv[1]
+        import(pathToFileURL(file).href).then((mod) => {
+          assert.deepStrictEqual(Object.keys(mod).sort(), ["default"])
+          assert.strictEqual(typeof mod.default, "function")
+        }).catch((error) => {
+          console.error(error)
+          process.exit(1)
+        })
+      `
+      const result = spawnSync(process.execPath, ["-e", check, distEntry], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      })
+      assert.strictEqual(result.status, 0, result.stderr)
+    }],
     ["npm pack includes the compiled OpenCode dist payload", () => {
       const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
         cwd: repoRoot,
