@@ -130,21 +130,22 @@ function extractAdditionalContext(stdout) {
 }
 
 /**
- * Mirror of the adapter's `normalizePiPackageName` (same file, same six
- * lines of logic) so the trailing-@version stripping can be exercised
- * directly without importing the TypeScript source. This copy proves the
- * *behavior* below is correct, but a copy cannot detect the real adapter's
- * guards drifting out from under it. The source-text assertions in the
- * "companion package detection reads Pi's package list" test below read the
- * real `normalizePiPackageName` text out of `.pi/extensions/index.ts` and pin
- * its actual guards directly, so that kind of drift fails the test instead
+ * Mirror of the adapter's `normalizePiPackageName` (same file, same handful of
+ * lines) so the object-form unwrapping and the trailing-@version stripping can
+ * be exercised directly without importing the TypeScript source. This copy
+ * proves the *behavior* below is correct, but a copy cannot detect the real
+ * adapter's guards drifting out from under it. The source-text assertions in
+ * the "companion package detection reads Pi's package list" test below read
+ * the real `normalizePiPackageName` text out of `.pi/extensions/index.ts` and
+ * pin its actual guards directly, so that kind of drift fails the test instead
  * of passing silently against this mirror.
  */
 function normalizePiPackageName(entry) {
-  if (typeof entry !== "string" || !entry.startsWith("npm:")) {
+  const source = entry && typeof entry === "object" ? entry.source : entry
+  if (typeof source !== "string" || !source.startsWith("npm:")) {
     return undefined
   }
-  const spec = entry.slice("npm:".length)
+  const spec = source.slice("npm:".length)
   // Strip a trailing @version without breaking the leading @ of a scoped name.
   const versionAt = spec.lastIndexOf("@")
   return versionAt > 0 ? spec.slice(0, versionAt) : spec
@@ -858,17 +859,28 @@ async function main() {
           : extensionSource.slice(normalizeStart, nextFunctionStart)
 
       assert.ok(
-        /typeof\s+entry\s*!==\s*["'`]string["'`]\s*\|\|\s*!\s*entry\.startsWith\(\s*["'`]npm:["'`]\s*\)/.test(
+        /typeof\s+entry\s*===\s*["'`]object["'`]\s*\?\s*\(entry\s+as\s*\{\s*source\?:\s*unknown\s*\}\)\.source/.test(
+          normalizeSource
+        ),
+        "expected normalizePiPackageName in .pi/extensions/index.ts to read `source` off " +
+          "an object entry before normalizing; Pi's settings accept both a bare source " +
+          'string and an object carrying it ({ source: "npm:x", skills: [] }), and a ' +
+          "package filtered that way is just as installed as a plain one -- treating the " +
+          "object form as unrecognized makes /ecc-doctor report an installed companion as " +
+          "missing"
+      )
+      assert.ok(
+        /typeof\s+source\s*!==\s*["'`]string["'`]\s*\|\|\s*!\s*source\.startsWith\(\s*["'`]npm:["'`]\s*\)/.test(
           normalizeSource
         ),
         "expected normalizePiPackageName in .pi/extensions/index.ts to return undefined " +
-          "for any entry that is not a string starting with 'npm:' (git sources and " +
+          "for any source that is not a string starting with 'npm:' (git sources and " +
           "filesystem paths carry no comparable package name)"
       )
       assert.ok(
-        /spec\s*=\s*entry\.slice\(\s*["'`]npm:["'`]\.length\)/.test(normalizeSource),
+        /spec\s*=\s*source\.slice\(\s*["'`]npm:["'`]\.length\)/.test(normalizeSource),
         'expected normalizePiPackageName in .pi/extensions/index.ts to strip the "npm:" ' +
-          'prefix via entry.slice("npm:".length)'
+          'prefix via source.slice("npm:".length)'
       )
       assert.ok(
         /versionAt\s*=\s*spec\.lastIndexOf\(\s*["'`]@["'`]\s*\)/.test(normalizeSource),
@@ -928,6 +940,45 @@ async function main() {
         normalizePiPackageName(""),
         undefined,
         "expected an empty entry to normalize to undefined"
+      )
+    }],
+
+    ["companion package name normalization (behavioral mirror): an object entry with resource filters resolves to the same name as the bare source string", () => {
+      assert.strictEqual(
+        normalizePiPackageName({ source: "npm:pi-subagents", skills: [] }),
+        "pi-subagents",
+        "expected the object form Pi documents for filtered packages to resolve to the " +
+          "same name as the bare string; a user who narrows which resources pi-subagents " +
+          "contributes still has it installed, and /ecc-doctor exists to report exactly that"
+      )
+      assert.strictEqual(
+        normalizePiPackageName({ source: "npm:@juicesharp/rpiv-todo@1.4.2", prompts: ["prompts/review.md"] }),
+        "@juicesharp/rpiv-todo",
+        "expected an object entry to go through the same version-stripping path as a " +
+          "string entry, scope intact"
+      )
+      assert.strictEqual(
+        normalizePiPackageName({ source: "git:github.com/example/pi-plugin@v1" }),
+        undefined,
+        "expected an object entry wrapping a git source to stay unrecognized; the source " +
+          "type decides, not the entry shape"
+      )
+      assert.strictEqual(
+        normalizePiPackageName({ extensions: ["extensions/*.ts"] }),
+        undefined,
+        "expected an object entry with no source field to normalize to undefined instead " +
+          "of throwing"
+      )
+      assert.strictEqual(
+        normalizePiPackageName({ source: 42 }),
+        undefined,
+        "expected a non-string source to normalize to undefined instead of throwing"
+      )
+      assert.strictEqual(
+        normalizePiPackageName(null),
+        undefined,
+        "expected a null entry to normalize to undefined; typeof null is \"object\", so " +
+          "this is the case an unguarded object branch would throw on"
       )
     }],
 
@@ -1130,6 +1181,52 @@ async function main() {
             "performance.md from PORTABLE_RULE_FILES exists to prevent"
         )
       }
+    }],
+
+    ["/ecc-doctor reports rule files actually loaded, not the allowlist length (source contract)", () => {
+      assert.ok(
+        /let\s+cachedRuleFileCount\s*=\s*0/.test(extensionSource),
+        "expected .pi/extensions/index.ts to track how many rule files actually loaded in a " +
+          "cachedRuleFileCount counter alongside cachedRules"
+      )
+      assert.ok(
+        /cachedRuleFileCount\s*=\s*sections\.length/.test(extensionSource),
+        "expected loadPortableRules in .pi/extensions/index.ts to set cachedRuleFileCount " +
+          "from sections.length, which is what survived the read failures, the empty-file " +
+          "skip, and the MAX_RULES_BYTES break"
+      )
+
+      const disabledBranch = extensionSource.slice(
+        extensionSource.indexOf("isDisabledByEnv(process.env.ECC_PI_RULES)"),
+        extensionSource.indexOf("const sections: string[] = []")
+      )
+      assert.ok(
+        /cachedRuleFileCount\s*=\s*0/.test(disabledBranch),
+        "expected the ECC_PI_RULES disable branch of loadPortableRules in " +
+          ".pi/extensions/index.ts to reset cachedRuleFileCount to 0, so the counter can " +
+          "never survive from a prior load into a disabled session"
+      )
+
+      const statusStart = extensionSource.indexOf("function describeRulesStatus")
+      assert.ok(
+        statusStart !== -1,
+        "expected .pi/extensions/index.ts to define a function named describeRulesStatus"
+      )
+      const nextFunctionStart = extensionSource.indexOf("\nfunction ", statusStart + 1)
+      const statusSource =
+        nextFunctionStart === -1
+          ? extensionSource.slice(statusStart)
+          : extensionSource.slice(statusStart, nextFunctionStart)
+
+      assert.ok(
+        /\$\{cachedRuleFileCount\}\/\$\{PORTABLE_RULE_FILES\.length\}\s+rule file/.test(statusSource),
+        "expected describeRulesStatus in .pi/extensions/index.ts to report the loaded count " +
+          "over the allowlist length (`${cachedRuleFileCount}/${PORTABLE_RULE_FILES.length} " +
+          "rule file(s)`); loadPortableRules silently skips unreadable and empty files and " +
+          "breaks out of the loop at MAX_RULES_BYTES, so reporting the allowlist length " +
+          "alone makes an install that loaded 3 of 7 report 7 -- and /ecc-doctor is the one " +
+          "place a user looks to find a partial install"
+      )
     }],
 
     ["isDisabledByEnv() behavioral mirror: recognizes 0/false/off/none/disabled case- and whitespace-insensitively, and the real function reads ECC_PI_RULES", () => {

@@ -332,6 +332,16 @@ function isDisabledByEnv(value: string | undefined): boolean {
 let cachedRules: string | null | undefined
 
 /**
+ * How many of `PORTABLE_RULE_FILES` actually made it into `cachedRules`.
+ *
+ * Kept alongside the cache because `loadPortableRules` silently drops files it
+ * cannot read, files that are empty, and every file past the size cap — so the
+ * allowlist length would overstate a partial install in `/ecc-doctor`, which is
+ * the one place a user looks to find exactly that.
+ */
+let cachedRuleFileCount = 0
+
+/**
  * ECC's portable engineering rules, concatenated from the canonical
  * `rules/common/` directory of the installed package.
  *
@@ -345,6 +355,7 @@ function loadPortableRules(): string | null {
 
   if (isDisabledByEnv(process.env.ECC_PI_RULES)) {
     cachedRules = null
+    cachedRuleFileCount = 0
     return cachedRules
   }
 
@@ -372,6 +383,7 @@ function loadPortableRules(): string | null {
   }
 
   cachedRules = sections.length > 0 ? sections.join("\n\n---\n\n") : null
+  cachedRuleFileCount = sections.length
   return cachedRules
 }
 
@@ -427,15 +439,22 @@ function listInstalledPiPackages(projectDir: string): Set<string> {
 /**
  * Reduce a `packages` entry to a bare package name.
  *
- * Entries look like `npm:pi-subagents`, `npm:@scope/name@1.2.3`, a git source,
+ * An entry is either the source string itself or an object carrying that
+ * string under `source` alongside resource filters (`{ source: "npm:x",
+ * skills: [] }`). Pi accepts both forms, and a filtered package is just as
+ * installed as a plain one, so both must resolve to the same name.
+ *
+ * Sources look like `npm:pi-subagents`, `npm:@scope/name@1.2.3`, a git source,
  * or a filesystem path. Only npm sources carry a comparable package name.
  */
 function normalizePiPackageName(entry: unknown): string | undefined {
-  if (typeof entry !== "string" || !entry.startsWith("npm:")) {
+  const source = entry && typeof entry === "object" ? (entry as { source?: unknown }).source : entry
+
+  if (typeof source !== "string" || !source.startsWith("npm:")) {
     return undefined
   }
 
-  const spec = entry.slice("npm:".length)
+  const spec = source.slice("npm:".length)
   // Strip a trailing @version without breaking the leading @ of a scoped name.
   const versionAt = spec.lastIndexOf("@")
   return versionAt > 0 ? spec.slice(0, versionAt) : spec
@@ -478,7 +497,9 @@ function describeRulesStatus(): string {
     return `NOT FOUND (${path.join(ECC_ROOT, "rules", "common")})`
   }
 
-  return `${PORTABLE_RULE_FILES.length} rule file(s), ${rules.length} chars, from rules/common/`
+  const skipped = PORTABLE_RULE_FILES.length - cachedRuleFileCount
+  const shortfall = skipped > 0 ? ` (${skipped} unreadable, empty, or past the size cap)` : ""
+  return `${cachedRuleFileCount}/${PORTABLE_RULE_FILES.length} rule file(s), ${rules.length} chars, from rules/common/${shortfall}`
 }
 
 function buildDoctorReport(ctx: ExtensionContext): string {

@@ -186,5 +186,5 @@ A `NOT FOUND` line points at the specific path that failed to resolve.
 
 - The `.pi/extensions/` directory is the only place for adapter code
 - Skills and commands are defined in the repo root (`skills/`, `commands/`) and referenced by Pi
-- MCP servers are intentionally out of scope; use ECC's MCP configs with other harnesses
+- MCP is not bundled, but ECC's MCP configs load in Pi through the community `pi-mcp-adapter` — see [MCP](#mcp) above
 - This adapter was tested against Pi v0.84.1
