@@ -464,6 +464,93 @@ textarea {
   padding: 32px 12px;
 }
 
+/* --- Home: empty state (every tile hidden) --------------------------------- */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--tabbar-h) - env(safe-area-inset-bottom, 0px));
+}
+.home-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  color: var(--muted);
+}
+.desert-empty-svg {
+  width: 168px;
+  height: auto;
+  overflow: visible;
+}
+.desert-tumbleweed-track {
+  animation: desertTumbleRoll 5s linear infinite;
+}
+.desert-tumbleweed-bounce {
+  animation: desertTumbleBounce 0.625s ease-in-out infinite;
+}
+.desert-tumbleweed-frame-a,
+.desert-tumbleweed-frame-b {
+  transform-origin: 0 0;
+  animation: desertTumbleFrameA 1.25s ease-in-out infinite;
+}
+.desert-tumbleweed-frame-b {
+  animation-name: desertTumbleFrameB;
+}
+@keyframes desertTumbleRoll {
+  0% {
+    transform: translate(-16px, 88px);
+  }
+  100% {
+    transform: translate(216px, 88px);
+  }
+}
+@keyframes desertTumbleBounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-9px) rotate(180deg);
+  }
+}
+@keyframes desertTumbleFrameA {
+  0%,
+  35% {
+    opacity: 1;
+  }
+  50%,
+  85% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes desertTumbleFrameB {
+  0%,
+  35% {
+    opacity: 0;
+  }
+  50%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desert-tumbleweed-track,
+  .desert-tumbleweed-bounce,
+  .desert-tumbleweed-frame-a,
+  .desert-tumbleweed-frame-b {
+    animation: none;
+  }
+}
+
 /* --- Swipe to delete ------------------------------------------------------- */
 .swipe-row {
   position: relative;
