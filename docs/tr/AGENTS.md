@@ -1,6 +1,6 @@
 # Everything Claude Code (ECC) — Agent Talimatları
 
-Bu, yazılım geliştirme için 68 özel agent, 286 skill, 94 command ve otomatik hook iş akışları sağlayan **üretime hazır bir AI kodlama eklentisidir**.
+Bu, yazılım geliştirme için 68 özel agent, 287 skill, 94 command ve otomatik hook iş akışları sağlayan **üretime hazır bir AI kodlama eklentisidir**.
 
 **Sürüm:** 2.2.0
 
@@ -142,7 +142,7 @@ Başarısızlık sorunlarını giderin: test izolasyonunu kontrol edin → mockl
 
 ```
 agents/          — 68 özel subagent
-skills/          — 286 iş akışı skillleri ve alan bilgisi
+skills/          — 287 iş akışı skillleri ve alan bilgisi
 commands/        — 94 slash command
 hooks/           — Tetikleyici tabanlı otomasyonlar
 rules/           — Her zaman uyulması gereken kurallar (ortak + dile özel)
