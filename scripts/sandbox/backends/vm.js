@@ -429,8 +429,15 @@ function executeVm(manifest, options) {
       try {
         const stop = invoke(driver.stopArgs(vmName), MAX_EXEC_BUFFER, CLEANUP_TIMEOUT_MS);
         if (!succeeded(stop)) {
-          executionError = true;
-          notes.push(`${driver.backend} stop failed before forced deletion: ${resultDetail(stop)}`);
+          const stoppedState = driver.stoppedArgs && driver.stopped
+            ? invoke(driver.stoppedArgs(vmName), MAX_EXEC_BUFFER, CLEANUP_TIMEOUT_MS)
+            : null;
+          if (stoppedState && succeeded(stoppedState) && driver.stopped(stoppedState)) {
+            notes.push(`${driver.backend} guest was verified stopped after the launcher exited`);
+          } else {
+            executionError = true;
+            notes.push(`${driver.backend} stop failed before forced deletion: ${resultDetail(stop)}`);
+          }
         }
       } catch (error) {
         executionError = true;

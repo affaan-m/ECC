@@ -7,9 +7,20 @@ const { executeVm } = require('./vm');
 const DEFAULT_LUME_SEED = 'ecc-sandbox-macos-seed';
 
 function parseJson(value) {
+  const text = String(value || '').trim();
   try {
-    return JSON.parse(String(value || ''));
+    return JSON.parse(text);
   } catch {
+    const lines = text.split(/\r?\n/);
+    for (let index = 1; index < lines.length; index += 1) {
+      const candidate = lines.slice(index).join('\n').trim();
+      if (!candidate.startsWith('{') && !candidate.startsWith('[')) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // Lume may prepend multiple timestamped INFO lines before JSON output.
+      }
+    }
     return null;
   }
 }
@@ -25,6 +36,14 @@ function lumeSeedReady(result, expected = {}) {
     details
     && ['stopped', 'halted'].includes(stateOf(details))
     && ['macos', 'darwin'].includes(String(details.os || '').toLowerCase())
+  ));
+}
+
+function lumeGuestStopped(result) {
+  const parsed = parseJson(result.stdout);
+  const values = Array.isArray(parsed) ? parsed : [parsed];
+  return values.some(details => (
+    details && ['stopped', 'halted'].includes(stateOf(details))
   ));
 }
 
@@ -345,6 +364,8 @@ const LUME_DRIVER = {
     'ssh', vmName, '--timeout', String(timeout), '--', `/bin/sh -c ${shellQuote(command)}`,
   ],
   stopArgs: vmName => ['stop', vmName],
+  stoppedArgs: vmName => ['get', vmName, '--format', 'json'],
+  stopped: lumeGuestStopped,
   deleteArgs: vmName => ['delete', vmName, '--force'],
   missingInstance: result => /(?:not found|does not exist|no virtual machine)/i.test(
     `${result.stderr || ''}\n${result.stdout || ''}`

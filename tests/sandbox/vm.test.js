@@ -536,12 +536,16 @@ test('stops a managed Lume guest after its launcher exits and before deletion', 
 test('reports an error when VM stop fails even if forced deletion succeeds', () => {
   const exitOnly = manifest();
   exitOnly.report = 'exit-only';
+  let getCount = 0;
   const outcome = executeLume(exitOnly, {
     arch: 'arm64',
     manifestPath: '/repo/stop-failure.yaml',
     mock: true,
     run: (executable, argv) => {
-      if (argv[0] === 'get') return result(0, lumeSeedJson);
+      if (argv[0] === 'get') {
+        getCount += 1;
+        return result(0, getCount === 1 ? lumeSeedJson : '[{"status":"running"}]');
+      }
       if (argv[0] === 'ls') return result(0, '[]');
       if (argv[0] === 'stop') return result(1, '', 'guest still running');
       return result(0);
@@ -553,6 +557,45 @@ test('reports an error when VM stop fails even if forced deletion succeeds', () 
   assert.strictEqual(outcome.report.result, 'error');
   assert.strictEqual(outcome.cleanup.pass, true);
   assert.match(outcome.report.notes.join('\n'), /stop failed before forced deletion/);
+});
+
+test('accepts a nonzero Lume stop when the guest is already verified stopped', () => {
+  let alive = true;
+  let getCount = 0;
+  const child = {
+    pid: 72_000,
+    forceStop: () => { alive = false; return true; },
+    isAlive: () => alive,
+    isOwned: () => alive,
+    prepareStop: () => true,
+    signalOwned: () => { alive = false; },
+    unref() {},
+  };
+  const exitOnly = manifest();
+  exitOnly.report = 'exit-only';
+  const outcome = executeLume(exitOnly, {
+    arch: 'arm64',
+    manifestPath: '/repo/already-stopped.yaml',
+    mock: true,
+    run: (executable, argv) => {
+      if (argv[0] === 'get') {
+        getCount += 1;
+        return result(0, getCount === 1
+          ? lumeSeedJson
+          : `[2026-08-11T17:43:39Z] INFO: Cleaned up stale session file\n${lumeSeedJson}`);
+      }
+      if (argv[0] === 'ls') return result(0, '[]');
+      if (argv[0] === 'stop') return result(1);
+      return result(0);
+    },
+    seed: 'ecc-macos-seed',
+    sleep: () => {},
+    start: () => ({ ...result(0), child }),
+    vmName: 'ecc-lume-already-stopped-test',
+  });
+  assert.strictEqual(outcome.report.result, 'pass');
+  assert.strictEqual(outcome.cleanup.pass, true);
+  assert.match(outcome.report.notes.join('\n'), /verified stopped after the launcher exited/);
 });
 
 test('CLI mock mode routes to Lume on Apple Silicon and emits one schema-valid report', () => {
