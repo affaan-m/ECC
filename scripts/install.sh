@@ -127,7 +127,7 @@ while getopts "fnlh" opt; do
                 # Show which categories exist for each language
                 cats=""
                 for cat in "${CATEGORIES[@]}" hooks; do
-                    if [[ -d "${REPO_ROOT}/${cat}/${lang}" ]]; then
+                    if [[ -d "${CONTENT_ROOT}/${cat}/${lang}" ]]; then
                         cats="${cats} ${cat}"
                     fi
                 done
@@ -170,11 +170,11 @@ echo ""
 $DRY_RUN || mkdir -p "$CLAUDE_DIR"
 
 # Install global CLAUDE.md
-global_claude="${REPO_ROOT}/global/CLAUDE.md"
+global_claude="${CONTENT_ROOT}/instructions/global.md"
 if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     copy_file "$global_claude" "${CLAUDE_DIR}/CLAUDE.md" \
-        "global/CLAUDE.md" "CLAUDE.md"
+        "content/instructions/global.md" "CLAUDE.md"
 
     # Also install as Codex AGENTS.md when Codex is installed/configured.
     if codex_is_available; then
@@ -182,7 +182,7 @@ if [[ -f "$global_claude" ]]; then
             mkdir -p "$CODEX_DIR"
         fi
         copy_file "$global_claude" "${CODEX_DIR}/AGENTS.md" \
-            "global/CLAUDE.md" "$(codex_agents_label)"
+            "content/instructions/global.md" "$(codex_agents_label)"
     else
         log_info "Codex not detected; skipping Codex AGENTS.md"
     fi
@@ -194,7 +194,7 @@ for category in "${CATEGORIES[@]}"; do
     has_files=false
 
     for lang in "${LANGUAGES[@]}"; do
-        src_dir="${REPO_ROOT}/${category}/${lang}"
+        src_dir="${CONTENT_ROOT}/${category}/${lang}"
         [[ -d "$src_dir" ]] || continue
 
         dest_dir="${CLAUDE_DIR}/${category}"
@@ -213,7 +213,7 @@ for category in "${CATEGORIES[@]}"; do
                 fi
 
                 copy_dir "$skill_dir" "${dest_dir}/${local_name}" \
-                    "${category}/${lang}/${local_name}/" "${category}/${local_name}/"
+                    "content/${category}/${lang}/${local_name}/" "${category}/${local_name}/"
             done
         else
             # Agents, commands, rules: flat .md files
@@ -227,7 +227,7 @@ for category in "${CATEGORIES[@]}"; do
                 fi
 
                 copy_file "$file" "${dest_dir}/${filename}" \
-                    "${category}/${lang}/${filename}" "${category}/${filename}"
+                    "content/${category}/${lang}/${filename}" "${category}/${filename}"
             done
         fi
     done
@@ -300,12 +300,12 @@ fi
 hooks_to_merge=()
 for lang in "${LANGUAGES[@]}"; do
     # hooks.json (used by common/)
-    hooks_file="${REPO_ROOT}/hooks/${lang}/hooks.json"
+    hooks_file="${CONTENT_ROOT}/hooks/${lang}/hooks.json"
     if [[ -f "$hooks_file" ]]; then
         hooks_to_merge+=("$hooks_file")
     fi
     # global-hooks.json (used by language-specific dirs)
-    global_hooks_file="${REPO_ROOT}/hooks/${lang}/global-hooks.json"
+    global_hooks_file="${CONTENT_ROOT}/hooks/${lang}/global-hooks.json"
     if [[ -f "$global_hooks_file" ]]; then
         hooks_to_merge+=("$global_hooks_file")
     fi
@@ -338,7 +338,7 @@ verify_hook_paths
 # Copy project hooks templates (hooks/*/project-hooks.json → ~/.claude/project-hooks/{lang}.json)
 has_project_hooks=false
 for lang in "${LANGUAGES[@]}"; do
-    project_hooks_file="${REPO_ROOT}/hooks/${lang}/project-hooks.json"
+    project_hooks_file="${CONTENT_ROOT}/hooks/${lang}/project-hooks.json"
     [[ -f "$project_hooks_file" ]] || continue
 
     dest_project_hooks="${CLAUDE_DIR}/project-hooks"
@@ -351,7 +351,7 @@ for lang in "${LANGUAGES[@]}"; do
     fi
 
     copy_file_subst "$project_hooks_file" "${dest_project_hooks}/${lang}.json" \
-        "hooks/${lang}/project-hooks.json" "project-hooks/${lang}.json"
+        "content/hooks/${lang}/project-hooks.json" "project-hooks/${lang}.json"
 done
 
 if $has_project_hooks; then

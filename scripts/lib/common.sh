@@ -3,6 +3,7 @@ set -euo pipefail
 # Shared helpers for install/uninstall scripts.
 # Callers must set REPO_ROOT before sourcing, and FORCE/DRY_RUN before
 # calling copy_*/remove_* functions.
+CONTENT_ROOT="${REPO_ROOT}/content"
 
 CLAUDE_DIR="${HOME}/.claude"
 CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"

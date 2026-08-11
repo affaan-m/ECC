@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SKILLS_DIR = path.join(__dirname, '../../../skills');
+const SKILLS_DIR = path.join(__dirname, '../../../content/skills');
 
 function validateSkills() {
   if (!fs.existsSync(SKILLS_DIR)) {

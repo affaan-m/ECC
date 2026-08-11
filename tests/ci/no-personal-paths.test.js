@@ -120,11 +120,11 @@ record(test('passes against the real repository', () => {
 record(test('flags a leaked /Users/<name> path', () => {
   const testDir = createTestDir();
   try {
-    writeFile(path.join(testDir, 'skills', 'leaky', 'SKILL.md'), 'See /Users/sugig/.claude/settings.json\n');
+    writeFile(path.join(testDir, 'content', 'skills', 'leaky', 'SKILL.md'), 'See /Users/sugig/.claude/settings.json\n');
     const result = runValidatorAgainst(testDir);
     assert.strictEqual(result.code, 1, 'expected non-zero exit on leak');
     assert.ok(result.stderr.includes('/Users/sugig'), `expected stderr to mention leaked path; got: ${result.stderr}`);
-    assert.ok(result.stderr.includes('skills/leaky/SKILL.md'), `expected normalized file path; got: ${result.stderr}`);
+    assert.ok(result.stderr.includes('content/skills/leaky/SKILL.md'), `expected normalized file path; got: ${result.stderr}`);
   } finally {
     cleanupTestDir(testDir);
   }
@@ -145,7 +145,7 @@ record(test('flags a leaked C:\\Users\\<name> path case-insensitively', () => {
 record(test('allows /Users/<placeholder> templates', () => {
   const testDir = createTestDir();
   try {
-    writeFile(path.join(testDir, 'commands', 'demo.md'), [
+    writeFile(path.join(testDir, 'content', 'commands', 'demo.md'), [
       '/Users/you/.claude/session.json',
       '/Users/example/.claude/rules/foo.md',
       '/Users/yourname/projects/app',
@@ -176,7 +176,7 @@ record(test('exempts docs/fixes forensic reports', () => {
 record(test('only scans configured file extensions', () => {
   const testDir = createTestDir();
   try {
-    writeFile(path.join(testDir, 'skills', 'demo', 'image.png'), 'binary /Users/sugig/secret');
+    writeFile(path.join(testDir, 'content', 'skills', 'demo', 'image.png'), 'binary /Users/sugig/secret');
     const result = runValidatorAgainst(testDir);
     assert.strictEqual(result.code, 0, `expected non-text extensions to be skipped; stderr: ${result.stderr}`);
   } finally {
@@ -187,7 +187,7 @@ record(test('only scans configured file extensions', () => {
 record(test('reports every leak on a single offending file', () => {
   const testDir = createTestDir();
   try {
-    writeFile(path.join(testDir, 'skills', 'multi', 'SKILL.md'), [
+    writeFile(path.join(testDir, 'content', 'skills', 'multi', 'SKILL.md'), [
       '/Users/sugig/.claude/a.json',
       '/Users/sugig/.claude/b.json',
       'C:\\Users\\foo\\bar',

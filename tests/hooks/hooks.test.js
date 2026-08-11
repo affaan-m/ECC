@@ -154,7 +154,7 @@ async function runTests() {
   // hooks JSON validation (common + node global hooks)
   console.log('\ncommon/hooks.json Validation:');
 
-  const commonHooksPath = path.join(__dirname, '..', '..', 'hooks', 'common', 'hooks.json');
+  const commonHooksPath = path.join(__dirname, '..', '..', 'content', 'hooks', 'common', 'hooks.json');
 
   if (test('common/hooks.json is valid JSON', () => {
     const content = fs.readFileSync(commonHooksPath, 'utf8');
@@ -169,7 +169,7 @@ async function runTests() {
 
   console.log('\nnode/global-hooks.json Validation:');
 
-  const nodeHooksPath = path.join(__dirname, '..', '..', 'hooks', 'node', 'global-hooks.json');
+  const nodeHooksPath = path.join(__dirname, '..', '..', 'content', 'hooks', 'node', 'global-hooks.json');
 
   if (test('node/global-hooks.json is valid JSON', () => {
     const content = fs.readFileSync(nodeHooksPath, 'utf8');
@@ -244,8 +244,8 @@ async function runTests() {
     const pluginPath = path.join(rootDir, '.claude-plugin', 'plugin.json');
     const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
 
-    assert.deepStrictEqual(plugin.commands, ['./commands/']);
-    assert.deepStrictEqual(plugin.skills, ['./skills/']);
+    assert.deepStrictEqual(plugin.commands, ['./content/commands/']);
+    assert.deepStrictEqual(plugin.skills, ['./content/skills/']);
 
     for (const agentPath of plugin.agents) {
       assert.ok(

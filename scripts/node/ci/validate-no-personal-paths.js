@@ -16,9 +16,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '../../..');
 const TARGETS = [
   'README.md',
-  'skills',
-  'commands',
-  'agents',
+  'content/skills',
+  'content/commands',
+  'content/agents',
   'docs',
 ];
 

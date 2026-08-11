@@ -11,9 +11,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT_DIR = path.join(__dirname, '../../..');
-const COMMANDS_DIR = path.join(ROOT_DIR, 'commands');
-const AGENTS_DIR = path.join(ROOT_DIR, 'agents');
-const SKILLS_DIR = path.join(ROOT_DIR, 'skills');
+const COMMANDS_DIR = path.join(ROOT_DIR, 'content/commands');
+const AGENTS_DIR = path.join(ROOT_DIR, 'content/agents');
+const SKILLS_DIR = path.join(ROOT_DIR, 'content/skills');
 
 // Language prefixes used in nested directory layouts.
 const LANG_PREFIXES = ['node-', 'python-', 'rust-', 'typescript-', 'fastapi-'];

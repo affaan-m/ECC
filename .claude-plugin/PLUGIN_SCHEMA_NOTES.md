@@ -56,7 +56,7 @@ Even if there is only one entry, **strings are not accepted**.
 
 ```json
 {
-  "agents": "./agents"
+  "agents": "./content/agents"
 }
 ```
 
@@ -64,7 +64,7 @@ Even if there is only one entry, **strings are not accepted**.
 
 ```json
 {
-  "agents": ["./agents/common/planner.md"]
+  "agents": ["./content/agents/common/planner.md"]
 }
 ```
 
@@ -82,7 +82,7 @@ Even the following will fail:
 
 ```json
 {
-  "agents": ["./agents/"]
+  "agents": ["./content/agents/"]
 }
 ```
 
@@ -91,9 +91,9 @@ Instead, you must enumerate agent files explicitly:
 ```json
 {
   "agents": [
-    "./agents/common/planner.md",
-    "./agents/common/architect.md",
-    "./agents/node/node-code-reviewer.md"
+    "./content/agents/common/planner.md",
+    "./content/agents/common/architect.md",
+    "./content/agents/node/node-code-reviewer.md"
   ]
 }
 ```
@@ -177,11 +177,11 @@ Avoid cleverness. Be explicit.
 {
   "version": "1.1.0",
   "agents": [
-    "./agents/common/planner.md",
-    "./agents/node/node-code-reviewer.md"
+    "./content/agents/common/planner.md",
+    "./content/agents/node/node-code-reviewer.md"
   ],
-  "commands": ["./commands/"],
-  "skills": ["./skills/"]
+  "commands": ["./content/commands/"],
+  "skills": ["./content/skills/"]
 }
 ```
 

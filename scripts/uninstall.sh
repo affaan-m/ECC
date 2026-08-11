@@ -48,7 +48,7 @@ while getopts "nlh" opt; do
             discover_languages | while read -r lang; do
                 cats=""
                 for cat in "${CATEGORIES[@]}" hooks; do
-                    if [[ -d "${REPO_ROOT}/${cat}/${lang}" ]]; then
+                    if [[ -d "${CONTENT_ROOT}/${cat}/${lang}" ]]; then
                         cats="${cats} ${cat}"
                     fi
                 done
@@ -89,7 +89,7 @@ echo -e "Uninstalling: ${RED}${LANGUAGES[*]}${NC} from ${CLAUDE_DIR}/"
 echo ""
 
 # Remove global CLAUDE.md
-global_claude="${REPO_ROOT}/global/CLAUDE.md"
+global_claude="${CONTENT_ROOT}/instructions/global.md"
 if [[ -f "$global_claude" ]]; then
     echo -e "${CYAN}[global]${NC}"
     remove_file "${CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
@@ -109,7 +109,7 @@ for category in "${CATEGORIES[@]}"; do
     has_files=false
 
     for lang in "${LANGUAGES[@]}"; do
-        src_dir="${REPO_ROOT}/${category}/${lang}"
+        src_dir="${CONTENT_ROOT}/${category}/${lang}"
         [[ -d "$src_dir" ]] || continue
 
         dest_dir="${CLAUDE_DIR}/${category}"
@@ -211,8 +211,8 @@ fi
 # Remove global hooks (settings.json)
 has_hooks=false
 for lang in "${LANGUAGES[@]}"; do
-    if [[ -f "${REPO_ROOT}/hooks/${lang}/hooks.json" ]] || \
-       [[ -f "${REPO_ROOT}/hooks/${lang}/global-hooks.json" ]]; then
+    if [[ -f "${CONTENT_ROOT}/hooks/${lang}/hooks.json" ]] || \
+       [[ -f "${CONTENT_ROOT}/hooks/${lang}/global-hooks.json" ]]; then
         has_hooks=true
         break
     fi
@@ -243,7 +243,7 @@ fi
 # Remove project hook templates (project-hooks/{lang}.json)
 has_project_hooks=false
 for lang in "${LANGUAGES[@]}"; do
-    if [[ -f "${REPO_ROOT}/hooks/${lang}/project-hooks.json" ]]; then
+    if [[ -f "${CONTENT_ROOT}/hooks/${lang}/project-hooks.json" ]]; then
         if ! $has_project_hooks; then
             echo -e "${CYAN}[project hooks]${NC}"
             has_project_hooks=true

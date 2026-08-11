@@ -155,4 +155,4 @@ jobs:
         run: npx eslint scripts/**/*.js tests/**/*.js
 
       - name: Run markdownlint
-        run: npx markdownlint "agents/**/*.md" "skills/**/*.md" "commands/**/*.md" "rules/**/*.md"
+        run: npx markdownlint "content/agents/**/*.md" "content/skills/**/*.md" "content/commands/**/*.md" "content/rules/**/*.md"

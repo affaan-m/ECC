@@ -85,7 +85,7 @@ Place files in the appropriate directory:
 - `commands/` for slash commands
 - `rules/` for rule files
 - `hooks/` for hook configurations
-- `mcp-configs/` for MCP server configs
+- `content/mcp/` for MCP server configs
 
 ### 4. Follow the format
 
