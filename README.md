@@ -116,11 +116,11 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 67 agents, 285 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 68 agents, 285 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   67 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
 | Skills           |  285 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
 | Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
@@ -966,7 +966,7 @@ This repo is the raw code. The guides explain everything.
 
 ```text
 ECC/
-|-- agents/           # 67 specialized subagents for delegation
+|-- agents/           # 68 specialized subagents for delegation
 |-- skills/           # 282 reusable workflows loaded on demand
 |-- commands/         # 94 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
@@ -1433,6 +1433,13 @@ export ECC_MAX_INJECTED_INSTINCTS=6
 
 # Minimum confidence an instinct needs to be injected, 0-1 (default: 0.7)
 export ECC_INSTINCT_CONFIDENCE_THRESHOLD=0.7
+
+# SessionStart ranks injected instincts by confidence + project/stack relevance
+# (default: on). Project-scoped instincts, and instincts whose domain/trigger
+# matches the detected stack (languages, frameworks, plus terraform/dbt markers),
+# get a small ranking boost so they surface above unrelated higher-confidence
+# ones. Set to off/false/0/no to rank by confidence alone.
+export ECC_INSTINCT_RELEVANCE_RANKING=on
 
 # Keep context/scope/loop warnings but suppress API-rate cost estimates
 export ECC_CONTEXT_MONITOR_COST_WARNINGS=off
