@@ -1,16 +1,16 @@
 ---
-description: 复盘 PROJECT_LOG.md——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为"该下沉成 lint/测试"的候选清单。LOG 从流水账变资产。
+description: 复盘项目历史角色——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为"该下沉成 lint/测试"的候选清单。让历史流水账变成资产。
 argument-hint: "[可选：起始日期 YYYY-MM-DD，默认全量]"
 ---
 
-对当前项目的 `PROJECT_LOG.md` 做一次**只读复盘统计**。LOG 只追加、越来越长——它不该只是负担，定期复盘一次，它就是项目最诚实的错误分布数据。
+对当前项目映射或发现到的历史角色做一次**只读复盘统计**。历史只追加、越来越长——它不该只是负担，定期复盘一次，它就是项目最诚实的错误分布数据。
 
 用户参数（可选）：`$ARGUMENTS` —— 起始日期（如 `2026-05-01`，只统计该日期之后的条目）；不带参数统计全量。
 
 执行步骤：
 
 1. **按事件计数**：先运行 `python3 "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/project-log-index.py" status --root "${CLAUDE_PROJECT_DIR:-$PWD}"`；阈值按 `## [日期] 类型 | 摘要` 事件计，不按行数。
-2. **读 LOG**：`PROJECT_LOG.md`（存在 `PROJECT_LOG.archive.md` 且用户要全量时一并读）。存在 `.governance/project-log.sqlite` 时可用于分类查询，但结论必须能回到 Markdown 原文；`PROJECT_LOG.md` 不存在就报告缺失并停止。
+2. **读历史角色**：先读取 `.governance/docs-map.json` 的 `history` / `history_archive`，没有映射时使用默认 `PROJECT_LOG.md` / `PROJECT_LOG.archive.md`。用户要全量时一并读取归档。存在 `.governance/project-log.sqlite` 时可用于分类查询，但结论必须能回到 Markdown 原文；历史角色不存在就报告缺失并停止。
 3. **分类统计**（按条目的类型词和内容聚合）：
    - **按模块**：哪个模块 / 文件被 fix 类条目点名最多（top 5，带次数）。
    - **按错误类型**：把 fix / bug 条目按病根聚类（如：空值处理、类型截断、口径不一致、路径硬编码、日期格式……），报重复出现 ≥2 次的类型。

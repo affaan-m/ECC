@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -22,8 +23,6 @@ TEST_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b", re.IGNORECASE)
 COMMIT_RE = re.compile(r"(?<![0-9a-f])(?:[0-9a-f]{7,40})(?![0-9a-f])", re.IGNORECASE)
 ADR_RE = re.compile(r"(?:docs/adr/\d{4}-[a-z0-9-]+\.md|\bADR-?\d{4}\b)", re.IGNORECASE)
 CONTRACT_RE = re.compile(r"\bCONTRACT\.md\b", re.IGNORECASE)
-ARCHIVE_NOTE = "> 历史归档见 `PROJECT_LOG.archive.md`；`.governance/project-log.sqlite` 只是可重建索引。"
-ARCHIVE_PREAMBLE = "# PROJECT_LOG.archive.md —— 历史归档（原始事件，只追加）\n\n"
 
 
 @dataclass(frozen=True)
@@ -63,10 +62,41 @@ def parse_entries(text: str, source_file: str) -> tuple[str, list[Entry]]:
     return preamble, entries
 
 
-def load_entries(path: Path) -> tuple[str, list[Entry]]:
+def load_entries(path: Path, root: Path | None = None) -> tuple[str, list[Entry]]:
     if not path.exists():
         return "", []
-    return parse_entries(path.read_text(encoding="utf-8"), path.name)
+    source_file = path.relative_to(root).as_posix() if root is not None else path.name
+    return parse_entries(path.read_text(encoding="utf-8"), source_file)
+
+
+def resolve_project_path(root: Path, value: str, role: str) -> Path:
+    candidate = (root / value).resolve()
+    if root != candidate and root not in candidate.parents:
+        raise SystemExit(f"{role} 路径不得越出项目根：{value}")
+    return candidate
+
+
+def log_paths(root: Path) -> tuple[Path, Path]:
+    mapping_path = root / ".governance" / "docs-map.json"
+    mapping: dict[str, object] = {}
+    if mapping_path.exists():
+        try:
+            loaded = json.loads(mapping_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"无法读取 {mapping_path}: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise SystemExit(f"{mapping_path} 必须是 role -> 相对路径对象")
+        mapping = loaded
+    history = mapping.get("history", "PROJECT_LOG.md")
+    archive = mapping.get("history_archive", "PROJECT_LOG.archive.md")
+    if not isinstance(history, str) or not history.strip():
+        raise SystemExit("history 角色必须是非空相对路径")
+    if not isinstance(archive, str) or not archive.strip():
+        raise SystemExit("history_archive 角色必须是非空相对路径")
+    return (
+        resolve_project_path(root, history, "history"),
+        resolve_project_path(root, archive, "history_archive"),
+    )
 
 
 def deduplicate(entries: list[Entry]) -> list[Entry]:
@@ -199,6 +229,8 @@ def command_archive(
     threshold: int,
     keep: int,
     confirmed: bool,
+    archive_note: str,
+    archive_preamble_default: str,
 ) -> None:
     if len(active) <= threshold:
         print(f"PROJECT_LOG 只有 {len(active)} 条事件，未超过阈值 {threshold}，无需归档。")
@@ -211,10 +243,10 @@ def command_archive(
     moved = active[:-keep]
     recent = active[-keep:]
     merged_archive = deduplicate(archived + moved)
-    if ARCHIVE_NOTE not in preamble:
-        preamble = preamble.rstrip() + "\n" + ARCHIVE_NOTE + "\n"
+    if archive_note not in preamble:
+        preamble = preamble.rstrip() + "\n" + archive_note + "\n"
     if not archive_preamble.strip():
-        archive_preamble = ARCHIVE_PREAMBLE
+        archive_preamble = archive_preamble_default
 
     active_content = render(preamble, recent)
     archive_content = render(archive_preamble, merged_archive)
@@ -224,8 +256,9 @@ def command_archive(
     try:
         atomic_write(archive_path, archive_content)
         atomic_write(log_path, active_content)
-        _, stored_archive = load_entries(archive_path)
-        _, stored_active = load_entries(log_path)
+        project_root = database.parent.parent
+        _, stored_archive = load_entries(archive_path, project_root)
+        _, stored_active = load_entries(log_path, project_root)
         command_rebuild(database, stored_archive, stored_active)
     except Exception:
         atomic_write(log_path, before_log.decode("utf-8"))
@@ -248,14 +281,13 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
-    log_path = root / "PROJECT_LOG.md"
-    archive_path = root / "PROJECT_LOG.archive.md"
+    log_path, archive_path = log_paths(root)
     database = root / ".governance" / "project-log.sqlite"
     if not log_path.exists():
         raise SystemExit(f"缺少 {log_path}")
 
-    preamble, active = load_entries(log_path)
-    archive_preamble, archived = load_entries(archive_path)
+    preamble, active = load_entries(log_path, root)
+    archive_preamble, archived = load_entries(archive_path, root)
     if args.action == "status":
         command_status(active, args.threshold)
     elif args.action == "rebuild":
@@ -272,6 +304,8 @@ def main() -> int:
             args.threshold,
             args.keep,
             args.yes,
+            f"> 历史归档见 `{archive_path.relative_to(root).as_posix()}`；`.governance/project-log.sqlite` 只是可重建索引。",
+            f"# {archive_path.name} —— 历史归档（原始事件，只追加）\n\n",
         )
     return 0
 

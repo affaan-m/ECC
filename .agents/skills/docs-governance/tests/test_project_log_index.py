@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sqlite3
 import subprocess
 import sys
@@ -95,6 +96,42 @@ class ProjectLogIndexTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(log.read_text(encoding="utf-8"), before)
         self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
+
+    def test_role_map_controls_history_status_rebuild_and_archive(self):
+        docs = self.project / "docs"
+        docs.mkdir()
+        log = docs / "history.md"
+        archive = docs / "history-archive.md"
+        log.write_text(render_log(201), encoding="utf-8")
+        governance = self.project / ".governance"
+        governance.mkdir()
+        (governance / "docs-map.json").write_text(
+            json.dumps(
+                {
+                    "history": "docs/history.md",
+                    "history_archive": "docs/history-archive.md",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        status = self.run_script("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("事件数：201", status.stdout)
+
+        archived = self.run_script("archive", "--keep", "100", "--yes")
+        self.assertEqual(archived.returncode, 0, archived.stderr)
+        self.assertTrue(archive.exists())
+        self.assertIn("docs/history-archive.md", log.read_text(encoding="utf-8"))
+
+        connection = sqlite3.connect(governance / "project-log.sqlite")
+        try:
+            sources = {
+                row[0] for row in connection.execute("SELECT DISTINCT source_file FROM events")
+            }
+            self.assertEqual(sources, {"docs/history.md", "docs/history-archive.md"})
+        finally:
+            connection.close()
 
 
 if __name__ == "__main__":
