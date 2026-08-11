@@ -495,16 +495,27 @@ textarea {
 [data-theme='dark'] .desert-moon-icon {
   display: block;
 }
+/* One 6s cycle: a 3s crossing (with two small bounces and a slow
+   emergence from behind the left wall) followed by 3s hidden behind
+   the right wall before the next tumbleweed starts. The clip-path on
+   the wrapping <g> in the component is what makes the "walls" — the
+   shape simply goes invisible once it's past x=4..196. */
 .desert-tumbleweed-track {
-  animation: desertTumbleRoll 5s linear infinite;
-}
-.desert-tumbleweed-bounce {
-  transform-origin: 0 0;
-  animation: desertTumbleBounce 0.9s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: desertTumbleCycle 6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
 }
 .desert-tumbleweed-spin {
   transform-origin: 0 0;
-  animation: desertTumbleSpin 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: desertTumbleSpin 1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.desert-wind {
+  opacity: 0;
+  color: var(--muted);
+}
+.desert-wind-a {
+  animation: desertWindA 6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
+}
+.desert-wind-b {
+  animation: desertWindB 6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
 }
 @keyframes desertSceneIn {
   from {
@@ -516,26 +527,29 @@ textarea {
     transform: translateY(0) scale(1);
   }
 }
-@keyframes desertTumbleRoll {
+@keyframes desertTumbleCycle {
   0% {
-    transform: translate(-16px, 88px);
+    transform: translate(-20px, 88px) scale(1);
+    animation-timing-function: ease-in;
   }
+  14% {
+    transform: translate(6px, 88px) scale(1);
+  }
+  22% {
+    transform: translate(45px, 79px) scale(0.96, 1.06);
+  }
+  30% {
+    transform: translate(84px, 88px) scale(1.06, 0.93);
+  }
+  38% {
+    transform: translate(124px, 79px) scale(0.96, 1.06);
+  }
+  46% {
+    transform: translate(163px, 88px) scale(1.06, 0.93);
+  }
+  50%,
   100% {
-    transform: translate(216px, 88px);
-  }
-}
-@keyframes desertTumbleBounce {
-  0%,
-  100% {
-    transform: translateY(0) scaleX(1) scaleY(1);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  45% {
-    transform: translateY(-6px) scaleX(0.95) scaleY(1.07);
-    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
-  }
-  92% {
-    transform: translateY(0) scaleX(1.08) scaleY(0.9);
+    transform: translate(220px, 88px) scale(1);
   }
 }
 @keyframes desertTumbleSpin {
@@ -546,14 +560,69 @@ textarea {
     transform: rotate(360deg);
   }
 }
+/* Trails ~20px behind the tumbleweed's own position throughout the
+   crossing (see desertTumbleCycle) so it reads as turbulence dragging
+   behind it, not a gust running out ahead. */
+@keyframes desertWindA {
+  0%,
+  10% {
+    opacity: 0;
+    transform: translate(-46px, 80px);
+  }
+  16% {
+    opacity: 0.5;
+    transform: translate(-10px, 79px);
+  }
+  30% {
+    opacity: 0.5;
+    transform: translate(62px, 76px);
+  }
+  46% {
+    opacity: 0.3;
+    transform: translate(141px, 75px);
+  }
+  50%,
+  100% {
+    opacity: 0;
+    transform: translate(198px, 75px);
+  }
+}
+@keyframes desertWindB {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translate(-30px, 95px) scale(0.75);
+  }
+  26% {
+    opacity: 0.35;
+    transform: translate(10px, 93px) scale(0.75);
+  }
+  38% {
+    opacity: 0.35;
+    transform: translate(96px, 90px) scale(0.75);
+  }
+  48% {
+    opacity: 0.2;
+    transform: translate(155px, 89px) scale(0.75);
+  }
+  50%,
+  100% {
+    opacity: 0;
+    transform: translate(205px, 89px) scale(0.75);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .home-empty-state {
     animation: none;
   }
   .desert-tumbleweed-track,
-  .desert-tumbleweed-bounce,
-  .desert-tumbleweed-spin {
+  .desert-tumbleweed-spin,
+  .desert-wind-a,
+  .desert-wind-b {
     animation: none;
+  }
+  .desert-wind {
+    opacity: 0;
   }
 }
 
