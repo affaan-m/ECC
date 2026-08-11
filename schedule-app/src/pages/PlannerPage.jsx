@@ -2430,7 +2430,6 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
             <Checkbox checked={!!occ.done} onChange={onToggleDone} ariaLabel="Mark as done" />
           </label>
         </div>
-        {type && <span className="tag" style={{ borderColor: type.color, color: type.color }}>{type.label}</span>}
         {(linkedGoal || linkedTask) && (
           <p className="muted small detail-done-hint">
             Checking done updates {linkedGoal ? 'the linked goal' : 'the linked task'}.
