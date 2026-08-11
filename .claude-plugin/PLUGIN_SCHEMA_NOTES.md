@@ -219,3 +219,34 @@ Documenting validator quirks here:
 * Preserves plugin stability as the ecosystem evolves
 
 If the validator changes, update this document first.
+
+---
+
+## 2026-08-11: Dual-target restructure (`content/` + `targets/`)
+
+The repo was restructured so a single `content/` tree feeds both a Claude
+Code plugin install and a Codex CLI install (`targets/claude/`,
+`targets/codex/`, dispatched via `scripts/install.sh --target`). This moved
+every component category one level deeper. The rules above are unaffected,
+but two things are worth calling out explicitly:
+
+* **Component paths now point into `./content/...`.** `agents`, `commands`,
+  and `skills` in `plugin.json` were repathed from the old root-level
+  `./agents/`, `./commands/`, `./skills/` to `./content/agents/`,
+  `./content/commands/`, `./content/skills/`. The path-resolution rules
+  above (agents need explicit file paths; commands/skills accept directory
+  paths) are unchanged - only the prefix moved.
+* **Agents remain explicit file paths.** The `agents` array in `plugin.json`
+  still enumerates every `./content/agents/<lang>/<file>.md` individually;
+  the move did not relax the "no directory paths for agents" rule.
+* **`hooks` still must not be added to `plugin.json`.** The regression test
+  in `tests/hooks/hooks.test.js` covers this at the new path too.
+* **`content/hooks/common/hooks.json` is NOT at the auto-load path
+  `hooks/hooks.json`.** Claude Code's plugin auto-load convention looks for
+  `hooks/hooks.json` relative to the plugin root, literally one level deep.
+  Before this restructure, the file already lived at `hooks/common/hooks.json`
+  (nested a level deeper than the auto-load path); after the restructure it
+  lives at `content/hooks/common/hooks.json` (nested two levels deeper).
+  Neither path collides with the auto-load convention, so **plugin hook
+  auto-loading behavior is unchanged by the move** - it neither started nor
+  stopped triggering the duplicate-detection error described above.

@@ -78,14 +78,22 @@ git checkout -b add-python-reviewer
 
 ### 3. Add your contribution
 
-Place files in the appropriate directory:
+All shared content lives under `content/`, organized by language
+(`common/`, `node/`, `python/`, `rust/`, `typescript/`). Place files in the
+appropriate directory:
 
-- `agents/` for new agents
-- `skills/` for skills (can be single .md or directory)
-- `commands/` for slash commands
-- `rules/` for rule files
-- `hooks/` for hook configurations
+- `content/agents/<lang>/` for new agents
+- `content/skills/<lang>/` for skills (a directory containing `SKILL.md`)
+- `content/commands/<lang>/` for slash commands
+- `content/rules/<lang>/` for rule files
+- `content/hooks/<lang>/` for hook configurations
 - `content/mcp/` for MCP server configs
+
+Target-specific install logic (how content gets copied into `~/.claude` or
+`~/.codex`) lives in `targets/<target>/` (`targets/claude/`,
+`targets/codex/`), not alongside the content itself. New content only needs
+a place under `content/`; you shouldn't need to touch `targets/` unless
+you're changing how a category is installed.
 
 ### 4. Follow the format
 
