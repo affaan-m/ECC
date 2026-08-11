@@ -438,7 +438,8 @@ test('orchestration efficiency scenario rejects intuition-only parallelism claim
     'single-agent and orchestrated controls are matched',
     'all attempted candidates use the same acceptance evaluator',
     'aggregate controller and worker cost is recorded or explicitly unavailable',
-    'failed candidates remain in the comparison'
+    'failed candidates remain in the comparison',
+    'at least three fresh sequential pairs with alternated order are completed before promotion'
   ]) {
     assert.ok(scenario.acceptance_gates.includes(required), `Missing orchestration acceptance gate: ${required}`);
   }

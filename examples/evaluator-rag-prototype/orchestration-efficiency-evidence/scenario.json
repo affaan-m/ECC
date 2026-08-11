@@ -54,6 +54,7 @@
     "aggregate controller and worker cost is recorded or explicitly unavailable",
     "elapsed time, retries, conflicts, integration rework, and human corrections are retained",
     "failed candidates remain in the comparison",
+    "at least three fresh sequential pairs with alternated order are completed before promotion",
     "at least one one-run parallelism claim is rejected"
   ]
 }
