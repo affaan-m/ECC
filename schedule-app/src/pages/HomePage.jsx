@@ -30,7 +30,6 @@ import { useSmartAdd } from '../data/useSmartAdd.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
 import Icon from '../components/Icon.jsx';
 import AddressField from '../components/AddressField.jsx';
-import DesertEmptyState from '../components/DesertEmptyState.jsx';
 
 // Shown when every home block has been toggled off in Customize mode —
 // picked once at random per visit rather than always the same line, since
@@ -512,7 +511,7 @@ export default function HomePage() {
   const nudges = useMemo(() => computeNudges(state), [state]);
 
   return (
-    <div className={isEmptyHome ? 'page page-fill' : 'page'}>
+    <div className="page">
       <header className="page-head">
         <div className="page-head-row">
           <Brand>Home</Brand>
@@ -548,10 +547,7 @@ export default function HomePage() {
           />
         </section>
       ) : isEmptyHome ? (
-        <div className="home-empty-state">
-          <DesertEmptyState />
-          <p className="muted">{emptyHomeMessage}</p>
-        </div>
+        <p className="muted center-pad">{emptyHomeMessage}</p>
       ) : (
         visibleBlocks.map((b) => {
           if (b.id === 'goals') {
