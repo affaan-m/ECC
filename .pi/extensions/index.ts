@@ -419,7 +419,11 @@ function buildDoctorReport(ctx: ExtensionContext): string {
 
   const installed = listInstalledPiPackages(ctx.cwd)
   for (const name of COMPANION_PACKAGES) {
-    lines.push(`  ${installed.has(name) ? "installed" : "not installed"}  ${name}`)
+    const present = installed.has(name)
+    lines.push(`  ${present ? "installed    " : "not installed"}  ${name}`)
+    if (!present) {
+      lines.push(`      install with: pi install npm:${name}`)
+    }
   }
 
   lines.push(

@@ -95,9 +95,18 @@ Intentionally **out of scope** for this first adapter (to be added independently
 - Structured approval gates (need `@juicesharp/rpiv-ask-user-question`)
 - Persistent todos (need `@juicesharp/rpiv-todo`)
 - Profile-based resource filtering
-- MCP translation (Pi has no MCP surface by design)
+- MCP translation (Pi core has no MCP surface by design; the community
+  `pi-mcp-adapter` package adds one, but this adapter neither installs nor
+  verifies it, and ECC's MCP reference configs are not known to be compatible)
 
 ECC works in Pi without any of these. Skills and commands are fully available today.
+
+These capabilities are provided by existing community Pi packages rather than by
+anything ECC would need to write. This adapter deliberately does not bundle or
+auto-install them: bundling would ship third-party code that executes with full
+user permissions in every ECC install, and would make optional capabilities
+mandatory. Install whichever you want yourself — `/ecc-doctor` reports which are
+present and prints the exact `pi install` command for the ones that are not.
 
 ## Security
 
