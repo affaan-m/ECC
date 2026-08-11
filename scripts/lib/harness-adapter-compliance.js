@@ -135,7 +135,7 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
     unsupported_surfaces: [
       'Subagents, chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter',
-      'Pi core has no MCP surface, and this adapter does not bridge one or verify the community pi-mcp-adapter package',
+      'Pi core has no MCP surface, though ECC MCP configs load verbatim through the community pi-mcp-adapter package, which ECC neither installs nor depends on',
     ],
     install_or_onramp: ['`pi install git:github.com/affaan-m/ECC`', '`pi install /path/to/ECC` from a local checkout'],
     verification_commands: [
