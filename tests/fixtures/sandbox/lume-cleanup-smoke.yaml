@@ -1,0 +1,15 @@
+name: lume-process-tree-cleanup
+needs:
+  os: [macos]
+  arch: [arm64]
+  capabilities: [services, "network:*"]
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup: [/usr/bin/true]
+  assert: [/usr/bin/true]
+report: exit-only

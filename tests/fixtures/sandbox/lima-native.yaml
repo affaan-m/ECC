@@ -1,0 +1,16 @@
+name: linux-native-vm-mock
+needs:
+  os: [linux]
+  capabilities: [services, "network:*"]
+  trust: first-party
+  native: true
+resources:
+  cpu: 2
+  memory: 2GB
+  timeout: 300
+steps:
+  setup:
+    - touch /tmp/ecc-vm-setup
+  assert:
+    - test -f /tmp/ecc-vm-setup
+report: install-diff

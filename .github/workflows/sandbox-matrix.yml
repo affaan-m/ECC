@@ -1,0 +1,256 @@
+name: Sandbox native matrix
+run-name: ECC Sandbox ${{ inputs.correlation || github.event.client_payload.correlation || github.run_id }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sandbox-matrix.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'schemas/sandbox-*.schema.json'
+      - 'scripts/sandbox/**'
+      - 'tests/fixtures/sandbox/ci-matrix.yaml'
+      - 'tests/sandbox/**'
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: Repository-relative sandbox manifest path
+        required: true
+        default: tests/fixtures/sandbox/ci-matrix.yaml
+        type: string
+      os:
+        description: JSON OS list retained as dispatch evidence
+        required: true
+        default: '["linux","macos","windows"]'
+        type: string
+      targets:
+        description: JSON target list using os/arch values
+        required: true
+        default: '["linux/x86_64","macos/arm64","windows/x86_64"]'
+        type: string
+      correlation:
+        description: ECC-generated artifact correlation ID
+        required: true
+        default: ecc-manual-run
+        type: string
+      manifest_sha256:
+        description: Canonical SHA-256 emitted by ecc-sandbox dispatch
+        required: true
+        type: string
+  repository_dispatch:
+    types: [sandbox-matrix]
+
+concurrency:
+  group: sandbox-matrix-${{ github.event.pull_request.number || inputs.correlation || github.event.client_payload.correlation || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native ${{ matrix.target }}
+    runs-on: ${{ matrix.target == 'linux/x86_64' && 'ubuntu-latest' || matrix.target == 'linux/arm64' && 'ubuntu-24.04-arm' || matrix.target == 'macos/x86_64' && 'macos-15-intel' || matrix.target == 'macos/arm64' && 'macos-latest' || matrix.target == 'windows/x86_64' && 'windows-latest' || matrix.target == 'windows/arm64' && 'windows-11-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.targets || github.event.client_payload.targets || '["linux/x86_64","macos/arm64","windows/x86_64"]') }}
+    env:
+      ECC_SANDBOX_CI_NATIVE: '1'
+      # Preserve the manifest but bypass Tier 0/1 routing on the native runner.
+      ECC_SANDBOX_CI_FORCE_NATIVE: '1'
+      MATRIX_CORRELATION: ${{ inputs.correlation || github.event.client_payload.correlation || format('ecc-pr-{0}', github.run_id) }}
+      MATRIX_EVENT: ${{ github.event_name }}
+      MATRIX_MANIFEST: ${{ inputs.manifest || github.event.client_payload.manifest || 'tests/fixtures/sandbox/ci-matrix.yaml' }}
+      MATRIX_MANIFEST_SHA256: ${{ inputs.manifest_sha256 || github.event.client_payload.manifest_sha256 || '' }}
+      MATRIX_OS: ${{ inputs.os || github.event.client_payload.os || '["linux","macos","windows"]' }}
+      MATRIX_TARGET: ${{ matrix.target }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate dispatch and runner identity
+        id: metadata
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { contractDigest, loadManifest } = require('./scripts/sandbox/contracts');
+          const allowed = new Set([
+            'linux/x86_64', 'linux/arm64',
+            'macos/x86_64', 'macos/arm64',
+            'windows/x86_64', 'windows/arm64',
+          ]);
+          if (!allowed.has(process.env.MATRIX_TARGET)) throw new Error('unsupported matrix target');
+          if (!/^ecc-[A-Za-z0-9-]{6,80}$/.test(process.env.MATRIX_CORRELATION)) {
+            throw new Error('invalid correlation ID');
+          }
+          const osList = JSON.parse(process.env.MATRIX_OS);
+          const targetOs = process.env.MATRIX_TARGET.split('/')[0];
+          if (!Array.isArray(osList) || !osList.includes(targetOs)) {
+            throw new Error('matrix target is absent from the requested OS list');
+          }
+          const manifest = process.env.MATRIX_MANIFEST;
+          if (path.isAbsolute(manifest) || manifest.split(/[\\/]/).includes('..')) {
+            throw new Error('manifest must be a repository-relative path');
+          }
+          const stat = fs.lstatSync(manifest);
+          if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('manifest must be a regular file');
+          const loadedManifest = loadManifest(manifest);
+          const actualDigest = contractDigest(loadedManifest);
+          const suppliedDigest = process.env.MATRIX_MANIFEST_SHA256;
+          if (process.env.MATRIX_EVENT !== 'pull_request' && !/^[0-9a-f]{64}$/.test(suppliedDigest)) {
+            throw new Error('manifest_sha256 is required for remote dispatch');
+          }
+          if (suppliedDigest && suppliedDigest !== actualDigest) {
+            throw new Error('manifest_sha256 does not match the checked-out manifest');
+          }
+          const actualOs = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];
+          const actualArch = { x64: 'x86_64', arm64: 'arm64' }[process.arch];
+          if (`${actualOs}/${actualArch}` !== process.env.MATRIX_TARGET) {
+            throw new Error(`runner mismatch: expected ${process.env.MATRIX_TARGET}, got ${actualOs}/${actualArch}`);
+          }
+          NODE
+          artifact_suffix="${MATRIX_TARGET//\//-}"
+          echo "artifact_suffix=$artifact_suffix" >> "$GITHUB_OUTPUT"
+
+      - name: Probe and execute native shard
+        id: sandbox
+        shell: bash
+        run: |
+          node scripts/sandbox/ecc-sandbox probe \
+            --refresh \
+            --cache "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/ecc-sandbox-probe.json"
+          set +e
+          node scripts/sandbox/ecc-sandbox run "$MATRIX_MANIFEST" \
+            --local-only \
+            --shard "$MATRIX_TARGET" \
+            --capabilities "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/report.json"
+          sandbox_status=$?
+          set -e
+          node scripts/sandbox/ecc-sandbox report "$RUNNER_TEMP/report.json"
+          exit "$sandbox_status"
+
+      - name: Upload normalized report
+        if: always() && steps.metadata.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-${{ env.MATRIX_CORRELATION }}-${{ steps.metadata.outputs.artifact_suffix }}
+          path: ${{ runner.temp }}/report.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Verify aggregate on Linux
+    needs: native
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MATRIX_CORRELATION: ${{ inputs.correlation || github.event.client_payload.correlation || format('ecc-pr-{0}', github.run_id) }}
+      MATRIX_MANIFEST: ${{ inputs.manifest || github.event.client_payload.manifest || 'tests/fixtures/sandbox/ci-matrix.yaml' }}
+      MATRIX_TARGETS: ${{ inputs.targets || github.event.client_payload.targets || '["linux/x86_64","macos/arm64","windows/x86_64"]' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download native reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sandbox-${{ env.MATRIX_CORRELATION }}-*
+          path: ${{ runner.temp }}/sandbox-reports
+
+      - name: Validate and aggregate reports
+        id: aggregate
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { collectCiReports } = require('./scripts/sandbox/backends/ci');
+          const { loadManifest } = require('./scripts/sandbox/contracts');
+          const { buildAggregateReport } = require('./scripts/sandbox/report');
+          const targets = JSON.parse(process.env.MATRIX_TARGETS).map(value => {
+            const [os, arch, extra] = value.split('/');
+            if (!os || !arch || extra) throw new Error(`invalid matrix target: ${value}`);
+            return { os, arch };
+          });
+          const started = new Date().toISOString();
+          const collected = collectCiReports(
+            path.join(process.env.RUNNER_TEMP, 'sandbox-reports'),
+            targets,
+            {
+              executionMode: 'real',
+              expectedManifest: loadManifest(process.env.MATRIX_MANIFEST),
+              manifestPath: process.env.MATRIX_MANIFEST,
+              requireNoEscalations: true,
+              started,
+            }
+          );
+          const report = buildAggregateReport({
+            manifest: process.env.MATRIX_MANIFEST,
+            venue: 'ci',
+            started,
+            durationMs: 0,
+            children: collected.children,
+            notes: ['hosted_linux_aggregation=true', ...collected.notes],
+          });
+          const output = path.join(process.env.RUNNER_TEMP, 'aggregate-report.json');
+          fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `result=${report.result}\n`);
+          NODE
+
+      - name: Upload aggregate evidence
+        id: upload
+        if: always() && steps.aggregate.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-aggregate-${{ env.MATRIX_CORRELATION }}
+          path: ${{ runner.temp }}/aggregate-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce matrix result
+        if: always()
+        shell: bash
+        env:
+          AGGREGATE_OUTCOME: ${{ steps.aggregate.outcome }}
+          AGGREGATE_RESULT: ${{ steps.aggregate.outputs.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        run: |
+          if [[ "$NATIVE_RESULT" != success \
+            || "$AGGREGATE_OUTCOME" != success \
+            || "$AGGREGATE_RESULT" != pass \
+            || "$UPLOAD_OUTCOME" != success ]]; then
+            echo "Sandbox CI matrix did not produce passing aggregate evidence" >&2
+            exit 1
+          fi

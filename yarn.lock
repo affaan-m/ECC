@@ -589,12 +589,14 @@ __metadata:
     markdownlint-cli: "npm:0.48.0"
     sql.js: "npm:1.14.1"
     typescript: "npm:6.0.3"
+    yaml: "npm:2.9.0"
   bin:
     ecc: scripts/ecc.js
     ecc-control-pane: scripts/control-pane.js
     ecc-install: scripts/install-apply.js
     ecc-memory-mcp: scripts/memory-mcp.mjs
     ecc-plan-canvas: scripts/plan-canvas.js
+    ecc-sandbox: scripts/sandbox/ecc-sandbox
     ecc-universal: scripts/ecc.js
   languageName: unknown
   linkType: soft
@@ -2124,7 +2126,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yaml@npm:^2.9.0":
+"yaml@npm:2.9.0, yaml@npm:^2.9.0":
   version: 2.9.0
   resolution: "yaml@npm:2.9.0"
   bin:

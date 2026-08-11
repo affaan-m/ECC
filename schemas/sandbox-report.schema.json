@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ecc.tools/schemas/sandbox-report.schema.json",
+  "title": "ECC sandbox report",
+  "oneOf": [
+    { "$ref": "#/definitions/singleReport" },
+    { "$ref": "#/definitions/aggregateReport" }
+  ],
+  "definitions": {
+    "result": {
+      "enum": ["pass", "fail", "error"]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "reason", "to"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "exit", "stdout_tail", "stderr_tail"],
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "exit": { "type": "integer" },
+        "stdout_tail": { "type": "string", "maxLength": 65536 },
+        "stderr_tail": { "type": "string", "maxLength": 65536 }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "pass"],
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "pass": { "type": "boolean" }
+      }
+    },
+    "installDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "complete",
+        "files_added",
+        "files_changed",
+        "files_deleted",
+        "path_changes",
+        "services_registered",
+        "dotfiles_touched"
+      ],
+      "properties": {
+        "method": { "enum": ["podman-layer", "docker-layer", "scan", "none"] },
+        "complete": { "type": "boolean" },
+        "files_added": { "$ref": "#/definitions/stringArray" },
+        "files_changed": { "$ref": "#/definitions/stringArray" },
+        "files_deleted": { "$ref": "#/definitions/stringArray" },
+        "path_changes": { "$ref": "#/definitions/stringArray" },
+        "services_registered": { "$ref": "#/definitions/stringArray" },
+        "dotfiles_touched": { "$ref": "#/definitions/stringArray" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "method": { "const": "none" } } },
+          "then": { "properties": { "complete": { "const": false } } }
+        }
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "type": "string", "maxLength": 4096 }
+    },
+    "singleReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest",
+        "backend",
+        "tier",
+        "os",
+        "arch",
+        "execution_mode",
+        "started",
+        "duration_ms",
+        "escalations",
+        "steps",
+        "assertions",
+        "install_diff",
+        "result",
+        "notes"
+      ],
+      "properties": {
+        "manifest": { "type": "string", "minLength": 1 },
+        "backend": {
+          "enum": [
+            "srt",
+            "podman",
+            "docker",
+            "microsandbox",
+            "lume",
+            "lima",
+            "windows-sandbox",
+            "hyper-v",
+            "dockur-windows",
+            "tart",
+            "ci-native"
+          ]
+        },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "os": { "enum": ["linux", "macos", "windows"] },
+        "arch": { "enum": ["arm64", "x86_64"] },
+        "execution_mode": { "enum": ["real", "mock"] },
+        "started": { "$ref": "#/definitions/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "escalations": {
+          "type": "array",
+          "maxItems": 1,
+          "items": { "$ref": "#/definitions/escalation" }
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/definitions/step" }
+        },
+        "assertions": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/definitions/assertion" }
+        },
+        "install_diff": { "$ref": "#/definitions/installDiff" },
+        "result": { "$ref": "#/definitions/result" },
+        "notes": { "$ref": "#/definitions/stringArray" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "backend": { "const": "srt" } } },
+          "then": { "properties": { "tier": { "const": 0 } } }
+        },
+        {
+          "if": { "properties": { "backend": { "enum": ["podman", "docker", "microsandbox"] } } },
+          "then": {
+            "properties": {
+              "tier": { "const": 1 },
+              "os": { "const": "linux" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "backend": { "enum": ["lume", "tart"] } } },
+          "then": {
+            "properties": {
+              "tier": { "const": 2 },
+              "os": { "const": "macos" },
+              "arch": { "const": "arm64" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "backend": { "const": "lima" } } },
+          "then": {
+            "properties": {
+              "tier": { "const": 2 },
+              "os": { "const": "linux" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "backend": { "const": "ci-native" } } },
+          "then": { "properties": { "tier": { "const": 3 } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "backend": {
+                "enum": ["windows-sandbox", "hyper-v", "dockur-windows"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tier": { "const": 2 },
+              "os": { "const": "windows" }
+            }
+          }
+        }
+      ]
+    },
+    "aggregateReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest",
+        "backend",
+        "tier",
+        "os",
+        "arch",
+        "venue",
+        "execution_mode",
+        "started",
+        "duration_ms",
+        "escalations",
+        "children",
+        "result",
+        "notes"
+      ],
+      "properties": {
+        "manifest": { "type": "string", "minLength": 1 },
+        "backend": { "const": "aggregate" },
+        "tier": { "type": "null" },
+        "os": { "const": "multiple" },
+        "arch": { "const": "multiple" },
+        "venue": { "enum": ["local", "ci", "mixed"] },
+        "execution_mode": { "enum": ["real", "mock", "mixed"] },
+        "started": { "$ref": "#/definitions/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "escalations": {
+          "type": "array",
+          "maxItems": 1,
+          "items": { "$ref": "#/definitions/escalation" }
+        },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/definitions/singleReport" }
+        },
+        "result": { "$ref": "#/definitions/result" },
+        "notes": { "$ref": "#/definitions/stringArray" }
+      }
+    }
+  }
+}

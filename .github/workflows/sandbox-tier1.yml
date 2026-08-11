@@ -1,0 +1,148 @@
+name: Sandbox Tier 1 acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sandbox-tier1.yml'
+      - 'images/sandbox/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'schemas/sandbox-*.schema.json'
+      - 'scripts/sandbox/**'
+      - 'tests/fixtures/sandbox/podman-install.yaml'
+      - 'tests/sandbox/**'
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-tier1-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  podman:
+    name: Podman ${{ matrix.distro }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu
+            arch: x86_64
+            runner: ubuntu-latest
+            image: localhost/ecc-sandbox:ubuntu-lts
+            acceptance: true
+          - distro: debian
+            arch: x86_64
+            runner: ubuntu-latest
+            image: localhost/ecc-sandbox:debian-stable
+            acceptance: false
+          - distro: fedora
+            arch: x86_64
+            runner: ubuntu-latest
+            image: localhost/ecc-sandbox:fedora-latest
+            acceptance: false
+          - distro: ubuntu
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            image: localhost/ecc-sandbox:ubuntu-lts
+            acceptance: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Install validation dependencies and Podman
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          sudo apt-get update
+          sudo apt-get install --yes podman
+          podman info
+
+      - name: Build pinned snapshot
+        run: >-
+          podman build
+          --file images/sandbox/Containerfile.${{ matrix.distro }}
+          --tag ${{ matrix.image }}
+          images/sandbox
+
+      - name: Execute snapshot smoke test
+        run: >-
+          podman run --rm --user 1000:1000
+          ${{ matrix.image }}
+          bash -lc 'node --version && npm --version && test "$(id -u)" = 1000'
+
+      - name: Run adapter contract tests
+        if: matrix.acceptance
+        run: node tests/sandbox/podman.test.js
+
+      - name: Run two real clean-user installs
+        if: matrix.acceptance
+        shell: bash
+        env:
+          ECC_SANDBOX_IMAGE: ${{ matrix.image }}
+        run: |
+          scripts/sandbox/ecc-sandbox probe \
+            --refresh \
+            --cache "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/ecc-sandbox-probe.json"
+          scripts/sandbox/ecc-sandbox run \
+            tests/fixtures/sandbox/podman-install.yaml \
+            --capabilities "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/ecc-sandbox-tier1-first.json"
+          scripts/sandbox/ecc-sandbox run \
+            tests/fixtures/sandbox/podman-install.yaml \
+            --capabilities "$RUNNER_TEMP/ecc-sandbox-capabilities.json" \
+            > "$RUNNER_TEMP/ecc-sandbox-tier1-second.json"
+          node - "$RUNNER_TEMP/ecc-sandbox-tier1-first.json" "$RUNNER_TEMP/ecc-sandbox-tier1-second.json" <<'NODE'
+          const fs = require('fs');
+          const { validateReport } = require('./scripts/sandbox/contracts');
+          const reports = process.argv.slice(2).map(reportPath => (
+            validateReport(JSON.parse(fs.readFileSync(reportPath, 'utf8')))
+          ));
+          for (const report of reports) {
+            if (report.backend !== 'podman' || report.execution_mode !== 'real' || report.result !== 'pass') {
+              throw new Error('Tier 1 acceptance did not produce a real passing Podman report');
+            }
+            if (report.install_diff.method !== 'podman-layer' || !report.install_diff.complete || report.install_diff.files_added.length === 0) {
+              throw new Error('Tier 1 acceptance is missing Podman layer evidence');
+            }
+            if (!report.notes.some(note => note.startsWith('image_id=sha256:'))) {
+              throw new Error('Tier 1 acceptance did not record the inspected snapshot ID');
+            }
+            if (!report.install_diff.path_changes.some(filePath => filePath.endsWith('/cowsay'))) {
+              throw new Error('Tier 1 acceptance did not report the installed cowsay executable');
+            }
+          }
+          const startNote = reports[1].notes.find(note => note.startsWith('container_start_ms='));
+          if (!startNote || Number(startNote.split('=')[1]) >= 1000) {
+            throw new Error(`Reused snapshot start was not sub-second: ${startNote || '<missing>'}`);
+          }
+          NODE
+          if [ -n "$(podman ps --all --quiet --filter name=ecc-sandbox-)" ]; then
+            echo 'Tier 1 acceptance leaked an ECC sandbox container' >&2
+            exit 1
+          fi
+
+      - name: Upload normalized reports
+        if: always() && matrix.acceptance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sandbox-tier1-podman
+          path: |
+            ${{ runner.temp }}/ecc-sandbox-probe.json
+            ${{ runner.temp }}/ecc-sandbox-tier1-first.json
+            ${{ runner.temp }}/ecc-sandbox-tier1-second.json
+          if-no-files-found: error
+          retention-days: 7

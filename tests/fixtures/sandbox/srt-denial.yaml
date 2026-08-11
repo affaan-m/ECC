@@ -1,0 +1,16 @@
+name: srt-denial-acceptance
+needs:
+  os: [any]
+  capabilities: []
+  trust: first-party
+  native: false
+resources:
+  cpu: 1
+  memory: 256MB
+  timeout: 30
+steps:
+  setup:
+    - node -e "require('fs').writeFileSync('../.ecc-srt-denial-acceptance', 'nope')"
+  assert:
+    - node -e "if (require('fs').existsSync('../.ecc-srt-denial-acceptance')) process.exit(1)"
+report: exit-only
