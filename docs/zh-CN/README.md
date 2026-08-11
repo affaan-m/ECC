@@ -260,7 +260,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 /plugin list ecc@ecc
 ```
 
-**搞定！** 你现在可以使用 67 个智能体、286 项技能和 94 个命令了。
+**搞定！** 你现在可以使用 68 个智能体、288 项技能和 94 个命令了。
 
 ***
 
@@ -1172,9 +1172,9 @@ opencode
 
 | 功能特性 | Claude Code   | OpenCode | 状态 |
 |---------|---------------|----------|--------|
-| 智能体 | PASS: 67 个    | PASS: 12 个 | **Claude Code 领先** |
+| 智能体 | PASS: 68 个    | PASS: 12 个 | **Claude Code 领先** |
 | 命令 | PASS: 94 个    | PASS: 35 个 | **Claude Code 领先** |
-| 技能 | PASS: 286 项   | PASS: 37 项 | **Claude Code 领先** |
+| 技能 | PASS: 288 项   | PASS: 37 项 | **Claude Code 领先** |
 | 钩子 | PASS: 8 种事件类型 | PASS: 11 种事件 | **OpenCode 更多！** |
 | 规则 | PASS: 29 条    | PASS: 13 条指令 | **Claude Code 领先** |
 | MCP 服务器 | PASS: 14 个    | PASS: 完整 | **完全对等** |
@@ -1280,9 +1280,9 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 
 | 功能特性 | Claude Code           | Cursor IDE | Codex CLI | OpenCode |
 |---------|-----------------------|------------|-----------|----------|
-| **智能体** | 67                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
+| **智能体** | 68                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
 | **命令** | 94                    | 共享 | 基于指令 | 35 |
-| **技能** | 286                   | 共享 | 10 (原生格式) | 37 |
+| **技能** | 288                   | 共享 | 10 (原生格式) | 37 |
 | **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |
 | **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |
 | **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |

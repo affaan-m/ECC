@@ -172,7 +172,7 @@ jobs:
         continue-on-error: false
 
   python-tests:
-    name: Python Tests
+    name: Python Lint, Type Check & Test
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -189,6 +189,12 @@ jobs:
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+
+      - name: Run ruff (lint)
+        run: python -m ruff check src tests
+
+      - name: Run mypy (type check)
+        run: python -m mypy src
 
       - name: Run Python tests
         run: python -m pytest tests/test_*.py -m "not integration"
