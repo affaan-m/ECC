@@ -50,6 +50,20 @@
 > [!WARNING]
 > **Official sources only.** Install ECC only from verified channels: the GitHub repository [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC), the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield), the [GitHub App](https://github.com/apps/ecc-tools), the plugin slug `ecc@ecc`, and the project website [ecc.tools](https://ecc.tools). Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware.
 
+## Install with Claude Code
+
+Run these commands inside Claude Code:
+
+```text
+/plugin marketplace add https://github.com/affaan-m/ECC
+/plugin install ecc@ecc
+```
+
+That installs ECC's skills, agents, commands, and plugin-managed hooks. If you choose this path, stop there. Do not also run a full manual install into Claude Code.
+
+> Guided package setup is coming in `ecc-universal` 2.2.0. Use the native
+> Claude plugin commands above while npm remains on 2.1.0.
+
 <div align="center">
 
 <table aria-label="ECC primary links">
@@ -131,14 +145,14 @@ Access to 68 agents, 285 skills, and 94 legacy command shims, plus hooks, rules,
 
 > [!IMPORTANT]
 > Guided package setup is coming in `ecc-universal` 2.2.0. The current npm
-> release, 2.1.0, does not include the guided setup commands. Use the
-> provider-native instructions below until 2.2.0 is published.
+> release, 2.1.0, does not include the guided setup commands. Use the native
+> Claude plugin commands at the top of this README until 2.2.0 is published.
 
 ### Pick one path only (per harness)
 
 You can use ECC with Claude Code, Codex, and other harnesses at the same time. Choose one install method for each harness:
 
-- **Recommended today for Claude Code:** use the native plugin commands below
+- **Recommended today for Claude Code:** use the [native plugin commands above](#install-with-claude-code)
 - **Coming in 2.2.0:** guided setup with `npx ecc-universal setup` and `npx ecc-universal install --guided`
 - **Works:** Claude Code plugin + Codex native plugin
 - **Works:** Claude Code plugin + the legacy Codex sync flow
@@ -150,17 +164,6 @@ You can use ECC with Claude Code, Codex, and other harnesses at the same time. C
 If you already layered multiple installs and things look duplicated, skip straight to [Reset / Uninstall ECC](#reset--uninstall-ecc).
 
 **Install trouble?** Open the short [install or runtime problem form](https://github.com/affaan-m/ECC/issues/new?template=install-problem.yml), or run `ecc feedback`. ECC never uploads diagnostics automatically.
-
-### Claude Code (available now)
-
-Run these commands inside Claude Code:
-
-```text
-/plugin marketplace add https://github.com/affaan-m/ECC
-/plugin install ecc@ecc
-```
-
-That installs ECC's skills, agents, commands, and plugin-managed hooks. If you choose this path, stop there. Do not also run a full manual install into Claude Code.
 
 ### Guided setup (coming in 2.2.0)
 

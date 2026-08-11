@@ -36,7 +36,7 @@ function runTests() {
       'README should surface a top-level install decision section'
     );
     assert.ok(
-      readme.includes('**Recommended today for Claude Code:** use the native plugin commands below'),
+      readme.includes('**Recommended today for Claude Code:** use the [native plugin commands above]'),
       'README should name the currently available native plugin path as the default'
     );
     assert.ok(
@@ -54,12 +54,13 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('README leads with native Claude setup while the guided path is gated', () => {
-    const nativeIndex = readme.indexOf('### Claude Code (available now)');
+    const nativeIndex = readme.indexOf('## Install with Claude Code');
+    const overviewIndex = readme.indexOf('\n# ECC\n');
     const guidedIndex = readme.indexOf('### Guided setup (coming in 2.2.0)');
 
     assert.ok(
-      nativeIndex > -1 && guidedIndex > nativeIndex,
-      'README should show the available native path before the unreleased guided path'
+      nativeIndex > -1 && nativeIndex < overviewIndex && guidedIndex > overviewIndex,
+      'README should put the available Claude plugin install above the product overview and unreleased guided path'
     );
     assert.ok(
       readme.includes('Do not run the guided commands in this section until npm publishes 2.2.0'),
