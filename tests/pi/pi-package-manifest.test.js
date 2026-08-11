@@ -31,6 +31,66 @@ function extractFrontmatter(content) {
   return match ? match[1] : null
 }
 
+/**
+ * Manual recursive file walk. Node 18 (the repo's minimum supported version,
+ * see `engines` in package.json) does not support
+ * `fs.readdirSync(dir, { recursive: true })` — that option was only added in
+ * Node 20 — so this walk is done by hand instead.
+ */
+function walkFiles(dir) {
+  let files = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      files = files.concat(walkFiles(fullPath))
+    } else if (entry.isFile()) {
+      files.push(fullPath)
+    }
+  }
+  return files
+}
+
+const COPY_OR_GENERATE_WORD = /\b(copy|copies|copying|generate|generates|generated|generating)\b/i
+const PATH_UNDER_PI = /\.pi\//
+const NEGATION_WORD = /\b(no|not|never|nothing|without|isn't|aren't|don't|doesn't)\b/i
+const COPY_INTO_PI_SHAPE = /\b(copy|copies|copying|generate|generates|generating)\b[^.!?\n]*\.pi\//i
+
+/**
+ * Splits markdown text into sentence-ish chunks: paragraphs first, then each
+ * paragraph on sentence-ending punctuation. Good enough for this heuristic —
+ * it does not need to be a real sentence parser, only to stop treating an
+ * entire multi-sentence paragraph as one unit.
+ */
+function splitIntoSentences(text) {
+  return text
+    .split(/\n\s*\n/)
+    .flatMap((paragraph) => paragraph.split(/(?<=[.!?])\s+/))
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Detects an actual imperative instruction to copy or generate files into
+ * `.pi/` (e.g. "Copy your skills into .pi/skills/ before installing."),
+ * while explicitly allowing negated phrasing that documents the opposite
+ * (e.g. "no generated copies", "Nothing is copied or generated under .pi/").
+ * A naive "copy/generate word AND .pi/ path in the same paragraph" proximity
+ * check flags that legitimate negated documentation as a violation; this
+ * requires copy/generate word and .pi/ path to appear in the same sentence
+ * with no negation word, which is what an actual instruction looks like.
+ */
+function findImperativeCopyIntoPiInstruction(text) {
+  return splitIntoSentences(text).some((sentence) => {
+    if (!COPY_OR_GENERATE_WORD.test(sentence) || !PATH_UNDER_PI.test(sentence)) {
+      return false
+    }
+    if (NEGATION_WORD.test(sentence)) {
+      return false
+    }
+    return COPY_INTO_PI_SHAPE.test(sentence)
+  })
+}
+
 function main() {
   console.log("\n=== Testing Pi package manifest (pi key + .pi/ adapter) ===\n")
 
@@ -107,22 +167,38 @@ function main() {
       }
     }],
 
-    ["REGRESSION GUARD: git tracks fewer than 10 files under .pi/ (adapter code only)", () => {
-      let output
+    ["REGRESSION GUARD: fewer than 10 files exist on disk under .pi/ (adapter code only)", () => {
+      // Authoritative check: walk .pi/ on disk so untracked files (e.g.
+      // regenerated skill copies that were never `git add`ed) cannot bypass
+      // this guard the way a git-only check would.
+      const piDir = path.join(repoRoot, ".pi")
+      const onDiskFiles = walkFiles(piDir)
+      assert.ok(
+        onDiskFiles.length < 10,
+        ".pi/ must contain only adapter code, never copies of canonical assets " +
+          `(skills/agents/prompts) — found ${onDiskFiles.length} files on disk: ` +
+          `${onDiskFiles.map((file) => path.relative(repoRoot, file)).join(", ")}`
+      )
+
+      // Additional signal only, not authoritative: git ls-files reports what
+      // is tracked, which is useful corroborating evidence but is silently
+      // bypassed by untracked files, so it never replaces the on-disk walk above.
+      let trackedFiles
       try {
-        output = execFileSync("git", ["ls-files", ".pi"], {
+        const output = execFileSync("git", ["ls-files", ".pi"], {
           cwd: repoRoot,
           encoding: "utf8",
         })
+        trackedFiles = output.split("\n").filter(Boolean)
       } catch (error) {
-        console.log(`    (skipped: git unavailable or \`git ls-files .pi\` failed: ${error.message})`)
-        return
+        console.log(`    (git signal skipped: git unavailable or \`git ls-files .pi\` failed: ${error.message})`)
       }
-      const trackedFiles = output.split("\n").filter(Boolean)
-      assert.ok(
-        trackedFiles.length < 10,
-        `.pi/ must contain only adapter code, never copies of canonical assets (skills/agents/prompts) — found ${trackedFiles.length} tracked files: ${trackedFiles.join(", ")}`
-      )
+      if (trackedFiles) {
+        assert.ok(
+          trackedFiles.length < 10,
+          `.pi/ must contain only adapter code, never copies of canonical assets (skills/agents/prompts) — found ${trackedFiles.length} tracked files: ${trackedFiles.join(", ")}`
+        )
+      }
     }],
 
     ["package.json files array ships the .pi/ adapter and the canonical assets the manifest depends on", () => {
@@ -208,15 +284,37 @@ function main() {
         readme.includes("commands/"),
         ".pi/README.md must mention commands/ as the canonical directory Pi mounts directly"
       )
-      const copyOrGenerateWord = /\b(copy|copies|copying|generate|generates|generated|generating)\b/i
-      const pathUnderPi = /\.pi\//
-      const paragraphs = readme.split(/\n\s*\n/)
-      const instructsCopyingIntoPi = paragraphs.some(
-        (paragraph) => copyOrGenerateWord.test(paragraph) && pathUnderPi.test(paragraph)
+
+      // Detects actual imperative instructions to copy/generate into .pi/,
+      // not mere word proximity — a naive "copy/generate word + .pi/ path in
+      // the same paragraph" check would flag legitimate negated documentation
+      // (e.g. "no generated copies", "Nothing is copied or generated under
+      // .pi/") as a violation. Verified against the current .pi/README.md
+      // content below (must pass) and the detector's own behavior further down.
+      assert.ok(
+        !findImperativeCopyIntoPiInstruction(readme),
+        ".pi/README.md must not instruct users to copy or generate files into .pi/ " +
+          "— that documentation would reintroduce the PR #2352 regression"
+      )
+
+      // Sanity-check the detector itself so the assertion above is not
+      // vacuously true: it must still catch a real instruction...
+      assert.ok(
+        findImperativeCopyIntoPiInstruction("Copy your skills into .pi/skills/ before installing."),
+        "the copy-into-.pi/ detector must flag an actual instruction to copy files " +
+          "into .pi/ (this checks the detector, not .pi/README.md itself)"
+      )
+      // ...and it must explicitly allow the negated phrasing named in the
+      // PR #2352 regression-guard rationale, rather than flagging it.
+      assert.ok(
+        !findImperativeCopyIntoPiInstruction("This adapter ships with no generated copies under `.pi/`."),
+        'the copy-into-.pi/ detector must not flag negated phrasing (e.g. "no generated ' +
+          'copies... .pi/") as an instruction (this checks the detector, not .pi/README.md itself)'
       )
       assert.ok(
-        !instructsCopyingIntoPi,
-        ".pi/README.md must not instruct users to copy or generate files into .pi/ (a paragraph mentions both a copy/generate word and a .pi/ path) — that documentation would reintroduce the PR #2352 regression"
+        !findImperativeCopyIntoPiInstruction("Nothing is copied or generated under `.pi/`."),
+        'the copy-into-.pi/ detector must not flag negated phrasing (e.g. "Nothing is copied ' +
+          'or generated under .pi/") as an instruction (this checks the detector, not .pi/README.md itself)'
       )
     }],
   ]

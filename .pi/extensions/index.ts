@@ -23,6 +23,7 @@
 
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 
 /**
@@ -191,10 +192,22 @@ function runEccHook(
       resolve({ stdout: "", failure: `${spec.id}: ${error.message}` })
     })
 
+    // stdin.end() writes asynchronously. A hook that exits, short-circuits, or
+    // is killed by the timeout before reading the payload makes the write fail
+    // with EPIPE, which Node reports as an `error` event rather than a throw.
+    // Without this listener that event is unhandled and would take the Pi
+    // session down, breaking the isolation guarantee documented above.
+    child.stdin?.on("error", error => {
+      resolve({ stdout: "", failure: `${spec.id}: could not write hook payload (${error.message})` })
+    })
+
     try {
       child.stdin?.end(JSON.stringify(payload))
-    } catch {
-      resolve({ stdout: "", failure: `${spec.id}: could not write hook payload` })
+    } catch (error) {
+      resolve({
+        stdout: "",
+        failure: `${spec.id}: could not write hook payload (${(error as Error).message})`,
+      })
     }
   })
 }
@@ -286,20 +299,70 @@ function extractAdditionalContext(stdout: string): string | undefined {
   }
 }
 
-function isCompanionInstalled(packageName: string): boolean {
-  try {
-    require.resolve(`${packageName}/package.json`)
-    return true
-  } catch {
-    // Not every package exports package.json; fall back to the entry point.
+/**
+ * Pi's config directory, honoring the documented `PI_CODING_AGENT_DIR` override.
+ */
+function resolvePiConfigDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR
+  if (override && override.trim()) {
+    return override.trim()
+  }
+  return path.join(os.homedir(), ".pi", "agent")
+}
+
+/**
+ * Package names Pi currently has installed, read from the same `packages`
+ * lists Pi itself uses: the user config directory plus the project-local
+ * `.pi/settings.json`.
+ *
+ * `require.resolve` cannot answer this. Pi installs packages under its own
+ * config directory (`<config>/npm`, `<config>/git`), which is not on Node's
+ * module resolution path from this file, so resolving would report every
+ * companion as missing no matter what the user has installed.
+ */
+function listInstalledPiPackages(projectDir: string): Set<string> {
+  const names = new Set<string>()
+
+  const settingsFiles = [
+    path.join(resolvePiConfigDir(), "settings.json"),
+    path.join(projectDir, ".pi", "settings.json"),
+  ]
+
+  for (const file of settingsFiles) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { packages?: unknown }
+      if (!Array.isArray(parsed.packages)) {
+        continue
+      }
+      for (const entry of parsed.packages) {
+        const name = normalizePiPackageName(entry)
+        if (name) {
+          names.add(name)
+        }
+      }
+    } catch {
+      // Missing or unreadable settings are simply "nothing installed here".
+    }
   }
 
-  try {
-    require.resolve(packageName)
-    return true
-  } catch {
-    return false
+  return names
+}
+
+/**
+ * Reduce a `packages` entry to a bare package name.
+ *
+ * Entries look like `npm:pi-subagents`, `npm:@scope/name@1.2.3`, a git source,
+ * or a filesystem path. Only npm sources carry a comparable package name.
+ */
+function normalizePiPackageName(entry: unknown): string | undefined {
+  if (typeof entry !== "string" || !entry.startsWith("npm:")) {
+    return undefined
   }
+
+  const spec = entry.slice("npm:".length)
+  // Strip a trailing @version without breaking the leading @ of a scoped name.
+  const versionAt = spec.lastIndexOf("@")
+  return versionAt > 0 ? spec.slice(0, versionAt) : spec
 }
 
 function countDirectories(dir: string): number {
@@ -351,17 +414,20 @@ function buildDoctorReport(ctx: ExtensionContext): string {
     `  profile:       ${process.env.ECC_HOOK_PROFILE || "standard (default)"}`,
     `  disabled:      ${process.env.ECC_DISABLED_HOOKS || "none"}`,
     "",
-    "Optional companion packages",
+    "Optional companion packages (from Pi's installed package list)",
   ]
 
+  const installed = listInstalledPiPackages(ctx.cwd)
   for (const name of COMPANION_PACKAGES) {
-    lines.push(`  ${isCompanionInstalled(name) ? "installed" : "not installed"}  ${name}`)
+    lines.push(`  ${installed.has(name) ? "installed" : "not installed"}  ${name}`)
   }
 
   lines.push(
     "",
     "Companion packages are optional; ECC skills, commands, and session hooks",
-    "work without them. See .pi/README.md for what each one unlocks."
+    "work without them. See .pi/README.md for what each one unlocks.",
+    "Detection reads Pi's `packages` list, so a companion vendored some other",
+    "way may work while reporting as not installed."
   )
 
   return lines.join("\n")
@@ -383,6 +449,12 @@ export default function (pi: ExtensionAPI): void {
       cwd: ctx.cwd,
       session_id: readSessionId(ctx),
     }
+
+    // Drop any context captured by an earlier session start that has not been
+    // injected yet. Pi can start a new session (/new, /resume, /fork) before
+    // `before_agent_start` consumes the previous value, and replaying context
+    // built for a different session would describe the wrong project state.
+    pendingContext = undefined
 
     const result = await runEccHook(
       SESSION_START_HOOK,

@@ -135,7 +135,7 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
     unsupported_surfaces: [
       'Subagents, chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter',
-      'Pi has no MCP surface; MCP reference configs do not apply',
+      'Pi has no MCP surface, so MCP reference configs do not apply',
     ],
     install_or_onramp: ['`pi install git:github.com/affaan-m/ECC`', '`pi install /path/to/ECC` from a local checkout'],
     verification_commands: [
@@ -144,8 +144,8 @@ const ADAPTER_RECORDS = Object.freeze([
       '`npm run harness:adapters -- --check`',
     ],
     risk_notes: [
-      'Pi extensions execute with full user permissions; hooks run without a shell and resolve from the installed package, not the user project.',
-      'Keep canonical skills and commands as the single source of truth; do not generate copies under .pi/.',
+      'Pi extensions execute with full user permissions, and hooks run without a shell and resolve from the installed package rather than the user project',
+      'Keep canonical skills and commands as the single source of truth, and never generate copies under .pi/',
     ],
     last_verified_at: '2026-08-10',
     owner: 'ECC maintainers',
