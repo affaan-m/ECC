@@ -15,25 +15,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# TODO(task-6): remove the `-x targets/codex/install.sh` guards once
-# targets/codex/install.sh lands; until then keep the dispatcher functional.
 case "$TARGET" in
     claude) exec "${REPO_ROOT}/targets/claude/install.sh" "${PASS_ARGS[@]:-}" ;;
-    codex)
-        if [[ -x "${REPO_ROOT}/targets/codex/install.sh" ]]; then
-            exec "${REPO_ROOT}/targets/codex/install.sh" "${PASS_ARGS[@]:-}"
-        else
-            log_info "codex target not yet implemented"
-        fi
-        ;;
+    codex) exec "${REPO_ROOT}/targets/codex/install.sh" "${PASS_ARGS[@]:-}" ;;
     all)
         "${REPO_ROOT}/targets/claude/install.sh" "${PASS_ARGS[@]:-}"
         if codex_is_available; then
-            if [[ -x "${REPO_ROOT}/targets/codex/install.sh" ]]; then
-                "${REPO_ROOT}/targets/codex/install.sh" "${PASS_ARGS[@]:-}"
-            else
-                log_info "codex target not yet implemented"
-            fi
+            "${REPO_ROOT}/targets/codex/install.sh" "${PASS_ARGS[@]:-}"
         else
             log_info "Codex not detected; skipping codex target"
         fi

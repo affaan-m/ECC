@@ -58,5 +58,21 @@ test('default target all without codex skips codex with INFO', () => {
   assert.ok(res.stdout.includes('Codex not detected'), 'expected skip message');
 });
 
+test('--target codex dry-run plans AGENTS.md, instructions, and skills', () => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-'));
+  const res = run(['-n', '--target', 'codex', 'common', 'python'],
+    { CODEX_HOME: codexHome });
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.ok(res.stdout.includes('AGENTS.md'), 'AGENTS.md missing from plan');
+  assert.ok(res.stdout.includes('instructions/coding-style.md'), 'rules copy missing');
+  assert.ok(res.stdout.includes('skills/git-commit-msg'), 'skill copy missing');
+});
+
+test('--target codex without codex fails', () => {
+  const res = run(['-n', '--target', 'codex', 'common']);
+  assert.notStrictEqual(res.status, 0);
+  assert.ok((res.stdout + res.stderr).includes('Codex not detected'));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
