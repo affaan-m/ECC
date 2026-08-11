@@ -1,0 +1,36 @@
+{
+  "schema_version": "ecc.evaluator-rag.verifier.v1",
+  "scenario_id": "orchestration-efficiency-evidence",
+  "run_id": "2026-08-11-orchestration-efficiency-prototype",
+  "read_only": true,
+  "candidates": [
+    {
+      "candidate_id": "controlled-paired-orchestration-evaluation",
+      "decision": "accepted",
+      "score": 0.95,
+      "reasons": [
+        "records a dependency graph and exclusive write ownership before delegation",
+        "matches task, revision, model, reasoning effort, permissions, tools, time limit, and evaluator",
+        "requires acceptance and evidence quality before comparing elapsed time or cost",
+        "aggregates controller, worker, and retry tokens or cost and marks unavailable telemetry honestly",
+        "retains failed candidates, conflicts, integration rework, retries, and human corrections",
+        "requires repeated sequential pairs and alternated run order before a general recommendation"
+      ],
+      "rollback": "Withdraw the recommendation and retain the raw run receipts if later replications reverse the result; this read-only playbook launches no workers and changes no candidate repository."
+    },
+    {
+      "candidate_id": "parallelism-implies-efficiency",
+      "decision": "rejected",
+      "score": 0.12,
+      "reasons": [
+        "treats more agents as inherently faster and cheaper",
+        "has no matched accepted single-agent baseline",
+        "reports no aggregate worker token or cost total",
+        "ignores overlap, machine contention, conflicts, integration rework, and failed attempts",
+        "turns one smoke run with unavailable telemetry into a general efficiency claim"
+      ],
+      "rollback": "Do not publish the claim; restart from matched controls, acceptance evidence, complete run receipts, and sequential paired replications."
+    }
+  ],
+  "promoted_candidate_id": "controlled-paired-orchestration-evaluation"
+}

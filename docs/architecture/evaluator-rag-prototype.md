@@ -23,6 +23,10 @@ working examples, reference-set gaps, and validation commands before a skill
 amendment can be promoted. A deep-analyzer evidence scenario requires analyzer
 corpus cases, expected-output comparisons, and risk-taxonomy proof before
 repository or commit-analysis behavior can change.
+An orchestration-efficiency evidence scenario requires matched single-agent
+controls, aggregate controller and worker cost, accepted quality, coordination
+costs, and sequential paired replications before parallelism is called faster
+or cheaper.
 
 ## Reference Pressure
 
@@ -122,6 +126,10 @@ Current corpus:
 - `deep-analyzer-evidence`: requires maintained analyzer corpus cases,
   expected-output comparisons, representative repository/commit histories, and
   regression commands before deep-analysis behavior can be promoted.
+- `orchestration-efficiency-evidence`: requires dependency and ownership plans,
+  matched single-agent controls, common acceptance gates, aggregate worker
+  costs, retained failures and coordination overhead, and repeated sequential
+  pairs before an orchestration-efficiency recommendation can be promoted.
 
 ## ECC Tools Mapping
 

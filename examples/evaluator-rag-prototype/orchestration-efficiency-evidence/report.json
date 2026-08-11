@@ -1,0 +1,40 @@
+{
+  "schema_version": "ecc.evaluator-rag.report.v1",
+  "scenario_id": "orchestration-efficiency-evidence",
+  "run_id": "2026-08-11-orchestration-efficiency-prototype",
+  "result": "prototype_passed",
+  "read_only": true,
+  "scores": {
+    "control_matching": 0.96,
+    "acceptance_first": 1,
+    "aggregate_cost_coverage": 0.94,
+    "coordination_cost_coverage": 0.93,
+    "claim_safety": 1
+  },
+  "findings": [
+    {
+      "id": "quality-before-efficiency",
+      "severity": "warning",
+      "summary": "Elapsed time or token totals are not decision-useful when candidates fail different acceptance gates or evidence requirements."
+    },
+    {
+      "id": "aggregate-worker-cost-required",
+      "severity": "warning",
+      "summary": "Controller-only telemetry understates orchestration cost; totals must include every worker and retry or remain explicitly unavailable."
+    },
+    {
+      "id": "coordination-cost-visible",
+      "severity": "info",
+      "summary": "Conflicts, integration rework, retries, and human corrections are part of the result rather than incidental notes."
+    },
+    {
+      "id": "replication-before-recommendation",
+      "severity": "warning",
+      "summary": "One pair, overlapping variants, or fixed run order can qualify a harness but cannot establish a general orchestration efficiency boundary."
+    }
+  ],
+  "recommended_next_action": {
+    "candidate_id": "controlled-paired-orchestration-evaluation",
+    "action": "Use the promoted playbook to design sequential paired runs, preserve every attempt, and recommend orchestration only for task classes where accepted quality and measured coordination cost justify it."
+  }
+}

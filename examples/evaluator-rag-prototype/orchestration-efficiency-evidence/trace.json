@@ -1,0 +1,45 @@
+{
+  "schema_version": "ecc.evaluator-rag.trace.v1",
+  "scenario_id": "orchestration-efficiency-evidence",
+  "run_id": "2026-08-11-orchestration-efficiency-prototype",
+  "read_only": true,
+  "events": [
+    {
+      "phase": "observation",
+      "summary": "A workflow proposes multiple agents or reports an orchestrated result. The evaluator records the task boundary and claims without launching workers or changing candidate repositories.",
+      "evidence": [
+        "skills/parallel-execution-optimizer/SKILL.md",
+        "scripts/lib/orchestration-session.js"
+      ]
+    },
+    {
+      "phase": "retrieval",
+      "summary": "Retrieved dependency and ownership plans, matched run controls, acceptance results, aggregate token or cost telemetry, elapsed time, failures, conflicts, integration rework, retries, and human corrections.",
+      "evidence": [
+        "skills/context-budget/SKILL.md",
+        "node tests/lib/orchestration-session.test.js",
+        "contributed orchestration smoke evidence pinned to commit 527296f"
+      ]
+    },
+    {
+      "phase": "proposal",
+      "summary": "Generated two candidates: a controlled paired evaluation that preserves all attempts and an intuition-only claim that parallelism implies efficiency.",
+      "candidate_ids": [
+        "controlled-paired-orchestration-evaluation",
+        "parallelism-implies-efficiency"
+      ]
+    },
+    {
+      "phase": "verification",
+      "summary": "Accepted the controlled paired evaluation because it matches controls, evaluates quality first, aggregates worker cost, and keeps negative results. Rejected the intuition-only claim because it relies on one overlapping run with unavailable token totals.",
+      "evidence": [
+        "examples/evaluator-rag-prototype/orchestration-efficiency-evidence/verifier-result.json"
+      ]
+    },
+    {
+      "phase": "promotion",
+      "summary": "Promoted only the read-only orchestration evidence playbook. It does not launch agents, edit candidates, publish results, or claim that orchestration is efficient.",
+      "promoted_candidate_id": "controlled-paired-orchestration-evaluation"
+    }
+  ]
+}

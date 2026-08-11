@@ -409,6 +409,53 @@ test('deep analyzer evidence scenario rejects no-corpus analyzer changes', () =>
   assert.ok(playbook.includes('Deep Analyzer Evidence'));
 });
 
+test('orchestration efficiency scenario rejects intuition-only parallelism claims', () => {
+  const scenario = readFixtureJson('orchestration-efficiency-evidence/scenario.json');
+  const trace = readFixtureJson('orchestration-efficiency-evidence/trace.json');
+  const report = readFixtureJson('orchestration-efficiency-evidence/report.json');
+  const verifier = readFixtureJson('orchestration-efficiency-evidence/verifier-result.json');
+  const playbook = read('examples/evaluator-rag-prototype/orchestration-efficiency-evidence/candidate-playbook.md');
+
+  assert.strictEqual(scenario.scenario_id, 'orchestration-efficiency-evidence');
+  assert.strictEqual(trace.scenario_id, scenario.scenario_id);
+  assert.strictEqual(report.scenario_id, scenario.scenario_id);
+  assert.strictEqual(verifier.scenario_id, scenario.scenario_id);
+  assert.strictEqual(trace.read_only, true);
+  assert.strictEqual(report.read_only, true);
+  assert.strictEqual(verifier.read_only, true);
+
+  for (const blocked of [
+    'claiming that parallel agents are faster or cheaper without a matched accepted single-agent baseline',
+    'reporting controller-only tokens or cost while omitting worker totals',
+    'excluding failed candidates, edit conflicts, integration rework, retries, or human corrections',
+    'estimating unavailable telemetry or turning one overlapping smoke run into a general efficiency claim'
+  ]) {
+    assert.ok(scenario.forbidden_actions.includes(blocked), `Missing orchestration forbidden action: ${blocked}`);
+  }
+
+  for (const required of [
+    'dependency graph and exclusive ownership boundaries are recorded',
+    'single-agent and orchestrated controls are matched',
+    'all attempted candidates use the same acceptance evaluator',
+    'aggregate controller and worker cost is recorded or explicitly unavailable',
+    'failed candidates remain in the comparison'
+  ]) {
+    assert.ok(scenario.acceptance_gates.includes(required), `Missing orchestration acceptance gate: ${required}`);
+  }
+
+  const accepted = verifier.candidates.find(candidate => candidate.candidate_id === 'controlled-paired-orchestration-evaluation');
+  const rejected = verifier.candidates.find(candidate => candidate.candidate_id === 'parallelism-implies-efficiency');
+
+  assert.ok(accepted, 'Missing accepted controlled orchestration candidate');
+  assert.ok(rejected, 'Missing rejected intuition-only orchestration candidate');
+  assert.strictEqual(accepted.decision, 'accepted');
+  assert.strictEqual(rejected.decision, 'rejected');
+  assert.strictEqual(verifier.promoted_candidate_id, accepted.candidate_id);
+  assert.ok(rejected.reasons.join('\n').includes('no matched accepted single-agent baseline'));
+  assert.ok(playbook.includes('total tokens or cost across controller, every worker, and retries'));
+  assert.ok(playbook.includes('At least three sequential pairs with alternated order'));
+});
+
 if (failed > 0) {
   console.log(`\nFailed: ${failed}`);
   process.exit(1);
