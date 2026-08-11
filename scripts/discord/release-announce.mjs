@@ -4,8 +4,12 @@
 import {
   announcementKey,
   buildDiscordPayload,
+  discussionReceiptMarker,
+  discussionReceiptStatus,
+  findDiscussionReceipt,
   findDiscordReceipt,
   findReleaseDiscussion,
+  normalizeDiscordWebhookUrl,
   releaseMarker,
 } from './announcement-core.mjs';
 
@@ -87,6 +91,49 @@ function discussionFromEnvironment() {
   };
 }
 
+async function discussionFromGitHub() {
+  if (!/^\d+$/.test(env.DISCUSSION_NUMBER || '')) throw new Error('discussion number is invalid');
+  const response = await request(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/discussions/${env.DISCUSSION_NUMBER}`, {
+    headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json' },
+  });
+  if (!response.ok) throw new Error(`discussion lookup failed (${response.status})`);
+  const discussion = await response.json();
+  if (discussion.category?.name !== 'Announcements') throw new Error('discussion is not an Announcement');
+  return { id: discussion.node_id, title: discussion.title, body: discussion.body, url: discussion.html_url };
+}
+
+async function findReceiptComment(discussionId, marker) {
+  let cursor = null;
+  for (let page = 0; page < 50; page += 1) {
+    const data = await githubGraphql(
+      `query($id:ID!,$after:String){node(id:$id){... on Discussion{comments(first:100,after:$after){nodes{id body author{login}} pageInfo{hasNextPage endCursor}}}}}`,
+      { id: discussionId, after: cursor },
+    );
+    const comments = data.node?.comments;
+    if (!comments) throw new Error('discussion receipt lookup failed');
+    const receipt = findDiscussionReceipt(comments.nodes, marker);
+    if (receipt) return receipt;
+    if (!comments.pageInfo.hasNextPage) return null;
+    cursor = comments.pageInfo.endCursor;
+  }
+  throw new Error('discussion receipt lookup exceeded page budget');
+}
+
+async function addReceiptComment(discussionId, body) {
+  const data = await githubGraphql(
+    `mutation($id:ID!,$body:String!){addDiscussionComment(input:{discussionId:$id,body:$body}){comment{id}}}`,
+    { id: discussionId, body },
+  );
+  return data.addDiscussionComment.comment.id;
+}
+
+async function deleteReceiptComment(commentId) {
+  await githubGraphql(
+    `mutation($id:ID!){deleteDiscussionComment(input:{id:$id}){clientMutationId}}`,
+    { id: commentId },
+  );
+}
+
 async function discord(method, path, body) {
   const response = await request(`https://discord.com/api/v10${path}`, {
     method,
@@ -98,10 +145,43 @@ async function discord(method, path, body) {
 }
 
 async function deliver(discussion) {
+  const key = announcementKey({ repository: env.GITHUB_REPOSITORY, discussionId: discussion.id });
+  if (env.DISCORD_ANNOUNCE_WEBHOOK_URL) {
+    if (!env.GITHUB_TOKEN) throw new Error('GitHub receipt configuration is missing');
+    const webhookUrl = normalizeDiscordWebhookUrl(env.DISCORD_ANNOUNCE_WEBHOOK_URL);
+    const marker = discussionReceiptMarker(key);
+    const existingReceipt = await findReceiptComment(discussion.id, marker);
+    if (existingReceipt) {
+      if (discussionReceiptStatus(existingReceipt) === 'complete') {
+        console.log('announcement already delivered');
+        return;
+      }
+      throw new Error('announcement has a pending receipt; inspect Discord before clearing it');
+    }
+    const claimId = await addReceiptComment(discussion.id, `${marker}\n\nDiscord delivery: pending.`);
+    const payload = buildDiscordPayload({ title: discussion.title, body: discussion.body, url: discussion.url, key });
+    delete payload.nonce;
+    delete payload.enforce_nonce;
+    const response = await request(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      await deleteReceiptComment(claimId);
+      throw new Error(`Discord webhook request failed (${response.status})`);
+    }
+    const message = await response.json();
+    await addReceiptComment(discussion.id, `${marker}\n\nDiscord delivery: complete (message ${message.id}).`);
+    await deleteReceiptComment(claimId).catch(() => {
+      console.warn('announcement delivered; pending receipt cleanup requires attention');
+    });
+    console.log('announcement delivered by channel webhook');
+    return;
+  }
   if (!env.DISCORD_BOT_TOKEN || !/^\d{10,25}$/.test(env.DISCORD_ANNOUNCE_CHANNEL_ID || '')) {
     throw new Error('Discord announcement credentials are missing or invalid');
   }
-  const key = announcementKey({ repository: env.GITHUB_REPOSITORY, discussionId: discussion.id });
   const recent = await discord('GET', `/channels/${env.DISCORD_ANNOUNCE_CHANNEL_ID}/messages?limit=100`);
   const receipt = findDiscordReceipt(recent, key);
   if (receipt) {
@@ -121,10 +201,12 @@ async function deliver(discussion) {
 
 async function main() {
   if (!env.GITHUB_REPOSITORY) throw new Error('GitHub repository configuration is missing');
-  if (env.ANNOUNCEMENT_KIND === 'release' && !env.GITHUB_TOKEN) throw new Error('GitHub release configuration is missing');
+  if ((env.ANNOUNCEMENT_KIND === 'release' || env.ANNOUNCEMENT_KIND === 'manual') && !env.GITHUB_TOKEN) throw new Error('GitHub configuration is missing');
   const discussion = env.ANNOUNCEMENT_KIND === 'release'
     ? await createOrFindReleaseDiscussion()
-    : discussionFromEnvironment();
+    : env.ANNOUNCEMENT_KIND === 'manual'
+      ? await discussionFromGitHub()
+      : discussionFromEnvironment();
   await deliver(discussion);
 }
 

@@ -48,3 +48,41 @@ export function findDiscordReceipt(messages, key) {
   const discussionId = String(key).split(':').at(-1);
   return messages.find(message => message.embeds?.some(embed => embed.footer?.text === `ecc:${discussionId}`)) || null;
 }
+
+export function normalizeDiscordWebhookUrl(value) {
+  const raw = String(value || '').trim();
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('invalid Discord webhook URL');
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'discord.com' || parsed.port || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('invalid Discord webhook URL');
+  }
+  if (!/^\/api\/webhooks\/\d{10,25}\/[A-Za-z0-9._-]{20,}$/.test(parsed.pathname)) {
+    throw new Error('invalid Discord webhook URL');
+  }
+  parsed.search = '?wait=true';
+  return parsed.toString();
+}
+
+export function discussionReceiptMarker(key) {
+  return `<!-- ecc-discord-receipt:${createHash('sha256').update(String(key)).digest('hex').slice(0, 32)} -->`;
+}
+
+export function findDiscussionReceipt(comments, marker) {
+  const trusted = comments.filter(comment => (
+    ['github-actions', 'github-actions[bot]'].includes(comment?.author?.login)
+    && typeof comment.body === 'string'
+    && comment.body.includes(marker)
+  ));
+  return trusted.find(comment => discussionReceiptStatus(comment) === 'complete') || trusted[0] || null;
+}
+
+export function discussionReceiptStatus(comment) {
+  const body = String(comment?.body || '');
+  if (body.includes('Discord delivery: complete')) return 'complete';
+  if (body.includes('Discord delivery: pending')) return 'pending';
+  return 'unknown';
+}

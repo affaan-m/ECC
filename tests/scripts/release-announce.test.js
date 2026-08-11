@@ -6,6 +6,10 @@ async function main() {
     buildDiscordPayload,
     findReleaseDiscussion,
     isAnnouncementDiscussion,
+    normalizeDiscordWebhookUrl,
+    discussionReceiptMarker,
+    findDiscussionReceipt,
+    discussionReceiptStatus,
     releaseMarker,
   } = await import('../../scripts/discord/announcement-core.mjs');
 
@@ -34,6 +38,26 @@ assert.equal(payload.embeds[0].footer.text, 'ecc:D_kw123');
 assert.equal(payload.embeds[0].url, 'https://github.com/affaan-m/ECC/discussions/3000');
 assert.equal(payload.enforce_nonce, true);
 assert.match(payload.nonce, /^ecc-[a-f0-9]{16}$/);
+
+assert.equal(
+  normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough'),
+  'https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough?wait=true',
+);
+assert.throws(() => normalizeDiscordWebhookUrl('https://evil.example/api/webhooks/123/token'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://user@discord.com/api/webhooks/123456789012345678/secret-token-long-enough'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://discord.com:444/api/webhooks/123456789012345678/secret-token-long-enough'), /invalid Discord webhook URL/);
+assert.throws(() => normalizeDiscordWebhookUrl('https://discord.com/api/webhooks/123456789012345678/secret-token-long-enough?leak=1'), /invalid Discord webhook URL/);
+
+const receiptMarker = discussionReceiptMarker('affaan-m/ECC:discussion:D_kw123');
+assert.match(receiptMarker, /^<!-- ecc-discord-receipt:[a-f0-9]{32} -->$/);
+assert.equal(findDiscussionReceipt([
+  { id: 'forged', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'attacker' } },
+  { id: 'pending', body: `Discord delivery: pending.\n${receiptMarker}`, author: { login: 'github-actions' } },
+  { id: 'comment-1', body: `Discord delivery: complete\n${receiptMarker}`, author: { login: 'github-actions' } },
+], receiptMarker).id, 'comment-1');
+assert.equal(findDiscussionReceipt([{ id: 'comment-2', body: 'unrelated' }], receiptMarker), null);
+assert.equal(discussionReceiptStatus({ body: `Discord delivery: pending.\n${receiptMarker}` }), 'pending');
+assert.equal(discussionReceiptStatus({ body: `Discord delivery: complete (message 1).\n${receiptMarker}` }), 'complete');
 
   console.log('release announcement core: ok');
 }
