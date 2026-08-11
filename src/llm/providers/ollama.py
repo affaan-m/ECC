@@ -11,7 +11,13 @@ from llm.core.interface import (
     LLMProvider,
     RateLimitError,
 )
-from llm.core.types import LLMInput, LLMOutput, Message, ModelInfo, ProviderType, ToolCall
+from llm.core.types import (
+    LLMInput,
+    LLMOutput,
+    ModelInfo,
+    ProviderType,
+    ToolCall,
+)
 
 
 class OllamaProvider(LLMProvider):
@@ -52,8 +58,8 @@ class OllamaProvider(LLMProvider):
         ]
 
     def generate(self, input: LLMInput) -> LLMOutput:
-        import urllib.request
         import json
+        import urllib.request
 
         try:
             url = f"{self.base_url}/api/chat"
