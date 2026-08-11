@@ -98,6 +98,21 @@ function runTests() {
   else failed++;
 
   if (
+    test('long Bash commands diverging only after 160 chars still hash differently', () => {
+      // Shared prefix longer than the old 160-char command slice; the
+      // commands differ only afterwards (heredocs, long one-liners). Hashing
+      // the full command must keep them distinct, otherwise consecutive
+      // different Bash calls look like a stuck loop.
+      const prefix = 'python3 - <<EOF\n' + '# '.repeat(120);
+      const h1 = hashToolCall('Bash', { command: prefix + 'print(1)\nEOF' });
+      const h2 = hashToolCall('Bash', { command: prefix + 'print(2)\nEOF' });
+      assert.notStrictEqual(h1, h2);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('large edits diverging only after 2048 chars still hash differently', () => {
       // Shared prefix longer than the old HASH_INPUT_LIMIT (2048) truncation
       // point; the payloads differ only afterwards. Hashing the full payload
