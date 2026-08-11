@@ -8,9 +8,9 @@ description: >-
 
 把“业务里这些词是什么意思”和“为什么选择这个方案”分开管理。没有稳定内容时不要创建空壳。
 
-## `CONTEXT.md`：只管领域语言
+## 领域上下文载体：只管领域语言
 
-在术语反复解释、同词异义或模块边界因语言不清而出错时，使用本 Skill 的 `templates/context.example.md` 懒创建根目录 `CONTEXT.md`。
+在术语反复解释、同词异义或模块边界因语言不清而出错时，先复用仓库已有的领域词汇/模型文档或 `.governance/docs-map.json` 中的 `context` 角色。只有没有等价载体时，才用 `templates/context.example.md` 结构懒创建默认 `CONTEXT.md`。
 
 只记录：
 

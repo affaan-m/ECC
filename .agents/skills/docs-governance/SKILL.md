@@ -1,7 +1,7 @@
 ---
 name: docs-governance
 description: >-
-  作为 docs-governance 插件的总入口，根据用户意图把任务路由到活文档、领域上下文与 ADR、变更影响、接口契约、测试资产、模块回归或闭环设计能力，并在大型变更中组织正确顺序。用于用户只说“文档治理”“项目治理”“帮我整理项目知识”“改完怎么收尾”而未指定具体 Skill，或需要跨多项治理能力时。English triggers: docs governance router, project knowledge governance, documentation workflow, governance workflow.
+  作为 ECC 文档治理能力的总入口，根据用户意图把任务路由到活文档、领域上下文与 ADR、变更影响、接口契约、测试资产、模块回归或闭环设计能力，并在大型变更中组织正确顺序。用于用户只说“文档治理”“项目治理”“帮我整理项目知识”“改完怎么收尾”而未指定具体 Skill，或需要跨多项治理能力时。English triggers: docs governance router, project knowledge governance, documentation workflow, governance workflow.
 ---
 
 # 文档治理总路由

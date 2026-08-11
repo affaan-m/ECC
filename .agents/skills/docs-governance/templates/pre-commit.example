@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # docs-governance · pre-commit 护栏
-# 固化一条最小可判定不变量：凡 staged 含代码改动的 commit，PROJECT_LOG.md 必须同批 staged（至少一行流水账）。
+# 固化一条最小可判定不变量：凡 staged 含代码改动的 commit，历史角色必须同批 staged（至少一行流水账）。
 # 只拦这一条；MAP/STATUS 的同步交给 /governance-sync 与 /governance-audit（commit 关口卡多了会"狼来了"）。
 # 豁免：只改测试/文档/治理文件 → 自动放行；真急事 git commit --no-verify 跳过（audit 会秋后算账）。
 # 安装：cp 本文件到 .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 set -uo pipefail
 
-# 没用四件套的项目，直接放行
-[ -f PROJECT_LOG.md ] || exit 0
+# 优先读取自定义文档角色映射；无法读取时安全回退到默认路径。
+LOG_PATH=$(python3 -c 'import json, pathlib; p=pathlib.Path(".governance/docs-map.json"); d=json.loads(p.read_text()) if p.exists() else {}; print(d.get("history", "PROJECT_LOG.md"))' 2>/dev/null || printf '%s' PROJECT_LOG.md)
+
+# 没启用历史角色的项目，直接放行
+[ -f "$LOG_PATH" ] || exit 0
 
 STAGED=$(git diff --cached --name-only)
 [ -z "$STAGED" ] && exit 0
 
 # LOG 已同批 staged → 放行
-echo "$STAGED" | grep -qx "PROJECT_LOG.md" && exit 0
+echo "$STAGED" | grep -Fqx "$LOG_PATH" && exit 0
 
 # 代码改动 = 豁免清单之外的 staged 文件（测试/文档/产物目录/治理文件/纯文档后缀 均豁免）
 CODE=$(echo "$STAGED" \
@@ -22,10 +25,10 @@ CODE=$(echo "$STAGED" \
   | grep -vE '\.(md|txt)$' || true)
 [ -z "$CODE" ] && exit 0
 
-echo "✋ docs-governance：本次 commit 含代码改动，但 PROJECT_LOG.md 没有同批提交。" >&2
+echo "✋ docs-governance：本次 commit 含代码改动，但历史角色 $LOG_PATH 没有同批提交。" >&2
 echo "   代码改动：" >&2
 echo "$CODE" | head -5 | sed 's/^/     - /' >&2
 echo "   补一行流水账（十秒钟）：" >&2
-echo "     echo '## [$(date +%Y-%m-%d)] fix | 一句话说清改了什么' >> PROJECT_LOG.md && git add PROJECT_LOG.md" >&2
+echo "     echo '## [$(date +%Y-%m-%d)] fix | 一句话说清改了什么' >> \"$LOG_PATH\" && git add \"$LOG_PATH\"" >&2
 echo "   然后重新 git commit。真急事：git commit --no-verify（/governance-audit 会秋后算账）。" >&2
 exit 1

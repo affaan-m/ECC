@@ -968,7 +968,7 @@ This repo is the raw code. The guides explain everything.
 ECC/
 |-- agents/           # 71 specialized subagents for delegation
 |-- skills/           # 290 reusable workflows loaded on demand
-|-- commands/         # 94 maintained slash-command shims
+|-- commands/         # 100 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
 |-- scripts/          # install, repair, sync, orchestration, and checks

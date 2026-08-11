@@ -30,12 +30,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "${AR
 执行要求：
 
 1. 只读扫描，不修改任何文件。
-2. 先检查 `CLAUDE.md` / `CLAUDE_MAP.md` / `PROJECT_STATUS.md` / `PROJECT_LOG.md` 是否存在；不存在就报告缺失，不要创建。
-3. 抽查 `CLAUDE_MAP.md` 里的路径是否真实存在。
-4. 检查 `PROJECT_STATUS.md` 的指标是否像是实际量过；无法验证就标“未验证”。
-5. 检查 `PROJECT_LOG.md` 是否保持历史流水账职责。
+2. 先读取 `.governance/docs-map.json`（若存在），否则发现项目已有载体并采用默认角色名；检查章程 / 地图 / 状态 / 历史角色是否存在。缺失就报告，不要创建。
+3. 抽查地图角色里的路径是否真实存在。
+4. 检查状态角色的指标是否像是实际量过；无法验证就标“未验证”。
+5. 检查历史角色是否保持只追加流水账职责。
 6. 如存在 `CONTRACT.md`，检查其是否和前后端接口位置形成单一真相源。
-7. 如存在 `AGENTS.md`，检查它是否只桥接共享 `CLAUDE.md`；不得复制章程或 MAP。
+7. 如存在宿主入口文件，检查它是否只桥接共享章程；不得复制章程或地图正文。
 8. 外部 Issue Tracker 不可用时，把相关状态写成“未验证”，不猜任务是否完成。
 9. 输出审计报告：总体结论、P0/P1/P2 发现、证据、建议、待人工确认项。
 10. 默认只在回复中输出；只有用户明确要求保存，才写入 `docs/audits/YYYY-MM-DD-*.md`。

@@ -360,7 +360,7 @@
     },
     {
       "command": "governance",
-      "description": "对当前项目做活文档治理——扫描真实结构，生成或增量更新四件套治理文档（CLAUDE.md / CLAUDE_MAP.md / PROJECT_STATUS.md / PROJECT_LOG.md），并按需生成 Codex 的 AGENTS.md 薄桥接，全中文。",
+      "description": "对当前项目做活文档治理——扫描真实结构，识别或增量更新章程 / 地图 / 状态 / 历史等文档角色，并按需生成 Codex 的 AGENTS.md 薄桥接。",
       "type": "general",
       "primaryAgents": [],
       "allAgents": [],

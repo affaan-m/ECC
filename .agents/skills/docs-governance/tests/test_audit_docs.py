@@ -47,9 +47,9 @@ class AuditDocsTest(unittest.TestCase):
     def test_adr_scope_accepts_indexed_decision(self):
         adr_dir = self.project / "docs" / "adr"
         adr_dir.mkdir(parents=True)
-        (adr_dir / "README.md").write_text("[0001](0001-storage.md)\n", encoding="utf-8")
-        (adr_dir / "0001-storage.md").write_text(
-            "# ADR-0001\n\nStatus: accepted\n",
+        (adr_dir / "README.md").write_text("[decision](ADR-001-Storage.md)\n", encoding="utf-8")
+        (adr_dir / "ADR-001-Storage.md").write_text(
+            "# ADR-001\n\nStatus: final\n",
             encoding="utf-8",
         )
         result = self.run_audit("adr")

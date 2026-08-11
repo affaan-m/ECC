@@ -268,10 +268,23 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         target = normalize_link_target(raw)
         if target is not None and target.endswith(".md") and not resolve_target(root, index, target).exists():
             report.fail(f"ADR 索引链接不存在：docs/adr/README.md -> {target}")
-    adr_files = sorted(path for path in adr_dir.glob("*.md") if ADR_FILE_RE.match(path.name))
+    custom_layout = (
+        roles["adr_dir"] != DEFAULT_ROLES["adr_dir"]
+        or roles["adr_index"] != DEFAULT_ROLES["adr_index"]
+    )
+    if custom_layout:
+        adr_files = sorted(path for path in adr_dir.glob("*.md") if path.resolve() != index.resolve())
+    else:
+        adr_files = sorted(path for path in adr_dir.glob("*.md") if ADR_FILE_RE.match(path.name))
     missing_from_index = [path.name for path in adr_files if path.name not in index_text]
     for name in missing_from_index:
         report.fail(f"ADR 未登记到统一索引：docs/adr/{name}")
+
+    if custom_layout:
+        if not missing_from_index:
+            report.ok(f"自定义 ADR 布局的索引与 {len(adr_files)} 个 Markdown 决策文件一致")
+        report.warn("自定义 ADR 命名与状态生命周期留给语义审计；确定性层只验证索引和链接")
+        return
 
     allowed = {"proposed", "accepted", "deprecated", "superseded"}
     for path in adr_files:
