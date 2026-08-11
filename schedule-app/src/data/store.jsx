@@ -5,6 +5,15 @@ import { DEFAULT_HOME_BLOCKS } from './homeBlocks.js';
 
 const STORAGE_KEY = 'compass.data.v1';
 
+// The very first default event types, from before interaction-medium kinds
+// existed at all — see the color-backfill comment in loadState() below.
+const LEGACY_DEFAULT_TYPE_COLORS = {
+  et_personal: '#1f5f8b',
+  et_work: '#8a5cd1',
+  et_health: '#2e9e6b',
+  et_social: '#e08a1e',
+};
+
 // --- Persistence -----------------------------------------------------------
 
 function loadState() {
@@ -39,12 +48,26 @@ function loadState() {
       // rendering the way it always did instead of collapsing to the plain
       // accent color.
       events: (parsed.events || seed.events).map((e) => {
-        if (e.kind !== undefined) return e;
-        const legacyTypes = parsed.eventTypes || [];
-        const oldType = e.typeId ? legacyTypes.find((t) => t.id === e.typeId) : null;
-        const kind = oldType?.kind || '';
-        const color = e.color || (kind ? '' : oldType?.color || '');
-        return { ...e, kind, color };
+        if (e.kind === undefined) {
+          const legacyTypes = parsed.eventTypes || [];
+          const oldType = e.typeId ? legacyTypes.find((t) => t.id === e.typeId) : null;
+          const kind = oldType?.kind || '';
+          const color = e.color || (kind ? '' : oldType?.color || '');
+          e = { ...e, kind, color };
+        }
+        // An even older migration (before the color-preservation above
+        // existed) already flattened some records to kind: '' with no
+        // color, for exactly the four original default types — Personal,
+        // Work, Health, Social — that predate kinds entirely. Those events
+        // now permanently look already-migrated (kind is defined) so the
+        // block above never re-runs for them, and the eventTypes list that
+        // would've told us their colors is long gone too. Recover their
+        // last-known colors from these fixed ids as a one-time backfill,
+        // independent of that guard.
+        if (!e.color && !e.kind && LEGACY_DEFAULT_TYPE_COLORS[e.typeId]) {
+          e = { ...e, color: LEGACY_DEFAULT_TYPE_COLORS[e.typeId] };
+        }
+        return e;
       }),
       eventTypes: undefined,
       tasks: (parsed.tasks || []).map((t) => ({
