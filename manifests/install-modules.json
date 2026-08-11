@@ -375,6 +375,50 @@
       "stability": "stable"
     },
     {
+      "id": "documentation-governance",
+      "kind": "skills",
+      "description": "A complete documentation-governance workflow for durable project context, decisions, change impact, test evidence, downstream regression, deterministic audits, and lifecycle synchronization.",
+      "paths": [
+        "skills/docs-governance",
+        "skills/change-impact",
+        "skills/context-and-decisions",
+        "skills/test-collaboration",
+        "skills/module-regression",
+        "commands/governance.md",
+        "commands/governance-init.md",
+        "commands/governance-audit.md",
+        "commands/governance-sync.md",
+        "commands/governance-retro.md",
+        "commands/regression-audit.md",
+        "agents/docs-governor.md",
+        "agents/docs-auditor.md",
+        "agents/regression-auditor.md"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "agents-core",
+        "commands-core",
+        "workflow-quality"
+      ],
+      "defaultInstall": false,
+      "cost": "medium",
+      "stability": "beta"
+    },
+    {
       "id": "optimization-workflows",
       "kind": "skills",
       "description": "Parallel execution, benchmarking, data-throughput, latency, and recursive decision-ledger skills for faster evidence-backed work.",

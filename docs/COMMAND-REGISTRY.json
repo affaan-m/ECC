@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 100,
   "commands": [
     {
       "command": "aside",
@@ -313,6 +313,61 @@
         "tdd-workflow"
       ],
       "path": "commands/go-test.md"
+    },
+    {
+      "command": "governance-audit",
+      "description": "只读审计当前项目的文档治理质量与产物链接完整性；先跑确定性检查，只有通过后再判断职责、语义与证据漂移，不修改任何文件。",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-audit.md"
+    },
+    {
+      "command": "governance-init",
+      "description": "给全新（还没代码的）项目搭 day-0 治理骨架：精简 CLAUDE.md + Codex 的 AGENTS.md 桥接 + docs/governance.md 检查流程 + PROJECT_LOG.md，并 git init 首提。已有代码的项目请用 /governance。",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-init.md"
+    },
+    {
+      "command": "governance-retro",
+      "description": "复盘 PROJECT_LOG.md——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为\"该下沉成 lint/测试\"的候选清单。LOG 从流水账变资产。",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-retro.md"
+    },
+    {
+      "command": "governance-sync",
+      "description": "阶段收尾时同步项目治理文档：根据实际 diff 查漏补缺脊柱、CONTEXT、ADR、CONTRACT、TESTS 与 REGRESSION，并核对 Issue Tracker 引用。",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-sync.md"
+    },
+    {
+      "command": "governance",
+      "description": "对当前项目做活文档治理——扫描真实结构，生成或增量更新四件套治理文档（CLAUDE.md / CLAUDE_MAP.md / PROJECT_STATUS.md / PROJECT_LOG.md），并按需生成 Codex 的 AGENTS.md 薄桥接，全中文。",
+      "type": "general",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance.md"
     },
     {
       "command": "gradle-build",
@@ -852,6 +907,17 @@
       "path": "commands/refactor-clean.md"
     },
     {
+      "command": "regression-audit",
+      "description": "模块回归审计——改完代码后照 REGRESSION.md 台账跑\"本模块+全部下游\"的验收命令，退出码终审，防\"改一个模块悄悄弄坏其他模块\"。带 init 参数时扫 import 关系生成台账草稿。",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "module-regression"
+      ],
+      "path": "commands/regression-audit.md"
+    },
+    {
       "command": "resume-session",
       "description": "Load the most recent session file from ~/.claude/session-data/ and resume work with full context from where the last session ended.",
       "type": "testing",
@@ -1029,12 +1095,12 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 10,
+      "general": 11,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
       "review": 15,
-      "testing": 53
+      "testing": 58
     },
     "topAgents": [
       {
@@ -1084,6 +1150,10 @@
         "count": 6
       },
       {
+        "skill": "docs-governance",
+        "count": 5
+      },
+      {
         "skill": "orch-add-feature",
         "count": 4
       },
@@ -1113,10 +1183,6 @@
       },
       {
         "skill": "cpp-coding-standards",
-        "count": 2
-      },
-      {
-        "skill": "cpp-testing",
         "count": 2
       }
     ]
