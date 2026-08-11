@@ -102,8 +102,8 @@ Choose `openai`, `anthropic`, or `unknown` for `--host-provider`. The adapter:
 - uses the installed `codex` CLI; it installs nothing;
 - runs in a new empty temporary directory, not the project;
 - ignores user configuration and project rules;
-- version-checks every required stable feature toggle and fails closed if the
-  installed CLI cannot guarantee a tool-less review;
+- accepts only the exactly tested Codex CLI 0.146.0 boundary, verifies every
+  required stable feature toggle, and fails closed for every other version;
 - disables shell, file-execution, browser, app, plugin, multi-agent, image, and
   workspace-dependency tools, plus web search and inherited MCP servers;
 - suppresses model-visible skill instructions and shell environment inheritance;

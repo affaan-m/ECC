@@ -13,6 +13,7 @@ const ADAPTER = path.join(SKILL_ROOT, 'scripts', 'review-with-codex.js');
 const {
   MAX_PROMPT_BYTES,
   REQUIRED_TOOLLESS_FEATURES,
+  SUPPORTED_CODEX_VERSION,
   buildCodexArgs,
   buildEnvironment,
   parseArgs,
@@ -99,24 +100,37 @@ function runTests() {
     assert.ok(args.includes('web_search="disabled"'));
     assert.ok(args.includes('mcp_servers={}'));
     assert.strictEqual(args.at(-1), '-');
+    for (const feature of ['auth_elicitation', 'code_mode_host', 'skill_search']) {
+      assert.ok(REQUIRED_TOOLLESS_FEATURES.includes(feature), `${feature} must be disabled`);
+    }
   })) passed += 1; else failed += 1;
 
-  if (test('version-checks every tool-disable capability and fails closed', () => {
+  if (test('accepts only the exactly tested Codex version and fails closed', () => {
     const featureLines = REQUIRED_TOOLLESS_FEATURES
       .map((feature) => `${feature.padEnd(36)} stable             true`)
       .join('\n');
     const successfulProbe = (command, args) => {
       assert.strictEqual(command, 'codex');
       if (args[0] === '--version') {
-        return { status: 0, stdout: 'codex-cli 0.143.0\n', stderr: '' };
+        return { status: 0, stdout: `codex-cli ${SUPPORTED_CODEX_VERSION}\n`, stderr: '' };
       }
       assert.deepStrictEqual(args, ['features', 'list']);
       return { status: 0, stdout: featureLines, stderr: '' };
     };
     assert.strictEqual(
       verifyToollessSupport({ spawnSync: successfulProbe, env: { PATH: '/bin' } }),
-      '0.143.0'
+      SUPPORTED_CODEX_VERSION
     );
+
+    assert.throws(() => verifyToollessSupport({
+      env: { PATH: '/bin' },
+      spawnSync: (command, args) => {
+        if (args[0] === '--version') {
+          return { status: 0, stdout: 'codex-cli 0.145.0\n', stderr: '' };
+        }
+        throw new Error('feature probe must not run for an unsupported version');
+      },
+    }), /unsupported Codex version.*0\.145\.0.*0\.146\.0/);
 
     let probeCalls = 0;
     assert.throws(() => verifyToollessSupport({
@@ -124,7 +138,11 @@ function runTests() {
       spawnSync: (command, args) => {
         probeCalls += 1;
         if (args[0] === '--version') {
-          return { status: 0, stdout: 'codex-cli 0.142.0\n', stderr: '' };
+          return {
+            status: 0,
+            stdout: `codex-cli ${SUPPORTED_CODEX_VERSION}\n`,
+            stderr: '',
+          };
         }
         return {
           status: 0,

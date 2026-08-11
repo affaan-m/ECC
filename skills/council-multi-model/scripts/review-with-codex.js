@@ -10,13 +10,16 @@ const { spawnSync } = require('child_process');
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_PROMPT_BYTES = 64 * 1024;
+const SUPPORTED_CODEX_VERSION = '0.146.0';
 const HOST_PROVIDERS = new Set(['anthropic', 'openai', 'unknown']);
 const REQUIRED_TOOLLESS_FEATURES = Object.freeze([
   'apps',
+  'auth_elicitation',
   'browser_use',
   'browser_use_external',
   'browser_use_full_cdp_access',
   'computer_use',
+  'code_mode_host',
   'goals',
   'hooks',
   'image_generation',
@@ -27,6 +30,7 @@ const REQUIRED_TOOLLESS_FEATURES = Object.freeze([
   'remote_plugin',
   'shell_snapshot',
   'shell_tool',
+  'skill_search',
   'skill_mcp_dependency_install',
   'tool_call_mcp_elicitation',
   'tool_suggest',
@@ -136,6 +140,12 @@ function verifyToollessSupport(dependencies = {}) {
   const versionMatch = versionText.match(/^codex-cli\s+([^\s]+)$/m);
   if (!versionMatch) {
     throw new Error('Codex version could not be verified for tool-less review');
+  }
+  if (versionMatch[1] !== SUPPORTED_CODEX_VERSION) {
+    throw new Error(
+      `unsupported Codex version ${versionMatch[1]}; `
+      + `tool-less review requires exactly ${SUPPORTED_CODEX_VERSION}`
+    );
   }
 
   const featuresText = probeCodex(spawn, ['features', 'list'], options, 'feature');
@@ -284,6 +294,7 @@ if (require.main === module) {
 module.exports = {
   MAX_PROMPT_BYTES,
   REQUIRED_TOOLLESS_FEATURES,
+  SUPPORTED_CODEX_VERSION,
   buildCodexArgs,
   buildEnvironment,
   parseArgs,
