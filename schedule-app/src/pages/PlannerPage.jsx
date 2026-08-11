@@ -1801,6 +1801,7 @@ function DayView({
             const recurring = ev.repeat && ev.repeat !== 'none';
             const color = eventColor(ev, contactColor, '', kindColors);
             const displayStartMin = ev.s;
+            const displayEndMin = ev.e2;
             return (
               <button
                 key={key}
@@ -1853,14 +1854,16 @@ function DayView({
                 {selectMode && <span className={`select-dot${isSel ? ' select-dot--on' : ''}`} />}
                 {short ? (
                   <span className="event-title">
-                    <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
+                    <span className="event-time-inline">
+                      {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
+                    </span>{' '}
                     {ev.title || 'Untitled'}
                     {recurring && <span className="repeat-glyph"> <Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                   </span>
                 ) : (
                   <>
                     <span className="event-time">
-                      {formatTime(minutesToTime(displayStartMin))}
+                      {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
                       {recurring && <span className="repeat-glyph"> <Icon name={ev.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                       {ev.reminder > 0 && <span className="repeat-glyph"> <Icon name="bell" size={13} /></span>}
                     </span>
@@ -1910,6 +1913,7 @@ function DayView({
             const color = eventColor(occ, contactColor, '', kindColors);
             const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
             const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
+            const displayEndMin = displayStartMin + (occ.e2 - occ.s);
             return (
               <div className="event-layer event-layer--ghost">
                 <div
@@ -1927,14 +1931,16 @@ function DayView({
                   <span className="drag-grip">⠿⠿</span>
                   {short ? (
                     <span className="event-title">
-                      <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
+                      <span className="event-time-inline">
+                        {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
+                      </span>{' '}
                       {occ.title || 'Untitled'}
                       {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                     </span>
                   ) : (
                     <>
                       <span className="event-time">
-                        {formatTime(minutesToTime(displayStartMin))}
+                        {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
                         {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                         {occ.reminder > 0 && <span className="repeat-glyph"> <Icon name="bell" size={13} /></span>}
                       </span>
@@ -1960,6 +1966,7 @@ function DayView({
               const color = eventColor(occ, contactColor, '', kindColors);
               const rubberX = Math.max(-18, Math.min(18, groupDrag.dx * 0.2));
               const displayStartMin = clampStart(occ, groupDrag.dy, pxPerMin, dayStart, dayEnd);
+              const displayEndMin = displayStartMin + (occ.e2 - occ.s);
               return (
                 <div
                   key={`${occ.id}:${occ.recDate}`}
@@ -1977,14 +1984,16 @@ function DayView({
                   <span className="drag-grip">⠿⠿</span>
                   {short ? (
                     <span className="event-title">
-                      <span className="event-time-inline">{formatTime(minutesToTime(displayStartMin))}</span>{' '}
+                      <span className="event-time-inline">
+                        {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
+                      </span>{' '}
                       {occ.title || 'Untitled'}
                       {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                     </span>
                   ) : (
                     <>
                       <span className="event-time">
-                        {formatTime(minutesToTime(displayStartMin))}
+                        {formatTime(minutesToTime(displayStartMin))} – {formatTime(minutesToTime(displayEndMin))}
                         {recurring && <span className="repeat-glyph"> <Icon name={occ.isException ? 'pencil' : 'repeat'} size={13} /></span>}
                       </span>
                       <span className="event-title">{occ.title || 'Untitled'}</span>
