@@ -11,6 +11,28 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_PROMPT_BYTES = 64 * 1024;
 const HOST_PROVIDERS = new Set(['anthropic', 'openai', 'unknown']);
+const REQUIRED_TOOLLESS_FEATURES = Object.freeze([
+  'apps',
+  'browser_use',
+  'browser_use_external',
+  'browser_use_full_cdp_access',
+  'computer_use',
+  'goals',
+  'hooks',
+  'image_generation',
+  'in_app_browser',
+  'multi_agent',
+  'plugin_sharing',
+  'plugins',
+  'remote_plugin',
+  'shell_snapshot',
+  'shell_tool',
+  'skill_mcp_dependency_install',
+  'tool_call_mcp_elicitation',
+  'tool_suggest',
+  'unified_exec',
+  'workspace_dependencies',
+]);
 
 function usage() {
   return [
@@ -68,6 +90,7 @@ function providerLabel(hostProvider) {
 function buildCodexArgs(tempDir, outputFile) {
   return [
     '--ask-for-approval', 'never',
+    ...REQUIRED_TOOLLESS_FEATURES.flatMap((feature) => ['--disable', feature]),
     'exec',
     '--ephemeral',
     '--ignore-user-config',
@@ -77,12 +100,62 @@ function buildCodexArgs(tempDir, outputFile) {
     '--sandbox', 'read-only',
     '--cd', tempDir,
     '--color', 'never',
-    '--config', 'sandbox_permissions=[]',
     '--config', 'shell_environment_policy.inherit="none"',
+    '--config', 'skills.include_instructions=false',
+    '--config', 'web_search="disabled"',
     '--config', 'mcp_servers={}',
     '--output-last-message', outputFile,
     '-',
   ];
+}
+
+function probeCodex(spawn, args, options, label) {
+  const result = spawn('codex', args, options);
+  if (result.error) {
+    if (result.error.code === 'ENOENT') throw new Error('Codex CLI is not installed');
+    throw new Error(`Codex ${label} probe failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || '').trim().split('\n').slice(-1)[0];
+    throw new Error(`Codex ${label} probe failed${detail ? `: ${detail}` : ''}`);
+  }
+  return (result.stdout || '').trim();
+}
+
+function verifyToollessSupport(dependencies = {}) {
+  const spawn = dependencies.spawnSync || spawnSync;
+  const options = {
+    cwd: os.tmpdir(),
+    env: buildEnvironment(dependencies.env || process.env),
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true,
+  };
+  const versionText = probeCodex(spawn, ['--version'], options, 'version');
+  const versionMatch = versionText.match(/^codex-cli\s+([^\s]+)$/m);
+  if (!versionMatch) {
+    throw new Error('Codex version could not be verified for tool-less review');
+  }
+
+  const featuresText = probeCodex(spawn, ['features', 'list'], options, 'feature');
+  const stages = new Map();
+  for (const line of featuresText.split('\n')) {
+    const match = line.trim().match(
+      /^(\S+)\s+(stable|under development|experimental|deprecated|removed)\s+(true|false)$/
+    );
+    if (match) stages.set(match[1], match[2]);
+  }
+  const unavailable = REQUIRED_TOOLLESS_FEATURES.filter(
+    (feature) => stages.get(feature) !== 'stable'
+  );
+  if (unavailable.length > 0) {
+    throw new Error(
+      `Codex ${versionMatch[1]} cannot guarantee tool-less review; `
+      + `required stable feature toggles unavailable: ${unavailable.join(', ')}`
+    );
+  }
+  return versionMatch[1];
 }
 
 function buildEnvironment(sourceEnv = process.env) {
@@ -106,6 +179,9 @@ function runReview(prompt, options, dependencies = {}) {
   }
 
   const spawn = dependencies.spawnSync || spawnSync;
+  const environment = buildEnvironment(dependencies.env || process.env);
+  const verifySupport = dependencies.verifyToollessSupport || verifyToollessSupport;
+  verifySupport({ spawnSync: spawn, env: environment });
   const makeTemp = dependencies.mkdtempSync || fs.mkdtempSync;
   const readFile = dependencies.readFileSync || fs.readFileSync;
   const remove = dependencies.rmSync || fs.rmSync;
@@ -115,7 +191,7 @@ function runReview(prompt, options, dependencies = {}) {
   try {
     const result = spawn('codex', buildCodexArgs(tempDir, outputFile), {
       cwd: tempDir,
-      env: buildEnvironment(dependencies.env || process.env),
+      env: environment,
       input: prompt,
       encoding: 'utf8',
       timeout: options.timeoutMs,
@@ -207,10 +283,12 @@ if (require.main === module) {
 
 module.exports = {
   MAX_PROMPT_BYTES,
+  REQUIRED_TOOLLESS_FEATURES,
   buildCodexArgs,
   buildEnvironment,
   parseArgs,
   providerLabel,
   runStdinReview,
   runReview,
+  verifyToollessSupport,
 };

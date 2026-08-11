@@ -102,15 +102,30 @@ Choose `openai`, `anthropic`, or `unknown` for `--host-provider`. The adapter:
 - uses the installed `codex` CLI; it installs nothing;
 - runs in a new empty temporary directory, not the project;
 - ignores user configuration and project rules;
-- clears inherited MCP configuration and shell environment inheritance;
-- uses an ephemeral, read-only session with approval escalation disabled;
+- version-checks every required stable feature toggle and fails closed if the
+  installed CLI cannot guarantee a tool-less review;
+- disables shell, file-execution, browser, app, plugin, multi-agent, image, and
+  workspace-dependency tools, plus web search and inherited MCP servers;
+- suppresses model-visible skill instructions and shell environment inheritance;
+- uses an ephemeral, read-only session with approval escalation disabled as
+  defense in depth, not as the file-isolation boundary;
 - limits prompt size and terminates the call after a bounded timeout;
 - removes its temporary directory after the call.
 
-If the CLI is missing, authentication fails, the call times out, or no final
-text is returned, write **external review absent** with the concrete reason
-and continue with the normal council result. Do not silently substitute another
-model or pretend a review occurred.
+The regression suite also has an opt-in adversarial integration check that
+places an outside-directory sentinel beside the review sandbox and proves a
+real Codex invocation cannot read it:
+
+```bash
+ECC_CODEX_ISOLATION_INTEGRATION=1 \
+  node tests/scripts/council-multi-model.test.js
+```
+
+If the CLI is missing, its tool-less feature set cannot be verified,
+authentication fails, the call times out, or no final text is returned, write
+**external review absent** with the concrete reason and continue with the normal
+council result. Do not silently substitute another model or pretend a review
+occurred.
 
 ### 5. Present without hiding disagreement
 
