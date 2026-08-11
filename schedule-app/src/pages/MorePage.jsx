@@ -13,7 +13,7 @@ import {
   requestNotificationPermission,
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
-import { formatTime } from '../data/helpers.js';
+import { formatTime, EVENT_TYPE_KINDS, DEFAULT_KIND_COLORS } from '../data/helpers.js';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import SettingsGroup from '../components/SettingsGroup.jsx';
 import SettingsSection from '../components/SettingsSection.jsx';
@@ -134,6 +134,7 @@ const SETTINGS_INDEX = [
     label: 'Calendar',
     groups: [
       { id: 'g8', title: 'Calendar settings', keywords: 'day start end hour zoom week 24 templates duration reminder default' },
+      { id: 'g16', title: 'Event colors', keywords: 'call text in person email other category colour color type' },
       { id: 'g3', title: 'Calendar import / export', keywords: 'ics subscribe google apple outlook download' },
     ],
   },
@@ -178,6 +179,7 @@ export default function MorePage() {
   const actions = useActions();
   const navigate = useNavigate();
   const [editingStatus, setEditingStatus] = useState(null);
+  const [editingKindColor, setEditingKindColor] = useState(null); // { value, label, color } | null
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | null
   const [feedback, setFeedback] = useState(null); // string | null
   const [editingProfile, setEditingProfile] = useState(null);
@@ -329,6 +331,12 @@ export default function MorePage() {
     if (editingStatus.id) actions.updateStatus({ id: editingStatus.id, label, color: editingStatus.color });
     else actions.addStatus({ label, color: editingStatus.color });
     setEditingStatus(null);
+  };
+
+  const kindColors = { ...DEFAULT_KIND_COLORS, ...(state.settings?.eventKindColors || {}) };
+  const saveKindColor = () => {
+    actions.setSettings({ eventKindColors: { ...kindColors, [editingKindColor.value]: editingKindColor.color } });
+    setEditingKindColor(null);
   };
 
   const counts = {
@@ -762,6 +770,23 @@ export default function MorePage() {
           />
         </div>
       </SettingsGroup>
+      <SettingsGroup {...grp('g16')}>
+        <span className="detail-label">Event colors</span>
+        <p className="muted small">Color used for each event type on the calendar.</p>
+        <ul className="status-list">
+          {EVENT_TYPE_KINDS.map((k) => (
+            <li key={k.value}>
+              <button
+                className="status-item"
+                onClick={() => setEditingKindColor({ value: k.value, label: k.label, color: kindColors[k.value] })}
+              >
+                <span className="swatch" style={{ background: kindColors[k.value] }} />
+                <span>{k.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </SettingsGroup>
       <SettingsGroup {...grp('g3')}>
         <span className="detail-label">Calendar import / export</span>
         <p className="muted small">Move events to or from other calendar apps using the .ics format.</p>
@@ -1100,6 +1125,41 @@ export default function MorePage() {
                     className={`color-dot${editingStatus.color === c ? ' color-dot--on' : ''}`}
                     style={{ background: c }}
                     onClick={() => setEditingStatus({ ...editingStatus, color: c })}
+                    aria-label={`Choose ${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Event kind color editor */}
+      <Modal
+        open={!!editingKindColor}
+        title={editingKindColor?.label}
+        onClose={() => setEditingKindColor(null)}
+        fullPage
+        footer={
+          <button className="btn btn-primary" onClick={saveKindColor}>
+            Save
+          </button>
+        }
+      >
+        {editingKindColor && (
+          <div className="form">
+            <div className="field">
+              <span>Color</span>
+              <div className="color-grid">
+                {(PRESET_COLORS.includes(editingKindColor.color)
+                  ? PRESET_COLORS
+                  : [...PRESET_COLORS, editingKindColor.color]
+                ).map((c) => (
+                  <button
+                    key={c}
+                    className={`color-dot${editingKindColor.color === c ? ' color-dot--on' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => setEditingKindColor({ ...editingKindColor, color: c })}
                     aria-label={`Choose ${c}`}
                   />
                 ))}

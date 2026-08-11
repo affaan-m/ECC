@@ -350,7 +350,10 @@ export function goalFreezesLeft(goal, isPro) {
 // contact touchpoint it is. There's no separate, user-manageable list of
 // types to pick from; an event just carries one of these `kind` values
 // directly, which is also how the event detail view knows to surface a
-// linked contact's phone (call/text) or email (email).
+// linked contact's phone (call/text) or email (email). The label and id are
+// fixed; only the colour is user-customizable (Settings → Calendar → Event
+// colors), stored as `settings.eventKindColors` and layered over these
+// defaults everywhere a kind's colour is resolved.
 export const EVENT_TYPE_KINDS = [
   { value: 'call', label: 'Call', color: '#2e9e6b' },
   { value: 'text', label: 'Text', color: '#1f5f8b' },
@@ -358,11 +361,12 @@ export const EVENT_TYPE_KINDS = [
   { value: 'email', label: 'Email', color: '#e08a1e' },
   { value: 'other', label: 'Other', color: '#6b7280' },
 ];
-const KIND_COLORS = Object.fromEntries(EVENT_TYPE_KINDS.map((k) => [k.value, k.color]));
+export const DEFAULT_KIND_COLORS = Object.fromEntries(EVENT_TYPE_KINDS.map((k) => [k.value, k.color]));
 
 // The colour an event should be drawn in, in priority order: a colour set
-// on the event itself, then its kind's default colour, then the status
-// colour of the person it's with, then the theme accent.
+// on the event itself, then its kind's colour (user-customized if set, else
+// the default above), then the status colour of the person it's with, then
+// the theme accent.
 //
 // One function because the four views used to each spell this out inline and
 // had already drifted — Month view checked only `event.color`, so an event
@@ -370,9 +374,13 @@ const KIND_COLORS = Object.fromEntries(EVENT_TYPE_KINDS.map((k) => [k.value, k.c
 // real colour everywhere else.
 // `contactColor` is an optional (id) => color|undefined lookup — pages that
 // have the contact and status lists build it once with makeContactColor().
-export function eventColor(event, contactColor, fallback = 'var(--accent)') {
+// `kindColors` is an optional { call, text, ... } override map — pages that
+// have settings pass `settings.eventKindColors`; omitted, the defaults above
+// apply.
+export function eventColor(event, contactColor, fallback = 'var(--accent)', kindColors) {
   if (event?.color) return event.color;
-  if (event?.kind && KIND_COLORS[event.kind]) return KIND_COLORS[event.kind];
+  const colors = kindColors || DEFAULT_KIND_COLORS;
+  if (event?.kind && colors[event.kind]) return colors[event.kind];
   if (event?.contactId && contactColor) {
     const c = contactColor(event.contactId);
     if (c) return c;

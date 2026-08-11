@@ -42,6 +42,7 @@ import {
   eventColor,
   makeContactColor,
   EVENT_TYPE_KINDS,
+  DEFAULT_KIND_COLORS,
 } from '../data/helpers.js';
 import AddressField from '../components/AddressField.jsx';
 import Icon from '../components/Icon.jsx';
@@ -146,6 +147,7 @@ const PENDING_DRAFT_KEY = 'keystone.pendingEventDraft';
 export default function PlannerPage() {
   const { state } = useStore();
   const actions = useActions();
+  const kindColors = { ...DEFAULT_KIND_COLORS, ...(state.settings?.eventKindColors || {}) };
   const showToast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -844,6 +846,7 @@ export default function PlannerPage() {
           events={state.events}
           contacts={state.contacts}
           statuses={state.statuses}
+          kindColors={kindColors}
           onAddAt={(start) => openNew(cursor, start)}
           onOpen={openView}
           onMove={moveOccurrence}
@@ -870,6 +873,7 @@ export default function PlannerPage() {
           events={state.events}
           contacts={state.contacts}
           statuses={state.statuses}
+          kindColors={kindColors}
           onOpenDay={openDay}
           onOpen={openView}
           onAdd={(iso) => openNew(iso)}
@@ -891,6 +895,7 @@ export default function PlannerPage() {
           statuses={state.statuses}
           monthStart={monthStart}
           events={state.events}
+          kindColors={kindColors}
           onOpenDay={openDay}
           onOpen={openView}
           cursor={cursor}
@@ -1034,6 +1039,7 @@ export default function PlannerPage() {
           goals={state.goals || []}
           tasks={state.tasks || []}
           isPro={!!state.settings?.isPro}
+          kindColors={kindColors}
           onClose={() => setViewing(null)}
           onEdit={openEditFromView}
           onToggleDone={() => toggleDoneQuick(viewing)}
@@ -1093,6 +1099,7 @@ function DayView({
   events,
   contacts,
   statuses,
+  kindColors,
   onAddAt,
   onOpen,
   onMove,
@@ -1792,7 +1799,7 @@ function DayView({
             const short = ev.e2 - ev.s < 55;
             const who = contactName(ev.contactId);
             const recurring = ev.repeat && ev.repeat !== 'none';
-            const color = eventColor(ev, contactColor, '');
+            const color = eventColor(ev, contactColor, '', kindColors);
             const displayStartMin = ev.s;
             return (
               <button
@@ -1900,7 +1907,7 @@ function DayView({
             const short = occ.e2 - occ.s < 55;
             const who = contactName(occ.contactId);
             const recurring = occ.repeat && occ.repeat !== 'none';
-            const color = eventColor(occ, contactColor, '');
+            const color = eventColor(occ, contactColor, '', kindColors);
             const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
             const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
             return (
@@ -1950,7 +1957,7 @@ function DayView({
               const short = occ.e2 - occ.s < 55;
               const who = contactName(occ.contactId);
               const recurring = occ.repeat && occ.repeat !== 'none';
-              const color = eventColor(occ, contactColor, '');
+              const color = eventColor(occ, contactColor, '', kindColors);
               const rubberX = Math.max(-18, Math.min(18, groupDrag.dx * 0.2));
               const displayStartMin = clampStart(occ, groupDrag.dy, pxPerMin, dayStart, dayEnd);
               return (
@@ -2021,6 +2028,7 @@ function WeekView({
   events,
   contacts,
   statuses,
+  kindColors,
   onOpenDay,
   onOpen,
   onAdd,
@@ -2171,7 +2179,7 @@ function WeekView({
                         dragging ? ' agenda-chip--dragging' : ''
                       }${rejectedKey === selKey ? ' agenda-chip--refused' : ''}`}
                       style={{
-                        '--ev': eventColor(ev, contactColor),
+                        '--ev': eventColor(ev, contactColor, undefined, kindColors),
                         ...(dragging ? { transform: `translateY(${drag.y - drag.startY}px)` } : null),
                       }}
                       onPointerDown={onChipDown(ev, selKey)}
@@ -2204,7 +2212,7 @@ function WeekView({
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, onOpenDay, onOpen, cursor, onSwipe, contacts, statuses, birthdaysEnabled = true }) {
+function MonthView({ monthStart, events, kindColors, onOpenDay, onOpen, cursor, onSwipe, contacts, statuses, birthdaysEnabled = true }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
   const year = monthStart.getFullYear();
@@ -2304,7 +2312,7 @@ function MonthView({ monthStart, events, onOpenDay, onOpen, cursor, onSwipe, con
                     <span
                       key={i}
                       className="month-dot"
-                      style={{ background: eventColor(ev, contactColor) }}
+                      style={{ background: eventColor(ev, contactColor, undefined, kindColors) }}
                     />
                   ))}
                   {dayEvents.length > 3 && <span className="month-more">+{dayEvents.length - 3}</span>}
@@ -2325,7 +2333,7 @@ function MonthView({ monthStart, events, onOpenDay, onOpen, cursor, onSwipe, con
                 <button
                   key={`${ev.id}:${ev.recDate}`}
                   className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
-                  style={{ '--ev': eventColor(ev, contactColor) }}
+                  style={{ '--ev': eventColor(ev, contactColor, undefined, kindColors) }}
                   onClick={() => onOpen(ev)}
                 >
                   <span className="chip-time chip-time--wide">
@@ -2348,12 +2356,12 @@ function MonthView({ monthStart, events, onOpenDay, onOpen, cursor, onSwipe, con
 
 const DETAIL_DISMISS_THRESHOLD = 110;
 
-function EventDetailView({ occ, contacts, goals, tasks, isPro, onClose, onEdit, onToggleDone }) {
+function EventDetailView({ occ, contacts, goals, tasks, isPro, kindColors, onClose, onEdit, onToggleDone }) {
   const navigate = useNavigate();
   useBackDismiss(true, onClose);
   const contact = contacts.find((c) => c.id === occ.contactId);
   const recurring = occ.repeat && occ.repeat !== 'none';
-  const color = eventColor(occ, null, '');
+  const color = eventColor(occ, null, '', kindColors);
   const linkedGoal = occ.linkKind === 'goal' ? goals.find((g) => g.id === occ.linkId) : null;
   const linkedTask = occ.linkKind === 'task' ? tasks.find((t) => t.id === occ.linkId) : null;
 
@@ -2539,6 +2547,8 @@ function EventEditor({ editing, events, contacts, goals, tasks, settings, onClos
   const [initialJson, setInitialJson] = useState('');
   const [scheduling, setScheduling] = useState(false);
   const recurringMaster = !!editing?.id && !!editing?.repeat && editing.repeat !== 'none';
+  const kindColors = { ...DEFAULT_KIND_COLORS, ...(settings?.eventKindColors || {}) };
+  const kindOptions = EVENT_TYPE_KINDS.map((k) => ({ ...k, color: kindColors[k.value] }));
 
   const key = editing ? `${editing.id || 'new'}|${editing.recDate || editing.date}|${editing.start}` : null;
   const keyRef = useRef(null);
@@ -2709,7 +2719,7 @@ function EventEditor({ editing, events, contacts, goals, tasks, settings, onClos
             value={draft.kind || ''}
             onChange={(v) => setDraft({ ...draft, kind: v })}
             placeholder="None"
-            options={[{ value: '', label: 'None' }, ...EVENT_TYPE_KINDS]}
+            options={[{ value: '', label: 'None' }, ...kindOptions]}
           />
         </label>
 
@@ -2951,6 +2961,7 @@ function ScheduleCalendarView({ draft, setDraft, events, settings, onDone }) {
   const dragRef = useRef(null); // { mode, startClientY, startS, startE }
   const dayStart = settings?.timelineStartHour ?? DAY_START;
   const dayEnd = settings?.timelineEndHour ?? DAY_END;
+  const kindColors = { ...DEFAULT_KIND_COLORS, ...(settings?.eventKindColors || {}) };
   const pxPerHour = SCHED_PX_PER_HOUR;
   const pxPerMin = pxPerHour / 60;
 
@@ -3042,7 +3053,7 @@ function ScheduleCalendarView({ draft, setDraft, events, settings, onDone }) {
                   height: Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3),
                   left: `${(ev.col / ev.cols) * 100}%`,
                   width: `calc(${100 / ev.cols}% - 4px)`,
-                  '--ev': eventColor(ev, null),
+                  '--ev': eventColor(ev, null, undefined, kindColors),
                 }}
               >
                 <span className="event-title">{ev.title || 'Untitled'}</span>
@@ -3050,7 +3061,7 @@ function ScheduleCalendarView({ draft, setDraft, events, settings, onDone }) {
             ))}
             <div
               className="event-block schedule-draft-block"
-              style={{ top, height, left: 0, width: 'calc(100% - 4px)', '--ev': eventColor(draft, null) }}
+              style={{ top, height, left: 0, width: 'calc(100% - 4px)', '--ev': eventColor(draft, null, undefined, kindColors) }}
               onPointerDown={onDown('move')}
               onPointerMove={onMove}
               onPointerUp={onUp}

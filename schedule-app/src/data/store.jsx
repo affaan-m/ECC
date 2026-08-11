@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useReducer } from 'react';
 import { makeSeed } from './seed.js';
-import { uid, todayISO } from './helpers.js';
+import { uid, todayISO, DEFAULT_KIND_COLORS } from './helpers.js';
 import { DEFAULT_HOME_BLOCKS } from './homeBlocks.js';
 
 const STORAGE_KEY = 'compass.data.v1';
@@ -29,11 +29,22 @@ function loadState() {
       // carries its interaction-medium `kind` directly. Migrate any older
       // record still shaped the old way by resolving its typeId through the
       // now-discarded eventTypes list one last time.
+      //
+      // Not every old type maps to one of the new fixed kinds — a custom
+      // type the user made, or one of the original seed types (Personal,
+      // Work, Health, Social) from before kinds existed at all, has no
+      // equivalent. Losing the label there is unavoidable, but losing the
+      // *color* isn't: bake the old type's color onto the event's own
+      // (per-event, already-supported) `color` override so it keeps
+      // rendering the way it always did instead of collapsing to the plain
+      // accent color.
       events: (parsed.events || seed.events).map((e) => {
         if (e.kind !== undefined) return e;
         const legacyTypes = parsed.eventTypes || [];
-        const kind = e.typeId ? legacyTypes.find((t) => t.id === e.typeId)?.kind || '' : '';
-        return { ...e, kind };
+        const oldType = e.typeId ? legacyTypes.find((t) => t.id === e.typeId) : null;
+        const kind = oldType?.kind || '';
+        const color = e.color || (kind ? '' : oldType?.color || '');
+        return { ...e, kind, color };
       }),
       eventTypes: undefined,
       tasks: (parsed.tasks || []).map((t) => ({
@@ -108,6 +119,12 @@ function loadState() {
         homeBlocks: DEFAULT_HOME_BLOCKS,
         tutorialSeen: false,
         ...(parsed.settings || {}),
+        // Per-kind colors for Call/Text/In Person/Email/Other events —
+        // customizable in Settings → Calendar → Event colors. Merged key by
+        // key, not just carried along by the spread above, so a saved
+        // record from before a new kind existed still picks up that kind's
+        // default rather than ending up with `undefined`.
+        eventKindColors: { ...DEFAULT_KIND_COLORS, ...(parsed.settings?.eventKindColors || {}) },
       },
     };
   } catch {
