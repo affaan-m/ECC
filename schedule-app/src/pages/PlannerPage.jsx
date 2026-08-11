@@ -9,6 +9,7 @@ import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { confirmTick, selectTick, warnTick } from '../data/haptics.js';
 import { useBackDismiss } from '../data/useBackDismiss.js';
+import { useTodayResync } from '../data/useTodayResync.js';
 import { useToast } from '../data/toast.jsx';
 import {
   requestNotificationPermission,
@@ -167,36 +168,17 @@ export default function PlannerPage() {
   // rather than reloaded, which is routine for a PWA) never notices, so
   // "today" quietly drifts a day behind: new events would land on
   // yesterday's date without any indication anything was wrong. Goals had
-  // the identical bug (day/weekStart, same fix — see GoalsPage.jsx) and it
-  // was confirmed there by simulating real usage without reloading between
-  // days; this is the same defect for the calendar's own idea of "today".
+  // the identical bug (day/weekStart, same fix) — both now share
+  // useTodayResync rather than each carrying their own copy.
   //
   // `manualNavRef` distinguishes "still tracking today" from "the user
   // deliberately went somewhere else" (chevron/swipe, a month/week cell,
   // arriving to view a specific event, following a smart-add to another
   // day) — only the former gets auto-corrected when the tab regains focus.
-  const manualNavRef = useRef(false);
-  useEffect(() => {
-    const resync = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (manualNavRef.current) return;
-      const nowDay = todayISO();
-      setCursor((c) => (c === nowDay ? c : nowDay));
-    };
-    document.addEventListener('visibilitychange', resync);
-    window.addEventListener('focus', resync);
-    // Belt and suspenders — see the identical comment on GoalsPage.jsx's
-    // copy of this effect: visibilitychange/focus aren't guaranteed to fire
-    // on every platform (a screen timing out and back on is not reliably
-    // one of the events that does), so a low-cost interval check backs
-    // them up rather than depending on either firing.
-    const timer = setInterval(resync, 60000);
-    return () => {
-      document.removeEventListener('visibilitychange', resync);
-      window.removeEventListener('focus', resync);
-      clearInterval(timer);
-    };
-  }, []);
+  const manualNavRef = useTodayResync(() => {
+    const nowDay = todayISO();
+    setCursor((c) => (c === nowDay ? c : nowDay));
+  });
 
   const dayStartHour = state.settings?.timelineStartHour ?? DAY_START;
   const dayEndHour = state.settings?.timelineEndHour ?? DAY_END;

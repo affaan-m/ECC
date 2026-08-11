@@ -6,6 +6,7 @@ import Checkbox from '../components/Checkbox.jsx';
 import { Brand } from '../components/Logo.jsx';
 import { successTick, selectTick } from '../data/haptics.js';
 import { useCountUp } from '../data/useCountUp.js';
+import { useTodayResync } from '../data/useTodayResync.js';
 import AnimatedNumber from '../components/AnimatedNumber.jsx';
 import MilestoneCelebration from '../components/MilestoneCelebration.jsx';
 import {
@@ -104,37 +105,20 @@ export default function GoalsPage() {
   // actually logged on — confirmed by reproducing it directly (5 taps
   // across 5 simulated real days, with no reload in between, all landed on
   // day one: `{"<day-one-date>": 5}` instead of five separate dates).
+  // Planner's `cursor` had the identical bug; both now share
+  // useTodayResync rather than each carrying their own copy.
   //
   // `manualNavRef` distinguishes "still tracking today" from "the user
   // deliberately paged to some other day" — only the former should be
   // auto-corrected when the tab regains focus; a deliberate look at last
   // Tuesday shouldn't get yanked back to today just because the tab was
   // backgrounded for a while.
-  const manualNavRef = useRef(false);
-  useEffect(() => {
-    const resync = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (manualNavRef.current) return;
-      const nowDay = todayISO();
-      setDay((d) => (d === nowDay ? d : nowDay));
-      const nowWeek = startOfWeek(new Date());
-      setWeekStart((w) => (toISODate(w) === toISODate(nowWeek) ? w : nowWeek));
-    };
-    document.addEventListener('visibilitychange', resync);
-    window.addEventListener('focus', resync);
-    // Belt and suspenders: visibilitychange/focus cover the common case
-    // (switching apps, unlocking the phone) but aren't guaranteed on every
-    // platform — a screen simply timing out and back on doesn't reliably
-    // fire either event on every browser. A day is a long time to be wrong
-    // for, so a low-cost interval check closes that gap without depending
-    // on any one event actually firing.
-    const timer = setInterval(resync, 60000);
-    return () => {
-      document.removeEventListener('visibilitychange', resync);
-      window.removeEventListener('focus', resync);
-      clearInterval(timer);
-    };
-  }, []);
+  const manualNavRef = useTodayResync(() => {
+    const nowDay = todayISO();
+    setDay((d) => (d === nowDay ? d : nowDay));
+    const nowWeek = startOfWeek(new Date());
+    setWeekStart((w) => (toISODate(w) === toISODate(nowWeek) ? w : nowWeek));
+  });
 
   const isDaily = period === 'daily';
   const ctx = isDaily ? fromISODate(day) : weekStart;
