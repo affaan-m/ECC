@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const RULES_DIR = path.join(__dirname, '../../../rules');
+const RULES_DIR = path.join(__dirname, '../../../content/rules');
 
 function validateRules() {
   if (!fs.existsSync(RULES_DIR)) {

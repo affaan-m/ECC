@@ -205,8 +205,8 @@ async function runTests() {
   const scriptsDir = path.join(__dirname, '..', '..', 'scripts', 'node', 'hooks');
 
   // Load hook definitions from split files
-  const commonHooksPath = path.join(__dirname, '..', '..', 'hooks', 'common', 'hooks.json');
-  const projectHooksPath = path.join(__dirname, '..', '..', 'hooks', 'node', 'project-hooks.json');
+  const commonHooksPath = path.join(__dirname, '..', '..', 'content', 'hooks', 'common', 'hooks.json');
+  const projectHooksPath = path.join(__dirname, '..', '..', 'content', 'hooks', 'node', 'project-hooks.json');
   const commonHooks = JSON.parse(fs.readFileSync(commonHooksPath, 'utf8'));
   const projectHooks = JSON.parse(fs.readFileSync(projectHooksPath, 'utf8'));
 

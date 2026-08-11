@@ -72,7 +72,7 @@ Get up and running in under 2 minutes:
 git clone https://github.com/affaan-m/everything-claude-code.git
 
 # Copy rules (applies to all projects)
-cp -r everything-claude-code/rules/* ~/.claude/rules/
+cp -r everything-claude-code/content/rules/* ~/.claude/rules/
 ```
 
 ### Step 3: Start Using
@@ -126,99 +126,52 @@ Or use the `/setup-pm` command in Claude Code.
 
 ## 📦 What's Inside
 
-This repo is a **Claude Code plugin** - install it directly or copy components manually.
+This repo is a **Claude Code plugin** that also installs into **Codex CLI** -
+install it directly or copy components manually. All shared content lives in
+one target-neutral tree (`content/`); per-tool install logic lives in
+`targets/<target>/`.
 
 ```text
 everything-claude-code/
 |-- .claude-plugin/   # Plugin and marketplace manifests
-|   |-- plugin.json         # Plugin metadata and component paths
-|   |-- marketplace.json    # Marketplace catalog for /plugin marketplace add
+|   |-- plugin.json             # Plugin metadata, component paths (./content/...)
+|   |-- marketplace.json        # Marketplace catalog for /plugin marketplace add
+|   |-- PLUGIN_SCHEMA_NOTES.md  # Undocumented validator constraints
 |
-|-- global/           # Global CLAUDE.md (copied to ~/.claude/CLAUDE.md)
-|   |-- CLAUDE.md
+|-- content/          # Single source of truth (target-neutral, no install logic)
+|   |-- instructions/
+|   |   |-- global.md        # Global instructions (-> ~/.claude/CLAUDE.md, folded into ~/.codex/AGENTS.md)
+|   |-- agents/               # Specialized subagents (Claude Code only)
+|   |   |-- common/, node/, python/, rust/, typescript/
+|   |-- skills/                # Workflow definitions (Claude Code + Codex, via $skill-name)
+|   |   |-- common/, node/, python/
+|   |-- commands/              # Slash commands (Claude Code only)
+|   |   |-- common/, node/, python/, rust/
+|   |-- rules/                 # Always-follow guidelines (Claude Code + Codex)
+|   |   |-- common/, node/, python/, rust/, typescript/
+|   |-- hooks/                 # Trigger-based automations (Claude Code only)
+|   |   |-- common/, node/, python/, rust/
+|   |-- mcp/
+|       |-- servers.json     # MCP server configs (Claude Code settings + Codex config.toml)
 |
-|-- agents/           # Specialized subagents for delegation
-|   |-- common/              # Language-agnostic agents
-|   |   |-- planner.md           # Feature implementation planning
-|   |   |-- architect.md         # System design decisions
-|   |-- node/                # Node.js/TypeScript agents
-|   |   |-- node-code-reviewer.md
-|   |   |-- node-tdd-guide.md
-|   |   |-- node-build-error-resolver.md
-|   |   |-- node-e2e-runner.md
-|   |   |-- node-security-reviewer.md
-|   |   |-- node-refactor-cleaner.md
-|   |   |-- node-doc-updater.md
-|   |-- python/              # Python agents
-|   |   |-- fastapi-reviewer.md
-|   |   |-- python-code-reviewer.md
-|   |   |-- python-reviewer.md
-|   |   |-- python-tdd-guide.md
-|   |   |-- python-planner.md
-|   |   |-- python-refactor-cleaner.md
-|   |   |-- python-doc-updater.md
-|   |-- rust/                # Rust agents
-|   |   |-- rust-build-resolver.md
-|   |   |-- rust-reviewer.md
-|   |-- typescript/          # TypeScript/JavaScript agents
-|       |-- typescript-reviewer.md
+|-- targets/           # Per-target adapters - mapping/transform only, no content
+|   |-- claude/
+|   |   |-- install.sh        # content/* -> ~/.claude/*
+|   |   |-- uninstall.sh
+|   |-- codex/
+|       |-- install.sh        # content/* -> ~/.codex/* (see Codex support below)
+|       |-- uninstall.sh
+|       |-- build-agents-md.sh  # Generates AGENTS.md (global.md + rules index)
+|       |-- merge-mcp.py        # servers.json -> config.toml [mcp_servers.*] merge
 |
-|-- skills/           # Workflow definitions and domain knowledge
-|   |-- common/              # Language-agnostic skills
-|   |   |-- security-review/
-|   |-- node/                # Node.js/TypeScript skills
-|   |   |-- node-coding-standards/
-|   |   |-- node-backend-patterns/
-|   |   |-- node-frontend-patterns/
-|   |   |-- node-tdd-workflow/
-|   |   |-- node-verification-loop/
-|   |-- python/              # Python skills
-|   |   |-- fastapi-patterns/
-|   |   |-- python-patterns/
-|   |   |-- python-testing/
-|
-|-- commands/         # Slash commands for quick execution
-|   |-- common/              # Language-agnostic commands
-|   |   |-- plan.md, code-review.md, verify.md, ...
-|   |-- node/                # Node.js commands
-|   |   |-- node-tdd.md, node-build-fix.md, node-e2e.md, ...
-|   |-- python/              # Python commands
-|   |   |-- python-review.md
-|   |   |-- fastapi-review.md
-|   |-- rust/                # Rust commands
-|       |-- rust-build.md, rust-review.md, rust-test.md
-|
-|-- rules/            # Always-follow guidelines (copy to ~/.claude/rules/)
-|   |-- common/              # Language-agnostic rules
-|   |   |-- agents.md, coding-style.md, security.md, testing.md, ...
-|   |-- node/                # Node.js rules
-|   |   |-- node-coding-style.md, node-security.md, node-testing.md, ...
-|   |-- python/              # Python rules
-|   |   |-- python-coding-style.md, python-fastapi.md, python-security.md, ...
-|   |-- rust/                # Rust rules
-|   |   |-- rust-coding-style.md, rust-security.md, rust-testing.md, ...
-|   |-- typescript/          # TypeScript/JavaScript rules
-|       |-- typescript-coding-style.md, typescript-security.md, ...
-|
-|-- hooks/            # Trigger-based automations
-|   |-- common/              # Language-agnostic hooks
-|   |   |-- hooks.json           # Git push review, doc blocker, PR logging
-|   |-- node/                # Node.js hooks
-|   |   |-- global-hooks.json    # Session lifecycle, compaction
-|   |   |-- project-hooks.json   # oxfmt, tsc, console.log warning
-|   |-- python/              # Python hooks
-|   |   |-- project-hooks.json   # ruff, ty check, print() warning
-|   |-- rust/                # Rust hooks
-|       |-- project-hooks.json   # cargo fmt, cargo clippy
-|
-|-- scripts/          # Install/uninstall and hook scripts
-|   |-- install.sh           # Install configs to ~/.claude/
-|   |-- uninstall.sh         # Remove configs from ~/.claude/
+|-- scripts/          # Thin dispatchers + hook runtime scripts
+|   |-- install.sh           # --target claude|codex|all (default all)
+|   |-- uninstall.sh         # --target claude|codex|all (default all)
 |   |-- init-project.sh      # Initialize project hooks
-|   |-- node/                # Node.js scripts
-|       |-- lib/                 # Shared utilities
-|       |-- hooks/               # Hook implementations
-|       |-- ci/                  # CI validation scripts
+|   |-- lib/common.sh        # Shared copy/log/dry-run helpers for targets/
+|   |-- node/                # Node.js hook runtime scripts
+|   |   |-- lib/, hooks/, ci/
+|   |-- python/              # Python hook runtime scripts (as they land)
 |
 |-- docs/             # Repo structure and validation docs
 |   |-- COMMAND-AGENT-MAP.md
@@ -229,14 +182,12 @@ everything-claude-code/
 |   |-- lib/                     # Library tests
 |   |-- hooks/                   # Hook tests
 |   |-- integration/             # Integration tests
+|   |-- scripts/                 # Dispatcher and Codex adapter tests
 |   |-- run-all.js               # Run all tests
 |
 |-- examples/         # Example configurations and sessions
 |   |-- CLAUDE.md           # Example project-level config
 |   |-- user-CLAUDE.md      # Example user-level config
-|
-|-- mcp-configs/      # MCP server configurations
-|   |-- mcp-servers.json    # Chrome DevTools MCP
 |
 |-- marketplace.json  # Self-hosted marketplace config (for /plugin marketplace add)
 ```
@@ -348,43 +299,76 @@ This gives you instant access to all commands, agents, skills, and hooks.
 > git clone https://github.com/affaan-m/everything-claude-code.git
 >
 > # Option A: User-level rules (applies to all projects)
-> cp -r everything-claude-code/rules/* ~/.claude/rules/
+> cp -r everything-claude-code/content/rules/* ~/.claude/rules/
 >
 > # Option B: Project-level rules (applies to current project only)
 > mkdir -p .claude/rules
-> cp -r everything-claude-code/rules/* .claude/rules/
+> cp -r everything-claude-code/content/rules/* .claude/rules/
 > ```
 
 ---
 
-### 🔧 Option 2: Manual Installation
+### 🔧 Option 2: Install Script (Claude Code, Codex, or both)
 
-If you prefer manual control over what's installed:
+If you prefer explicit, scriptable control over what's installed - and if you
+also use [Codex CLI](https://github.com/openai/codex) - use the install
+dispatcher instead of the plugin marketplace:
 
 ```bash
 # Clone the repo
 git clone https://github.com/affaan-m/everything-claude-code.git
+cd everything-claude-code
 
-# Copy agents to your Claude config
-cp everything-claude-code/agents/*.md ~/.claude/agents/
+# Install for both Claude Code and Codex (Codex skipped if not detected)
+./scripts/install.sh python common
 
-# Copy rules
-cp everything-claude-code/rules/*.md ~/.claude/rules/
+# Claude Code only / Codex only
+./scripts/install.sh --target claude python common
+./scripts/install.sh --target codex python common
 
-# Copy commands
-cp everything-claude-code/commands/*.md ~/.claude/commands/
+# Preview what would be installed, without writing anything
+./scripts/install.sh -n --target all python common
 
-# Copy skills
-cp -r everything-claude-code/skills/* ~/.claude/skills/
+# List available languages
+./scripts/install.sh -l
 ```
 
-#### Add hooks to settings.json
+`scripts/install.sh` is a thin `--target claude|codex|all` dispatcher
+(default `all`) over `targets/claude/install.sh` and `targets/codex/install.sh`,
+which both read from the single `content/` source tree. Matching
+`scripts/uninstall.sh` accepts the same `--target` flag. Add `-f` to either
+script to force-overwrite existing files.
 
-Copy the hooks from `hooks/hooks.json` to your `~/.claude/settings.json`.
+---
 
-#### Configure MCPs
+### Codex Support
 
-Copy desired MCP servers from `mcp-configs/mcp-servers.json` to your `~/.claude.json`.
+`./scripts/install.sh --target codex` (or `--target all` when Codex is
+detected) installs into `$CODEX_HOME` or `~/.codex`:
+
+| content | destination |
+|---|---|
+| `content/instructions/global.md` + rules index | `~/.codex/AGENTS.md` (generated) |
+| `content/rules/**` | `~/.codex/instructions/*.md` (flat, one file per rule) |
+| `content/skills/**` | `~/.codex/skills/<name>/` (invoked via `$skill-name`, e.g. `$git-commit-msg`) |
+| `content/mcp/servers.json` | `[mcp_servers.*]` merged into `~/.codex/config.toml`, with a timestamped backup of the existing file. Requires `uv`; if it's missing, the MCP step is skipped with a warning and the entries can be added manually. |
+
+Codex has no subagent or slash-command concept, so `content/agents/` and
+`content/commands/` are not installed there. `content/hooks/` targets Claude
+Code's tool-event hooks, which have no Codex lifecycle equivalent, so those
+are not installed either.
+
+Codex is detected via `$CODEX_HOME`, an existing `~/.codex` directory, or a
+`codex` binary on `PATH`. `--target codex` on a machine without any of those
+is an error; `--target all` prints an INFO message and skips Codex.
+`uninstall.sh --target codex` removes the installed files but never touches
+`config.toml` - it prints the manual removal steps instead, since that file
+also holds user state (trust levels, model settings) that must not be
+clobbered.
+
+**Manual verification after installing:** restart Codex, run `$skill-name`
+(e.g. `$git-commit-msg`) to confirm skill discovery, and confirm `AGENTS.md`
+is loaded (Codex reads it automatically at session start).
 
 ---
 
