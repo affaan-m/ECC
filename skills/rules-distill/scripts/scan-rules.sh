@@ -16,10 +16,17 @@ if [[ ! -d "$RULES_DIR" ]]; then
 fi
 
 # Collect all .md files (excluding _archived/)
+# Bash globstar instead of `find | sort`: AppLocker-hardened machines shim
+# find/sort (silent-empty on GNU flags), and glob expansion is already
+# lexicographically sorted with no external processes.
+shopt -s globstar nullglob
 files=()
-while IFS= read -r f; do
+for f in "$RULES_DIR"/**/*.md; do
+  [[ -f "$f" ]] || continue
+  [[ "$f" == */_archived/* ]] && continue
   files+=("$f")
-done < <(find "$RULES_DIR" -name '*.md' -not -path '*/_archived/*' -print | sort)
+done
+shopt -u globstar nullglob
 
 total=${#files[@]}
 
@@ -38,13 +45,16 @@ for i in "${!files[@]}"; do
   # Get line count
   line_count=$(wc -l < "$file" | tr -d ' ')
 
+  # Zero-pad so the later "$tmpdir"/*.json glob keeps insertion order past 9
+  # files (unpadded, 10.json sorts before 2.json lexicographically).
+  printf -v fname '%06d.json' "$i"
   jq -n \
     --arg path "$rel_path" \
     --arg file "$(basename "$file")" \
     --argjson lines "$line_count" \
     --argjson headings "$headings_json" \
     '{path:$path,file:$file,lines:$lines,headings:$headings}' \
-    > "$tmpdir/$i.json"
+    > "$tmpdir/$fname"
 done
 
 if [[ ${#files[@]} -eq 0 ]]; then
