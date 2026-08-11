@@ -168,19 +168,30 @@ half-applied.
   forget to swap the Stripe price (see §3) — the old recurring price will be
   rejected in `payment` mode.
 
-- **Shared calendars are scaffolded but not migrated.** The
+- **The shared-calendars migration hasn't been applied.** The
   `SharedCalendar` / `SharedCalendarMember` / `SharedCalendarInvite` /
-  `SharedEvent` models exist in `prisma/schema.prisma` and the routes in
-  `src/routes/calendars.js` are wired up, but no migration has been run
-  against any database — run `npm run db:migrate` (creates one against
-  your local dev DB) or `npm run db:deploy` (applies pending migrations,
-  for CI/production) once you're ready to turn this on. Invites don't send
-  an email; `POST /api/calendars/:id/invites` just returns the invite
-  (with its `token`) for you to deliver however you like (a `mailto:`
-  link, copy-to-clipboard, etc.) — see `schedule-app/src/pages/
-  SharedCalendarsPage.jsx` for the frontend that already expects this
-  shape. Shared events are intentionally simple (no recurrence) — see the
-  schema comment for why.
+  `SharedEvent` models in `prisma/schema.prisma`, the routes in
+  `src/routes/calendars.js`, and `prisma/migrations/
+  20260811161029_shared_calendars` are all in place and verified (create →
+  invite → accept → add an event → delete-cascades-correctly, exercised
+  directly against a throwaway Postgres instance) — same shape as the
+  lifetime-purchase gap above, just needs `npm run db:migrate` locally or
+  `npm run db:deploy` in production to actually create the tables. Until
+  then the routes 500 on the missing tables, and the frontend shows its
+  honest "not connected yet" state (see `backendConfigured()` gating in
+  `schedule-app/src/pages/SharedCalendarsPage.jsx`) rather than pretending
+  to work.
+
+  Invites still don't send an email, deliberately — there's no email
+  provider wired up (nothing like Postmark/Resend/SMTP configured
+  anywhere in this backend), so `POST /api/calendars/:id/invites` just
+  returns the invite (with its `token`) for the owner to deliver
+  themselves, and `SharedCalendarDetailPage.jsx` says so plainly rather
+  than implying an email went out. Wiring up a real provider is a
+  separate decision (which one, whose API key, whether it's worth the
+  added dependency for a feature this size) rather than something to bolt
+  on silently. Shared events are intentionally simple (no recurrence) —
+  see the schema comment for why.
 - Data sync (`/api/data`) stores the whole app state as one JSON blob per
   user — simple last-write-wins across a person's own devices, not a
   conflict-resolving multi-editor sync. It's a real prerequisite for any
