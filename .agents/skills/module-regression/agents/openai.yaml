@@ -1,0 +1,7 @@
+interface:
+  display_name: "Module Regression"
+  short_description: "Verify changed modules and downstream consumers"
+  brand_color: "#EF4444"
+  default_prompt: "Use $module-regression to run executable regression checks for changed modules and their downstream consumers."
+policy:
+  allow_implicit_invocation: true

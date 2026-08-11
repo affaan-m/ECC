@@ -1,0 +1,7 @@
+interface:
+  display_name: "Context and Decisions"
+  short_description: "Govern stable domain language and durable decisions"
+  brand_color: "#8B5CF6"
+  default_prompt: "Use $context-and-decisions to maintain stable domain context and capture hard-to-reverse decisions."
+policy:
+  allow_implicit_invocation: true

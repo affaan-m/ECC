@@ -187,6 +187,14 @@
       ]
     },
     {
+      "id": "capability:documentation-governance",
+      "family": "capability",
+      "description": "Durable project documentation, context, decisions, change impact, test evidence, regression, and audit workflows.",
+      "modules": [
+        "documentation-governance"
+      ]
+    },
+    {
       "id": "capability:prediction-markets",
       "family": "capability",
       "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",

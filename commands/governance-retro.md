@@ -9,7 +9,7 @@ argument-hint: "[可选：起始日期 YYYY-MM-DD，默认全量]"
 
 执行步骤：
 
-1. **按事件计数**：先运行 `python3 <插件目录>/skills/docs-governance/scripts/project-log-index.py status --root <项目根>`；阈值按 `## [日期] 类型 | 摘要` 事件计，不按行数。
+1. **按事件计数**：先运行 `python3 "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/project-log-index.py" status --root "${CLAUDE_PROJECT_DIR:-$PWD}"`；阈值按 `## [日期] 类型 | 摘要` 事件计，不按行数。
 2. **读 LOG**：`PROJECT_LOG.md`（存在 `PROJECT_LOG.archive.md` 且用户要全量时一并读）。存在 `.governance/project-log.sqlite` 时可用于分类查询，但结论必须能回到 Markdown 原文；`PROJECT_LOG.md` 不存在就报告缺失并停止。
 3. **分类统计**（按条目的类型词和内容聚合）：
    - **按模块**：哪个模块 / 文件被 fix 类条目点名最多（top 5，带次数）。

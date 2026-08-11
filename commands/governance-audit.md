@@ -8,8 +8,10 @@ argument-hint: "[spine|context|adr|artifacts|full，默认 full]"
 **第一步 · 便宜层（确定性脚本，必须先跑）**：
 
 ```bash
-bash <插件目录>/skills/docs-governance/scripts/audit-cheap.sh <scope>
+bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "${ARGUMENTS:-full}"
 ```
+
+该脚本默认检查参考布局；项目复用自定义文件名时，先由治理执行者建立 `.governance/docs-map.json` 角色映射，再把映射作为项目审计约定。没有映射时，不得把“名称不同”直接判为治理缺失。
 
 范围：`spine`（四件套/删除区/LOG）、`context`、`adr`、`artifacts`（Markdown 链接、TEST-ID、孤儿文档）、`full`。它检查路径与链接断裂、ADR 索引、LOG 活跃+归档的只追加完整性、>200 条触发、派生数据库误提交、删除区复活和跨文档 TEST-ID 断链。
 

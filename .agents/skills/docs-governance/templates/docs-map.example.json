@@ -1,0 +1,14 @@
+{
+  "constitution": "AGENTS.md",
+  "map": "docs/architecture.md",
+  "status": "docs/project-status.md",
+  "history": "CHANGELOG.md",
+  "history_archive": "docs/archive/project-history.md",
+  "agents": "AGENTS.md",
+  "context": "docs/domain-context.md",
+  "contract": "docs/api/openapi.yaml",
+  "tests": "docs/testing/test-registry.md",
+  "regression": "docs/testing/regression.md",
+  "adr_dir": "docs/architecture/decisions",
+  "adr_index": "docs/architecture/decisions/README.md"
+}

@@ -412,7 +412,8 @@
       "dependencies": [
         "agents-core",
         "commands-core",
-        "workflow-quality"
+        "workflow-quality",
+        "framework-language"
       ],
       "defaultInstall": false,
       "cost": "medium",
