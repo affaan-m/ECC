@@ -57,6 +57,9 @@ const allowedSymbolCodePoints = new Set([
   0x00A9,
   0x00AE,
   0x2122,
+  // Visible glyphs that are part of ECC's terminal statusline language.
+  0x26A1,
+  0x2733,
 ]);
 
 const targetedReplacements = [

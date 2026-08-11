@@ -22,7 +22,6 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const WRAPPER = 'scripts/codex/ecc-codex';
 const PANE = 'scripts/codex/ecc-codex-bar-pane';
 const DOC = 'docs/STATUSLINE.md';
-const SEP = '│';
 
 let passed = 0;
 let failed = 0;
@@ -41,20 +40,6 @@ function test(name, fn) {
 
 function read(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
-}
-
-/** Every ```lua fenced block in a markdown document. */
-function luaBlocks(markdown) {
-  return [...markdown.matchAll(/```lua\n([\s\S]*?)```/g)].map(match => match[1]);
-}
-
-/**
- * Drop `--` line comments so the assertions below judge executable Lua only.
- * The example deliberately names the byte-class antipattern in a comment to
- * explain why it is wrong.
- */
-function stripLuaComments(source) {
-  return source.replace(/--.*$/gm, '');
 }
 
 console.log('\n=== Testing the Codex bar outside tmux ===\n');
@@ -173,13 +158,11 @@ test('plain terminals get the three lines in reserved bottom rows', () => {
     guard.includes('[ -z "${TMUX:-}" ]') && guard.includes('[ -z "$WEZTERM_BAR_PANE" ]'),
     'the reserved region must yield to tmux and to the WezTerm pane'
   );
-
-
   // Codex resets the scroll margins when it starts. The reservation only
   // survives because it is re-asserted on a one second cadence, not once per
   // refresh interval, which left the bar missing for up to 15 seconds.
   const loop = wrapper.slice(wrapper.indexOf('if [ "$REGION_ACTIVE" = 1 ]; then'));
-  assert.ok(/\n      sleep 1\n/.test(loop), 'the region must repaint every second');
+  assert.ok(/\n {6}sleep 1\n/.test(loop), 'the region must repaint every second');
   assert.ok(
     loop.includes('tick % INTERVAL'),
     'rendering must stay on the slow interval so node is not spawned every second'
