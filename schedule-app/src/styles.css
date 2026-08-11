@@ -479,6 +479,7 @@ textarea {
   gap: 14px;
   text-align: center;
   color: var(--muted);
+  animation: desertSceneIn 0.5s cubic-bezier(0.16, 0.8, 0.24, 1) both;
 }
 .desert-empty-svg {
   width: 168px;
@@ -497,9 +498,23 @@ textarea {
 .desert-tumbleweed-track {
   animation: desertTumbleRoll 5s linear infinite;
 }
+.desert-tumbleweed-bounce {
+  transform-origin: 0 0;
+  animation: desertTumbleBounce 0.9s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
 .desert-tumbleweed-spin {
   transform-origin: 0 0;
-  animation: desertTumbleSpin 1.6s linear infinite;
+  animation: desertTumbleSpin 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes desertSceneIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 @keyframes desertTumbleRoll {
   0% {
@@ -507,6 +522,20 @@ textarea {
   }
   100% {
     transform: translate(216px, 88px);
+  }
+}
+@keyframes desertTumbleBounce {
+  0%,
+  100% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  45% {
+    transform: translateY(-6px) scaleX(0.95) scaleY(1.07);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  92% {
+    transform: translateY(0) scaleX(1.08) scaleY(0.9);
   }
 }
 @keyframes desertTumbleSpin {
@@ -518,7 +547,11 @@ textarea {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .home-empty-state {
+    animation: none;
+  }
   .desert-tumbleweed-track,
+  .desert-tumbleweed-bounce,
   .desert-tumbleweed-spin {
     animation: none;
   }

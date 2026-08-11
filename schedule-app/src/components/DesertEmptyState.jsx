@@ -41,16 +41,18 @@ export default function DesertEmptyState() {
       <Cactus x={118} h={15} />
 
       <g className="desert-tumbleweed-track">
-        <g className="desert-tumbleweed-spin">
-          <circle cx="0" cy="0" r="10" {...S} />
-          <path d="M-6,-8 C0,-2 -2,4 -8,6" {...S} />
-          <path d="M8,-6 C2,-2 4,4 -2,8" {...S} />
-          <path d="M-8,2 C-2,-4 4,-6 8,2" {...S} />
-          <path d="M0,-10 L0,-13 M0,-10 L-2,-12.5" {...S} />
-          <path d="M8.6,-4.9 L11.6,-6.2 M8.6,-4.9 L11,-3.2" {...S} />
-          <path d="M5.3,8.3 L6.7,11.1 M5.3,8.3 L3.5,10.7" {...S} />
-          <path d="M-8.6,4.9 L-11.4,6.5 M-8.6,4.9 L-10.3,3" {...S} />
-          <path d="M-6.7,-7.5 L-9.4,-9.3 M-6.7,-7.5 L-8.9,-6" {...S} />
+        <g className="desert-tumbleweed-bounce">
+          <g className="desert-tumbleweed-spin">
+            <circle cx="0" cy="0" r="10" {...S} />
+            <path d="M-6,-8 C0,-2 -2,4 -8,6" {...S} />
+            <path d="M8,-6 C2,-2 4,4 -2,8" {...S} />
+            <path d="M-8,2 C-2,-4 4,-6 8,2" {...S} />
+            <path d="M0,-10 L0,-13 M0,-10 L-2,-12.5" {...S} />
+            <path d="M8.6,-4.9 L11.6,-6.2 M8.6,-4.9 L11,-3.2" {...S} />
+            <path d="M5.3,8.3 L6.7,11.1 M5.3,8.3 L3.5,10.7" {...S} />
+            <path d="M-8.6,4.9 L-11.4,6.5 M-8.6,4.9 L-10.3,3" {...S} />
+            <path d="M-6.7,-7.5 L-9.4,-9.3 M-6.7,-7.5 L-8.9,-6" {...S} />
+          </g>
         </g>
       </g>
     </svg>
