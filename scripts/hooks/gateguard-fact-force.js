@@ -714,6 +714,209 @@ function isDestructiveBash(command) {
   return false;
 }
 
+// --- PowerShell destructive detection ---
+//
+// When CLAUDE_CODE_USE_POWERSHELL_TOOL=1 the PowerShell tool can run arbitrary
+// commands, but its delete verbs share no syntax with POSIX `rm`, so the
+// tokenizer above cannot see them: `rm -Recurse -Force x` reaches
+// `isDestructiveRm` as tokens whose `-Force` fails its case-sensitive /f/ test.
+// These helpers close that gap. They run ONLY for the PowerShell tool, so Bash
+// gating behaviour is unchanged.
+
+// Remove-Item plus its built-in aliases, and Remove-ItemProperty (a distinct
+// cmdlet that deletes registry values rather than files, gated on the same terms).
+const PS_DELETE_VERBS = new Set([
+  'remove-item', 'remove-itemproperty', 'ri', 'rm', 'rmdir', 'rd', 'del', 'erase',
+]);
+
+// Shells reachable from PowerShell that can carry a destructive command in an
+// argument, the PowerShell analogue of the `sh -c` / `bash -c` wrapper class
+// that isDestructiveQuoteAware already unwraps for Bash.
+const PS_NESTED_SHELLS = new Set(['powershell', 'pwsh', 'cmd']);
+
+// PowerShell has unrestricted .NET access, so the delete verbs are not the only
+// route: [System.IO.Directory]::Delete($p, $true) removes a tree.
+const PS_DOTNET_DELETE = /\[\s*(?:system\.)?io\.(?:directory|file)\s*\]\s*::\s*delete\s*\(/i;
+
+// cmd.exe recursive removal reached via `cmd /c`: rd /s /q, rmdir /s, del /s.
+const CMD_RECURSIVE_DELETE = /(?:^|[\s;|&(])(?:rd|rmdir|del|erase)\s+[^;|&]*[/-]s\b/i;
+
+/**
+ * PowerShell accepts any unambiguous prefix of a parameter name (`-Recurse`
+ * may be written `-Recurs`, `-Rec`, or `-r`), so parameters must be matched by
+ * prefix rather than exact spelling. A trailing `:value` suffix
+ * (`-Confirm:$false`) is stripped before comparison.
+ *
+ * @param {string} token - a single argument token, e.g. `-Rec`
+ * @param {string} fullName - the lowercase full parameter name, e.g. `recurse`
+ * @returns {boolean}
+ */
+function isPsParamPrefixOf(token, fullName) {
+  const name = token.replace(/^-+/, '').split(':')[0].toLowerCase();
+  return name.length > 0 && fullName.startsWith(name);
+}
+
+/**
+ * Detect destructive PowerShell commands.
+ *
+ * Scoped deliberately to mirror `isDestructiveRm`, which gates `rm -rf` but not
+ * `rm -f`: the hazard class is *recursive or wildcarded* deletion, not any
+ * delete. A single-file `Remove-Item -Force notes.txt` stays ungated, exactly as
+ * its `rm -f notes.txt` equivalent does.
+ *
+ * @param {string} command
+ * @returns {boolean}
+ */
+function isDestructivePowerShell(command, depth = 0) {
+  if (depth > 4) return false;
+
+  // PowerShell's backtick escapes a single character. `n / `r are newlines
+  // (statement separators); before any other character the backtick is a no-op
+  // that obfuscation abuses, e.g. Rem`ove-Item. Normalize both away first.
+  const raw = String(command || '')
+    .replace(/`n/gi, '\n')
+    .replace(/`r/gi, '\n')
+    .replace(/`/g, '');
+
+  if (PS_DOTNET_DELETE.test(raw)) return true;
+  if (CMD_RECURSIVE_DELETE.test(raw)) return true;
+
+  // Statement-level pass. `Get-ChildItem -Recurse | Remove-Item` splits its
+  // evidence across a pipeline: -Recurse sits on the enumerating command, not
+  // on the delete verb. This is the PowerShell analogue of `find -exec rm`,
+  // which isDestructiveFindExec already covers for Bash.
+  for (const statement of splitPsStatements(raw)) {
+    const words = statement.map(word => word.toLowerCase());
+    const hasDeleteVerb = words.some(word => PS_DELETE_VERBS.has(commandBasename(word)));
+    if (!hasDeleteVerb) continue;
+    if (words.some(word => word.startsWith('-') && isPsParamPrefixOf(word, 'recurse'))) {
+      return true;
+    }
+  }
+
+  // Segment-level pass. quoteAwareSegments strips quotes and splits on
+  // ; | & and newlines, so it also resolves `& 'Remove-Item' ...` (the call
+  // operator) and quoted command words without extra handling here.
+  for (const tokens of quoteAwareSegments(raw)) {
+    if (tokens.length === 0) continue;
+
+    const verb = commandBasename(tokens[0]);
+    const rest = tokens.slice(1);
+
+    if (PS_NESTED_SHELLS.has(verb)) {
+      if (isDestructiveNestedPsShell(rest, depth)) return true;
+      continue;
+    }
+
+    if (!PS_DELETE_VERBS.has(verb)) continue;
+
+    for (const token of rest) {
+      // Splatted parameters (`Remove-Item @params`) are opaque to static
+      // inspection, so a splatted delete is gated rather than assumed safe.
+      if (token.startsWith('@')) return true;
+      if (!token.startsWith('-')) continue;
+      // -Force is gated as well as -Recurse: unlike `rm -f`, PowerShell's
+      // `Remove-Item -Force <directory>` removes the tree.
+      if (isPsParamPrefixOf(token, 'recurse') || isPsParamPrefixOf(token, 'force')) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Unwrap a nested shell invocation (`powershell -Command ...`, `pwsh -c ...`,
+ * `cmd /c ...`, and the base64 `-EncodedCommand` form) and re-scan its payload.
+ *
+ * @param {string[]} rest - tokens after the shell name
+ * @param {number} depth - recursion guard, shared with isDestructivePowerShell
+ * @returns {boolean}
+ */
+function isDestructiveNestedPsShell(rest, depth) {
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i];
+    const next = rest[i + 1];
+    if (!next) continue;
+
+    if (token.startsWith('-') && isPsParamPrefixOf(token, 'encodedcommand')) {
+      try {
+        // PowerShell encodes -EncodedCommand payloads as UTF-16LE base64.
+        const decoded = Buffer.from(next, 'base64').toString('utf16le');
+        if (decoded && isDestructivePowerShell(decoded, depth + 1)) return true;
+      } catch (_) {
+        /* not valid base64; fall through */
+      }
+      continue;
+    }
+
+    // `-Command`, `-c`, and cmd.exe's `/c` / `/k`.
+    const isCommandFlag =
+      (token.startsWith('-') && isPsParamPrefixOf(token, 'command')) ||
+      token === '/c' ||
+      token === '/C' ||
+      token === '/k' ||
+      token === '/K';
+    if (isCommandFlag && isDestructivePowerShell(rest.slice(i + 1).join(' '), depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Quote-aware split into statements on `;` and newlines only, keeping pipelines
+ * intact so recursion flags on an upstream command stay visible to the delete
+ * verb downstream. Each statement is returned as a list of words.
+ *
+ * @param {string} input
+ * @returns {string[][]}
+ */
+function splitPsStatements(input) {
+  const statements = [];
+  let words = [];
+  let current = '';
+  let quote = null;
+
+  const flushWord = () => {
+    if (current) words.push(current);
+    current = '';
+  };
+  const flushStatement = () => {
+    flushWord();
+    if (words.length) statements.push(words);
+    words = [];
+  };
+
+  for (const ch of String(input || '')) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === ';' || ch === '\n' || ch === '\r') {
+      flushStatement();
+      continue;
+    }
+    if (ch === '|') {
+      flushWord();
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      flushWord();
+      continue;
+    }
+    current += ch;
+  }
+  flushStatement();
+  return statements;
+}
+
 // --- State management (per-session, atomic writes, bounded) ---
 
 function normalizeEnvValue(value) {
@@ -1117,7 +1320,7 @@ function routineBashMsg() {
   return [
     '[Fact-Forcing Gate]',
     '',
-    'Before the first Bash command this session, present these facts:',
+    'Before the first shell command this session, present these facts:',
     '',
     '1. The current user request in one sentence',
     '2. What this specific command verifies or produces',
@@ -1185,7 +1388,7 @@ function run(rawInput) {
   const rawToolName = data.tool_name || '';
   const toolInput = data.tool_input || {};
   // Normalize: case-insensitive matching via lookup map
-  const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', bash: 'Bash' };
+  const TOOL_MAP = { edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', bash: 'Bash', powershell: 'PowerShell' };
   const toolName = TOOL_MAP[rawToolName.toLowerCase()] || rawToolName;
   const inSubagent = isSubagentInvocation(data);
 
@@ -1236,13 +1439,19 @@ function run(rawInput) {
     return rawInput; // allow
   }
 
-  if (toolName === 'Bash') {
+  // PowerShell shares this branch: `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` makes it a
+  // second arbitrary-command shell, and a gate that names only `Bash` is a hole
+  // rather than a policy. Both tools carry the command in `tool_input.command`.
+  if (toolName === 'Bash' || toolName === 'PowerShell') {
     const command = toolInput.command || '';
     if (isReadOnlyGitIntrospection(command)) {
       return rawInput;
     }
 
-    if (isDestructiveBash(command)) {
+    // `isDestructiveBash` still runs for PowerShell: `git push --force`,
+    // `git reset --hard`, `DROP TABLE` and `dd if=` are shell-agnostic phrases.
+    // The PowerShell-only detector is additive and never relaxes Bash gating.
+    if (isDestructiveBash(command) || (toolName === 'PowerShell' && isDestructivePowerShell(command))) {
       // Gate destructive commands on first attempt; allow retry after facts presented
       const key = '__destructive__' + crypto.createHash('sha256').update(command).digest('hex').slice(0, 16);
       if (!isChecked(key)) {

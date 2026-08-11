@@ -34,15 +34,23 @@ const SECRET_PATTERNS = [
 // Tool names that represent security-relevant operations
 const SECURITY_RELEVANT_TOOLS = new Set([
   'Bash', // Could execute arbitrary commands
+  'PowerShell', // Same, once CLAUDE_CODE_USE_POWERSHELL_TOOL=1 makes it a live shell
 ]);
 
-// Commands that require governance approval
+// Commands that require governance approval.
+// The git/SQL/dd entries are shell-agnostic and match under either shell; the
+// PowerShell entries cover delete verbs that share no syntax with POSIX `rm`.
 const APPROVAL_COMMANDS = [
   /git\s+push\s+.*--force/,
   /git\s+reset\s+--hard/,
   /rm\s+-rf?\s/,
   /DROP\s+(?:TABLE|DATABASE)/i,
   /DELETE\s+FROM\s+\w+\s*(?:;|$)/i,
+  // PowerShell Remove-Item and its aliases with -Recurse. PowerShell accepts any
+  // unambiguous parameter prefix, so -Recurse, -Rec and -r must all match.
+  /(?:^|[\s;|(])(?:Remove-Item|Remove-ItemProperty|ri|rmdir|rd|del|erase)\b[^;|]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b/i,
+  /(?:^|[\s;|(])Clear-(?:Content|Disk)\b/i,
+  /(?:^|[\s;|(])Format-Volume\b/i,
 ];
 
 // File patterns that indicate policy-sensitive paths
@@ -174,8 +182,8 @@ function analyzeForGovernanceEvents(input, context = {}) {
     });
   }
 
-  // 2. Approval-required commands (Bash only)
-  if (toolName === 'Bash') {
+  // 2. Approval-required commands (any shell tool)
+  if (SECURITY_RELEVANT_TOOLS.has(toolName)) {
     const command = toolInput.command || '';
     const approvalFindings = detectApprovalRequired(command);
     const commandSummary = summarizeCommand(command);
@@ -220,7 +228,13 @@ function analyzeForGovernanceEvents(input, context = {}) {
   // 4. Security-relevant tool usage tracking
   if (SECURITY_RELEVANT_TOOLS.has(toolName) && hookPhase === 'post') {
     const command = toolInput.command || '';
-    const hasElevated = /sudo\s/.test(command) || /chmod\s/.test(command) || /chown\s/.test(command);
+    const hasElevated =
+      /sudo\s/.test(command) ||
+      /chmod\s/.test(command) ||
+      /chown\s/.test(command) ||
+      // PowerShell equivalents: UAC elevation and ACL/ownership changes.
+      /-Verb\s+RunAs/i.test(command) ||
+      /\b(?:Set-Acl|icacls|takeown)\b/i.test(command);
     const commandSummary = summarizeCommand(command);
 
     if (hasElevated) {
