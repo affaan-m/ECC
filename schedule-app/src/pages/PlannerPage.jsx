@@ -41,6 +41,7 @@ import {
   uid,
   eventColor,
   makeContactColor,
+  EVENT_TYPE_KINDS,
 } from '../data/helpers.js';
 import AddressField from '../components/AddressField.jsx';
 import Icon from '../components/Icon.jsx';
@@ -133,7 +134,7 @@ const emptyDraft = (date, start, extra, opts = {}) => {
     repeat: 'none',
     repeatUntil: '',
     repeatDays: [],
-    typeId: '',
+    kind: '',
     color: '',
     reminder,
     ...extra,
@@ -843,7 +844,6 @@ export default function PlannerPage() {
           events={state.events}
           contacts={state.contacts}
           statuses={state.statuses}
-          eventTypes={state.eventTypes || []}
           onAddAt={(start) => openNew(cursor, start)}
           onOpen={openView}
           onMove={moveOccurrence}
@@ -870,7 +870,6 @@ export default function PlannerPage() {
           events={state.events}
           contacts={state.contacts}
           statuses={state.statuses}
-          eventTypes={state.eventTypes || []}
           onOpenDay={openDay}
           onOpen={openView}
           onAdd={(iso) => openNew(iso)}
@@ -892,7 +891,6 @@ export default function PlannerPage() {
           statuses={state.statuses}
           monthStart={monthStart}
           events={state.events}
-          eventTypes={state.eventTypes || []}
           onOpenDay={openDay}
           onOpen={openView}
           cursor={cursor}
@@ -1033,7 +1031,6 @@ export default function PlannerPage() {
         <EventDetailView
           occ={viewing}
           contacts={state.contacts}
-          eventTypes={state.eventTypes || []}
           goals={state.goals || []}
           tasks={state.tasks || []}
           isPro={!!state.settings?.isPro}
@@ -1047,7 +1044,6 @@ export default function PlannerPage() {
         editing={editing}
         events={state.events}
         contacts={state.contacts}
-        eventTypes={state.eventTypes || []}
         goals={state.goals || []}
         tasks={state.tasks || []}
         settings={state.settings}
@@ -1097,7 +1093,6 @@ function DayView({
   events,
   contacts,
   statuses,
-  eventTypes,
   onAddAt,
   onOpen,
   onMove,
@@ -1797,7 +1792,7 @@ function DayView({
             const short = ev.e2 - ev.s < 55;
             const who = contactName(ev.contactId);
             const recurring = ev.repeat && ev.repeat !== 'none';
-            const color = eventColor(ev, eventTypes, contactColor, '');
+            const color = eventColor(ev, contactColor, '');
             const displayStartMin = ev.s;
             return (
               <button
@@ -1905,7 +1900,7 @@ function DayView({
             const short = occ.e2 - occ.s < 55;
             const who = contactName(occ.contactId);
             const recurring = occ.repeat && occ.repeat !== 'none';
-            const color = eventColor(occ, eventTypes, contactColor, '');
+            const color = eventColor(occ, contactColor, '');
             const rubberX = Math.max(-18, Math.min(18, dragDx * 0.2));
             const displayStartMin = clampStart(occ, dragDy, pxPerMin, dayStart, dayEnd);
             return (
@@ -1955,7 +1950,7 @@ function DayView({
               const short = occ.e2 - occ.s < 55;
               const who = contactName(occ.contactId);
               const recurring = occ.repeat && occ.repeat !== 'none';
-              const color = eventColor(occ, eventTypes, contactColor, '');
+              const color = eventColor(occ, contactColor, '');
               const rubberX = Math.max(-18, Math.min(18, groupDrag.dx * 0.2));
               const displayStartMin = clampStart(occ, groupDrag.dy, pxPerMin, dayStart, dayEnd);
               return (
@@ -2026,7 +2021,6 @@ function WeekView({
   events,
   contacts,
   statuses,
-  eventTypes,
   onOpenDay,
   onOpen,
   onAdd,
@@ -2177,7 +2171,7 @@ function WeekView({
                         dragging ? ' agenda-chip--dragging' : ''
                       }${rejectedKey === selKey ? ' agenda-chip--refused' : ''}`}
                       style={{
-                        '--ev': eventColor(ev, eventTypes, contactColor),
+                        '--ev': eventColor(ev, contactColor),
                         ...(dragging ? { transform: `translateY(${drag.y - drag.startY}px)` } : null),
                       }}
                       onPointerDown={onChipDown(ev, selKey)}
@@ -2210,7 +2204,7 @@ function WeekView({
 
 // --- Month grid --------------------------------------------------------------
 
-function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, onSwipe, contacts, statuses, birthdaysEnabled = true }) {
+function MonthView({ monthStart, events, onOpenDay, onOpen, cursor, onSwipe, contacts, statuses, birthdaysEnabled = true }) {
   const weeks = monthGrid(monthStart);
   const month = monthStart.getMonth();
   const year = monthStart.getFullYear();
@@ -2310,7 +2304,7 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                     <span
                       key={i}
                       className="month-dot"
-                      style={{ background: eventColor(ev, eventTypes, contactColor) }}
+                      style={{ background: eventColor(ev, contactColor) }}
                     />
                   ))}
                   {dayEvents.length > 3 && <span className="month-more">+{dayEvents.length - 3}</span>}
@@ -2331,7 +2325,7 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
                 <button
                   key={`${ev.id}:${ev.recDate}`}
                   className={`agenda-chip${ev.done ? ' agenda-chip--done' : ''}`}
-                  style={{ '--ev': eventColor(ev, eventTypes, contactColor) }}
+                  style={{ '--ev': eventColor(ev, contactColor) }}
                   onClick={() => onOpen(ev)}
                 >
                   <span className="chip-time chip-time--wide">
@@ -2354,13 +2348,12 @@ function MonthView({ monthStart, events, eventTypes, onOpenDay, onOpen, cursor, 
 
 const DETAIL_DISMISS_THRESHOLD = 110;
 
-function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClose, onEdit, onToggleDone }) {
+function EventDetailView({ occ, contacts, goals, tasks, isPro, onClose, onEdit, onToggleDone }) {
   const navigate = useNavigate();
   useBackDismiss(true, onClose);
-  const type = eventTypes.find((t) => t.id === occ.typeId);
   const contact = contacts.find((c) => c.id === occ.contactId);
   const recurring = occ.repeat && occ.repeat !== 'none';
-  const color = occ.color || type?.color;
+  const color = eventColor(occ, null, '');
   const linkedGoal = occ.linkKind === 'goal' ? goals.find((g) => g.id === occ.linkId) : null;
   const linkedTask = occ.linkKind === 'task' ? tasks.find((t) => t.id === occ.linkId) : null;
 
@@ -2480,18 +2473,18 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
               </button>
             </div>
           )}
-          {contact && (type?.kind === 'call' || type?.kind === 'text') && contact.phone && (
+          {contact && (occ.kind === 'call' || occ.kind === 'text') && contact.phone && (
             <div className="detail-field">
               <span className="detail-label">Phone</span>
               <a
                 className="detail-value detail-value--link"
-                href={`${type.kind === 'text' ? 'sms' : 'tel'}:${contact.phone}`}
+                href={`${occ.kind === 'text' ? 'sms' : 'tel'}:${contact.phone}`}
               >
                 {contact.phone}
               </a>
             </div>
           )}
-          {contact && type?.kind === 'email' && contact.email && (
+          {contact && occ.kind === 'email' && contact.email && (
             <div className="detail-field">
               <span className="detail-label">Email</span>
               <a className="detail-value detail-value--link" href={`mailto:${contact.email}`}>
@@ -2541,7 +2534,7 @@ function EventDetailView({ occ, contacts, eventTypes, goals, tasks, isPro, onClo
 
 // --- Event editor (full-page sheet) -----------------------------------------
 
-function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings, onSelectLocation }) {
+function EventEditor({ editing, events, contacts, goals, tasks, settings, onClose, onSave, onDelete, onSkipOccurrence, setSettings, onSelectLocation }) {
   const [draft, setDraft] = useState(null);
   const [initialJson, setInitialJson] = useState('');
   const [scheduling, setScheduling] = useState(false);
@@ -2567,7 +2560,7 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
       repeat: editing.repeat || 'none',
       repeatUntil: editing.repeatUntil || '',
       repeatDays: editing.repeatDays || [],
-      typeId: editing.typeId || '',
+      kind: editing.kind || '',
       color: editing.color || '',
       reminder: Number(editing.reminder) || 0,
       link: editing.linkKind && editing.linkId ? `${editing.linkKind}:${editing.linkId}` : '',
@@ -2662,7 +2655,7 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
         locLat: draft.locLat,
         locLng: draft.locLng,
         notes: draft.notes,
-        typeId: draft.typeId,
+        kind: draft.kind,
         color: draft.color,
         reminder: draft.reminder,
         linkKind,
@@ -2684,7 +2677,6 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
           draft={draft}
           setDraft={setDraft}
           events={events}
-          eventTypes={eventTypes}
           settings={settings}
           onDone={() => setScheduling(false)}
         />
@@ -2710,20 +2702,15 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
           />
         </label>
 
-        {eventTypes.length > 0 && (
-          <label className="field">
-            <span>Type</span>
-            <Select
-              value={draft.typeId || ''}
-              onChange={(v) => setDraft({ ...draft, typeId: v })}
-              placeholder="None"
-              options={[
-                { value: '', label: 'None' },
-                ...eventTypes.map((t) => ({ value: t.id, label: t.label, color: t.color })),
-              ]}
-            />
-          </label>
-        )}
+        <label className="field">
+          <span>Type</span>
+          <Select
+            value={draft.kind || ''}
+            onChange={(v) => setDraft({ ...draft, kind: v })}
+            placeholder="None"
+            options={[{ value: '', label: 'None' }, ...EVENT_TYPE_KINDS]}
+          />
+        </label>
 
         <div className="field">
           <span>Block color</span>
@@ -2958,14 +2945,13 @@ function EventEditor({ editing, events, contacts, eventTypes, goals, tasks, sett
 
 const SCHED_PX_PER_HOUR = 64;
 
-function ScheduleCalendarView({ draft, setDraft, events, eventTypes, settings, onDone }) {
+function ScheduleCalendarView({ draft, setDraft, events, settings, onDone }) {
   const bodyRef = useRef(null);
   const dragRef = useRef(null); // { mode, startClientY, startS, startE }
   const dayStart = settings?.timelineStartHour ?? DAY_START;
   const dayEnd = settings?.timelineEndHour ?? DAY_END;
   const pxPerHour = SCHED_PX_PER_HOUR;
   const pxPerMin = pxPerHour / 60;
-  const typeColor = (id) => eventTypes.find((t) => t.id === id)?.color;
 
   const others = useMemo(
     () =>
@@ -3055,7 +3041,7 @@ function ScheduleCalendarView({ draft, setDraft, events, eventTypes, settings, o
                   height: Math.max(24, (ev.e2 - ev.s) * pxPerMin - 3),
                   left: `${(ev.col / ev.cols) * 100}%`,
                   width: `calc(${100 / ev.cols}% - 4px)`,
-                  '--ev': ev.color || typeColor(ev.typeId) || 'var(--accent)',
+                  '--ev': eventColor(ev, null),
                 }}
               >
                 <span className="event-title">{ev.title || 'Untitled'}</span>
@@ -3063,7 +3049,7 @@ function ScheduleCalendarView({ draft, setDraft, events, eventTypes, settings, o
             ))}
             <div
               className="event-block schedule-draft-block"
-              style={{ top, height, left: 0, width: 'calc(100% - 4px)', '--ev': draft.color || typeColor(draft.typeId) || 'var(--accent)' }}
+              style={{ top, height, left: 0, width: 'calc(100% - 4px)', '--ev': eventColor(draft, null) }}
               onPointerDown={onDown('move')}
               onPointerMove={onMove}
               onPointerUp={onUp}

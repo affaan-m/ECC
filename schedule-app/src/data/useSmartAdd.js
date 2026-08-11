@@ -33,7 +33,7 @@ export function useSmartAdd(fallbackDate) {
         repeat: parsed.repeat || 'none',
         repeatUntil: '',
         repeatDays: parsed.repeatDays || [],
-        typeId: '',
+        kind: '',
         color: '',
         reminder: parsed.reminderMinutes || 0,
       });

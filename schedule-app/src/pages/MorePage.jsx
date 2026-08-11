@@ -13,7 +13,7 @@ import {
   requestNotificationPermission,
 } from '../data/notifications.js';
 import { downloadICS, parseICS } from '../data/ics.js';
-import { formatTime, EVENT_TYPE_KINDS } from '../data/helpers.js';
+import { formatTime } from '../data/helpers.js';
 import ReorderToggleList from '../components/ReorderToggleList.jsx';
 import SettingsGroup from '../components/SettingsGroup.jsx';
 import SettingsSection from '../components/SettingsSection.jsx';
@@ -134,7 +134,6 @@ const SETTINGS_INDEX = [
     label: 'Calendar',
     groups: [
       { id: 'g8', title: 'Calendar settings', keywords: 'day start end hour zoom week 24 templates duration reminder default' },
-      { id: 'g15', title: 'Event types', keywords: 'category colour color label tag' },
       { id: 'g3', title: 'Calendar import / export', keywords: 'ics subscribe google apple outlook download' },
     ],
   },
@@ -179,7 +178,6 @@ export default function MorePage() {
   const actions = useActions();
   const navigate = useNavigate();
   const [editingStatus, setEditingStatus] = useState(null);
-  const [editingType, setEditingType] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'reset' | 'clear' | 'clearCache' | 'clearContacts' | null
   const [feedback, setFeedback] = useState(null); // string | null
   const [editingProfile, setEditingProfile] = useState(null);
@@ -260,7 +258,7 @@ export default function MorePage() {
             repeatDays: [],
             doneDates: [],
             skipDates: [],
-            typeId: '',
+            kind: '',
             color: '',
             reminder: 0,
             contactId: '',
@@ -282,15 +280,6 @@ export default function MorePage() {
     const perm = await requestNotificationPermission();
     setPermTick((t) => t + 1);
     actions.setSettings({ notifications: perm === 'granted' });
-  };
-
-  const saveType = () => {
-    const label = editingType.label.trim();
-    if (!label) return;
-    const kind = editingType.kind || 'other';
-    if (editingType.id) actions.updateEventType({ id: editingType.id, label, color: editingType.color, kind });
-    else actions.addEventType({ label, color: editingType.color, kind });
-    setEditingType(null);
   };
 
   const submitFeedback = (mode) => {
@@ -773,35 +762,6 @@ export default function MorePage() {
           />
         </div>
       </SettingsGroup>
-      <SettingsGroup {...grp('g15')}>
-        <div className="section-head">
-          <span className="detail-label">Event types</span>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => setEditingType({ label: '', color: PRESET_COLORS[1], kind: 'other' })}
-          >
-            + Add
-          </button>
-        </div>
-        <p className="muted small">
-          What kind of contact interaction each event represents — a Call or Text event shows the
-          linked contact's phone number, an Email event shows their email.
-        </p>
-        <ul className="status-list">
-          {(state.eventTypes || []).map((t) => (
-            <li key={t.id}>
-              <button className="status-item" onClick={() => setEditingType({ ...t, kind: t.kind || 'other' })}>
-                <span className="swatch" style={{ background: t.color }} />
-                <span>{t.label}</span>
-                <span className="muted count-tag">
-                  {state.events.filter((e) => e.typeId === t.id).length}
-                </span>
-              </button>
-            </li>
-          ))}
-          {(state.eventTypes || []).length === 0 && <li className="muted small">No types yet.</li>}
-        </ul>
-      </SettingsGroup>
       <SettingsGroup {...grp('g3')}>
         <span className="detail-label">Calendar import / export</span>
         <p className="muted small">Move events to or from other calendar apps using the .ics format.</p>
@@ -1140,72 +1100,6 @@ export default function MorePage() {
                     className={`color-dot${editingStatus.color === c ? ' color-dot--on' : ''}`}
                     style={{ background: c }}
                     onClick={() => setEditingStatus({ ...editingStatus, color: c })}
-                    aria-label={`Choose ${c}`}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Event type editor */}
-      <Modal
-        open={!!editingType}
-        title={editingType?.id ? 'Edit event type' : 'New event type'}
-        onClose={() => setEditingType(null)}
-        fullPage
-        footer={
-          <div className="modal-actions">
-            {editingType?.id && (
-              <button
-                className="btn btn-danger-ghost"
-                onClick={() => {
-                  actions.deleteEventType(editingType.id);
-                  setEditingType(null);
-                }}
-              >
-                Delete
-              </button>
-            )}
-            <button className="btn btn-primary" onClick={saveType}>
-              Save
-            </button>
-          </div>
-        }
-      >
-        {editingType && (
-          <div className="form">
-            <label className="field">
-              <span>Label</span>
-              <input
-                autoFocus
-                value={editingType.label}
-                onChange={(e) => setEditingType({ ...editingType, label: e.target.value })}
-                placeholder="e.g. Call, Text, In Person"
-              />
-            </label>
-            <label className="field">
-              <span>Kind</span>
-              <Select
-                value={editingType.kind || 'other'}
-                onChange={(v) => setEditingType({ ...editingType, kind: v })}
-                options={EVENT_TYPE_KINDS}
-              />
-              <span className="muted small">
-                Call/Text events show the linked contact's phone number; Email events show their
-                email address.
-              </span>
-            </label>
-            <div className="field">
-              <span>Color</span>
-              <div className="color-grid">
-                {PRESET_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    className={`color-dot${editingType.color === c ? ' color-dot--on' : ''}`}
-                    style={{ background: c }}
-                    onClick={() => setEditingType({ ...editingType, color: c })}
                     aria-label={`Choose ${c}`}
                   />
                 ))}

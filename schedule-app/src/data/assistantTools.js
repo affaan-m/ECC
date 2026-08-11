@@ -179,7 +179,7 @@ const TOOLS = {
       contactId: contactId || '',
       notes: notes || '',
       repeat: repeat && repeat !== 'none' ? repeat : 'none',
-      typeId: '',
+      kind: '',
       reminder: Number.isFinite(reminderMinutes) ? reminderMinutes : (state.settings?.defaultReminderLead || 0),
     };
     actions.addEvent(event);
@@ -265,13 +265,12 @@ const TOOLS = {
     const day = date || todayISO();
 
     const contactById = byId(state.contacts);
-    const typeById = byId(state.eventTypes);
     const eventStops = (state.events || [])
       .flatMap((e) => expandEventOnDay(e, day))
       .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
       .map((o) => ({
         id: `event:${o.id}:${o.recDate || day}`,
-        ...eventPinIdentity(o, { contact: contactById[o.contactId], eventType: typeById[o.typeId] }),
+        ...eventPinIdentity(o, { contact: contactById[o.contactId], eventKind: o.kind }),
         lat: o.locLat,
         lng: o.locLng,
         start: o.start,

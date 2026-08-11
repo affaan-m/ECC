@@ -43,7 +43,6 @@ export default function RoutePlannerPage() {
   // can't collide with a real pin's.
   const eventStops = useMemo(() => {
     const iso = todayISO();
-    const typeById = Object.fromEntries((state.eventTypes || []).map((t) => [t.id, t]));
     return state.events
       .flatMap((e) => expandEventOnDay(e, iso))
       .filter((o) => typeof o.locLat === 'number' && typeof o.locLng === 'number')
@@ -51,7 +50,7 @@ export default function RoutePlannerPage() {
         id: `event:${o.id}:${o.recDate || iso}`,
         ...eventPinIdentity(o, {
           contact: contactById[o.contactId],
-          eventType: typeById[o.typeId],
+          eventKind: o.kind,
         }),
         lat: o.locLat,
         lng: o.locLng,
@@ -64,7 +63,7 @@ export default function RoutePlannerPage() {
         end: o.end,
       }))
       .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-  }, [state.events, state.eventTypes, contactById]);
+  }, [state.events, contactById]);
 
   const pins = useMemo(() => [...(state.pins || []), ...eventStops], [state.pins, eventStops]);
 

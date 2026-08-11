@@ -346,32 +346,33 @@ export function goalFreezesLeft(goal, isPro) {
   return Math.max(0, quota - used);
 }
 
+// The event's "type" is really just its interaction medium — what kind of
+// contact touchpoint it is. There's no separate, user-manageable list of
+// types to pick from; an event just carries one of these `kind` values
+// directly, which is also how the event detail view knows to surface a
+// linked contact's phone (call/text) or email (email).
+export const EVENT_TYPE_KINDS = [
+  { value: 'call', label: 'Call', color: '#2e9e6b' },
+  { value: 'text', label: 'Text', color: '#1f5f8b' },
+  { value: 'inPerson', label: 'In Person', color: '#8a5cd1' },
+  { value: 'email', label: 'Email', color: '#e08a1e' },
+  { value: 'other', label: 'Other', color: '#6b7280' },
+];
+const KIND_COLORS = Object.fromEntries(EVENT_TYPE_KINDS.map((k) => [k.value, k.color]));
+
 // The colour an event should be drawn in, in priority order: a colour set
-// on the event itself, then its event type's, then the status colour of the
-// person it's with, then the theme accent.
+// on the event itself, then its kind's default colour, then the status
+// colour of the person it's with, then the theme accent.
 //
 // One function because the four views used to each spell this out inline and
 // had already drifted — Month view checked only `event.color`, so an event
-// coloured by its *type* rendered a plain gold dot there while showing its
+// coloured by its *kind* rendered a plain gold dot there while showing its
 // real colour everywhere else.
 // `contactColor` is an optional (id) => color|undefined lookup — pages that
 // have the contact and status lists build it once with makeContactColor().
-// The interaction medium an event type represents. Kept separate from the
-// type's (renameable, freeform) label so "does this event have a call/text/
-// email type" can be answered reliably even after a user renames or
-// recolors their types.
-export const EVENT_TYPE_KINDS = [
-  { value: 'call', label: 'Call' },
-  { value: 'text', label: 'Text' },
-  { value: 'inPerson', label: 'In Person' },
-  { value: 'email', label: 'Email' },
-  { value: 'other', label: 'Other' },
-];
-
-export function eventColor(event, eventTypes, contactColor, fallback = 'var(--accent)') {
+export function eventColor(event, contactColor, fallback = 'var(--accent)') {
   if (event?.color) return event.color;
-  const type = (eventTypes || []).find((t) => t.id === event?.typeId);
-  if (type?.color) return type.color;
+  if (event?.kind && KIND_COLORS[event.kind]) return KIND_COLORS[event.kind];
   if (event?.contactId && contactColor) {
     const c = contactColor(event.contactId);
     if (c) return c;

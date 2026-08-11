@@ -122,23 +122,13 @@ export function makeSeed() {
     },
   ];
 
-  // `kind` marks the interaction medium so the event detail view can
-  // reliably surface a linked contact's phone/email regardless of what the
-  // type gets renamed to (see EVENT_TYPE_KINDS in MorePage.jsx).
-  const eventTypes = [
-    { id: 'et_call', label: 'Call', color: '#2e9e6b', kind: 'call' },
-    { id: 'et_text', label: 'Text', color: '#1f5f8b', kind: 'text' },
-    { id: 'et_in_person', label: 'In Person', color: '#8a5cd1', kind: 'inPerson' },
-    { id: 'et_email', label: 'Email', color: '#e08a1e', kind: 'email' },
-  ];
-
   const baseEvent = {
     repeat: 'none',
     repeatUntil: '',
     done: false,
     doneDates: [],
     skipDates: [],
-    typeId: '',
+    kind: '',
     color: '',
     reminder: 0,
   };
@@ -154,7 +144,7 @@ export function makeSeed() {
       location: 'Riverside trail',
       notes: '',
       repeat: 'daily',
-      typeId: 'et_health',
+      kind: 'inPerson',
       reminder: 15,
     },
     {
@@ -167,7 +157,7 @@ export function makeSeed() {
       contactId: contacts[0].id,
       location: 'Bluebird Cafe',
       notes: 'Plan the hiking trip.',
-      typeId: 'et_social',
+      kind: 'inPerson',
       reminder: 30,
     },
     {
@@ -180,7 +170,7 @@ export function makeSeed() {
       contactId: '',
       location: '',
       notes: 'Project proposal draft.',
-      typeId: 'et_work',
+      kind: 'other',
     },
     {
       ...baseEvent,
@@ -193,7 +183,7 @@ export function makeSeed() {
       location: '',
       notes: '',
       repeat: 'weekly',
-      typeId: 'et_personal',
+      kind: 'call',
     },
     // --- History ----------------------------------------------------------
     // A person's timeline is a record of what has already happened, and with
@@ -211,7 +201,7 @@ export function makeSeed() {
       contactId: contacts[0].id,
       location: 'Toca Madera',
       notes: 'She mentioned wanting to do the coastal trail in spring.',
-      typeId: 'et_social',
+      kind: 'inPerson',
     },
     {
       ...baseEvent,
@@ -223,7 +213,7 @@ export function makeSeed() {
       contactId: contacts[0].id,
       location: '',
       notes: '',
-      typeId: 'et_personal',
+      kind: 'inPerson',
     },
     {
       ...baseEvent,
@@ -235,7 +225,7 @@ export function makeSeed() {
       contactId: contacts[1].id,
       location: 'Riverside trail',
       notes: 'Beat his PB by two minutes.',
-      typeId: 'et_health',
+      kind: 'inPerson',
     },
     {
       ...baseEvent,
@@ -247,7 +237,7 @@ export function makeSeed() {
       contactId: contacts[1].id,
       location: '',
       notes: '',
-      typeId: 'et_social',
+      kind: 'inPerson',
     },
     {
       ...baseEvent,
@@ -259,7 +249,7 @@ export function makeSeed() {
       contactId: contacts[2].id,
       location: '',
       notes: '',
-      typeId: 'et_personal',
+      kind: 'inPerson',
     },
   ];
 
@@ -392,7 +382,6 @@ export function makeSeed() {
     interactions,
     templates: [],
     statuses,
-    eventTypes,
     settings: { theme: 'system', reconnectDays: 30, notifications: false },
   };
 }

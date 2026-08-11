@@ -5,9 +5,9 @@
 // already know. These pick the most specific name and icon the event
 // actually supports, and fall back quietly when there's nothing to go on.
 
-// Matched against the event title first, then the event type, then the
-// contact's tags. Ordered most-specific-first: "coffee shop" should be a
-// coffee, not a shop, and "doctor's office" should be a doctor.
+// Matched against the event title first, then its kind (call/text/...),
+// then the contact's tags. Ordered most-specific-first: "coffee shop" should
+// be a coffee, not a shop, and "doctor's office" should be a doctor.
 const EMOJI_RULES = [
   [/\b(coffee|cafe|café|espresso|latte|brunch)\b/i, '☕'],
   [/\b(lunch|dinner|breakfast|meal|restaurant|eat|food|pizza|bbq|barbecue)\b/i, '🍽️'],
@@ -52,7 +52,7 @@ function mentions(haystack, needle) {
 //   { title: 'Coffee with Alex Rivera', contact: {...} }   →  '☕ Coffee with Alex Rivera'
 //   { title: '', contact: { name: 'Alex Rivera' } }        →  '🧑 Alex Rivera'
 //   { title: 'Dentist' }                                   →  '🩺 Dentist'
-export function eventPinIdentity(event, { contact, eventType } = {}) {
+export function eventPinIdentity(event, { contact, eventKind } = {}) {
   const title = (event?.title || '').trim();
   const name = (contact?.name || '').trim();
   const firstName = name.split(/\s+/)[0] || '';
@@ -68,7 +68,7 @@ export function eventPinIdentity(event, { contact, eventType } = {}) {
 
   const emoji =
     matchEmoji(title) ||
-    matchEmoji(eventType?.label) ||
+    matchEmoji(eventKind) ||
     matchEmoji((contact?.tags || []).join(' ')) ||
     (name ? CONTACT_FALLBACK_EMOJI : '') ||
     DEFAULT_EMOJI;

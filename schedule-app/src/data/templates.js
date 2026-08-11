@@ -9,7 +9,7 @@ import { addDays, expandEventOnDay, startOfWeek, toISODate, uid, weekDays } from
 // (the whole point is that it moves), `repeat` (a template is applied to
 // specific days; a repeating event stamped repeatedly would multiply), and
 // anything occurrence-specific like overrides or done-state.
-const BLOCK_FIELDS = ['title', 'start', 'end', 'location', 'locLat', 'locLng', 'notes', 'typeId', 'color', 'contactId', 'reminder'];
+const BLOCK_FIELDS = ['title', 'start', 'end', 'location', 'locLat', 'locLng', 'notes', 'kind', 'color', 'contactId', 'reminder'];
 
 function toBlock(occ, dayOffset) {
   const block = { dayOffset };
@@ -72,7 +72,7 @@ export function instantiate(template, targetISO) {
       locLat: null,
       locLng: null,
       notes: '',
-      typeId: '',
+      kind: '',
       color: '',
       reminder: 0,
       repeat: 'none',

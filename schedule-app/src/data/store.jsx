@@ -24,7 +24,18 @@ function loadState() {
         progress: g.progress || g.weeklyProgress || {},
         reminder: g.reminder || null,
       })),
-      eventTypes: parsed.eventTypes || seed.eventTypes,
+      // Event types used to be a separate user-managed list (label + color)
+      // that events pointed at by id. That's gone — an event now just
+      // carries its interaction-medium `kind` directly. Migrate any older
+      // record still shaped the old way by resolving its typeId through the
+      // now-discarded eventTypes list one last time.
+      events: (parsed.events || seed.events).map((e) => {
+        if (e.kind !== undefined) return e;
+        const legacyTypes = parsed.eventTypes || [];
+        const kind = e.typeId ? legacyTypes.find((t) => t.id === e.typeId)?.kind || '' : '';
+        return { ...e, kind };
+      }),
+      eventTypes: undefined,
       tasks: (parsed.tasks || []).map((t) => ({
         repeat: 'none',
         completedDates: [],
@@ -189,18 +200,6 @@ function reducer(state, action) {
     case 'DELETE_PIN':
       return { ...state, pins: (state.pins || []).filter((p) => p.id !== action.id) };
 
-    // Event types (user-defined, with a color)
-    case 'ADD_EVENT_TYPE':
-      return { ...state, eventTypes: [...(state.eventTypes || []), action.eventType] };
-    case 'UPDATE_EVENT_TYPE':
-      return { ...state, eventTypes: upsert(state.eventTypes || [], action.eventType) };
-    case 'DELETE_EVENT_TYPE':
-      return {
-        ...state,
-        eventTypes: (state.eventTypes || []).filter((t) => t.id !== action.id),
-        events: state.events.map((e) => (e.typeId === action.id ? { ...e, typeId: '' } : e)),
-      };
-
     // Tasks (checkable, with an optional reminder)
     case 'ADD_TASK':
       return { ...state, tasks: [...(state.tasks || []), action.task] };
@@ -350,7 +349,6 @@ function reducer(state, action) {
         interactions: [],
         templates: [],
         statuses: state.statuses,
-        eventTypes: state.eventTypes,
         settings: state.settings,
       };
 
@@ -404,10 +402,6 @@ export function useActions() {
     addEvent: (data) => dispatch({ type: 'ADD_EVENT', event: { id: uid('e'), done: false, ...data } }),
     updateEvent: (event) => dispatch({ type: 'UPDATE_EVENT', event }),
     deleteEvent: (id) => dispatch({ type: 'DELETE_EVENT', id }),
-
-    addEventType: (data) => dispatch({ type: 'ADD_EVENT_TYPE', eventType: { id: uid('et'), ...data } }),
-    updateEventType: (eventType) => dispatch({ type: 'UPDATE_EVENT_TYPE', eventType }),
-    deleteEventType: (id) => dispatch({ type: 'DELETE_EVENT_TYPE', id }),
 
     addContact: (data) =>
       dispatch({ type: 'ADD_CONTACT', contact: { id: data.id || uid('c'), tags: [], ...data } }),
