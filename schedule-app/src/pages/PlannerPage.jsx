@@ -2671,6 +2671,7 @@ function EventEditor({ editing, events, contacts, goals, tasks, settings, onClos
       dirty={dirty}
       onSave={doSave}
       onDiscard={onClose}
+      bodyClassName={scheduling ? 'editor-sheet-body--flush' : undefined}
     >
       {scheduling ? (
         <ScheduleCalendarView
@@ -3077,9 +3078,11 @@ function ScheduleCalendarView({ draft, setDraft, events, settings, onDone }) {
           </div>
         </div>
       </div>
-      <button className="btn btn-primary full schedule-done-btn" onClick={onDone}>
-        Done
-      </button>
+      <div className="schedule-done-bar">
+        <button className="btn btn-primary full" onClick={onDone}>
+          Done
+        </button>
+      </div>
     </div>
   );
 }

@@ -1725,6 +1725,14 @@ textarea {
      scrolled clear of the on-screen keyboard. */
   padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px));
 }
+/* Content with its own sticky footer (the "Schedule from calendar" Done
+   button) doesn't need — and is actively hurt by — that keyboard-clearance
+   padding: a `position: sticky; bottom: 0` element sticks to this
+   container's padding edge, so the big padding above parks it well short of
+   the sheet's real bottom edge, "floating" with a dead gap beneath it. */
+.editor-sheet-body--flush {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
 .editor-sheet-foot {
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
@@ -2455,14 +2463,19 @@ textarea {
   background: var(--ev, var(--accent));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
-.schedule-done-btn {
+.schedule-done-bar {
   /* The timeline grid above this can run 1000px+ tall (a full day at 64px/hr),
      easily taller than the sheet's visible scroll area. A plain in-flow
      button there sat below the fold after picking a time — nothing wrong
      had happened, but there was no visible way back to the edit form
      without first discovering you had to scroll past the whole day. Sticky
      keeps it reachable the moment a time is set, matching the "Done" tap
-     immediately returning you, rather than requiring a scroll hunt first. */
+     immediately returning you, rather than requiring a scroll hunt first.
+     This is a wrapper around the actual button rather than styling the
+     button directly — its `background` here is an opaque scrim so the
+     timeline grid doesn't show through the gap around a sticky element,
+     which would otherwise also paint over (and hide) the button's own
+     `.btn-primary` accent-colored background. */
   position: sticky;
   bottom: 0;
   margin-top: 14px;

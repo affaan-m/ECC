@@ -19,6 +19,10 @@ export default function EditorSheet({
   onDiscard,
   saveDisabled,
   danger, // { label, onClick } for a delete-style action, shown bottom-left of the header
+  // Extra class(es) for the scrolling body — e.g. to drop its large
+  // keyboard-clearance bottom padding for content that has its own sticky
+  // footer and would otherwise park short of the sheet's real bottom edge.
+  bodyClassName,
   children,
 }) {
   const [dragY, setDragY] = useState(0);
@@ -126,7 +130,7 @@ export default function EditorSheet({
         </div>
       </div>
 
-      <div className="editor-sheet-body">{children}</div>
+      <div className={`editor-sheet-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>{children}</div>
 
       {danger && (
         <div className="editor-sheet-foot">
