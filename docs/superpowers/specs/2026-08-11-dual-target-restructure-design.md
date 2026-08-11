@@ -73,7 +73,7 @@ changes.
 | content | destination | method |
 |---|---|---|
 | `instructions/global.md` + `rules/**` | `~/.codex/AGENTS.md` + `~/.codex/instructions/*.md` | Rules are copied as individual files; `AGENTS.md` is generated as `global.md` body plus an appended **index section** ("when working on Python, read `~/.codex/instructions/python-coding-style.md`", etc.). Concatenating all rules would bloat every session's context; an index keeps AGENTS.md small and loads rules on demand. |
-| `skills/**` | `~/.codex/skills/<name>/` | SKILL.md format is compatible; copy skill folders, stripping Claude-specific frontmatter keys (e.g. `allowed-tools`). Invoked via `$skill-name`. |
+| `skills/**` | `~/.codex/skills/<name>/` | SKILL.md format is compatible; copy skill folders unchanged (superseded during implementation: Codex ignores unknown frontmatter keys, so no stripping is needed). Invoked via `$skill-name`. |
 | `mcp/servers.json` | `[mcp_servers.*]` in `~/.codex/config.toml` | **Never overwrite config.toml wholesale** — it holds user state (project trust levels, plugins, model settings). Create a timestamped backup, then merge only `[mcp_servers.*]` keys using tomlkit via `uv run`. Existing user-defined servers with the same name are left untouched unless `--force`. |
 
 Codex detection stays as today: `CODEX_HOME` set, `~/.codex` exists, or `codex`

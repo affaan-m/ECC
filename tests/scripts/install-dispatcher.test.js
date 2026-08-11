@@ -78,13 +78,14 @@ test('uninstall --target codex dry-run plans removals but not config.toml', () =
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-codex-un-'));
   const uninstallSh = path.join(repoRoot, 'scripts', 'uninstall.sh');
   const env = { ...process.env, HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-h-')), CODEX_HOME: codexHome, PATH: '/usr/bin:/bin' };
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "test"\n');
   const res = spawnSync('bash', [uninstallSh, '-n', '--target', 'codex', 'common'], { env, encoding: 'utf8' });
   assert.strictEqual(res.status, 0, res.stderr);
   assert.ok(res.stdout.includes('AGENTS.md'));
   assert.ok(res.stdout.includes('instructions/coding-style.md'));
   assert.ok(res.stdout.includes('mcp_servers'), 'expected manual-removal INFO for MCP');
-  assert.ok(!res.stdout.includes('RM') || !res.stdout.includes('config.toml'),
-    'config.toml must never be removed');
+  assert.ok(!/RM.*config\.toml/.test(res.stdout), 'config.toml must never be scheduled for removal');
+  assert.strictEqual(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8'), 'model = "test"\n', 'config.toml content must be untouched');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
