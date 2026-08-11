@@ -225,14 +225,19 @@ function renderBar(tokenCount, options = {}) {
   if (secondary) parts.push(secondary);
 
   const info = tokenCount.info || {};
+  const last = info.last_token_usage;
+  if (last?.input_tokens > 0) {
+    const cachePct = Math.round(((last.cached_input_tokens || 0) / last.input_tokens) * 100);
+    parts.push(`${p.dim('cache')} ${cachePct >= 50 ? p.amber(`${cachePct}%`) : p.dim(`${cachePct}%`)}`);
+  }
+  if (options.conversationTitle) {
+    parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(options.conversationTitle))}`);
+  }
   const used = info.last_token_usage?.total_tokens ?? info.total_token_usage?.total_tokens;
   if (used && info.model_context_window) {
     const ctxPct = Math.min(100, Math.round((used / info.model_context_window) * 100));
     const paint = ctxPct >= 90 ? p.crit : ctxPct >= 75 ? p.warn : p.dim;
     parts.push(`${p.dim('ctx')} ${paint(`${ctxPct}%`)}`);
-    if (options.conversationTitle) {
-      parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(options.conversationTitle))}`);
-    }
   }
   const total = info.total_token_usage?.total_tokens;
   if (total) {
@@ -332,6 +337,9 @@ function buildFullLines(tokenCount, codexHome, mode = 'ansi', conversationTitle 
     const cachePct = Math.round(((last.cached_input_tokens || 0) / last.input_tokens) * 100);
     l1parts.push(`${p.dim('cache')} ${cachePct >= 50 ? p.amber(`${cachePct}%`) : p.dim(`${cachePct}%`)}`);
   }
+  if (conversationTitle) {
+    l1parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(conversationTitle))}`);
+  }
   const line1 = l1parts.length > 0
     ? `${p.amber(`${G.bolt}`)} ${l1parts.join(sep)}`
     : p.dim(`${G.bolt} no session data`);
@@ -345,9 +353,6 @@ function buildFullLines(tokenCount, codexHome, mode = 'ansi', conversationTitle 
       ? '1M'
       : `${Math.round(info.model_context_window / 1000)}K`;
     l2parts.push(`${p.dim('ctx')} ${paint(`${buildBar(ctxPct, 10)} ${ctxPct}%`)} ${p.dim(window)}`);
-    if (conversationTitle) {
-      l2parts.push(`${p.dim('chat')} ${p.terracotta(formatConversationTitle(conversationTitle))}`);
-    }
   }
   const total = info.total_token_usage?.total_tokens;
   if (total) {

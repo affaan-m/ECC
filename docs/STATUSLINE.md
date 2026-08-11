@@ -76,8 +76,8 @@ terminal, and none of them need tmux:
 | Terminal.app and other VT100 terminals | the bottom three rows, reserved with DECSTBM margins |
 
 ```text
-⚡ 7d ██░░░░ 25% ↻9h50m │ cache 97%
-✳ gpt-5.6-sol │ ctx ███░░░░░░░ 26% 258K │ chat Add usage titles… │ 96.4M tok
+⚡ 7d ██░░░░ 25% ↻9h50m │ cache 97% │ chat Add usage titles…
+✳ gpt-5.6-sol │ ctx ███░░░░░░░ 26% 258K │ 96.4M tok
 ⬢ ECC 2.2.0 │ plugins ecc │ myproject
 ```
 

@@ -68,7 +68,8 @@ test('renders primary window, context, and token total', () => {
   assert.ok(bar.includes('42%'), 'expected usage percentage');
   assert.ok(bar.includes('50%'), 'expected context percentage');
   assert.ok(bar.includes('1.5M tok'), 'expected token total');
-  assert.ok(bar.includes('chat') && bar.includes('Add conversation titles'), 'expected conversation title next to context');
+  assert.ok(bar.indexOf('cache') < bar.indexOf('chat'), 'expected conversation title after cache');
+  assert.ok(bar.includes('Add conversation titles'), 'expected conversation title');
   assert.ok(bar.includes('↻'), 'expected reset countdown');
 });
 test('plain mode strips all color codes', () => {
@@ -106,8 +107,8 @@ test('renders three Claude-style lines in tmux mode without ANSI', () => {
     }, tmpDir, 'tmux', 'Show the Codex conversation title');
     assert.strictEqual(lines.length, 3);
     assert.ok(lines[0].includes('7d') && lines[0].includes('cache'), 'line 1 usage + cache');
+    assert.ok(lines[0].includes('chat') && lines[0].includes('Show the Codex conversation title'), 'line 1 title');
     assert.ok(lines[1].includes('gpt-5.6') && lines[1].includes('ctx'), 'line 2 model + ctx');
-    assert.ok(lines[1].includes('chat') && lines[1].includes('Show the Codex conversation title'), 'line 2 title');
     assert.ok(lines[2].includes('ECC'), 'line 3 ECC identity');
     assert.ok(!lines.join('').includes('\x1b['), 'no raw ANSI in tmux mode');
   } finally {
