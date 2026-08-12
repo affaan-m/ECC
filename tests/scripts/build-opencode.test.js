@@ -61,12 +61,17 @@ function main() {
           assert.deepStrictEqual(Object.keys(mod).sort(), ["default"])
           assert.strictEqual(typeof mod.default, "function")
 
+          let shellCalls = 0
           const plugin = await mod.default({
             client: { app: { log: () => {} } },
-            $: async () => { throw new Error("$ must not be called during plugin init") },
+            $: async () => {
+              shellCalls += 1
+              throw new Error("$ must not be called during plugin init")
+            },
             directory: process.cwd(),
             worktree: process.cwd(),
           })
+          assert.strictEqual(shellCalls, 0, "$ must not be called during plugin init")
           assert.ok(plugin && typeof plugin === "object", "default export must return a plugin record")
           const expectedHooks = [
             "file.edited",
@@ -83,6 +88,18 @@ function main() {
           ]
           for (const hook of expectedHooks) {
             assert.strictEqual(typeof plugin[hook], "function", "missing hook: " + hook)
+          }
+          assert.deepStrictEqual(
+            Object.keys(plugin.tool).sort(),
+            ["changed-files", "dependency-analyzer"],
+            "plugin.tool must expose exactly the custom tools"
+          )
+          for (const toolName of ["changed-files", "dependency-analyzer"]) {
+            const toolDefinition = plugin.tool[toolName]
+            assert.ok(toolDefinition && typeof toolDefinition === "object", "missing tool: " + toolName)
+            assert.strictEqual(typeof toolDefinition.description, "string", toolName + " must declare a description")
+            assert.ok(toolDefinition.args && typeof toolDefinition.args === "object", toolName + " must declare args")
+            assert.strictEqual(typeof toolDefinition.execute, "function", toolName + " must declare an execute function")
           }
         }
 
