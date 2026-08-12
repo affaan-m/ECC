@@ -1024,6 +1024,86 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
+  if (await asyncTest('treats POST-only Streamable HTTP MCP servers that answer every GET with 404 as healthy', async () => {
+    const tempDir = createTempDir();
+    const configPath = path.join(tempDir, 'claude.json');
+    const statePath = path.join(tempDir, 'mcp-health.json');
+    const serverScript = path.join(tempDir, 'http-post-only-server.js');
+    const portFile = path.join(tempDir, 'server-port.txt');
+
+    fs.writeFileSync(
+      serverScript,
+      [
+        "const fs = require('fs');",
+        "const http = require('http');",
+        "const portFile = process.argv[2];",
+        "const server = http.createServer((req, res) => {",
+        "  if (req.method !== 'POST') {",
+        "    res.writeHead(404, { 'Content-Type': 'application/json' });",
+        "    res.end(JSON.stringify({ error: 'not found' }));",
+        "    return;",
+        "  }",
+        "  let body = '';",
+        "  req.on('data', chunk => { body += chunk; });",
+        "  req.on('end', () => {",
+        "    let parsed = null;",
+        "    try { parsed = JSON.parse(body); } catch { parsed = null; }",
+        "    if (!parsed || parsed.jsonrpc !== '2.0' || parsed.method !== 'initialize') {",
+        "      res.writeHead(400, { 'Content-Type': 'application/json' });",
+        "      res.end(JSON.stringify({ error: 'expected a JSON-RPC initialize body' }));",
+        "      return;",
+        "    }",
+        "    res.writeHead(200, { 'Content-Type': 'application/json' });",
+        "    res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: {} }));",
+        "  });",
+        "});",
+        "server.listen(0, '127.0.0.1', () => {",
+        "  fs.writeFileSync(portFile, String(server.address().port));",
+        "});",
+        "setInterval(() => {}, 1000);"
+      ].join('\n')
+    );
+
+    const serverProcess = spawn(process.execPath, [serverScript, portFile], {
+      stdio: 'ignore'
+    });
+
+    try {
+      const port = waitForFile(portFile).trim();
+      await waitForHttpReady(`http://127.0.0.1:${port}/mcp`);
+
+      writeConfig(configPath, {
+        mcpServers: {
+          postonly: {
+            type: 'http',
+            url: `http://127.0.0.1:${port}/mcp`
+          }
+        }
+      });
+
+      const input = { tool_name: 'mcp__postonly__list_api_endpoints', tool_input: {} };
+      const result = runHook(input, {
+        CLAUDE_HOOK_EVENT_NAME: 'PreToolUse',
+        ECC_MCP_CONFIG_PATH: configPath,
+        ECC_MCP_HEALTH_STATE_PATH: statePath,
+        ECC_MCP_HEALTH_TIMEOUT_MS: '2000'
+      });
+
+      assert.strictEqual(
+        result.code,
+        0,
+        `Expected POST-only MCP server to survive a 404 GET probe: ${hookFailureDetails(result, statePath)}`
+      );
+      assert.strictEqual(result.stdout.trim(), JSON.stringify(input), 'Expected original JSON on stdout');
+
+      const state = readState(statePath);
+      assert.strictEqual(state.servers.postonly.status, 'healthy', 'Expected POST-only MCP server to be marked healthy');
+    } finally {
+      serverProcess.kill('SIGTERM');
+      cleanupTempDir(tempDir);
+    }
+  })) passed++; else failed++;
+
   // Windows-only: child_process.spawn cannot resolve .cmd/.bat shims for
   // bare PATH commands without an extension, and Node 18.20+/20.12+ refuse
   // to spawn .cmd targets without `shell: true` (CVE-2024-27980). The probe

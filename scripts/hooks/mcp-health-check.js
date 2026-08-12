@@ -253,19 +253,28 @@ function detectFailureCode(text) {
   return null;
 }
 
-function requestHttp(urlString, headers, timeoutMs) {
+function requestHttp(urlString, headers, timeoutMs, options = {}) {
   return new Promise(resolve => {
     let settled = false;
     let timedOut = false;
 
     const url = new URL(urlString);
     const client = url.protocol === 'https:' ? https : http;
+    const method = options.method || 'GET';
+    const body = options.body || null;
+    const requestHeaders = { ...headers };
+
+    if (body) {
+      requestHeaders['content-type'] = 'application/json';
+      requestHeaders['content-length'] = Buffer.byteLength(body);
+      requestHeaders.accept = 'application/json, text/event-stream';
+    }
 
     const req = client.request(
       url,
       {
-        method: 'GET',
-        headers,
+        method,
+        headers: requestHeaders,
       },
       res => {
         if (settled) return;
@@ -294,7 +303,23 @@ function requestHttp(urlString, headers, timeoutMs) {
       });
     });
 
-    req.end();
+    req.end(body || undefined);
+  });
+}
+
+// Some Streamable HTTP MCP servers (e.g. api.telnyx.com/v2/mcp) only route POST
+// and answer any GET with 404, so a bare GET proves nothing. Replay the probe as
+// a real JSON-RPC initialize before declaring the server unreachable.
+function mcpInitializeBody() {
+  return JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'ecc-mcp-health-check', version: '1' }
+    }
   });
 }
 
@@ -513,7 +538,19 @@ async function probeServer(serverName, resolvedConfig) {
   const config = resolvedConfig.config;
 
   if (config.type === 'http' || config.url) {
-    const result = await requestHttp(config.url, config.headers || {}, envNumber('ECC_MCP_HEALTH_TIMEOUT_MS', DEFAULT_TIMEOUT_MS));
+    const timeoutMs = envNumber('ECC_MCP_HEALTH_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
+    let result = await requestHttp(config.url, config.headers || {}, timeoutMs);
+
+    if (!result.ok) {
+      const posted = await requestHttp(config.url, config.headers || {}, timeoutMs, {
+        method: 'POST',
+        body: mcpInitializeBody()
+      });
+
+      if (posted.ok) {
+        result = posted;
+      }
+    }
 
     return {
       ok: result.ok,
