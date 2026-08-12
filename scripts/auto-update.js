@@ -316,7 +316,10 @@ function runAutoUpdate(options = {}, dependencies = {}) {
 
 function printHuman(result) {
   if (result.results.length === 0) {
-    console.log('No ECC install-state files found for the current home/project context.');
+    const hasWarnings = Array.isArray(result.warnings) && result.warnings.length > 0;
+    console.log(hasWarnings
+      ? 'No active ECC install-state files found for the current home/project context.'
+      : 'No ECC install-state files found for the current home/project context.');
     for (const warning of Array.isArray(result.warnings) ? result.warnings : []) {
       console.log(`Warning: ${warning}`);
     }

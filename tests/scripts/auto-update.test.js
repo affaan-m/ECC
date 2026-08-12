@@ -489,6 +489,8 @@ function runTests() {
 
       assert.deepStrictEqual(result.results, []);
       assert.strictEqual(result.summary.checkedCount, 0);
+      assert.strictEqual(result.summary.updatedCount, 0);
+      assert.strictEqual(result.summary.errorCount, 0);
       assert.strictEqual(commands.length, 0);
       assert.ok(result.warnings.some(warning => warning.includes(
         'Run the Antigravity installer once to migrate it to .agents'
