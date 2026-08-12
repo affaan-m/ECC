@@ -139,35 +139,68 @@ const ALLOWED_NETWORKS = new Set([
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
   "eip155:8453",                                   // Base
 ]);
-const MAX_AMOUNT = 10_000n;   // atomic units — 6-decimal USDC, so $0.01
+const MAX_AMOUNT = 10_000n;      // atomic units — 6-decimal USDC, so $0.01 per call
+const SESSION_CAP = 50_000n;     // $0.05 across the whole session
 
 // EVM addresses are case-insensitive, so compare them lowercased. Solana
 // addresses are base58 and ARE case-sensitive — never lowercase those, or a
 // different account could slip through.
-const normalizeAsset = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const normalizeAddress = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
 const ALLOWED_ASSETS = new Set(
   [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
-  ].map(normalizeAsset),
+  ].map(normalizeAddress),
+);
+// Who you are willing to pay. Without this, any 402 an agent happens to hit
+// can name its own recipient.
+const ALLOWED_PAY_TO = new Set(
+  ["7pr7NCaQRz5PEhPy7BAeB3Z72TVkiShhjRyVCN5DA6yC"].map(normalizeAddress),
 );
 
 client.registerPolicy((_x402Version, requirements) =>
   requirements.filter(r => {
-    if (!ALLOWED_NETWORKS.has(r.network)) return false;              // wrong chain
-    if (!ALLOWED_ASSETS.has(normalizeAsset(r.asset))) return false;  // wrong token
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;                   // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAddress(r.asset))) return false;     // wrong token
+    if (!ALLOWED_PAY_TO.has(normalizeAddress(r.payTo))) return false;     // wrong recipient
     try {
       const amount = BigInt(r.amount);
-      return amount >= 0n && amount <= MAX_AMOUNT;                   // over budget / negative
+      return amount >= 0n && amount <= MAX_AMOUNT;                        // over budget / negative
     } catch {
-      return false;                                                  // unparseable amount
+      return false;                                                       // unparseable amount
     }
   }),
 );
 
+// The policy sees one challenge at a time, so it cannot enforce a session
+// total or ask a human anything. Keep the payment-enabled client private and
+// route every paid call through this boundary.
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
-const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
+// Supply this from your harness — a real prompt, never a stub that returns true.
+declare function confirmWithUser(prompt: string): Promise<boolean>;
+
+let sessionSpent = 0n;
+let sessionApproved = false;
+
+async function payOnce(url: string, init?: RequestInit): Promise<Response> {
+  // Reserve the worst case the policy allows. Settlement responses do not
+  // carry an amount, so counting MAX_AMOUNT per call is a deliberate
+  // over-estimate — it can stop early, never late.
+  if (sessionSpent + MAX_AMOUNT > SESSION_CAP) {
+    throw new Error("Session budget exhausted — blocked");
+  }
+  if (!sessionApproved) {
+    sessionApproved = await confirmWithUser(
+      `Allow paid requests up to ${SESSION_CAP} atomic units this session?`,
+    );
+    if (!sessionApproved) throw new Error("User declined — no payment attempted");
+  }
+  sessionSpent += MAX_AMOUNT;
+  return fetchWithPayment(url, init);
+}
+
+const res = await payOnce("https://api.example.com/data", { method: "GET" });
 ```
 
 ポリシーを登録すると、予算超過の金額、想定外のトークン、未登録のチェーンはすべてフェイルクローズドになる — 候補がすべて除外されるため、`createPaymentPayload` は署名せずに例外を投げる。デブネット USDC は `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`；開発時のみ `ALLOWED_ASSETS` に追加すること。ポリシーは敵対的にテストする — `5000000` アトミック単位を要求するチャレンジ、別のミントを提示するチャレンジ、登録していないチェーンのチャレンジを与え、いずれも署名が生成されないことを確認する。exact-SVM スキームではファシリテーターがトランザクション手数料支払者となるため、買い手のウォレットは USDC のみを保有すればよい — ガス用の SOL は不要。
@@ -193,20 +226,32 @@ const res = await fetchWithPayment("https://api.example.com/data", { method: "GE
 | Python（FastAPI、Flask） | PyPI の `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
-**Solana のセラー：`payTo` アドレスには先にトークンアカウントが必要。** exact-SVM クライアントは `payTo` から導出した*関連トークンアカウント*（ATA）に送金するが、それを作成はしない。そのアカウントが存在しないと決済はシミュレーション段階で失敗し、402 が `transaction_simulation_failed` を返す — クライアントのバグのように見えるが、実際は受取側アカウントの欠落である。本番投入前に確認すること：
+**Solana のセラー：`payTo` アドレスには先に正規のトークンアカウントが必要。** exact-SVM クライアントは `findAssociatedTokenPda` で `payTo` の*関連トークンアカウント*（ATA）を導出してそこに送金するが、それを作成はしない。その正確なアカウントが存在しないと決済はシミュレーション段階で失敗し、402 が `transaction_simulation_failed` を返す — クライアントのバグのように見えるが、実際は受取側アカウントの欠落である。導出したアドレス自体を確認すること — オーナーのトークンアカウントを走査するのは等価ではない。同じミントの非正規な補助アカウントがあると検査は通るのに、クライアントが対象とする ATA は依然として存在しないからだ：
+
+```typescript
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+
+const [ata] = await findAssociatedTokenPda({
+  mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",   // USDC mainnet
+  owner: payToAddress,
+  tokenProgram: TOKEN_PROGRAM_ADDRESS,                     // TOKEN_2022_PROGRAM_ADDRESS for Token-2022 mints
+});
+```
+
+次にそのアドレスが実在することを確認する — `value: null` なら存在せず、そこへの決済は失敗する：
 
 ```bash
 curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
-       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
-  | jq '.result.value | length'   # 0 なら USDC アカウントなし — 支払い受付前に作成する
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo",
+       "params":["<DERIVED_ATA>",{"encoding":"base64"}]}' \
+  | jq '.result.value != null'
 ```
 
-次のいずれかで作成できる（作成者が少額のレントを負担し、支払者ではない）：
+作成方法（作成者が少額のレントを負担し、支払者ではない）：
 
-- そのトークンを `payTo` に一度でも送金する — 送金側の転送でアカウントが作成される。
+- コード上では `@solana-program/token` の `getCreateAssociatedTokenIdempotentInstruction` をオンボーディングフローに追加する — 冪等版なので再実行しても安全で、決定的に動作する唯一の方法。
 - spl-token CLI で `spl-token create-account <MINT> --owner <PAYTO_ADDRESS>`。
-- コード上では `@solana-program/token` の `getCreateAssociatedTokenIdempotentInstruction` をプロビジョニングフローに追加する — 冪等版なので再実行しても安全。
+- そのトークンを `payTo` に送金する方法も使えるが、送金側が作成インストラクションを含む場合に限る — ウォレットや `spl-token transfer --fund-recipient` は含める。ATA が無い状態への素の `transferChecked` は、決済と同じように失敗する。
 
 これは新規プロビジョニングされたウォレットやカストディアルウォレットへの支払いで最も問題になりやすい。そうしたウォレットは対象アセットの ATA をまだ持っていないことが多い。
 

@@ -140,35 +140,68 @@ const ALLOWED_NETWORKS = new Set([
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
   "eip155:8453",                                   // Base
 ]);
-const MAX_AMOUNT = 10_000n;   // atomic units — 6-decimal USDC, so $0.01
+const MAX_AMOUNT = 10_000n;      // atomic units — 6-decimal USDC, so $0.01 per call
+const SESSION_CAP = 50_000n;     // $0.05 across the whole session
 
 // EVM addresses are case-insensitive, so compare them lowercased. Solana
 // addresses are base58 and ARE case-sensitive — never lowercase those, or a
 // different account could slip through.
-const normalizeAsset = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const normalizeAddress = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
 const ALLOWED_ASSETS = new Set(
   [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
-  ].map(normalizeAsset),
+  ].map(normalizeAddress),
+);
+// Who you are willing to pay. Without this, any 402 an agent happens to hit
+// can name its own recipient.
+const ALLOWED_PAY_TO = new Set(
+  ["7pr7NCaQRz5PEhPy7BAeB3Z72TVkiShhjRyVCN5DA6yC"].map(normalizeAddress),
 );
 
 client.registerPolicy((_x402Version, requirements) =>
   requirements.filter(r => {
-    if (!ALLOWED_NETWORKS.has(r.network)) return false;              // wrong chain
-    if (!ALLOWED_ASSETS.has(normalizeAsset(r.asset))) return false;  // wrong token
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;                   // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAddress(r.asset))) return false;     // wrong token
+    if (!ALLOWED_PAY_TO.has(normalizeAddress(r.payTo))) return false;     // wrong recipient
     try {
       const amount = BigInt(r.amount);
-      return amount >= 0n && amount <= MAX_AMOUNT;                   // over budget / negative
+      return amount >= 0n && amount <= MAX_AMOUNT;                        // over budget / negative
     } catch {
-      return false;                                                  // unparseable amount
+      return false;                                                       // unparseable amount
     }
   }),
 );
 
+// The policy sees one challenge at a time, so it cannot enforce a session
+// total or ask a human anything. Keep the payment-enabled client private and
+// route every paid call through this boundary.
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
-const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
+// Supply this from your harness — a real prompt, never a stub that returns true.
+declare function confirmWithUser(prompt: string): Promise<boolean>;
+
+let sessionSpent = 0n;
+let sessionApproved = false;
+
+async function payOnce(url: string, init?: RequestInit): Promise<Response> {
+  // Reserve the worst case the policy allows. Settlement responses do not
+  // carry an amount, so counting MAX_AMOUNT per call is a deliberate
+  // over-estimate — it can stop early, never late.
+  if (sessionSpent + MAX_AMOUNT > SESSION_CAP) {
+    throw new Error("Session budget exhausted — blocked");
+  }
+  if (!sessionApproved) {
+    sessionApproved = await confirmWithUser(
+      `Allow paid requests up to ${SESSION_CAP} atomic units this session?`,
+    );
+    if (!sessionApproved) throw new Error("User declined — no payment attempted");
+  }
+  sessionSpent += MAX_AMOUNT;
+  return fetchWithPayment(url, init);
+}
+
+const res = await payOnce("https://api.example.com/data", { method: "GET" });
 ```
 
 With the policy registered, an over-budget amount, an unexpected token, or an unregistered chain all fail closed — `createPaymentPayload` throws instead of signing, because every candidate was filtered out. Devnet USDC is `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`; add it to `ALLOWED_ASSETS` only for development. Test the policy adversarially — feed it a challenge demanding `5000000` atomic units, one quoting a different mint, and one on a chain you never registered, and assert that none of them produce a signature. In the exact-SVM scheme the facilitator is the transaction fee payer, so the buyer wallet holds USDC only — no SOL for gas.
@@ -194,20 +227,32 @@ For the hosted option, choose from the [facilitator list](https://docs.x402.org/
 | Python (FastAPI, Flask) | `x402` on PyPI |
 | Go (Gin, Echo, `net/http`) | `github.com/x402-foundation/x402/go/v2` |
 
-**Solana sellers: the `payTo` address needs a token account first.** The exact-SVM client transfers to the *associated token account* (ATA) it derives for `payTo` and does not create it. If that account does not exist, settlement fails at simulation — the 402 comes back with `transaction_simulation_failed`, which reads like a client bug but is a missing recipient account. Check before going live:
+**Solana sellers: the `payTo` address needs its canonical token account first.** The exact-SVM client derives the *associated token account* (ATA) for `payTo` with `findAssociatedTokenPda` and transfers there; it never creates it. If that exact account is missing, settlement fails at simulation and the 402 comes back with `transaction_simulation_failed`, which reads like a client bug rather than a missing recipient account. Check the derived address itself — scanning the owner's token accounts is not equivalent, because a non-canonical auxiliary account for the same mint would pass while the ATA the client targets is still absent:
+
+```typescript
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+
+const [ata] = await findAssociatedTokenPda({
+  mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",   // USDC mainnet
+  owner: payToAddress,
+  tokenProgram: TOKEN_PROGRAM_ADDRESS,                     // TOKEN_2022_PROGRAM_ADDRESS for Token-2022 mints
+});
+```
+
+Then confirm that exact address exists — `value: null` means it does not, and settlement to it will fail:
 
 ```bash
 curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
-       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
-  | jq '.result.value | length'   # 0 means no USDC account — create it before accepting payments
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo",
+       "params":["<DERIVED_ATA>",{"encoding":"base64"}]}' \
+  | jq '.result.value != null'
 ```
 
-Any one of these creates it (whoever creates it pays the small rent, not the payer):
+To provision it (whoever creates it pays the small rent, not the payer):
 
-- Send any amount of that token to `payTo` once — the sender's transfer creates the account.
+- In code, add `getCreateAssociatedTokenIdempotentInstruction` from `@solana-program/token` to your onboarding flow — the idempotent variant is safe to re-run and is the only option that is deterministic.
 - `spl-token create-account <MINT> --owner <PAYTO_ADDRESS>` with the spl-token CLI.
-- In code, add `getCreateAssociatedTokenIdempotentInstruction` from `@solana-program/token` to your provisioning flow — the idempotent variant is safe to re-run.
+- A transfer of that token to `payTo` also works, but only when the sender includes the create instruction — wallets and `spl-token transfer --fund-recipient` do; a bare `transferChecked` to a missing ATA fails the same way settlement does.
 
 This bites hardest when payouts go to freshly provisioned or custodial wallets, which often have no ATA for the asset yet.
 

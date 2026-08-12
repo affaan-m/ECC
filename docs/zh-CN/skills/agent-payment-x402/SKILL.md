@@ -139,35 +139,68 @@ const ALLOWED_NETWORKS = new Set([
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
   "eip155:8453",                                   // Base
 ]);
-const MAX_AMOUNT = 10_000n;   // atomic units — 6-decimal USDC, so $0.01
+const MAX_AMOUNT = 10_000n;      // atomic units — 6-decimal USDC, so $0.01 per call
+const SESSION_CAP = 50_000n;     // $0.05 across the whole session
 
 // EVM addresses are case-insensitive, so compare them lowercased. Solana
 // addresses are base58 and ARE case-sensitive — never lowercase those, or a
 // different account could slip through.
-const normalizeAsset = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const normalizeAddress = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
 const ALLOWED_ASSETS = new Set(
   [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
-  ].map(normalizeAsset),
+  ].map(normalizeAddress),
+);
+// Who you are willing to pay. Without this, any 402 an agent happens to hit
+// can name its own recipient.
+const ALLOWED_PAY_TO = new Set(
+  ["7pr7NCaQRz5PEhPy7BAeB3Z72TVkiShhjRyVCN5DA6yC"].map(normalizeAddress),
 );
 
 client.registerPolicy((_x402Version, requirements) =>
   requirements.filter(r => {
-    if (!ALLOWED_NETWORKS.has(r.network)) return false;              // wrong chain
-    if (!ALLOWED_ASSETS.has(normalizeAsset(r.asset))) return false;  // wrong token
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;                   // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAddress(r.asset))) return false;     // wrong token
+    if (!ALLOWED_PAY_TO.has(normalizeAddress(r.payTo))) return false;     // wrong recipient
     try {
       const amount = BigInt(r.amount);
-      return amount >= 0n && amount <= MAX_AMOUNT;                   // over budget / negative
+      return amount >= 0n && amount <= MAX_AMOUNT;                        // over budget / negative
     } catch {
-      return false;                                                  // unparseable amount
+      return false;                                                       // unparseable amount
     }
   }),
 );
 
+// The policy sees one challenge at a time, so it cannot enforce a session
+// total or ask a human anything. Keep the payment-enabled client private and
+// route every paid call through this boundary.
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
-const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
+// Supply this from your harness — a real prompt, never a stub that returns true.
+declare function confirmWithUser(prompt: string): Promise<boolean>;
+
+let sessionSpent = 0n;
+let sessionApproved = false;
+
+async function payOnce(url: string, init?: RequestInit): Promise<Response> {
+  // Reserve the worst case the policy allows. Settlement responses do not
+  // carry an amount, so counting MAX_AMOUNT per call is a deliberate
+  // over-estimate — it can stop early, never late.
+  if (sessionSpent + MAX_AMOUNT > SESSION_CAP) {
+    throw new Error("Session budget exhausted — blocked");
+  }
+  if (!sessionApproved) {
+    sessionApproved = await confirmWithUser(
+      `Allow paid requests up to ${SESSION_CAP} atomic units this session?`,
+    );
+    if (!sessionApproved) throw new Error("User declined — no payment attempted");
+  }
+  sessionSpent += MAX_AMOUNT;
+  return fetchWithPayment(url, init);
+}
+
+const res = await payOnce("https://api.example.com/data", { method: "GET" });
 ```
 
 注册该策略后，超预算金额、非预期代币或未注册的链都会故障关闭——所有候选项都被过滤掉，`createPaymentPayload` 会抛出异常而不是签名。开发网 USDC 是 `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`；仅在开发时把它加入 `ALLOWED_ASSETS`。对策略做对抗性测试——分别喂入要求 `5000000` 原子单位的挑战、报价另一种铸币地址的挑战，以及你从未注册的链上的挑战，并断言它们都不会产生签名。在 exact-SVM 方案中，结算器是交易费用支付方，因此买方钱包只需持有 USDC——无需 SOL 支付 gas。
@@ -193,20 +226,32 @@ const res = await fetchWithPayment("https://api.example.com/data", { method: "GE
 | Python（FastAPI、Flask） | PyPI 上的 `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
-**Solana 卖方：`payTo` 地址需要先有代币账户。** exact-SVM 客户端会转账到它为 `payTo` 推导出的*关联代币账户*（ATA），但不会创建它。如果该账户不存在，结算会在模拟阶段失败——402 返回 `transaction_simulation_failed`，看起来像客户端 bug，实际是收款方账户缺失。上线前请检查：
+**Solana 卖方：`payTo` 地址需要先有其规范代币账户。** exact-SVM 客户端用 `findAssociatedTokenPda` 为 `payTo` 推导*关联代币账户*（ATA）并转账到那里，但不会创建它。如果那个确切账户不存在，结算会在模拟阶段失败，402 返回 `transaction_simulation_failed`，看起来像客户端 bug，实际是收款方账户缺失。要检查推导出的地址本身——扫描该所有者的代币账户并不等价，因为同一铸币地址下的非规范辅助账户会让检查通过，而客户端真正要用的 ATA 仍然不存在：
+
+```typescript
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+
+const [ata] = await findAssociatedTokenPda({
+  mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",   // USDC mainnet
+  owner: payToAddress,
+  tokenProgram: TOKEN_PROGRAM_ADDRESS,                     // TOKEN_2022_PROGRAM_ADDRESS for Token-2022 mints
+});
+```
+
+然后确认该确切地址存在——`value: null` 表示不存在，向它结算将会失败：
 
 ```bash
 curl -s https://api.mainnet-beta.solana.com -X POST -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner",
-       "params":["<PAYTO_ADDRESS>",{"mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"},{"encoding":"jsonParsed"}]}' \
-  | jq '.result.value | length'   # 0 表示没有 USDC 账户 —— 接受付款前先创建
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo",
+       "params":["<DERIVED_ATA>",{"encoding":"base64"}]}' \
+  | jq '.result.value != null'
 ```
 
-以下任一方式都能创建（由创建者支付少量租金，而非付款方）：
+创建方式（由创建者支付少量租金，而非付款方）：
 
-- 向 `payTo` 转一次该代币的任意数量——发送方的转账会创建该账户。
+- 在代码中，将 `@solana-program/token` 的 `getCreateAssociatedTokenIdempotentInstruction` 加入你的开通流程——幂等版本可安全重复执行，也是唯一确定性的方式。
 - 用 spl-token CLI：`spl-token create-account <MINT> --owner <PAYTO_ADDRESS>`。
-- 在代码中，将 `@solana-program/token` 的 `getCreateAssociatedTokenIdempotentInstruction` 加入你的开通流程——幂等版本可安全重复执行。
+- 向 `payTo` 转账该代币也可以，但仅当发送方包含创建指令时——钱包和 `spl-token transfer --fund-recipient` 会包含；对缺失 ATA 的裸 `transferChecked` 会像结算一样失败。
 
 这个问题在向新开通的钱包或托管钱包付款时最容易出现，这类钱包往往还没有该资产的 ATA。
 
