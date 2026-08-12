@@ -27,7 +27,8 @@ function test(name, fn) {
 }
 
 function runHarnessScript(script, args = []) {
-  const result = spawnSync('/bin/bash', ['-c', script, 'gan-harness-test', ...args], {
+  const bashExecutable = process.platform === 'win32' ? 'bash' : '/bin/bash';
+  const result = spawnSync(bashExecutable, ['-c', script, 'gan-harness-test', ...args], {
     encoding: 'utf8',
   });
   assert.strictEqual(result.status, 0, result.stderr || 'GAN harness script failed');
