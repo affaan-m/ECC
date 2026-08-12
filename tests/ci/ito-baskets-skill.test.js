@@ -86,7 +86,7 @@ test("documents anonymous, keyed, and SDK surfaces with scope and credential sep
   assert.match(skill, /ito\.public_basket_read\.v1/);
   assert.match(skill, /\/api\/markets\/hot/);
   assert.match(skill, /Keyed developer API\*\* at/);
-  assert.ok(skill.includes("/api/v1"), "missing versioned keyed API path");
+  assert.match(skill, /https:\/\/itomarkets\.com\/api\/v1(?!\d)/, "missing versioned keyed API path");
   assert.match(skill, /Authorization: Bearer/);
   assert.match(skill, /baskets:read/);
   assert.match(skill, /markets:read/);
