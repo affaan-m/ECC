@@ -116,4 +116,4 @@ def test_default_selector_includes_minimax(
     monkeypatch.setattr("builtins.input", lambda _: next(answers))
     monkeypatch.chdir(tmp_path)
 
-    assert interactive_select() == ("minimax", "MiniMax-M3")
+    assert interactive_select() == ("minimax", "MiniMax-M2.7")

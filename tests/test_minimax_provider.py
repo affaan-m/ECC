@@ -97,7 +97,7 @@ def _tool() -> ToolDefinition:
     )
 
 
-def test_minimax_provider_exposes_both_target_models(
+def test_minimax_provider_exposes_documented_target_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
@@ -111,10 +111,10 @@ def test_minimax_provider_exposes_both_target_models(
     assert provider.base_url == MINIMAX_BASE_URL
     assert provider.get_default_model() == DEFAULT_MINIMAX_MODEL
     assert provider.validate_config() is False
-    assert provider.supports_vision() is True
-    assert models[DEFAULT_MINIMAX_MODEL].context_window == 1_000_000
+    assert provider.supports_vision() is False
+    assert models[DEFAULT_MINIMAX_MODEL].context_window == 204_800
     assert models[DEFAULT_MINIMAX_MODEL].max_tokens is None
-    assert models[DEFAULT_MINIMAX_MODEL].supports_vision is True
+    assert models[DEFAULT_MINIMAX_MODEL].supports_vision is False
     assert models[MINIMAX_M2_7_MODEL].context_window == 204_800
     assert models[MINIMAX_M2_7_MODEL].max_tokens is None
     assert models[MINIMAX_M2_7_MODEL].supports_vision is False
@@ -123,10 +123,7 @@ def test_minimax_provider_exposes_both_target_models(
 def test_minimax_provider_lists_custom_default_model() -> None:
     provider = MiniMaxProvider(api_key="test", default_model="custom-model")
 
-    assert {model.name for model in provider.list_models()} == {
-        DEFAULT_MINIMAX_MODEL,
-        MINIMAX_M2_7_MODEL,
-    }
+    assert {model.name for model in provider.list_models()} == {DEFAULT_MINIMAX_MODEL}
     assert provider.supports_vision() is False
 
 

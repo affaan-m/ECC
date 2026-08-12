@@ -10,10 +10,6 @@
       "region": "global_en",
       "base_url": "https://api.minimax.io/v1",
       "models": {
-        "MiniMax-M3": {
-          "context_window": 1000000,
-          "supports_vision": true
-        },
         "MiniMax-M2.7": {
           "context_window": 204800,
           "supports_vision": false
@@ -25,10 +21,6 @@
       "region": "cn_zh",
       "base_url": "https://api.minimaxi.com/v1",
       "models": {
-        "MiniMax-M3": {
-          "context_window": 1000000,
-          "supports_vision": true
-        },
         "MiniMax-M2.7": {
           "context_window": 204800,
           "supports_vision": false
@@ -40,10 +32,6 @@
       "region": "global_en",
       "base_url": "https://api.minimax.io/anthropic",
       "models": {
-        "MiniMax-M3": {
-          "context_window": 1000000,
-          "supports_vision": true
-        },
         "MiniMax-M2.7": {
           "context_window": 204800,
           "supports_vision": false
@@ -55,10 +43,6 @@
       "region": "cn_zh",
       "base_url": "https://api.minimaxi.com/anthropic",
       "models": {
-        "MiniMax-M3": {
-          "context_window": 1000000,
-          "supports_vision": true
-        },
         "MiniMax-M2.7": {
           "context_window": 204800,
           "supports_vision": false
