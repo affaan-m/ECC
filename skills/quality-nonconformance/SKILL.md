@@ -9,9 +9,9 @@ description: >
   Use when investigating non-conformances, performing root cause analysis,
   managing CAPAs, interpreting SPC data, or handling supplier quality issues.
 license: Apache-2.0
-version: 1.0.0
 homepage: https://github.com/affaan-m/everything-claude-code
 metadata:
+  version: 1.0.0
   origin: ECC
   author: evos
   clawdbot:
