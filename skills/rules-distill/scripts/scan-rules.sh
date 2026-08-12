@@ -15,26 +15,39 @@ if [[ ! -d "$RULES_DIR" ]]; then
   exit 1
 fi
 
-# Collect all .md files (excluding _archived/)
-# Bash globstar instead of `find | sort`: AppLocker-hardened machines shim
-# find/sort (silent-empty on GNU flags), and glob expansion is already
-# lexicographically sorted with no external processes.
-shopt -s globstar nullglob
+# Collect markdown files recursively without `find`, `sort`, or Bash 4's
+# globstar. A small in-process insertion sort preserves the full-path ordering
+# that the previous external `sort` supplied.
 files=()
-for f in "$RULES_DIR"/**/*.md; do
-  [[ -f "$f" ]] || continue
-  [[ "$f" == */_archived/* ]] && continue
-  files+=("$f")
+collect_rule_files() {
+  local dir="$1"
+  local entry
+  for entry in "$dir"/..?* "$dir"/.[!.]* "$dir"/*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    if [[ -d "$entry" && ! -L "$entry" ]]; then
+      [[ "${entry##*/}" == "_archived" ]] && continue
+      collect_rule_files "$entry"
+    elif [[ -f "$entry" && "$entry" == *.md ]]; then
+      files+=("$entry")
+    fi
+  done
+}
+collect_rule_files "$RULES_DIR"
+for ((sort_index = 1; sort_index < ${#files[@]}; sort_index += 1)); do
+  sort_value="${files[$sort_index]}"
+  sort_cursor=$((sort_index - 1))
+  while ((sort_cursor >= 0)) && [[ "${files[$sort_cursor]}" > "$sort_value" ]]; do
+    files[$((sort_cursor + 1))]="${files[$sort_cursor]}"
+    sort_cursor=$((sort_cursor - 1))
+  done
+  files[$((sort_cursor + 1))]="$sort_value"
 done
-shopt -u globstar nullglob
-
-total=${#files[@]}
 
 tmpdir=$(mktemp -d)
 _rules_cleanup() { rm -rf "$tmpdir"; }
 trap _rules_cleanup EXIT
 
-for i in "${!files[@]}"; do
+for ((i = 0; i < ${#files[@]}; i += 1)); do
   file="${files[$i]}"
   rel_path="${file#"$HOME"/}"
   rel_path="~/$rel_path"
@@ -57,12 +70,16 @@ for i in "${!files[@]}"; do
     > "$tmpdir/$fname"
 done
 
-if [[ ${#files[@]} -eq 0 ]]; then
-  jq -n --arg dir "$RULES_DIR" '{rules_dir:$dir,total:0,rules:[]}'
-else
-  jq -n \
-    --arg dir "$RULES_DIR" \
-    --argjson total "$total" \
-    --argjson rules "$(jq -s '.' "$tmpdir"/*.json)" \
-    '{rules_dir:$dir,total:$total,rules:$rules}'
-fi
+stream_json_files() {
+  local dir="$1"
+  local json_file line
+  for json_file in "$dir"/*.json; do
+    [[ -f "$json_file" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      printf '%s\n' "$line"
+    done < "$json_file"
+  done
+}
+
+stream_json_files "$tmpdir" |
+  jq -s --arg dir "$RULES_DIR" '{rules_dir:$dir,total:length,rules:.}'

@@ -51,6 +51,46 @@ get_mtime() {
   date -u -r "$secs" +%Y-%m-%dT%H:%M:%SZ
 }
 
+# Bash-3.2-compatible recursive discovery. Avoids `find | sort` on
+# AppLocker-hardened Windows and avoids Bash 4's globstar on stock macOS.
+discovered_files=()
+collect_skill_files() {
+  local dir="$1"
+  local entry
+  for entry in "$dir"/..?* "$dir"/.[!.]* "$dir"/*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    if [[ -d "$entry" && ! -L "$entry" ]]; then
+      collect_skill_files "$entry"
+    elif [[ -f "$entry" && "${entry##*/}" == "SKILL.md" ]]; then
+      discovered_files+=("$entry")
+    fi
+  done
+}
+
+sort_discovered_files() {
+  local sort_index sort_cursor sort_value
+  for ((sort_index = 1; sort_index < ${#discovered_files[@]}; sort_index += 1)); do
+    sort_value="${discovered_files[$sort_index]}"
+    sort_cursor=$((sort_index - 1))
+    while ((sort_cursor >= 0)) && [[ "${discovered_files[$sort_cursor]}" > "$sort_value" ]]; do
+      discovered_files[$((sort_cursor + 1))]="${discovered_files[$sort_cursor]}"
+      sort_cursor=$((sort_cursor - 1))
+    done
+    discovered_files[$((sort_cursor + 1))]="$sort_value"
+  done
+}
+
+stream_json_files() {
+  local dir="$1"
+  local json_file line
+  for json_file in "$dir"/*.json; do
+    [[ -f "$json_file" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      printf '%s\n' "$line"
+    done < "$json_file"
+  done
+}
+
 # Scan a directory and produce a JSON array of skill objects
 scan_dir_to_json() {
   local dir="$1"
@@ -61,14 +101,15 @@ scan_dir_to_json() {
   _scan_cleanup() { rm -rf "$_scan_tmpdir"; }
   trap _scan_cleanup RETURN
 
-  # Bash globstar instead of `find | sort`: AppLocker-hardened machines shim
-  # find/sort (silent-empty on GNU flags), and glob expansion is already
-  # lexicographically sorted with no external processes.
+  discovered_files=()
+  collect_skill_files "$dir"
+  sort_discovered_files
+
   local i=0
   local file
-  shopt -s globstar nullglob
-  for file in "$dir"/**/SKILL.md; do
-    [[ -f "$file" ]] || continue
+  local file_index
+  for ((file_index = 0; file_index < ${#discovered_files[@]}; file_index += 1)); do
+    file="${discovered_files[$file_index]}"
     local name desc mtime dp fname
     name=$(extract_field "$file" "name")
     desc=$(extract_field "$file" "description")
@@ -87,13 +128,7 @@ scan_dir_to_json() {
       > "$tmpdir/$fname"
     i=$((i+1))
   done
-  shopt -u globstar nullglob
-
-  if [[ $i -eq 0 ]]; then
-    echo "[]"
-  else
-    jq -s '.' "$tmpdir"/*.json
-  fi
+  stream_json_files "$tmpdir" | jq -s '.'
 }
 
 # --- Main ---
@@ -120,22 +155,18 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" ]]; then
   project_count=$(echo "$project_skills" | jq 'length')
 fi
 
-# Merge global + project skills into one array.
-# --argjson instead of process substitution: native Windows jq cannot open
-# MSYS /proc/<pid>/fd paths, which made this merge fail silently under 2>/dev/null.
-all_skills=$(jq -n --argjson g "$global_skills" --argjson p "$project_skills" '$g + $p')
-
-jq -n \
+# Stream arrays on stdin: this works with native Windows jq and cannot exceed
+# the operating system's command-line argument limit.
+printf '%s\n%s\n' "$global_skills" "$project_skills" | jq -s \
   --arg global_found "$global_found" \
   --argjson global_count "$global_count" \
   --arg project_found "$project_found" \
   --arg project_path "$project_path" \
   --argjson project_count "$project_count" \
-  --argjson skills "$all_skills" \
   '{
     scan_summary: {
       global: { found: ($global_found == "true"), count: $global_count },
       project: { found: ($project_found == "true"), path: $project_path, count: $project_count }
     },
-    skills: $skills
+    skills: (.[0] + .[1])
   }'
