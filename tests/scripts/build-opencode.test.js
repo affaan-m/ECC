@@ -89,6 +89,7 @@ function main() {
           for (const hook of expectedHooks) {
             assert.strictEqual(typeof plugin[hook], "function", "missing hook: " + hook)
           }
+          assert.ok(plugin.tool && typeof plugin.tool === "object", "plugin record must expose a tool object")
           assert.deepStrictEqual(
             Object.keys(plugin.tool).sort(),
             ["changed-files", "dependency-analyzer"],
