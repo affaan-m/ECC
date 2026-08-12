@@ -952,6 +952,23 @@
       "stability": "stable"
     },
     {
+      "id": "config-health",
+      "kind": "skills",
+      "description": "Runtime configuration integrity monitoring for Claude Code (Claude-only hooks: SessionStart/PreToolUse).",
+      "paths": [
+        "skills/config-health",
+        "scripts/config-health.py"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
       "id": "docs-ja-jp",
       "kind": "docs",
       "description": "Japanese (ja-JP) translated reference docs for agents, commands, skills, and rules.",
