@@ -364,6 +364,7 @@ async function runTests() {
     // PowerShell accepts any unambiguous parameter prefix.
     assert.ok(detectApprovalRequired('Remove-Item -Rec C:/tmp/demo').length > 0);
     assert.ok(detectApprovalRequired('rd -Recurse C:/tmp/demo').length > 0);
+    assert.ok(detectApprovalRequired('rm -Recurse C:/tmp/demo').length > 0);
   })) passed += 1; else failed += 1;
 
   if (await test('detectApprovalRequired flags Clear-Content and Format-Volume', async () => {

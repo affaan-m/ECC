@@ -48,7 +48,7 @@ const APPROVAL_COMMANDS = [
   /DELETE\s+FROM\s+\w+\s*(?:;|$)/i,
   // PowerShell Remove-Item and its aliases with -Recurse. PowerShell accepts any
   // unambiguous parameter prefix, so -Recurse, -Rec and -r must all match.
-  /(?:^|[\s;|(])(?:Remove-Item|Remove-ItemProperty|ri|rmdir|rd|del|erase)\b[^;|]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b/i,
+  /(?:^|[\s;|(])(?:Remove-Item|Remove-ItemProperty|ri|rm|rmdir|rd|del|erase)\b[^;|]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b/i,
   /(?:^|[\s;|(])Clear-(?:Content|Disk)\b/i,
   /(?:^|[\s;|(])Format-Volume\b/i,
 ];

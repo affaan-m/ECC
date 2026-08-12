@@ -2541,10 +2541,26 @@ async function runTests() {
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
 
       const preBash = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'Bash');
+      const prePowerShell = hooks.hooks.PreToolUse.filter(entry => entry.matcher === 'PowerShell');
+      const preGovernance = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:governance-capture');
       const postEntries = hooks.hooks.PostToolUse;
 
       assert.strictEqual(preBash.length, 1, 'Should have exactly one PreToolUse Bash dispatcher');
       assert.strictEqual(preBash[0].id, 'pre:bash:dispatcher');
+      assert.strictEqual(prePowerShell.length, 1, 'Should have exactly one dedicated PreToolUse PowerShell GateGuard route');
+      assert.strictEqual(prePowerShell[0].id, 'pre:powershell:gateguard-fact-force');
+      assert.ok(
+        prePowerShell[0].hooks[0].command.includes('pre:powershell:gateguard-fact-force'),
+        'PowerShell route should preserve its independently configurable hook ID'
+      );
+      assert.ok(
+        prePowerShell[0].hooks[0].command.includes('scripts/hooks/gateguard-fact-force.js'),
+        'PowerShell route should invoke GateGuard directly instead of unrelated Bash hooks'
+      );
+      assert.ok(
+        preGovernance.matcher.split('|').includes('PowerShell'),
+        'PreToolUse governance capture should receive PowerShell commands'
+      );
       assert.deepStrictEqual(
         postEntries.map(entry => entry.id),
         ['post:dispatcher:sync', 'post:dispatcher:async'],
@@ -2559,6 +2575,47 @@ async function runTests() {
       assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
       assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
       assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('configured PowerShell route reaches GateGuard without Bash-only hooks', () => {
+      const repoRoot = path.join(__dirname, '..', '..');
+      const hooksPath = path.join(repoRoot, 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+      const route = hooks.hooks.PreToolUse.find(entry => entry.id === 'pre:powershell:gateguard-fact-force');
+      const stateDir = createTestDir();
+
+      try {
+        const result = spawnSync(route.hooks[0].command, {
+          shell: true,
+          cwd: repoRoot,
+          input: JSON.stringify({
+            hook_event_name: 'PreToolUse',
+            tool_name: 'PowerShell',
+            tool_input: { command: 'Remove-Item C:/build/*' },
+            session_id: 'configured-powershell-route'
+          }),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            CLAUDE_PLUGIN_ROOT: repoRoot,
+            ECC_PLUGIN_ROOT: repoRoot,
+            ECC_PROFILE: 'standard',
+            GATEGUARD_STATE_DIR: stateDir
+          },
+          timeout: 10000
+        });
+
+        assert.strictEqual(result.status, 0, result.stderr);
+        const output = JSON.parse(result.stdout);
+        assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
+        assert.match(output.hookSpecificOutput.permissionDecisionReason, /Destructive command detected/);
+      } finally {
+        cleanupTestDir(stateDir);
+      }
     })
   )
     passed++;

@@ -2487,8 +2487,11 @@ function runTests() {
     const result = runBashHook({ tool_name: 'PowerShell', tool_input: { command } });
     assert.strictEqual(result.code, 0, `${label}: exit code should be 0`);
     const output = parseOutput(result.stdout);
-    if (output && output.hookSpecificOutput) {
+    assert.ok(output, `${label}: should produce JSON output`);
+    if (output.hookSpecificOutput) {
       assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', `${label}: should not deny`);
+    } else {
+      assert.strictEqual(output.tool_name, 'PowerShell', `${label}: pass-through should preserve the tool name`);
     }
   }
 
@@ -2534,6 +2537,15 @@ function runTests() {
   if (
     test('denies forced wildcard delete without -Recurse', () => {
       expectPsDeny('Remove-Item -Force C:/build/*', '-Force with wildcard');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies wildcard-only PowerShell deletes', () => {
+      expectPsDeny('Remove-Item C:/build/*', 'wildcard target');
+      expectPsDeny('Remove-Item C:/build/file?.tmp', 'single-character wildcard target');
     })
   )
     passed++;
@@ -2632,6 +2644,19 @@ function runTests() {
   else failed++;
 
   if (
+    test('fails closed when encoded PowerShell nesting exceeds the scan budget', () => {
+      let command = 'Remove-Item -Recurse -Force C:/tmp/demo';
+      for (let depth = 0; depth < 6; depth += 1) {
+        const encoded = Buffer.from(command, 'utf16le').toString('base64');
+        command = `powershell -EncodedCommand ${encoded}`;
+      }
+      expectPsDeny(command, 'deep -EncodedCommand nesting');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('denies cmd.exe recursive removal via cmd /c', () => {
       expectPsDeny('cmd /c rd /s /q C:/tmp/demo', 'cmd /c rd /s /q');
     })
@@ -2671,12 +2696,15 @@ function runTests() {
       writeState({ checked: ['__bash_session__'], last_active: Date.now() });
       const result = runBashHook({ tool_name: 'PowerShell', tool_input: { command: 'Get-Date' } });
       const output = parseOutput(result.stdout);
-      if (output && output.hookSpecificOutput) {
+      assert.ok(output, 'PowerShell should produce pass-through JSON');
+      if (output.hookSpecificOutput) {
         assert.notStrictEqual(
           output.hookSpecificOutput.permissionDecision,
           'deny',
           'PowerShell should not re-trigger the routine gate Bash already satisfied'
         );
+      } else {
+        assert.strictEqual(output.tool_name, 'PowerShell');
       }
     })
   )

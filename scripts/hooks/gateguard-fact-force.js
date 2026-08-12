@@ -41,6 +41,7 @@ const MAX_SESSION_KEYS = 50;
 const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 const EDIT_WRITE_HOOK_ID = 'pre:edit-write:gateguard-fact-force';
 const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
+const POWERSHELL_HOOK_ID = 'pre:powershell:gateguard-fact-force';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
@@ -768,7 +769,9 @@ function isPsParamPrefixOf(token, fullName) {
  * @returns {boolean}
  */
 function isDestructivePowerShell(command, depth = 0) {
-  if (depth > 4) return false;
+  // Deeply wrapped commands are no longer statically analyzable. Treat scan
+  // budget exhaustion as a gate candidate instead of silently allowing it.
+  if (depth > 4) return true;
 
   // PowerShell's backtick escapes a single character. `n / `r are newlines
   // (statement separators); before any other character the backtick is a no-op
@@ -814,7 +817,13 @@ function isDestructivePowerShell(command, depth = 0) {
       // Splatted parameters (`Remove-Item @params`) are opaque to static
       // inspection, so a splatted delete is gated rather than assumed safe.
       if (token.startsWith('@')) return true;
-      if (!token.startsWith('-')) continue;
+      if (!token.startsWith('-')) {
+        // PowerShell expands wildcard targets before deletion. Even without
+        // -Recurse or -Force, one command can therefore remove an unbounded
+        // number of entries.
+        if (token.includes('*') || token.includes('?')) return true;
+        continue;
+      }
       // -Force is gated as well as -Recurse: unlike `rm -f`, PowerShell's
       // `Remove-Item -Force <directory>` removes the tree.
       if (isPsParamPrefixOf(token, 'recurse') || isPsParamPrefixOf(token, 'force')) {
@@ -1475,7 +1484,8 @@ function run(rawInput) {
       if (!markChecked(ROUTINE_BASH_SESSION_KEY)) {
         return allowWithStateWarning();
       }
-      return denyResult(routineBashMsg(), { hookIds: [BASH_HOOK_ID] });
+      const shellHookId = toolName === 'PowerShell' ? POWERSHELL_HOOK_ID : BASH_HOOK_ID;
+      return denyResult(routineBashMsg(), { hookIds: [shellHookId] });
     }
 
     return rawInput; // allow
