@@ -1,6 +1,6 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 68 specialized agents, 287 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 69 specialized agents, 288 skills, 94 commands, and automated hook workflows for software development.
 
 **Version:** 2.2.0
 
@@ -20,6 +20,7 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 | architect | System design and scalability | Architectural decisions |
 | tdd-guide | Test-driven development | New features, bug fixes |
 | code-reviewer | Code quality and maintainability | After writing/modifying code |
+| bengali-reviewer | Bengali text review | Unicode, normalization, grapheme, search, and locale correctness |
 | security-reviewer | Vulnerability detection | Before commits, sensitive code |
 | spec-miner | Brownfield spec extraction | Onboarding brownfield projects to spec-driven development |
 | build-error-resolver | Fix build/type errors | When build fails |
@@ -54,6 +55,7 @@ This is a **production-ready AI coding plugin** providing 68 specialized agents,
 Use agents proactively without user prompt:
 - Complex feature requests → **planner**
 - Code just written/modified → **code-reviewer**
+- Bengali text handling changes → **bengali-reviewer**
 - Bug fix or new feature → **tdd-guide**
 - Architectural decision → **architect**
 - Security-sensitive code → **security-reviewer**
@@ -153,8 +155,8 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 68 specialized subagents
-skills/          — 287 workflow skills and domain knowledge
+agents/          — 69 specialized subagents
+skills/          — 288 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)
