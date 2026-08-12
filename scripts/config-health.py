@@ -273,11 +273,11 @@ def check_mode():
     user_home, project_dir = resolve_dirs()
     findings = run_startup_audit(user_home, project_dir)
     if findings:
-        print('config-health: 🟡 attention')
+        print('config-health: [warn] attention')
         for finding in findings:
             print('  ' + WARN_PREFIX + finding)
     else:
-        print('config-health: 🟢 normal — hook wiring, rules, and guards OK')
+        print('config-health: [ok] normal — hook wiring, rules, and guards OK')
     sys.exit(0)
 
 
