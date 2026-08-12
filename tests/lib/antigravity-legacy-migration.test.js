@@ -192,6 +192,29 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('preserves recorded legacy content when the current ECC source has changed', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-source-drift-'));
+    try {
+      const legacy = seedLegacyState(projectRoot, [{
+        relativePath: 'rules/common-coding-style.md',
+        sourceRelativePath: 'rules/common/coding-style.md',
+        recordedContent: 'historical ECC content\n',
+      }]);
+      const sourcePath = path.join(projectRoot, 'source.md');
+      fs.writeFileSync(sourcePath, 'canonical managed\n', 'utf8');
+
+      const result = applyInstallPlan(createCanonicalPlan(projectRoot, sourcePath));
+
+      assert.ok(fs.existsSync(legacy.operations[0].destinationPath));
+      assert.ok(fs.existsSync(legacy.installStatePath));
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'current ECC source differs from the recorded installed content'
+      )));
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('preserves drifted and unmanaged legacy files and retains legacy state', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-migrate-partial-'));
     try {
@@ -539,6 +562,37 @@ function runTests() {
       fs.rmSync(mismatchedProject, { recursive: true, force: true });
       fs.rmSync(symlinkProject, { recursive: true, force: true });
       fs.rmSync(externalRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('reports corrupt legacy state instead of treating it as absent', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-home-'));
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-corrupt-'));
+    try {
+      const legacyRoot = path.join(projectRoot, '.agent');
+      const legacyStatePath = path.join(legacyRoot, 'ecc-install-state.json');
+      fs.mkdirSync(legacyRoot, { recursive: true });
+      fs.writeFileSync(legacyStatePath, '{not valid json\n', 'utf8');
+
+      const records = discoverInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      }).filter(record => record.exists);
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(records[0].legacy, true);
+      assert.match(records[0].error, /Unable to inspect legacy Antigravity install-state/);
+
+      const sourcePath = path.join(projectRoot, 'source.md');
+      fs.writeFileSync(sourcePath, 'canonical managed\n', 'utf8');
+      const result = applyInstallPlan(createCanonicalPlan(projectRoot, sourcePath));
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'Unable to inspect legacy Antigravity install-state'
+      )));
+      assert.ok(fs.existsSync(legacyStatePath));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(projectRoot, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 

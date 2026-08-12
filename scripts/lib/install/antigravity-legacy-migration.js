@@ -55,12 +55,14 @@ function getLegacyLocationForPlan(plan) {
   return getLegacyAntigravityLocation(path.dirname(path.resolve(plan.targetRoot)));
 }
 
-function readValidLegacyAntigravityState(location) {
-  if (!location || !pathExists(location.installStatePath)) {
-    return null;
+function inspectLegacyAntigravityState(location) {
+  if (!location) {
+    return { status: 'absent', state: null, error: null };
   }
-
   try {
+    if (!pathExists(location.installStatePath)) {
+      return { status: 'absent', state: null, error: null };
+    }
     const rootStat = fs.lstatSync(location.targetRoot);
     const stateStat = fs.lstatSync(location.installStatePath);
     if (
@@ -69,7 +71,7 @@ function readValidLegacyAntigravityState(location) {
       || !stateStat.isFile()
       || stateStat.isSymbolicLink()
     ) {
-      return null;
+      return { status: 'invalid', state: null, error: null };
     }
     const state = readInstallState(location.installStatePath);
     const isAntigravity = state.target.target === ANTIGRAVITY_TARGET
@@ -83,12 +85,21 @@ function readValidLegacyAntigravityState(location) {
         || operation.ownership !== 'managed'
       ))
     ) {
-      return null;
+      return { status: 'invalid', state: null, error: null };
     }
-    return state;
-  } catch (_error) {
-    return null;
+    return { status: 'valid', state, error: null };
+  } catch (error) {
+    return {
+      status: 'unreadable',
+      state: null,
+      error: `Unable to inspect legacy Antigravity install-state at ${location.installStatePath}: ${error.message}`,
+    };
   }
+}
+
+function readValidLegacyAntigravityState(location) {
+  const inspection = inspectLegacyAntigravityState(location);
+  return inspection.status === 'valid' ? inspection.state : null;
 }
 
 function sha256FileNoFollow(filePath) {
@@ -180,22 +191,49 @@ function getVerifiedManagedFile(operation, legacyRoot, sourceRoot) {
   }
 
   const stat = fs.lstatSync(destinationPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || !pathExists(sourcePath)) {
+  if (!stat.isFile() || stat.isSymbolicLink()) {
     return null;
   }
 
   const destination = sha256FileNoFollow(destinationPath);
-  const source = sha256FileNoFollow(sourcePath);
   if (
     !destination
-    || !source
     || destination.digest !== operation.contentSha256.toLowerCase()
-    || destination.digest !== source.digest
   ) {
     return null;
   }
 
+  if (!pathExists(sourcePath)) {
+    return {
+      destinationPath,
+      fileStat: destination.stat,
+      missing: false,
+      retainedReason: 'The current ECC source file is unavailable, so its provenance cannot be revalidated.',
+    };
+  }
+
+  const source = sha256FileNoFollow(sourcePath);
+  if (!source || destination.digest !== source.digest) {
+    return {
+      destinationPath,
+      fileStat: destination.stat,
+      missing: false,
+      retainedReason: 'The current ECC source differs from the recorded installed content, so the legacy file was preserved.',
+    };
+  }
+
   return { destinationPath, fileStat: destination.stat, missing: false };
+}
+
+function cleanupResult(overrides = {}) {
+  return {
+    detected: false,
+    complete: false,
+    removedPaths: [],
+    retainedPaths: [],
+    warnings: [],
+    ...overrides,
+  };
 }
 
 function removeEmptyParents(startPath, legacyRoot) {
@@ -271,7 +309,7 @@ function removeLegacyStateWhenEmpty(location) {
 function cleanupLegacyAntigravityInstall(plan) {
   const location = getLegacyLocationForPlan(plan);
   if (!location || typeof plan.sourceRoot !== 'string' || !pathExists(plan.installStatePath)) {
-    return { detected: false, complete: false, removedPaths: [] };
+    return cleanupResult();
   }
 
   try {
@@ -283,25 +321,38 @@ function cleanupLegacyAntigravityInstall(plan) {
       && samePath(canonicalState.target.root, plan.targetRoot)
       && samePath(canonicalState.target.installStatePath, plan.installStatePath);
     if (!isCanonicalState) {
-      return { detected: false, complete: false, removedPaths: [] };
+      return cleanupResult();
     }
   } catch (_error) {
-    return { detected: false, complete: false, removedPaths: [] };
+    return cleanupResult();
   }
 
-  const legacyState = readValidLegacyAntigravityState(location);
-  if (!legacyState) {
-    return { detected: false, complete: false, removedPaths: [] };
+  const legacyInspection = inspectLegacyAntigravityState(location);
+  if (legacyInspection.status === 'unreadable') {
+    return cleanupResult({
+      detected: true,
+      retainedPaths: [location.targetRoot],
+      warnings: [legacyInspection.error],
+    });
   }
+  if (legacyInspection.status !== 'valid') {
+    return cleanupResult();
+  }
+  const legacyState = legacyInspection.state;
 
   const removedPaths = [];
   const filesToRemove = [];
+  const warnings = [];
   for (const operation of legacyState.operations || []) {
     const verified = getVerifiedManagedFile(operation, location.targetRoot, plan.sourceRoot);
     if (!verified) {
       continue;
     }
     if (verified.missing) {
+      continue;
+    }
+    if (verified.retainedReason) {
+      warnings.push(`${verified.destinationPath}: ${verified.retainedReason}`);
       continue;
     }
     filesToRemove.push({
@@ -351,11 +402,12 @@ function cleanupLegacyAntigravityInstall(plan) {
       retainedPaths = [location.targetRoot];
     }
   }
-  return { detected: true, complete, removedPaths, retainedPaths };
+  return cleanupResult({ detected: true, complete, removedPaths, retainedPaths, warnings });
 }
 
 module.exports = {
   cleanupLegacyAntigravityInstall,
   getLegacyAntigravityLocation,
+  inspectLegacyAntigravityState,
   readValidLegacyAntigravityState,
 };

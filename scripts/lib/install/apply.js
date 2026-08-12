@@ -400,7 +400,8 @@ function applyInstallPlan(plan, dependencies = {}) {
   const antigravityMigration = cleanupLegacyAntigravityInstall(appliedPlan);
   const antigravityMigrationWarnings = antigravityMigration.detected && !antigravityMigration.complete
     ? [
-        'Legacy Antigravity migration is incomplete. ECC preserved modified or unmanaged content under .agent; review and move anything you want to keep, then rerun the Antigravity install.',
+        'Legacy Antigravity migration is incomplete. ECC preserved modified, unverifiable, or unmanaged content under .agent; review and move anything you want to keep, then rerun the Antigravity install.',
+        ...(Array.isArray(antigravityMigration.warnings) ? antigravityMigration.warnings : []),
       ]
     : [];
 

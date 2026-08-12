@@ -448,6 +448,58 @@ function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (test('runAutoUpdate explains a legacy-only Antigravity install', () => {
+    const homeDir = createTempDir('auto-update-home-');
+    const projectRoot = createTempDir('auto-update-project-');
+    const repoRoot = createTempDir('auto-update-repo-');
+
+    try {
+      ensureFakeRepo(repoRoot);
+      const legacy = {
+        ...makeRecord({
+          repoRoot,
+          homeDir,
+          projectRoot,
+          adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+          request: {
+            profile: null,
+            modules: [],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: ['typescript'],
+            legacyMode: true,
+          },
+          resolution: { selectedModules: ['legacy-antigravity-install'], skippedModules: [] },
+          operations: [],
+        }),
+        installStatePath: path.join(projectRoot, '.agent', 'ecc-install-state.json'),
+        legacy: true,
+      };
+      const commands = [];
+
+      const result = runAutoUpdate(
+        { homeDir, projectRoot, repoRoot, dryRun: true },
+        {
+          discoverInstalledStates: () => [legacy],
+          runExternalCommand(command, args) {
+            commands.push({ command, args });
+          },
+        }
+      );
+
+      assert.deepStrictEqual(result.results, []);
+      assert.strictEqual(result.summary.checkedCount, 0);
+      assert.strictEqual(commands.length, 0);
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'Run the Antigravity installer once to migrate it to .agents'
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(repoRoot);
+    }
+  })) passed += 1; else failed += 1;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

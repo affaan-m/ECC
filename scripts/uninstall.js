@@ -70,7 +70,8 @@ function printHuman(result) {
       }
     }
 
-    const paths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
+    const candidatePaths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
+    const paths = Array.isArray(candidatePaths) ? candidatePaths : [];
     console.log(`  ${result.dryRun ? 'Planned removals' : 'Removed paths'}: ${paths.length}`);
   }
 

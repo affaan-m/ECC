@@ -13,7 +13,7 @@ const {
 } = require('./install/claude-skill-migration');
 const {
   getLegacyAntigravityLocation,
-  readValidLegacyAntigravityState,
+  inspectLegacyAntigravityState,
 } = require('./install/antigravity-legacy-migration');
 const { adaptAntigravityAgent } = require('./install/antigravity-agent');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
@@ -1214,15 +1214,35 @@ function discoverInstalledStates(options = {}) {
     }
 
     const legacyLocation = getLegacyAntigravityLocation(context.projectRoot);
-    const legacyState = readValidLegacyAntigravityState(legacyLocation);
+    const legacyInspection = inspectLegacyAntigravityState(legacyLocation);
     if (
       path.resolve(legacyLocation.installStatePath) === path.resolve(canonicalRecord.installStatePath)
-      || !legacyState
+      || legacyInspection.status === 'absent'
+      || legacyInspection.status === 'invalid'
     ) {
       return [canonicalRecord];
     }
 
-    return [canonicalRecord, buildDiscoveryRecord(adapter, context, legacyLocation, legacyState)];
+    if (legacyInspection.status === 'unreadable') {
+      return [canonicalRecord, {
+        adapter: {
+          id: adapter.id,
+          target: adapter.target,
+          kind: adapter.kind,
+        },
+        targetRoot: legacyLocation.targetRoot,
+        installStatePath: legacyLocation.installStatePath,
+        exists: true,
+        state: null,
+        error: legacyInspection.error,
+        legacy: true,
+      }];
+    }
+
+    return [
+      canonicalRecord,
+      buildDiscoveryRecord(adapter, context, legacyLocation, legacyInspection.state),
+    ];
   });
 }
 
