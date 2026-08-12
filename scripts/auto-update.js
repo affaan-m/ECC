@@ -183,7 +183,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
     homeDir,
     projectRoot,
     targets: options.targets
-  }).filter(record => record.exists);
+  }).filter(record => record.exists && !record.legacy);
 
   const results = [];
   if (records.length === 0) {

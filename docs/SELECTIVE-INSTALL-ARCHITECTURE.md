@@ -593,7 +593,7 @@ Suggested first adapters:
 2. `cursor-project`
    writes into `./.cursor/...`
 3. `antigravity-project`
-   writes into `./.agent/...`
+   writes into `./.agents/...`
 4. `codex-home`
    later
 5. `opencode-home`
@@ -668,7 +668,7 @@ Suggested path conventions:
 - Cursor target:
   `./.cursor/ecc-install-state.json`
 - Antigravity target:
-  `./.agent/ecc-install-state.json`
+  `./.agents/ecc-install-state.json`
 - future Codex target:
   `~/.codex/ecc-install-state.json`
 

@@ -16,10 +16,22 @@ const {
   prepareClaudeSkillMigration,
   removeLegacyClaudeSkillFiles,
 } = require('./claude-skill-migration');
+const { cleanupLegacyAntigravityInstall } = require('./antigravity-legacy-migration');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
+const { adaptAntigravityAgent } = require('./antigravity-agent');
 
 function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
+
+function transformInstallContent(operation, content) {
+  if (!operation.contentTransform) {
+    return content;
+  }
+  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
+    return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }
 
 // Map every copy-file operation to { sourceRel, destRel } so relative links in
@@ -348,7 +360,7 @@ function applyInstallPlan(plan, dependencies = {}) {
       && isMarkdownPath(operation.destinationPath)
     ) {
       const rewritten = rewriteRelativeLinks(
-        fs.readFileSync(operation.sourcePath, 'utf8'),
+        transformInstallContent(operation, fs.readFileSync(operation.sourcePath, 'utf8')),
         { sourceRel: operation.sourceRelativePath, index: linkIndex }
       );
       fs.writeFileSync(operation.destinationPath, rewritten, 'utf8');
@@ -385,6 +397,12 @@ function applyInstallPlan(plan, dependencies = {}) {
     beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
   }
   persistInstallState(plan.installStatePath, finalState);
+  const antigravityMigration = cleanupLegacyAntigravityInstall(appliedPlan);
+  const antigravityMigrationWarnings = antigravityMigration.detected && !antigravityMigration.complete
+    ? [
+        'Legacy Antigravity migration is incomplete. ECC preserved modified or unmanaged content under .agent; review and move anything you want to keep, then rerun the Antigravity install.',
+      ]
+    : [];
 
   return {
     ...plan,
@@ -395,6 +413,7 @@ function applyInstallPlan(plan, dependencies = {}) {
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
+      ...antigravityMigrationWarnings,
     ],
     applied: true,
   };

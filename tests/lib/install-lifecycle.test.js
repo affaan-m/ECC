@@ -14,6 +14,7 @@ const {
   repairInstalledStates,
   uninstallInstalledStates,
 } = require('../../scripts/lib/install-lifecycle');
+const { applyInstallPlan } = require('../../scripts/lib/install/apply');
 const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
@@ -1454,6 +1455,89 @@ function runTests() {
       assert.strictEqual(report.results.length, 1);
       assert.strictEqual(report.results[0].status, 'warning');
       assert.ok(report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor reproduces install-time link rewrites for managed copy files', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.agents');
+      const statePath = path.join(targetRoot, 'ecc-install-state.json');
+      const operations = ['code-review.md', 'testing.md'].map(fileName => ({
+        kind: 'copy-file',
+        moduleId: 'rules-core',
+        sourcePath: path.join(REPO_ROOT, 'rules', 'common', fileName),
+        sourceRelativePath: path.join('rules', 'common', fileName),
+        destinationPath: path.join(targetRoot, 'rules', `common-${fileName}`),
+        strategy: 'flatten-copy',
+        ownership: 'managed',
+        scaffoldOnly: false,
+      }));
+      const state = createInstallState({
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        targetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: [],
+          legacyLanguages: ['typescript'],
+          legacyMode: true,
+        },
+        resolution: {
+          selectedModules: ['rules-core'],
+          skippedModules: [],
+        },
+        operations,
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+      applyInstallPlan({
+        mode: 'legacy',
+        target: 'antigravity',
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: statePath,
+        operations,
+        warnings: [],
+        statePreview: state,
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      fs.writeFileSync(operations[0].destinationPath, 'customer edit\n');
+      const driftedReport = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.ok(driftedReport.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.strictEqual(repair.results[0].status, 'repaired');
+      assert.ok(
+        fs.readFileSync(operations[0].destinationPath, 'utf8').includes('(common-testing.md)')
+      );
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

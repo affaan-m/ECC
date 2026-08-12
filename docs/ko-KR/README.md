@@ -586,7 +586,7 @@ cp -r everything-claude-code/rules/common ~/.claude/rules/common
 - **Cursor**: `.cursor/`에 변환된 설정 제공
 - **OpenCode**: `.opencode/`에 전체 플러그인 지원
 - **Codex**: macOS 앱과 CLI 모두 퍼스트클래스 지원
-- **Antigravity**: `.agent/`에 워크플로우, 스킬, 평탄화된 룰 통합
+- **Antigravity**: `.agents/`에 워크플로우, 스킬, 평탄화된 룰 통합
 - **Claude Code**: 네이티브 — 이것이 주 타겟입니다
 </details>
 

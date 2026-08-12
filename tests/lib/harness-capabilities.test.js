@@ -88,7 +88,7 @@ function runTests() {
   if (test('keeps every advanced target attached to its registered root and scope', () => {
     const expected = {
       cursor: ['project', './.cursor'],
-      antigravity: ['project', './.agent'],
+      antigravity: ['project', './.agents'],
       gemini: ['project', './.gemini'],
       opencode: ['home', '~/.opencode'],
       codebuddy: ['project', './.codebuddy'],
@@ -103,6 +103,7 @@ function runTests() {
       const harness = getHarnessCapability(id);
       assert.strictEqual(harness.guidedReady, false, id);
       assert.strictEqual(harness.availability, 'advanced', id);
+      assert.strictEqual(harness.destination, root, id);
       assert.deepStrictEqual(harness.scopes, [
         { id: scopeId, targetId: id, root },
       ], id);

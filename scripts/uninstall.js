@@ -60,11 +60,21 @@ function printHuman(result) {
       continue;
     }
 
+    if (entry.warning) {
+      console.log(`  Warning: ${entry.warning}`);
+    }
+    if (Array.isArray(entry.retainedPaths) && entry.retainedPaths.length > 0) {
+      console.log(`  Retained paths: ${entry.retainedPaths.length}`);
+      for (const retainedPath of entry.retainedPaths) {
+        console.log(`    - ${retainedPath}`);
+      }
+    }
+
     const paths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
     console.log(`  ${result.dryRun ? 'Planned removals' : 'Removed paths'}: ${paths.length}`);
   }
 
-  console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, errors=${result.summary.errorCount}`);
+  console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, partial=${result.summary.partialCount}, errors=${result.summary.errorCount}`);
 
   if (!result.dryRun) {
     console.log(`\n${exitFeedbackLines().join('\n')}`);
@@ -84,7 +94,7 @@ function main() {
       targets: options.targets,
       dryRun: options.dryRun,
     });
-    const hasErrors = result.summary.errorCount > 0;
+    const hasErrors = result.summary.errorCount > 0 || result.summary.partialCount > 0;
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));

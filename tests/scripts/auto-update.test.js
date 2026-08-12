@@ -388,6 +388,66 @@ function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (test('runAutoUpdate excludes residual legacy Antigravity records', () => {
+    const homeDir = createTempDir('auto-update-home-');
+    const projectRoot = createTempDir('auto-update-project-');
+    const repoRoot = createTempDir('auto-update-repo-');
+
+    try {
+      ensureFakeRepo(repoRoot);
+      const canonical = makeRecord({
+        repoRoot,
+        homeDir,
+        projectRoot,
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        request: {
+          profile: null,
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: ['typescript'],
+          legacyMode: true,
+        },
+        resolution: { selectedModules: ['legacy-antigravity-install'], skippedModules: [] },
+        operations: [],
+      });
+      const legacy = {
+        ...canonical,
+        installStatePath: path.join(projectRoot, '.agent', 'ecc-install-state.json'),
+        legacy: true,
+      };
+      const commands = [];
+
+      const result = runAutoUpdate(
+        {
+          homeDir,
+          projectRoot,
+          repoRoot,
+          dryRun: true,
+        },
+        {
+          discoverInstalledStates: () => [canonical, legacy],
+          runExternalCommand(command, args) {
+            commands.push({ command, args });
+            return {
+              stdout: JSON.stringify({ dryRun: true, plan: {} }),
+              stderr: '',
+            };
+          },
+        }
+      );
+
+      assert.strictEqual(result.summary.checkedCount, 1);
+      assert.strictEqual(result.summary.updatedCount, 1);
+      assert.strictEqual(commands.length, 1);
+      assert.strictEqual(commands[0].command, process.execPath);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(repoRoot);
+    }
+  })) passed += 1; else failed += 1;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

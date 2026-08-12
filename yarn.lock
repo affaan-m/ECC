@@ -586,6 +586,7 @@ __metadata:
     c8: "npm:11.0.0"
     eslint: "npm:10.6.0"
     globals: "npm:17.4.0"
+    js-yaml: "npm:4.3.0"
     markdownlint-cli: "npm:0.48.0"
     sql.js: "npm:1.14.1"
     typescript: "npm:6.0.3"
