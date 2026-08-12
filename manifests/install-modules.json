@@ -575,12 +575,9 @@
     {
       "id": "prediction-market-skills",
       "kind": "skills",
-      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
+      "description": "Public, non-advisory prediction-market workflows and the consolidated read-only Ito baskets data skill with gated Ito API access.",
       "paths": [
-        "skills/ito-basket-compare",
-        "skills/ito-data-atlas-agent",
-        "skills/ito-market-intelligence",
-        "skills/ito-trade-planner",
+        "skills/ito-baskets",
         "skills/prediction-market-oracle-research",
         "skills/prediction-market-risk-review"
       ],
