@@ -110,18 +110,24 @@ async def test_react_agent_preserves_request_and_response_metadata() -> None:
     )
     provider = MetadataProvider()
     agent = ReActAgent(provider, ToolExecutor(registry), max_iterations=2)
+    initial_message = Message(role=Role.USER, content="Search.")
+    request_metadata = {"thinking": {"type": "adaptive"}}
 
     output = await agent.run(
         LLMInput(
-            messages=[Message(role=Role.USER, content="Search.")],
+            messages=[initial_message],
             tools=[ToolDefinition(name="search", description="Search", parameters={})],
-            metadata={"thinking": {"type": "adaptive"}},
+            metadata=request_metadata,
         )
     )
 
     assert output.content == "done"
+    assert provider.inputs[0].messages == [initial_message]
+    assert provider.inputs[0].messages is not provider.inputs[1].messages
     assert provider.inputs[0].metadata == {"thinking": {"type": "adaptive"}}
     assert provider.inputs[1].metadata == {"thinking": {"type": "adaptive"}}
+    assert provider.inputs[0].metadata is not provider.inputs[1].metadata
+    assert provider.inputs[0].metadata["thinking"] is not request_metadata["thinking"]
     assert provider.inputs[1].messages[1].metadata == {
         "anthropic_content": [{"type": "thinking"}]
     }

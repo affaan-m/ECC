@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -25,6 +26,8 @@ from llm.providers.minimax import (
 )
 
 pytestmark = pytest.mark.unit
+
+CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "minimax_contract.json"
 
 
 class _OpenAICompletions:
@@ -123,9 +126,21 @@ def test_minimax_provider_lists_custom_default_model() -> None:
     assert {model.name for model in provider.list_models()} == {
         DEFAULT_MINIMAX_MODEL,
         MINIMAX_M2_7_MODEL,
-        "custom-model",
     }
     assert provider.supports_vision() is False
+
+
+def test_minimax_provider_matches_recorded_official_contract() -> None:
+    contract = json.loads(CONTRACT_FIXTURE.read_text())
+
+    for endpoint in contract["endpoints"]:
+        provider = MiniMaxProvider(api_key="test", base_url=endpoint["base_url"])
+        models = {model.name: model for model in provider.list_models()}
+
+        assert set(models) == set(endpoint["models"])
+        for model_name, expected in endpoint["models"].items():
+            assert models[model_name].context_window == expected["context_window"]
+            assert models[model_name].supports_vision is expected["supports_vision"]
 
 
 def test_minimax_provider_uses_openai_chat_completions() -> None:

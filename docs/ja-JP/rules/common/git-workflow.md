@@ -10,7 +10,7 @@
 
 タイプ: feat, fix, refactor, docs, test, chore, perf, ci
 
-注記: コミットの共同作成者の属性を無効にするには、`~/.claude/settings.json` に `"includeCoAuthoredBy": false` を設定します。Claude Code は既定で `Co-Authored-By` を付与し、ECC はこの設定を同梱しません。
+注記: ECC が管理するインストールは `~/.claude/settings.json` に `"includeCoAuthoredBy": false` を設定するため、コミットには既定で `Co-Authored-By` が付きません。Claude の属性を残す場合は `"includeCoAuthoredBy": true` または `attribution` を設定してください。ECC は明示的な設定を上書きしません。
 
 ## Pull Request ワークフロー
 

@@ -212,14 +212,6 @@ class MiniMaxProvider(LLMProvider):
                 context_window=204_800,
             ),
         ]
-        if self.default_model not in {model.name for model in self._models}:
-            self._models.append(
-                ModelInfo(
-                    name=self.default_model,
-                    provider=self.provider_type,
-                    supports_tools=True,
-                )
-            )
 
     def generate(self, llm_input: LLMInput) -> LLMOutput:
         try:

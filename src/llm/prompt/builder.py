@@ -33,15 +33,22 @@ class PromptBuilder:
             raise ValueError("Pass either config or PromptBuilder keyword options, not both")
 
         if config is None:
+            defaults = PromptConfig()
             config = PromptConfig(
-                system_template=system_template,
-                user_template=user_template,
+                system_template=(
+                    system_template if system_template is not None else defaults.system_template
+                ),
+                user_template=(
+                    user_template if user_template is not None else defaults.user_template
+                ),
                 include_tools_in_system=(
                     include_tools_in_system
                     if include_tools_in_system is not None
-                    else True
+                    else defaults.include_tools_in_system
                 ),
-                tool_format=tool_format if tool_format is not None else "native",
+                tool_format=(
+                    tool_format if tool_format is not None else defaults.tool_format
+                ),
             )
 
         self.config = config

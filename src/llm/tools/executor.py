@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any, Protocol
 
 from llm.core.types import (
@@ -89,15 +90,15 @@ class ReActAgent:
 
         for _ in range(self.max_iterations):
             input_copy = LLMInput(
-                messages=messages,
+                messages=deepcopy(messages),
                 model=input.model,
                 temperature=input.temperature,
                 max_tokens=input.max_tokens,
-                tools=tools,
-                metadata=input.metadata,
+                tools=deepcopy(tools),
+                metadata=deepcopy(input.metadata),
             )
 
-            output = self.provider.generate(input_copy)
+            output: LLMOutput = self.provider.generate(input_copy)
             tool_calls = output.tool_calls
 
             if not tool_calls:
@@ -107,8 +108,8 @@ class ReActAgent:
                 Message(
                     role=Role.ASSISTANT,
                     content=output.content or "",
-                    tool_calls=tool_calls,
-                    metadata=output.metadata,
+                    tool_calls=deepcopy(tool_calls),
+                    metadata=deepcopy(output.metadata),
                 )
             )
 
