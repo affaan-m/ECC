@@ -85,7 +85,7 @@ test("documents anonymous, keyed, and SDK surfaces with scope and credential sep
   assert.match(skill, /\/api\/baskets\/bootstrap\?stream=1/);
   assert.match(skill, /ito\.public_basket_read\.v1/);
   assert.match(skill, /\/api\/markets\/hot/);
-  assert.match(skill, /https:\/\/itomarkets\.com\/api\/v1/);
+  assert.ok(skill.includes("https://itomarkets.com/api/v1"), "missing keyed API origin");
   assert.match(skill, /Authorization: Bearer/);
   assert.match(skill, /baskets:read/);
   assert.match(skill, /markets:read/);
