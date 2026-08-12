@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
-
-import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-
 from scripts.runner import _parse_stream_json, _setup_sandbox, run_scenario
 
 
@@ -156,40 +154,115 @@ class TestParseStreamJsonRedactsHomePath:
     rather than persisting the raw path.
     """
 
-    def _stream_json_for(self, tool_input: dict, output_text: str) -> str:
+    def _stream_json_for(self, tool_input: dict, output_content: object) -> str:
         return (
             '{"type":"assistant","message":{"content":[{"type":"tool_use",'
             '"id":"tu1","name":"Read","input":' + json.dumps(tool_input) + "}]}}\n"
             '{"type":"user","session_id":"s1","message":{"content":[{"type":'
-            '"tool_result","tool_use_id":"tu1","content":' + json.dumps(output_text) + "}]}}\n"
+            '"tool_result","tool_use_id":"tu1","content":' + json.dumps(output_content) + "}]}}\n"
         )
 
-    def test_input_home_path_redacted(self):
-        home = str(Path.home())
+    @staticmethod
+    def _set_home(monkeypatch: pytest.MonkeyPatch, home: str) -> None:
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path(home)))
+
+    def test_posix_input_string_leaves_and_embedded_paths_redacted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = "/home/alice"
+        self._set_home(monkeypatch, home)
         stdout = self._stream_json_for(
-            {"file_path": f"{home}/notes/secrets.env"}, "irrelevant output"
+            {
+                "command": f"cat '{home}/notes/secrets.env' && echo home={home}, done",
+                "nested": {"paths": [f"{home}/one", f"{home}/two"]},
+            },
+            "irrelevant output",
         )
         events = _parse_stream_json(stdout)
+
         assert len(events) == 1
         assert home not in events[0].input
-        assert "~/notes/secrets.env" in events[0].input
+        parsed_input = json.loads(events[0].input)
+        assert parsed_input["command"] == "cat '~/notes/secrets.env' && echo home=~, done"
+        assert parsed_input["nested"]["paths"] == ["~/one", "~/two"]
 
-    def test_output_home_path_redacted(self):
-        home = str(Path.home())
+    def test_windows_home_with_unicode_and_backslashes_redacted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = r"C:\Users\Zoë"
+        self._set_home(monkeypatch, home)
         stdout = self._stream_json_for(
-            {"file_path": "irrelevant"}, f"wrote to {home}/notes/secrets.env"
+            {
+                "paths": [
+                    home + r"\Documents\résumé.txt",
+                    "C:/Users/Zoë/資料.txt",
+                ]
+            },
+            "irrelevant output",
         )
         events = _parse_stream_json(stdout)
+
         assert len(events) == 1
-        assert home not in events[0].output
-        assert "~/notes/secrets.env" in events[0].output
+        parsed_input = json.loads(events[0].input)
+        assert parsed_input["paths"] == [
+            r"~\Documents\résumé.txt",
+            "~/資料.txt",
+        ]
 
-    def test_paths_outside_home_untouched(self):
+    def test_sibling_and_embedded_prefix_paths_untouched(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = "/home/alice"
+        self._set_home(monkeypatch, home)
+        outside_paths = [
+            "/home/alice-old/report.txt",
+            "/home/alice2/report.txt",
+            "/tmp/home/alice/report.txt",
+        ]
         stdout = self._stream_json_for(
-            {"file_path": "/tmp/skill-comply-sandbox/t1/file.txt"}, "ok"
+            {"paths": outside_paths},
+            [{"type": "text", "text": path} for path in outside_paths],
         )
         events = _parse_stream_json(stdout)
-        assert "/tmp/skill-comply-sandbox/t1/file.txt" in events[0].input
+
+        assert json.loads(events[0].input)["paths"] == outside_paths
+        assert [item["text"] for item in json.loads(events[0].output)] == outside_paths
+
+    def test_list_output_redacts_nested_string_leaves(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = "/Users/reviewer"
+        self._set_home(monkeypatch, home)
+        output_content = [
+            {"type": "text", "text": f"created {home}/résumé.txt"},
+            {"type": "metadata", "paths": [home, f"{home}/資料.json"]},
+        ]
+        stdout = self._stream_json_for({"file_path": "irrelevant"}, output_content)
+        events = _parse_stream_json(stdout)
+
+        assert json.loads(events[0].output) == [
+            {"type": "text", "text": "created ~/résumé.txt"},
+            {"type": "metadata", "paths": ["~", "~/資料.json"]},
+        ]
+
+    def test_redacts_before_json_serialization_and_5000_character_truncation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = "/home/alice"
+        self._set_home(monkeypatch, home)
+        boundary_value = "x" * 4977 + f" {home}/secret.txt" + "tail" * 20
+        stdout = self._stream_json_for(
+            {"command": boundary_value},
+            boundary_value,
+        )
+        events = _parse_stream_json(stdout)
+
+        assert len(events[0].input) == 5000
+        assert "~/secret" in events[0].input
+        assert "/home/" not in events[0].input
+        assert len(events[0].output) == 5000
+        assert "~/secret.txt" in events[0].output
+        assert "/home/" not in events[0].output
 
 
 class TestRunScenarioErrorIncludesStdoutTail:
