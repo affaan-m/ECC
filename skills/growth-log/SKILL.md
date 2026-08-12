@@ -1,8 +1,8 @@
 ---
 name: growth-log
 description: "Use after a complex task, failure, or when reviewing what was learned. Teaches how to write growth logs that extract reusable patterns — not diary entries."
-version: 1.1.0
 metadata:
+  version: 1.1.0
   origin: ECC
 ---
 

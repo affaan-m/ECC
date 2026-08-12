@@ -9,9 +9,9 @@ description: >
   resolving bottlenecks, optimizing changeovers, responding to disruptions,
   or balancing manufacturing lines.
 license: Apache-2.0
-version: 1.0.0
 homepage: https://github.com/affaan-m/everything-claude-code
 metadata:
+  version: 1.0.0
   origin: ECC
   author: evos
   clawdbot:
