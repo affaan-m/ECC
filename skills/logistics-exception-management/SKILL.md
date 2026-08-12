@@ -8,9 +8,9 @@ description: >
   Use when handling shipping exceptions, freight claims, delivery issues,
   or carrier disputes.
 license: Apache-2.0
-version: 1.0.0
 homepage: https://github.com/affaan-m/everything-claude-code
 metadata:
+  version: 1.0.0
   origin: ECC
   author: evos
   clawdbot:

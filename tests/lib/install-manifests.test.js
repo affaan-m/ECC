@@ -168,6 +168,28 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('marks unified-memory install surfaces as requiring the separate ECC runtime', () => {
+    const component = getInstallComponent('skill:unified-memory');
+    assert.deepStrictEqual(component.moduleIds, ['skill-unified-memory']);
+    assert.match(component.description, /ecc-universal/i);
+    assert.match(component.description, /separate|external/i);
+
+    const modules = listInstallModules();
+    const singleSkillModule = modules.find(module => module.id === 'skill-unified-memory');
+    const workflowModule = modules.find(module => module.id === 'workflow-quality');
+    assert.ok(singleSkillModule, 'Should define an explicit unified-memory module');
+    assert.match(singleSkillModule.description, /ecc-universal/i);
+    assert.match(singleSkillModule.description, /separate|external/i);
+    assert.match(workflowModule.description, /ecc-universal/i);
+
+    const plan = resolveInstallPlan({
+      includeComponentIds: ['skill:unified-memory'],
+      target: 'claude',
+    });
+    assert.ok(plan.selectedModuleIds.includes('skill-unified-memory'));
+    assert.ok(plan.selectedModuleIds.includes('platform-configs'));
+  })) passed++; else failed++;
+
   if (test('lists supported legacy compatibility languages', () => {
     const languages = listLegacyCompatibilityLanguages();
     assert.ok(languages.includes('typescript'));
@@ -230,7 +252,14 @@ function runTests() {
 
     assert.deepStrictEqual(
       plan.selectedModuleIds,
-      ['rules-core', 'agents-core', 'commands-core', 'platform-configs', 'workflow-quality']
+      [
+        'rules-core',
+        'agents-core',
+        'commands-core',
+        'platform-configs',
+        'skill-unified-memory',
+        'workflow-quality'
+      ]
     );
     assert.ok(plan.skippedModuleIds.includes('hooks-runtime'));
     assert.ok(!plan.skippedModuleIds.includes('platform-configs'));
@@ -248,7 +277,14 @@ function runTests() {
 
     assert.deepStrictEqual(
       plan.selectedModuleIds,
-      ['rules-core', 'agents-core', 'commands-core', 'platform-configs', 'workflow-quality']
+      [
+        'rules-core',
+        'agents-core',
+        'commands-core',
+        'platform-configs',
+        'skill-unified-memory',
+        'workflow-quality'
+      ]
     );
     assert.ok(!plan.selectedModuleIds.includes('hooks-runtime'),
       'minimal profile should not install hooks-runtime');
@@ -265,7 +301,14 @@ function runTests() {
 
     assert.deepStrictEqual(
       plan.selectedModuleIds,
-      ['rules-core', 'agents-core', 'commands-core', 'platform-configs', 'workflow-quality']
+      [
+        'rules-core',
+        'agents-core',
+        'commands-core',
+        'platform-configs',
+        'skill-unified-memory',
+        'workflow-quality'
+      ]
     );
     assert.deepStrictEqual(plan.skippedModuleIds, []);
     assert.strictEqual(plan.targetAdapterId, 'qwen-home');
@@ -290,7 +333,14 @@ function runTests() {
 
     assert.deepStrictEqual(
       plan.selectedModuleIds,
-      ['rules-core', 'agents-core', 'commands-core', 'platform-configs', 'workflow-quality']
+      [
+        'rules-core',
+        'agents-core',
+        'commands-core',
+        'platform-configs',
+        'skill-unified-memory',
+        'workflow-quality'
+      ]
     );
     assert.deepStrictEqual(plan.skippedModuleIds, []);
     assert.strictEqual(plan.targetAdapterId, 'zed-project');
@@ -796,7 +846,7 @@ function runTests() {
             id: 'unsupported-antigravity',
             kind: 'skills',
             description: 'Unsupported',
-            paths: ['.cursor', 'skills/example'],
+            paths: ['.cursor', 'skills/example', 'commands/example'],
             targets: ['antigravity'],
             dependencies: [],
             defaultInstall: false,
@@ -825,8 +875,12 @@ function runTests() {
         'Unsupported antigravity paths should be filtered from planned operations'
       );
       assert.ok(
-        plan.operations.some(operation => operation.sourceRelativePath === 'skills/example'),
-        'Supported antigravity skill paths should still be planned'
+        plan.operations.every(operation => operation.sourceRelativePath !== 'skills/example'),
+        'ECC skills should be filtered: antigravity .agent/skills holds ECC agents'
+      );
+      assert.ok(
+        plan.operations.some(operation => operation.sourceRelativePath === 'commands/example'),
+        'Supported antigravity source paths should still be planned'
       );
     } finally {
       cleanupTestRepo(repoRoot);

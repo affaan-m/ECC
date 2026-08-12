@@ -60,6 +60,13 @@ function runTests() {
     assert.strictEqual(parseHostHeader('bad:host:extra'), null);
   })) passed++; else failed++;
 
+  if (test('rejects ports outside the valid TCP range', () => {
+    assert.strictEqual(parseHostHeader('localhost:65536'), null);
+    assert.strictEqual(parseHostHeader('localhost:99999'), null);
+    assert.strictEqual(parseHostHeader('[::1]:65536'), null);
+    assert.strictEqual(parseHostHeader('localhost:65535'), 'localhost');
+  })) passed++; else failed++;
+
   console.log('\nbuildAllowedHostnames:');
 
   if (test('always includes loopback names', () => {

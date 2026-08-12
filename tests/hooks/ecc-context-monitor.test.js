@@ -176,6 +176,40 @@ function runTests() {
     passed++;
   else failed++;
 
+  if (
+    test('cost warnings dedupe by tier: notice fires once, re-fires on escalation', () => {
+      const sessionId = `ctx-monitor-tier-dedupe-${process.pid}-${Date.now()}`;
+      const warnPath = path.join(os.tmpdir(), `ecc-ctx-warn-${sessionId}.json`);
+      const input = JSON.stringify({ session_id: sessionId, tool_name: 'Bash' });
+      const setCost = cost =>
+        writeBridgeAtomic(sessionId, { total_cost_usd: cost, last_timestamp: new Date().toISOString() });
+      try {
+        setCost(6);
+        const first = run(input);
+        assert.ok(
+          JSON.parse(first).hookSpecificOutput.additionalContext.includes('COST NOTICE'),
+          'first crossing of the notice threshold must emit'
+        );
+
+        setCost(6.4); // cost ticks up within the same tier — must stay silent
+        const second = run(input);
+        assert.strictEqual(second, input, 'same tier must not re-emit on every cost tick');
+
+        setCost(12); // tier escalation notice → warning must re-emit
+        const third = run(input);
+        assert.ok(
+          JSON.parse(third).hookSpecificOutput.additionalContext.includes('COST WARNING'),
+          'tier escalation must re-emit'
+        );
+      } finally {
+        fs.rmSync(getBridgePath(sessionId), { force: true });
+        fs.rmSync(warnPath, { force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // evaluateConditions — scope warnings
   console.log('\nevaluateConditions (scope):');
 
@@ -205,16 +239,30 @@ function runTests() {
   console.log('\ndetectLoop:');
 
   if (
-    test('3 identical entries returns detected true', () => {
-      const entries = [
-        { tool: 'Bash', hash: 'aabbccdd' },
-        { tool: 'Bash', hash: 'aabbccdd' },
-        { tool: 'Bash', hash: 'aabbccdd' }
-      ];
+    test('5 identical entries returns detected true', () => {
+      const entries = Array(5).fill({ tool: 'Bash', hash: 'aabbccdd' });
       const result = detectLoop(entries);
       assert.strictEqual(result.detected, true);
       assert.strictEqual(result.tool, 'Bash');
-      assert.ok(result.count >= 3);
+      assert.ok(result.count >= 5);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('4 identical among 5 entries returns detected false', () => {
+      // Legitimate repetition (retries, polling) must not fire: only a full
+      // ring buffer of identical calls counts as a stuck loop.
+      const entries = [
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'aabbccdd' },
+        { tool: 'Bash', hash: 'ffffffff' }
+      ];
+      const result = detectLoop(entries);
+      assert.strictEqual(result.detected, false);
     })
   )
     passed++;

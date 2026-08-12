@@ -103,7 +103,8 @@ function canvasCss() {
   .presence{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:3px 10px 3px 8px;white-space:nowrap}
   .presence .dot{width:7px;height:7px;border-radius:99px;background:var(--text3)}
   .presence[data-state="listening"] .dot{background:var(--green);box-shadow:0 0 0 3px var(--green-glow);animation:pulse 2s infinite}
-  .presence[data-state="working"] .dot{background:var(--orange);box-shadow:0 0 0 3px var(--orange-glow)}
+  .presence[data-state="thinking"] .dot,.presence[data-state="typing"] .dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);animation:pulse 1.2s infinite}
+  .presence[data-state="queued"] .dot{background:var(--orange);box-shadow:0 0 0 3px var(--orange-glow)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 
   .toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text2);cursor:pointer;user-select:none}
@@ -139,6 +140,23 @@ function canvasCss() {
   .msg.kind-annotation{border-left:2px solid var(--teal)}
   .msg.kind-verdict{border-left:2px solid var(--green)}
   .chat .empty{color:var(--text3);font-size:12px;text-align:center;margin-top:24px;line-height:1.6}
+
+  /* iMessage-style activity bubble: dots while the agent thinks or types. */
+  .typing{align-self:flex-start;display:none;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-bottom-left-radius:3px;border-radius:10px;padding:9px 12px}
+  .typing.show{display:flex}
+  .typing .dots{display:flex;align-items:center;gap:3px}
+  .typing .dots i{width:6px;height:6px;border-radius:99px;background:var(--text2);animation:typing-bounce 1.4s infinite ease-in-out both}
+  .typing .dots i:nth-child(1){animation-delay:-.32s}
+  .typing .dots i:nth-child(2){animation-delay:-.16s}
+  .typing .label{font-size:11px;color:var(--text3)}
+  @keyframes typing-bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+  @media (prefers-reduced-motion:reduce){
+    .typing .dots i{animation:none;opacity:.7}
+    .presence .dot{animation:none}
+  }
+  /* A queued message nobody is listening for gets an explicit, honest note. */
+  .stalled{align-self:flex-start;display:none;gap:8px;background:var(--orange-glow);border:1px solid color-mix(in srgb,var(--orange) 35%,transparent);border-radius:10px;padding:8px 11px;font-size:11.5px;color:var(--text2);line-height:1.5}
+  .stalled.show{display:flex}
 
   .queue{padding:8px 14px 0;display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto}
   .pill{display:flex;align-items:flex-start;gap:8px;background:var(--bg3);border:1px solid var(--border);border-left:2px solid var(--teal);border-radius:6px;padding:6px 8px;font-size:11.5px}
@@ -267,27 +285,69 @@ function canvasClientJs() {
   }
   renderQueue();
 
+  // --- activity indicators ---------------------------------------------
+  // Built once and re-appended on every chat render so the animation never
+  // restarts mid-thought.
+  const typingEl = document.createElement('div');
+  typingEl.className = 'typing';
+  typingEl.setAttribute('role', 'status');
+  typingEl.setAttribute('aria-live', 'polite');
+  const dots = document.createElement('span');
+  dots.className = 'dots';
+  dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+  const typingLabel = document.createElement('span');
+  typingLabel.className = 'label';
+  typingEl.append(dots, typingLabel);
+
+  const stalledEl = document.createElement('div');
+  stalledEl.className = 'stalled';
+  stalledEl.setAttribute('role', 'status');
+
+  const TYPING_LABELS = { thinking: 'agent is thinking\\u2026', typing: 'agent is typing\\u2026' };
+
+  function renderActivity(state) {
+    const typingText = TYPING_LABELS[state];
+    typingEl.classList.toggle('show', Boolean(typingText));
+    if (typingText) typingLabel.textContent = typingText;
+    const stalled = state === 'queued';
+    stalledEl.classList.toggle('show', stalled);
+    if (stalled) {
+      stalledEl.textContent =
+        'Delivered to the queue. Your agent is not listening right now, so it picks this up the moment it checks in.';
+    }
+    if (typingText || stalled) scrollToEnd();
+  }
+
   // --- chat -----------------------------------------------------------
+  function atBottom() {
+    return chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
+  }
+  function scrollToEnd() { chatLog.scrollTop = chatLog.scrollHeight; }
+
   function renderChat(entries) {
+    const pinned = atBottom();
     chatLog.innerHTML = '';
     if (!entries.length) {
       const empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = 'Click anything in the plan to annotate it, or type below. Feedback goes straight to your agent.';
       chatLog.appendChild(empty);
-      return;
+    } else {
+      for (const entry of entries) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (entry.role === 'agent' ? 'agent' : 'user') + ' kind-' + (entry.kind || 'chat');
+        div.textContent = entry.text;
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = (entry.role === 'agent' ? 'agent' : 'you') + ' \\u00B7 ' + new Date(entry.at).toLocaleTimeString();
+        div.appendChild(meta);
+        chatLog.appendChild(div);
+      }
     }
-    for (const entry of entries) {
-      const div = document.createElement('div');
-      div.className = 'msg ' + (entry.role === 'agent' ? 'agent' : 'user') + ' kind-' + (entry.kind || 'chat');
-      div.textContent = entry.text;
-      const meta = document.createElement('span');
-      meta.className = 'meta';
-      meta.textContent = (entry.role === 'agent' ? 'agent' : 'you') + ' \\u00B7 ' + new Date(entry.at).toLocaleTimeString();
-      div.appendChild(meta);
-      chatLog.appendChild(div);
-    }
-    chatLog.scrollTop = chatLog.scrollHeight;
+    // The indicators live at the tail of the log, so they survive re-render.
+    chatLog.appendChild(typingEl);
+    chatLog.appendChild(stalledEl);
+    if (pinned) scrollToEnd();
   }
   renderChat(boot.chat || []);
 
@@ -312,11 +372,17 @@ function canvasClientJs() {
         body: JSON.stringify({ items })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      const body = await res.json().catch(() => ({}));
       queue = [];
       persistQueue();
       renderQueue();
       input.value = '';
-      statusEl.textContent = 'Sent. Your agent picks this up on its next check-in.';
+      // Say what actually happened: a parked agent takes the batch on the
+      // spot, otherwise it sits in the queue until the agent checks in.
+      statusEl.textContent = body.presence === 'thinking' || body.presence === 'typing'
+        ? 'Delivered. Your agent has it.'
+        : 'Queued. Your agent picks this up the moment it checks in.';
+      if (body.presence) applyPresence(body.presence);
     } catch (err) {
       statusEl.textContent = 'Send failed (' + err.message + ') - is the canvas server still running?';
     } finally {
@@ -345,6 +411,7 @@ function canvasClientJs() {
     ended = true;
     sendBtn.disabled = true;
     input.disabled = true;
+    renderActivity('ended');
     presence.setAttribute('data-state', 'ended');
     presence.querySelector('.label').textContent = 'session ended';
     $('endedOverlay').classList.add('show');
@@ -355,20 +422,28 @@ function canvasClientJs() {
   if (ended) markEnded(boot.endedBy);
 
   // --- server events ----------------------------------------------------
-  const PRESENCE_LABELS = { waiting: 'agent not connected', listening: 'agent listening', working: 'agent working\\u2026' };
+  const PRESENCE_LABELS = {
+    waiting: 'agent not connected',
+    listening: 'agent listening',
+    thinking: 'agent is thinking\\u2026',
+    typing: 'agent is typing\\u2026',
+    queued: 'queued for your agent'
+  };
+  function applyPresence(state) {
+    if (ended) return;
+    presence.setAttribute('data-state', state);
+    presence.querySelector('.label').textContent = PRESENCE_LABELS[state] || state;
+    renderActivity(state);
+  }
   function connectEvents() {
     const es = new EventSource('/events/' + key);
     es.addEventListener('chat-sync', e => renderChat(JSON.parse(e.data).chat || []));
-    es.addEventListener('presence', e => {
-      const state = JSON.parse(e.data).state;
-      if (ended) return;
-      presence.setAttribute('data-state', state);
-      presence.querySelector('.label').textContent = PRESENCE_LABELS[state] || state;
-    });
+    es.addEventListener('presence', e => applyPresence(JSON.parse(e.data).state));
     es.addEventListener('reload', reloadArtifact);
     es.addEventListener('ended', e => { markEnded(JSON.parse(e.data).endedBy); es.close(); });
     es.onerror = () => {
       if (ended) return;
+      renderActivity('offline');
       presence.setAttribute('data-state', 'waiting');
       presence.querySelector('.label').textContent = 'canvas server offline';
     };

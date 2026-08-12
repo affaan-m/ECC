@@ -2,7 +2,7 @@
 
 Thank you to everyone funding ECC's open-source work. Your sponsorship is what lets the OSS layer stay free while the GitHub App, hosted security scans, and continuous improvements ship every week.
 
-## Strategic Sponsors — $2,500/mo
+## Strategic Sponsors — $3,700/mo
 
 *Become a [Strategic sponsor](https://github.com/sponsors/affaan-m) to be featured here.*
 
@@ -14,7 +14,7 @@ Thank you to everyone funding ECC's open-source work. Your sponsorship is what l
 | [**Greptile**](https://www.greptile.com/go/ecc) | <img src="assets/images/sponsors/greptile.png" width="60" alt="Greptile logo" /> | 2026 |
 | [**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ECC) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="120" alt="Atlas Cloud logo" /></picture> | 2026 |
 | [**Moonshot AI (Kimi)**](https://www.moonshot.ai) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="100" alt="Moonshot AI Kimi logo" /></picture> | 2026 |
-| [**Itô**](https://compute.itomarkets.com) | <picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/ito-dark.svg" /><img src="assets/images/sponsors/ito.svg" width="120" alt="Itô Markets logo" /></picture> | 2026 |
+| [**Itô**](https://compute.itomarkets.com) | <picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="88" alt="Itô Markets logo" /></picture> | 2026 |
 
 *[Become a Business sponsor](https://github.com/sponsors/affaan-m) to get README sponsor placement + SPONSORS.md listing. Current Business tier is $800/mo. No seats, SLA, custom development, or preferential technical placement is bundled unless separately agreed.*
 
@@ -41,7 +41,7 @@ Run or self-host any open-source model. Itô partners with ECC on compute, while
 
 *[Become a Builder sponsor](https://github.com/sponsors/affaan-m) to support the project and get your name in this list.*
 
-## Supporters — $5/mo
+## Supporters — $10/mo
 
 *[Become a Supporter](https://github.com/sponsors/affaan-m) to back the project with a profile badge and a thank-you in release notes.*
 
@@ -51,12 +51,12 @@ Run or self-host any open-source model. Itô partners with ECC on compute, while
 
 | Tier | Monthly | Perks |
 |------|--------:|-------|
-| Supporter | $5 | Sponsor badge on profile, thank-you in release notes |
+| Supporter | $10 | Sponsor badge on profile, thank-you in release notes |
 | Builder | $25 | Above + name in SPONSORS.md |
 | Pro Sponsor | $50 | Above + listed in SPONSORS.md |
 | Team Sponsor | $200 | SPONSORS.md listing |
-| Business Sponsor | $500 | README sponsor placement + SPONSORS.md listing |
-| Strategic Sponsor | $2,500 | Premium sponsor placement + sponsor placement call |
+| Business Sponsor | $800 | README sponsor placement + SPONSORS.md listing |
+| Strategic Sponsor | $3,700 | Premium sponsor placement + sponsor placement call |
 
 [**Become a Sponsor →**](https://github.com/sponsors/affaan-m)
 
@@ -79,4 +79,4 @@ If you sponsored before May 2026, you keep your original perks at your original 
 
 ---
 
-*Updated by Hermes. Last sync: 2026-06-16*
+*Last verified against the public GitHub Sponsor tiers: 2026-07-24*

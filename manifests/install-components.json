@@ -44,7 +44,7 @@
     {
       "id": "baseline:workflow",
       "family": "baseline",
-      "description": "Evaluation, TDD, verification, and compaction workflow support.",
+      "description": "Evaluation, TDD, verification, compaction, learning, and cross-harness memory workflow support.",
       "modules": [
         "workflow-quality"
       ]
@@ -197,7 +197,7 @@
     {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
       ]
@@ -468,6 +468,14 @@
       "description": "Browser review canvas for plan artifacts: annotate, chat, approve or request changes.",
       "modules": [
         "workflow-quality"
+      ]
+    },
+    {
+      "id": "skill:unified-memory",
+      "family": "skill",
+      "description": "Cross-harness memory guidance that requires the separately installed ecc-universal CLI runtime.",
+      "modules": [
+        "skill-unified-memory"
       ]
     },
     {

@@ -27,14 +27,13 @@ function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
   }
 
   if (normalizedSourcePath === 'skills') {
-    return path.join(targetRoot, 'skills', CLAUDE_ECC_NAMESPACE);
+    return path.join(targetRoot, 'skills');
   }
 
   if (normalizedSourcePath.startsWith('skills/')) {
     return path.join(
       targetRoot,
       'skills',
-      CLAUDE_ECC_NAMESPACE,
       normalizedSourcePath.slice('skills/'.length)
     );
   }

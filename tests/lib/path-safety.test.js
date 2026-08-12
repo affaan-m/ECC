@@ -10,7 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { assertWithinTrustedRoot, isWithinRoot } = require('../../scripts/lib/path-safety');
+const {
+  assertWithinTrustedRoot,
+  isWithinRoot,
+  realpathNearestExisting
+} = require('../../scripts/lib/path-safety');
 
 let passed = 0;
 let failed = 0;
@@ -43,10 +47,89 @@ try {
     assert.strictEqual(isWithinRoot(root, root), true);
   });
 
+  test('allows a non-existent destination beneath a non-existent trusted root', () => {
+    const futureRoot = path.join(root, 'future-root');
+    const futureDestination = path.join(futureRoot, 'session-data', 'session.json');
+    assert.strictEqual(isWithinRoot(futureDestination, futureRoot), true);
+    assert.strictEqual(
+      assertWithinTrustedRoot(futureDestination, futureRoot, 'write'),
+      realpathNearestExisting(futureDestination)
+    );
+  });
+
+  test('canonicalizes the nearest existing ancestor for a non-existent trusted root', () => {
+    const realParent = fs.mkdtempSync(path.join(os.tmpdir(), 'path-safety-real-'));
+    const linkedParent = path.join(
+      os.tmpdir(),
+      `path-safety-link-${process.pid}-${Date.now()}`
+    );
+
+    try {
+      fs.symlinkSync(realParent, linkedParent, 'dir');
+    } catch {
+      console.log('    (symlink unsupported on this platform; skipping)');
+      fs.rmSync(realParent, { recursive: true, force: true });
+      return;
+    }
+
+    try {
+      const futureRoot = path.join(linkedParent, '.cursor', 'ecc');
+      const futureDestination = path.join(futureRoot, 'session-data', 'session.json');
+      assert.strictEqual(isWithinRoot(futureDestination, futureRoot), true);
+      assert.strictEqual(
+        assertWithinTrustedRoot(futureDestination, futureRoot, 'write'),
+        path.join(
+          fs.realpathSync(realParent),
+          '.cursor',
+          'ecc',
+          'session-data',
+          'session.json'
+        )
+      );
+    } finally {
+      // Unlink the directory symlink itself. Node 24 rejects rmSync() here
+      // with EISDIR even though older supported runtimes accepted it.
+      fs.unlinkSync(linkedParent);
+      fs.rmSync(realParent, { recursive: true, force: true });
+    }
+  });
+
+  test('returns the same canonical destination that was checked for containment', () => {
+    const destination = path.join(root, 'single-canonicalization.txt');
+    const originalRealpathSync = fs.realpathSync;
+    let destinationCanonicalizations = 0;
+    fs.writeFileSync(destination, 'safe\n');
+
+    fs.realpathSync = function countedRealpathSync(candidatePath, options) {
+      if (path.resolve(candidatePath) === path.resolve(destination)) {
+        destinationCanonicalizations += 1;
+      }
+      return originalRealpathSync.call(fs, candidatePath, options);
+    };
+
+    try {
+      assert.strictEqual(
+        assertWithinTrustedRoot(destination, root, 'write'),
+        originalRealpathSync(destination)
+      );
+    } finally {
+      fs.realpathSync = originalRealpathSync;
+    }
+
+    assert.strictEqual(destinationCanonicalizations, 1);
+  });
+
   test('refuses an absolute path outside the root', () => {
     const evil = path.join(outside, 'PWNED.txt');
     assert.throws(() => assertWithinTrustedRoot(evil, root, 'repair'), /outside the install root/);
     assert.strictEqual(isWithinRoot(evil, root), false);
+  });
+
+  test('refuses an escape from a non-existent trusted root', () => {
+    const futureRoot = path.join(root, 'future-root');
+    const evil = path.join(futureRoot, '..', 'escape.txt');
+    assert.throws(() => assertWithinTrustedRoot(evil, futureRoot, 'write'), /outside the install root/);
+    assert.strictEqual(isWithinRoot(evil, futureRoot), false);
   });
 
   test('refuses a ../ traversal escape', () => {
@@ -65,6 +148,23 @@ try {
     // root/link -> outside, so root/link/PWNED resolves outside the root.
     const evil = path.join(linkDir, 'PWNED.txt');
     assert.throws(() => assertWithinTrustedRoot(evil, root, 'repair'), /outside the install root/);
+  });
+
+  test('refuses a dangling symlinked intermediate directory', () => {
+    const danglingTarget = path.join(outside, 'missing-target');
+    const linkDir = path.join(root, 'dangling-link');
+    try {
+      fs.symlinkSync(danglingTarget, linkDir, 'dir');
+    } catch {
+      console.log('    (symlink unsupported on this platform; skipping)');
+      return;
+    }
+    const evil = path.join(linkDir, 'session-data', 'session.json');
+    assert.strictEqual(isWithinRoot(evil, root), false);
+    assert.throws(
+      () => assertWithinTrustedRoot(evil, root, 'write'),
+      /outside the install root/
+    );
   });
 
   test('refuses when no trusted root is resolved', () => {

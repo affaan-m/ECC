@@ -1,9 +1,9 @@
 ---
 name: continuous-learning-v2
-description: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. v2.1 adds project-scoped instincts to prevent cross-project contamination.
+description: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. v2.1 adds project-scoped instincts to prevent cross-project contamination. Use when capturing lessons from a session, managing instincts, or promoting them into skills, commands, or agents.
 metadata:
+  version: 2.1.0
   origin: ECC
-version: 2.1.0
 ---
 
 # Continuous Learning v2.1 - Instinct
@@ -128,7 +128,7 @@ Session Activity (in a git repo)
 
 The system automatically detects your current project:
 
-1. **`CLAUDE_PROJECT_DIR` env var** (highest priority)
+1. **`CLAUDE_PROJECT_DIR` env var** (highest priority) -- honored as an explicit override even when the directory is not a git repo (hashed by its absolute path)
 2. **`git remote get-url origin`** -- hashed to create a portable project ID (same repo on different machines gets the same ID)
 3. **`git rev-parse --show-toplevel`** -- fallback using repo path (machine-specific)
 4. **Global fallback** -- if no project is detected, instincts go to global scope

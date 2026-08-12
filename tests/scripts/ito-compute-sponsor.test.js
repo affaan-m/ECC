@@ -25,6 +25,15 @@ function read(relativePath) {
   return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
+function readPngDimensions(relativePath) {
+  const image = fs.readFileSync(path.join(REPO_ROOT, relativePath));
+  assert.strictEqual(image.subarray(1, 4).toString('ascii'), 'PNG');
+  return {
+    width: image.readUInt32BE(16),
+    height: image.readUInt32BE(20),
+  };
+}
+
 function runTest(name, fn) {
   try {
     fn();
@@ -56,6 +65,31 @@ function assertExactComputeRoute(content) {
   );
 }
 
+function assertExactHref(content, expectedHref) {
+  const expected = new URL(expectedHref);
+  const hrefs = [...content.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
+  const properties = [
+    'protocol',
+    'hostname',
+    'port',
+    'username',
+    'password',
+    'pathname',
+    'search',
+    'hash',
+  ];
+  const hasExactHref = hrefs.some((href) => {
+    try {
+      const candidate = new URL(href);
+      return properties.every(property => candidate[property] === expected[property]);
+    } catch {
+      return false;
+    }
+  });
+
+  assert.ok(hasExactHref, `Should include the exact href ${expectedHref}`);
+}
+
 function assertHonestComputeCopy(content) {
   assertExactComputeRoute(content);
   assert.match(content, /preferred compute sponsor/i);
@@ -68,6 +102,16 @@ function assertHonestComputeCopy(content) {
   assert.match(content, /does not reserve capacity/i);
   assert.match(content, /managed inference[^\n.]*not live/i);
   assert.doesNotMatch(content, /ECC only (?:links|provides this link)/i);
+}
+
+function extractNamedTable(content, ariaLabel) {
+  const escapedLabel = ariaLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = content.match(
+    new RegExp(`<table[^>]*aria-label="${escapedLabel}"[^>]*>([\\s\\S]*?)<\\/table>`)
+  );
+
+  assert.ok(match, `Should include the "${ariaLabel}" table`);
+  return match[1];
 }
 
 function main() {
@@ -92,39 +136,237 @@ function main() {
     }],
     ['README exposes the sponsor logo and honest self-hosting route', () => {
       const readme = read('README.md');
-      assert.ok(readme.includes('assets/images/sponsors/ito.svg'));
-      assert.ok(readme.includes('assets/images/sponsors/ito-dark.svg'));
+      assert.ok(readme.includes('assets/images/sponsors/ito-transparent.png'));
+      assert.ok(readme.includes('assets/images/sponsors/ito-transparent-light.png'));
+      assert.doesNotMatch(readme, /assets\/images\/sponsors\/ito(?:-dark)?\.svg/);
+      assert.match(readme, /<p align="center" aria-label="Partners and sponsors">/);
+      assert.doesNotMatch(
+        readme,
+        /<sub><strong>Partners &amp; sponsors<\/strong><\/sub>\s*<table>/
+      );
+      assert.doesNotMatch(readme, /<strong>Itô<\/strong>/);
+      assert.doesNotMatch(readme, /<strong>Moonshot AI<\/strong>/);
       assertHonestComputeCopy(readme);
       assert.match(
         readme,
         /custom API endpoint or model gateway[\s\S]*Run or self-host any open-source model behind that gateway[\s\S]*sponsorship link is passive/
       );
-      const sponsorMark = read('assets/images/sponsors/ito.svg');
-      const sponsorMarkDark = read('assets/images/sponsors/ito-dark.svg');
-      assert.match(sponsorMark, /viewBox="0 0 280 40"/);
-      assert.match(sponsorMark, />It</);
-      assert.match(sponsorMark, />ô</);
-      assert.match(sponsorMark, />MARKETS</);
-      assert.match(sponsorMarkDark, /viewBox="0 0 280 40"/);
-      assert.match(sponsorMarkDark, />It</);
-      assert.match(sponsorMarkDark, />ô</);
-      assert.match(sponsorMarkDark, />MARKETS</);
-      assert.match(sponsorMarkDark, /fill="#F8FAFC"/i);
+      const sponsorMark = readPngDimensions('assets/images/sponsors/ito-transparent.png');
+      const sponsorMarkLight = readPngDimensions(
+        'assets/images/sponsors/ito-transparent-light.png'
+      );
+      assert.deepStrictEqual(sponsorMark, { width: 1797, height: 1097 });
+      assert.deepStrictEqual(sponsorMarkLight, sponsorMark);
+    }],
+    ['README keeps the three primary choices and all three guides inline', () => {
+      const readme = read('README.md');
+      const primaryLinks = extractNamedTable(readme, 'ECC primary links');
+      const guides = extractNamedTable(readme, 'ECC guides');
+      const centeredPrimaryLinks = readme.match(
+        /<div align="center">\s*<table[^>]*aria-label="ECC primary links"[^>]*>[\s\S]*?<\/table>\s*<\/div>/
+      );
+
+      assert.ok(centeredPrimaryLinks, 'The three primary-link cards should be centered as one group');
+      assert.strictEqual((primaryLinks.match(/<td\b/g) || []).length, 3);
+      assert.ok(primaryLinks.includes('assets/images/community/ecc-tools-mark.svg'));
+      assertExactHref(primaryLinks, 'https://github.com/apps/ecc-tools');
+      assertExactHref(primaryLinks, 'https://ecc.tools/pricing');
+      assertExactHref(primaryLinks, 'https://github.com/sponsors/affaan-m');
+      assert.ok(primaryLinks.includes('assets/images/community/heart.svg'));
+      assert.match(primaryLinks, /Fund the open-source project/);
+      assert.doesNotMatch(primaryLinks, /From \$5\/mo/);
+      assertExactHref(primaryLinks, 'https://discord.gg/36yGMHGFbR');
+      assert.ok(primaryLinks.includes('assets/images/community/discord.svg'));
+
+      for (const iconPath of [
+        'assets/images/community/heart.svg',
+        'assets/images/community/discord.svg',
+      ]) {
+        const icon = read(iconPath);
+        assert.match(icon, /<svg\b/);
+        assert.doesNotMatch(
+          icon,
+          /<script|<foreignObject|\son[a-z]+=|(?:href|xlink:href)=/i
+        );
+      }
+
+      assert.strictEqual((guides.match(/<td\b/g) || []).length, 3);
+      assert.ok(guides.includes('./the-shortform-guide.md'));
+      assert.ok(guides.includes('./the-longform-guide.md'));
+      assert.ok(guides.includes('./the-security-guide.md'));
+      assert.strictEqual((guides.match(/width="213" height="120"/g) || []).length, 3);
+
+      for (const guideAsset of [
+        'assets/images/guides/shorthand-guide.png',
+        'assets/images/guides/longform-guide.png',
+        'assets/images/guides/security-guide.png',
+      ]) {
+        assert.ok(guides.includes(guideAsset));
+        const { width, height } = readPngDimensions(guideAsset);
+        assert.ok(
+          Math.abs((width / height) - (16 / 9)) < 0.002,
+          `${guideAsset} should use the shared 16:9 guide-card geometry`
+        );
+      }
+
+      const eccToolsMark = read('assets/images/community/ecc-tools-mark.svg');
+      assert.match(eccToolsMark, /viewBox="0 0 96 96"/);
+      assert.match(eccToolsMark, /id="favicon-frame"/);
+      assert.match(eccToolsMark, /id="favicon-node"/);
+      assert.match(eccToolsMark, /circle cx="62" cy="44"/);
       assert.doesNotMatch(
-        `${sponsorMark}\n${sponsorMarkDark}`,
+        eccToolsMark,
         /<script|<foreignObject|\son[a-z]+=|(?:href|xlink:href)=/i
       );
-      const sponsorAssetUrls = `${sponsorMark}\n${sponsorMarkDark}`.match(URL_TOKEN_PATTERN) || [];
-      assert.ok(sponsorAssetUrls.length >= 4);
-      assert.ok(sponsorAssetUrls.every((url) => (
-        url.startsWith('http://www.w3.org/2000/svg')
-        || url.startsWith('https://fonts.googleapis.com/css2?')
-      )));
+    }],
+    ['sponsor docs match the current public tiers', () => {
+      const sponsors = read('SPONSORS.md');
+
+      assert.match(sponsors, /## Supporters — \$10\/mo/);
+      assert.match(sponsors, /\| Supporter \| \$10 \|/);
+      assert.match(sponsors, /\| Business Sponsor \| \$800 \|/);
+      assert.match(sponsors, /\| Strategic Sponsor \| \$3,700 \|/);
+      assert.doesNotMatch(sponsors, /Supporters — \$5\/mo|\| Supporter \| \$5 \|/);
+    }],
+    ['README shows the verified local Kimi via Ito path without claiming managed serving', () => {
+      const readme = read('README.md');
+      const localModelPath = extractNamedTable(readme, 'Local Kimi model path');
+
+      assert.strictEqual((localModelPath.match(/<td\b/g) || []).length, 3);
+      assert.ok(localModelPath.includes('assets/images/sponsors/ito-transparent.png'));
+      assert.ok(localModelPath.includes('assets/images/sponsors/moonshot.png'));
+      assert.ok(localModelPath.includes('assets/images/community/ecc-tools-mark.svg'));
+      assert.match(readme, /install\.sh --target kimi --profile minimal/);
+      assert.match(readme, /npx ecc-universal doctor --target kimi/);
+      assert.match(readme, /\.kimi-code\/AGENTS\.md/);
+      assert.match(readme, /\.kimi-code\/skills\//);
+      assert.match(readme, /~\/\.kimi-code\/config\.toml/);
+      assert.match(readme, /Kimi Code 0\.31/);
+      assertExactHref(
+        readme,
+        'https://moonshotai.github.io/kimi-cli/en/configuration/providers.html'
+      );
+      assertHonestComputeCopy(readme);
+    }],
+    ['Kimi install stays inside its project root and passes doctor with native instruction surfaces', () => {
+      const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-kimi-home-'));
+      const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-kimi-project-'));
+
+      try {
+        const result = spawnSync(
+          process.execPath,
+          [
+            path.join(REPO_ROOT, 'scripts', 'install-apply.js'),
+            '--target',
+            'kimi',
+            '--profile',
+            'minimal',
+            '--dry-run',
+            '--json',
+          ],
+          {
+            cwd: projectDir,
+            env: { ...process.env, HOME: homeDir },
+            encoding: 'utf8',
+            maxBuffer: 20 * 1024 * 1024,
+          }
+        );
+        assert.strictEqual(result.status, 0, result.stderr);
+
+        const plan = JSON.parse(result.stdout).plan;
+        const targetRoot = path.resolve(plan.targetRoot);
+        const destinations = plan.operations.map(operation => (
+          path.resolve(operation.destinationPath)
+        ));
+        const relativeDestinations = destinations.map(destination => (
+          path.relative(targetRoot, destination).replaceAll(path.sep, '/')
+        ));
+
+        assert.strictEqual(plan.target, 'kimi');
+        assert.strictEqual(plan.adapter.id, 'kimi-project');
+        assert.strictEqual(plan.adapter.kind, 'project');
+        assert.deepStrictEqual(plan.warnings, []);
+        assert.ok(plan.operations.length > 0);
+        assert.ok(destinations.every(destination => (
+          destination === targetRoot || destination.startsWith(`${targetRoot}${path.sep}`)
+        )));
+        assert.ok(relativeDestinations.includes('AGENTS.md'));
+        assert.ok(relativeDestinations.some(destination => destination.startsWith('skills/')));
+        assert.ok(relativeDestinations.every(destination => (
+          !/^\.(?:claude|codex|cursor|gemini|hermes|opencode|openclaw|qwen|zed)\//.test(destination)
+        )));
+        assert.ok(!plan.operations.some(operation => operation.moduleId === 'hooks-runtime'));
+
+        fs.mkdirSync(path.join(projectDir, '.kimi-code'), { recursive: true });
+        fs.writeFileSync(
+          path.join(projectDir, '.kimi-code', 'mcp.json'),
+          `${JSON.stringify({ mcpServers: { existing: { command: 'keep-me' } } }, null, 2)}\n`,
+          'utf8'
+        );
+
+        const apply = spawnSync(
+          process.execPath,
+          [
+            path.join(REPO_ROOT, 'scripts', 'install-apply.js'),
+            '--target',
+            'kimi',
+            '--profile',
+            'minimal',
+            '--json',
+          ],
+          {
+            cwd: projectDir,
+            env: { ...process.env, HOME: homeDir },
+            encoding: 'utf8',
+            maxBuffer: 30 * 1024 * 1024,
+          }
+        );
+        assert.strictEqual(apply.status, 0, apply.stderr);
+        assert.strictEqual(JSON.parse(apply.stdout).result.target, 'kimi');
+        assert.strictEqual(targetRoot, path.join(fs.realpathSync(projectDir), '.kimi-code'));
+        assert.ok(fs.existsSync(path.join(projectDir, '.kimi-code', 'AGENTS.md')));
+        assert.ok(fs.readdirSync(path.join(projectDir, '.kimi-code', 'skills')).length > 0);
+        assert.ok(fs.existsSync(path.join(projectDir, '.kimi-code', 'mcp.json')));
+        const mcpConfig = JSON.parse(
+          fs.readFileSync(path.join(projectDir, '.kimi-code', 'mcp.json'), 'utf8')
+        );
+        assert.strictEqual(mcpConfig.mcpServers.existing.command, 'keep-me');
+        assert.ok(mcpConfig.mcpServers['chrome-devtools']);
+        assert.ok(!fs.existsSync(path.join(projectDir, '.kimi')));
+        assert.ok(!fs.existsSync(path.join(homeDir, '.kimi-code', 'config.toml')));
+
+        const doctor = spawnSync(
+          process.execPath,
+          [
+            path.join(REPO_ROOT, 'scripts', 'doctor.js'),
+            '--target',
+            'kimi',
+            '--json',
+          ],
+          {
+            cwd: projectDir,
+            env: { ...process.env, HOME: homeDir },
+            encoding: 'utf8',
+            maxBuffer: 30 * 1024 * 1024,
+          }
+        );
+        assert.strictEqual(doctor.status, 0, doctor.stderr);
+        const doctorResult = JSON.parse(doctor.stdout).results.find(result => (
+          result.adapter.target === 'kimi'
+        ));
+        assert.ok(doctorResult);
+        assert.strictEqual(doctorResult.exists, true);
+      } finally {
+        fs.rmSync(homeDir, { recursive: true, force: true });
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
     }],
     ['sponsor roster keeps Itô and Moonshot distinct from node tooling', () => {
       const sponsors = read('SPONSORS.md');
       assert.ok(sponsors.includes('[**Itô**]'));
-      assert.ok(sponsors.includes('assets/images/sponsors/ito.svg'));
+      assert.ok(sponsors.includes('assets/images/sponsors/ito-transparent.png'));
+      assert.ok(sponsors.includes('assets/images/sponsors/ito-transparent-light.png'));
+      assert.doesNotMatch(sponsors, /assets\/images\/sponsors\/ito(?:-dark)?\.svg/);
       assert.ok(sponsors.includes('[**Moonshot AI (Kimi)**]'));
       assert.ok(sponsors.includes('assets/images/sponsors/moonshot.png'));
       assert.doesNotMatch(sponsors, /sixtytwo|sixty.?two/i);
@@ -195,7 +437,20 @@ function main() {
       assert.match(packageJson.scripts.welcome, /ecc ito find/i);
       assert.match(packageJson.scripts.welcome, /submits a live authenticated RFQ/i);
       assert.match(packageJson.scripts.welcome, /does not reserve capacity/i);
-      assert.ok(fs.existsSync(path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'ito.svg')));
+      assert.ok(
+        fs.existsSync(path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'ito-transparent.png'))
+      );
+      assert.ok(
+        fs.existsSync(
+          path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'ito-transparent-light.png')
+        )
+      );
+      assert.ok(
+        !fs.existsSync(path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'ito.svg'))
+      );
+      assert.ok(
+        !fs.existsSync(path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'ito-dark.svg'))
+      );
       assert.ok(fs.existsSync(path.join(REPO_ROOT, 'assets', 'images', 'sponsors', 'moonshot.png')));
     }],
   ];
