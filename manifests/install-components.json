@@ -197,7 +197,7 @@
     {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
       ]
@@ -559,6 +559,14 @@
       ]
     },
     {
+      "id": "skill:bengali-nlp",
+      "family": "skill",
+      "description": "Bengali Unicode, normalization, tokenization, search, and NLP guidance.",
+      "modules": [
+        "framework-language"
+      ]
+    },
+    {
       "id": "skill:security-review",
       "family": "skill",
       "description": "Security review checklist and vulnerability analysis.",
@@ -644,6 +652,14 @@
       "description": "Traditional Chinese (zh-TW) translated reference docs installed to ~/.claude/docs/zh-TW/.",
       "modules": [
         "docs-zh-tw"
+      ]
+    },
+    {
+      "id": "locale:bn",
+      "family": "locale",
+      "description": "Bengali (bn) translated reference documentation installed to ~/.claude/docs/bn/.",
+      "modules": [
+        "docs-bn"
       ]
     },
     {

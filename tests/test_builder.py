@@ -1,5 +1,6 @@
 import pytest
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
+
+from llm.core.types import Message, Role, ToolDefinition
 from llm.prompt import PromptBuilder, adapt_messages_for_provider
 from llm.prompt.builder import PromptConfig
 

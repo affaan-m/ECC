@@ -23,7 +23,7 @@
 
 **Dil / Language / 语言 / 語言 / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [**Türkçe**](README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [**Türkçe**](README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [বাংলা](../bn/README.md)
 
 </div>
 
@@ -78,6 +78,10 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 ---
 
 ## Yenilikler
+
+### v2.2.0 — Rehberli Çoklu Harness Kurulumu (Ağu 2026)
+
+Claude Code, Codex ve Kimi Code için incelenebilir çoklu harness kurulumu ve eşitlenmiş npm komut girişi eklendi.
 
 ### v2.1.0 — Ajan Harness İşletim Sistemi (Haz 2026)
 

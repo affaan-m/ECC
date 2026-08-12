@@ -1,8 +1,8 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 67 specialized agents, 281 skills, 94 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 69 specialized agents, 288 skills, 94 commands, and automated hook workflows for software development.
 
-**Version:** 2.1.0
+**Version:** 2.2.0
 
 ## Core Principles
 
@@ -20,6 +20,7 @@ This is a **production-ready AI coding plugin** providing 67 specialized agents,
 | architect | System design and scalability | Architectural decisions |
 | tdd-guide | Test-driven development | New features, bug fixes |
 | code-reviewer | Code quality and maintainability | After writing/modifying code |
+| bengali-reviewer | Bengali text review | Unicode, normalization, grapheme, search, and locale correctness |
 | security-reviewer | Vulnerability detection | Before commits, sensitive code |
 | spec-miner | Brownfield spec extraction | Onboarding brownfield projects to spec-driven development |
 | build-error-resolver | Fix build/type errors | When build fails |
@@ -46,6 +47,7 @@ This is a **production-ready AI coding plugin** providing 67 specialized agents,
 | rust-build-resolver | Rust build errors | Rust build failures |
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
+| rag-pipeline-reviewer | RAG pipeline review | Retrieval quality, chunking, reranking, RAGAS evaluation coverage |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
 
 ## Agent Orchestration
@@ -53,12 +55,14 @@ This is a **production-ready AI coding plugin** providing 67 specialized agents,
 Use agents proactively without user prompt:
 - Complex feature requests → **planner**
 - Code just written/modified → **code-reviewer**
+- Bengali text handling changes → **bengali-reviewer**
 - Bug fix or new feature → **tdd-guide**
 - Architectural decision → **architect**
 - Security-sensitive code → **security-reviewer**
 - Brownfield project onboarding → **spec-miner**
 - Autonomous loops / loop monitoring → **loop-operator**
 - Harness config reliability and cost → **harness-optimizer**
+- RAG/retrieval pipeline changes → **rag-pipeline-reviewer**
 
 Use parallel execution for independent operations — launch multiple agents simultaneously.
 
@@ -151,8 +155,8 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 67 specialized subagents
-skills/          — 281 workflow skills and domain knowledge
+agents/          — 69 specialized subagents
+skills/          — 288 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)

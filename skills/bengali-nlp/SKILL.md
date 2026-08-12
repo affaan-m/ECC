@@ -250,10 +250,10 @@ system_prompt_mixed = (
 
 # Always delimit user-provided content
 def build_prompt(system: str, user_input: str) -> str:
-    return f"{system}
+    return f"""{system}
 ---USER INPUT---
 {user_input}
----END INPUT---"
+---END INPUT---"""
 ```
 
 ### Handling Banglish (Mixed Bengali-English)
