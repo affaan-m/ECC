@@ -65,15 +65,19 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-src-path = ["src"]
+src = ["src"]
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = ["E501"]
+# E501: line length is handled by the formatter, not enforced here.
+# UP042: the (str, Enum) mixin is intentional — enum members must compare
+#        and serialize as plain strings across providers. StrEnum changes
+#        str() semantics, so the explicit mixin is kept deliberately.
+ignore = ["E501", "UP042"]
 
 [tool.mypy]
 python_version = "3.11"
-src_paths = ["src"]
+mypy_path = "src"
 warn_return_any = true
 warn_unused_ignores = true

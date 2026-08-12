@@ -2,8 +2,8 @@
 name: plan-canvas
 description: Open plans and HTML artifacts in a local browser canvas where the human annotates elements, chats, and approves or requests changes without leaving the page. Use when presenting a plan for review, or when feedback like "move this, change that" is easier pointed at than typed.
 metadata:
+  version: "1.0.0"
   origin: ECC
-version: "1.0.0"
 ---
 
 # Plan Canvas

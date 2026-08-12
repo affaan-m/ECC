@@ -4,7 +4,8 @@ description: "Map a described workflow to the right ECC command-GROUP with run-o
 argument-hint: <workflow description | empty=list all>
 origin: community
 author: KyawZinLatt
-version: "1.0.0"
+metadata:
+  version: "1.0.0"
 ---
 
 # ECC Recipes

@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
-from llm.providers.claude import ClaudeProvider
-from llm.providers.openai import OpenAIProvider
-from llm.providers.ollama import OllamaProvider
+from llm.core.types import Message, Role, ToolDefinition
 
 
 @dataclass
@@ -36,13 +33,23 @@ class PromptBuilder:
             raise ValueError("Pass either config or PromptBuilder keyword options, not both")
 
         if config is None:
-            overrides = {
-                "system_template": system_template,
-                "user_template": user_template,
-                "include_tools_in_system": include_tools_in_system,
-                "tool_format": tool_format,
-            }
-            config = PromptConfig(**{key: value for key, value in overrides.items() if value is not None})
+            defaults = PromptConfig()
+            config = PromptConfig(
+                system_template=(
+                    system_template if system_template is not None else defaults.system_template
+                ),
+                user_template=(
+                    user_template if user_template is not None else defaults.user_template
+                ),
+                include_tools_in_system=(
+                    include_tools_in_system
+                    if include_tools_in_system is not None
+                    else defaults.include_tools_in_system
+                ),
+                tool_format=(
+                    tool_format if tool_format is not None else defaults.tool_format
+                ),
+            )
 
         self.config = config
 
