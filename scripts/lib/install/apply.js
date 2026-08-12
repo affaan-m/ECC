@@ -1,10 +1,16 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+const {
+  hasExplicitCommitAttributionPreference,
+  withCommitAttributionDisabled,
+} = require('../claude-commit-attribution');
 const { writeInstallState } = require('../install-state');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
+const { assertWithinTrustedRoot } = require('../path-safety');
 const {
   assertSafeClaudeSkillOperation,
   prepareClaudeSkillMigration,
@@ -50,6 +56,27 @@ function readJsonObject(filePath, label) {
   return parsed;
 }
 
+function stateWithContentDigests(state) {
+  return {
+    ...state,
+    operations: (state.operations || []).map(operation => {
+      if (
+        !operation.destinationPath
+        || !fs.existsSync(operation.destinationPath)
+        || !fs.statSync(operation.destinationPath).isFile()
+      ) {
+        return { ...operation };
+      }
+      return {
+        ...operation,
+        contentSha256: crypto.createHash('sha256')
+          .update(fs.readFileSync(operation.destinationPath))
+          .digest('hex'),
+      };
+    }),
+  };
+}
+
 function cloneJsonValue(value) {
   if (value === undefined) {
     return undefined;
@@ -82,6 +109,52 @@ function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function shouldSetClaudeCommitAttributionPreference(plan) {
+  if (!plan?.adapter || !['claude', 'claude-project'].includes(plan.adapter.target)) {
+    return false;
+  }
+
+  return plan.operations.some(operation => {
+    if (typeof operation?.destinationPath !== 'string') {
+      return false;
+    }
+    const relativePath = path.relative(plan.targetRoot, operation.destinationPath);
+    return relativePath && !relativePath.startsWith(`docs${path.sep}`) && relativePath !== 'docs';
+  });
+}
+
+function writeClaudeCommitAttributionPreference(settingsPath) {
+  // Read once rather than probing with existsSync first. Checking for the file and
+  // then writing it is a file system race (CodeQL js/file-system-race), and a
+  // missing file is simply the fresh-install case.
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      // Unreadable or malformed settings belong to the user; leave them untouched.
+      return false;
+    }
+    settings = {};
+  }
+
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return false;
+  }
+
+  if (hasExplicitCommitAttributionPreference(settings)) {
+    return false;
+  }
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(
+    settingsPath,
+    formatJson(withCommitAttributionDisabled(settings)),
+    'utf8'
+  );
+  return true;
+}
+
 function replacePluginRootPlaceholders(value, pluginRoot) {
   if (!pluginRoot) {
     return value;
@@ -107,14 +180,49 @@ function replacePluginRootPlaceholders(value, pluginRoot) {
   return value;
 }
 
-function findHooksSourcePath(plan, hooksDestinationPath) {
-  const operation = plan.operations.find(item => item.destinationPath === hooksDestinationPath);
-  return operation ? operation.sourcePath : null;
+function findHooksOperation(plan, hooksDestinationPath) {
+  return plan.operations.find(item => (
+    item.destinationPath === hooksDestinationPath
+    && item.moduleId === 'hooks-runtime'
+    && typeof item.sourcePath === 'string'
+  ));
 }
 
 function isMcpConfigPath(filePath) {
   const basename = path.basename(String(filePath || ''));
   return basename === '.mcp.json' || basename === 'mcp.json';
+}
+
+function assertSafeInstallOperation(plan, operation) {
+  if (!operation || typeof operation.destinationPath !== 'string') {
+    throw new Error('Refusing to apply install operation: missing destination path.');
+  }
+
+  const targetRoot = plan && plan.targetRoot;
+  assertWithinTrustedRoot(operation.destinationPath, targetRoot, 'install ECC file');
+
+  const resolvedRoot = path.resolve(targetRoot);
+  const resolvedTarget = path.resolve(operation.destinationPath);
+  const relativePath = path.relative(resolvedRoot, resolvedTarget);
+  const segments = relativePath ? relativePath.split(path.sep) : [];
+  for (const segmentIndex of Array.from({ length: segments.length + 1 }, (_value, index) => index)) {
+    const currentPath = segmentIndex === 0
+      ? resolvedRoot
+      : path.join(resolvedRoot, ...segments.slice(0, segmentIndex));
+    try {
+      const stats = fs.lstatSync(currentPath);
+      if (stats.isSymbolicLink()) {
+        throw new Error(
+          `Refusing to install ECC file through symlinked path: '${currentPath}'.`
+        );
+      }
+    } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        break;
+      }
+      throw error;
+    }
+  }
 }
 
 function buildResolvedClaudeHooks(plan) {
@@ -124,7 +232,11 @@ function buildResolvedClaudeHooks(plan) {
 
   const pluginRoot = plan.targetRoot;
   const hooksDestinationPath = path.join(plan.targetRoot, 'hooks', 'hooks.json');
-  const hooksSourcePath = findHooksSourcePath(plan, hooksDestinationPath) || hooksDestinationPath;
+  const hooksOperation = findHooksOperation(plan, hooksDestinationPath);
+  if (!hooksOperation) {
+    return null;
+  }
+  const hooksSourcePath = hooksOperation.sourcePath;
   if (!fs.existsSync(hooksSourcePath)) {
     return null;
   }
@@ -136,6 +248,7 @@ function buildResolvedClaudeHooks(plan) {
   }
 
   return {
+    hooksOperation,
     hooksDestinationPath,
     resolvedHooksConfig: {
       ...hooksConfig,
@@ -162,6 +275,8 @@ function previewInstallPlan(plan) {
 
 function applyInstallPlan(plan, dependencies = {}) {
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const beforeOperationWrite = dependencies.beforeOperationWrite;
+  const beforeInstallStateWrite = dependencies.beforeInstallStateWrite;
   const migration = prepareClaudeSkillMigration(plan);
   const appliedPlan = {
     ...plan,
@@ -177,16 +292,24 @@ function applyInstallPlan(plan, dependencies = {}) {
     // before the first copy. A later failure is retryable and uninstall can
     // clean the entire partial install, including non-skill files. During
     // legacy migration the bridge also retains the prior managed operations.
+    if (typeof beforeInstallStateWrite === 'function') {
+      beforeInstallStateWrite({ plan: appliedPlan, state: migration.bridgeState });
+    }
     persistInstallState(plan.installStatePath, migration.bridgeState);
   }
 
   for (const operation of appliedPlan.operations) {
+    assertSafeInstallOperation(appliedPlan, operation);
     assertSafeClaudeSkillOperation(appliedPlan, operation);
     fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
     // Recheck directories that were absent during the first validation. This
     // narrows the symlink-swap window around mkdirSync, but path checks cannot
     // eliminate a later TOCTOU race before the file write.
+    assertSafeInstallOperation(appliedPlan, operation);
     assertSafeClaudeSkillOperation(appliedPlan, operation);
+    if (typeof beforeOperationWrite === 'function') {
+      beforeOperationWrite({ plan: appliedPlan, operation });
+    }
 
     if (operation.kind === 'merge-json') {
       const payload = cloneJsonValue(operation.mergePayload);
@@ -236,7 +359,12 @@ function applyInstallPlan(plan, dependencies = {}) {
   }
 
   if (resolvedClaudeHooksPlan) {
+    assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
     fs.mkdirSync(path.dirname(resolvedClaudeHooksPlan.hooksDestinationPath), { recursive: true });
+    assertSafeInstallOperation(appliedPlan, resolvedClaudeHooksPlan.hooksOperation);
+    if (typeof beforeOperationWrite === 'function') {
+      beforeOperationWrite({ plan: appliedPlan, operation: resolvedClaudeHooksPlan.hooksOperation });
+    }
     fs.writeFileSync(
       resolvedClaudeHooksPlan.hooksDestinationPath,
       JSON.stringify(resolvedClaudeHooksPlan.resolvedHooksConfig, null, 2) + '\n',
@@ -247,11 +375,20 @@ function applyInstallPlan(plan, dependencies = {}) {
   if (hasLegacyMigration) {
     removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
   }
-  persistInstallState(plan.installStatePath, migration.finalState);
+
+  if (shouldSetClaudeCommitAttributionPreference(appliedPlan)) {
+    writeClaudeCommitAttributionPreference(path.join(plan.targetRoot, 'settings.json'));
+  }
+
+  const finalState = stateWithContentDigests(migration.finalState);
+  if (typeof beforeInstallStateWrite === 'function') {
+    beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
+  }
+  persistInstallState(plan.installStatePath, finalState);
 
   return {
     ...plan,
-    statePreview: migration.finalState,
+    statePreview: finalState,
     plannedOperations: [...plan.operations],
     operations: migration.appliedOperations,
     skippedOperations: migration.skippedOperations,
@@ -265,5 +402,6 @@ function applyInstallPlan(plan, dependencies = {}) {
 
 module.exports = {
   applyInstallPlan,
+  assertSafeInstallOperation,
   previewInstallPlan,
 };

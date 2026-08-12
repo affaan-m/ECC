@@ -1,5 +1,4 @@
-import pytest
-from llm.core.types import ToolCall, ToolDefinition, ToolResult
+from llm.core.types import ToolCall, ToolDefinition
 from llm.tools import ToolExecutor, ToolRegistry
 
 

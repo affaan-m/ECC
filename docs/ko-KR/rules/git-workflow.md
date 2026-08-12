@@ -9,7 +9,7 @@
 
 타입: feat, fix, refactor, docs, test, chore, perf, ci
 
-참고: 공동 작성자 표기를 비활성화하려면 `~/.claude/settings.json`에 `"includeCoAuthoredBy": false`를 설정하세요. Claude Code는 기본적으로 `Co-Authored-By`를 추가하며 ECC는 이 설정을 포함하지 않습니다.
+참고: ECC가 관리하는 설치는 `~/.claude/settings.json`에 `"includeCoAuthoredBy": false`를 설정하므로 커밋에 기본적으로 `Co-Authored-By`가 붙지 않습니다. Claude 표기를 유지하려면 `"includeCoAuthoredBy": true`를 설정하거나 `attribution`을 구성하세요. ECC는 명시적인 선택을 덮어쓰지 않습니다.
 
 ## Pull Request 워크플로우
 

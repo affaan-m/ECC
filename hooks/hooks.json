@@ -171,9 +171,31 @@
         ],
         "description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect",
         "id": "post:mcp-health-check"
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('path');const r=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const s=p.join(r,'scripts/hooks/plugin-hook-bootstrap.js');process.env.CLAUDE_PLUGIN_ROOT=r;process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:skill:track scripts/hooks/skill-run-tracker.js standard,strict"
+          }
+        ],
+        "description": "Record hard Skill tool failures for skill-health telemetry",
+        "id": "post:skill:track"
       }
     ],
     "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs');const path=require('path');const {spawnSync}=require('child_process');const raw=fs.readFileSync(0,'utf8');const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};const rel=path.join('scripts','hooks','run-with-flags.js');const root=(function(){var p=require('path'),f=require('fs'),o=require('os');var e=process.env.CLAUDE_PLUGIN_ROOT;if(e&&e.trim())return e.trim();var d=p.join(o.homedir(),'.claude');function L(x){try{return require(p.join(x,'scripts','lib','resolve-ecc-root')).resolveEccRoot()}catch(_){return null}}var r=L(d);if(r)return r;var s=['ecc','ecc@ecc','marketplaces/ecc','everything-claude-code','everything-claude-code@everything-claude-code','marketplaces/everything-claude-code'];for(var i=0;i<s.length;i++){r=L(p.join(d,'plugins',s[i]));if(r)return r}try{var g=['ecc','everything-claude-code'];for(var j=0;j<g.length;j++){var c=p.join(d,'plugins','cache',g[j]);var O=f.readdirSync(c);for(var k=0;k<O.length;k++){var q=p.join(c,O[k]);var V=f.readdirSync(q);for(var m=0;m<V.length;m++){r=L(p.join(q,V[m]));if(r)return r}}}}catch(_){}return d})();const script=path.join(root,rel);if(fs.existsSync(script)){const result=spawnSync(process.execPath,[script,'stop:plan-canvas-pending','scripts/hooks/plan-canvas-pending.js','minimal,standard,strict'],{input:raw,encoding:'utf8',env:process.env,cwd:process.cwd(),timeout:30000,maxBuffer:16*1024*1024});const failed=result.error||result.status===null||result.signal;const stdout=!failed&&typeof result.stdout==='string'?result.stdout:'';let stderr=typeof result.stderr==='string'?result.stderr:'';let code=Number.isInteger(result.status)?result.status:0;if(failed){const reason=result.error?result.error.message:(result.signal?'signal '+result.signal:'missing exit status');stderr+='[Stop] ERROR: hook runner failed: '+reason+String.fromCharCode(10);code=1;}finish(stdout,stderr,code);}else{finish(raw,'[Stop] WARNING: could not resolve ECC plugin root; skipping hook'+String.fromCharCode(10),0);}\""
+          }
+        ],
+        "description": "Deliver undelivered Plan Canvas browser feedback before the agent stops",
+        "id": "stop:plan-canvas-pending"
+      },
       {
         "matcher": "*",
         "hooks": [
