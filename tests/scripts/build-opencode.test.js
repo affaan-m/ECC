@@ -49,11 +49,44 @@ function main() {
       const check = `
         const assert = require("assert")
         const { pathToFileURL } = require("url")
-        const file = process.argv[1]
-        import(pathToFileURL(file).href).then((mod) => {
+
+        async function main() {
+          let mod
+          try {
+            mod = await import(pathToFileURL(process.argv[1]).href)
+          } catch (error) {
+            console.error(error)
+            process.exit(1)
+          }
           assert.deepStrictEqual(Object.keys(mod).sort(), ["default"])
           assert.strictEqual(typeof mod.default, "function")
-        }).catch((error) => {
+
+          const plugin = await mod.default({
+            client: { app: { log: () => {} } },
+            $: async () => { throw new Error("$ must not be called during plugin init") },
+            directory: process.cwd(),
+            worktree: process.cwd(),
+          })
+          assert.ok(plugin && typeof plugin === "object", "default export must return a plugin record")
+          const expectedHooks = [
+            "file.edited",
+            "tool.execute.after",
+            "tool.execute.before",
+            "session.created",
+            "session.idle",
+            "session.deleted",
+            "file.watcher.updated",
+            "todo.updated",
+            "shell.env",
+            "experimental.session.compacting",
+            "permission.ask",
+          ]
+          for (const hook of expectedHooks) {
+            assert.strictEqual(typeof plugin[hook], "function", "missing hook: " + hook)
+          }
+        }
+
+        main().catch((error) => {
           console.error(error)
           process.exit(1)
         })
