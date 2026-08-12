@@ -14,6 +14,14 @@ const repoRoot = path.resolve(__dirname, '..');
 const harnessPath = path.join(repoRoot, 'scripts', 'gan-harness.sh');
 const harnessSource = fs.readFileSync(harnessPath, 'utf8');
 
+if (process.platform === 'win32') {
+  console.log('\n=== GAN harness helpers ===\n');
+  console.log('  - skipped on Windows; GAN harness shell helpers are Unix-only');
+  console.log('\nPassed: 0');
+  console.log('Failed: 0');
+  process.exit(0);
+}
+
 function test(name, fn) {
   try {
     fn();
