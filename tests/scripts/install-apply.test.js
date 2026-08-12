@@ -681,7 +681,7 @@ function runTests() {
     assert.ok(result.stderr.includes('Unknown install module: ghost-module'));
   })) passed++; else failed++;
 
-  if (test('installs claude hooks without generating settings.json', () => {
+  if (test('installs claude hooks and defaults commit attribution off', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -691,7 +691,10 @@ function runTests() {
 
       const claudeRoot = path.join(homeDir, '.claude');
       assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should be copied');
-      assert.ok(!fs.existsSync(path.join(claudeRoot, 'settings.json')), 'settings.json should not be created just to install managed hooks');
+      assert.deepStrictEqual(
+        readJson(path.join(claudeRoot, 'settings.json')),
+        { includeCoAuthoredBy: false }
+      );
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
@@ -742,7 +745,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('preserves existing settings.json without mutating it during claude install', () => {
+  if (test('preserves existing settings.json while disabling Claude co-author attribution', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -766,6 +769,7 @@ function runTests() {
 
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
       assert.strictEqual(settings.effortLevel, 'high', 'existing effortLevel should be preserved');
+      assert.strictEqual(settings.includeCoAuthoredBy, false, 'Claude co-author attribution should be disabled by default');
       assert.deepStrictEqual(settings.env, { MY_VAR: '1' }, 'existing env should be preserved');
       assert.deepStrictEqual(
         settings.hooks.UserPromptSubmit,
@@ -857,7 +861,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('reinstall does not create settings.json when only managed hooks are installed', () => {
+  if (test('reinstall keeps commit attribution disabled when only managed hooks are installed', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -868,14 +872,17 @@ function runTests() {
       const secondInstall = run(['--profile', 'core'], { cwd: projectDir, homeDir });
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
-      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'settings.json')));
+      assert.deepStrictEqual(
+        readJson(path.join(homeDir, '.claude', 'settings.json')),
+        { includeCoAuthoredBy: false }
+      );
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;
 
-  if (test('reinstall leaves pre-existing hook-based settings.json untouched', () => {
+  if (test('reinstall leaves pre-existing hook-based settings.json untouched apart from co-author preference', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');
 
@@ -894,7 +901,62 @@ function runTests() {
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
       const afterSecondInstall = readJson(settingsPath);
-      assert.deepStrictEqual(afterSecondInstall, legacySettings);
+      assert.deepStrictEqual(afterSecondInstall, {
+        ...legacySettings,
+        includeCoAuthoredBy: false,
+      });
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('reinstall preserves an explicit includeCoAuthoredBy opt-in', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const claudeRoot = path.join(homeDir, '.claude');
+      fs.mkdirSync(claudeRoot, { recursive: true });
+      const settingsPath = path.join(claudeRoot, 'settings.json');
+      const customSettings = {
+        includeCoAuthoredBy: true,
+        theme: 'dark',
+      };
+      fs.writeFileSync(settingsPath, JSON.stringify(customSettings, null, 2));
+
+      const install = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      assert.strictEqual(install.code, 0, install.stderr);
+
+      const afterInstall = readJson(settingsPath);
+      assert.deepStrictEqual(afterInstall, customSettings);
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('reinstall preserves an explicit attribution opt-in', () => {
+    const homeDir = createTempDir('install-apply-home-');
+    const projectDir = createTempDir('install-apply-project-');
+
+    try {
+      const claudeRoot = path.join(homeDir, '.claude');
+      fs.mkdirSync(claudeRoot, { recursive: true });
+      const settingsPath = path.join(claudeRoot, 'settings.json');
+      // `attribution` supersedes `includeCoAuthoredBy` in Claude Code, so writing
+      // the deprecated key here would be dead config that loses to the user's choice.
+      const customSettings = {
+        attribution: { commit: 'Signed-off-by: Someone <someone@example.com>' },
+        theme: 'dark',
+      };
+      fs.writeFileSync(settingsPath, JSON.stringify(customSettings, null, 2));
+
+      const install = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      assert.strictEqual(install.code, 0, install.stderr);
+
+      const afterInstall = readJson(settingsPath);
+      assert.deepStrictEqual(afterInstall, customSettings);
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);

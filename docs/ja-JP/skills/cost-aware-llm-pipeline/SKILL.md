@@ -22,7 +22,7 @@ origin: ECC
 シンプルなタスクには自動的に安価なモデルを選択し、複雑なタスクのために高価なモデルを予約します。
 
 ```python
-MODEL_SONNET = "claude-sonnet-4-6"
+MODEL_SONNET = "claude-sonnet-5"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 _SONNET_TEXT_THRESHOLD = 10_000  # 文字数

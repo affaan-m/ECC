@@ -260,6 +260,7 @@ test('an existing single-scope install defaults to its detected scope', () => {
       ['plugin', 'list', '--json'],
     ]);
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'minimal');
   });
 });
@@ -345,6 +346,7 @@ test('same-scope repeat setup updates ECC and changes durable user hook preferen
     setupClaudePlugin(setupOptions(fixture, { scope: 'local', hooks: 'off' }));
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
     assert.strictEqual(settings.theme, 'dark');
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.deepStrictEqual(settings.pluginConfigs['another@market'], { enabled: false });
     assert.deepStrictEqual(settings.pluginConfigs['ecc@ecc'].futureKey, { keep: true });
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.unknown, 'keep');
@@ -373,7 +375,59 @@ test('repeat setup preserves the current hook preference when --hooks is omitted
     const result = setupClaudePlugin(setupOptions(fixture, { hooks: undefined }));
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
     assert.strictEqual(result.hooks, 'off');
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hooks_enabled, false);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
+  });
+});
+
+test('setup preserves an explicit includeCoAuthoredBy opt-in', () => {
+  withFixture({
+    plugins: [installedPlugin('user')],
+    marketplaces: [officialMarketplace('user')],
+  }, fixture => {
+    fs.writeFileSync(fixture.settingsPath, `${JSON.stringify({
+      includeCoAuthoredBy: true,
+      pluginConfigs: {
+        'ecc@ecc': {
+          options: {
+            hooks_enabled: true,
+            hook_profile: 'minimal',
+          },
+        },
+      },
+    }, null, 2)}\n`);
+
+    setupClaudePlugin(setupOptions(fixture, { hooks: 'strict' }));
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, true);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
+  });
+});
+
+test('setup preserves an explicit attribution opt-in', () => {
+  withFixture({
+    plugins: [installedPlugin('user')],
+    marketplaces: [officialMarketplace('user')],
+  }, fixture => {
+    // `attribution` wins over `includeCoAuthoredBy` in Claude Code, so ECC must not
+    // add a deprecated key that would silently lose to the user's own setting.
+    fs.writeFileSync(fixture.settingsPath, `${JSON.stringify({
+      attribution: { commit: 'Signed-off-by: Someone <someone@example.com>' },
+      pluginConfigs: {
+        'ecc@ecc': {
+          options: {
+            hooks_enabled: true,
+            hook_profile: 'minimal',
+          },
+        },
+      },
+    }, null, 2)}\n`);
+
+    setupClaudePlugin(setupOptions(fixture, { hooks: 'strict' }));
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, undefined);
+    assert.deepStrictEqual(settings.attribution, { commit: 'Signed-off-by: Someone <someone@example.com>' });
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
   });
 });

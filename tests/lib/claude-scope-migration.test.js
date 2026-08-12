@@ -321,11 +321,17 @@ test('destination-only migration honors explicit hook preferences and reports dr
     assert.strictEqual(result.action, 'already-migrated');
     assert.strictEqual(result.dryRun, true);
     assert.strictEqual(result.preferencesUpdated, false);
-    assert.deepStrictEqual(result.plannedActions, [{
-      action: 'write-hook-preferences',
-      hooks_enabled: false,
-      hook_profile: 'standard',
-    }]);
+    assert.deepStrictEqual(result.plannedActions, [
+      {
+        action: 'write-hook-preferences',
+        hooks_enabled: false,
+        hook_profile: 'standard',
+      },
+      {
+        action: 'write-commit-attribution-preference',
+        includeCoAuthoredBy: false,
+      },
+    ]);
     assert.ok(!fs.existsSync(fixture.settingsPath));
   });
 });
@@ -614,7 +620,10 @@ test('migration preserves hook preferences unless --hooks is explicit', () => {
     assert.strictEqual(result.hooks, 'off');
     assert.deepStrictEqual(
       JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8')),
-      original
+      {
+        ...original,
+        includeCoAuthoredBy: false,
+      }
     );
     assert.ok(readCalls(fixture).some(argv => (
       JSON.stringify(argv) === JSON.stringify(installArgv('project', 'off', 'strict'))
@@ -637,9 +646,31 @@ test('migration preserves hook preferences unless --hooks is explicit', () => {
     migrateClaudePluginScope(migrationOptions(fixture, 'project', { hooks: 'strict' }));
     const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
     assert.strictEqual(settings.theme, 'dark');
+    assert.strictEqual(settings.includeCoAuthoredBy, false);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].futureKey, true);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.unknown, 'keep');
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hooks_enabled, true);
+    assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
+  });
+});
+
+test('migration preserves an explicit includeCoAuthoredBy opt-in', () => {
+  withFixture({
+    plugins: [plugin('user')],
+    marketplaces: [marketplace('user')],
+  }, fixture => {
+    fs.writeFileSync(fixture.settingsPath, `${JSON.stringify({
+      includeCoAuthoredBy: true,
+      pluginConfigs: {
+        'ecc@ecc': {
+          options: { hooks_enabled: true, hook_profile: 'minimal' },
+        },
+      },
+    }, null, 2)}\n`);
+
+    migrateClaudePluginScope(migrationOptions(fixture, 'project', { hooks: 'strict' }));
+    const settings = JSON.parse(fs.readFileSync(fixture.settingsPath, 'utf8'));
+    assert.strictEqual(settings.includeCoAuthoredBy, true);
     assert.strictEqual(settings.pluginConfigs['ecc@ecc'].options.hook_profile, 'strict');
   });
 });

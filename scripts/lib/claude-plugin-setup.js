@@ -5,6 +5,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { writeFileAtomic } = require('./atomic-write');
+const {
+  hasExplicitCommitAttributionPreference,
+  withCommitAttributionDisabled,
+} = require('./claude-commit-attribution');
 const { normalizeGitHubGitOrigin } = require('./github-origin');
 const {
   CURRENT_PLUGIN_ID,
@@ -320,21 +324,32 @@ function deriveHookMode(settings) {
   return options.hooks_enabled ? options.hook_profile : 'off';
 }
 
+function withClaudeCommitAttributionPreference(settings) {
+  return withCommitAttributionDisabled(settings);
+}
+
+function needsClaudeCommitAttributionPreferenceWrite(settings) {
+  return !hasExplicitCommitAttributionPreference(settings);
+}
+
 function writeClaudePluginOptions(settingsPath, hooks) {
   const settings = readSettings(settingsPath);
   const pluginConfigs = settings.pluginConfigs || {};
   const eccConfig = pluginConfigs[CURRENT_PLUGIN_ID] || {};
   const options = eccConfig.options || {};
+  const nextOptions = hooks === undefined
+    ? { ...options }
+    : {
+      ...options,
+      ...hookOptions(hooks),
+    };
   const nextSettings = {
-    ...settings,
+    ...withClaudeCommitAttributionPreference(settings),
     pluginConfigs: {
       ...pluginConfigs,
       [CURRENT_PLUGIN_ID]: {
         ...eccConfig,
-        options: {
-          ...options,
-          ...hookOptions(hooks),
-        },
+        options: nextOptions,
       },
     },
   };
@@ -609,8 +624,15 @@ function setupClaudePlugin(options = {}, dependencies = {}) {
     run,
     scope: inventory.scope,
   });
-  if (options.hooks !== undefined || !inventory.installed) {
-    writeClaudePluginOptions(settingsPath, hooks);
+  const hooksToPersist = options.hooks !== undefined || !inventory.installed
+    ? hooks
+    : undefined;
+  if (
+    options.hooks !== undefined
+    || !inventory.installed
+    || needsClaudeCommitAttributionPreferenceWrite(initialSettings)
+  ) {
+    writeClaudePluginOptions(settingsPath, hooksToPersist);
   }
 
   return {
@@ -648,5 +670,7 @@ module.exports = {
   runClaude,
   setupClaudePlugin,
   verifyPluginAtScope,
+  needsClaudeCommitAttributionPreferenceWrite,
+  withClaudeCommitAttributionPreference,
   writeClaudePluginOptions,
 };

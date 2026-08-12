@@ -4,6 +4,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+const {
+  hasExplicitCommitAttributionPreference,
+  withCommitAttributionDisabled,
+} = require('../claude-commit-attribution');
 const { writeInstallState } = require('../install-state');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
@@ -103,6 +107,52 @@ function deepMergeJson(baseValue, patchValue) {
 
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function shouldSetClaudeCommitAttributionPreference(plan) {
+  if (!plan?.adapter || !['claude', 'claude-project'].includes(plan.adapter.target)) {
+    return false;
+  }
+
+  return plan.operations.some(operation => {
+    if (typeof operation?.destinationPath !== 'string') {
+      return false;
+    }
+    const relativePath = path.relative(plan.targetRoot, operation.destinationPath);
+    return relativePath && !relativePath.startsWith(`docs${path.sep}`) && relativePath !== 'docs';
+  });
+}
+
+function writeClaudeCommitAttributionPreference(settingsPath) {
+  // Read once rather than probing with existsSync first. Checking for the file and
+  // then writing it is a file system race (CodeQL js/file-system-race), and a
+  // missing file is simply the fresh-install case.
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      // Unreadable or malformed settings belong to the user; leave them untouched.
+      return false;
+    }
+    settings = {};
+  }
+
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return false;
+  }
+
+  if (hasExplicitCommitAttributionPreference(settings)) {
+    return false;
+  }
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(
+    settingsPath,
+    formatJson(withCommitAttributionDisabled(settings)),
+    'utf8'
+  );
+  return true;
 }
 
 function replacePluginRootPlaceholders(value, pluginRoot) {
@@ -325,6 +375,11 @@ function applyInstallPlan(plan, dependencies = {}) {
   if (hasLegacyMigration) {
     removeLegacyClaudeSkillFiles(migration, plan.targetRoot);
   }
+
+  if (shouldSetClaudeCommitAttributionPreference(appliedPlan)) {
+    writeClaudeCommitAttributionPreference(path.join(plan.targetRoot, 'settings.json'));
+  }
+
   const finalState = stateWithContentDigests(migration.finalState);
   if (typeof beforeInstallStateWrite === 'function') {
     beforeInstallStateWrite({ plan: appliedPlan, state: finalState });
