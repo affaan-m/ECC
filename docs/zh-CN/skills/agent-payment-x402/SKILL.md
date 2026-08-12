@@ -32,7 +32,7 @@ origin: community
 
 - `agentwallet-sdk`：在生产使用前，通过包文档确认当前网络覆盖范围。Base Sepolia 是最安全的开发默认值；Base 主网是原始技能所述的生产路径。
 - OKX Payments / X Layer：当前卖家文档面向 X Layer（`eip155:196`）和 USDT0 结算。由于支付包和结算器行为可能快速变化，生成生产代码前请获取当前 SDK 文档。
-- 上游 x402 包：设计上即多网络 —— 一条路由可以同时提供 Base 和 Solana，由买方选择。包默认使用 `x402.org` 结算器，它仅限测试网（Base Sepolia `eip155:84532`、Solana 开发网 `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`，以及 Stellar、Aptos、Hedera、XRPL 测试网），不适用于主网路由。生产环境请从上游文档的结算器列表中选择 —— PayAI 结算器是 Solana 主网（`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）及其他网络的合理默认选择，无需 API 密钥；CDP 结算器由 Coinbase 托管，对每笔交易执行 KYT/OFAC 筛查。生产前请在各结算器的 `/supported` 端点确认实时覆盖范围，而不要在此硬编码。
+- 上游 x402 包：设计上即多网络 —— 一条路由可以同时提供 Base 和 Solana，由买方选择。包默认使用 `x402.org` 结算器，它仅限测试网（Base Sepolia `eip155:84532`、Solana 开发网 `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`，以及 Stellar、Aptos、Hedera、XRPL 测试网），不适用于主网路由。主网（Solana 为 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）请选择自结算、自行运行结算器，或从上游结算器列表中挑选托管方案——参见选项 C 中的结算器对比。生产前请在结算器的 `/supported` 端点确认实时覆盖范围，而不要在此硬编码。
 
 ## 工作原理
 
@@ -109,8 +109,8 @@ x402 将 HTTP 402（需要付款）扩展为机器可协商的流程。当服务
 
 1. 从维护中的 [`examples/typescript/clients`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/clients) 示例（fetch、axios、MCP）开始，而不是复制旧文档中的片段。
 2. 在签署或提交第一笔付费请求之前要求明确的用户确认，与选项 B 对 OKX 流程的要求完全一致。不要将支付执行隐藏在通用工具调用之后。
-3. 锁定包版本（例如 `@x402/fetch@2.19.0`）；上游所有包以相同步调发布版本。
-4. 在每次付费调用之前立即用预算策略进行故障关闭门控——而不是在客户端构建时只做一次。
+3. 锁定包版本（例如 `@x402/fetch@2.22.0`）；上游所有包以相同步调发布版本。
+4. 用注册到客户端的 `PaymentPolicy` 强制预算，使检查在每次调用时都针对服务器的真实挑战运行。与你自己传入的数字比较的预算不能证明任何事——金额、资产和网络都来自服务器，因此必须在签名产生之前全部验证。
 
 ```typescript
 import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
@@ -131,34 +131,65 @@ if (!evmKey || !svmKey) {
 const client = new x402Client();
 client.register("eip155:*", new ExactEvmScheme(privateKeyToAccount(evmKey)));
 client.register("solana:*", new ExactSvmScheme(await createKeyPairSignerFromBytes(base58.decode(svmKey))));
+
+// A PaymentPolicy filters the SERVER's payment requirements before any
+// signature is created. Returning an empty array means "nothing here is
+// acceptable" and the client refuses to pay rather than falling back.
+const ALLOWED_NETWORKS = new Set([
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
+  "eip155:8453",                                   // Base
+]);
+const MAX_AMOUNT = 10_000n;   // atomic units — 6-decimal USDC, so $0.01
+
+// EVM addresses are case-insensitive, so compare them lowercased. Solana
+// addresses are base58 and ARE case-sensitive — never lowercase those, or a
+// different account could slip through.
+const normalizeAsset = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const ALLOWED_ASSETS = new Set(
+  [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
+  ].map(normalizeAsset),
+);
+
+client.registerPolicy((_x402Version, requirements) =>
+  requirements.filter(r => {
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;              // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAsset(r.asset))) return false;  // wrong token
+    try {
+      const amount = BigInt(r.amount);
+      return amount >= 0n && amount <= MAX_AMOUNT;                   // over budget / negative
+    } catch {
+      return false;                                                  // unparseable amount
+    }
+  }),
+);
+
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
-// Minimal fail-closed gate. For the full MCP-backed version with budget
-// tracking, reuse preToolCheck from the Examples section below.
-const ALLOWED_HOSTS = new Set(["api.example.com"]);
-let sessionSpend = 0;
-function assertPaymentAllowed(url: string, maxCost: number, sessionCap = 5.0): void {
-  if (!ALLOWED_HOSTS.has(new URL(url).host)) throw new Error("Host not allowlisted — blocked");
-  if (!Number.isFinite(maxCost) || maxCost < 0) throw new Error("Invalid cost — blocked");
-  if (sessionSpend + maxCost > sessionCap) throw new Error("Session budget exceeded — blocked");
-  sessionSpend += maxCost;
-}
-
-// Gate immediately before EVERY paid call — a wrapped client checked only once
-// at construction leaves every later call unmetered.
-assertPaymentAllowed("https://api.example.com/data", 0.01);
 const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
 ```
 
-包装后的客户端只会支付 `network` 与已注册方案匹配的挑战。签署前还应验证挑战的 `asset`：在 Solana 上，USDC 主网为 `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`，开发网为 `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`。任何不匹配都按故障关闭处理：不签署，不重试。在 exact-SVM 方案中，结算器是交易费用支付方，因此买方钱包只需持有 USDC——无需 SOL 支付 gas。
+注册该策略后，超预算金额、非预期代币或未注册的链都会故障关闭——所有候选项都被过滤掉，`createPaymentPayload` 会抛出异常而不是签名。开发网 USDC 是 `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`；仅在开发时把它加入 `ALLOWED_ASSETS`。对策略做对抗性测试——分别喂入要求 `5000000` 原子单位的挑战、报价另一种铸币地址的挑战，以及你从未注册的链上的挑战，并断言它们都不会产生签名。在 exact-SVM 方案中，结算器是交易费用支付方，因此买方钱包只需持有 USDC——无需 SOL 支付 gas。
 
-**结算器选择。** 包默认使用 [`x402.org` 结算器](https://x402.org/facilitator)——仅限测试网（Base Sepolia、Solana 开发网等），零配置，适合开发。主网请从上游文档的[结算器列表](https://docs.x402.org/dev-tools/facilitators)中选择：[PayAI 结算器](https://facilitator.payai.network) 是合理的生产默认选择（包括 Solana 主网在内的多网络，无需 API 密钥），CDP 结算器由 Coinbase 托管并对每笔交易执行 KYT/OFAC 筛查。也可以自行运行结算器或自结算。
+**结算器选择。** 结算器代表资源服务器执行验证和结算，因此这是资源服务器的决定，而非买方的决定。按委托信任由少到多排列：
+
+| 选项 | 适用场景 |
+|--------|--------------|
+| [进程内自结算](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation) | 你不希望结算路径中有第三方，且能自行持有密钥和 RPC 访问 |
+| 自行运行结算器 | 你想要同样的控制力，但在多个服务间共享 |
+| [`x402.org` 结算器](https://x402.org/facilitator) | 开发与测试网——它是包的默认值，无需配置，上游明确说明它不适用于主网路由 |
+| 托管的生产结算器 | 你希望获得主网覆盖而不必自己运维基础设施 |
+
+选择托管方案时，请从上游文档的[结算器列表](https://docs.x402.org/dev-tools/facilitators)中挑选，而不是照搬这里的名字——该列表有人维护、并不详尽，且覆盖范围会变化。撰写时它包含 Coinbase 的 CDP（对每笔交易执行 KYT/OFAC 筛查）、PayAI、Corbits、Dexter、Solvador 等，其中若干同时覆盖 EVM 与 Solana 主网。无论选择哪一个，上线前都要在其 `/supported` 端点确认实时覆盖范围，并在新增网络时重新确认。
+
+> **披露**：本节由参与 PayAI（所列结算器之一）的人贡献。它只是若干选项之一，上面的自托管与上游默认路径是有意排在前面的。
 
 **卖方侧（API 向代理收费）。** 使用上游中间件；一条路由可以同时提供 Base 和 Solana（可运行版本参见 [`examples/typescript/servers`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers)）：
 
 | 运行时 | 包 |
 |---------|---------|
-| Express / Hono / Next.js / Fastify | `@x402/express@2.19.0`、`@x402/hono@2.19.0`、`@x402/next@2.19.0`、`@x402/fastify@2.19.0` |
+| Express / Hono / Next.js / Fastify | `@x402/express@2.22.0`、`@x402/hono@2.22.0`、`@x402/next@2.22.0`、`@x402/fastify@2.22.0` |
 | Python（FastAPI、Flask） | PyPI 上的 `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
@@ -309,5 +340,5 @@ main().catch((err) => {
 - **上游 x402 monorepo**：[`x402-foundation/x402`](https://github.com/x402-foundation/x402) — TypeScript、Python 和 Go 实现，以及维护中的客户端和服务器示例
 - **x402 文档**：[docs.x402.org](https://docs.x402.org)；生产结算器列表位于 [docs.x402.org/dev-tools/facilitators](https://docs.x402.org/dev-tools/facilitators)
 - **`@x402` 包**：[npmjs.com/org/x402](https://www.npmjs.com/org/x402) — `@x402/fetch`、`@x402/axios`、`@x402/express`、`@x402/hono`、`@x402/next`、`@x402/fastify`、`@x402/evm`、`@x402/svm`
-- **结算器**：[x402.org 结算器](https://x402.org/facilitator)（测试网默认）、[PayAI](https://facilitator.payai.network)（多网络生产，无需 API 密钥）、[CDP](https://docs.cdp.coinbase.com/x402/docs/quickstart-sellers)（Coinbase 托管，KYT/OFAC）
+- **结算器**：[自结算示例](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation)（无第三方）、[x402.org 结算器](https://x402.org/facilitator)（测试网默认）、以及有人维护的[生产列表](https://docs.x402.org/dev-tools/facilitators)
 - **发现**：CDP 与 PayAI 集市位于 `/discovery/resources`；Solana 可付费服务见 [pay.sh](https://pay.sh)

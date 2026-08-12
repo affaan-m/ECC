@@ -32,7 +32,7 @@ origin: community
 
 - `agentwallet-sdk`: 本番使用前に現在のネットワークカバレッジをパッケージドキュメントで確認。Base Sepolia が最も安全な開発デフォルト；Base メインネットがオリジナルスキルで説明されている本番パス。
 - OKX Payments / X Layer: 現在のセラードキュメントは X Layer（`eip155:196`）と USDT0 決済を対象。決済パッケージとファシリテーターの動作が迅速に変わる可能性があるため、本番コードを生成する前に現在の SDK ドキュメントを取得すること。
-- アップストリーム x402 パッケージ: 設計上マルチネットワーク — 1 つのルートで Base と Solana を同時に提示し、買い手に選ばせることができる。パッケージのデフォルトは `x402.org` ファシリテーターで、テストネット専用（Base Sepolia `eip155:84532`、Solana デブネット `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`、加えて Stellar、Aptos、Hedera、XRPL の各テストネット）であり、メインネットルート向けではない。本番はアップストリームドキュメントのファシリテーターリストから選ぶ — PayAI ファシリテーターは Solana メインネット（`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）ほか複数ネットワークで API キー不要の妥当なデフォルト；CDP ファシリテーターは全トランザクションに KYT/OFAC スクリーニングを行う Coinbase ホスト型。本番前にここにハードコードするのではなく、各ファシリテーターの `/supported` エンドポイントでライブカバレッジを確認すること。
+- アップストリーム x402 パッケージ: 設計上マルチネットワーク — 1 つのルートで Base と Solana を同時に提示し、買い手に選ばせることができる。パッケージのデフォルトは `x402.org` ファシリテーターで、テストネット専用（Base Sepolia `eip155:84532`、Solana デブネット `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`、加えて Stellar、Aptos、Hedera、XRPL の各テストネット）であり、メインネットルート向けではない。メインネット（Solana は `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`）では、自己ファシリテートするか、自前のファシリテーターを運用するか、アップストリームのファシリテーターリストからホスト型を選ぶ — オプション C のファシリテーター比較を参照。本番前にここにハードコードするのではなく、ファシリテーターの `/supported` エンドポイントでライブカバレッジを確認すること。
 
 ## 仕組み
 
@@ -109,8 +109,8 @@ X Layer x402、マルチパーティ決済（MPP）、セッション決済、�
 
 1. 古いドキュメントのスニペットをコピーするのではなく、メンテナンスされている [`examples/typescript/clients`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/clients)（fetch、axios、MCP）の例から始める。
 2. オプション B が OKX フローに要求するのとまったく同様に、最初の有料リクエストの署名または送信の前に明示的なユーザー確認を求める。汎用ツール呼び出しの背後に決済実行を隠さない。
-3. パッケージバージョンを固定する（例：`@x402/fetch@2.19.0`）；アップストリームの全パッケージはロックステップでバージョニングされる。
-4. すべての有料呼び出しを、呼び出しの直前にバジェットポリシーでフェイルクローズドにゲートする — クライアント構築時に一度だけではない。
+3. パッケージバージョンを固定する（例：`@x402/fetch@2.22.0`）；アップストリームの全パッケージはロックステップでバージョニングされる。
+4. バジェットはクライアントに登録した `PaymentPolicy` で強制し、毎回サーバーの実際のチャレンジに対して検査が走るようにする。自分で渡した数値と突き合わせるバジェットは何も証明しない — 金額・アセット・ネットワークはすべてサーバー由来なので、署名が生成される前に 3 つとも検証すること。
 
 ```typescript
 import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
@@ -120,45 +120,76 @@ import { privateKeyToAccount } from "viem/accounts";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { base58 } from "@scure/base";
 
-// 署名者のキーはオーケストレーターの env に属する — ハードコードせず、エージェントが書き込めないようにする。
+// Signer keys belong to the ORCHESTRATOR's env — never hardcoded, never agent-writable.
 const evmKey = process.env.EVM_PRIVATE_KEY as `0x${string}`;
 const svmKey = process.env.SVM_PRIVATE_KEY;
 if (!evmKey || !svmKey) {
   throw new Error("Signer keys are not set — refusing to start payment client");
 }
 
-// 1 つのクライアントで両方のネットワークファミリーに対応：買い手は 402 が提示するチェーンで支払う。
+// One client, both network families: the buyer pays whichever chain the 402 offers.
 const client = new x402Client();
 client.register("eip155:*", new ExactEvmScheme(privateKeyToAccount(evmKey)));
 client.register("solana:*", new ExactSvmScheme(await createKeyPairSignerFromBytes(base58.decode(svmKey))));
+
+// A PaymentPolicy filters the SERVER's payment requirements before any
+// signature is created. Returning an empty array means "nothing here is
+// acceptable" and the client refuses to pay rather than falling back.
+const ALLOWED_NETWORKS = new Set([
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",      // Solana mainnet
+  "eip155:8453",                                   // Base
+]);
+const MAX_AMOUNT = 10_000n;   // atomic units — 6-decimal USDC, so $0.01
+
+// EVM addresses are case-insensitive, so compare them lowercased. Solana
+// addresses are base58 and ARE case-sensitive — never lowercase those, or a
+// different account could slip through.
+const normalizeAsset = (a: string) => (a.startsWith("0x") ? a.toLowerCase() : a);
+const ALLOWED_ASSETS = new Set(
+  [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC, Solana mainnet
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",    // USDC, Base
+  ].map(normalizeAsset),
+);
+
+client.registerPolicy((_x402Version, requirements) =>
+  requirements.filter(r => {
+    if (!ALLOWED_NETWORKS.has(r.network)) return false;              // wrong chain
+    if (!ALLOWED_ASSETS.has(normalizeAsset(r.asset))) return false;  // wrong token
+    try {
+      const amount = BigInt(r.amount);
+      return amount >= 0n && amount <= MAX_AMOUNT;                   // over budget / negative
+    } catch {
+      return false;                                                  // unparseable amount
+    }
+  }),
+);
+
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
-// 最小限のフェイルクローズドゲート。バジェット追跡を備えた完全な MCP バックの
-// バージョンは、下の Examples セクションの preToolCheck を再利用する。
-const ALLOWED_HOSTS = new Set(["api.example.com"]);
-let sessionSpend = 0;
-function assertPaymentAllowed(url: string, maxCost: number, sessionCap = 5.0): void {
-  if (!ALLOWED_HOSTS.has(new URL(url).host)) throw new Error("Host not allowlisted — blocked");
-  if (!Number.isFinite(maxCost) || maxCost < 0) throw new Error("Invalid cost — blocked");
-  if (sessionSpend + maxCost > sessionCap) throw new Error("Session budget exceeded — blocked");
-  sessionSpend += maxCost;
-}
-
-// すべての有料呼び出しの直前にゲートする — 構築時に一度だけチェックされたラップ
-// クライアントは、以降のすべての呼び出しを無計量のままにしてしまう。
-assertPaymentAllowed("https://api.example.com/data", 0.01);
 const res = await fetchWithPayment("https://api.example.com/data", { method: "GET" });
 ```
 
-ラップされたクライアントは、`network` が登録済みスキームに一致するチャレンジのみに支払います。署名前にチャレンジの `asset` も検証すること：Solana では USDC はメインネットが `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`、デブネットが `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`。不一致はフェイルクローズドとして扱う：署名せず、リトライしない。exact-SVM スキームではファシリテーターがトランザクション手数料支払者となるため、買い手のウォレットは USDC のみを保有すればよい — ガス用の SOL は不要。
+ポリシーを登録すると、予算超過の金額、想定外のトークン、未登録のチェーンはすべてフェイルクローズドになる — 候補がすべて除外されるため、`createPaymentPayload` は署名せずに例外を投げる。デブネット USDC は `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`；開発時のみ `ALLOWED_ASSETS` に追加すること。ポリシーは敵対的にテストする — `5000000` アトミック単位を要求するチャレンジ、別のミントを提示するチャレンジ、登録していないチェーンのチャレンジを与え、いずれも署名が生成されないことを確認する。exact-SVM スキームではファシリテーターがトランザクション手数料支払者となるため、買い手のウォレットは USDC のみを保有すればよい — ガス用の SOL は不要。
 
-**ファシリテーターの選択。** パッケージのデフォルトは [`x402.org` ファシリテーター](https://x402.org/facilitator) — テストネット専用（Base Sepolia、Solana デブネットほか）、セットアップ不要で開発に最適。メインネットはアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶ：[PayAI ファシリテーター](https://facilitator.payai.network) は妥当な本番デフォルト（Solana メインネットを含むマルチネットワーク、API キー不要）で、CDP ファシリテーターは全トランザクションに KYT/OFAC スクリーニングを行う Coinbase ホスト型。自前のファシリテーター運用やセルフファシリテーションも可能。
+**ファシリテーターの選択。** ファシリテーターはリソースサーバーに代わって検証と決済を行うため、これは買い手ではなくリソースサーバーの判断である。委ねる信頼が小さい順に：
+
+| 選択肢 | 適する場面 |
+|--------|--------------|
+| [インプロセスで自己ファシリテート](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation) | 決済経路に第三者を入れたくなく、鍵と RPC アクセスを自前で保持できる |
+| 自前のファシリテーターを運用 | 同じ制御を複数サービスで共有したい |
+| [`x402.org` ファシリテーター](https://x402.org/facilitator) | 開発・テストネット向け — パッケージのデフォルトでセットアップ不要。アップストリームはメインネットルート向けではないと明記している |
+| ホスト型の本番ファシリテーター | インフラを運用せずにメインネット対応が欲しい |
+
+ホスト型を選ぶ場合は、ここに書かれた名前ではなくアップストリームドキュメントの[ファシリテーターリスト](https://docs.x402.org/dev-tools/facilitators)から選ぶこと — メンテナンスされており、網羅的ではなく、カバレッジも変わる。執筆時点では Coinbase の CDP（全トランザクションに KYT/OFAC スクリーニング）、PayAI、Corbits、Dexter、Solvador などが掲載され、複数が EVM に加えて Solana メインネットをカバーしている。どれを選ぶ場合も、本番前に `/supported` エンドポイントでライブカバレッジを確認し、ネットワークを追加したときは再確認すること。
+
+> **開示**: このセクションは、掲載されているファシリテーターの 1 つである PayAI に関わる者が寄稿した。複数ある選択肢の 1 つとして記載しており、上記の自己ホストおよびアップストリームデフォルトのパスを意図的に先に挙げている。
 
 **セラー側（API がエージェントに課金する）。** アップストリームのミドルウェアを使用する；1 つのルートで Base と Solana を同時に提示できる（実行可能なバージョンは [`examples/typescript/servers`](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers) を参照）：
 
 | ランタイム | パッケージ |
 |---------|---------|
-| Express / Hono / Next.js / Fastify | `@x402/express@2.19.0`、`@x402/hono@2.19.0`、`@x402/next@2.19.0`、`@x402/fastify@2.19.0` |
+| Express / Hono / Next.js / Fastify | `@x402/express@2.22.0`、`@x402/hono@2.22.0`、`@x402/next@2.22.0`、`@x402/fastify@2.22.0` |
 | Python（FastAPI、Flask） | PyPI の `x402` |
 | Go（Gin、Echo、`net/http`） | `github.com/x402-foundation/x402/go/v2` |
 
@@ -309,5 +340,5 @@ main().catch((err) => {
 - **アップストリーム x402 モノレポ**: [`x402-foundation/x402`](https://github.com/x402-foundation/x402) — TypeScript、Python、Go の実装と、メンテナンスされているクライアント・サーバー例
 - **x402 ドキュメント**: [docs.x402.org](https://docs.x402.org)；本番ファシリテーターリストは [docs.x402.org/dev-tools/facilitators](https://docs.x402.org/dev-tools/facilitators)
 - **`@x402` パッケージ**: [npmjs.com/org/x402](https://www.npmjs.com/org/x402) — `@x402/fetch`、`@x402/axios`、`@x402/express`、`@x402/hono`、`@x402/next`、`@x402/fastify`、`@x402/evm`、`@x402/svm`
-- **ファシリテーター**: [x402.org ファシリテーター](https://x402.org/facilitator)（テストネットデフォルト）、[PayAI](https://facilitator.payai.network)（マルチネットワーク本番、API キー不要）、[CDP](https://docs.cdp.coinbase.com/x402/docs/quickstart-sellers)（Coinbase ホスト型、KYT/OFAC）
+- **ファシリテーター**: [自己ファシリテーションの例](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/self-facilitation)（第三者なし）、[x402.org ファシリテーター](https://x402.org/facilitator)（テストネットデフォルト）、メンテナンスされている[本番リスト](https://docs.x402.org/dev-tools/facilitators)
 - **発見**: CDP と PayAI のバザールは `/discovery/resources`；Solana で支払い可能なサービスは [pay.sh](https://pay.sh)
