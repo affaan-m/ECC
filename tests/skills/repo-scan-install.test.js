@@ -83,24 +83,54 @@ exec "$REAL_GIT" "$@"
 `);
   writeExecutable(path.join(binDir, 'mv'), `#!/usr/bin/env bash
 set -euo pipefail
-if [ "\${1:-}" = -- ]; then shift; fi
-source_path="\${1:-}"
+original_args=("$@")
+no_target=0
+positional=()
+for arg in "$@"; do
+  case "$arg" in
+    -T) no_target=1 ;;
+    --) ;;
+    *) positional+=("$arg") ;;
+  esac
+done
+source_path="\${positional[0]:-}"
+destination="\${positional[1]:-}"
 case "$source_path" in
-  */install)
+  */mv-probe-source)
+    case "\${REPO_SCAN_TEST_MV_FAILURE:-}" in
+      *-portable) if [ "$no_target" -eq 1 ]; then exit 64; fi ;;
+    esac
+    exec "$REAL_MV" "\${original_args[@]}"
+    ;;
+esac
+case "$source_path" in
+  */stage-*)
     case "\${REPO_SCAN_TEST_MV_FAILURE:-}" in
       replace|rollback) exit 73 ;;
-      target-conflict)
-        mkdir -p -- "\${2:-}"
-        printf 'concurrent installation\n' > "\${2:-}/concurrent-marker.txt"
-        exit 75
+      rollback-target-conflict|rollback-target-conflict-portable) exit 73 ;;
+      target-conflict|target-conflict-portable)
+        if [ ! -e "$SHIM_DIR/conflict-created" ]; then
+          mkdir -p -- "$destination"
+          printf 'concurrent installation\n' > "$destination/concurrent-marker.txt"
+          : > "$SHIM_DIR/conflict-created"
+        fi
         ;;
     esac
     ;;
-  */previous-install)
-    if [ "\${REPO_SCAN_TEST_MV_FAILURE:-}" = rollback ]; then exit 74; fi
+  */backup-*)
+    case "\${REPO_SCAN_TEST_MV_FAILURE:-}" in
+      rollback) exit 74 ;;
+      rollback-target-conflict|rollback-target-conflict-portable)
+        if [ ! -e "$SHIM_DIR/conflict-created" ]; then
+          mkdir -p -- "$destination"
+          printf 'concurrent installation\n' > "$destination/concurrent-marker.txt"
+          : > "$SHIM_DIR/conflict-created"
+        fi
+        ;;
+    esac
     ;;
 esac
-exec "$REAL_MV" -- "$source_path" "\${2:-}"
+exec "$REAL_MV" "\${original_args[@]}"
 `);
   return binDir;
 }
@@ -124,14 +154,17 @@ function prepareInstallScenario(installParent, installDir, scenario) {
 function failureMode(scenario) {
   if (scenario === 'replacement-failure') return 'replace';
   if (scenario === 'rollback-failure') return 'rollback';
-  if (scenario === 'target-conflict') return 'target-conflict';
+  if (scenario.includes('target-conflict')) return scenario;
   return '';
 }
 
 function assertPreservedBackup(result, installParent) {
   const workspaces = transactionDirs(installParent);
   assert.strictEqual(workspaces.length, 1, result.stderr);
-  const preservedBackup = path.join(installParent, workspaces[0], 'previous-install');
+  const workspace = path.join(installParent, workspaces[0]);
+  const backupName = fs.readdirSync(workspace).find(name => name.startsWith('backup-'));
+  assert.ok(backupName, result.stderr);
+  const preservedBackup = path.join(workspace, backupName);
   assert.strictEqual(
     fs.readFileSync(path.join(preservedBackup, 'old-marker.txt'), 'utf8'),
     'previous installation\n'
@@ -164,9 +197,13 @@ function assertInstallationResult({ result, scenario, installDir, installParent 
 
   assertPreservedBackup(result, installParent);
   assert.ok(!fs.existsSync(lockDir));
-  if (scenario === 'target-conflict') {
+  if (scenario.includes('target-conflict')) {
     assert.ok(fs.existsSync(path.join(installDir, 'concurrent-marker.txt')));
-    assert.match(result.stderr, /target was recreated/);
+    assert.ok(
+      !fs.readdirSync(installDir).some(name => /^(stage|backup)-/.test(name)),
+      'native mv must not leave staged or backup directories nested in the target'
+    );
+    assert.match(result.stderr, /target was recreated|rollback failed/);
   } else {
     assert.match(result.stderr, /previous installation preserved at/);
   }
@@ -223,7 +260,10 @@ for (const [index, block] of blocks.entries()) {
   assert.ok(block.includes('mktemp -d "$REPO_SCAN_INSTALL_PARENT/'), `${relativePath} must stage on the target filesystem`);
   assert.ok(block.includes('REPO_SCAN_KEEP_TMP=0'), `${relativePath} must track cleanup safety`);
   assert.ok(block.includes('REPO_SCAN_LOCK_HELD=0'), `${relativePath} must track lock ownership`);
+  assert.ok(block.includes('REPO_SCAN_MV_HAS_NO_TARGET=0'), `${relativePath} must probe no-target moves`);
   assert.ok(block.includes('trap cleanup_repo_scan_install EXIT'), `${relativePath} must use conditional cleanup`);
+  assert.ok(block.includes('mv -T -- "$REPO_SCAN_MOVE_SOURCE"'), `${relativePath} must reject an existing GNU mv destination`);
+  assert.ok(block.includes('move_repo_scan_dir()'), `${relativePath} must guard portable directory moves`);
   assert.ok(block.includes('git clone --filter=blob:none --no-checkout'), `${relativePath} must clone before checkout`);
   assert.ok(block.includes('checkout --detach "$REPO_SCAN_COMMIT"'), `${relativePath} must detach at the pin`);
   assert.ok(block.includes('archive "$REPO_SCAN_COMMIT"'), `${relativePath} must archive the exact pinned commit`);
@@ -232,8 +272,9 @@ for (const [index, block] of blocks.entries()) {
   assert.ok(block.includes('read -r REPO_SCAN_CONFIRM'), `${relativePath} must require explicit confirmation`);
   assert.ok(block.includes('mkdir -- "$REPO_SCAN_LOCK"'), `${relativePath} must serialize replacement`);
   assert.ok(block.includes('[ "$REPO_SCAN_CONFIRM" != install ]'), `${relativePath} must default-deny installation`);
-  assert.ok(block.indexOf('read -r REPO_SCAN_CONFIRM') < block.indexOf('mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must confirm before replacing the target`);
-  assert.ok(block.indexOf('mkdir -- "$REPO_SCAN_LOCK"') < block.indexOf('mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must lock before replacing the target`);
+  assert.ok(block.includes('move_repo_scan_dir "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must use guarded replacement`);
+  assert.ok(block.indexOf('read -r REPO_SCAN_CONFIRM') < block.indexOf('move_repo_scan_dir "$REPO_SCAN_STAGE"'), `${relativePath} must confirm before replacing the target`);
+  assert.ok(block.indexOf('mkdir -- "$REPO_SCAN_LOCK"') < block.indexOf('move_repo_scan_dir "$REPO_SCAN_STAGE"'), `${relativePath} must lock before replacing the target`);
   assert.ok(!block.includes('rm -rf "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must preserve the old target until replacement succeeds`);
   assert.ok(block.includes('${CLAUDE_CONFIG_DIR:-$HOME/.claude}'), `${relativePath} must honor CLAUDE_CONFIG_DIR`);
   assert.ok(!block.includes('cp -r .'), `${relativePath} must not copy .git metadata`);
@@ -258,6 +299,9 @@ if (bashBinary) {
       'replacement-failure',
       'rollback-failure',
       'target-conflict',
+      'target-conflict-portable',
+      'rollback-target-conflict',
+      'rollback-target-conflict-portable',
       'lock-held',
     ]) {
       executeInstallation(block, scenario);

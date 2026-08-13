@@ -26,11 +26,13 @@ REPO_SCAN_INSTALL_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-scan"
 REPO_SCAN_INSTALL_PARENT="$(dirname "$REPO_SCAN_INSTALL_DIR")"
 mkdir -p "$REPO_SCAN_INSTALL_PARENT"
 REPO_SCAN_TMP="$(mktemp -d "$REPO_SCAN_INSTALL_PARENT/.repo-scan-install.XXXXXX")"
-REPO_SCAN_STAGE="$REPO_SCAN_TMP/install"
-REPO_SCAN_BACKUP="$REPO_SCAN_TMP/previous-install"
+REPO_SCAN_TOKEN="${REPO_SCAN_TMP##*.}"
+REPO_SCAN_STAGE="$REPO_SCAN_TMP/stage-$REPO_SCAN_TOKEN"
+REPO_SCAN_BACKUP="$REPO_SCAN_TMP/backup-$REPO_SCAN_TOKEN"
 REPO_SCAN_LOCK="$REPO_SCAN_INSTALL_PARENT/.repo-scan-install.lock"
 REPO_SCAN_KEEP_TMP=0
 REPO_SCAN_LOCK_HELD=0
+REPO_SCAN_MV_HAS_NO_TARGET=0
 cleanup_repo_scan_install() {
   if [ "$REPO_SCAN_KEEP_TMP" -eq 0 ]; then
     rm -rf -- "$REPO_SCAN_TMP"
@@ -40,6 +42,39 @@ cleanup_repo_scan_install() {
   fi
 }
 trap cleanup_repo_scan_install EXIT
+mkdir "$REPO_SCAN_TMP/mv-probe-source"
+if mv -T -- "$REPO_SCAN_TMP/mv-probe-source" \
+  "$REPO_SCAN_TMP/mv-probe-destination" 2>/dev/null; then
+  REPO_SCAN_MV_HAS_NO_TARGET=1
+  rmdir "$REPO_SCAN_TMP/mv-probe-destination"
+else
+  rmdir "$REPO_SCAN_TMP/mv-probe-source"
+fi
+move_repo_scan_dir() {
+  REPO_SCAN_MOVE_SOURCE=$1
+  REPO_SCAN_MOVE_DESTINATION=$2
+  REPO_SCAN_MOVE_NAME=${REPO_SCAN_MOVE_SOURCE##*/}
+  if [ -e "$REPO_SCAN_MOVE_DESTINATION" ] || [ -L "$REPO_SCAN_MOVE_DESTINATION" ]; then
+    return 1
+  fi
+  if [ "$REPO_SCAN_MV_HAS_NO_TARGET" -eq 1 ]; then
+    mv -T -- "$REPO_SCAN_MOVE_SOURCE" "$REPO_SCAN_MOVE_DESTINATION"
+    return
+  fi
+  if ! mv -- "$REPO_SCAN_MOVE_SOURCE" "$REPO_SCAN_MOVE_DESTINATION"; then
+    return 1
+  fi
+  if [ -e "$REPO_SCAN_MOVE_DESTINATION/$REPO_SCAN_MOVE_NAME" ] || \
+    [ -L "$REPO_SCAN_MOVE_DESTINATION/$REPO_SCAN_MOVE_NAME" ]; then
+    if ! mv -- "$REPO_SCAN_MOVE_DESTINATION/$REPO_SCAN_MOVE_NAME" \
+      "$REPO_SCAN_MOVE_SOURCE"; then
+      REPO_SCAN_KEEP_TMP=1
+      printf 'Move conflict recovery failed; staged data remains at %s\n' \
+        "$REPO_SCAN_MOVE_DESTINATION/$REPO_SCAN_MOVE_NAME" >&2
+    fi
+    return 1
+  fi
+}
 
 git clone --filter=blob:none --no-checkout \
   https://github.com/haibindev/repo-scan.git "$REPO_SCAN_TMP/source"
@@ -64,15 +99,15 @@ fi
 REPO_SCAN_LOCK_HELD=1
 
 if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
-  mv -- "$REPO_SCAN_INSTALL_DIR" "$REPO_SCAN_BACKUP"
+  move_repo_scan_dir "$REPO_SCAN_INSTALL_DIR" "$REPO_SCAN_BACKUP"
 fi
-if ! mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"; then
+if ! move_repo_scan_dir "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"; then
   if [ -e "$REPO_SCAN_BACKUP" ] || [ -L "$REPO_SCAN_BACKUP" ]; then
     if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
       REPO_SCAN_KEEP_TMP=1
       printf 'Replacement failed and target was recreated; previous installation preserved at %s\n' \
         "$REPO_SCAN_BACKUP" >&2
-    elif ! mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"; then
+    elif ! move_repo_scan_dir "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"; then
       REPO_SCAN_KEEP_TMP=1
       printf 'Replacement and rollback failed; previous installation preserved at %s\n' \
         "$REPO_SCAN_BACKUP" >&2
