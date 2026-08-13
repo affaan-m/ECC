@@ -23,11 +23,19 @@ metadata:
 set -euo pipefail
 
 REPO_SCAN_COMMIT=2742664ebcad1450c208eda0ae45d3c17fad5dd8
-REPO_SCAN_TMP="$(mktemp -d)"
 REPO_SCAN_INSTALL_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-scan"
+REPO_SCAN_INSTALL_PARENT="$(dirname "$REPO_SCAN_INSTALL_DIR")"
+mkdir -p "$REPO_SCAN_INSTALL_PARENT"
+REPO_SCAN_TMP="$(mktemp -d "$REPO_SCAN_INSTALL_PARENT/.repo-scan-install.XXXXXX")"
 REPO_SCAN_STAGE="$REPO_SCAN_TMP/install"
-REPO_SCAN_BACKUP=""
-trap 'rm -rf "$REPO_SCAN_TMP"' EXIT
+REPO_SCAN_BACKUP="$REPO_SCAN_TMP/previous-install"
+REPO_SCAN_KEEP_TMP=0
+cleanup_repo_scan_install() {
+  if [ "$REPO_SCAN_KEEP_TMP" -eq 0 ]; then
+    rm -rf -- "$REPO_SCAN_TMP"
+  fi
+}
+trap cleanup_repo_scan_install EXIT
 
 git clone --filter=blob:none --no-checkout \
   https://github.com/haibindev/repo-scan.git "$REPO_SCAN_TMP/source"
@@ -45,15 +53,16 @@ if [ "$REPO_SCAN_CONFIRM" != install ]; then
   exit 1
 fi
 
-mkdir -p "$(dirname "$REPO_SCAN_INSTALL_DIR")"
 if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
-  REPO_SCAN_BACKUP="$REPO_SCAN_TMP/previous-install"
   mv -- "$REPO_SCAN_INSTALL_DIR" "$REPO_SCAN_BACKUP"
 fi
 if ! mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"; then
-  if [ -n "$REPO_SCAN_BACKUP" ] && \
-    { [ -e "$REPO_SCAN_BACKUP" ] || [ -L "$REPO_SCAN_BACKUP" ]; }; then
-    mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"
+  if [ -e "$REPO_SCAN_BACKUP" ] || [ -L "$REPO_SCAN_BACKUP" ]; then
+    if ! mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"; then
+      REPO_SCAN_KEEP_TMP=1
+      printf 'Replacement and rollback failed; previous installation preserved at %s\n' \
+        "$REPO_SCAN_BACKUP" >&2
+    fi
   fi
   exit 1
 fi

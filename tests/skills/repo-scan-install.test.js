@@ -5,7 +5,9 @@
 'use strict';
 
 const assert = require('assert');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -15,6 +17,155 @@ const skillFiles = [
   { relativePath: path.join('docs', 'ja-JP', 'skills', 'repo-scan', 'SKILL.md'), heading: '## インストール' }
 ];
 const pinnedCommit = '2742664ebcad1450c208eda0ae45d3c17fad5dd8';
+const bashBinary = process.env.ECC_TEST_BASH || (process.platform === 'win32' ? null : 'bash');
+
+function run(command, args, options = {}) {
+  return spawnSync(command, args, {
+    encoding: 'utf8',
+    ...options,
+    env: { ...process.env, ...(options.env || {}) },
+  });
+}
+
+function toShellPath(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.replace(/^([A-Za-z]):\//, (_, drive) => `/${drive.toLowerCase()}/`);
+}
+
+function writeExecutable(filePath, content) {
+  fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o755 });
+  fs.chmodSync(filePath, 0o755);
+}
+
+function requireShellCommand(command) {
+  const result = run(bashBinary, ['-lc', `command -v ${command}`]);
+  assert.strictEqual(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+function createLocalSource(root) {
+  const sourceRepo = path.join(root, 'source-repo');
+  fs.mkdirSync(sourceRepo, { recursive: true });
+  assert.strictEqual(run('git', ['init', '--quiet'], { cwd: sourceRepo }).status, 0);
+  fs.writeFileSync(path.join(sourceRepo, 'SKILL.md'), 'pinned fixture\n');
+  fs.mkdirSync(path.join(sourceRepo, 'scripts'));
+  fs.writeFileSync(path.join(sourceRepo, 'scripts', 'scan.sh'), '#!/bin/sh\n');
+  assert.strictEqual(run('git', ['add', '.'], { cwd: sourceRepo }).status, 0);
+  const commit = run('git', ['commit', '--quiet', '-m', 'fixture'], {
+    cwd: sourceRepo,
+    env: {
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+    },
+  });
+  assert.strictEqual(commit.status, 0, commit.stderr);
+  return sourceRepo;
+}
+
+function createCommandShims(root) {
+  const binDir = path.join(root, 'bin');
+  fs.mkdirSync(binDir);
+  writeExecutable(path.join(binDir, 'git'), `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = clone ]; then
+  target="\${!#}"
+  exec "$REAL_GIT" clone --quiet "$LOCAL_REPO" "$target"
+fi
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = checkout ]; then
+  exec "$REAL_GIT" -C "$2" checkout --quiet --detach HEAD
+fi
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = archive ]; then
+  exec "$REAL_GIT" -C "$2" archive HEAD
+fi
+exec "$REAL_GIT" "$@"
+`);
+  writeExecutable(path.join(binDir, 'mv'), `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = -- ]; then shift; fi
+source_path="\${1:-}"
+case "$source_path" in
+  */install)
+    if [ -n "\${REPO_SCAN_TEST_MV_FAILURE:-}" ]; then exit 73; fi
+    ;;
+  */previous-install)
+    if [ "\${REPO_SCAN_TEST_MV_FAILURE:-}" = rollback ]; then exit 74; fi
+    ;;
+esac
+exec "$REAL_MV" -- "$source_path" "\${2:-}"
+`);
+  return binDir;
+}
+
+function transactionDirs(installParent) {
+  if (!fs.existsSync(installParent)) return [];
+  return fs.readdirSync(installParent).filter(name => name.startsWith('.repo-scan-install.'));
+}
+
+function executeInstallation(block, scenario) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-repo-scan-install-'));
+  try {
+    const sourceRepo = createLocalSource(root);
+    const binDir = createCommandShims(root);
+    const configDir = path.join(root, 'config');
+    const installParent = path.join(configDir, 'skills');
+    const installDir = path.join(installParent, 'repo-scan');
+    if (scenario !== 'fresh') {
+      fs.mkdirSync(installDir, { recursive: true });
+      fs.writeFileSync(path.join(installDir, 'old-marker.txt'), 'previous installation\n');
+    }
+
+    const result = run(bashBinary, ['-c', `export PATH="$SHIM_DIR:$PATH"\n${block}`], {
+      input: 'install\n',
+      cwd: repoRoot,
+      env: {
+        CLAUDE_CONFIG_DIR: toShellPath(configDir),
+        LOCAL_REPO: toShellPath(sourceRepo),
+        REAL_GIT: requireShellCommand('git'),
+        REAL_MV: requireShellCommand('mv'),
+        REPO_SCAN_TEST_MV_FAILURE:
+          scenario === 'replacement-failure'
+            ? 'replace'
+            : scenario === 'rollback-failure'
+              ? 'rollback'
+              : '',
+        SHIM_DIR: toShellPath(binDir),
+      },
+      timeout: 30000,
+    });
+
+    if (scenario === 'fresh' || scenario === 'existing') {
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(fs.readFileSync(path.join(installDir, 'SKILL.md'), 'utf8').trim(), 'pinned fixture');
+      assert.ok(!fs.existsSync(path.join(installDir, '.git')));
+      assert.ok(!fs.existsSync(path.join(installDir, 'old-marker.txt')));
+      assert.deepStrictEqual(transactionDirs(installParent), []);
+      return;
+    }
+
+    assert.notStrictEqual(result.status, 0, 'forced replacement failure must propagate');
+    if (scenario === 'replacement-failure') {
+      assert.strictEqual(
+        fs.readFileSync(path.join(installDir, 'old-marker.txt'), 'utf8'),
+        'previous installation\n'
+      );
+      assert.deepStrictEqual(transactionDirs(installParent), []);
+      return;
+    }
+
+    const workspaces = transactionDirs(installParent);
+    assert.strictEqual(workspaces.length, 1, result.stderr);
+    const preservedBackup = path.join(installParent, workspaces[0], 'previous-install');
+    assert.strictEqual(
+      fs.readFileSync(path.join(preservedBackup, 'old-marker.txt'), 'utf8'),
+      'previous installation\n'
+    );
+    assert.match(result.stderr, /previous installation preserved at/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
 
 function installationBlock({ relativePath, heading }) {
   const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -31,11 +182,14 @@ function installationBlock({ relativePath, heading }) {
 console.log('\nrepo-scan installation docs (#2774):');
 
 const blocks = skillFiles.map(installationBlock);
+let passed = 0;
 for (const [index, block] of blocks.entries()) {
   const { relativePath } = skillFiles[index];
   assert.ok(block.includes(`REPO_SCAN_COMMIT=${pinnedCommit}`), `${relativePath} must pin the full commit SHA`);
   assert.ok(block.includes('set -euo pipefail'), `${relativePath} must fail closed`);
-  assert.ok(block.includes(`trap 'rm -rf "$REPO_SCAN_TMP"' EXIT`), `${relativePath} must clean up its temporary directory`);
+  assert.ok(block.includes('mktemp -d "$REPO_SCAN_INSTALL_PARENT/'), `${relativePath} must stage on the target filesystem`);
+  assert.ok(block.includes('REPO_SCAN_KEEP_TMP=0'), `${relativePath} must track cleanup safety`);
+  assert.ok(block.includes('trap cleanup_repo_scan_install EXIT'), `${relativePath} must use conditional cleanup`);
   assert.ok(block.includes('git clone --filter=blob:none --no-checkout'), `${relativePath} must clone before checkout`);
   assert.ok(block.includes('checkout --detach "$REPO_SCAN_COMMIT"'), `${relativePath} must detach at the pin`);
   assert.ok(block.includes('archive "$REPO_SCAN_COMMIT"'), `${relativePath} must archive the exact pinned commit`);
@@ -48,11 +202,28 @@ for (const [index, block] of blocks.entries()) {
   assert.ok(block.includes('${CLAUDE_CONFIG_DIR:-$HOME/.claude}'), `${relativePath} must honor CLAUDE_CONFIG_DIR`);
   assert.ok(!block.includes('cp -r .'), `${relativePath} must not copy .git metadata`);
   assert.ok(!block.includes('git fetch --depth 1 origin 2742664\n'), `${relativePath} must not fetch the short SHA`);
+  assert.ok(block.includes('REPO_SCAN_KEEP_TMP=1'), `${relativePath} must preserve a failed rollback backup`);
+  passed++;
 }
 
 for (const block of blocks.slice(1)) {
   assert.strictEqual(block, blocks[0], 'translated installation commands must stay synchronized');
+  passed++;
 }
 
-console.log(`  Passed: ${skillFiles.length}`);
+if (bashBinary) {
+  for (const block of blocks) {
+    const syntax = run(bashBinary, ['-n'], { input: block });
+    assert.strictEqual(syntax.status, 0, syntax.stderr);
+    passed++;
+    for (const scenario of ['fresh', 'existing', 'replacement-failure', 'rollback-failure']) {
+      executeInstallation(block, scenario);
+      passed++;
+    }
+  }
+} else {
+  console.log('  Integration coverage skipped on Windows without ECC_TEST_BASH');
+}
+
+console.log(`  Passed: ${passed}`);
 console.log('  Failed: 0');
