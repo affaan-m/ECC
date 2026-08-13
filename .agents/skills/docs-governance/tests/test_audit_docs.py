@@ -32,6 +32,25 @@ class AuditDocsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Broken Markdown link", result.stdout)
 
+    def test_artifact_scope_resolves_root_relative_markdown_links_inside_project(self):
+        docs = self.project / "docs"
+        docs.mkdir()
+        (self.project / "README.md").write_text("[guide](/docs/guide.md)\n", encoding="utf-8")
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        result = self.run_audit("artifacts")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_artifact_scope_rejects_markdown_path_that_escapes_project(self):
+        outside = self.project.parent / f"{self.project.name}-outside.md"
+        outside.write_text("outside\n", encoding="utf-8")
+        try:
+            (self.project / "README.md").write_text("[outside](../" + outside.name + ")\n", encoding="utf-8")
+            result = self.run_audit("artifacts")
+        finally:
+            outside.unlink(missing_ok=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Broken Markdown link", result.stdout)
+
     def test_adr_scope_requires_every_file_in_index(self):
         adr_dir = self.project / "docs" / "adr"
         adr_dir.mkdir(parents=True)
@@ -124,6 +143,20 @@ class AuditDocsTest(unittest.TestCase):
         result = self.run_audit("spine")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("Active and archived history remain append-only when combined", result.stdout)
+
+    def test_log_rejects_removing_one_of_duplicate_events(self):
+        subprocess.run(["git", "init"], cwd=self.project, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=self.project, check=True)
+        event = "## [2026-01-01] fix | duplicate\n"
+        (self.project / "PROJECT_LOG.md").write_text("# LOG\n\n" + event + event, encoding="utf-8")
+        subprocess.run(["git", "add", "PROJECT_LOG.md"], cwd=self.project, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=self.project, capture_output=True, check=True)
+
+        (self.project / "PROJECT_LOG.md").write_text("# LOG\n\n" + event, encoding="utf-8")
+        result = self.run_audit("spine")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("1 history events were removed", result.stdout)
 
 
 if __name__ == "__main__":

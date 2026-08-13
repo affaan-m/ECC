@@ -402,15 +402,10 @@
         "claude-project",
         "cursor",
         "antigravity",
-        "codex",
-        "opencode",
         "codebuddy",
         "joycode",
         "qwen",
-        "zed",
-        "hermes",
-        "openclaw",
-        "kimi"
+        "zed"
       ],
       "dependencies": [
         "agents-core",

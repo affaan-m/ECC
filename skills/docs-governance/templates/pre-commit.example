@@ -12,7 +12,10 @@ MAP="$ROOT/.governance/docs-map.json"
 LOG_PATH="PROJECT_LOG.md"
 
 if [ -f "$MAP" ]; then
-  MAPPED=$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("history", ""); print(value if isinstance(value, str) else "")' "$MAP" 2>/dev/null || true)
+  if ! MAPPED=$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("history", ""); print(value if isinstance(value, str) else "")' "$MAP" 2>/dev/null); then
+    echo "docs-governance: cannot read $MAP" >&2
+    exit 1
+  fi
   [ -n "$MAPPED" ] && LOG_PATH="$MAPPED"
 fi
 
@@ -22,8 +25,12 @@ fi
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -n "$STAGED" ] || exit 0
 
-# A staged history update satisfies the invariant.
-printf '%s\n' "$STAGED" | grep -Fxq "$LOG_PATH" && exit 0
+# A staged history update satisfies the invariant only when it adds an event.
+if printf '%s\n' "$STAGED" | grep -Fxq "$LOG_PATH"; then
+  git diff --cached --unified=0 -- "$LOG_PATH" |
+    grep -Eq '^\+## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' &&
+    exit 0
+fi
 
 # Treat everything outside these documentation/test/governance surfaces as code.
 CODE=$(printf '%s\n' "$STAGED" | grep -Ev '(^|/)(tests?|docs?|artifacts?|governance)(/|$)|(^|/)(CLAUDE|AGENTS|PROJECT_LOG|PROJECT_STATUS|CLAUDE_MAP|CONTEXT|CONTRACT|TESTS|REGRESSION)\.md$|\.(md|mdx|txt|rst)$' || true)

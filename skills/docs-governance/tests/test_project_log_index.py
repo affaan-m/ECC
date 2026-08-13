@@ -97,6 +97,15 @@ class ProjectLogIndexTest(unittest.TestCase):
         self.assertEqual(log.read_text(encoding="utf-8"), before)
         self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
 
+    def test_archive_preserves_duplicate_events_in_the_archive(self):
+        event = "## [2026-01-01] fix | duplicate\n"
+        (self.project / "PROJECT_LOG.md").write_text("# LOG\n\n" + event + event, encoding="utf-8")
+        archive = self.project / "PROJECT_LOG.archive.md"
+        archive.write_text("# ARCHIVE\n\n" + event, encoding="utf-8")
+        result = self.run_script("archive", "--threshold", "1", "--keep", "1", "--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(archive.read_text(encoding="utf-8").count("## [2026-01-01] fix | duplicate"), 2)
+
     def test_role_map_controls_history_status_rebuild_and_archive(self):
         docs = self.project / "docs"
         docs.mkdir()
@@ -132,6 +141,15 @@ class ProjectLogIndexTest(unittest.TestCase):
             self.assertEqual(sources, {"docs/history.md", "docs/history-archive.md"})
         finally:
             connection.close()
+
+    def test_role_map_rejects_paths_outside_project(self):
+        governance = self.project / ".governance"
+        governance.mkdir()
+        for value in ("../outside.md", str(self.project.parent / "outside.md")):
+            (governance / "docs-map.json").write_text(json.dumps({"history": value}), encoding="utf-8")
+            result = self.run_script("status")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must stay inside the project root", result.stderr)
 
 
 if __name__ == "__main__":

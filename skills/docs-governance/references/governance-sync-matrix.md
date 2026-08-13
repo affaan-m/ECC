@@ -1,6 +1,6 @@
 # Documentation Governance Change-Impact Matrix
 
-Use this matrix at stage closeout, or when the user asks to synchronize, organize, wrap up, or make the project ready for a new maintainer.
+Use this matrix at stage closeout, or when the user asks to synchronize, organize, wrap up, or make the project ready for a new maintainer. Resolve each artifact by its role in `.governance/docs-map.json` or the repository's existing source of truth before using the reference filenames below.
 
 Core discipline: `PROJECT_LOG.md` is append-only history. `CLAUDE_MAP.md`, `PROJECT_STATUS.md`, and `CLAUDE.md` represent current truth, so obsolete facts must be corrected, duplicates consolidated, and stale content removed.
 

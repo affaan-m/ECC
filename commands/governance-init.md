@@ -9,6 +9,10 @@ Use this command only for a new project with no implementation. Existing codebas
 
 Treat `$ARGUMENTS` as project name, technology stack, and confirmed modules. Ask for missing information one item at a time; never guess the stack.
 
+## Preflight
+
+Before creating a file, running `git init`, staging, or committing, inspect tracked and untracked contents. Stop when implementation files or an existing repository are present; `/governance-init` must not mutate an existing project. For a truly empty project, validate the project name, stack, and confirmed modules, then obtain explicit confirmation immediately before the first write and again before Git initialization and the initial commit.
+
 ## Create
 
 ### 1. `CLAUDE.md` (Project Charter, ≤60 Lines)
@@ -35,10 +39,10 @@ Copy `skills/docs-governance/templates/governance.example.md`, replace `{Project
 Use the format in `PROJECT_LOG.example.md`, but keep only one new event:
 
 ```markdown
-## [today] init | Initialized the project with /governance-init
+## [YYYY-MM-DD] init | Initialized the project with /governance-init
 ```
 
-Do not copy example history entries.
+Replace `YYYY-MM-DD` with the actual run date in ISO format; do not copy example history entries.
 
 ### 5. Only Immediately Used Directories
 

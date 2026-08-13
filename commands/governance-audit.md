@@ -7,8 +7,10 @@ Perform a **read-only documentation governance audit** of the current working di
 
 ## Step 1 — Deterministic Checks
 
+First parse the input: no argument means scope `full`; one of `spine`, `context`, `adr`, `artifacts`, or `full` selects that deterministic scope; `contract` or a repository-relative path is a semantic focus and still runs deterministic scope `full`. Reject any other value before running a command. Then run only the validated scope:
+
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "${ARGUMENTS:-full}"
+bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "<validated-scope>"
 ```
 
 The script uses the reference layout by default. If the project reuses different filenames or locations, first establish `.governance/docs-map.json` as the project's role mapping. Without a mapping, do not treat a different filename as proof that governance is missing.
@@ -26,7 +28,7 @@ Optional `$ARGUMENTS`:
 
 - no argument: `full`;
 - a scope: review only that scope;
-- a path or `contract`: emphasize that object without changing the read-only boundary.
+- a path or `contract`: run deterministic scope `full`, then emphasize that object in the semantic review without changing the read-only boundary.
 
 Requirements:
 

@@ -144,9 +144,10 @@ def build_database(path: Path, entries: list[Entry]) -> None:
     temp_path = Path(temp_name)
     try:
         connection = sqlite3.connect(temp_path)
-        with connection:
-            connection.executescript(
-                """
+        try:
+            with connection:
+                connection.executescript(
+                    """
                 CREATE TABLE events (
                     entry_hash TEXT PRIMARY KEY,
                     event_date TEXT NOT NULL,
@@ -165,26 +166,27 @@ def build_database(path: Path, entries: list[Entry]) -> None:
                 );
                 CREATE INDEX events_by_date_type ON events(event_date, event_type);
                 CREATE INDEX events_by_module ON events(module);
-                """
-            )
-            for entry in deduplicate(entries):
-                connection.execute(
-                    "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        entry.entry_hash,
-                        entry.event_date,
-                        entry.event_type,
-                        entry.summary,
-                        infer_module(entry),
-                        entry.source_file,
-                        entry.source_line,
-                    ),
+                    """
                 )
-                connection.executemany(
-                    "INSERT INTO event_refs VALUES (?, ?, ?)",
-                    [(entry.entry_hash, ref_type, value) for ref_type, value in extract_refs(entry)],
-                )
-        connection.close()
+                for entry in deduplicate(entries):
+                    connection.execute(
+                        "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            entry.entry_hash,
+                            entry.event_date,
+                            entry.event_type,
+                            entry.summary,
+                            infer_module(entry),
+                            entry.source_file,
+                            entry.source_line,
+                        ),
+                    )
+                    connection.executemany(
+                        "INSERT INTO event_refs VALUES (?, ?, ?)",
+                        [(entry.entry_hash, ref_type, value) for ref_type, value in extract_refs(entry)],
+                    )
+        finally:
+            connection.close()
         os.replace(temp_path, path)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -192,11 +194,14 @@ def build_database(path: Path, entries: list[Entry]) -> None:
 
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    previous_mode = path.stat().st_mode & 0o777 if path.exists() else None
     handle, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(temp_name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             stream.write(content)
+        if previous_mode is not None:
+            os.chmod(temp_path, previous_mode)
         os.replace(temp_path, path)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -222,6 +227,7 @@ def command_archive(
     log_path: Path,
     archive_path: Path,
     database: Path,
+    root: Path,
     preamble: str,
     active: list[Entry],
     archive_preamble: str,
@@ -242,7 +248,7 @@ def command_archive(
 
     moved = active[:-keep]
     recent = active[-keep:]
-    merged_archive = deduplicate(archived + moved)
+    merged_archive = archived + moved
     if archive_note not in preamble:
         preamble = preamble.rstrip() + "\n" + archive_note + "\n"
     if not archive_preamble.strip():
@@ -256,9 +262,8 @@ def command_archive(
     try:
         atomic_write(archive_path, archive_content)
         atomic_write(log_path, active_content)
-        project_root = database.parent.parent
-        _, stored_archive = load_entries(archive_path, project_root)
-        _, stored_active = load_entries(log_path, project_root)
+        _, stored_archive = load_entries(archive_path, root)
+        _, stored_active = load_entries(log_path, root)
         command_rebuild(database, stored_archive, stored_active)
     except Exception:
         atomic_write(log_path, before_log.decode("utf-8"))
@@ -297,6 +302,7 @@ def main() -> int:
             log_path,
             archive_path,
             database,
+            root,
             preamble,
             active,
             archive_preamble,

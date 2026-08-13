@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 import re
@@ -25,6 +26,8 @@ DEFAULT_ROLES = {
     "regression": "REGRESSION.md",
     "adr_dir": "docs/adr",
     "adr_index": "docs/adr/README.md",
+    "impact": "docs/impacts",
+    "review": "docs/reviews",
 }
 ENTRY_RE = re.compile(
     r"^## \[(?P<date>\d{4}-\d{2}-\d{2})\]\s+(?P<type>[^|\n]+?)\s*\|\s*(?P<summary>[^\n]+)$",
@@ -125,10 +128,18 @@ def normalize_link_target(raw: str) -> str | None:
     return target
 
 
-def resolve_target(root: Path, source: Path, target: str) -> Path:
+def resolve_within_root(root: Path, base: Path, target: str) -> Path | None:
+    candidate = (base / target).resolve()
+    if root == candidate or root in candidate.parents:
+        return candidate
+    return None
+
+
+def resolve_target(root: Path, source: Path, target: str) -> Path | None:
+    # Markdown paths starting with '/' are repository-root-relative, not host paths.
     if target.startswith("/"):
-        return Path(target)
-    return (source.parent / target).resolve()
+        return resolve_within_root(root, root, target.lstrip("/"))
+    return resolve_within_root(root, source.parent, target)
 
 
 def check_markdown_links(root: Path, files: list[Path], report: Report) -> None:
@@ -142,7 +153,7 @@ def check_markdown_links(root: Path, files: list[Path], report: Report) -> None:
             if target is None:
                 continue
             resolved = resolve_target(root, source, target)
-            if not resolved.exists():
+            if resolved is None or not resolved.exists():
                 broken.append(f"{source.relative_to(root)} -> {target}")
     if broken:
         for item in sorted(set(broken)):
@@ -172,9 +183,8 @@ def check_spine_paths(root: Path, roles: dict[str, str], report: Report) -> None
         for value in CODE_PATH_RE.findall(source.read_text(encoding="utf-8")):
             if not plausible_code_path(value):
                 continue
-            candidate = Path(value)
-            resolved = candidate if candidate.is_absolute() else root / candidate
-            if not resolved.exists():
+            resolved = resolve_within_root(root, root, value)
+            if resolved is None or not resolved.exists():
                 broken.append(f"{source.relative_to(root)} -> {value}")
     if broken:
         for item in sorted(set(broken)):
@@ -193,8 +203,10 @@ def check_status_resurrection(root: Path, roles: dict[str, str], report: Report)
     resurrected: list[str] = []
     if match:
         for value in CODE_PATH_RE.findall(match.group("body")):
-            if plausible_code_path(value) and (root / value).exists():
-                resurrected.append(value)
+            if plausible_code_path(value):
+                resolved = resolve_within_root(root, root, value)
+                if resolved is not None and resolved.exists():
+                    resurrected.append(value)
     if resurrected:
         for value in sorted(set(resurrected)):
             report.fail(f"Deletion-zone target has been recreated: {value}")
@@ -212,15 +224,15 @@ def check_log(root: Path, roles: dict[str, str], report: Report, threshold: int)
     active_text = active_path.read_text(encoding="utf-8")
     archive_text = archive_path.read_text(encoding="utf-8") if archive_path.exists() else ""
     active_events = event_contents(active_text)
-    current_events = set(active_events + event_contents(archive_text))
-    previous_events: set[str] = set()
+    current_events = Counter(active_events + event_contents(archive_text))
+    previous_events: Counter[str] = Counter()
     for relative in (roles["history"], roles["history_archive"]):
         previous = git_show(root, relative)
         if previous is not None:
             previous_events.update(event_contents(previous))
     missing = previous_events - current_events
     if missing:
-        report.fail(f"{len(missing)} history events were removed or rewritten without verbatim archival")
+        report.fail(f"{sum(missing.values())} history events were removed or rewritten without verbatim archival")
     else:
         report.ok("Active and archived history remain append-only when combined")
 
@@ -266,8 +278,9 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
     index_text = index.read_text(encoding="utf-8")
     for raw in MARKDOWN_LINK_RE.findall(index_text):
         target = normalize_link_target(raw)
-        if target is not None and target.endswith(".md") and not resolve_target(root, index, target).exists():
-            report.fail(f"ADR index link does not exist: docs/adr/README.md -> {target}")
+        resolved = resolve_target(root, index, target) if target is not None else None
+        if target is not None and target.endswith(".md") and (resolved is None or not resolved.exists()):
+            report.fail(f"ADR index link does not exist: {index.relative_to(root)} -> {target}")
     custom_layout = (
         roles["adr_dir"] != DEFAULT_ROLES["adr_dir"]
         or roles["adr_index"] != DEFAULT_ROLES["adr_index"]
@@ -278,7 +291,7 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         adr_files = sorted(path for path in adr_dir.glob("*.md") if ADR_FILE_RE.match(path.name))
     missing_from_index = [path.name for path in adr_files if path.name not in index_text]
     for name in missing_from_index:
-        report.fail(f"ADR is missing from the canonical index: docs/adr/{name}")
+        report.fail(f"ADR is missing from the canonical index: {adr_dir.relative_to(root) / name}")
 
     if custom_layout:
         if not missing_from_index:

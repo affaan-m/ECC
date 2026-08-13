@@ -132,6 +132,7 @@ Before marking a TEST-ID `covered`, confirm:
 3. the command runs with exit code 0;
 4. the test belongs to the standard runner or a clearly named specialized group;
 5. the evidence matches the TEST-ID input, expected behavior, and boundary.
+6. when the repository configures a coverage threshold, the configured coverage command passes and its recorded result meets that threshold.
 
 Files, test counts, and green CI alone do not prove required rules are covered.
 

@@ -50,7 +50,7 @@ Prefer evidence from real imports and calls, routes, schemas, configuration, gen
 
 ## Output
 
-For small changes, report affected objects, evidence, required verification, documentation updates, and unknowns in the response. Save a report under `docs/impacts/` only for cross-module or high-risk work, or when the user explicitly requests a durable record. Confirm before creating the file to avoid one-off documentation.
+For small changes, report affected objects, evidence, required verification, documentation updates, and unknowns in the response. Before saving a durable report, resolve the `impact` role from `.governance/docs-map.json` when present; use `docs/impacts/` only when no mapped equivalent exists. Save one only for cross-module or high-risk work, or when the user explicitly requests it, and confirm before creating the file.
 
 ## Post-Implementation Alignment
 
@@ -62,4 +62,4 @@ After implementation, check:
 4. Whether CONTEXT, ADR, CONTRACT, TESTS, REGRESSION, MAP, STATUS, and LOG artifacts were synchronized with the actual change.
 5. Whether temporary code, compatibility logic, unfinished migration work, or follow-up Issues remain.
 
-Report the alignment result in the delivery response by default. Save it under `docs/reviews/` only for high-risk changes or when the user requests a formal review. Do not create a generic `REFLECTION.md`.
+Report the alignment result in the delivery response by default. Before saving a formal review, resolve the `review` role from `.governance/docs-map.json` when present; use `docs/reviews/` only when no mapped equivalent exists. Save one only for high-risk changes or when the user requests a formal review. Do not create a generic `REFLECTION.md`.
