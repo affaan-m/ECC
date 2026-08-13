@@ -157,12 +157,16 @@ function extractTargetContext(raw) {
 }
 
 function escapeDiagnostic(value, maxLength = 160) {
-  const escaped = String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, character => {
+  const escaped = Array.from(String(value), character => {
+    const codePoint = character.codePointAt(0);
+    if (codePoint > 0x1f && (codePoint < 0x7f || codePoint > 0x9f)) {
+      return character;
+    }
     if (character === '\n') return '\\n';
     if (character === '\r') return '\\r';
     if (character === '\t') return '\\t';
-    return `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`;
-  });
+    return `\\x${codePoint.toString(16).padStart(2, '0')}`;
+  }).join('');
   return escaped.length > maxLength ? `${escaped.slice(0, maxLength)}...` : escaped;
 }
 
