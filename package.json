@@ -50,6 +50,7 @@
     ".hermes/",
     ".kimi/",
     ".opencode/",
+    ".pi/",
     ".openclaw/",
     ".qwen/",
     ".zed/",
@@ -226,12 +227,9 @@
     "skills/homelab-network-setup/",
     "skills/hookify-rules/",
     "skills/inventory-demand-planning/",
-    "skills/ito-basket-compare/",
+    "skills/ito-baskets/",
     "skills/ito-compute/",
-    "skills/ito-data-atlas-agent/",
     "skills/ito-inference/",
-    "skills/ito-market-intelligence/",
-    "skills/ito-trade-planner/",
     "skills/ito-training/",
     "skills/investor-materials/",
     "skills/investor-outreach/",
@@ -477,6 +475,17 @@
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
     "sql.js": "1.14.1"
+  },
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./commands"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

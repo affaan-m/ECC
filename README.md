@@ -130,12 +130,12 @@ Instead of rebuilding that process in every prompt, you install it once and make
 
 ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
 
-Access to 71 agents, 292 skills, and 100 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+Access to 71 agents, 289 skills, and 100 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
 
 | Included         |       Count | What it gives you                                                                    |
 | ---------------- | ----------: | ------------------------------------------------------------------------------------ |
 | Agents           |   71 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  292 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Skills           |  289 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
 | Commands         | 100 commands | Convenient entry points while ECC moves to a skills-first surface                    |
 | Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
 | Rules            |   Selective | Always-loaded standards you choose by language or project                            |
@@ -778,7 +778,7 @@ Stable graduation of the 2.0 line: the control-pane substrate (session adapters 
 - **Operator and outbound workflow expansion**: `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops`, and `workspace-surface-audit` round out the operator lane.
 - **Media and launch tooling**: `manim-video`, `remotion-video-creation`, and upgraded social publishing surfaces make technical explainers and launch content part of the same system.
 - **Framework and product surface growth**: `nestjs-patterns`, richer Codex/OpenCode install surfaces, and expanded cross-harness packaging keep the repo usable beyond a single harness.
-- **Itô prediction-market skill pack**: `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research`, and `prediction-market-risk-review` add public, non-advisory market/basket workflows while keeping live Itô API access gated and separate from ECC Tools billing.
+- **Itô prediction-market skill pack**: the consolidated `ito-baskets` skill (read-only basket index, comparison, market briefs, and non-executable planning worksheets — replacing the former `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, and `ito-data-atlas-agent` skills), plus `prediction-market-oracle-research` and `prediction-market-risk-review`, add public, non-advisory market/basket workflows while keeping live Itô API access gated and separate from ECC Tools billing.
 - **Optimization skill pack**: `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems`, and `recursive-decision-ledger` turn repeated speed/recursion prompts into bounded benchmark, throughput, and decision-ledger workflows.
 - **ECC 2.0 alpha in-tree**: the Rust control-plane prototype in `ecc2/` builds locally and exposes `dashboard`, `start`, `sessions`, `status`, `stop`, `resume`, and `daemon` commands.
 - **Operator status snapshots**: `ecc status --markdown --write status.md` turns the local state store into a portable handoff covering readiness, active sessions, skill-run health, install health, pending governance events, and linked work items from Linear/GitHub/handoffs.
@@ -988,7 +988,7 @@ This repo is the raw code. The guides explain everything.
 ```text
 ECC/
 |-- agents/           # 71 specialized subagents for delegation
-|-- skills/           # 292 reusable workflows loaded on demand
+|-- skills/           # 289 reusable workflows loaded on demand
 |-- commands/         # 100 maintained slash-command shims
 |-- rules/            # opt-in common and language standards
 |-- hooks/            # runtime automation and enforcement
