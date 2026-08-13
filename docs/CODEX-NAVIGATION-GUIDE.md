@@ -147,7 +147,9 @@ docs-only changes, run the targeted docs test and review links for drift.
   Prefer `skills/` first.
 - Do not copy Claude hook claims into Codex docs. Only the provider-specific
   context and continuous-learning lifecycle in `hooks/codex-hooks.json` is
-  native; blocking enforcement remains instruction- and sandbox-based.
+  native; blocking enforcement remains instruction- and sandbox-based. Open
+  `/hooks` to review and trust each ECC definition, and repeat that review
+  whenever a definition hash changes.
 - Do not update `.agents/skills/` without checking the canonical `skills/`
   source and Codex `agents/openai.yaml` metadata expectations.
 - Do not open broad PRs that mix unrelated skill, command, install, and release

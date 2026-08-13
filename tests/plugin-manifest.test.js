@@ -440,8 +440,8 @@ test('hook documentation distinguishes the Claude off setting from runtime profi
 test('Chinese capability matrix documents the native Codex learning lifecycle', () => {
   const source = fs.readFileSync(zhCnReadmePath, 'utf8');
   assert.ok(
-    source.includes('| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart、PreToolUse、PostToolUse、SessionEnd（4 种类型） | 11 种类型 |'),
-    'Expected the Codex capability column to document the native learning lifecycle'
+    source.includes('| **钩子事件** | 8 种类型                 | 15 种类型 | ECC 当前投射的 SessionStart、PreToolUse、PostToolUse、SessionEnd（4 种生命周期事件，并非 Codex 的全部钩子） | 11 种类型 |'),
+    'Expected the Codex capability column to scope the native learning lifecycle to ECC projections'
   );
   assert.ok(
     source.includes('| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 会话上下文和持续学习 | 插件钩子 |'),
@@ -451,6 +451,23 @@ test('Chinese capability matrix documents the native Codex learning lifecycle', 
     !source.includes('Codex 缺少钩子功能'),
     'Codex architecture guidance must not contradict its native SessionStart hook'
   );
+});
+
+test('Codex security-boundary docs require hook review after definition changes', () => {
+  const docs = [
+    '.codex/AGENTS.md',
+    'README.md',
+    'docs/CODEX-NAVIGATION-GUIDE.md'
+  ];
+
+  for (const relativePath of docs) {
+    const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+    assert.ok(source.includes('/hooks'), `${relativePath} must require explicit Codex hook review`);
+    assert.ok(
+      /definition\s+hash changes?/i.test(source),
+      `${relativePath} must require renewed trust after a hook definition hash change`
+    );
+  }
 });
 
 test('codex plugin.json has interface.displayName', () => {

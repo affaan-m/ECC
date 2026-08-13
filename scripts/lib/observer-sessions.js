@@ -141,8 +141,17 @@ function resolveHookSessionId(rawInput, env = process.env) {
     payload = {};
   }
 
-  const rawSessionId = payload.session_id ?? payload.sessionId ?? env.ECC_SESSION_ID ?? env.CLAUDE_SESSION_ID;
-  return resolveSessionId(rawSessionId);
+  const candidates = [
+    payload.session_id,
+    payload.sessionId,
+    env.ECC_SESSION_ID,
+    env.CLAUDE_SESSION_ID
+  ];
+  for (const candidate of candidates) {
+    const sessionId = resolveSessionId(candidate ?? '');
+    if (sessionId) return sessionId;
+  }
+  return '';
 }
 
 function getSessionLeaseFile(context, rawSessionId = process.env.CLAUDE_SESSION_ID) {

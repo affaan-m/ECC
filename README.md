@@ -1521,6 +1521,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
 - **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
 - Codex runs four verified non-blocking lifecycle hooks; blocking security policy still relies on `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
+- Codex hook activation requires opening `/hooks`, reviewing and trusting each ECC hook definition, and repeating that review whenever a definition hash changes
 
 <details>
 <summary><strong>Cursor IDE support in depth</strong></summary>
@@ -1651,7 +1652,8 @@ Codex does **not provide full Claude-style hook parity**. Its native ECC bundle
 loads session context and records continuous-learning observations through four
 non-blocking lifecycle hooks. Blocking enforcement remains instruction-based via
 `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox/approval
-settings.
+settings. Open `/hooks` to review and trust each ECC hook definition, and repeat
+that review whenever a definition hash changes.
 
 #### Multi-agent support
 

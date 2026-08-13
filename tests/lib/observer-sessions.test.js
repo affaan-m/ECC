@@ -110,11 +110,22 @@ test('resolveHookSessionId prefers and sanitizes hook payload ids', () => {
   const env = { CLAUDE_SESSION_ID: 'claude-fallback' };
   assert.strictEqual(resolveHookSessionId('{"session_id":"codex-session"}', env), 'codex-session');
   assert.strictEqual(resolveHookSessionId({ sessionId: '../unsafe session' }, env), 'unsafe-session');
+  assert.strictEqual(
+    resolveHookSessionId({ session_id: '', sessionId: 'camel-session' }, env),
+    'camel-session'
+  );
 });
 
 test('resolveHookSessionId falls back safely for malformed payloads', () => {
   assert.strictEqual(resolveHookSessionId('{not-json', { CLAUDE_SESSION_ID: 'claude-fallback' }), 'claude-fallback');
   assert.strictEqual(resolveHookSessionId('{}', { ECC_SESSION_ID: 'ecc-fallback', CLAUDE_SESSION_ID: 'claude-fallback' }), 'ecc-fallback');
+  assert.strictEqual(
+    resolveHookSessionId(
+      { session_id: '', sessionId: '' },
+      { ECC_SESSION_ID: 'ecc-fallback', CLAUDE_SESSION_ID: 'claude-fallback' }
+    ),
+    'ecc-fallback'
+  );
   assert.strictEqual(resolveHookSessionId([], { CLAUDE_SESSION_ID: 'claude-fallback' }), 'claude-fallback');
   assert.strictEqual(resolveHookSessionId(null, {}), '');
 });

@@ -87,7 +87,7 @@ Sample role configs in this repo:
 
 | Feature | Claude Code | Codex CLI |
 |---------|------------|-----------|
-| Hooks | 8+ event types | 4 native lifecycle events for context and continuous learning |
+| Hooks | 8+ event types | Four ECC-projected native lifecycle events for context and continuous learning |
 | Context file | CLAUDE.md + AGENTS.md | AGENTS.md only |
 | Skills | Skills loaded via plugin | `.agents/skills/` directory |
 | Commands | `/slash` commands | Instruction-based |
@@ -98,7 +98,9 @@ Sample role configs in this repo:
 ## Security Boundary
 
 The native Codex hook bundle intentionally does not port Claude's blocking
-security handlers. Security enforcement remains instruction-based:
+security handlers. Before enabling or updating the bundle, open `/hooks`, review
+and trust every ECC hook definition, and repeat that review whenever a definition
+hash changes. Security enforcement remains instruction-based:
 1. Always validate inputs at system boundaries
 2. Never hardcode secrets — use environment variables
 3. Run `npm audit` / `pip audit` before committing
