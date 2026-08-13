@@ -1,102 +1,103 @@
 ---
 template_source: docs-governance /governance-init
 template_version: 2026-07-02-v3
-note: 派生后归项目自管；模板更新不会自动覆盖已派生项目，需要时手动同步固定区
+note: The derived file belongs to the project. Template updates do not overwrite it; synchronize fixed sections manually when needed.
 ---
 
-# {项目名称} · 治理文档
+# {Project Name} — Governance Guide
 
-## 1. 治理原则（固定区）
+## 1. Governance Principles (Fixed)
 
-代码改动后必须按本文档 4 步流程检查。无视该步 = 违反共享项目章程（Claude Code 从 `CLAUDE.md` 进入，Codex 从 `AGENTS.md` 桥接进入）。
+After changing code, complete the four-step process in section 2. Skipping it violates the shared project charter. Claude Code enters through `CLAUDE.md`; Codex enters through the thin `AGENTS.md` bridge.
 
-本文档分两段：
-- 固定区（§1-§4 + §7-§8）：来自模板母版，尽量少改
-- 项目区（§5 + §6）：项目自由追加，演化中按需扩展
+This document has two parts:
 
-## 2. 代码改动后 4 步流程（固定区）
+- Fixed sections (§1–§4 and §7–§8): derived from the template; change sparingly.
+- Project sections (§5 and §6): project-owned and extended as evidence appears.
 
-### 步骤 1：列改动
-- 改了哪些源文件（`git status -s` 或对话回顾）
-- 涉及哪些模块、字段、规则（按 §5 模块映射）
+## 2. Four-Step Post-Change Process (Fixed)
 
-### 步骤 2：判影响
-- 涉及业务规则 → 触发 §6 业务/规则审计
-- 涉及配置/schema → 触发 §6 高风险文件规则
-- 纯重构/重命名/日志/测试补强 → 走 §6 豁免
+### Step 1 — List Changes
 
-### 步骤 3：同步文档
-- 按 §5 模块映射决定改哪些 docs
-- 按 §4 文档分层边界判断内容归属
+- Which source files changed (`git status -s` or session review)?
+- Which modules, fields, and rules are involved according to section 5?
 
-### 步骤 3.5：实际运行验证（三层验收第 3 层）
-- 跑最小相关命令（项目区填具体命令）
-- 检查产物（项目区填产物清单）
-- **任务分级**：
-  - 日常小改 → 跑最小命令
-  - 重要功能 → 端到端真实路径
-  - 产物型任务 → **必检产物本身**（图片能打开 / 表格行列正确 / 文件大小非 0 / 输出目录正确）
-  - 纯文档/注释/重命名 → 可豁免（在变更摘要明示理由）
+### Step 2 — Determine Impact
 
-### 步骤 4：输出摘要（按 §7 最小输出格式）
+- Business-rule changes trigger the business/rule audit in section 6.
+- Configuration or schema changes trigger the high-risk-file rules in section 6.
+- Pure refactoring, renaming, logging, or test strengthening follows the documented exemption rules.
 
-## 3. 4 个 placeholder（项目按自身情况填写）
+### Step 3 — Synchronize Documentation
 
-由项目在 §5 / §6 展开：
+- Use the module mapping in section 5 to identify affected docs.
+- Use the ownership boundaries in section 4 to decide where each fact belongs.
 
-- `<PROJECT_MODULE_MAP>`：模块映射（哪些模块改动 → 必同步哪些 docs）
-- `<LANGUAGE_CHECKS>`：语言/框架检查项（按技术栈填，如 Python 查 `print(`/相对导入，Node 查 `console.log`）
-- `<BUSINESS_RULE_AUDIT>`：业务规则审计触发条件（什么改动触发本项目审计）
-- `<NO_DOC_SYNC_EXEMPTIONS>`：无需同步文档的豁免规则
+### Step 3.5 — Run the Real System (Acceptance Layer 3)
 
-> 回流规则：placeholder 内容在 ≥2 个项目重复出现时，才值得回流进模板母版（防单项目污染）。
+- Run the minimum relevant command defined by the project.
+- Inspect the resulting artifacts defined by the project.
+- Apply task-specific depth:
+  - routine small change → minimum relevant command;
+  - important feature → real end-to-end path;
+  - artifact-producing task → inspect the artifact itself (image opens, table shape is correct, file is non-empty, output path is correct);
+  - docs/comments/rename only → exemption allowed when the delivery summary states why.
 
-## 4. 文档分层边界（固定区）
+### Step 4 — Produce the Summary in Section 7
 
-| 内容类型 | 应放位置 |
+## 3. Four Project Placeholders
+
+Expand these in sections 5 and 6:
+
+- `<PROJECT_MODULE_MAP>`: changed module → documentation that must stay synchronized.
+- `<LANGUAGE_CHECKS>`: stack-specific checks, such as Python relative imports or Node `console.log` calls.
+- `<BUSINESS_RULE_AUDIT>`: changes that trigger domain review.
+- `<NO_DOC_SYNC_EXEMPTIONS>`: changes that do not require documentation synchronization.
+
+Promote a placeholder pattern back into the template only after it recurs in at least two projects. This prevents one project from contaminating the shared template.
+
+## 4. Documentation Ownership Boundaries (Fixed)
+
+| Content | Owner |
 |---|---|
-| 每次都用的硬约束 + 指路牌 | CLAUDE.md（共享唯一源，保持一页内，超了拆 docs/）；AGENTS.md 仅作 Codex 薄桥接 |
-| 项目对外说明 / 安装运行 | README.md |
-| 模块需求 / 验收标准 | docs/{模块}-spec.md |
-| 模块技术方案 / 已知坑 | docs/{模块}-plan.md |
-| 关键架构决策记录 | docs/adr/{日期}-{决策}.md |
-| 已完成模块归档 | docs/archive/ |
+| Always-on hard rules and pointers | `CLAUDE.md`, kept within one page; `AGENTS.md` remains only a Codex bridge |
+| External project overview, installation, and run instructions | `README.md` |
+| Module requirements and success criteria | The project's Spec/Issue artifact |
+| Module technical plan and known hazards | The project's Plan artifact |
+| Important architecture decisions | The repository's ADR convention |
+| Completed artifact archive | The repository's existing archive convention |
 
-原则：CLAUDE.md 不复读 docs/ 内容，只放指路牌；AGENTS.md 不复制 CLAUDE.md 内容。
+`CLAUDE.md` links to detail instead of repeating it. `AGENTS.md` does not copy `CLAUDE.md`.
 
-## 5. 模块映射（项目区，展开 `<PROJECT_MODULE_MAP>`）
+## 5. Module Mapping (Project-Owned)
 
-| 改动类型 | 必同步的文档 |
+| Change type | Documentation that must be synchronized |
 |---|---|
-| {模块路径} | {对应 docs} |
+| `{module path}` | `{corresponding artifact}` |
 
-## 6. 高风险文件 / 业务规则审计 / 豁免（项目区）
+## 6. High-Risk Files, Business Audit, and Exemptions (Project-Owned)
 
-| 类别 | 触发条件 | 行动 |
+| Category | Trigger | Action |
 |---|---|---|
-| 高风险（配置 / schema / 业务规则）| （项目填） | （项目填） |
-| 业务规则审计 | （项目填） | （项目填） |
-| 语言/框架检查 | （项目填） | （项目填） |
-| 豁免（无需改 docs）| （项目填） | （项目填） |
+| High risk: configuration/schema/business rules | `{project-specific}` | `{project-specific}` |
+| Business-rule audit | `{project-specific}` | `{project-specific}` |
+| Language/framework checks | `{project-specific}` | `{project-specific}` |
+| Documentation-sync exemption | `{project-specific}` | `{project-specific}` |
 
-## 7. 最小输出格式（固定区）
+## 7. Minimum Delivery Summary (Fixed)
 
-每次代码改动后输出：
+- **Change summary**: goal, scope, risks, rollback.
+- **Changed files**: file, what changed, why, and behavioral effect.
+- **Synchronization decision**: affected modules/rules, artifacts updated, audits triggered, and exemption reasons.
+- **Verification**: normal path and failure/boundary path.
+- **Remaining risk**: unresolved items and decisions requiring an owner.
 
-- **变更摘要**：目标 / 改动范围 / 风险点 / 回滚方式
-- **改动清单**：{文件} —— 改了什么 / 为什么 / 对行为的影响
-- **同步判断**：涉及模块/规则；已同步文档；触发审计；豁免理由
-- **自测步骤**：正常路径 / 异常路径
-- **剩余风险**：没解决的项 / 待业务拍板
+## 8. Three Acceptance Layers (Fixed)
 
-## 8. 三层验收原则（固定区）
-
-| 层 | 证明什么 | 手段 |
+| Layer | Proves | Method |
 |---|---|---|
-| 第 1 层：自动化测试 | 局部逻辑正确 | pytest / npm test / go test（按栈） |
-| 第 2 层：代码审查 | 结构 / 风险 / 安全 | 人工或审查类命令/子代理 |
-| 第 3 层：实际运行验证 | 真实链路 + 产物可用 | 跑命令 + 检查产物（按 §6 项目区清单）|
+| 1. Automated tests | Local logic is correct | `pytest`, `npm test`, `go test`, or stack equivalent |
+| 2. Code review | Structure, risk, and security are acceptable | Human or review command/agent |
+| 3. Real execution | Real path and artifacts work | Run the command and inspect outputs defined in section 6 |
 
-**三层不重叠**：测试过 ≠ 跑通；跑通 ≠ 产物正确。三层都过才算交付。
-
-**为什么必须有第 3 层**（真实教训）：某图片批处理项目只跑测试就交付——输出图片打不开、模板没叠上、详情图被乱改。**测试不能保证产物可用**。
+The layers do not overlap: tests passing does not prove the real path works, and a command completing does not prove its artifact is correct. Delivery requires all applicable layers.

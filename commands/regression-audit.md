@@ -1,30 +1,34 @@
 ---
-description: 模块回归审计——改完代码后照 REGRESSION.md 台账跑"本模块+全部下游"的验收命令，退出码终审，防"改一个模块悄悄弄坏其他模块"。带 init 参数时扫 import 关系生成台账草稿。
-argument-hint: "[init | 模块名 | 留空=按 git 改动自动定位]"
+description: Run the changed module and every required downstream acceptance command from the regression ledger. Exit codes are the final delivery gate. Use init to draft a ledger from reproducible repository evidence.
+argument-hint: "[init | module name | blank = locate from git changes]"
 ---
 
-调用 **regression-auditor** 子 agent 对**当前工作目录的项目**做模块回归审计。方法论唯一源在 `skills/module-regression/SKILL.md`。
+Invoke **regression-auditor** for the project in the current working directory. The single methodology source is `skills/module-regression/SKILL.md`.
 
-用户参数：`$ARGUMENTS`
+User input: `$ARGUMENTS`
 
-## 三种用法
+## Modes
 
-**1. `/regression-audit`（日常，改完就跑）**
-按 `git status -s` / `git diff --name-only` 自动定位本次改动涉及的模块 → 查台账下游 → 跑"本模块 + 全部下游"的验收命令 → 出红绿审计摘要。**任何一条红 = 不可交付**。
+### 1. `/regression-audit`
 
-**2. `/regression-audit 模块名`**
-跳过自动定位，直接对指定模块及其下游做回归。
+Use `git status -s` and `git diff --name-only` to locate affected modules, resolve downstream consumers from the ledger, run the changed module plus every required downstream acceptance command, and report exit codes. Any failure blocks delivery.
 
-**3. `/regression-audit init`（首跑建台账）**
-项目还没有 `REGRESSION.md` 时：
-- 优先调用仓库已有依赖图或构建工具；没有时选择适合当前语言的可复现扫描命令，按模块聚合出“谁依赖谁”，并把命令和未验证边记录进台账；本命令不声称一个通用扫描器能解析所有生态；
-- **验收命令留空待填**——先从项目现有 tests/ 和对账脚本里找候选填入并标"待确认"，找不到的模块如实标"缺验收命令"（这是台账缺口，不许编）；
-- 生成后提示用户逐模块确认验收命令，并在项目 `CLAUDE.md` 挂指路牌。
-- 模板参考 `skills/module-regression/templates/REGRESSION.example.md`。
+### 2. `/regression-audit <module>`
 
-## 执行要求
+Skip automatic path mapping and audit the named module plus downstream consumers.
 
-1. 台账不存在且不是 init → 报告并建议先跑 init，不要瞎猜依赖关系。
-2. 审计员**只跑只报不修**；红了给出哪红、为什么红，修复由主会话完成后**重跑本命令**直到全绿。
-3. 全绿后提醒：本次审计结果值得一行 `PROJECT_LOG.md`（有 pre-commit 护栏的项目 commit 时自然会要求）。
-4. 汇报用审计摘要表格（模块/命令/退出码/结论），不要谎报"完成"。
+### 3. `/regression-audit init`
+
+When no regression ledger exists:
+
+- Prefer the repository's existing dependency graph or build tooling. Otherwise choose a reproducible command suitable for the current language, aggregate edges by module, and record both the command and any unverified edges. Do not claim one universal scanner handles every ecosystem.
+- Find acceptance-command candidates from existing tests and reconciliation scripts. Mark uncertain candidates `needs confirmation`; mark modules with no candidate `MISSING`.
+- Ask the user to confirm module commands and link the ledger from the project's instruction/map artifact.
+- Adapt `skills/module-regression/templates/REGRESSION.example.md` to the repository's existing layout.
+
+## Requirements
+
+1. If the ledger is missing and the mode is not `init`, stop and recommend initialization. Do not infer dependencies ad hoc.
+2. The auditor runs and reports but never fixes code. After a failure, the main change author fixes it and reruns this command until green.
+3. After an all-green run, mention that a durable project may append one short history event.
+4. Report a table containing module, command, exit code, and verdict. Never claim completion for commands that did not run.

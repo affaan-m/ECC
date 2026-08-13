@@ -1,24 +1,25 @@
 ---
-description: 对当前项目做活文档治理——扫描真实结构，识别或增量更新章程 / 地图 / 状态 / 历史等文档角色，并按需生成 Codex 的 AGENTS.md 薄桥接。
+description: Apply living-document governance to an existing project by discovering its real structure, reusing or incrementally updating charter, map, status, and history roles, and adding a thin Codex AGENTS.md bridge when needed.
 ---
 
-调用 **docs-governor** 子 agent 对**当前工作目录的项目**做活文档治理。
+Invoke **docs-governor** for the project in the current working directory.
 
-**分工**：本命令面向**已有代码**的项目；全新空项目请用 `/governance-init`（day-0 骨架）。
+This command is for an existing codebase. Use `/governance-init` for a new empty project.
 
-用户参数（可选）：`$ARGUMENTS`
-- 不带参数：对整个项目做一次完整治理（侦察 + 识别/更新文档脊柱）。
-- 带路径：只针对该子目录/模块更新地图与状态。
-- 带 `log: 一句话`：只往映射或发现到的历史角色追加一条记录，不动其他文件。
+Optional `$ARGUMENTS`:
 
-执行要求：
+- no argument: discover and govern the complete project;
+- a path: limit map/status updates to that module;
+- `log: <summary>`: append one event to the mapped or discovered history role and change nothing else.
 
-1. 先让 docs-governor 侦察项目真实结构，**不要照模板瞎填**。
-2. 先读取 `.governance/docs-map.json`（若存在）并识别现有等价载体；已有治理文件**增量更新**，不推翻重写；历史角色只追加。
-3. 严守四件套非重叠纪律：每个事实只写一处。
-4. 遵循用户和项目现有语言；未指定时默认 English。
-5. 项目使用 Codex、已有 `AGENTS.md` 或用户要求跨宿主兼容时：从 `skills/docs-governance/templates/AGENTS.example.md` 生成或增量维护薄桥接，不复制 `CLAUDE.md` / MAP 内容。
-6. 若项目是 git 仓且 `.git/hooks/pre-commit` 不存在：问用户要不要装 pre-commit 护栏（`skills/docs-governance/templates/pre-commit.example`，固化"代码改动必须同批带一行流水账"）。
-7. 识别可选载体但不强制创建：稳定领域术语 → `CONTEXT.md`；难回退技术决策 → `docs/adr/`；任务与排期 → 项目已有 Issue Tracker。不要把三者塞进 STATUS 或 LOG 数据库。
-8. 用 `skills/docs-governance/scripts/project-log-index.py status` 按事件数检查历史角色；脚本会读取 `.governance/docs-map.json`。超过 200 条只报告并建议先复盘，未经确认不归档。
-9. 干完汇报：建/改了哪几份文件、关键内容、怎么验收。不要谎报"完成"。
+Requirements:
+
+1. Discover the real project before writing. Never fill templates from assumptions.
+2. Read `.governance/docs-map.json` when present and identify existing equivalents. Update incrementally; never rewrite append-only history.
+3. Preserve non-overlapping ownership: each fact has one canonical owner.
+4. Follow the user's and project's established language; default to English.
+5. When the project uses Codex, already has `AGENTS.md`, or requests cross-host compatibility, create or maintain a thin bridge from `skills/docs-governance/templates/AGENTS.example.md`. Do not copy charter or map content.
+6. If the repository is Git-based and has no pre-commit hook, ask whether to install the optional reference hook. Do not install it silently.
+7. Discover optional artifacts but create them lazily: context for stable domain language, ADRs for hard-to-reverse decisions, and the existing Issue Tracker for tasks and schedules.
+8. Run `project-log-index.py status`; it respects the role map. Above 200 events, report and recommend retrospective review. Never archive without confirmation.
+9. Report files created or changed, the evidence behind them, and how the user can verify the result. Do not claim completion without reading and changing the project.

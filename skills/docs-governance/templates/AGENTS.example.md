@@ -1,5 +1,5 @@
-# AGENTS.md — Codex 入口桥接
+# AGENTS.md — Codex Entry Bridge
 
-本项目的共享章程以 `CLAUDE.md` 为唯一来源。开始实质工作前，读取并遵守 `CLAUDE.md`，同时读取 `PROJECT_STATUS.md` 顶部红线块（文件存在时）；不要把这些规则复制进本文件。
+The shared project charter has one canonical source: `CLAUDE.md`. Before substantive work, read and follow `CLAUDE.md`, and read the red-line block at the top of `PROJECT_STATUS.md` when that file exists. Do not copy those rules into this file.
 
-需要定位文件、理解非显然的目录职责、新建/删除/重命名文件或做跨目录修改时，先读取 `CLAUDE_MAP.md`（文件存在时）。追溯历史时按需检索 `PROJECT_LOG.md`。
+Read `CLAUDE_MAP.md` when you need to locate files, understand non-obvious directory responsibilities, create/delete/rename files, or make cross-directory changes. Search `PROJECT_LOG.md` only when historical context is needed.

@@ -1,34 +1,38 @@
-#!/usr/bin/env bash
-# docs-governance · pre-commit 护栏
-# 固化一条最小可判定不变量：凡 staged 含代码改动的 commit，历史角色必须同批 staged（至少一行流水账）。
-# 只拦这一条；MAP/STATUS 的同步交给 /governance-sync 与 /governance-audit（commit 关口卡多了会"狼来了"）。
-# 豁免：只改测试/文档/治理文件 → 自动放行；真急事 git commit --no-verify 跳过（audit 会秋后算账）。
-# 安装：cp 本文件到 .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
-set -uo pipefail
+#!/bin/sh
+# docs-governance optional pre-commit guard
+# One invariant only: a commit with staged code changes must also stage the mapped history artifact with at least one new event.
+# MAP/STATUS synchronization remains the responsibility of /governance-sync and /governance-audit.
+# Test-, documentation-, artifact-, and governance-only changes are exempt.
+# Install with: cp pre-commit.example .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 
-# 优先读取自定义文档角色映射；无法读取时安全回退到默认路径。
-LOG_PATH=$(python3 -c 'import json, pathlib; p=pathlib.Path(".governance/docs-map.json"); d=json.loads(p.read_text()) if p.exists() else {}; print(d.get("history", "PROJECT_LOG.md"))' 2>/dev/null || printf '%s' PROJECT_LOG.md)
+set -eu
 
-# 没启用历史角色的项目，直接放行
-[ -f "$LOG_PATH" ] || exit 0
+ROOT=$(git rev-parse --show-toplevel)
+MAP="$ROOT/.governance/docs-map.json"
+LOG_PATH="PROJECT_LOG.md"
 
-STAGED=$(git diff --cached --name-only)
-[ -z "$STAGED" ] && exit 0
+if [ -f "$MAP" ]; then
+  MAPPED=$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("history", ""); print(value if isinstance(value, str) else "")' "$MAP" 2>/dev/null || true)
+  [ -n "$MAPPED" ] && LOG_PATH="$MAPPED"
+fi
 
-# LOG 已同批 staged → 放行
-echo "$STAGED" | grep -Fqx "$LOG_PATH" && exit 0
+# Projects without a history role do not enable this guard.
+[ -f "$ROOT/$LOG_PATH" ] || exit 0
 
-# 代码改动 = 豁免清单之外的 staged 文件（测试/文档/产物目录/治理文件/纯文档后缀 均豁免）
-CODE=$(echo "$STAGED" \
-  | grep -vE '^(tests?/|docs/|references/|reviews/|logs/|output/)' \
-  | grep -vE '^(PROJECT_STATUS\.md|CLAUDE_MAP\.md|CLAUDE\.md|CLAUDE\.local\.md|CONTRACT\.md|README\.md|CHANGELOG\.md|LICENSE|\.gitignore)$' \
-  | grep -vE '\.(md|txt)$' || true)
-[ -z "$CODE" ] && exit 0
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$STAGED" ] || exit 0
 
-echo "✋ docs-governance：本次 commit 含代码改动，但历史角色 $LOG_PATH 没有同批提交。" >&2
-echo "   代码改动：" >&2
-echo "$CODE" | head -5 | sed 's/^/     - /' >&2
-echo "   补一行流水账（十秒钟）：" >&2
-echo "     echo '## [$(date +%Y-%m-%d)] fix | 一句话说清改了什么' >> \"$LOG_PATH\" && git add \"$LOG_PATH\"" >&2
-echo "   然后重新 git commit。真急事：git commit --no-verify（/governance-audit 会秋后算账）。" >&2
+# A staged history update satisfies the invariant.
+printf '%s\n' "$STAGED" | grep -Fxq "$LOG_PATH" && exit 0
+
+# Treat everything outside these documentation/test/governance surfaces as code.
+CODE=$(printf '%s\n' "$STAGED" | grep -Ev '(^|/)(tests?|docs?|artifacts?|governance)(/|$)|(^|/)(CLAUDE|AGENTS|PROJECT_LOG|PROJECT_STATUS|CLAUDE_MAP|CONTEXT|CONTRACT|TESTS|REGRESSION)\.md$|\.(md|mdx|txt|rst)$' || true)
+[ -n "$CODE" ] || exit 0
+
+echo "docs-governance: this commit stages code but not the history artifact: $LOG_PATH" >&2
+echo "Staged code paths:" >&2
+printf '  %s\n' "$CODE" >&2
+echo "Append one concise event, stage the history artifact, and commit again, for example:" >&2
+echo "  echo '## [$(date +%Y-%m-%d)] fix | describe the change in one sentence' >> \"$LOG_PATH\" && git add \"$LOG_PATH\"" >&2
+echo "Emergency bypass: git commit --no-verify. A later /governance-audit must reconcile the missing event." >&2
 exit 1

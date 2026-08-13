@@ -1,38 +1,37 @@
-# CLAUDE_MAP.md —— 地图（只写文件树看不出来的东西）
+# CLAUDE_MAP.md — Project Map
 
-> **别在这里抄目录结构。** 有哪些文件夹、哪些文件，AI 自己 `ls` / `glob` 一下就知道，而且是不会过期的真相——抄进来只会变旧、白占上下文。
-> 这份只写四样**光看文件名推不出来、grep 也搜不到**的东西。判据：能从真实文件树 + 文件头注释稳定推出来的，一律别写。
-> 这份**默认不读**，只在"找不到东西 / 要跨模块改 / 动手新建删除重命名文件前"才翻。
+> Do not copy the directory tree here. Agents can derive files and folders from `ls` or glob without creating stale context. Record only facts that cannot be inferred reliably from the real tree and file headers.
+>
+> This file is not part of the default session read. Open it when something is hard to find, a change crosses modules, or before creating, deleting, or renaming files.
 
-## 1. 依赖方向（谁能调谁，防乱引用）
+## 1. Dependency Direction
 
-`main → ui → services → utils`；**禁止反向**（utils 不准依赖任何业务层，services 不准反过来调 ui）。
-> 这是架构铁律，文件树里完全看不出来，但违反了就埋下循环依赖的雷。
+`main → ui → services → utils`; reverse dependencies are forbidden. `utils` must not depend on business layers, and `services` must not call `ui`.
 
-## 2. 不好找的东西在哪（跳转表，指向稳定锚点）
+> This is an architectural invariant that the file tree cannot reveal.
 
-> 只列"AI 第一次会找不到 / 容易找错"的。能 `glob` 一下就命中的（如 `test_xxx.py`）别写。
+## 2. Hard-to-Find Locations
 
-| 要找 | 去 | 备注 |
+List only locations an agent would otherwise miss or choose incorrectly. Do not list paths that a simple glob reveals.
+
+| Looking for | Go to | Why |
 |---|---|---|
-| 退款率计算 | `src/services/refund.py` | 不在 report 里，容易找错 |
-| 全局配置入口 | `config/settings.yaml` | 不是 `.env` |
-| 某个 agent 工具怎么注册 | `src/agent/tool_registry.py` | 加工具要同步这里 |
+| Refund-rate calculation | `src/services/refund.py` | It is not under reporting and is easy to misplace |
+| Global configuration entry | `config/settings.yaml` | It is not `.env` |
+| Agent tool registration | `src/agent/tool_registry.py` | New tools must also be registered here |
 
-项目已启用对应载体时，再把知识入口挂在这里：领域词汇 → `CONTEXT.md`；架构/数据库决策 → `docs/adr/README.md`；接口 → `CONTRACT.md`；测试证据 → `TESTS.md`；下游回归 → `REGRESSION.md`；任务与排期 → Issue Tracker。只挂入口，不枚举每个 ADR、Issue、Spec 或任务。
+When the project enables the corresponding artifact, link only its entry point here: domain language → `CONTEXT.md`; decisions → ADR index; interfaces → `CONTRACT.md`; test evidence → `TESTS.md`; downstream regression → `REGRESSION.md`; tasks and schedules → Issue Tracker. Do not enumerate every ADR, Issue, Spec, or task.
 
-## 3. 树真实但会骗你的（最值钱的一栏）
+## 3. Misleading but Real Paths
 
-> 文件树看着正常、其实有坑的地方。这是这份地图最不可替代的内容——`ls` 给你看到它们，却不会告诉你"别信"。
-
-| 路径 | 真相 |
+| Path | Reality |
 |---|---|
-| `src/legacy/` | 老代码，已废弃，**别动也别参考**（仍能跑但走的是旧逻辑） |
-| `src/generated/` | 自动生成，**别手改**（改了下次生成被覆盖），要改去改生成脚本 |
-| `src/api_v1/` | 名字像在用，其实只为兼容旧客户端保留，新功能一律走 `api_v2/` |
-| `samples/` | 示例代码，不是真实业务，别照着抄 |
+| `src/legacy/` | Deprecated code. Do not modify or use as a reference, even though it still runs. |
+| `src/generated/` | Generated output. Do not edit by hand; modify the generator. |
+| `src/api_v1/` | Retained only for legacy-client compatibility. New work belongs in `api_v2/`. |
+| `samples/` | Example code, not production business logic. |
 
-## 4. 别碰区（碰之前先问人）
+## 4. Ask Before Touching
 
-- `src/billing/` —— 涉及真实扣费，改动必须人工复核，AI 不许自行修改
-- 任何 `*.lock` / 凭证文件 —— 不许改、不许提交
+- `src/billing/` — affects real charges; every change requires human review.
+- Lockfiles and credential files — do not modify or commit unless explicitly authorized.

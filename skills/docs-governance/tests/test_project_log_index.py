@@ -13,10 +13,10 @@ SCRIPT = ROOT / "scripts" / "project-log-index.py"
 
 def render_log(count: int) -> str:
     entries = [
-        f"## [2026-01-{(index % 28) + 1:02d}] fix | module=orders 修复第 {index:03d} 项 `src/orders/service.py` TEST-ORDER-{index:03d}"
+        f"## [2026-01-{(index % 28) + 1:02d}] fix | module=orders fix item {index:03d} `src/orders/service.py` TEST-ORDER-{index:03d}"
         for index in range(1, count + 1)
     ]
-    return "# PROJECT_LOG.md —— 只追加\n\n" + "\n".join(entries) + "\n"
+    return "# PROJECT_LOG.md — Append-only\n\n" + "\n".join(entries) + "\n"
 
 
 class ProjectLogIndexTest(unittest.TestCase):
@@ -39,8 +39,8 @@ class ProjectLogIndexTest(unittest.TestCase):
         (self.project / "PROJECT_LOG.md").write_text(render_log(201), encoding="utf-8")
         result = self.run_script("status")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("事件数：201", result.stdout)
-        self.assertIn("超过阈值", result.stdout)
+        self.assertIn("events: 201", result.stdout)
+        self.assertIn("above threshold", result.stdout)
 
     def test_rebuild_is_idempotent_and_indexes_refs(self):
         (self.project / "PROJECT_LOG.md").write_text(render_log(3), encoding="utf-8")
@@ -74,7 +74,7 @@ class ProjectLogIndexTest(unittest.TestCase):
         archive_text = (self.project / "PROJECT_LOG.archive.md").read_text(encoding="utf-8")
         self.assertEqual(active_text.count("\n## ["), 100)
         self.assertEqual(archive_text.count("\n## ["), 101)
-        self.assertIn("历史归档见", active_text)
+        self.assertIn("Historical events are archived", active_text)
 
         connection = sqlite3.connect(self.project / ".governance" / "project-log.sqlite")
         try:
@@ -117,7 +117,7 @@ class ProjectLogIndexTest(unittest.TestCase):
 
         status = self.run_script("status")
         self.assertEqual(status.returncode, 0, status.stderr)
-        self.assertIn("事件数：201", status.stdout)
+        self.assertIn("events: 201", status.stdout)
 
         archived = self.run_script("archive", "--keep", "100", "--yes")
         self.assertEqual(archived.returncode, 0, archived.stderr)

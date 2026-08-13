@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 治理审计便宜层：确定性断链先判，失败短路；语义问题留给 docs-auditor。
+# Cheap governance layer: fail fast on deterministic integrity errors; leave semantic judgment to docs-auditor.
 set -uo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,7 +9,7 @@ SCOPE="${1:-full}"
 case "$SCOPE" in
   spine|context|adr|artifacts|full) ;;
   *)
-    echo "用法：bash audit-cheap.sh [spine|context|adr|artifacts|full]"
+    echo "Usage: bash audit-cheap.sh [spine|context|adr|artifacts|full]"
     exit 2
     ;;
 esac

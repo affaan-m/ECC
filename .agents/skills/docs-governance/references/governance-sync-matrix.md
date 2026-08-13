@@ -1,59 +1,59 @@
-# 文档治理变更影响矩阵
+# Documentation Governance Change-Impact Matrix
 
-阶段收尾或用户说"同步一下 / 整理一下 / 收尾 / 新人能接手"时，用这张表判断本次改动应同步哪些治理文件。
+Use this matrix at stage closeout, or when the user asks to synchronize, organize, wrap up, or make the project ready for a new maintainer.
 
-核心纪律：`PROJECT_LOG.md` 是历史，只追加；`CLAUDE_MAP.md` / `PROJECT_STATUS.md` / `CLAUDE.md` 是当前真相，要修正旧事实、合并重复、删除过期内容。
+Core discipline: `PROJECT_LOG.md` is append-only history. `CLAUDE_MAP.md`, `PROJECT_STATUS.md`, and `CLAUDE.md` represent current truth, so obsolete facts must be corrected, duplicates consolidated, and stale content removed.
 
-## 代码 / 项目变化 -> 治理文件
+## Code or Project Change → Governance Artifacts
 
-| 本次发生的事 | 必须检查 / 更新 |
+| What changed | Must inspect or update |
 |---|---|
-| 新增、删除、改名顶层目录或核心模块 | `CLAUDE_MAP.md` 顶层结构、跳转表、依赖方向；`PROJECT_LOG.md` 追加结构变更 |
-| 新增入口文件、命令、脚本、服务端口 | `CLAUDE_MAP.md` 入口表；README 运行说明；`PROJECT_LOG.md` 追加 |
-| 新增或改变测试方式 | `PROJECT_STATUS.md` 测试健康指标；`CLAUDE.md` 验证硬规则（仅当成为长期规则）；`PROJECT_LOG.md` 追加 |
-| 指标越过阈值（行数、覆盖率、测试缺失、依赖风险） | `PROJECT_STATUS.md` 指标与 P0/P1 行动；`PROJECT_LOG.md` 追加 audit/fix |
-| 故意删除文件、废弃模块、清理备份目录 | `PROJECT_STATUS.md` 删除区（路径、原因、日期、替代物）；`PROJECT_LOG.md` 追加 cleanup |
-| 新增硬规则、编码约束、不可违背流程 | `CLAUDE.md`；必要时链接到 docs；`PROJECT_LOG.md` 追加 governance |
-| README、docs、代码结构互相矛盾 | 修正当前真相所在文件；不要只在 LOG 里解释；`PROJECT_LOG.md` 可追加 audit/fix |
-| 新增环境变量、密钥配置、部署参数 | `CLAUDE.md` 或 README 的配置指路；`PROJECT_STATUS.md` 风险项（如密钥/公网）；`PROJECT_LOG.md` 追加 |
-| 新增业务流程、用户动线、页面或视图 | `CLAUDE_MAP.md` 找 X 去这里；README 演示/运行说明（如面向人类用户）；`PROJECT_LOG.md` 追加 |
-| 新增 API / 路由 / 前后端字段变化 | `CONTRACT.md`（若存在）；`CLAUDE_MAP.md` 前端入口 / API 封装 / 后端路由位置；`PROJECT_LOG.md` 追加 contract |
-| 新增接口但项目尚无 `CONTRACT.md` | 报告建议创建 `CONTRACT.md`；不要把字段细节塞进 `CLAUDE_MAP.md` |
-| 领域术语、概念关系或采用口径变化 | `CONTEXT.md`（若已启用）；证据未确认时只列待确认，不改代码口径 |
-| 架构、数据库、认证、部署、数据模型或 API 版本等难回退决策 | `docs/adr/` 新建/更新单项 ADR；`docs/adr/README.md` 更新索引；MAP 只挂索引入口；LOG 追加 decision |
-| 成功标准、需求或 Bug 变化 | 原始 Spec/Issue 保持唯一来源；`TESTS.md` 关联 TEST-ID/人工出口；不要复制标准 |
-| 模块行为或下游依赖变化 | `REGRESSION.md` 的下游与执行命令；相关 TEST-ID；实施后跑本模块和下游 |
-| 数据迁移、破坏性接口或高风险发布 | 变更影响报告中的兼容期、迁移/恢复/回滚和不可逆部分；必要时 ADR / CONTRACT |
-| 任务负责人、阻塞或项目排期变化 | Issue Tracker；STATUS 只在健康风险变化时更新，LOG 数据库不存排期 |
+| A top-level directory or core module was added, removed, or renamed | `CLAUDE_MAP.md` dependency direction and hard-to-find jump table; append the structural change to `PROJECT_LOG.md` |
+| An entry point, command, script, or service port was added | `CLAUDE_MAP.md` entry-point table; README run instructions; append to `PROJECT_LOG.md` |
+| The testing method changed | `PROJECT_STATUS.md` test-health metrics; `CLAUDE.md` verification rule only if it became a durable rule; append to `PROJECT_LOG.md` |
+| A metric crossed a threshold (file size, coverage, missing tests, dependency risk) | `PROJECT_STATUS.md` metric and P0/P1 action; append an audit/fix event to `PROJECT_LOG.md` |
+| A file was deliberately deleted, a module deprecated, or a backup directory cleaned | `PROJECT_STATUS.md` deletion zone with path, reason, date, and replacement; append a cleanup event to `PROJECT_LOG.md` |
+| A durable rule, coding constraint, or non-negotiable process was added | `CLAUDE.md`; link to detailed docs when needed; append a governance event to `PROJECT_LOG.md` |
+| README, docs, and code structure contradict one another | Correct the file that owns current truth; do not explain the mismatch only in LOG; optionally append an audit/fix event |
+| An environment variable, secret setting, or deployment parameter was added | A pointer in `CLAUDE.md` or README; `PROJECT_STATUS.md` risk entry when relevant; append to `PROJECT_LOG.md` |
+| A business flow, user journey, page, or view was added | A “find X here” pointer in `CLAUDE_MAP.md`; README demo/run instructions when user-facing; append to `PROJECT_LOG.md` |
+| An API, route, or frontend/backend field changed | `CONTRACT.md` if present; frontend entry, API wrapper, and backend route locations in `CLAUDE_MAP.md`; append a contract event to `PROJECT_LOG.md` |
+| An interface was added but no `CONTRACT.md` exists | Recommend creating `CONTRACT.md`; do not put field-level details in `CLAUDE_MAP.md` |
+| Domain terminology, concept relationships, or adopted interpretation changed | `CONTEXT.md` if enabled; list unconfirmed evidence as needing confirmation and do not change code semantics |
+| A hard-to-reverse architecture, database, authentication, deployment, data-model, or API-version decision changed | Create or update the relevant ADR with `architecture-decision-records`; keep MAP as an index pointer only; append a decision event to LOG |
+| Success criteria, a requirement, or a bug changed | Keep the original Spec/Issue as the single source; link TEST-ID or manual-exit evidence in `TESTS.md`; do not copy the criteria |
+| Module behavior or downstream dependencies changed | `REGRESSION.md` downstream list and executable commands; associated TEST-IDs; run the changed module and downstream consumers after implementation |
+| A data migration, breaking interface, or high-risk release is planned | Compatibility period, migration/recovery/rollback, and irreversible effects in the change-impact report; ADR/CONTRACT when applicable |
+| Task ownership, blockers, or schedule changed | Issue Tracker; update STATUS only when project health changes, and never store scheduling in the LOG index database |
 
-## 四件套职责回查
+## Documentation Spine Responsibility Check
 
-| 文档 | 收尾时问自己 |
+| Artifact | Closeout question |
 |---|---|
-| `CLAUDE.md` | 本次是否产生长期硬规则？是否有细节应挪到 MAP/STATUS/LOG？ |
-| `CLAUDE_MAP.md` | 新人是否能从这里找到入口、模块、测试、关键文件？路径是否真实存在？ |
-| `PROJECT_STATUS.md` | 当前风险、健康指标、待删区是否反映真实状态？指标是否量过？ |
-| `PROJECT_LOG.md` | 本次有意义的变更是否追加一行？是否避免改旧历史？ |
-| `CONTRACT.md` | 前后端字段、类型、枚举、错误码是否只有这里定义一次？ |
-| `CONTEXT.md`（可选） | 是否只写稳定领域语言，且与代码/契约证据一致？ |
-| `docs/adr/`（可选） | 难回退决策是否一项一文件、状态与索引一致、写明可逆性？ |
-| `TESTS.md`（可选） | 成功标准是否链接回 Spec/Issue，证据是否关联 TEST-ID？ |
-| `REGRESSION.md`（可选） | 实际受影响模块及下游是否有可执行命令并已运行？ |
+| `CLAUDE.md` | Did this change introduce a durable hard rule? Should any detail move to MAP, STATUS, or LOG? |
+| `CLAUDE_MAP.md` | Can a newcomer find entry points, modules, tests, and critical files? Do all paths exist? |
+| `PROJECT_STATUS.md` | Do current risks, health metrics, and the deletion zone reflect measured reality? |
+| `PROJECT_LOG.md` | Was each meaningful event appended? Were old history entries left untouched? |
+| `CONTRACT.md` | Are frontend/backend fields, types, enums, and error codes defined only once? |
+| `CONTEXT.md` (optional) | Does it contain only stable domain language supported by code, contract, or business evidence? |
+| ADR set (optional) | Is each hard-to-reverse decision isolated, correctly indexed, and explicit about reversibility? |
+| `TESTS.md` (optional) | Do success criteria link back to Spec/Issue, with verification evidence linked to TEST-IDs? |
+| `REGRESSION.md` (optional) | Do affected modules and downstream consumers have executable commands, and were they run? |
 
-## 收尾同步流程
+## Closeout Synchronization Flow
 
-1. 盘点本次改动：优先看会话记录、`git status -s`、最近修改文件、用户明确说过的完成项。
-2. 对照上表列出"应更新文档"。
-3. 对每份治理文件判断：已同步 / 需要更新 / 需要用户确认。
-4. 能确定的当前真相直接更新；不能确定的列入交付摘要的"待确认"。
-5. 故意删除或废弃的东西必须进 `PROJECT_STATUS.md` 删除区，避免下个 agent 重建。
-6. 最后追加 `PROJECT_LOG.md`，记录这次同步本身或本次阶段成果。
-7. 若有变更影响分析，对照实际 diff，报告超范围改动、未验证项和临时兼容逻辑。
+1. Inventory the change from the session context, `git status -s`, recently modified files, and user-confirmed outcomes.
+2. Use the matrix above to identify artifacts that should change.
+3. Classify each governance artifact as synchronized, needs update, or needs user confirmation.
+4. Update current truth when evidence is sufficient. Put uncertain items in the delivery summary under `Needs confirmation`.
+5. Put intentionally deleted or deprecated items in the deletion zone of `PROJECT_STATUS.md` so a later agent does not recreate them.
+6. Append `PROJECT_LOG.md` last, recording the stage outcome or this synchronization event.
+7. If a change-impact analysis exists, reconcile it against the actual diff and report out-of-scope changes, unverified items, and temporary compatibility logic.
 
-## 不要做
+## Do Not
 
-- 不要把所有内容都追加到 `CLAUDE.md`；它只放硬规则和路标。
-- 不要把接口字段细节放进 `CLAUDE_MAP.md`；字段契约放 `CONTRACT.md`。
-- 不要用 `PROJECT_LOG.md` 替代当前状态修正；LOG 只解释历史。
-- 不要为了"看起来完整"编造没量过的指标。
-- 不要把排期和任务状态搬进 STATUS、LOG 或 SQLite；沿用项目已有 Issue Tracker。
+- Do not append everything to `CLAUDE.md`; it contains only hard rules and pointers.
+- Do not put interface fields in `CLAUDE_MAP.md`; field contracts belong in `CONTRACT.md`.
+- Do not use `PROJECT_LOG.md` instead of correcting current truth; LOG explains history only.
+- Do not invent unmeasured metrics for completeness.
+- Do not move schedules or task state into STATUS, LOG, or SQLite; preserve the project's existing Issue Tracker.

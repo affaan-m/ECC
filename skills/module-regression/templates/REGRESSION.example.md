@@ -1,28 +1,32 @@
-# REGRESSION.md —— 模块回归台账（改完照单跑，防"改 A 坏 B"）
+# REGRESSION.md — Module Regression Ledger
 
-> 用法：每次改完代码跑 `/regression-audit`（或手动照下表）——定位改动模块 → 跑"本模块 + 下游"的验收命令 → 全绿才交付。
-> 纪律：**下游列表由脚本从 import 关系生成，勿手改**（重扫刷新）；**验收命令是核心资产**，优先对账型（golden sample / 上游合计），"测试全过"能被钻、对账钻不了。
-> 台账缺口（模块没有验收命令）要如实标 `MISSING`，不许编。
+> After each relevant change, locate the changed module, run its acceptance command plus every required downstream command, and deliver only when all exit codes are green.
+> Refresh downstream relationships from reproducible repository evidence. Acceptance commands are the core asset; prefer reconciliation against external facts over weak mocks or assertions.
+> If a module has no acceptance command, mark it `MISSING`. Never manufacture a green result.
+>
+> Downstream evidence last refreshed: 2026-06-09 using `<repository dependency graph or scan command>`
 
-<!-- 下游关系生成示例（Python 项目）：
-grep -rE "^(from|import) " src/ | 按模块聚合；Node 项目扫 require/import。
-生成日期写在下面，重扫时更新。 -->
-> 下游关系最后生成：2026-06-09（脚本：scripts/scan_deps.py）
+## Module 01 — Data Ingestion
 
-## 模块 01-数据接入
-下游（谁依赖我）：02-清洗、03-店铺映射        <!-- 从依赖证据生成；在下方记录工具 -->
-依赖证据：`<仓库现有依赖图或扫描命令>`
-回归验收命令：`pytest tests/test_01.py`
-联动规则：改输出列/格式 → 必须跑 02、03；只改内部日志等 → 本模块绿即可豁免
+- Downstream consumers: `02-cleaning`, `03-shop-mapping`
+- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Regression acceptance command: `pytest tests/test_01.py`
+- Propagation rule: output column/format changes require 02 and 03; internal logging-only changes may exempt downstream when this module is green
+- Last green commit: `<commit>`
 
-## 模块 02-清洗
-下游（谁依赖我）：05-汇总
-回归验收命令：`pytest tests/test_02.py && python scripts/reconcile.py --module 02`   <!-- 对账型，优先 -->
-联动规则：改我 → 必跑 05
-关联测试点：`TEST-ORDER-001`、`TEST-AMOUNT-002`  <!-- 规则和证据只在 TESTS.md 维护 -->
+## Module 02 — Cleaning
 
-## 模块 04-临时工具
-下游（谁依赖我）：（无）
-回归验收命令：`MISSING`（台账缺口，待补最小测试）
-联动规则：-
-关联测试点：`MISSING`，待在 TESTS.md 盘点
+- Downstream consumers: `05-aggregation`
+- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Regression acceptance command: `pytest tests/test_02.py && python scripts/reconcile.py --module 02`
+- Propagation rule: external behavior changes require 05
+- Related test points: `TEST-ORDER-001`, `TEST-AMOUNT-002`
+- Last green commit: `<commit>`
+
+## Module 04 — Temporary Utility
+
+- Downstream consumers: none
+- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Regression acceptance command: `MISSING` — add the minimum executable check
+- Propagation rule: none
+- Related test points: `MISSING` — inventory in the test registry

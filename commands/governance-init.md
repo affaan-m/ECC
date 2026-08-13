@@ -1,59 +1,63 @@
 ---
-description: 给全新（还没代码的）项目搭 day-0 治理骨架：精简 CLAUDE.md + Codex 的 AGENTS.md 桥接 + docs/governance.md 检查流程 + PROJECT_LOG.md，并 git init 首提。已有代码的项目请用 /governance。
-argument-hint: "[项目名 技术栈 模块划分]"
+description: Create a day-zero governance scaffold for a new empty project: concise CLAUDE.md, thin Codex AGENTS.md bridge, governance workflow, append-only project history, optional pre-commit guard, and initial local commit. Use /governance for existing codebases.
+argument-hint: "[project name, technology stack, confirmed modules]"
 ---
 
-给**当前工作目录的全新项目**搭 day-0 治理骨架。
+Create a **minimal day-zero governance scaffold** in the current empty project.
 
-**分工（别用错命令）**：项目已有代码 → 用 `/governance`（扫描真实结构生成/更新四件套）；**空项目从零起步 → 用本命令**。本命令刻意只生成最小脊柱，不铺满目录和可选文档——渐进式采用，见 living-docs-governance skill。
+Use this command only for a new project with no implementation. Existing codebases use `/governance`, which discovers real structure before adding or updating governance artifacts. Progressive adoption is defined by `living-docs-governance`.
 
-用户参数：`$ARGUMENTS`（项目名 / 技术栈 / 模块划分）。缺什么就逐项问，**不要猜技术栈**。
+Treat `$ARGUMENTS` as project name, technology stack, and confirmed modules. Ask for missing information one item at a time; never guess the stack.
 
-## 生成什么
+## Create
 
-### 1. `CLAUDE.md`（宪法，≤60 行）
+### 1. `CLAUDE.md` (Project Charter, ≤60 Lines)
 
-以 `skills/docs-governance/templates/CLAUDE.example.md` 为骨架（读取时机分级 / 硬规则少而精 / 路标），按本项目填充，并加入以下 day-0 段落：
+Adapt `skills/docs-governance/templates/CLAUDE.example.md` and add only project-confirmed day-zero rules:
 
-- **治理硬约束**（放最前）：更新任何文件 / 新建文件 / 改业务规则前，必须读取并执行 `docs/governance.md`；无视 = 违反章程，必须重做。
-- **验证**（按技术栈生成，禁止照抄别的语言）：如 Python 项目 `python -m py_compile` + `ruff check`；Node 项目 `npx tsc --noEmit` + `npm test`；改主程序后跑最小启动命令。
-- **Git 规则（自动执行 + 硬禁单）**：
-  - 自动执行：初始化后 `git init` + 首提；文档生成后、模块验证通过后、修 bug 后按型提交；commit message 用英文。
-  - 硬禁单（绝对禁止自动执行）：`git add -A` / `git add .`（只 add 具体文件）、`git push`（人工触发）、`git reset --hard`、`git push -f`、`git branch -D`、`git checkout -- .`、`git commit --amend`、`git rebase -i`。
-- **代码完成后检查（强制）**：跑本项目验证命令 → 精简一遍再验证 → 有审查手段就审查（CRITICAL 必须修）→ 对照 `docs/{模块}-spec.md` 验收标准逐条核对 → 按 `docs/governance.md` §2 步骤 3.5 做实际运行验证（产物型任务必检产物本身）→ 全过才 commit，没过不许 commit。
-- **失败自检（强制）**：操作失败不要直接重试，先答三问——缺信息？缺工具？缺约束？→ 告诉用户缺什么。
-- **文档结构指路**：`docs/{模块}-spec.md`（需求/验收标准）、`docs/{模块}-plan.md`（方案/已知坑）、`references/`（已验证参考实现）。**references/ 触发规则**：遇外部 API / 复杂转换 / 图像文件批处理等高不确定实现，先建 references/ 最小跑通版，再写正式代码；禁止从纯文字描述直接实现。
+- **Governance rule first:** before updating or creating files or changing business rules, read and follow `docs/governance.md`.
+- **Verification:** derive commands from the confirmed stack, such as `python -m py_compile` plus `ruff check`, or `npx tsc --noEmit` plus `npm test`. Include a minimum run command when the main program changes.
+- **Git rules:** after initialization, create a local repository and initial commit; later commit focused change types after verification. Use English commit messages. Never automatically run broad staging, push, force push, hard reset, destructive checkout, branch deletion, amend, or interactive rebase.
+- **Completion gate:** run project verification, simplify only the current change, rerun verification, perform review when available, reconcile Spec/Issue success criteria, execute the real path and inspect artifacts, then commit only when all applicable layers pass.
+- **Failure self-check:** before retrying a failed operation, identify whether information, tooling, or constraints are missing and tell the user.
+- **Pointers:** link requirements/success criteria, technical plans, and validated reference prototypes using the repository's chosen locations. For uncertain external APIs or transformations, build the smallest disposable reference experiment before production implementation.
 
-### 1.5 `AGENTS.md`（Codex 薄桥接）
+### 2. `AGENTS.md` (Thin Codex Bridge)
 
-若用户使用 Codex，或希望项目同时兼容 Claude Code 与 Codex，则从 `skills/docs-governance/templates/AGENTS.example.md` 生成根目录 `AGENTS.md`。它只指向共享章程 `CLAUDE.md`、STATUS 红线和按需 MAP，不复制规则或目录树。
+When the user uses Codex or requests cross-host compatibility, adapt `skills/docs-governance/templates/AGENTS.example.md`. It points to the shared charter, red-line status, and on-demand map without copying their content.
 
-### 2. `docs/governance.md`
+### 3. `docs/governance.md`
 
-**从 `skills/docs-governance/templates/governance.example.md` 复制**，只替换 `{项目名称}`，placeholder 留给项目演化中填。不要内嵌改写模板正文。
+Copy `skills/docs-governance/templates/governance.example.md`, replace `{Project Name}`, and leave project placeholders for evidence-driven evolution. Do not rewrite the fixed sections inline.
 
-### 3. `PROJECT_LOG.md`
+### 4. `PROJECT_LOG.md`
 
-**照 `skills/docs-governance/templates/PROJECT_LOG.example.md` 的格式**建新文件，只留一行：`## [今天日期] init | /governance-init 项目初始化`。示例行不要抄进去。
+Use the format in `PROJECT_LOG.example.md`, but keep only one new event:
 
-### 4. 必要目录（不建空壳）
+```markdown
+## [today] init | Initialized the project with /governance-init
+```
 
-只创建当前技术栈和已确认模块马上要使用的目录。`docs/` 因 `docs/governance.md` 已自然存在；`src/`、`tests/`、`references/`、`logs/`、`output/` 等没有首个文件时不要预建。运行产物目录一旦出现就加入 `.gitignore`。
+Do not copy example history entries.
 
-### 5. pre-commit 护栏
+### 5. Only Immediately Used Directories
 
-把插件 `skills/docs-governance/templates/pre-commit.example` 的内容写入 `.git/hooks/pre-commit` 并 `chmod +x`（安装形态不同找不到模板文件时，按其要点生成：代码改动必须同批 staged 一行 PROJECT_LOG；测试/文档/治理文件豁免；拦截时给可复制的补账命令）。
+Create directories only when the scaffold puts a real file in them. Do not pre-create empty `src/`, `tests/`, `references/`, `logs/`, or output folders. Add runtime-output locations to `.gitignore` when they first appear.
 
-### 6. git init + 首提
+### 6. Optional Pre-Commit Guard
 
-`git init` → 只 add 刚生成的具体文件（包含已生成的 `AGENTS.md`）→ `git commit -m "init: project governance scaffold"`。不 push。
+Ask before installing `skills/docs-governance/templates/pre-commit.example` into `.git/hooks/pre-commit`. The reference guard requires a staged history event with code changes, exempts test/documentation/governance-only changes, and prints an actionable recovery command.
 
-## 刻意不生成的（防出生即漂移）
+### 7. Local Git Initialization
 
-- **CLAUDE_MAP.md / PROJECT_STATUS.md**：空项目没有值得记的依赖方向和健康指标，生成出来全是占位符=假文档。等预警信号出现（AI 开始找不到东西 / 重复踩坑 / 该删的又被重建）再跑 `/governance` 升级到四件套。
-- **CONTEXT.md / docs/adr/ / CONTRACT.md / TESTS.md / REGRESSION.md**：分别等稳定领域语言、难回退决策、跨端接口、必要测试点或模块联动真实出现后再创建。
-- **项目级 hook**：本插件自带的 Stop hook（`hooks/check-on-stop.sh`）检测到治理文件就自动生效，无需项目级 settings.json。
+Run `git init`, stage only the explicitly generated files, and create `git commit -m "init: project governance scaffold"`. Do not push.
 
-## 收尾汇报
+## Deliberately Omitted
 
-列出：建了哪几个文件（真实路径）、CLAUDE.md 行数（超 60 行说明为什么）、git 首提的 commit id、下一步建议（写第一个 `docs/{模块}-spec.md` → 建 references/ 最小跑通版 → 写代码）。不要谎报"完成"。
+- Project map and status: an empty project has no verified dependency direction, non-obvious paths, health metrics, or deletion zone. Create them after warning signals appear.
+- CONTEXT, ADR, CONTRACT, TESTS, and REGRESSION artifacts: create only when stable domain language, hard-to-reverse decisions, cross-boundary interfaces, required test points, or real module dependencies appear.
+- Project-specific hook configuration beyond the explicitly confirmed optional guard.
+
+## Closeout
+
+Report exact files created, the charter line count, the initial commit ID, and the smallest next step. Do not claim completion for commands that did not run.

@@ -316,7 +316,7 @@
     },
     {
       "command": "governance-audit",
-      "description": "只读审计当前项目的文档治理质量与产物链接完整性；先跑确定性检查，只有通过后再判断职责、语义与证据漂移，不修改任何文件。",
+      "description": "Read-only audit of documentation governance and artifact-link integrity. Run deterministic checks first; only after they pass, judge semantic ownership and evidence drift. Never modify files.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -327,7 +327,7 @@
     },
     {
       "command": "governance-init",
-      "description": "给全新（还没代码的）项目搭 day-0 治理骨架：精简 CLAUDE.md + Codex 的 AGENTS.md 桥接 + docs/governance.md 检查流程 + PROJECT_LOG.md，并 git init 首提。已有代码的项目请用 /governance。",
+      "description": "Create a day-zero governance scaffold for a new empty project: concise CLAUDE.md, thin Codex AGENTS.md bridge, governance workflow, append-only project history, optional pre-commit guard, and initial local commit. Use /governance for existing codebases.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -338,7 +338,7 @@
     },
     {
       "command": "governance-retro",
-      "description": "复盘项目历史角色——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为\"该下沉成 lint/测试\"的候选清单。让历史流水账变成资产。",
+      "description": "Review append-only project history to find modules and defect classes that recur, detect standard drift, and propose repeated failures for deterministic tests, lint, or schema checks.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -349,7 +349,7 @@
     },
     {
       "command": "governance-sync",
-      "description": "阶段收尾时同步项目治理文档：根据实际 diff 查漏补缺脊柱、CONTEXT、ADR、CONTRACT、TESTS 与 REGRESSION，并核对 Issue Tracker 引用。",
+      "description": "Synchronize project governance at stage closeout from the actual diff: spine, CONTEXT, ADR, CONTRACT, TESTS, REGRESSION, and Issue Tracker references.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -360,8 +360,8 @@
     },
     {
       "command": "governance",
-      "description": "对当前项目做活文档治理——扫描真实结构，识别或增量更新章程 / 地图 / 状态 / 历史等文档角色，并按需生成 Codex 的 AGENTS.md 薄桥接。",
-      "type": "general",
+      "description": "Apply living-document governance to an existing project by discovering its real structure, reusing or incrementally updating charter, map, status, and history roles, and adding a thin Codex AGENTS.md bridge when needed.",
+      "type": "review",
       "primaryAgents": [],
       "allAgents": [],
       "skills": [
@@ -908,7 +908,7 @@
     },
     {
       "command": "regression-audit",
-      "description": "模块回归审计——改完代码后照 REGRESSION.md 台账跑\"本模块+全部下游\"的验收命令，退出码终审，防\"改一个模块悄悄弄坏其他模块\"。带 init 参数时扫 import 关系生成台账草稿。",
+      "description": "Run the changed module and every required downstream acceptance command from the regression ledger. Exit codes are the final delivery gate. Use init to draft a ledger from reproducible repository evidence.",
       "type": "testing",
       "primaryAgents": [],
       "allAgents": [],
@@ -1095,11 +1095,11 @@
   "statistics": {
     "byType": {
       "build": 2,
-      "general": 11,
+      "general": 10,
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 15,
+      "review": 16,
       "testing": 58
     },
     "topAgents": [

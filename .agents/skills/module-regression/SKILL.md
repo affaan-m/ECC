@@ -1,97 +1,98 @@
 ---
 name: module-regression
 description: >-
-  大项目模块间联动回归——一份 REGRESSION.md 回归台账登记"每个模块的下游消费者 + 可执行的回归验收命令"，每次改动后照台账跑回归审计，防"改一个模块悄悄弄坏其他模块"。判决靠退出码，不靠 AI 看着没问题。中文触发：模块回归、回归台账、回归审计、改A坏B、模块联动检查、影响面检查、模块牵连、下游验证、大项目改动检查。English triggers: module regression, regression ledger, impact regression audit, downstream verification.
+  Govern cross-module regression in large repositories with a REGRESSION.md ledger that records each module's downstream consumers and executable acceptance command. After a change, run the changed module and every affected downstream command, and use exit codes—not model judgment—as the delivery gate. Use for module regression, regression ledgers, impact audits, downstream verification, and changes where modifying A may break B.
 metadata:
   origin: ECC
 ---
 
-# 模块回归台账（module-regression）
+# Module Regression Ledger
 
 ## When to Activate
 
-- 代码库至少有三个相互依赖的模块，或已经发生过“改 A 坏 B”。
-- 变更修改模块对外行为，需要证明本模块和下游仍然可用。
-- 项目已有可执行测试或对账命令，需要把它们按依赖关系组织起来。
+- The repository has at least three interdependent modules, or a previous change to A has broken B.
+- A change modifies a module's externally observable behavior and must prove both that module and downstream consumers still work.
+- The project already has executable tests or reconciliation commands that should be organized by dependency.
 
 ## Anti-Patterns
 
-- 为小型、无跨模块依赖的仓库创建回归台账。
-- 手工猜测依赖关系，或把一次扫描结果当作永久真相。
-- 以模型阅读代码的判断替代验收命令退出码。
+- Creating a regression ledger for a small repository with no cross-module dependencies.
+- Guessing dependencies manually or treating one scan as permanent truth.
+- Replacing executable acceptance-command exit codes with model review.
 
 ## Related Skills
 
-- `test-collaboration`：TEST-ID、测试资产和缺陷回归证据。
-- `ai-regression-testing`：从重要缺陷建立可执行回归测试。
-- `contract-first`：跨服务或跨端契约验证。
-- `change-impact`：实施前后的影响面分析。
+- `test-collaboration`: TEST-IDs, test assets, and defect-regression evidence.
+- `ai-regression-testing`: executable regression tests derived from important defects.
+- `contract-first`: cross-service or cross-client contract verification.
+- `change-impact`: pre- and post-implementation blast-radius analysis.
 
-## 治什么病
+## Problem
 
-大项目里模块互相引用。改模块 A 时，AI 和人都只盯着 A 本身对不对，**下游的 B、C 被悄悄改坏了没人知道**——直到几天后 B 的产出数字对不上才发现。这是 AI 协作大项目里最高发、最晚爆雷的事故。
+In large projects, modules depend on one another. People and agents often verify only the changed module while downstream consumers fail silently. The defect appears days later when an aggregate, export, or external behavior is wrong.
 
-解法：一份**回归台账**（`REGRESSION.md`）+ 一个**照单审计**动作——改完任何模块，按台账把受牵连的下游全部验一遍，全绿才算改完。
+The remedy is a **regression ledger** (`REGRESSION.md`) plus a deterministic audit: after any relevant change, run the changed module and all affected downstream consumers. Delivery requires every command to pass.
 
-## 台账三要素（每个模块一段，缺一不可）
-
-```markdown
-## 模块 03-店铺数据清洗
-下游（谁依赖我）：05-汇总、07-成品导出        <!-- 由仓库依赖证据生成；记录所用工具 -->
-回归验收命令：pytest tests/test_03.py && python scripts/对账.py --module 03
-联动规则：改我的对外行为 → 必须跑 05、07 的验收命令；只改内部实现且本模块验收绿 → 可豁免下游
-```
-
-1. **下游消费者**——从仓库已有依赖图、构建工具或可复现的 import/调用扫描结果生成，并在台账记录命令或工具。不同生态的依赖提取方式不同，本 Skill 不假装一个通用扫描器能正确解析所有语言。无法机械确认时标“未验证”，不要手写猜测。
-2. **回归验收命令**——**台账的核心资产**：每个模块一条"怎么证明我没坏"的**可执行命令**（pytest / 对账脚本 / golden sample diff）。没有这行，审计退化成"AI 看一眼说没问题"（把裁判权交给被告）；有这行，判决就是退出码。
-3. **联动规则**——改我 → 谁必须被验证；什么情况可豁免。
-
-## 与 TESTS.md 的连接
-
-`REGRESSION.md` 不再维护业务规则和测试缺口。它只引用 `TESTS.md` 中稳定的 TEST-ID：
+## Three Required Fields per Module
 
 ```markdown
-关联测试点：TEST-ORDER-001、TEST-REFUND-003
+## Module 03 — Shop Data Cleaning
+Downstream consumers: 05-aggregation, 07-final-export
+Dependency evidence: `<repository dependency graph or reproducible scan command>`
+Regression acceptance command: `pytest tests/test_03.py && python scripts/reconcile.py --module 03`
+Propagation rule: external behavior change → run 05 and 07; internal-only change with a green module check → downstream may be exempted
 ```
 
-- 哪些规则必须被保护、测试处于什么状态、证据在哪：由 `test-collaboration` skill 和 `TESTS.md` 管理。
-- 改了某模块后要重跑哪些模块、执行哪条命令：由本 skill 和 `REGRESSION.md` 管理。
-- `/regression-audit` 只按回归台账执行命令和报告退出码，不重复审查测试必要性。
+1. **Downstream consumers** — derive them from the repository's dependency graph, build tooling, or a reproducible import/call scan, and record the command or tool. Extraction differs by ecosystem; this skill does not pretend a universal scanner can parse every language. Mark edges `unverified` when they cannot be established mechanically.
+2. **Regression acceptance command** — the ledger's core asset. Each module needs an executable command that proves it still works: tests, reconciliation scripts, or golden-sample diffs. Without it, the audit collapses into “the model looked and found no problem.”
+3. **Propagation rule** — state which downstream modules must run after a change and when an exemption is justified.
 
-## 台账纪律
+## Connection to TESTS.md
 
-- **验收命令优先"对账型"而非"断言型"**：锚外部事实（golden sample / 上游合计 / 财务勾稽），"测试全过"能被钻（改松断言、注水 mock），"和基准差异 < 0.01"钻不了。
-- **下游列表只由可复现证据刷新**：加了新依赖 → 重跑已记录的仓库工具或扫描命令，不许手补一行了事。
-- 台账放项目根或 `docs/`，从 `CLAUDE.md` 挂指路牌（否则成孤儿文档没人读必烂）。
+`REGRESSION.md` does not maintain business rules or test gaps. It references stable TEST-IDs from the test-registry artifact:
 
-## 审计流程（每次改完照做）
+```markdown
+Related test points: TEST-ORDER-001, TEST-REFUND-003
+```
 
-Claude Code 可通过 `/regression-audit` 调用 `regression-auditor`；Codex / ChatGPT 直接调用 `$module-regression`，由当前 agent 承担同一“只跑、只报、不修”职责。宿主不同不改变退出码终审和红着不交付的边界。
+- What rules must be protected, their coverage state, and the evidence location belong to `test-collaboration` and the test registry.
+- Which modules and commands must rerun after a change belong to this skill and the regression ledger.
+- `/regression-audit` executes the ledger and reports exit codes; it does not re-evaluate whether a test is necessary.
 
-1. **列改动**：`git status -s` / `git diff --name-only`，对照台账定位改的是哪个（些）模块。
-2. **查联动**：台账告诉你下游是谁。
-3. **跑回归**：本模块验收命令 + 所有下游模块的验收命令，逐个跑，记录每条的退出码。
-4. **退出码终审**：全绿 = 没牵连，可交付；任何一条红 = 改动波及下游，**修完从第 3 步重跑**，不许带红交付。
-   - **红了怎么归因（控制变量，不靠猜）**：基线全绿 + 本次只改了 A + B 红 → 错误必然由 A 引入，顺着 B 验收命令的输出（对账差异行 / assert 信息）反查 A 碰到的交接字段。若 B 在改动**前**就红 = B 的旧债，不赖本次改动，标台账缺口另行处理。**改动批次越小归因越准**——一次改 5 个模块再跑，红了就说不清谁干的。台账应记「上次全绿的 commit」，保证归因有干净基线。
-5. **出审计摘要**：改了哪个模块 / 跑了谁的回归 / 各自结果（命令 + 关键输出行）/ 豁免了谁及理由。
+## Ledger Discipline
 
-## 铁律（四条，违反任何一条审计无效）
+- Prefer **reconciliation-style** acceptance commands over assertion-only checks. External facts such as golden samples, upstream totals, and accounting relationships are harder to weaken accidentally than mocks or loose assertions.
+- Refresh downstream lists only from reproducible evidence. When dependencies change, rerun the recorded repository tool or scan; do not hand-edit an edge without evidence.
+- Keep the ledger at the repository root or under `docs/`, and link it from the project's instruction/map artifact so it does not become an orphan.
 
-1. **判决 = 退出码**，不是"看着没问题"。没有可执行验收命令的模块 = 台账缺口，先补命令再审计。
-2. **审计员只报不修**：跑回归、报红绿；红了怎么修是改动者（主会话/人）的事——裁判不能下场踢球。
-3. **红着不准交付**：下游红 = 本次改动没完成，没有"下游的问题以后再说"。
-4. **坑必下沉**：每修一个 bug，必须在 `TESTS.md` 新增或关联 TEST-ID，写清回归测试 / lint / schema 校验落在哪；确实只能人工验收时写明理由、步骤和证据。只改代码不登记保护证据 = 没修完。
+## Audit Flow
 
-## 与相邻方法的边界（别混）
+Claude Code can invoke `/regression-audit` and the `regression-auditor`. Codex and other hosts can invoke `$module-regression`; the current agent then assumes the same run-only, report-only role. The host does not change the exit-code gate.
 
-| 方法 | 管什么 | 文档 | 验证时机 |
+1. **List changes** with `git status -s` and `git diff --name-only`, then map them to ledger modules.
+2. **Resolve propagation** from each module's downstream list and rule.
+3. **Run regression** for the changed module and every required downstream module, recording each command and exit code.
+4. **Gate on exit codes**. All green means the change can proceed. Any failure means the change is incomplete; fix it and rerun from step 3.
+   - Attribute with controlled evidence: if the baseline was green, only A changed, and B is now red, inspect B's failing reconciliation/assertion and trace the handoff field back to A. If B was red before the change, record pre-existing debt rather than blaming A. Small change batches produce better attribution. Record the last green commit in the ledger.
+5. **Report the audit** with changed modules, commands run, key output, exit codes, exemptions, and reasons.
+
+## Four Invariants
+
+1. **Verdict = exit code.** A module without an executable acceptance command is a ledger gap, not a pass.
+2. **The auditor reports but does not fix.** The change author fixes failures and asks for a rerun.
+3. **No delivery while red.** A failing downstream consumer means the current change is unfinished.
+4. **Every important defect leaves durable evidence.** Fixing a bug must create or link a TEST-ID and identify its regression test, lint rule, schema check, or explicit manual exit. Code-only fixes are incomplete.
+
+## Boundary with Adjacent Methods
+
+| Method | Owns | Artifact | Verification time |
 |---|---|---|---|
-| contract-first | 跨端接口（前后端 / 服务间字段契约） | `CONTRACT.md` | 集成对账 |
-| test-collaboration | 测试资产、必要测试点、Bug 回归保护和证据 | `TESTS.md` | 需求/Bug/测试变化与交付前 |
-| module-regression | 同一代码库内模块间行为回归 | `REGRESSION.md`（下游 + 验收命令 + TEST-ID 引用） | 每次相关改动后 |
+| `contract-first` | Cross-client/service field contracts | `CONTRACT.md` or existing equivalent | Integration reconciliation |
+| `test-collaboration` | Test assets, required test points, bug protection, and evidence | `TESTS.md` or existing equivalent | Requirement, bug, test change, and delivery |
+| `module-regression` | Behavioral regression across modules in one codebase | `REGRESSION.md` or existing equivalent | After each relevant change |
 
-## 渐进采用
+## Progressive Adoption
 
-- 模块 < 3 个、或模块间零引用 → 不需要，别过度治理。
-- **预警信号**：第一次发生"改 A 坏了 B"的事故 → 当天建台账。
-- 已有测试/对账脚本的项目：台账 = 把现成验收命令按模块归位登记，半天出第一版。
+- Fewer than three modules, or no cross-module references: do not create a ledger.
+- First “A broke B” incident: establish the ledger that day.
+- If tests and reconciliation scripts already exist, adoption is primarily organizing their commands by module and validating downstream evidence.

@@ -1,108 +1,108 @@
-# TESTS.md —— 测试资产与必要测试点清单
+# TESTS.md — Test Assets and Required Test Points
 
-> 用法：本文件回答“项目有哪些测试、哪些规则必须被保护、证据在哪”。
-> 纪律：按模块或流程聚合资产，不手抄每个测试函数；测试代码是可执行事实，本文件只保存索引、判断和证据。
+> This registry answers: What tests exist? Which rules require protection? Where is the evidence?
+> Aggregate assets by module or workflow rather than mirroring every test function. Test code is executable truth; this document stores only indexes, assessments, and evidence.
 
-## 一、测试入口
+## 1. Test Entry Points
 
-| 执行组 | 命令 | 何时运行 | 外部依赖 |
+| Execution group | Command | When to run | External dependencies |
 |---|---|---|---|
-| 默认测试 | `待填写` | 每次提交前 / CI | 无或待核实 |
-| 契约校验 | `待填写` | 契约变化时 / CI | 契约工具 |
-| 消费方契约测试 | `待填写` | 前端或消费者变化时 | 待填写 |
-| 提供方契约测试 | `待填写` | 后端或提供方变化时 | 待填写 |
-| 专用 E2E | `待填写` | 关键链路或发布前 | 待填写 |
+| Default tests | `TODO` | Before each commit / CI | None or unverified |
+| Contract validation | `TODO` | Contract changes / CI | Contract tooling |
+| Consumer contract tests | `TODO` | Client or consumer changes | `TODO` |
+| Provider contract tests | `TODO` | Server or provider changes | `TODO` |
+| Specialized E2E | `TODO` | Critical path or pre-release | `TODO` |
 
-## 二、测试资产地图
+## 2. Test Asset Map
 
-受控层级：`单元`、`集成`、`契约`、`E2E`、`冒烟`。
+Controlled levels: `unit`, `integration`, `contract`, `E2E`, `smoke`.
 
-受控用途：`规则保护`、`关键链路`、`回归保护`、`专项保护`。多个用途用逗号分隔。
+Controlled purposes: `rule protection`, `critical path`, `regression protection`, `specialized protection`. Separate multiple purposes with commas.
 
-| 模块或流程 | 层级 | 用途 | 执行组 | 外部依赖 | 测试位置 | 当前判断 |
+| Module or workflow | Level | Purpose | Execution group | External dependencies | Test location | Assessment |
 |---|---|---|---|---|---|---|
-| 示例：订单金额计算 | 单元、集成 | 规则保护 | 默认测试 | 无 | `tests/order/` | 必要 |
-| 示例：支付成功链路 | E2E | 关键链路 | 专用 E2E | 测试支付环境 | `tests/e2e/payment/` | 缺失 |
+| Example: order total calculation | unit, integration | rule protection | default tests | none | `tests/order/` | required |
+| Example: successful payment path | E2E | critical path | specialized E2E | payment sandbox | `tests/e2e/payment/` | missing |
 
-当前判断使用：`必要`、`缺失`、`疑似重复`、`疑似废弃`。后两项只表示需要人工确认，不等于可以直接删除。
+Assessment values: `required`, `missing`, `possibly duplicate`, `possibly stale`. The last two require human confirmation and do not authorize deletion.
 
-## 三、跨端契约证据
+## 3. Cross-Boundary Contract Evidence
 
-仅当前端与后端或多个服务分开开发时使用。只引用唯一契约源，不在这里复制字段定义。
+Use only when clients and providers develop independently. Reference the single contract source; do not duplicate field definitions here.
 
-| 接口或消息边界 | 唯一契约源 | 契约自身校验 | 消费方证据 | 提供方证据 | 联调证据 | 当前判断 |
+| Interface or message boundary | Single contract source | Contract validation | Consumer evidence | Provider evidence | Integration evidence | Assessment |
 |---|---|---|---|---|---|---|
-| 示例：订单详情接口 | `待填写：OpenAPI / JSON Schema / GraphQL / protobuf 等` | 命令 + 退出码 | 生成类型/mock + 测试命令 | 真实序列化响应校验命令 | 最小 E2E 命令 | 待补 |
+| Example: order detail API | `TODO: OpenAPI / JSON Schema / GraphQL / protobuf path` | command + exit code | generated type/mock + test command | serialized-response validation command | minimum E2E command | missing |
 
-当前判断使用：`待补`、`已覆盖`、`不适用`、`不可验证`。双方各自测试为绿但未引用同一契约时，仍是 `待补` 或 `不可验证`。
+Assessment values: `missing`, `covered`, `not applicable`, `unverifiable`. Separate green consumer and provider tests remain `missing` or `unverifiable` unless both reference the same contract.
 
-## 四、必要测试点
+## 4. Required Test Points
 
-状态使用：`待补`、`开发中`、`已覆盖`、`不适用`。
+State values: `missing`, `in progress`, `covered`, `not applicable`.
 
-### TEST-ORDER-001：订单金额规则
+### TEST-ORDER-001 — Order Amount Rule
 
-- 状态：待补
-- 用途：规则保护
-- 来源：需求 / 业务规则 / 风险 / Bug 编号
-- 模拟输入：填写能触发规则的最小真实输入
-- 业务预期：填写可观察、可断言的结果
-- 层级：单元
-- 执行组：默认测试
-- 边界：金额计算真实运行；无外部系统
-- 测试文件：待补
-- 测试节点：待补
-- 执行命令：待补
-- 证据：待补
+- State: missing
+- Purpose: rule protection
+- Source: requirement / business rule / risk / bug identifier
+- Representative input: the minimum realistic input that triggers the rule
+- Observable expectation: a result that can be asserted without copying the source criteria
+- Level: unit
+- Execution group: default tests
+- Boundary: amount calculation runs for real; no external system
+- Test file: TODO
+- Test node: TODO
+- Command: TODO
+- Evidence: TODO
 
-### TEST-BUG-001：Bug 回归保护
+### TEST-BUG-001 — Defect Regression Protection
 
-- 状态：待补
-- 用途：回归保护
-- 来源：BUG-001
-- 真实失败形状：填写导致故障的原始输入、路径和边界条件
-- 业务预期：填写修复后必须保持的行为
-- 层级：集成
-- 执行组：默认测试
-- 边界：核心逻辑真实运行；外部服务使用项目已有 fake
-- 测试文件：待补
-- 测试节点：待补
-- 执行命令：待补
-- 修复前证据：待补
-- 修复后证据：待补
+- State: missing
+- Purpose: regression protection
+- Source: BUG-001
+- Real failure shape: original input, path, and boundary condition that caused the defect
+- Observable expectation: behavior that must remain true after the fix
+- Level: integration
+- Execution group: default tests
+- Boundary: core logic runs for real; external services use the project's existing fake
+- Test file: TODO
+- Test node: TODO
+- Command: TODO
+- Before-fix evidence: TODO
+- After-fix evidence: TODO
 
-### TEST-API-001：跨端接口契约
+### TEST-API-001 — Cross-Boundary Interface Contract
 
-- 状态：待补
-- 用途：规则保护、关键链路
-- 来源：接口需求 / 契约变更 / 字段漂移 Bug
-- 唯一契约源：待填写路径及版本、commit 或 hash
-- 业务预期：消费方与提供方遵守同一字段、类型、空值、枚举和错误结构
-- 层级：契约、E2E
-- 消费方命令与证据：待补
-- 提供方命令与证据：待补；必须验证真实序列化边界
-- 联调命令与证据：待补
-- 未验证边界：待补
+- State: missing
+- Purpose: rule protection, critical path
+- Source: interface requirement / contract change / field-drift bug
+- Single contract source: path plus version, commit, or hash
+- Observable expectation: consumer and provider obey the same field names, types, nullability, enums, and error shape
+- Level: contract, E2E
+- Consumer command and evidence: TODO
+- Provider command and evidence: TODO; must validate the actual serialized boundary
+- Integration command and evidence: TODO
+- Unverified boundaries: TODO
 
-## 五、人工验收出口
+## 5. Manual Verification Exits
 
-只有确实无法自动化时才登记；“不好测”不是理由。
+Use only when automation is genuinely unavailable. “Hard to test” is not a reason.
 
-| 来源 | 无法自动化的理由 | 人工步骤 | 通过证据 | 负责人 |
+| Source | Why automation is unavailable | Manual steps | Passing evidence | Owner |
 |---|---|---|---|---|
-| 待填写 | 待填写 | 待填写 | 待填写 | 待填写 |
+| TODO | TODO | TODO | TODO | TODO |
 
-## 六、本轮缺口与动作
+## 6. Current Gaps and Actions
 
-| 优先级 | TEST-ID 或资产 | 缺口 | 下一步 | 状态 |
+| Priority | TEST-ID or asset | Gap | Next action | State |
 |---|---|---|---|---|
-| P0 | 待填写 | 待填写 | 待填写 | 待补 |
+| P0 | TODO | TODO | TODO | missing |
 
-## 七、维护触发器
+## 7. Maintenance Triggers
 
-- 测试目录、配置、CI 或标准入口变化：重扫受影响区域。
-- 新增需求、业务规则、风险或 Bug：新增或关联 TEST-ID。
-- 重大功能、接口或安全边界变化：重扫对应关键链路。
-- 跨端契约变化：重新校验契约，生成消费方资产，并重跑消费者、提供者和联调测试。
-- 阶段交付前：核对本次改动涉及的 TEST-ID 与执行证据。
-- 只有测试体系整体重构或地图明显失真时，才重新全量盘点。
+- Test directories, configuration, CI, or standard entry points change: rescan the affected area.
+- A requirement, business rule, risk, or bug is added: create or link a TEST-ID.
+- A major feature, interface, or security boundary changes: rescan the affected critical path.
+- A cross-boundary contract changes: revalidate the contract, regenerate consumer assets, and rerun consumer, provider, and integration tests.
+- Before stage delivery: reconcile TEST-IDs and evidence touched by the change.
+- Rescan the entire test system only after a testing-system rebuild or when the map is clearly stale.

@@ -1,55 +1,55 @@
 ---
 name: context-and-decisions
 description: >-
-  管理项目稳定领域上下文：按需建立边界严格的 CONTEXT.md，并在出现难回退决策时路由到 ECC 现有的 architecture-decision-records skill。用于领域术语反复解释、同词异义、模块边界因语言不清而出错，或需要把领域语义与架构决策分开管理时。English triggers: domain context, context governance, domain terminology, ubiquitous language, architecture decision handoff.
+  Govern stable domain context with a narrowly scoped CONTEXT.md when needed, and route hard-to-reverse decisions to ECC's existing architecture-decision-records skill. Use when domain terms require repeated explanation, one term has multiple meanings, unclear language causes module-boundary mistakes, or domain semantics must remain separate from architecture decisions.
 ---
 
-# 领域上下文与决策交接
+# Domain Context and Decision Handoff
 
-把“业务里这些词是什么意思”和“为什么选择这个方案”分开管理。没有稳定内容时不要创建空壳。
+Govern “what these business terms mean” separately from “why this option was chosen.” Do not create an empty shell when no stable content exists.
 
-## 领域上下文载体：只管领域语言
+## Domain Context Artifact: Domain Language Only
 
-在术语反复解释、同词异义或模块边界因语言不清而出错时，先复用仓库已有的领域词汇/模型文档或 `.governance/docs-map.json` 中的 `context` 角色。只有没有等价载体时，才用 `templates/context.example.md` 结构懒创建默认 `CONTEXT.md`。
+When terms require repeated explanation, one term has multiple meanings, or unclear language causes module-boundary errors, first reuse the repository's existing glossary/domain-model document or the `context` role in `.governance/docs-map.json`. Only when no equivalent exists should you lazily create the default `CONTEXT.md` from `templates/context.example.md`.
 
-只记录：
+Record only:
 
-- 领域术语及精确定义；
-- 核心概念之间的关系；
-- 已确认的歧义与采用口径；
-- 仍待业务方确认的歧义。
+- domain terms and precise definitions;
+- relationships among core concepts;
+- confirmed ambiguities and the chosen interpretation;
+- ambiguities still awaiting confirmation from a domain owner.
 
-禁止写入：实现细节、当前状态、任务排期、需求全文、决策理由和历史。对应内容分别回到代码/MAP、STATUS/Issue Tracker、Spec、ADR、LOG。术语必须能和代码、契约或业务证据对照；不能确认就标“待确认”，不要猜。
+Do not include implementation details, current state, task schedules, full requirements, decision rationale, or history. Keep those in code/MAP, STATUS/Issue Tracker, Spec, ADR, and LOG respectively. Terms must be traceable to code, contracts, or business evidence. Mark unconfirmed items as `needs confirmation`; do not guess.
 
-## ADR 交接：复用现有能力
+## ADR Handoff: Reuse the Existing Capability
 
-本 Skill 不定义第二套 ADR 目录、编号、状态或模板。首次出现难回退、未来缺少背景会困惑、且存在真实权衡的决策时：
+This skill does not define a second ADR directory, numbering scheme, lifecycle, or template. When a decision is hard to reverse, would confuse a future reader without context, and involves a real tradeoff:
 
-1. 读取并执行 `architecture-decision-records`，采用仓库已有 ADR 位置与格式。
-2. 没有既有约定时，也让该 Skill 决定最小落点；不要由本 Skill另起一套。
-3. 从 `CONTEXT.md`、项目地图或相关 Spec/Issue 链接到 ADR，而不是复制决策正文。
-4. 决策被接受、替代或废弃后，按活文档规则向项目历史追加事件。
+1. Read and execute `architecture-decision-records`, preserving the repository's existing ADR location and format.
+2. If no convention exists, let that skill choose the minimum viable location; do not create a separate system here.
+3. Link to the ADR from `CONTEXT.md`, the project map, or the relevant Spec/Issue instead of copying the decision body.
+4. When a decision is accepted, superseded, or deprecated, append an event to project history according to the living-document rules.
 
-普通实现细节、易回退的小改动和当天临时实验不需要 ADR。
+Routine implementation details, easily reversible changes, and short-lived experiments do not need ADRs.
 
 ## When to Activate
 
-- 领域术语被反复解释或同词异义导致实现偏差。
-- 项目需要一个稳定的领域语言入口，但尚无等价文档。
-- 上下文整理过程中发现需要交给 `architecture-decision-records` 的长期决策。
+- Domain terms are repeatedly re-explained or ambiguous language causes implementation drift.
+- The project needs a stable domain-language entry point but has no equivalent document.
+- Context work uncovers a durable decision that should be handed to `architecture-decision-records`.
 
 ## Anti-Patterns
 
-- 把当前任务、排期、需求全文或实现细节复制进 `CONTEXT.md`。
-- 为了“完整”创建空白上下文或第二套 ADR 体系。
-- 把未确认的业务口径写成事实，或把 ADR 正文复制进地图和日志。
+- Copying current tasks, schedules, full requirements, or implementation details into `CONTEXT.md`.
+- Creating empty context files or a second ADR system for completeness.
+- Treating unconfirmed domain interpretations as facts, or copying ADR bodies into maps and logs.
 
 ## Related Skills
 
-- `architecture-decision-records`：难回退决策的唯一 ADR 方法论。
-- `living-docs-governance`：项目地图、状态和历史的生命周期维护。
-- `docs-governance`：跨能力路由与收尾顺序。
+- `architecture-decision-records`: the sole ADR methodology for hard-to-reverse decisions.
+- `living-docs-governance`: lifecycle maintenance for the project map, status, and history.
+- `docs-governance`: cross-capability routing and closeout order.
 
-## 排期与任务边界
+## Scheduling and Task Boundary
 
-让 GitHub Issues、Linear 或项目已有 Tracker 成为任务、状态、阻塞和排期的唯一事实源。只有项目没有外部 Tracker 时，才按项目约定使用本地 `.scratch/`；不要把排期塞进 `CONTEXT.md`、ADR、PROJECT_STATUS 或日志数据库。
+Keep tasks, status, blockers, and schedules in the project's existing tracker, such as GitHub Issues or Linear, as the single source of truth. Use local `.scratch/` only when no external tracker exists and the project explicitly adopts it. Do not put schedules in `CONTEXT.md`, ADRs, PROJECT_STATUS, or the history index database.

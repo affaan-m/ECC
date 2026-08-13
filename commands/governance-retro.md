@@ -1,25 +1,21 @@
 ---
-description: 复盘项目历史角色——统计哪个模块出错最多、哪类错误重复、标准变更几次；重复 TOP 的错误输出为"该下沉成 lint/测试"的候选清单。让历史流水账变成资产。
-argument-hint: "[可选：起始日期 YYYY-MM-DD，默认全量]"
+description: Review append-only project history to find modules and defect classes that recur, detect standard drift, and propose repeated failures for deterministic tests, lint, or schema checks.
+argument-hint: "[optional start date YYYY-MM-DD; default: all history]"
 ---
 
-对当前项目映射或发现到的历史角色做一次**只读复盘统计**。历史只追加、越来越长——它不该只是负担，定期复盘一次，它就是项目最诚实的错误分布数据。
+Perform a **read-only retrospective** over the mapped or discovered history artifact.
 
-用户参数（可选）：`$ARGUMENTS` —— 起始日期（如 `2026-05-01`，只统计该日期之后的条目）；不带参数统计全量。
+Optional `$ARGUMENTS`: a start date such as `2026-05-01`. With no argument, inspect all active and archived history.
 
-执行步骤：
+1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/project-log-index.py" status --root "${CLAUDE_PROJECT_DIR:-$PWD}"`. Count events by `## [date] type | summary`, not physical lines.
+2. Read `history` and `history_archive` from `.governance/docs-map.json`; otherwise use the default history names. The SQLite index may accelerate queries, but every conclusion must trace back to Markdown. Stop if no history exists.
+3. Aggregate:
+   - top five modules/files named in fix events;
+   - root-cause classes that appear at least twice;
+   - every standards-change event, including old value, new value, and reason; flag standards repeatedly relaxed in one direction;
+   - longest audit interval and the number of commits across it.
+4. Produce a **durable-guard candidate list**. A repeated defect has not yet been owned by a deterministic guard; recommend regression tests, lint, or schema validation and link the appropriate TEST-ID format from `test-collaboration`.
+5. Return the retrospective without changing files.
+6. Only after the event count exceeds 200 and the user explicitly confirms may a separate action run `project-log-index.py archive --yes`. Archived Markdown remains the source; task state and scheduling stay in the Issue Tracker.
 
-1. **按事件计数**：先运行 `python3 "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/project-log-index.py" status --root "${CLAUDE_PROJECT_DIR:-$PWD}"`；阈值按 `## [日期] 类型 | 摘要` 事件计，不按行数。
-2. **读历史角色**：先读取 `.governance/docs-map.json` 的 `history` / `history_archive`，没有映射时使用默认 `PROJECT_LOG.md` / `PROJECT_LOG.archive.md`。用户要全量时一并读取归档。存在 `.governance/project-log.sqlite` 时可用于分类查询，但结论必须能回到 Markdown 原文；历史角色不存在就报告缺失并停止。
-3. **分类统计**（按条目的类型词和内容聚合）：
-   - **按模块**：哪个模块 / 文件被 fix 类条目点名最多（top 5，带次数）。
-   - **按错误类型**：把 fix / bug 条目按病根聚类（如：空值处理、类型截断、口径不一致、路径硬编码、日期格式……），报重复出现 ≥2 次的类型。
-   - **标准变更**：grep「标准变更」条目，列出每次的旧值 → 新值 + 理由——**连续朝同一方向放宽的要标红**（判定标准漂移的信号）。
-   - **审计频率**：audit 类条目的间隔，对照期间 commit 数（`git rev-list --count`），报"审计间隙最长的一段"。
-4. **产出「下沉候选清单」**（本命令的核心产出）：
-   - 重复出现 ≥2 次的错误类型 = **还没被机器接管的坑**，逐条建议它该下沉到哪层（回归测试 / lint / schema 校验），并指向 `test-collaboration` 的 `TESTS.md` / TEST-ID 登记格式。
-   - 同一个坑在 LOG 里出现第二次，说明第一次修复时没执行"坑必下沉"铁律——如实指出。
-5. **输出复盘报告**（只读，不改任何文件）：错误分布 top、重复错误类型、标准变更审查、下沉候选清单、建议的下一步。
-6. 只有事件数 >200 且用户确认后，才另行运行 `project-log-index.py archive --yes`；默认保留最近 100 条，原始旧事件进入 archive，再重建 SQLite。任务、负责人和项目排期仍留在 Issue Tracker，禁止写入该数据库。
-
-铁律：**只读不修**——复盘是裁判视角；落实下沉、归档 LOG 是改动者的活，分开做。
+This command judges patterns but does not implement fixes or archive history automatically.

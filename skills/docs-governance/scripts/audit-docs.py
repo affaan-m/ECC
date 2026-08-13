@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""文档治理确定性审计：先报告可机械证明的断链与完整性问题。"""
+"""Deterministic documentation-governance audit for mechanically provable integrity failures."""
 
 from __future__ import annotations
 
@@ -65,21 +65,21 @@ def load_roles(root: Path, report: Report) -> dict[str, str]:
     try:
         custom = json.loads(mapping_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        report.fail(f"无法读取 .governance/docs-map.json：{exc}")
+        report.fail(f"Cannot read .governance/docs-map.json: {exc}")
         return roles
     if not isinstance(custom, dict):
-        report.fail(".governance/docs-map.json 必须是 role -> 相对路径对象")
+        report.fail(".governance/docs-map.json must be a role-to-relative-path object")
         return roles
     for role, value in custom.items():
         if role not in roles or not isinstance(value, str) or not value.strip():
-            report.fail(f"无效文档角色映射：{role!r} -> {value!r}")
+            report.fail(f"Invalid documentation role mapping: {role!r} -> {value!r}")
             continue
         candidate = (root / value).resolve()
         if root != candidate and root not in candidate.parents:
-            report.fail(f"文档角色映射不得越出项目根：{role} -> {value}")
+            report.fail(f"Documentation role mapping escapes the project root: {role} -> {value}")
             continue
         roles[role] = value
-    report.ok("已加载 .governance/docs-map.json 自定义文档角色映射")
+    report.ok("Loaded custom documentation role mapping from .governance/docs-map.json")
     return roles
 
 
@@ -146,9 +146,9 @@ def check_markdown_links(root: Path, files: list[Path], report: Report) -> None:
                 broken.append(f"{source.relative_to(root)} -> {target}")
     if broken:
         for item in sorted(set(broken)):
-            report.fail(f"Markdown 链接断裂：{item}")
+            report.fail(f"Broken Markdown link: {item}")
     else:
-        report.ok("Markdown 本地链接无断链")
+        report.ok("All local Markdown links resolve")
 
 
 def plausible_code_path(value: str) -> bool:
@@ -178,18 +178,18 @@ def check_spine_paths(root: Path, roles: dict[str, str], report: Report) -> None
                 broken.append(f"{source.relative_to(root)} -> {value}")
     if broken:
         for item in sorted(set(broken)):
-            report.fail(f"脊柱/载体路径不存在：{item}")
+            report.fail(f"Referenced spine/artifact path does not exist: {item}")
     else:
-        report.ok("脊柱与可选载体中的路径引用存在")
+        report.ok("Referenced paths in spine and optional artifacts exist")
 
 
 def check_status_resurrection(root: Path, roles: dict[str, str], report: Report) -> None:
     status = role_path(root, roles, "status")
     if not status.exists():
-        report.warn("缺少 PROJECT_STATUS.md，跳过删除区检查")
+        report.warn("No status artifact; skipping deletion-zone checks")
         return
     text = status.read_text(encoding="utf-8")
-    match = re.search(r"删除区(?P<body>.*?)(?:\n## |\Z)", text, re.DOTALL)
+    match = re.search(r"(?:Deletion Zone|\u5220\u9664\u533a)(?P<body>.*?)(?:\n## |\Z)", text, re.DOTALL | re.IGNORECASE)
     resurrected: list[str] = []
     if match:
         for value in CODE_PATH_RE.findall(match.group("body")):
@@ -197,16 +197,16 @@ def check_status_resurrection(root: Path, roles: dict[str, str], report: Report)
                 resurrected.append(value)
     if resurrected:
         for value in sorted(set(resurrected)):
-            report.fail(f"删除区目标已复活：{value}")
+            report.fail(f"Deletion-zone target has been recreated: {value}")
     else:
-        report.ok("删除区无复活")
+        report.ok("No deletion-zone targets were recreated")
 
 
 def check_log(root: Path, roles: dict[str, str], report: Report, threshold: int) -> None:
     active_path = role_path(root, roles, "history")
     archive_path = role_path(root, roles, "history_archive")
     if not active_path.exists():
-        report.warn("缺少 PROJECT_LOG.md，跳过历史完整性检查")
+        report.warn("No history artifact; skipping append-only integrity checks")
         return
 
     active_text = active_path.read_text(encoding="utf-8")
@@ -220,16 +220,16 @@ def check_log(root: Path, roles: dict[str, str], report: Report, threshold: int)
             previous_events.update(event_contents(previous))
     missing = previous_events - current_events
     if missing:
-        report.fail(f"PROJECT_LOG 历史有 {len(missing)} 条被删除或改写，且未原样进入归档")
+        report.fail(f"{len(missing)} history events were removed or rewritten without verbatim archival")
     else:
-        report.ok("PROJECT_LOG 活跃文件与归档合并后保持只追加")
+        report.ok("Active and archived history remain append-only when combined")
 
     if len(active_events) > threshold:
         report.warn(
-            f"PROJECT_LOG 活跃事件 {len(active_events)} 条，超过 {threshold}；应先复盘，再归档并重建 SQLite 索引"
+            f"Active history has {len(active_events)} events, above {threshold}; review before archiving and rebuilding the SQLite index"
         )
     else:
-        report.ok(f"PROJECT_LOG 活跃事件 {len(active_events)} 条，未超过 {threshold}")
+        report.ok(f"Active history has {len(active_events)} events, within the {threshold} threshold")
 
     tracked = subprocess.run(
         ["git", "ls-files", "--error-unmatch", ".governance/project-log.sqlite"],
@@ -239,13 +239,13 @@ def check_log(root: Path, roles: dict[str, str], report: Report, threshold: int)
         check=False,
     )
     if tracked.returncode == 0:
-        report.fail(".governance/project-log.sqlite 是派生索引，不应提交进 git")
+        report.fail(".governance/project-log.sqlite is a derived index and must not be committed")
 
 
 def parse_adr_status(text: str) -> str | None:
     patterns = (
-        r"(?im)^[-*]?\s*(?:status|状态)\s*[:：]\s*`?([a-z]+)`?\s*$",
-        r"(?im)^##\s+(?:status|状态)\s*\n+\s*`?([a-z]+)`?\s*$",
+        r"(?im)^[-*]?\s*(?:status|\u72b6\u6001)\s*[:\uFF1A]\s*`?([a-z]+)`?\s*$",
+        r"(?im)^##\s+(?:status|\u72b6\u6001)\s*\n+\s*`?([a-z]+)`?\s*$",
     )
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -257,17 +257,17 @@ def parse_adr_status(text: str) -> str | None:
 def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
     adr_dir = role_path(root, roles, "adr_dir")
     if not adr_dir.exists():
-        report.warn("docs/adr/ 尚未创建；ADR 按实际决策懒创建")
+        report.warn("No ADR directory exists; create ADRs lazily for real decisions")
         return
     index = role_path(root, roles, "adr_index")
     if not index.exists():
-        report.fail("docs/adr/ 存在但缺少 README.md 统一索引")
+        report.fail("ADR directory exists without a canonical README.md index")
         return
     index_text = index.read_text(encoding="utf-8")
     for raw in MARKDOWN_LINK_RE.findall(index_text):
         target = normalize_link_target(raw)
         if target is not None and target.endswith(".md") and not resolve_target(root, index, target).exists():
-            report.fail(f"ADR 索引链接不存在：docs/adr/README.md -> {target}")
+            report.fail(f"ADR index link does not exist: docs/adr/README.md -> {target}")
     custom_layout = (
         roles["adr_dir"] != DEFAULT_ROLES["adr_dir"]
         or roles["adr_index"] != DEFAULT_ROLES["adr_index"]
@@ -278,12 +278,12 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         adr_files = sorted(path for path in adr_dir.glob("*.md") if ADR_FILE_RE.match(path.name))
     missing_from_index = [path.name for path in adr_files if path.name not in index_text]
     for name in missing_from_index:
-        report.fail(f"ADR 未登记到统一索引：docs/adr/{name}")
+        report.fail(f"ADR is missing from the canonical index: docs/adr/{name}")
 
     if custom_layout:
         if not missing_from_index:
-            report.ok(f"自定义 ADR 布局的索引与 {len(adr_files)} 个 Markdown 决策文件一致")
-        report.warn("自定义 ADR 命名与状态生命周期留给语义审计；确定性层只验证索引和链接")
+            report.ok(f"Custom ADR index covers all {len(adr_files)} Markdown decision files")
+        report.warn("Custom ADR naming and lifecycle require semantic review; deterministic checks cover only index and link integrity")
         return
 
     allowed = {"proposed", "accepted", "deprecated", "superseded"}
@@ -291,19 +291,19 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         text = path.read_text(encoding="utf-8")
         status = parse_adr_status(text)
         if status is None:
-            report.fail(f"ADR 缺少可解析状态：{path.relative_to(root)}")
+            report.fail(f"ADR has no parseable status: {path.relative_to(root)}")
         elif status not in allowed:
-            report.fail(f"ADR 状态不受支持：{path.relative_to(root)} -> {status}")
+            report.fail(f"ADR status is unsupported: {path.relative_to(root)} -> {status}")
         supersedes = re.search(r"(?ims)^##\s+Supersedes\s*\n(?P<body>.*?)(?:\n## |\Z)", text)
-        if supersedes and supersedes.group("body").strip().lower() not in {"none", "无"}:
+        if supersedes and supersedes.group("body").strip().lower() not in {"none", "\u65e0"}:
             targets = ADR_TARGET_RE.findall(supersedes.group("body"))
             if not targets:
-                report.warn(f"ADR Supersedes 无法机械解析，需人工核对：{path.relative_to(root)}")
+                report.warn(f"ADR Supersedes target cannot be parsed deterministically: {path.relative_to(root)}")
             for target in targets:
                 if not (adr_dir / target).exists():
-                    report.fail(f"ADR Supersedes 目标不存在：{path.relative_to(root)} -> {target}")
+                    report.fail(f"ADR Supersedes target does not exist: {path.relative_to(root)} -> {target}")
     if not missing_from_index and all(parse_adr_status(path.read_text(encoding="utf-8")) in allowed for path in adr_files):
-        report.ok(f"ADR 索引与 {len(adr_files)} 个决策文件一致")
+        report.ok(f"ADR index covers all {len(adr_files)} decision files")
 
 
 def check_test_ids(root: Path, roles: dict[str, str], files: list[Path], report: Report) -> None:
@@ -318,17 +318,17 @@ def check_test_ids(root: Path, roles: dict[str, str], files: list[Path], report:
         refs.update(value.upper() for value in TEST_ID_RE.findall(path.read_text(encoding="utf-8")))
     refs.discard("TEST-ID")
     if not refs:
-        report.ok("未发现跨文档 TEST-ID 引用")
+        report.ok("No cross-document TEST-ID references found")
         return
     if not tests_file.exists():
-        report.warn(f"发现 {len(refs)} 个具体 TEST-ID 引用，但项目未启用 TESTS.md；需人工判断是否只是方案示例")
+        report.warn(f"Found {len(refs)} TEST-ID references but no mapped test registry; review whether they are examples")
         return
     defined = {value.upper() for value in TEST_ID_RE.findall(tests_file.read_text(encoding="utf-8"))}
     missing = refs - defined
     if missing:
-        report.fail("TEST-ID 未在 TESTS.md 登记：" + ", ".join(sorted(missing)))
+        report.fail("TEST-IDs are missing from the test registry: " + ", ".join(sorted(missing)))
     else:
-        report.ok("跨文档 TEST-ID 均可回到 TESTS.md")
+        report.ok("All cross-document TEST-IDs resolve to the test registry")
 
 
 def check_orphans(root: Path, files: list[Path], report: Report) -> None:
@@ -349,35 +349,35 @@ def check_orphans(root: Path, files: list[Path], report: Report) -> None:
         ):
             orphans.append(relative)
     if orphans:
-        report.warn("疑似孤儿文档（需人工判断挂索引或归档）：" + ", ".join(orphans))
+        report.warn("Possible orphan documents; review whether to link or archive: " + ", ".join(orphans))
     else:
-        report.ok("docs/ 下未发现疑似孤儿文档")
+        report.ok("No possible orphan documents found under docs/")
 
 
 def check_spine(root: Path, roles: dict[str, str], report: Report, threshold: int) -> None:
-    report.section("spine · 脊柱")
+    report.section("spine")
     for role in ("constitution", "map", "status", "history"):
         name = roles[role]
         if role_path(root, roles, role).exists():
-            report.ok(f"{name} 存在（{role}）")
+            report.ok(f"{name} exists ({role})")
         else:
-            report.warn(f"{name} 缺失（{role}；渐进采用时可能合理）")
+            report.warn(f"{name} is missing ({role}); this may be valid under progressive adoption")
     check_spine_paths(root, roles, report)
     check_status_resurrection(root, roles, report)
     check_log(root, roles, report, threshold)
 
 
 def check_context(root: Path, roles: dict[str, str], report: Report) -> None:
-    report.section("context · 领域上下文")
+    report.section("context")
     context = role_path(root, roles, "context")
     if not context.exists():
-        report.warn("CONTEXT.md 未创建；没有稳定领域词汇时无需补空壳")
+        report.warn("No context artifact; do not create an empty shell without stable domain language")
         return
-    report.ok("CONTEXT.md 存在；术语边界与代码一致性留给语义层判断")
+    report.ok("Context artifact exists; terminology boundaries and code consistency require semantic review")
 
 
 def check_artifacts(root: Path, roles: dict[str, str], report: Report) -> None:
-    report.section("artifacts · 产物链接")
+    report.section("artifacts")
     files = markdown_files(root)
     check_markdown_links(root, files, report)
     check_test_ids(root, roles, files, report)
@@ -393,7 +393,7 @@ def main() -> int:
 
     root = args.root.resolve()
     if not root.is_dir():
-        print(f"不是目录：{root}", file=sys.stderr)
+        print(f"Not a directory: {root}", file=sys.stderr)
         return 2
     report = Report()
     roles = load_roles(root, report)
@@ -402,16 +402,16 @@ def main() -> int:
     if args.scope in ("context", "full"):
         check_context(root, roles, report)
     if args.scope in ("adr", "full"):
-        report.section("adr · 决策记录")
+        report.section("adr")
         check_adr(root, roles, report)
     if args.scope in ("artifacts", "full"):
         check_artifacts(root, roles, report)
 
     print()
     if report.failures:
-        print(f"✗ 确定性审计失败：{report.failures} 项。先修断链，再进入语义审计。")
+        print(f"✗ Deterministic audit failed with {report.failures} issue(s). Fix integrity errors before semantic review.")
         return 1
-    print("✓ 确定性审计通过；警告项需人工判断，可继续语义审计。")
+    print("✓ Deterministic audit passed. Review warnings manually, then continue to semantic audit.")
     return 0
 
 

@@ -1,41 +1,42 @@
 ---
-description: 只读审计当前项目的文档治理质量与产物链接完整性；先跑确定性检查，只有通过后再判断职责、语义与证据漂移，不修改任何文件。
-argument-hint: "[spine|context|adr|artifacts|full，默认 full]"
+description: Read-only audit of documentation governance and artifact-link integrity. Run deterministic checks first; only after they pass, judge semantic ownership and evidence drift. Never modify files.
+argument-hint: "[spine|context|adr|artifacts|full; default: full]"
 ---
 
-对当前工作目录做一次**只读文档治理审计**。铁律：**永远从最便宜的判定层开始，失败就短路**——确定性检查一个脚本秒出退出码，轮不到大模型；别拿劳斯莱斯买菜。
+Perform a **read-only documentation governance audit** of the current working directory. Always start with the cheapest decision layer and short-circuit on failure.
 
-**第一步 · 便宜层（确定性脚本，必须先跑）**：
+## Step 1 — Deterministic Checks
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "${ARGUMENTS:-full}"
 ```
 
-该脚本默认检查参考布局；项目复用自定义文件名时，先由治理执行者建立 `.governance/docs-map.json` 角色映射，再把映射作为项目审计约定。没有映射时，不得把“名称不同”直接判为治理缺失。
+The script uses the reference layout by default. If the project reuses different filenames or locations, first establish `.governance/docs-map.json` as the project's role mapping. Without a mapping, do not treat a different filename as proof that governance is missing.
 
-范围：`spine`（四件套/删除区/LOG）、`context`、`adr`、`artifacts`（Markdown 链接、TEST-ID、孤儿文档）、`full`。它检查路径与链接断裂、ADR 索引、LOG 活跃+归档的只追加完整性、>200 条触发、派生数据库误提交、删除区复活和跨文档 TEST-ID 断链。
+Scopes: `spine`, `context`, `adr`, `artifacts`, or `full`. Checks include broken paths and links, ADR index integrity, append-only active and archived history, the >200-event threshold, committed derived databases, resurrected deletion-zone paths, and cross-document TEST-ID references.
 
-- **退出码 1（红）→ 短路**：直接把脚本输出整理成审计报告交给用户，**不要调用 docs-auditor**——确定性问题先修，修完再来。
-- **退出码 0（绿）→ 进第二步**。
+- Exit code 1: stop. Turn the script output into a report and do not invoke `docs-auditor`. Deterministic failures must be fixed first.
+- Exit code 0: continue to semantic review.
 
-**第二步 · 贵层（LLM 裁判，只判机器判不了的模糊问题）**：
+## Step 2 — Semantic Review
 
-调用 **docs-auditor** 子 agent，只聚焦机器判不了的问题：CONTEXT 边界与术语冲突、ADR 决策冲突、过期/归档文档是否被当当前真相、Spec/Issue/代码/TEST-ID/评审是否闭环、STATUS 指标证据、脊柱越界与重复真相。**便宜层已经查过的不要重复查。**
+Invoke **docs-auditor** only for questions the deterministic script cannot settle: CONTEXT boundaries and terminology conflicts, conflicting ADRs, archived material treated as current truth, Spec/Issue/code/TEST-ID/review traceability, evidence behind STATUS metrics, overloaded spine documents, and duplicated sources of truth.
 
-用户参数（可选）：`$ARGUMENTS`
-- 不带参数：使用 `full`。
-- 带范围：只审对应范围；语义层也只看相关问题。
-- 带具体路径或 `contract`：在所选范围外再重点核对该对象，但仍保持只读。
+Optional `$ARGUMENTS`:
 
-执行要求：
+- no argument: `full`;
+- a scope: review only that scope;
+- a path or `contract`: emphasize that object without changing the read-only boundary.
 
-1. 只读扫描，不修改任何文件。
-2. 先读取 `.governance/docs-map.json`（若存在），否则发现项目已有载体并采用默认角色名；检查章程 / 地图 / 状态 / 历史角色是否存在。缺失就报告，不要创建。
-3. 抽查地图角色里的路径是否真实存在。
-4. 检查状态角色的指标是否像是实际量过；无法验证就标“未验证”。
-5. 检查历史角色是否保持只追加流水账职责。
-6. 如存在 `CONTRACT.md`，检查其是否和前后端接口位置形成单一真相源。
-7. 如存在宿主入口文件，检查它是否只桥接共享章程；不得复制章程或地图正文。
-8. 外部 Issue Tracker 不可用时，把相关状态写成“未验证”，不猜任务是否完成。
-9. 输出审计报告：总体结论、P0/P1/P2 发现、证据、建议、待人工确认项。
-10. 默认只在回复中输出；只有用户明确要求保存，才写入 `docs/audits/YYYY-MM-DD-*.md`。
+Requirements:
+
+1. Do not modify files.
+2. Read `.governance/docs-map.json` when present; otherwise discover existing artifacts before falling back to reference role names.
+3. Sample map paths and confirm they exist.
+4. Treat unmeasured STATUS metrics as `unverified`.
+5. Confirm the history role remains append-only.
+6. If a contract artifact exists, verify it is the single interface source and is linked to consumer/provider locations.
+7. Confirm host entry files remain thin bridges and do not copy the shared charter or map.
+8. When the external Issue Tracker is unavailable, mark task state `unverified` rather than inferring completion.
+9. Report an overall verdict, P0/P1/P2 findings, evidence, recommendations, and items requiring human confirmation.
+10. Return the report in the response by default. Save under `docs/audits/` only when explicitly requested.

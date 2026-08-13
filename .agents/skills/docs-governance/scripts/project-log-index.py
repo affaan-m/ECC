@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""为 PROJECT_LOG.md 构建可重建索引，并在明确确认后归档旧事件。"""
+"""Build a disposable PROJECT_LOG.md index and archive old events with consent."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def load_entries(path: Path, root: Path | None = None) -> tuple[str, list[Entry]
 def resolve_project_path(root: Path, value: str, role: str) -> Path:
     candidate = (root / value).resolve()
     if root != candidate and root not in candidate.parents:
-        raise SystemExit(f"{role} 路径不得越出项目根：{value}")
+        raise SystemExit(f"{role} path must stay inside the project root: {value}")
     return candidate
 
 
@@ -83,16 +83,16 @@ def log_paths(root: Path) -> tuple[Path, Path]:
         try:
             loaded = json.loads(mapping_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"无法读取 {mapping_path}: {exc}") from exc
+            raise SystemExit(f"Could not read {mapping_path}: {exc}") from exc
         if not isinstance(loaded, dict):
-            raise SystemExit(f"{mapping_path} 必须是 role -> 相对路径对象")
+            raise SystemExit(f"{mapping_path} must be a role-to-relative-path object")
         mapping = loaded
     history = mapping.get("history", "PROJECT_LOG.md")
     archive = mapping.get("history_archive", "PROJECT_LOG.archive.md")
     if not isinstance(history, str) or not history.strip():
-        raise SystemExit("history 角色必须是非空相对路径")
+        raise SystemExit("The history role must be a non-empty relative path")
     if not isinstance(archive, str) or not archive.strip():
-        raise SystemExit("history_archive 角色必须是非空相对路径")
+        raise SystemExit("The history_archive role must be a non-empty relative path")
     return (
         resolve_project_path(root, history, "history"),
         resolve_project_path(root, archive, "history_archive"),
@@ -111,7 +111,7 @@ def deduplicate(entries: list[Entry]) -> list[Entry]:
 
 
 def infer_module(entry: Entry) -> str:
-    explicit = re.search(r"(?:module|模块)\s*[:=]\s*([\w.-]+)", entry.content, re.IGNORECASE)
+    explicit = re.search(r"(?:module|\u6a21\u5757)\s*[:=]\s*([\w.-]+)", entry.content, re.IGNORECASE)
     if explicit:
         return explicit.group(1)
     path = PATH_RE.search(entry.content)
@@ -208,14 +208,14 @@ def render(preamble: str, entries: list[Entry]) -> str:
 
 
 def command_status(active: list[Entry], threshold: int) -> None:
-    state = "超过阈值，应建立结构化归档/索引" if len(active) > threshold else "未超过阈值"
-    print(f"PROJECT_LOG 事件数：{len(active)}；阈值：{threshold}；{state}。")
+    state = "above threshold; create a structured archive/index" if len(active) > threshold else "within threshold"
+    print(f"PROJECT_LOG events: {len(active)}; threshold: {threshold}; {state}.")
 
 
 def command_rebuild(database: Path, archive: list[Entry], active: list[Entry]) -> None:
     entries = deduplicate(archive + active)
     build_database(database, entries)
-    print(f"已重建 {database}：{len(entries)} 条事件。")
+    print(f"Rebuilt {database}: {len(entries)} events.")
 
 
 def command_archive(
@@ -233,12 +233,12 @@ def command_archive(
     archive_preamble_default: str,
 ) -> None:
     if len(active) <= threshold:
-        print(f"PROJECT_LOG 只有 {len(active)} 条事件，未超过阈值 {threshold}，无需归档。")
+        print(f"PROJECT_LOG has {len(active)} events, within threshold {threshold}; no archive is needed.")
         return
     if not confirmed:
-        raise SystemExit("归档会改写活跃 LOG 的事件集合；请经用户确认后加 --yes。")
+        raise SystemExit("Archiving rewrites the active log event set; add --yes only after user confirmation.")
     if keep < 1 or keep >= len(active):
-        raise SystemExit("--keep 必须大于 0 且小于当前事件数。")
+        raise SystemExit("--keep must be greater than 0 and less than the current event count.")
 
     moved = active[:-keep]
     recent = active[-keep:]
@@ -268,7 +268,7 @@ def command_archive(
             atomic_write(archive_path, before_archive.decode("utf-8"))
         raise
 
-    print(f"已归档 {len(moved)} 条，活跃 LOG 保留最近 {len(recent)} 条。")
+    print(f"Archived {len(moved)} events; the active log retains the newest {len(recent)}.")
 
 
 def main() -> int:
@@ -277,14 +277,14 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--threshold", type=int, default=200)
     parser.add_argument("--keep", type=int, default=100)
-    parser.add_argument("--yes", action="store_true", help="确认执行归档")
+    parser.add_argument("--yes", action="store_true", help="confirm archive execution")
     args = parser.parse_args()
 
     root = args.root.resolve()
     log_path, archive_path = log_paths(root)
     database = root / ".governance" / "project-log.sqlite"
     if not log_path.exists():
-        raise SystemExit(f"缺少 {log_path}")
+        raise SystemExit(f"Missing {log_path}")
 
     preamble, active = load_entries(log_path, root)
     archive_preamble, archived = load_entries(archive_path, root)
@@ -304,8 +304,8 @@ def main() -> int:
             args.threshold,
             args.keep,
             args.yes,
-            f"> 历史归档见 `{archive_path.relative_to(root).as_posix()}`；`.governance/project-log.sqlite` 只是可重建索引。",
-            f"# {archive_path.name} —— 历史归档（原始事件，只追加）\n\n",
+            f"> Historical events are archived in `{archive_path.relative_to(root).as_posix()}`; `.governance/project-log.sqlite` is only a rebuildable index.",
+            f"# {archive_path.name} — Historical Archive (raw events, append-only)\n\n",
         )
     return 0
 

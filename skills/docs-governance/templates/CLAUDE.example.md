@@ -1,21 +1,27 @@
-# CLAUDE.md —— 宪法（保持短，细节链接出去；超过一页就把内容挪进对应文档，原处只留路标）
+# CLAUDE.md — Project Charter
 
-## 进会话读取（分级，不是全读）
-默认只读：本文件全文 + `PROJECT_STATUS.md` 顶部红线块。
-需要定位文件、理解非显然的目录职责或整体结构时，按需读取 `CLAUDE_MAP.md`；**新建/删除/重命名文件、跨模块改动前**必读 `CLAUDE_MAP.md` + STATUS 删除区。普通目录结构直接 `ls`/`glob`，不要在本文件写死或复制地图。详细分级协议见 living-docs-governance skill。
+> Keep this file short. Link details elsewhere; if it grows beyond one page, move details to the artifact that owns them and leave only a pointer here.
 
-## 硬规则（少而精：只放高杠杆的不可妥协约定）
+## Session Reading Order
 
-> 经验值：前 10–15 条规则边际收益最大；规则越堆越没人遵守，宪法臃肿本身就是一种腐烂。够用就停，别凑数。
-- 文件编码一律 UTF-8
-- 只用绝对导入，禁止 `from . import xxx`
-- 禁止新建文件，除非明确要求（改 main.py，不建 main_v2.py）
-- （按项目补充：命名约定、提交信息格式、测试要求……）
+Read this file in full and the red-line block at the top of `PROJECT_STATUS.md` by default.
 
-## 路标（一行一个，指向细节所在）
-- 项目有什么、在哪找 → `CLAUDE_MAP.md`
-- 当前健康度 / 禁区 / 待删 → `PROJECT_STATUS.md`
-- 历史 / 改了什么 / 为什么 → `PROJECT_LOG.md`
-- 稳定领域术语 → `CONTEXT.md`（仅当项目已启用）
-- 架构 / 数据库等难回退决策 → `docs/adr/README.md`（仅当项目已启用）
-- 任务、负责人、阻塞与排期 → 项目已有 Issue Tracker（不要复制进 STATUS / LOG）
+Read `CLAUDE_MAP.md` only when locating a file, understanding non-obvious directory responsibility, or learning the overall structure. Before creating, deleting, renaming, or changing files across modules, read both `CLAUDE_MAP.md` and the STATUS deletion zone. Use `ls` or glob for ordinary directory structure; do not freeze or duplicate the tree here. See the `living-docs-governance` skill for the complete tiered-reading protocol.
+
+## Hard Rules
+
+> The first 10–15 rules usually provide the highest leverage. More rules reduce compliance, and an overloaded charter is itself documentation decay. Stop when the essentials are covered.
+
+- Use UTF-8 for all files.
+- Use absolute imports; do not use `from . import ...`.
+- Do not create a new file unless explicitly requested; edit the existing implementation instead of creating `main_v2.py`.
+- `{add project-specific naming, commit, and verification rules}`
+
+## Pointers
+
+- Project structure and where to find things → `CLAUDE_MAP.md`
+- Current health, red lines, and intentionally deleted items → `PROJECT_STATUS.md`
+- What changed and why → `PROJECT_LOG.md`
+- Stable domain terminology → `CONTEXT.md` when enabled
+- Hard-to-reverse architecture or database decisions → the repository's ADR index when enabled
+- Tasks, ownership, blockers, and scheduling → the project's existing Issue Tracker; do not copy them into STATUS or LOG

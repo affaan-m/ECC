@@ -1,19 +1,21 @@
-# CONTEXT.md —— 领域语言（按需创建，不写实现、状态、排期和决策）
+# CONTEXT.md — Domain Language
 
-## 核心术语
+> Create only when needed. Do not include implementation, status, scheduling, or decisions.
 
-| 术语 | 精确定义 | 证据/来源 |
+## Core Terms
+
+| Term | Precise definition | Evidence/source |
 |---|---|---|
-| `{术语}` | `{它是什么；与相近词有什么边界}` | `{业务规则、契约或代码位置}` |
+| `{term}` | `{what it means and how it differs from adjacent terms}` | `{business rule, contract, or code location}` |
 
-## 概念关系
+## Concept Relationships
 
-- `{概念 A}` 与 `{概念 B}`：`{一对多 / 状态转换 / 包含关系 / 约束}`。
+- `{Concept A}` and `{Concept B}`: `{one-to-many / state transition / containment / constraint}`.
 
-## 已确认歧义
+## Resolved Ambiguities
 
-- `{旧说法}` 统一指 `{采用口径}`；不要再用 `{被废弃说法}`。
+- `{old expression}` now consistently means `{adopted interpretation}`; stop using `{deprecated expression}`.
 
-## 待确认
+## Needs Confirmation
 
-- `{术语或关系}`：待 `{责任人/业务角色}` 确认；确认前不要据此修改实现。
+- `{term or relationship}`: awaiting confirmation from `{owner/domain role}`; do not change the implementation based on it until confirmed.

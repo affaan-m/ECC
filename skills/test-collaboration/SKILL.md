@@ -1,165 +1,163 @@
 ---
 name: test-collaboration
-description: "盘点并维护项目测试资产，把需求、业务规则、风险、Bug 和跨端接口契约转成 TEST-ID 与可验证证据，生成或更新 TESTS.md。用于测试资产盘点、测试缺口分析、单元/集成/契约/E2E/冒烟分类、Bug 回归保护、前后端或多服务基于同一契约的消费者/提供者测试、测试必要性判断、测试清单维护与交付前测试证据审查。中文触发：测试盘点、测试清单、测试资产、测试缺口、测试必要性、Bug 转测试、契约测试、前后端接口测试、测试治理。English triggers: test inventory, test catalog, test gap analysis, bug-to-test, contract testing, consumer contract, provider verification, test governance."
+description: "Inventory and govern a project's test assets. Connect requirements, business rules, risks, bugs, and cross-boundary contracts to stable TEST-IDs and executable evidence in the repository's existing test registry or TESTS.md. Use for test inventory, test gap analysis, unit/integration/contract/E2E/smoke classification, bug-to-test regression protection, consumer/provider contract testing, test-necessity review, and pre-delivery evidence review."
 ---
 
-# 测试协作治理（test-collaboration）
+# Test Collaboration Governance
 
 ## When to Activate
 
-- 需要盘点仓库测试资产、测试缺口或标准执行入口。
-- 需求、业务规则、风险或重要 Bug 需要可追踪的验证证据。
-- 前后端或多个服务要基于同一机器可读契约分别开发和测试。
+- Inventorying test assets, test gaps, or the standard test entry point.
+- Giving a requirement, business rule, risk, or important defect durable verification evidence.
+- Enabling frontend/backend or multiple services to develop and test independently against one machine-readable contract.
 
 ## Anti-Patterns
 
-- 把 `TESTS.md` 写成测试函数清单或复制业务成功标准。
-- 用测试数量、文件存在或绿色 CI 代替行为证据审查。
-- 为追求绿色删除、放松或隔离测试而不记录风险和人工出口。
+- Mirroring every test function or copying business success criteria into the registry.
+- Treating test count, file existence, or green CI as sufficient behavioral evidence.
+- Deleting, weakening, or quarantining tests merely to get green without recording the risk and an explicit manual exit.
 
 ## Related Skills
 
-- `ai-regression-testing`：把重要缺陷下沉为真实可执行的回归测试。
-- `contract-first`：消费者和提供者共享的机器可读契约。
-- `module-regression`：按模块及下游执行回归命令。
-- `living-docs-governance`：阶段同步与历史记录。
+- `ai-regression-testing`: turn important defects into executable regression tests.
+- `contract-first`: establish the shared machine-readable contract for consumers and providers.
+- `module-regression`: run regression commands for changed modules and downstream consumers.
+- `living-docs-governance`: synchronize stage outcomes and append history.
 
-## 目标
+## Goal
 
-用仓库已有测试登记文档或 `.governance/docs-map.json` 中的 `tests` 角色管理两类信息；没有等价载体时才使用默认 `TESTS.md`：
+Use the repository's existing test-registry document or the `tests` role in `.governance/docs-map.json`. Create the default `TESTS.md` only when no equivalent exists. Govern two kinds of information:
 
-1. **现有测试资产地图**：项目已经有哪些测试、从哪里运行、保护什么。
-2. **必要测试点清单**：哪些需求、规则、风险和 Bug 必须被测试保护，当前证据是否足够。
+1. **Existing test-asset map** — what tests exist, where they run, and what they protect.
+2. **Required test-point registry** — which requirements, rules, risks, and bugs require protection, and whether the current evidence is sufficient.
 
-清单管理的是“为什么测、测什么、证据在哪”，测试代码仍然是可执行事实。不要把 `TESTS.md` 写成每个测试函数的镜像。
+The registry owns why something must be tested, what behavior matters, and where evidence lives. Test code remains the executable fact. Do not mirror every test function.
 
-## 职责边界
+## Responsibility Boundary
 
-| 资产 | 唯一职责 |
+| Asset | Single responsibility |
 |---|---|
-| `TESTS.md` | 测试资产、必要测试点、缺口、状态和证据 |
-| 测试代码 | 可执行输入、断言、fixture/fake 和边界模拟 |
-| `REGRESSION.md` | 模块下游、回归命令和改动后的重跑规则；只引用 TEST-ID |
-| Spec/Issue | 成功标准、问题现象、影响、优先级、任务状态和排期的唯一来源 |
-| `PROJECT_LOG.md` | 只追加测试状态变化和交付结论，不复制整个清单 |
+| Test registry (`TESTS.md` or equivalent) | Test assets, required test points, gaps, state, and evidence |
+| Test code | Executable inputs, assertions, fixtures/fakes, and boundary simulation |
+| Regression ledger | Module downstream consumers, commands, and rerun rules; references TEST-IDs only |
+| Spec/Issue | Single source for success criteria, problem statement, impact, priority, task state, and schedule |
+| Project history | Append-only test-status changes and delivery outcomes, not a copy of the registry |
 
-v1 由当前会话直接执行本 skill，不新增专用 agent、slash command 或强制脚本。
+Version 1 is executed by the current session. It does not add a dedicated agent, slash command, or mandatory generator.
 
-## 开始前读取
+## Read Before Starting
 
-按存在性读取，不要求项目拥有全部文件：
+Read artifacts only when they exist:
 
-1. `TESTS.md` 与本 Skill 的 `templates/TESTS.example.md`。
-2. 项目规则和地图，如 `CLAUDE.md`、`AGENTS.md`、`CLAUDE_MAP.md`。
-3. 测试目录、测试配置、CI 配置、标准测试入口和专用测试任务。
-4. Spec、Bug、Issue、审计、事故或回归清单；成功标准只引用，不复制进 `TESTS.md`。
-5. `REGRESSION.md`，用于对齐模块回归命令与 TEST-ID。
-6. 跨端接口的机器可读契约及生成/校验入口，例如 OpenAPI、JSON Schema、GraphQL schema 或 protobuf。
+1. The existing test registry and `templates/TESTS.example.md`.
+2. Project rules and maps, such as `CLAUDE.md`, `AGENTS.md`, and `CLAUDE_MAP.md`.
+3. Test directories, test configuration, CI configuration, standard runners, and specialized suites.
+4. Specs, bugs, Issues, audits, incidents, and regression ledgers. Link success criteria; do not copy them.
+5. The regression ledger, to align module commands with TEST-IDs.
+6. Machine-readable cross-boundary contracts and their generation/validation entry points, such as OpenAPI, JSON Schema, GraphQL schema, or protobuf.
 
-先识别仓库已有的测试框架和命名习惯，不强迫项目改成统一目录结构。
+Preserve existing frameworks, naming, and layout.
 
-## 工作模式
+## 1. Inventory Existing Test Assets
 
-### 1. 盘点现有测试资产
+Perform a full inventory on first adoption, then maintain it incrementally:
 
-首次采用时做一次全量盘点，之后按事件增量维护：
+1. Find standard entry points such as `pytest`, `npm test`, `make test`, or project scripts.
+2. Inspect test directories, configuration, and CI. Collect/list modes are allowed; do not perform risky external operations merely to inventory tests.
+3. Aggregate by module, suite, or critical workflow. Do not hand-copy every test function.
+4. Record level, purpose, execution group, external dependency, location, and current assessment.
+5. Classify assets as required, missing, possibly duplicate, or possibly stale. Inventory reports candidates; it does not delete or rewrite tests.
 
-1. 找到标准测试入口，例如 `pytest`、`npm test`、`make test` 或项目脚本。
-2. 扫描测试目录、配置和 CI；可以使用 collect/list 模式，但不要为了盘点执行高风险外部操作。
-3. 按模块、测试套件或关键流程聚合，禁止手抄每个测试函数。
-4. 标注层级、用途、执行组、外部依赖、位置和当前判断。
-5. 将资产判断为：必要、疑似重复、缺失或疑似废弃。盘点阶段只报告，不擅自删除或重写测试。
+Rescan by event, not by calendar:
 
-重新盘点由事件触发，不按日历机械执行：
+- First registry: full scan.
+- Test directory, configuration, CI, or standard entry changes: rescan the affected area.
+- New or updated TEST-ID or bug: reconcile the related module.
+- Major feature, interface, business-rule, or security-boundary change: rescan the affected path.
+- Delivery or governance closeout: reconcile entries touched by the change.
+- Full rescan only when the testing system was rebuilt or the map is clearly stale.
 
-- 首次建立 `TESTS.md`：全量扫描。
-- 测试目录、测试配置、CI 或标准入口变化：重扫受影响区域。
-- 新增或更新 TEST-ID、Bug：增量核对相关模块。
-- 重大功能、接口、业务规则或安全边界变化：重扫对应链路。
-- 交付前或 `/governance-sync` 收尾：核对本次变更涉及的条目。
-- 只有测试体系整体重构或地图明显失真时，才再次全量扫描。
+## 2. Convert Requirements, Rules, and Risks into TEST-IDs
 
-### 2. 把需求、规则和风险转成 TEST-ID
+Use a stable ID such as `TEST-ORDER-001`. Record at least:
 
-每个必要测试点使用稳定 ID，例如 `TEST-ORDER-001`。至少记录：
+- state: `missing`, `in progress`, `covered`, or `not applicable`;
+- source requirement, rule, risk, bug, or incident;
+- representative input and observable expected behavior;
+- level and purpose;
+- execution group and real/simulated boundary;
+- test file, test node, and executable command.
 
-- 状态：`待补`、`开发中`、`已覆盖`、`不适用`。
-- 来源：需求、规则、风险、Bug 或事故编号。
-- 模拟输入与业务预期。
-- 层级与用途。
-- 执行组和真实/模拟边界。
-- 测试文件、测试节点和可执行命令。
+The source must link to the original success criteria in the Spec/Issue. The registry answers “which evidence verifies this?” and must not create a second drifting statement of the business criteria. If the criteria are ambiguous, return to requirement clarification or ask the owner; do not guess.
 
-来源必须链接回 Spec/Issue 中的原始成功标准。`TESTS.md` 只回答“哪条证据验证它”，不得另写一份可独立漂移的业务标准。成功标准含糊时，回到需求澄清能力或请项目负责人确认，不由测试 Skill 猜测。
+Controlled levels: `unit`, `integration`, `contract`, `E2E`, `smoke`.
 
-受控层级：`单元`、`集成`、`契约`、`E2E`、`冒烟`。
+Controlled purposes: `rule protection`, `critical path`, `regression protection`, `specialized protection`. Separate multiple purposes with commas instead of inventing new values.
 
-受控用途：`规则保护`、`关键链路`、`回归保护`、`专项保护`。需要多个用途时用逗号分隔，不能临时发明新值。
+`not applicable` requires a reason, such as a schema, type-system, or lint rule providing a more appropriate deterministic guard. “Hard to test” is not a reason.
 
-`不适用` 必须写理由，例如风险由 schema、类型系统或 lint 更合适地机械拦截。不能用“不好测”作为理由。
+## 3. Convert Bugs into Regression Protection
 
-### 3. 把 Bug 转成回归保护
+Every bug fix must do one of the following:
 
-修复 Bug 时，必须二选一：
+1. create or link a TEST-ID; or
+2. record why automation is not currently possible, plus manual verification steps and evidence.
 
-1. 新增或关联一个 TEST-ID；或
-2. 明确记录为什么只能人工验收，以及人工验收步骤和证据。
+The TEST-ID must reproduce the real failure shape rather than an easier similar input. Record before-fix failure and after-fix success. If the old code cannot be run, record the reproduction basis and what remains unverified.
 
-TEST-ID 应复现真实失败形状，而不是换成更容易通过的相似输入。记录修复前失败、修复后通过的证据；如果无法先运行旧代码，至少说明复现依据和未实测项。
+Without a TEST-ID or an explicit manual exit, the defect is not fully closed.
 
-没有 TEST-ID 或明确的人工出口，不得宣称 Bug 已完整闭环。
+## 4. Drive Cross-Boundary Tests from One Contract
 
-### 4. 用同一契约驱动跨端测试
+When clients and providers develop independently, use the same contract as test input instead of maintaining separate field definitions:
 
-前端与后端或多个服务分开开发时，把接口契约作为测试共同输入，不让各端分别手写一份接口事实：
+1. Locate the machine-readable contract and record its path and verifiable version, commit, or hash. Do not copy its field table into the test registry.
+2. Use one TEST-ID to connect four evidence layers:
+   - contract: schema lint or format validation;
+   - consumer: generated or contract-validated types, mocks, fixtures, and consumer tests;
+   - provider: validate the actual serialized response/message, not only internal DTOs or types;
+   - integration: at least one real cross-boundary path, or an explicit recorded gap.
+3. Record the actual command, exit code, and evidence location for each layer. Generated types or mocks that are stale or inconsistent with the contract cannot be marked covered.
+4. Change the single contract source first, then regenerate consumer assets and rerun provider and integration tests.
+5. If no machine-verifiable contract exists, mark the boundary `missing` or `unverifiable` and state the current evidence. Separate green client and server tests do not prove compatibility.
 
-1. 找到仓库已有的机器可读契约，记录路径及可核验的版本、commit 或 hash；不把字段表复制进 `TESTS.md`。
-2. 用同一个 TEST-ID 串起四层证据：
-   - 契约自身：schema lint 或格式校验；
-   - 消费方：由契约生成或校验的类型、mock、fixture 与消费者测试；
-   - 提供方：对真实序列化后的响应或消息做契约校验，不能只验证内部 DTO 或类型；
-   - 联调：至少一条真实跨端路径；暂时没有时明确登记缺口。
-3. 每层记录实际命令、退出码和证据位置。生成类型或 mock 未重新生成、与契约不一致时，不得标为 `已覆盖`。
-4. 接口需要变化时先更新唯一契约源，再重新生成消费方资产并重跑提供方与联调测试。
-5. 仓库没有机器可验证契约时，标为 `待补` 或 `不可验证`，说明当前只能依赖什么证据；不能把双方各自测试为绿写成“兼容性已验证”。
+Contract tests prove both sides obey one interface boundary. E2E proves the real business path works. Neither replaces the other.
 
-契约测试证明双方是否遵守同一接口边界；E2E 继续证明真实业务路径能否工作。两者不能互相替代。
+## 5. Review Test Evidence
 
-### 5. 审查测试证据
+Before marking a TEST-ID `covered`, confirm:
 
-将状态标为 `已覆盖` 前，逐项确认：
+1. the test file exists;
+2. assertions verify behavior rather than only “called” or HTTP 200;
+3. the command runs with exit code 0;
+4. the test belongs to the standard runner or a clearly named specialized group;
+5. the evidence matches the TEST-ID input, expected behavior, and boundary.
 
-1. 测试文件真实存在。
-2. 断言验证业务行为，不只是“函数被调用”或“状态码是 200”。
-3. 命令可执行且退出码为 0。
-4. 测试进入标准 runner，或登记为命名清楚的专用执行组。
-5. 证据能对应 TEST-ID 的输入、预期和边界。
+Files, test counts, and green CI alone do not prove required rules are covered.
 
-只看到测试文件、测试数量或绿色 CI，不足以证明必要规则已覆盖。
+Delivery closeout also confirms active Specs/Issues have explicit success criteria; critical criteria link to TEST-IDs or reviewable manual exits; evidence checks the expected behavior; and significant standard or outcome changes were appended to project history.
 
-交付闭环还要确认：活跃 Spec/Issue 有明确成功标准；关键标准已关联 TEST-ID 或可复核的人工出口；证据确实验证预期行为；标准变化和本次重要结果已按活文档规则记入 `PROJECT_LOG.md`。
+## Test Design Discipline
 
-## 测试设计纪律
+- Prefer one discoverable standard test command; isolate slow, networked, and expensive E2E tests in clearly named groups.
+- State which E2E components are real and which external systems are faked, including why.
+- Use the actual incident input, path, and boundary in defect regression tests.
+- Assert relationships and invariants rather than fragile snapshots, fixed enum counts, or version literals.
+- Reuse existing fixtures and fakes for common boundaries.
+- For critical rules, cover the normal case and a rejection/boundary case, especially permissions, security, configuration propagation, and file/network paths.
+- Prefer real imports and temporary-directory integration evidence for parsers, configuration propagation, security boundaries, remote backends, and file/network I/O.
+- Consumer types/mocks, provider verification, and integration tests must reference one contract source.
+- Provider contract tests inspect the actual serialized shape: names, types, nullability, enums, errors, and large identifiers.
+- Adopt the discipline, not another project's infrastructure scale.
 
-- **标准入口优先**：先让贡献者知道“一条命令怎么跑默认测试”；慢测试、联网测试和高成本 E2E 放入命名清楚的专用组。
-- **边界写清楚**：E2E 要说明哪些部分真实运行、哪些外部系统被 fake/mock，以及为什么。
-- **真实故障形状**：Bug 回归测试使用导致事故的输入、路径和边界条件。
-- **行为契约优先**：断言数据之间必须满足的关系和不变量，少写只会在正常更新时报警的快照、固定枚举数量或版本字面量。
-- **复用 fixture/fake**：同类输入和外部边界优先复用项目已有设施，避免每个测试自造一套。
-- **正反两面**：关键规则至少考虑正常输入和拒绝/边界输入；权限、安全、配置传播和文件/网络路径尤其如此。
-- **真实路径优先**：涉及解析链、配置传播、安全边界、远程后端或文件/网络 I/O 时，应有真实导入和临时目录上的集成或 E2E 证据，不能只靠单元 mock。
-- **契约单源**：消费者类型/mock、提供方验证和联调测试必须引用同一契约源；禁止维护多份手写字段定义。
-- **序列化边界**：提供方契约测试必须检查线上实际返回形状，覆盖字段名、类型、空值、枚举、错误结构和大整数 ID 等易漂移边界。
-- **规模适配**：借鉴这些纪律，不复制别的大项目的并行测试基础设施或目录规模。
+## Output
 
-## 输出要求
+When creating or updating a test-registry artifact, adapt `templates/TESTS.example.md` while preserving the repository's location and naming. Report:
 
-创建或更新测试登记角色时，可借用本 Skill 的 `templates/TESTS.example.md` 结构，但保留仓库已有位置和命名，并在回复中给出：
+1. standard test entry points and asset overview;
+2. counts of required, missing, possibly duplicate, and possibly stale assets;
+3. TEST-IDs added or changed;
+4. commands actually run, exit codes, and unverified items;
+5. only the highest-priority next test actions.
 
-1. 标准测试入口和测试资产概况。
-2. 必要、缺失、疑似重复、疑似废弃的数量。
-3. 本轮新增或变更的 TEST-ID。
-4. 已实际运行的命令、退出码和未实测项。
-5. 下一步只列最重要的补测动作。
-
-盘点任务默认只修改测试治理文档。除非用户另行授权，不修改生产代码、不删除测试，也不替贡献者偷偷补实现。
+Inventory tasks modify governance documentation only by default. Do not change production code, delete tests, or silently implement missing behavior without separate authorization.
