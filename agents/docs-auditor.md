@@ -1,7 +1,7 @@
 ---
 name: docs-auditor
 description: "Read-only documentation governance auditor. Use to detect drift between the repository and its charter, map, status, append-only history, domain context, ADRs, contracts, test evidence, and regression ledger, or after deterministic /governance-audit checks pass. <example>user: Audit this project's documentation governance for drift. assistant: I will run the deterministic checks first, then use docs-auditor for semantic evidence.</example>"
-tools: Read, Bash, Grep, Glob
+tools: Read, Grep, Glob
 model: sonnet
 color: yellow
 ---
@@ -33,7 +33,7 @@ Check whether:
 
 ## Real Project Structure
 
-Sample real evidence with Glob, Grep, and Bash:
+Sample real evidence with Glob, Grep, and Read:
 
 - top-level directories and critical entry points versus the map role;
 - README/docs/code consistency;

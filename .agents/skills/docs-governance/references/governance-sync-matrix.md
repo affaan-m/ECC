@@ -2,26 +2,30 @@
 
 Use this matrix at stage closeout, or when the user asks to synchronize, organize, wrap up, or make the project ready for a new maintainer. Resolve each artifact by its role in `.governance/docs-map.json` or the repository's existing source of truth before using the reference filenames below.
 
-Core discipline: `PROJECT_LOG.md` is append-only history. `CLAUDE_MAP.md`, `PROJECT_STATUS.md`, and `CLAUDE.md` represent current truth, so obsolete facts must be corrected, duplicates consolidated, and stale content removed.
+Core discipline: the mapped `history` role is append-only. The mapped `map`, `status`, and `constitution` roles represent current truth, so obsolete facts must be corrected, duplicates consolidated, and stale content removed.
+
+## Resolve Roles Before Applying the Matrix
+
+Every artifact name below is a logical role with its default filename shown for readability, not a required path. Before reading or writing, discover the repository's existing documentation sources and resolve `.governance/docs-map.json` when present. Use the mapped or already-indexed source of truth; use the displayed default only when no canonical equivalent exists and the user approves creating it. Apply the same rule to report destinations. Never create a default artifact beside an existing equivalent, split project history, or duplicate a fact merely to satisfy this matrix.
 
 ## Code or Project Change → Governance Artifacts
 
-| What changed | Must inspect or update |
+| What changed | Must inspect or update (logical role; default filename in parentheses) |
 |---|---|
-| A top-level directory or core module was added, removed, or renamed | `CLAUDE_MAP.md` dependency direction and hard-to-find jump table; append the structural change to `PROJECT_LOG.md` |
-| An entry point, command, script, or service port was added | `CLAUDE_MAP.md` entry-point table; README run instructions; append to `PROJECT_LOG.md` |
-| The testing method changed | `PROJECT_STATUS.md` test-health metrics; `CLAUDE.md` verification rule only if it became a durable rule; append to `PROJECT_LOG.md` |
-| A metric crossed a threshold (file size, coverage, missing tests, dependency risk) | `PROJECT_STATUS.md` metric and P0/P1 action; append an audit/fix event to `PROJECT_LOG.md` |
+| A top-level directory or core module was added, removed, or renamed | mapped project map (`CLAUDE_MAP.md` by default) dependency direction and hard-to-find jump table; append the structural change to mapped history (`PROJECT_LOG.md` by default) |
+| An entry point, command, script, or service port was added | mapped project map (`CLAUDE_MAP.md`) entry-point table; README run instructions; append to mapped history (`PROJECT_LOG.md`) |
+| The testing method changed | mapped status (`PROJECT_STATUS.md`) test-health metrics; mapped constitution (`CLAUDE.md`) verification rule only if it became a durable rule; append to mapped history (`PROJECT_LOG.md`) |
+| A metric crossed a threshold (file size, coverage, missing tests, dependency risk) | mapped status (`PROJECT_STATUS.md`) metric and P0/P1 action; append an audit/fix event to mapped history (`PROJECT_LOG.md`) |
 | A file was deliberately deleted, a module deprecated, or a backup directory cleaned | `PROJECT_STATUS.md` deletion zone with path, reason, date, and replacement; append a cleanup event to `PROJECT_LOG.md` |
 | A durable rule, coding constraint, or non-negotiable process was added | `CLAUDE.md`; link to detailed docs when needed; append a governance event to `PROJECT_LOG.md` |
 | README, docs, and code structure contradict one another | Correct the file that owns current truth; do not explain the mismatch only in LOG; optionally append an audit/fix event |
-| An environment variable, secret setting, or deployment parameter was added | A pointer in `CLAUDE.md` or README; `PROJECT_STATUS.md` risk entry when relevant; append to `PROJECT_LOG.md` |
-| A business flow, user journey, page, or view was added | A “find X here” pointer in `CLAUDE_MAP.md`; README demo/run instructions when user-facing; append to `PROJECT_LOG.md` |
-| An API, route, or frontend/backend field changed | `CONTRACT.md` if present; frontend entry, API wrapper, and backend route locations in `CLAUDE_MAP.md`; append a contract event to `PROJECT_LOG.md` |
-| An interface was added but no `CONTRACT.md` exists | Recommend creating `CONTRACT.md`; do not put field-level details in `CLAUDE_MAP.md` |
-| Domain terminology, concept relationships, or adopted interpretation changed | `CONTEXT.md` if enabled; list unconfirmed evidence as needing confirmation and do not change code semantics |
+| An environment variable, secret setting, or deployment parameter was added | A pointer in mapped constitution (`CLAUDE.md`) or README; mapped status (`PROJECT_STATUS.md`) risk entry when relevant; append to mapped history (`PROJECT_LOG.md`) |
+| A business flow, user journey, page, or view was added | A “find X here” pointer in mapped project map (`CLAUDE_MAP.md`); README demo/run instructions when user-facing; append to mapped history (`PROJECT_LOG.md`) |
+| An API, route, or frontend/backend field changed | mapped contract source (`CONTRACT.md`) if present; frontend entry, API wrapper, and backend route locations in mapped project map (`CLAUDE_MAP.md`); append a contract event to mapped history (`PROJECT_LOG.md`) |
+| An interface was added but no mapped or existing contract source exists | Recommend choosing one contract source; do not put field-level details in the project map |
+| Domain terminology, concept relationships, or adopted interpretation changed | mapped context (`CONTEXT.md`) if enabled; list unconfirmed evidence as needing confirmation and do not change code semantics |
 | A hard-to-reverse architecture, database, authentication, deployment, data-model, or API-version decision changed | Create or update the relevant ADR with `architecture-decision-records`; keep MAP as an index pointer only; append a decision event to LOG |
-| Success criteria, a requirement, or a bug changed | Keep the original Spec/Issue as the single source; link TEST-ID or manual-exit evidence in `TESTS.md`; do not copy the criteria |
+| Success criteria, a requirement, or a bug changed | Keep the original Spec/Issue as the single source; link TEST-ID or manual-exit evidence in mapped test registry (`TESTS.md`); do not copy the criteria |
 | Module behavior or downstream dependencies changed | `REGRESSION.md` downstream list and executable commands; associated TEST-IDs; run the changed module and downstream consumers after implementation |
 | A data migration, breaking interface, or high-risk release is planned | Compatibility period, migration/recovery/rollback, and irreversible effects in the change-impact report; ADR/CONTRACT when applicable |
 | Task ownership, blockers, or schedule changed | Issue Tracker; update STATUS only when project health changes, and never store scheduling in the LOG index database |

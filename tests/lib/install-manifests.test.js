@@ -91,7 +91,7 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('resolves documentation-governance for every advertised target', () => {
-    const module = listInstallModules().find(item => item.id === 'documentation-governance');
+    const module = loadInstallManifests().modulesById.get('documentation-governance');
     assert.ok(module, 'Should include documentation-governance');
     for (const target of module.targets) {
       const plan = resolveInstallPlan({ moduleIds: [module.id], target });
@@ -99,6 +99,10 @@ function runTests() {
         `documentation-governance should resolve for ${target}`);
       assert.ok(!plan.skippedModuleIds.includes(module.id),
         `documentation-governance should not be skipped for ${target}`);
+      for (const dependencyId of module.dependencies) {
+        assert.ok(plan.selectedModuleIds.includes(dependencyId),
+          `documentation-governance should resolve ${dependencyId} for ${target}`);
+      }
     }
   })) passed++; else failed++;
 

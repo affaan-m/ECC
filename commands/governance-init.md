@@ -7,11 +7,9 @@ Create a **minimal day-zero governance scaffold** in the current empty project.
 
 Use this command only for a new project with no implementation. Existing codebases use `/governance`, which discovers real structure before adding or updating governance artifacts. Progressive adoption is defined by `living-docs-governance`.
 
+Before any write, inspect the current directory, including hidden files and Git state. If it contains implementation, unexplained files, or an existing governance source of truth, stop and route to `/governance`. Show the exact files and planned Git operations, then require explicit user confirmation before creating files, installing a hook, initializing Git, staging, or committing.
+
 Treat `$ARGUMENTS` as project name, technology stack, and confirmed modules. Ask for missing information one item at a time; never guess the stack.
-
-## Preflight
-
-Before creating a file, running `git init`, staging, or committing, inspect tracked and untracked contents. Stop when implementation files or an existing repository are present; `/governance-init` must not mutate an existing project. For a truly empty project, validate the project name, stack, and confirmed modules, then obtain explicit confirmation immediately before the first write and again before Git initialization and the initial commit.
 
 ## Create
 
@@ -42,7 +40,7 @@ Use the format in `PROJECT_LOG.example.md`, but keep only one new event:
 ## [YYYY-MM-DD] init | Initialized the project with /governance-init
 ```
 
-Replace `YYYY-MM-DD` with the actual run date in ISO format; do not copy example history entries.
+Replace `YYYY-MM-DD` with the actual current ISO date. Do not copy example history entries.
 
 ### 5. Only Immediately Used Directories
 
@@ -54,7 +52,7 @@ Ask before installing `skills/docs-governance/templates/pre-commit.example` into
 
 ### 7. Local Git Initialization
 
-Run `git init`, stage only the explicitly generated files, and create `git commit -m "init: project governance scaffold"`. Do not push.
+After the user confirms the displayed plan, run `git init` only when no repository exists, stage only the explicitly generated files, and create `git commit -m "init: project governance scaffold"`. Do not push.
 
 ## Deliberately Omitted
 

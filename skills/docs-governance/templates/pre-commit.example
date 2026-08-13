@@ -12,8 +12,9 @@ MAP="$ROOT/.governance/docs-map.json"
 LOG_PATH="PROJECT_LOG.md"
 
 if [ -f "$MAP" ]; then
-  if ! MAPPED=$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("history", ""); print(value if isinstance(value, str) else "")' "$MAP" 2>/dev/null); then
-    echo "docs-governance: cannot read $MAP" >&2
+  if ! MAPPED=$(python3 -c 'import json,pathlib,sys; root=pathlib.Path(sys.argv[2]).resolve(); value=json.load(open(sys.argv[1], encoding="utf-8")).get("history", "PROJECT_LOG.md"); assert isinstance(value, str) and value.strip(), "history must be a non-empty path"; path=pathlib.Path(value); assert not path.is_absolute(), "history must be relative"; resolved=(root/path).resolve(); assert resolved == root or root in resolved.parents, "history escapes project root"; print(path.as_posix())' "$MAP" "$ROOT")
+  then
+    echo "docs-governance: invalid .governance/docs-map.json; refusing to bypass history enforcement" >&2
     exit 1
   fi
   [ -n "$MAPPED" ] && LOG_PATH="$MAPPED"
@@ -27,9 +28,13 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # A staged history update satisfies the invariant only when it adds an event.
 if printf '%s\n' "$STAGED" | grep -Fxq "$LOG_PATH"; then
-  git diff --cached --unified=0 -- "$LOG_PATH" |
-    grep -Eq '^\+## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' &&
+  PREVIOUS_COUNT=$(git show "HEAD:./$LOG_PATH" 2>/dev/null | grep -Ec '^## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' || true)
+  STAGED_COUNT=$(git show ":./$LOG_PATH" 2>/dev/null | grep -Ec '^## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' || true)
+  if [ "$STAGED_COUNT" -gt "$PREVIOUS_COUNT" ]; then
     exit 0
+  fi
+  echo "docs-governance: $LOG_PATH is staged but contains no new history event" >&2
+  exit 1
 fi
 
 # Treat everything outside these documentation/test/governance surfaces as code.

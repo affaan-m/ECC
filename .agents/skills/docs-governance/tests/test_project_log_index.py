@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -97,14 +98,59 @@ class ProjectLogIndexTest(unittest.TestCase):
         self.assertEqual(log.read_text(encoding="utf-8"), before)
         self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
 
-    def test_archive_preserves_duplicate_events_in_the_archive(self):
-        event = "## [2026-01-01] fix | duplicate\n"
-        (self.project / "PROJECT_LOG.md").write_text("# LOG\n\n" + event + event, encoding="utf-8")
+    def test_archive_preserves_existing_file_permissions(self):
+        log = self.project / "PROJECT_LOG.md"
         archive = self.project / "PROJECT_LOG.archive.md"
-        archive.write_text("# ARCHIVE\n\n" + event, encoding="utf-8")
-        result = self.run_script("archive", "--threshold", "1", "--keep", "1", "--yes")
+        log.write_text(render_log(201), encoding="utf-8")
+        archive.write_text("# Archive\n", encoding="utf-8")
+        os.chmod(log, 0o640)
+        os.chmod(archive, 0o644)
+
+        result = self.run_script("archive", "--keep", "100", "--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(archive.read_text(encoding="utf-8").count("## [2026-01-01] fix | duplicate"), 2)
+        self.assertEqual(log.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(archive.stat().st_mode & 0o777, 0o644)
+
+    def test_archive_preserves_duplicate_events_in_markdown(self):
+        duplicate = "## [2026-01-01] fix | repeated evidence\n"
+        unique = [
+            f"## [2026-02-{(index % 28) + 1:02d}] fix | unique {index:03d}\n"
+            for index in range(200)
+        ]
+        log = self.project / "PROJECT_LOG.md"
+        log.write_text("# LOG\n\n" + duplicate + duplicate + "".join(unique), encoding="utf-8")
+
+        result = self.run_script("archive", "--keep", "100", "--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        archive_text = (self.project / "PROJECT_LOG.archive.md").read_text(encoding="utf-8")
+        self.assertEqual(archive_text.count("repeated evidence"), 2)
+
+    def test_role_map_rejects_relative_history_path_outside_project(self):
+        (self.project / "PROJECT_LOG.md").write_text(render_log(1), encoding="utf-8")
+        outside = self.project.parent / f"{self.project.name}-outside.md"
+        governance = self.project / ".governance"
+        governance.mkdir()
+        (governance / "docs-map.json").write_text(
+            json.dumps({"history": f"../{outside.name}"}), encoding="utf-8"
+        )
+        result = self.run_script("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must stay inside the project root", result.stderr)
+        self.assertFalse(outside.exists())
+
+    def test_role_map_rejects_absolute_history_path_outside_project(self):
+        (self.project / "PROJECT_LOG.md").write_text(render_log(1), encoding="utf-8")
+        outside = self.project.parent / f"{self.project.name}-absolute-outside.md"
+        governance = self.project / ".governance"
+        governance.mkdir()
+        (governance / "docs-map.json").write_text(
+            json.dumps({"history": str(outside)}), encoding="utf-8"
+        )
+
+        result = self.run_script("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must stay inside the project root", result.stderr)
+        self.assertFalse(outside.exists())
 
     def test_role_map_controls_history_status_rebuild_and_archive(self):
         docs = self.project / "docs"
@@ -141,15 +187,6 @@ class ProjectLogIndexTest(unittest.TestCase):
             self.assertEqual(sources, {"docs/history.md", "docs/history-archive.md"})
         finally:
             connection.close()
-
-    def test_role_map_rejects_paths_outside_project(self):
-        governance = self.project / ".governance"
-        governance.mkdir()
-        for value in ("../outside.md", str(self.project.parent / "outside.md")):
-            (governance / "docs-map.json").write_text(json.dumps({"history": value}), encoding="utf-8")
-            result = self.run_script("status")
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("must stay inside the project root", result.stderr)
 
 
 if __name__ == "__main__":

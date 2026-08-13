@@ -364,9 +364,7 @@
       "type": "review",
       "primaryAgents": [],
       "allAgents": [],
-      "skills": [
-        "docs-governance"
-      ],
+      "skills": [],
       "path": "commands/governance.md"
     },
     {
@@ -1151,7 +1149,7 @@
       },
       {
         "skill": "docs-governance",
-        "count": 5
+        "count": 4
       },
       {
         "skill": "orch-add-feature",

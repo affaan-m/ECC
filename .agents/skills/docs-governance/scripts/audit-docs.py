@@ -26,8 +26,6 @@ DEFAULT_ROLES = {
     "regression": "REGRESSION.md",
     "adr_dir": "docs/adr",
     "adr_index": "docs/adr/README.md",
-    "impact": "docs/impacts",
-    "review": "docs/reviews",
 }
 ENTRY_RE = re.compile(
     r"^## \[(?P<date>\d{4}-\d{2}-\d{2})\]\s+(?P<type>[^|\n]+?)\s*\|\s*(?P<summary>[^\n]+)$",
@@ -291,7 +289,7 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         adr_files = sorted(path for path in adr_dir.glob("*.md") if ADR_FILE_RE.match(path.name))
     missing_from_index = [path.name for path in adr_files if path.name not in index_text]
     for name in missing_from_index:
-        report.fail(f"ADR is missing from the canonical index: {adr_dir.relative_to(root) / name}")
+        report.fail(f"ADR is missing from the canonical index: {(adr_dir / name).relative_to(root)}")
 
     if custom_layout:
         if not missing_from_index:

@@ -9,7 +9,7 @@
 ## Module 01 — Data Ingestion
 
 - Downstream consumers: `02-cleaning`, `03-shop-mapping`
-- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Dependency evidence: `MISSING` — replace after verification
 - Regression acceptance command: `MISSING` — replace after verification
 - Propagation rule: output column/format changes require 02 and 03; internal logging-only changes may exempt downstream when this module is green
 - Last green commit: `<commit>`
@@ -17,7 +17,7 @@
 ## Module 02 — Cleaning
 
 - Downstream consumers: `05-aggregation`
-- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Dependency evidence: `MISSING` — replace after verification
 - Regression acceptance command: `MISSING` — replace after verification
 - Propagation rule: external behavior changes require 05
 - Related test points: `TEST-ORDER-001`, `TEST-AMOUNT-002`
@@ -26,7 +26,7 @@
 ## Module 04 — Temporary Utility
 
 - Downstream consumers: none
-- Dependency evidence: `<repository dependency graph or reproducible scan command>`
+- Dependency evidence: `MISSING` — replace after verification
 - Regression acceptance command: `MISSING` — add the minimum executable check
 - Propagation rule: none
 - Related test points: `MISSING` — inventory in the test registry

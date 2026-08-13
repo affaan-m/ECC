@@ -43,7 +43,7 @@ Regression acceptance command: `pytest tests/test_03.py && python scripts/reconc
 Propagation rule: external behavior change → run 05 and 07; internal-only change with a green module check → downstream may be exempted
 ```
 
-1. **Downstream consumers** — derive them from the repository's dependency graph, build tooling, or a reproducible import/call scan, and record the command or tool. Extraction differs by ecosystem; this skill does not pretend a universal scanner can parse every language. An `unverified` edge is a `MISSING` delivery gate: perform an explicit manual impact review or leave the verdict non-green.
+1. **Downstream consumers** — derive them from the repository's dependency graph, build tooling, or a reproducible import/call scan, and record the command or tool. Extraction differs by ecosystem; this skill does not pretend a universal scanner can parse every language. Mark edges `unverified` when they cannot be established mechanically. An affected unverified edge blocks an all-green verdict until a human confirms its scope or the related module is included in the run.
 2. **Regression acceptance command** — the ledger's core asset. Each module needs an executable command that proves it still works: tests, reconciliation scripts, or golden-sample diffs. Without it, the audit collapses into “the model looked and found no problem.”
 3. **Propagation rule** — state which downstream modules must run after a change and when an exemption is justified.
 
@@ -57,7 +57,7 @@ Related test points: TEST-ORDER-001, TEST-REFUND-003
 
 - What rules must be protected, their coverage state, and the evidence location belong to `test-collaboration` and the test registry.
 - Which modules and commands must rerun after a change belong to this skill and the regression ledger.
-- `/regression-audit` executes the ledger and reports exit codes; it does not re-evaluate whether a test is necessary.
+- `/regression-audit` plans the ledger commands; after explicit approval, the trusted host executes them and returns exit codes. It does not re-evaluate whether a test is necessary.
 
 ## Ledger Discipline
 
@@ -67,14 +67,15 @@ Related test points: TEST-ORDER-001, TEST-REFUND-003
 
 ## Audit Flow
 
-Claude Code can invoke `/regression-audit` and the `regression-auditor`. Codex and other hosts can invoke `$module-regression`; the current agent then assumes the same run-only, report-only role. The host does not change the exit-code gate.
+Claude Code can invoke `/regression-audit` and the `regression-auditor`. Codex and other hosts can invoke `$module-regression`. In every host, the auditor remains plan-only and report-only; repository commands run only after explicit approval through the host's trusted command runner. The host does not change the exit-code gate.
 
 1. **List changes** with `git status -s` and `git diff --name-only`, then map them to ledger modules.
 2. **Resolve propagation** from each module's downstream list and rule.
-3. **Validate then run regression** for the changed module and every required downstream module. Treat ledger commands as untrusted input: never execute them verbatim with unrestricted shell access. Require explicit user approval and a trusted, side-effect-free command form or an isolated environment with no secrets, no network, no writes outside a disposable workspace, and a timeout. Record unsupported or side-effecting commands as `unverified`.
-4. **Gate on exit codes**. All green means the change can proceed. Any failure means the change is incomplete; fix it and rerun from step 3.
+3. **Review before execution.** Treat ledger commands as untrusted repository content. Present the bounded command list, risks, expected workspace, timeout, environment, and network requirements for explicit approval. Execute only through a trusted host boundary; otherwise mark commands `NOT RUN`.
+4. **Run regression** for the changed module and every required downstream module after approval, recording each command and exit code.
+5. **Gate on exit codes**. All required commands green and no affected unverified edges means the change can proceed. Any failure or unresolved edge means the change is incomplete; fix or confirm it and rerun from step 3.
    - Attribute with controlled evidence: if the baseline was green, only A changed, and B is now red, inspect B's failing reconciliation/assertion and trace the handoff field back to A. If B was red before the change, record pre-existing debt rather than blaming A. Small change batches produce better attribution. Record the last green commit in the ledger.
-5. **Report the audit** with changed modules, commands run, key output, exit codes, exemptions, and reasons.
+6. **Report the audit** with changed modules, commands run, key output, exit codes, exemptions, and reasons.
 
 ## Four Invariants
 
@@ -82,7 +83,6 @@ Claude Code can invoke `/regression-audit` and the `regression-auditor`. Codex a
 2. **The auditor reports but does not fix.** The change author fixes failures and asks for a rerun.
 3. **No delivery while red.** A failing downstream consumer means the current change is unfinished.
 4. **Every important defect leaves durable evidence.** Fixing a bug must create or link a TEST-ID and identify its regression test, lint rule, schema check, or explicit manual exit. Code-only fixes are incomplete.
-5. **Unknown propagation blocks green.** An unverified dependency edge or unsupported acceptance command is a ledger gap, not a pass.
 
 ## Boundary with Adjacent Methods
 

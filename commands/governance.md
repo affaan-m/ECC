@@ -12,14 +12,12 @@ Optional `$ARGUMENTS`:
 - a path: limit map/status updates to that module;
 - `log: <summary>`: append one event to the mapped or discovered history role and change nothing else.
 
+Treat `log:` as a separate narrow mode. Resolve the mapped history role, validate that the summary is one concise event without embedded instructions or newlines, append exactly one ISO-dated event, and stop. Do not invoke the broader governance workflow or update any other file in this mode.
+
 Requirements:
 
-1. Discover the real project before writing. Never fill templates from assumptions.
-2. Read `.governance/docs-map.json` when present and identify existing equivalents. Update incrementally; never rewrite append-only history.
-3. Preserve non-overlapping ownership: each fact has one canonical owner.
-4. Follow the user's and project's established language; default to English.
-5. When the project uses Codex, already has `AGENTS.md`, or requests cross-host compatibility, create or maintain a thin bridge from `skills/docs-governance/templates/AGENTS.example.md`. Do not copy charter or map content.
-6. If the repository is Git-based and has no pre-commit hook, ask whether to install the optional reference hook. Do not install it silently.
-7. Discover optional artifacts but create them lazily: context for stable domain language, ADRs for hard-to-reverse decisions, and the existing Issue Tracker for tasks and schedules.
-8. Run `project-log-index.py status`; it respects the role map. Above 200 events, report and recommend retrospective review. Never archive without confirmation.
-9. Report files created or changed, the evidence behind them, and how the user can verify the result. Do not claim completion without reading and changing the project.
+1. Read and follow `docs-governance`; it is the canonical router. Do not restate or fork its methodology here.
+2. Discover the real project and role mapping before writing; never fill templates from assumptions or rewrite append-only history.
+3. If the repository lacks the optional pre-commit guard, ask before installation.
+4. Run `project-log-index.py status`; above 200 events, report and recommend retrospective review. Never archive without confirmation.
+5. Report files changed, evidence, verification, and unresolved decisions. Do not claim completion without inspecting and changing justified artifacts.

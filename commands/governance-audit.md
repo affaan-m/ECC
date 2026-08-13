@@ -1,13 +1,13 @@
 ---
 description: Read-only audit of documentation governance and artifact-link integrity. Run deterministic checks first; only after they pass, judge semantic ownership and evidence drift. Never modify files.
-argument-hint: "[spine|context|adr|artifacts|full; default: full]"
+argument-hint: "[scope: spine|context|adr|artifacts|full] [focus: optional semantic target]"
 ---
 
 Perform a **read-only documentation governance audit** of the current working directory. Always start with the cheapest decision layer and short-circuit on failure.
 
 ## Step 1 — Deterministic Checks
 
-First parse the input: no argument means scope `full`; one of `spine`, `context`, `adr`, `artifacts`, or `full` selects that deterministic scope; `contract` or a repository-relative path is a semantic focus and still runs deterministic scope `full`. Reject any other value before running a command. Then run only the validated scope:
+Parse `$ARGUMENTS` before running anything. The deterministic `scope` must be exactly one of `spine`, `context`, `adr`, `artifacts`, or `full`; default to `full`. Keep any `focus` text for Step 2 only—never pass free-form text to the script.
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/audit-cheap.sh" "<validated-scope>"
@@ -24,11 +24,11 @@ Scopes: `spine`, `context`, `adr`, `artifacts`, or `full`. Checks include broken
 
 Invoke **docs-auditor** only for questions the deterministic script cannot settle: CONTEXT boundaries and terminology conflicts, conflicting ADRs, archived material treated as current truth, Spec/Issue/code/TEST-ID/review traceability, evidence behind STATUS metrics, overloaded spine documents, and duplicated sources of truth.
 
-Optional `$ARGUMENTS`:
+Optional semantic focus:
 
 - no argument: `full`;
 - a scope: review only that scope;
-- a path or `contract`: run deterministic scope `full`, then emphasize that object in the semantic review without changing the read-only boundary.
+- `focus: <path or topic>`: emphasize that object without changing the read-only boundary.
 
 Requirements:
 

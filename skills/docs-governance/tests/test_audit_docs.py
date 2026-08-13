@@ -32,24 +32,24 @@ class AuditDocsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Broken Markdown link", result.stdout)
 
-    def test_artifact_scope_resolves_root_relative_markdown_links_inside_project(self):
+    def test_artifact_scope_resolves_root_relative_links_inside_project(self):
         docs = self.project / "docs"
         docs.mkdir()
-        (self.project / "README.md").write_text("[guide](/docs/guide.md)\n", encoding="utf-8")
-        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        (docs / "guide.md").write_text("[status](/PROJECT_STATUS.md)\n", encoding="utf-8")
+        (self.project / "PROJECT_STATUS.md").write_text("# Status\n", encoding="utf-8")
         result = self.run_audit("artifacts")
         self.assertEqual(result.returncode, 0, result.stdout)
 
-    def test_artifact_scope_rejects_markdown_path_that_escapes_project(self):
-        outside = self.project.parent / f"{self.project.name}-outside.md"
-        outside.write_text("outside\n", encoding="utf-8")
+    def test_artifact_scope_rejects_links_that_escape_project(self):
+        outside = self.project.parent / "outside.md"
+        outside.write_text("# Outside\n", encoding="utf-8")
         try:
-            (self.project / "README.md").write_text("[outside](../" + outside.name + ")\n", encoding="utf-8")
+            (self.project / "guide.md").write_text("[outside](../outside.md)\n", encoding="utf-8")
             result = self.run_audit("artifacts")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Broken Markdown link", result.stdout)
         finally:
             outside.unlink(missing_ok=True)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Broken Markdown link", result.stdout)
 
     def test_adr_scope_requires_every_file_in_index(self):
         adr_dir = self.project / "docs" / "adr"
@@ -144,11 +144,11 @@ class AuditDocsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("Active and archived history remain append-only when combined", result.stdout)
 
-    def test_log_rejects_removing_one_of_duplicate_events(self):
+    def test_log_duplicate_removal_is_detected(self):
         subprocess.run(["git", "init"], cwd=self.project, capture_output=True, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=self.project, check=True)
-        event = "## [2026-01-01] fix | duplicate\n"
+        event = "## [2026-01-01] fix | same event\n"
         (self.project / "PROJECT_LOG.md").write_text("# LOG\n\n" + event + event, encoding="utf-8")
         subprocess.run(["git", "add", "PROJECT_LOG.md"], cwd=self.project, check=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=self.project, capture_output=True, check=True)

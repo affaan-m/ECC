@@ -1,11 +1,11 @@
 ---
 description: Review append-only project history to find modules and defect classes that recur, detect standard drift, and propose repeated failures for deterministic tests, lint, or schema checks.
-argument-hint: "[optional start date YYYY-MM-DD; default: all history]"
+argument-hint: "[no arguments; reviews all active and archived history]"
 ---
 
 Perform a **read-only retrospective** over the mapped or discovered history artifact.
 
-Optional `$ARGUMENTS`: a start date such as `2026-05-01`. With no argument, inspect all active and archived history.
+This command inspects all active and archived history. Reject arguments rather than silently ignoring a requested cutoff.
 
 1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/skills/docs-governance/scripts/project-log-index.py" status --root "${CLAUDE_PROJECT_DIR:-$PWD}"`. Count events by `## [date] type | summary`, not physical lines.
 2. Read `history` and `history_archive` from `.governance/docs-map.json`; otherwise use the default history names. The SQLite index may accelerate queries, but every conclusion must trace back to Markdown. Stop if no history exists.

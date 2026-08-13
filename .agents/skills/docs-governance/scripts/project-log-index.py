@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import tempfile
 from dataclasses import dataclass
 
@@ -194,14 +195,14 @@ def build_database(path: Path, entries: list[Entry]) -> None:
 
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    previous_mode = path.stat().st_mode & 0o777 if path.exists() else None
+    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     handle, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(temp_name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             stream.write(content)
-        if previous_mode is not None:
-            os.chmod(temp_path, previous_mode)
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
         os.replace(temp_path, path)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -224,10 +225,10 @@ def command_rebuild(database: Path, archive: list[Entry], active: list[Entry]) -
 
 
 def command_archive(
+    root: Path,
     log_path: Path,
     archive_path: Path,
     database: Path,
-    root: Path,
     preamble: str,
     active: list[Entry],
     archive_preamble: str,
@@ -299,10 +300,10 @@ def main() -> int:
         command_rebuild(database, archived, active)
     else:
         command_archive(
+            root,
             log_path,
             archive_path,
             database,
-            root,
             preamble,
             active,
             archive_preamble,
