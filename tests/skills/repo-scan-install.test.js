@@ -41,4 +41,5 @@ for (const block of blocks.slice(1)) {
   assert.strictEqual(block, blocks[0], 'translated installation commands must stay synchronized');
 }
 
-console.log(`  PASS ${skillFiles.length} installation blocks use the verified pinned flow`);
+console.log(`  Passed: ${skillFiles.length}`);
+console.log('  Failed: 0');
