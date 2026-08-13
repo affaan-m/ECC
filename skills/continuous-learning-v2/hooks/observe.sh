@@ -108,7 +108,7 @@ import json, sys
 try:
     data = json.load(sys.stdin)
     cwd = data.get("cwd", "")
-    print(cwd)
+    print(cwd if isinstance(cwd, str) else "")
 except(KeyError, TypeError, ValueError):
     print("")
 ' 2>/dev/null || echo "")
@@ -353,6 +353,7 @@ def scrub(val):
         return None
     return _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
 
+raw_cwd = parsed.get("cwd")
 observation = {
     "timestamp": os.environ["TIMESTAMP"],
     "event": parsed["event"],
@@ -360,7 +361,7 @@ observation = {
     "session": parsed["session"],
     "project_id": os.environ.get("PROJECT_ID_ENV", "global"),
     "project_name": os.environ.get("PROJECT_NAME_ENV", "global"),
-    "cwd": scrub(parsed.get("cwd", "")),
+    "cwd": scrub(raw_cwd if isinstance(raw_cwd, str) else ""),
     **({"input": scrub(parsed["input"])} if parsed["input"] else {}),
     **({"output": scrub(parsed["output"])} if parsed["output"] is not None else {})
 }

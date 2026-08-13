@@ -26,7 +26,7 @@ assert.ok(
   'project observations must not inspect or signal an unrelated global observer PID'
 );
 assert.ok(
-  observe.includes('"cwd": scrub(parsed.get("cwd", ""))'),
+  observe.includes('"cwd": scrub(raw_cwd if isinstance(raw_cwd, str) else "")'),
   'every stored observation must retain a scrubbed cwd diagnostic'
 );
 assert.ok(

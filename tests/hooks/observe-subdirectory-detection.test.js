@@ -251,6 +251,29 @@ test('missing cwd does not inherit the hook process git repository', () => {
   }
 });
 
+test('null cwd is normalized and does not inherit the hook process git repository', () => {
+  const testRoot = createTempDir();
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    fs.mkdirSync(homeDir, { recursive: true });
+
+    const result = runObserve({ homeDir, cwd: null });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+    const observation = JSON.parse(
+      fs.readFileSync(path.join(homunculusDir, 'observations.jsonl'), 'utf8').trim()
+    );
+    assert.strictEqual(observation.project_id, 'global');
+    assert.strictEqual(observation.cwd, '');
+    assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects.json')));
+    assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects')));
+  } finally {
+    cleanupDir(testRoot);
+  }
+});
+
 test('missing cwd uses a valid explicit CLAUDE_PROJECT_DIR', () => {
   const testRoot = createTempDir();
 
