@@ -22,6 +22,37 @@ function test(name, fn) {
   }
 }
 
+function testDiagnosticTruncationBoundaries() {
+  return test('dry-run preview preserves Unicode and escape-token truncation boundaries', () => {
+    const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
+    const emojiBoundary = `${'x'.repeat(63)}😀`;
+    const escapeBoundary = `${'y'.repeat(62)}\0`;
+
+    for (const [tool, expected] of [
+      [emojiBoundary, `tool=${'x'.repeat(63)}...`],
+      [escapeBoundary, `tool=${'y'.repeat(62)}...`],
+    ]) {
+      const input = JSON.stringify({ tool, tool_input: {} });
+      const result = spawnSync(process.execPath, [
+        runWithFlags,
+        'pre:test',
+        'scripts/hooks/doc-file-warning.js',
+        'standard',
+      ], {
+        input,
+        encoding: 'utf8',
+        env: { ...process.env, ECC_DRY_RUN: '1' },
+        cwd: path.resolve(__dirname, '..', '..'),
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(result.stderr.includes(expected), result.stderr);
+      assert.ok(!result.stderr.includes('\uFFFD'), 'Preview must not contain a replacement character');
+      assert.ok(!result.stderr.includes('\\x...'), 'Preview must not contain a partial escape token');
+    }
+  });
+}
+
 function runTests() {
   console.log('\n=== Testing dry-run mode ===\n');
 
@@ -198,34 +229,7 @@ function runTests() {
     assert.strictEqual(result.stderr.trim().split('\n').length, 1, 'Preview must remain one line');
   })) passed++; else failed++;
 
-  if (test('dry-run preview preserves Unicode and escape-token truncation boundaries', () => {
-    const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
-    const emojiBoundary = `${'x'.repeat(63)}😀`;
-    const escapeBoundary = `${'y'.repeat(62)}\0`;
-
-    for (const [tool, expected] of [
-      [emojiBoundary, `tool=${'x'.repeat(63)}...`],
-      [escapeBoundary, `tool=${'y'.repeat(62)}...`],
-    ]) {
-      const input = JSON.stringify({ tool, tool_input: {} });
-      const result = spawnSync(process.execPath, [
-        runWithFlags,
-        'pre:test',
-        'scripts/hooks/doc-file-warning.js',
-        'standard',
-      ], {
-        input,
-        encoding: 'utf8',
-        env: { ...process.env, ECC_DRY_RUN: '1' },
-        cwd: path.resolve(__dirname, '..', '..'),
-      });
-
-      assert.strictEqual(result.status, 0, result.stderr);
-      assert.ok(result.stderr.includes(expected), result.stderr);
-      assert.ok(!result.stderr.includes('\uFFFD'), 'Preview must not contain a replacement character');
-      assert.ok(!result.stderr.includes('\\x...'), 'Preview must not contain a partial escape token');
-    }
-  })) passed++; else failed++;
+  if (testDiagnosticTruncationBoundaries()) passed++; else failed++;
 
   if (test('dry-run preview handles non-JSON stdin gracefully', () => {
     const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
@@ -358,6 +362,8 @@ function runTests() {
   })) passed++; else failed++;
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
+  console.log(`Passed: ${passed}`);
+  console.log(`Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
 
