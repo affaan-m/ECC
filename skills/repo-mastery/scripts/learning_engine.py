@@ -13,7 +13,8 @@ Subcommands:
     compute-mastery <correctness.json>          recency-weighted accuracy + confidence cap
     schedule <type> <is_correct> [state.json]   spaced-repetition state transition
     record-attempt <progress.json> <opts...>    record a quiz/hands-on attempt
-    next-objective <progress.json>              what the tutor should do next
+    next-objective <progress.json> [--mode auto|review]   what the tutor should do next
+    set-phase <progress.json> <phase> [--module <id>]     advance the learning flow phase
     validate-map <course-map.json>              check a course map's schema
     init <repo_path> [--force]                  create .learning/ scaffolding + .gitignore
 
@@ -64,6 +65,12 @@ TYPE_PRIORITY: dict[str, int] = {
 VALID_TYPES: frozenset[str] = frozenset(
     {"memory", "concept", "procedure", "design"}
 )
+
+# Textbook-mode chapter lifecycle statuses (module-level gate flow).
+CHAPTER_STATUSES: tuple[str, ...] = ("teaching", "qna", "verifying")
+
+# progress.json key that lists modules whose chapter gate has passed.
+COVERED_KEY: str = "chapter_covered_modules"
 
 
 # --- core pure functions ---
@@ -130,7 +137,13 @@ def schedule_next(
 
 
 def is_mastered(progress: dict, kp_id: str, kp_type: str) -> bool:
-    """Whether a knowledge point clears its gate (quantitative or qualitative)."""
+    """Whether a knowledge point clears its gate (quantitative or qualitative).
+
+    `memory` points are demoted to reference notes (cheatsheet) and never gate
+    advancement — they count as covered so `next_objective` skips them.
+    """
+    if kp_type == "memory":
+        return True
     if kp_type in QUALITATIVE_TYPES:
         return bool(progress.get("qualitative_mastery", {}).get(kp_id, False))
     return progress.get("mastery_levels", {}).get(kp_id, 0.0) >= QUANTITATIVE_GATE
@@ -146,12 +159,29 @@ def objective_status(progress: dict, kp_id: str, kp_type: str) -> str:
     return "learning" if seen else "new"
 
 
-def next_objective(progress: dict, *, now: int | None = None) -> dict:
+def next_objective(progress: dict, *, now: int | None = None,
+                   mode: str = "auto") -> dict:
     """Decide the next thing to work on. The gate IS the cursor:
     advancement is computed from what is mastered, never a stage counter.
 
-    Precedence: 1) pending question  2) due spaced review  3) first
-    unmastered point (probe / practice / assess)  4) complete.
+    The learning flow has phases — "overview" → "module_overview" →
+    "learning" — tracked in `progress["flow_phase"]` (missing = "learning",
+    backward compatible). The whole picture comes before the nodes, and this is
+    enforced by the engine, not left to the tutor's discretion: while the flow
+    is still in an overview phase, `next_objective` REFUSES to hand out a
+    knowledge point.
+
+    Precedence (auto mode):
+      1) pending question
+      2) flow_phase gate  — overview / module_overview must finish first
+      3) due spaced review
+      4) first unmastered point (probe / practice / assess)
+      5) complete
+
+    `mode="review"` is the focused `/repo-mastery review` path: it bypasses the
+    flow_phase gate and unmastered-point steps, returning only pending →
+    due review → complete. Scattered-time review is never blocked by an
+    unfinished overview.
     """
     now = int(time.time()) if now is None else now
     kps = _all_knowledge_points(progress)
@@ -168,7 +198,50 @@ def next_objective(progress: dict, *, now: int | None = None) -> dict:
             "reason": "A posed question awaits the learner's answer.",
         }
 
-    # 2) due spaced-repetition reviews. Equal-priority reviews interleave
+    # 2) flow_phase gate: the whole picture comes before the nodes. The tutor
+    #    must present the overview first (then advance it via `set-phase`);
+    #    until then no knowledge point is handed out. Review mode bypasses
+    #    this so scattered-time review is never blocked.
+    if mode != "review":
+        flow_phase = progress.get("flow_phase", "learning")
+        if flow_phase == "overview":
+            return {
+                "action": "overview",
+                "reason": "The global overview (architecture narrative + module map) "
+                          "must be presented before any node. Run `set-phase "
+                          "module_overview` once done.",
+            }
+        if flow_phase == "module_overview":
+            return {
+                "action": "module_overview",
+                "module_id": progress.get("current_module_id"),
+                "reason": "This module's overview (knowledge-point map + cheatsheet) "
+                          "must be presented before its nodes. Run `set-phase "
+                          "learning` once done.",
+            }
+        # 2b) chapter gate: an in-progress textbook-mode chapter keeps teaching
+        #     its sections before any new point is handed out — chapter learning
+        #     is a continuous run, so a resume continues the chapter, not a node.
+        #     `mode="review"` bypasses this too (scattered-time review drains due
+        #     reviews even mid-chapter). The tutor resumes from chapters/<m>.md.
+        chapter = progress.get("chapter")
+        if chapter:
+            module = _find_module(progress.get("modules", []), chapter.get("module_id"))
+            due_count = sum(1 for t in progress.get("review_queue", [])
+                            if t.get("due_at", 0) <= now)
+            return {
+                "action": "chapter",
+                "module_id": chapter.get("module_id"),
+                "module_name": module.get("name") if module else "",
+                "chapter_status": chapter.get("status"),
+                "section_index": chapter.get("section_index"),
+                "sections": chapter.get("sections"),
+                "due_review_count": due_count,
+                "reason": "Textbook-mode chapter in progress — continue teaching "
+                          "from chapters/<module>.md.",
+            }
+
+    # 3) due spaced-repetition reviews. Equal-priority reviews interleave
     #    types: a review whose type differs from the last one wins, so
     #    consecutive reviews mix types instead of stacking one type.
     due = [t for t in progress.get("review_queue", []) if t.get("due_at", 0) <= now]
@@ -187,14 +260,34 @@ def next_objective(progress: dict, *, now: int | None = None) -> dict:
             "reason": "This objective is due for spaced-repetition review.",
         }
 
-    # 3) first unmastered point in module order, then knowledge-point order.
+    # Review mode stops here: it never opens new content.
+    if mode == "review":
+        return {
+            "action": "complete",
+            "reason": "Review mode: nothing due for review — suggest `continue` "
+                      "to advance the course.",
+        }
+
+    # 4) first unmastered point in module order, then knowledge-point order.
     error_kps = {
         e.get("knowledge_point_id") for e in progress.get("error_records", [])
         if e.get("status") in ("active", "retrying")
     }
+    # Modules whose chapter gate already passed are covered: their points were
+    # either engine-verified at after-class checking or get validated via
+    # spaced review — never re-offered as fresh nodes. The skip lives here (the
+    # module-iteration layer), NOT in `is_mastered` (which has no module_id).
+    covered = set(progress.get(COVERED_KEY, []))
     for module in sorted(progress.get("modules", []), key=lambda m: m.get("order", 0)):
+        if module.get("id") in covered:
+            continue
         for kp in module.get("knowledge_points", []):
             kp_id, kp_type = kp.get("id"), kp.get("type", "concept")
+            # `memory` points are demoted to reference notes (cheatsheet): they
+            # never gate advancement. New maps shouldn't define them as
+            # knowledge points at all; this skip keeps old maps valid & harmless.
+            if kp_type == "memory":
+                continue
             if is_mastered(progress, kp_id, kp_type):
                 continue
             status = objective_status(progress, kp_id, kp_type)
@@ -222,7 +315,7 @@ def next_objective(progress: dict, *, now: int | None = None) -> dict:
                 ),
             }
 
-    # 4) done.
+    # 5) done.
     return {"action": "complete", "reason": "All objectives mastered and nothing due."}
 
 
@@ -340,6 +433,155 @@ def _find(kps: list[dict], kp_id: str | None) -> dict | None:
     return next((k for k in kps if k.get("id") == kp_id), None)
 
 
+def _find_module(modules: list[dict], module_id: str | None) -> dict | None:
+    return next((m for m in modules if m.get("id") == module_id), None)
+
+
+def _first_review_state(kp_type: str, now: int) -> dict:
+    """A fresh first-review state (interval_index 0 on the type's base interval).
+
+    Used to initialise spaced review for points that were NOT individually
+    verified at after-class checking. It records no answer — mastery is built
+    later by real review attempts (fluency != storage; never fake a 'correct'
+    evidence by calling schedule_next with a fabricated result).
+    """
+    base = INTERVAL_SEQUENCES.get(kp_type, INTERVAL_SEQUENCES["memory"])[0]
+    return {
+        "interval_index": 0,
+        "consecutive_correct": 0,
+        "consecutive_wrong": 0,
+        "difficulty": 0.5,
+        "stability": 1.0,
+        "next_review_at": now + base * 86400,
+    }
+
+
+def chapter_start(progress: dict, *, module_id: str, sections: int) -> dict:
+    """Begin a textbook-mode chapter for a module. Validates preconditions so
+    the state machine never enters a dangling half-state."""
+    if progress.get("flow_phase", "learning") != "learning":
+        raise ValueError("flow_phase must be 'learning' before chapter-start — "
+                         "finish the overviews first (set-phase module_overview, "
+                         "then set-phase learning)")
+    modules = progress.get("modules", [])
+    module = _find_module(modules, module_id)
+    if module is None:
+        raise ValueError(f"unknown module {module_id!r} — check course-map modules")
+    if module_id in progress.get(COVERED_KEY, []):
+        raise ValueError(f"module {module_id!r} is already covered by a completed chapter")
+    if progress.get("pending_question"):
+        raise ValueError("a pending_question exists — grade it before starting a chapter")
+    if sections < 1:
+        raise ValueError("sections must be >= 1")
+
+    progress["chapter"] = {
+        "module_id": module_id,
+        "status": "teaching",
+        "section_index": 0,
+        "sections": sections,
+    }
+    progress["current_module_id"] = module_id
+    return dict(progress["chapter"])
+
+
+def chapter_advance(progress: dict, *, section_index: int | None = None,
+                    status: str | None = None) -> dict:
+    """Advance an in-progress chapter's section index and/or lifecycle status."""
+    chapter = progress.get("chapter")
+    if not chapter:
+        raise ValueError("no active chapter to advance")
+    if status is not None:
+        if status not in CHAPTER_STATUSES:
+            raise ValueError(f"invalid chapter status {status!r} — expected one of "
+                             f"{', '.join(CHAPTER_STATUSES)}")
+        chapter["status"] = status
+    if section_index is not None:
+        chapter["section_index"] = max(0, min(int(section_index), chapter["sections"]))
+    return dict(chapter)
+
+
+def chapter_complete(progress: dict, *, now: int | None = None) -> dict:
+    """Module-level gate for the active chapter.
+
+    The chapter's module counts as *covered* (learned together), but points
+    that were NOT individually verified get an initialised spaced review rather
+    than a fabricated mastery score — real mastery is built by later review
+    attempts. Key nodes verified at after-class checking keep their real engine
+    records (qualitative_mastery / quiz_attempts) untouched.
+    """
+    chapter = progress.get("chapter")
+    if not chapter:
+        raise ValueError("no active chapter to complete")
+    module_id = chapter["module_id"]
+    now = int(time.time()) if now is None else now
+    module = _find_module(progress.get("modules", []), module_id)
+    if module is None:
+        raise ValueError(f"unknown module {module_id!r} — cannot complete its chapter")
+
+    progress.setdefault("mastery_levels", {})
+    progress.setdefault("qualitative_mastery", {})
+    progress.setdefault("knowledge_types", {})
+    progress.setdefault("repetition_states", {})
+    progress.setdefault("review_queue", [])
+    progress.setdefault("error_records", [])
+
+    for kp in module.get("knowledge_points", []):
+        kp_id, kp_type = kp.get("id"), kp.get("type", "concept")
+        if kp_type == "memory":
+            continue
+        # _rebuild_review_queue reads knowledge_types and DROPS points whose
+        # type is missing (treated as `memory`). Without this write the covered
+        # points would never enter the review queue.
+        progress["knowledge_types"][kp_id] = kp_type
+        if kp_type in QUALITATIVE_TYPES:
+            mastered = bool(progress["qualitative_mastery"].get(kp_id, False))
+        else:
+            mastered = progress["mastery_levels"].get(kp_id, 0.0) >= QUANTITATIVE_GATE
+        state = progress["repetition_states"].get(kp_id)
+        if state is None or not mastered:
+            # Unverified (or verification-failed) → start spaced review from a
+            # fresh first-review state. A mastered point keeps its state; a
+            # non-mastered one is reset so a lucky review streak can't inherit a
+            # lengthened interval.
+            progress["repetition_states"][kp_id] = _first_review_state(kp_type, now)
+
+    progress["chapter"] = None
+    covered = progress.setdefault(COVERED_KEY, [])
+    if module_id not in covered:
+        covered.append(module_id)
+    _rebuild_review_queue(progress)
+    return {"module_id": module_id, "covered_modules": list(covered)}
+
+
+def set_qualitative(progress: dict, *, kp_id: str, kp_type: str,
+                    passed: bool) -> dict:
+    """Record a tutor-judged qualitative result (concept/design) and make sure
+    the point is scheduled for spaced review once passed. Without this,
+    qualitative points that pass the Feynman check would never enter the review
+    queue (an existing gap now fixed).
+    """
+    if kp_type not in QUALITATIVE_TYPES:
+        raise ValueError(f"set-qualitative requires a qualitative type "
+                         f"(concept|design), got {kp_type!r}")
+    progress.setdefault("qualitative_mastery", {})
+    progress.setdefault("knowledge_types", {})
+    progress.setdefault("repetition_states", {})
+    progress.setdefault("review_queue", [])
+    progress.setdefault("error_records", [])
+
+    progress["qualitative_mastery"][kp_id] = bool(passed)
+    progress["knowledge_types"][kp_id] = kp_type
+    if passed and kp_id not in progress["repetition_states"]:
+        progress["repetition_states"][kp_id] = _first_review_state(
+            kp_type, int(time.time()))
+    _rebuild_review_queue(progress)
+    return {
+        "kp_id": kp_id,
+        "passed": bool(passed),
+        "is_mastered": is_mastered(progress, kp_id, kp_type),
+    }
+
+
 def _rebuild_review_queue(progress: dict) -> None:
     """Rebuild review_queue from repetition_states + error priority."""
     now = int(time.time())
@@ -350,6 +592,9 @@ def _rebuild_review_queue(progress: dict) -> None:
     queue: list[dict] = []
     for kp_id, state in progress.get("repetition_states", {}).items():
         kp_type = progress.get("knowledge_types", {}).get(kp_id, "memory")
+        # `memory` points are reference notes, not review candidates.
+        if kp_type == "memory":
+            continue
         priority = 1 if kp_id in error_kps else TYPE_PRIORITY.get(kp_type, 5)
         queue.append({
             "id": f"review_{kp_id}",
@@ -397,6 +642,43 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("next-objective", help="what the tutor should do next")
     p.add_argument("progress", help="path to progress.json")
+    p.add_argument("--mode", choices=["auto", "review"], default="auto",
+                   help="auto = full flow (default); review = due reviews only")
+
+    p = sub.add_parser("set-phase", help="advance the learning flow phase")
+    p.add_argument("progress", help="path to progress.json")
+    p.add_argument("phase", choices=["overview", "module_overview", "learning"])
+    p.add_argument("--module", default=None,
+                   help="module id (for the module_overview phase)")
+
+    p = sub.add_parser("chapter-start", help="begin a textbook-mode chapter for a module")
+    p.add_argument("progress", help="path to progress.json")
+    p.add_argument("--module", required=True, help="module id")
+    p.add_argument("--sections", type=int, required=True,
+                   help="number of sections in the chapter")
+
+    p = sub.add_parser("chapter-advance", help="advance an in-progress chapter")
+    p.add_argument("progress", help="path to progress.json")
+    p.add_argument("--section", type=int, default=None,
+                   help="current section index (clamped to [0, sections])")
+    p.add_argument("--status", choices=list(CHAPTER_STATUSES), default=None,
+                   help="chapter lifecycle status: teaching|qna|verifying")
+
+    p = sub.add_parser("chapter-complete",
+                       help="module-level gate: mark the active chapter's module covered")
+    p.add_argument("progress", help="path to progress.json")
+
+    p = sub.add_parser("set-qualitative",
+                       help="record a tutor-judged qualitative result (concept|design)")
+    p.add_argument("progress", help="path to progress.json")
+    p.add_argument("--kp", required=True, help="knowledge point id")
+    p.add_argument("--type", choices=sorted(QUALITATIVE_TYPES), required=True,
+                   help="knowledge point type")
+    qgroup = p.add_mutually_exclusive_group(required=True)
+    qgroup.add_argument("--pass", dest="passed", action="store_true",
+                        help="qualitative judgment passed")
+    qgroup.add_argument("--fail", dest="passed", action="store_false",
+                        help="qualitative judgment failed")
 
     p = sub.add_parser("validate-map", help="check a course map's schema")
     p.add_argument("course_map", help="path to course-map.json")
@@ -427,7 +709,57 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.cmd == "next-objective":
         progress = _load_json(args.progress)
-        print(json.dumps(next_objective(progress)))
+        print(json.dumps(next_objective(progress, mode=args.mode)))
+
+    elif args.cmd == "set-phase":
+        progress = _load_json(args.progress)
+        progress["flow_phase"] = args.phase
+        if args.module:
+            progress["current_module_id"] = args.module
+        _atomic_write(args.progress, progress)
+        print(json.dumps({
+            "flow_phase": args.phase,
+            "current_module_id": progress.get("current_module_id"),
+        }))
+
+    elif args.cmd == "chapter-start":
+        progress = _load_json(args.progress)
+        try:
+            chapter = chapter_start(progress, module_id=args.module,
+                                    sections=args.sections)
+        except ValueError as exc:
+            sys.exit(f"chapter-start: {exc}")
+        _atomic_write(args.progress, progress)
+        print(json.dumps(chapter))
+
+    elif args.cmd == "chapter-advance":
+        progress = _load_json(args.progress)
+        try:
+            chapter = chapter_advance(progress, section_index=args.section,
+                                      status=args.status)
+        except ValueError as exc:
+            sys.exit(f"chapter-advance: {exc}")
+        _atomic_write(args.progress, progress)
+        print(json.dumps(chapter))
+
+    elif args.cmd == "chapter-complete":
+        progress = _load_json(args.progress)
+        try:
+            result = chapter_complete(progress)
+        except ValueError as exc:
+            sys.exit(f"chapter-complete: {exc}")
+        _atomic_write(args.progress, progress)
+        print(json.dumps(result))
+
+    elif args.cmd == "set-qualitative":
+        progress = _load_json(args.progress)
+        try:
+            result = set_qualitative(progress, kp_id=args.kp, kp_type=args.type,
+                                     passed=args.passed)
+        except ValueError as exc:
+            sys.exit(f"set-qualitative: {exc}")
+        _atomic_write(args.progress, progress)
+        print(json.dumps(result))
 
     elif args.cmd == "validate-map":
         problems = validate_map(_load_json(args.course_map))

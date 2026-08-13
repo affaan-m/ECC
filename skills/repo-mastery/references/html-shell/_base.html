@@ -10,6 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
+  <!-- Vendored highlighter first; styles.css links after so its `pre code.hljs`
+       override wins the specificity tie and the warm frame owns padding/scroll. -->
+  <link rel="stylesheet" href="vendor/highlight.min.css">
   <link rel="stylesheet" href="styles.css">
 
   <!-- Per-course accent. Pick one palette; only these four lines change.
@@ -27,6 +30,7 @@
     }
   </style>
 
+  <script src="vendor/highlight.min.js" defer></script>
   <script src="main.js" defer></script>
 </head>
 <body>

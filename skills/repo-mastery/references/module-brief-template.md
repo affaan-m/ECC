@@ -6,6 +6,8 @@
 
 To explain a knowledge point well, you usually need 2–4 key source snippets. Re-reading whole files every turn burns tokens repeatedly. **Pre-extraction** condenses "what this code does" into the brief; the tutor quotes the brief and only Reads source when the brief lacks detail.
 
+> **Feeds the source walk**: the pre-extracted snippets in `briefs/` feed the chapter's source walk — the key fragment (3-15 lines) directly, and the full `<details>` source when the slice is within the brief's 20-line cap. For longer slices the tutor Reads the wider range from the repo (located via `code-map.json`), so the full source is never truncated.
+
 ## When to write a brief
 
 - Large repos (Phase 0 judgment): one brief per module before learning it.
@@ -17,7 +19,7 @@ To explain a knowledge point well, you usually need 2–4 key source snippets. R
 Write to `<repo>/.learning/briefs/<module>.md`:
 
 ```md
-# Module Brief — <module title>（<module_id>）
+# Module Brief — <module title> (<module_id>)
 
 **Evidence locations**
 - Top-level dir / core file: <path>

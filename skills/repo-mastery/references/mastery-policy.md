@@ -20,7 +20,9 @@ Distinguish two kinds of "knowing":
 All mechanisms in this policy fight the fluency illusion:
 
 - Confidence ceiling (one lucky answer ≠ mastery) → prevents fluency masquerading as mastery.
-- Feynman recital (not nodding along) → forces retrieval from storage.
+- Reference-answer restatement in the learner's own words (not nodding along) →
+  forces reconstruction that exposes gaps the given answer can hide; during
+  review it is true retrieval from storage.
 - Spaced review (delayed review) → only what survives forgetting counts as storage.
 
 **ZPD (zone of proximal development)**: what to teach next = challenge "just enough". Its inputs = `records/` (established understanding) + `progress.json` (mastery) + Mission (why the learner is here). Don't re-cover what's mastered; don't leap too far.
@@ -29,12 +31,17 @@ All mechanisms in this policy fight the fluency illusion:
 
 | type | Gate kind | Pass condition |
 |---|---|---|
-| `memory` | quantitative | recency-weighted accuracy ≥ **0.9** |
 | `procedure` | quantitative | recency-weighted accuracy ≥ **0.9** (with the key hands-on task passing as evidence) |
-| `concept` | qualitative | tutor judges the Feynman recital passed (`mastery_assess`) |
-| `design` | qualitative | tutor judges the recital + design-tradeoff follow-ups passed |
+| `concept` | qualitative | tutor judges the reference-answer restatement passed (`mastery_assess`) |
+| `design` | qualitative | tutor judges the restatement + design-tradeoff follow-ups passed |
 
-**Design axiom**: quantitative types (memory/procedure) use exact grading because most have a single correct answer; concept/design use qualitative judgment because "why is it designed this way" has no single canonical answer — this is exactly how DeepTutor splits it.
+> **`memory` has no gate.** It is a reference-notes type (cheatsheet), not a
+> knowledge-point type — see `curriculum-design.md`. The engine still accepts
+> `memory` in old maps for backward compatibility but treats it as already
+> covered (`is_mastered` returns true) and never creates review tasks for it, so
+> it can never block advancement.
+
+**Design axiom**: quantitative types (procedure) use exact grading because most have a single correct answer; concept/design use qualitative judgment because "why is it designed this way" has no single canonical answer — this is exactly how DeepTutor splits it.
 
 ## 2. Quantitative mastery (`compute_mastery`)
 
@@ -104,14 +111,37 @@ first, so consecutive reviews interleave types instead of stacking one type.
 **Advancement is computed from what is already mastered — never from a stage counter.** Priority, high to low:
 
 1. **A pending question** (`pending_question`) → grade it first (`answer_pending`).
-2. **A due review** → review first, so mastered ground doesn't decay (`review`).
-3. **The first unmastered knowledge point** (by module order, then point order):
+2. **The `flow_phase` gate** — the whole picture comes before the nodes. When
+   `flow_phase` is `overview` → `{action: "overview"}`; `module_overview` →
+   `{action: "module_overview", module_id: current_module_id}`. While the gate is
+   open the engine **refuses to hand out knowledge points**. A missing
+   `flow_phase` (old data) is treated as `learning` — the gate is skipped,
+   point-by-point continues (backward compatible).
+3. **The chapter gate** (textbook mode) — an in-progress `chapter` resumes it:
+   `{action: "chapter", module_id, module_name, chapter_status, section_index,
+   sections, due_review_count}`. Chapter learning is a continuous run, so a
+   resume continues the chapter, not a node; `due_review_count` signposts the
+   reviews waiting at the next natural pause.
+4. **A due review** → review first, so mastered ground doesn't decay (`review`).
+5. **The first unmastered knowledge point** (by module order, then point order),
+   **skipping modules in `chapter_covered_modules`** — a module whose chapter
+   gate passed is *covered*: its points were either engine-verified at after-class
+   checking or get validated via spaced review, never re-offered as fresh nodes.
+   The skip lives in the module-iteration layer, NOT in `is_mastered` (which has
+   no `module_id`). Their due reviews still surface (step 4) — covered ≠ forgotten.
+   - **`memory` points are skipped outright** — reference-only, never a next objective (engine-level; old maps stay valid).
    - Never touched → `probe` (test whether it can be skipped — **test-out path**: already-proven points are skipped, not forced through fixed stages).
    - Quantitative type below its gate → `practice` (keep working it until it clears).
    - Qualitative type → `assess` (Feynman check).
-4. **All mastered and nothing due** → `complete`.
+6. **All mastered and nothing due** → `complete`.
 
-`NextStep` actions: `answer_pending / review / probe / practice / assess / complete`.
+`NextStep` actions: `answer_pending / overview / module_overview / chapter / review / probe / practice / assess / complete`.
+
+**`mode: "review"`** (the `/repo-mastery review` command): skips the `flow_phase`
+gate, the **chapter gate**, and the unmastered-point step — pending question →
+due review → complete. So an unfinished overview *or* an in-progress chapter
+never blocks scattered-time review; review drains only what is due (including
+covered modules' points) and says `complete` when nothing is.
 
 ## 5. Error diagnosis and metacognition
 
@@ -128,16 +158,45 @@ Each error record: `error_type` + user's self-attribution + tutor confirmation +
 
 ## 6. Qualitative judgment (`mastery_assess`)
 
-Pass criteria for the Feynman check on concept/design points:
+The user sees the **reference answer first** (see `session-flow.md` §2) — the
+judgment is whether they can *critically engage with and restate* it, not
+verbatim recall. Pass criteria for the Feynman check on concept/design points:
 
-- **concept**: the user can explain in their own words "what + why + relation to adjacent concepts". Can't → not passed → return to explanation, record the error type.
-- **design**: beyond the recital, add design-tradeoff follow-ups — "why not the alternative? in what scenario would it fail? where is the extension point?" Being able to answer the tradeoffs = mastery.
+- **concept**: the user can restate the reference answer in their own words —
+  "what + why + relation to adjacent concepts" — moving beyond its phrasing to
+  their own mental model. Can't → not passed → return to explanation +
+  reference answer, record the error type.
+- **design**: beyond the restatement, add design-tradeoff follow-ups — "why not
+  the alternative? in what scenario would it fail? where is the extension
+  point?" Being able to answer the tradeoffs = mastery; echoing the reference
+  answer without engaging the tradeoffs ≠ mastery.
 
-**Causal questioning** (absorbed from RetainCraft): after the recital, push with
-causal probes to expose whether understanding is causal or merely associative —
+**Causal questioning** (absorbed from RetainCraft): after the restatement, push
+with causal probes to expose whether understanding is causal or merely echoed —
 "why this design instead of X?", "if we swapped Y in, what would break and
 where?", "which single change flips this behavior?" Causal answers count as
 mastery evidence; vague recall does not.
+
+**Vs-peer probing (ecosystem points, `m00`)** — the canonical three questions
+for module 0 / any design point whose reference answer involves a peer
+comparison (single source of truth; `quiz-design.md` and `session-flow.md`
+only cross-reference this). Pick the applicable one(s); the peer facts must be
+in `.learning/positioning.md` (cited `[web]` / `[src]`), never tutor memory:
+
+- **Swap** — "if we swapped this repo for <peer> in the setup your
+  Mission motivates, what breaks, what survives, and where does the migration
+  pain concentrate?" Passing = naming concrete touchpoints from the matrix
+  rows, not a vague "it'd be different".
+- **Decision** — "give me the decision rule: under what conditions
+  is <peer> the right pick, and under what conditions is this repo? Point to
+  the matrix row that makes the call." Passing = a transferable criterion, not
+  a feature list.
+- **Boundary** — "this repo chose X over Y vs <peer>. What scenario
+  makes that choice *fail* — where does X's weakness show?" Passing = naming
+  the failure mode on the other side of the tradeoff, echoing neither side.
+
+An unsourced vs-peer claim is a "facts to verify" search seed, never the reference
+answer behind these probes.
 
 Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows full value once passed, but the judgment itself is a boolean, not a score.
 
@@ -147,6 +206,8 @@ Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows 
 {
   "repo": "owner/name",
   "diagnostic": { "module_mastery": {} },
+  "flow_phase": "learning",             // overview | module_overview | learning (missing → learning)
+  "current_module_id": "m01",           // module whose overview is pending (module_overview phase)
   "modules": [
     { "id": "m01", "name": "Build & environment", "order": 1,
       "pass_threshold": 0.7,
@@ -167,6 +228,9 @@ Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows 
                       "knowledge_type": "procedure", "due_at": 1754571490, "priority": 1 } ],
   "pending_question": { "question_id": "q3", "knowledge_point_id": "kp01-01",
                         "prompt": "...", "question_type": "short", "expected_answer": "..." },
+  "chapter": { "module_id": "m01", "status": "teaching",   // textbook mode: teaching | qna | verifying
+               "section_index": 2, "sections": 5 },       // (absent when no chapter in progress)
+  "chapter_covered_modules": ["m01"],                     // modules whose chapter gate passed
   "last_review_type": "concept",
   "version": 1
 }
@@ -174,9 +238,59 @@ Qualitative results live in `qualitative_mastery: {kp_id: bool}`; the map shows 
 
 Key points:
 
+- `flow_phase` (`overview` → `module_overview` → `learning`) gates
+  `next_objective`: while an overview is unfinished the engine refuses new
+  points. Missing defaults to `learning` (old data continues point-by-point).
+  `current_module_id` records which module's overview is pending. Advance via
+  `set-phase <progress> <phase> [--module <id>]`.
 - `pending_question.expected_answer` **lives server-side (this file)** and never round-trips to the user — grading never drifts (DeepTutor's `PendingQuestion`).
 - All timestamps are Unix seconds.
 - Once the file exists, **write it back atomically** (temp file + rename) at the end of each turn to avoid corruption.
 - `repetition_states[].difficulty` / `stability` are FSRS-inspired personalization
   parameters (default 0.5 / 1.0; missing → treated as defaults for old data).
   `last_review_type` is updated on each attempt and used to interleave review types.
+- `knowledge_types` may still hold `memory` (old maps) but the engine never
+  builds review tasks for it — memory is reference-only (see `curriculum-design.md`).
+
+### Module-level gate (`chapter-complete`) — review-init rules
+
+Textbook mode (the default chapter flow) ends a module with `chapter-complete`,
+the engine's module-level gate. For each **non-`memory`** knowledge point in
+the module:
+
+1. **No `repetition_states`** → initialise a fresh first-review state
+   (written directly, **never via `schedule_next`** — that would fabricate a
+   "answered correctly" record the learner never produced):
+   `{interval_index: 0, consecutive_correct: 0, consecutive_wrong: 0,
+   difficulty: 0.5, stability: 1.0, next_review_at: now + INTERVAL_SEQUENCES[type][0] * 86400}`.
+2. **Has state but not mastered** (procedure: `mastery_levels < 0.9`;
+   concept/design: `qualitative_mastery != true`) → **reset** to the same
+   first-review state, so a lucky review streak can't inherit a lengthened interval.
+3. **Has state and mastered** (key node verified at after-class checking) →
+   **keep** the existing state and real engine records
+   (`qualitative_mastery` / `quiz_attempts`) untouched.
+
+Always write `knowledge_types[kp_id] = kp_type` and rebuild the review queue
+(`_rebuild_review_queue`) — `_rebuild_review_queue` reads `knowledge_types` and
+drops points whose type is missing (treated as `memory`), which would silently
+remove covered points from review. The module is then added to
+`chapter_covered_modules` (dedup) and the `chapter` state cleared.
+
+**Display convention (status / COVERAGE.md)**: a point whose module is in
+`chapter_covered_modules` is shown as **"Covered · awaiting review verification"**, not as
+unmastered — covered means "module studied, true mastery pending spaced
+review", a third state alongside unmastered and mastered (real engine
+records). Never list a covered point under the unmastered column. Display
+labels localize to the teaching language. English canonical: not-yet-learned /
+Covered · awaiting review verification / mastered.
+
+**This gate never fabricates mastery**: unverified points get real spaced
+review and build mastery only from actual correct/incorrect attempts — the
+"fluency ≠ storage" axiom holds (no fake `mastery_levels`, no broken confidence
+ceiling). Key nodes checked after class keep their genuine engine records.
+
+`set-qualitative <progress> --kp <id> --type concept|design --pass|--fail`
+records an after-class qualitative judgment: writes `qualitative_mastery[kp]`,
+and on `--pass` initialises the point's first review (same fresh state above)
+if none exists, then rebuilds the queue — so a passed concept/design point is
+scheduled for spaced review instead of being dropped.

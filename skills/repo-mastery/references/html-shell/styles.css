@@ -312,3 +312,62 @@ code { font-family: var(--font-mono); font-size: .9em; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   .animate-in { opacity: 1; transform: none; }
 }
+
+/* ── code blocks ────────────────────────────────────────── */
+:not(.translation-code) > pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  background: var(--color-bg-warm);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  overflow-x: auto;
+  margin: var(--space-6) 0;
+}
+/* Neutralize the vendored hljs inner frame so the warm `pre` owns the padding,
+   background and horizontal scroll (no white inner block / double scrollbar).
+   styles.css is linked AFTER vendor/highlight.min.css, so this wins the
+   specificity tie on `pre code.hljs`. */
+pre code.hljs { background: transparent; padding: 0; overflow: visible; }
+pre code { font-size: inherit; }
+/* Token colors for highlighted code come from vendor/highlight.min.css
+   (GitHub light theme); this only frames the block and must not override it. */
+
+/* ── collapsible source blocks ──────────────────────────── */
+details {
+  margin: var(--space-6) 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+details summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+details summary::-webkit-details-marker { display: none; }
+details summary:hover { color: var(--color-text); }
+details[open] summary { border-bottom: 1px solid var(--color-border-light); }
+details summary::after {
+  content: "▸";
+  float: right;
+  margin-left: var(--space-3);
+  color: var(--color-accent-muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+details[open] summary::after { transform: rotate(90deg); }
+/* `details` is never .translation-code; the :not() only matches the scoped
+   base `pre` selector's class specificity so this override still wins. */
+details:not(.translation-code) > pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}

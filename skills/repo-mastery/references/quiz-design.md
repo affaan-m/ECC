@@ -11,11 +11,15 @@ The value of a question is: **a wrong answer reveals "can't use / don't understa
 2. **Tracing** — "which modules does this request pass through, from entry to storage?" Tests call-chain understanding.
 3. **Troubleshooting scenarios** — "startup fails with `ImportError: xxx` — most likely cause and first thing to check?"
 4. **Tradeoff/decision questions** — "for task Z, would you pick A or B? Why?" Tests design understanding.
-5. **"What is it / why"** — short definition + one why.
+5. **Ecosystem-pick questions** — "this repo or <peer> for setup Z — which and why? Under what conditions would the other win?" Tests positioning understanding (module 0). The canonical vs-peer probes live in `mastery-policy.md` §6 — cross-reference those, never maintain a second source here.
+6. **"What is it / why"** — short definition + one why.
 
 **What NOT to test**:
-- ❌ Verbatum definitions (that's memory, and scrollable).
-- ❌ Exact flag/argument spelling (unless the point is explicitly a memory type).
+- ❌ Verbatim definitions (that's memory, and scrollable).
+- ❌ **Exact flag/argument spelling, CLI commands, parameter names** — these are
+  reference-note material (cheatsheet), never quizzed. They're numerous,
+  project-specific, and don't build transferable skill (learner field feedback;
+  see `curriculum-design.md`). The engine never gates on `memory` points.
 - ❌ Anything answerable by scrolling up.
 
 ## Question formats (for code learning)
@@ -39,13 +43,38 @@ The value of a question is: **a wrong answer reveals "can't use / don't understa
 - Avoid "all of the above / none of the above" cop-out distractors.
 - Distractors should look real — taken from genuinely confusable configs/modules/calls, not invented.
 
-## Retrieval practice first (absorbed from the teach skill)
+## Retrieval practice: learning vs review (absorbed from the teach skill)
 
-Grading should force **retrieval from memory**, not "recognizing the answer feels right":
+**Learning a new point is reference-answer-first, not blank recall** (learner
+field feedback; absorbed from mattpocock's `grill-me`): after explaining, give
+the reference answer and let the user **react to the proposal** — agree, push
+back, restate in their own words. There is **no independent blank-prompt
+answering** for concept/design.
 
-- Short-answer/fill-in > recognition multiple-choice: being able to write the call chain proves storage better than recognizing the right option.
-- Review turns especially use short-answer: the whole point of spaced review is retrieving after forgetting.
+**Review stays recall-first**: the whole point of spaced review is retrieving
+after forgetting. But a stuck user gets the reference answer as a catch-up,
+never a grinding blank prompt:
+
+- Short-answer/fill-in > recognition multiple-choice for review turns: being able to write the call chain proves storage better than recognizing the right option.
 - Frame multiple-choice as "scenario → what would you do", so the user forms the answer in their head before comparing options.
+- For a graded procedure question during learning, the user answers first, then you **immediately show the reference answer** for self-check.
+
+## Reference-answer interaction (grill-me style)
+
+The default interaction for learning a new point:
+
+1. **Explain** the point from source (discussion-first).
+2. **Present a reference answer** — the standard one-line statement, with `file:line`.
+3. **User reacts to the proposal**: agree, push back, ask where it differs from
+   their understanding, restate it in their own words.
+4. **Judge the reaction** — the quality of the engagement (did they catch the
+   mechanism, can they restate it, can they point at what would change), not a
+   verbatim recall.
+
+**Boundary** (the one place the answer is withheld): a **graded** procedure
+question keeps the expected answer in `progress.json.pending_question` and
+never shows it *before* the user answers; it is shown *right after*, for
+self-check. That is the only case where the answer is hidden at all.
 
 ## How grading drives mastery
 

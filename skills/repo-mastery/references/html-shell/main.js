@@ -215,6 +215,18 @@
     window.addEventListener("scroll", hide, { passive: true });
   }
 
+  /* ---------- Syntax highlighting ---------- */
+  function initHighlight() {
+    // Vendored highlight.js; degrade silently if absent.
+    if (window.hljs) {
+      document.querySelectorAll("pre code").forEach(function (el) {
+        // Skip the dark command-translation component's code blocks.
+        if (el.closest(".translation-code")) return;
+        hljs.highlightElement(el);
+      });
+    }
+  }
+
   /* ---------- Nav: progress bar, dots, scroll reveal ---------- */
   function initNav() {
     var bar = document.getElementById("progress-bar");
@@ -266,5 +278,6 @@
     initTooltips();
     initNav();
     initReveal();
+    initHighlight();
   });
 })();
