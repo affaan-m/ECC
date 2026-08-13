@@ -77,6 +77,25 @@ Codex records trust against each definition's hash, so changed hooks require
 review again. Use `/plugins` for plugin enablement and `/hooks` for hook trust;
 these are separate controls.
 
+### Local observation data
+
+The `PreToolUse` and `PostToolUse` hooks store bounded tool inputs and outputs
+in the local continuous-learning data directory. By default, project-scoped
+observations are written under
+`~/.local/share/ecc-homunculus/projects/<project-id>/observations.jsonl`;
+`CLV2_HOMUNCULUS_DIR` or `XDG_DATA_HOME` can relocate that directory. Common
+credential patterns are redacted before persistence, but heuristic redaction is
+not a substitute for keeping secrets out of tool input and output. Review the
+hook definitions before trusting them.
+
+To keep the SessionStart context hook while disabling observation capture, set:
+
+```bash
+export ECC_DISABLED_HOOKS="pre:observe:continuous-learning,post:observe:continuous-learning"
+```
+
+Setting `ECC_HOOK_PROFILE=minimal` also skips both observation hooks.
+
 Once the cached skills are available, invoke `$configure-ecc` inside Codex for
 ECC's guided configuration. Installing the plugin again is idempotent and does
 not create a second scope or duplicate hook registration.

@@ -128,7 +128,11 @@ test('Codex lifecycle records tool observations and releases its session lease',
 
     const pre = runHook('PreToolUse', {
       fixture,
-      extra: { tool_name: 'Bash', tool_input: { command: 'printf ok' }, tool_use_id: 'tool-1' }
+      extra: {
+        tool_name: 'Bash',
+        tool_input: { command: 'printf ok', api_key: 'test-secret-value-123' },
+        tool_use_id: 'tool-1'
+      }
     });
     assert.strictEqual(pre.status, 0, pre.stderr || pre.error?.message);
     const post = runHook('PostToolUse', {
@@ -141,6 +145,9 @@ test('Codex lifecycle records tool observations and releases its session lease',
       .trim().split('\n').map(line => JSON.parse(line));
     assert.deepStrictEqual(observations.map(item => item.event), ['tool_start', 'tool_complete']);
     assert.ok(observations.every(item => item.session === TEST_SESSION_ID));
+    const serializedObservations = JSON.stringify(observations);
+    assert.ok(!serializedObservations.includes('test-secret-value-123'));
+    assert.ok(serializedObservations.includes('[REDACTED]'));
 
     const end = runHook('SessionEnd', { fixture });
     assert.strictEqual(end.status, 0, end.stderr || end.error?.message);
