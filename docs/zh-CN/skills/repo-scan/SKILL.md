@@ -18,14 +18,19 @@ origin: community
 ## 安装
 
 ```bash
-# Fetch only the pinned commit for reproducibility
-mkdir -p ~/.claude/skills/repo-scan
-git init repo-scan
-cd repo-scan
-git remote add origin https://github.com/haibindev/repo-scan.git
-git fetch --depth 1 origin 2742664
-git checkout --detach FETCH_HEAD
-cp -r . ~/.claude/skills/repo-scan
+# Clone first so the pinned commit can be reviewed before installation
+REPO_SCAN_COMMIT=2742664ebcad1450c208eda0ae45d3c17fad5dd8
+REPO_SCAN_TMP="$(mktemp -d)"
+REPO_SCAN_INSTALL_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-scan"
+trap 'rm -rf "$REPO_SCAN_TMP"' EXIT
+
+git clone --filter=blob:none --no-checkout \
+  https://github.com/haibindev/repo-scan.git "$REPO_SCAN_TMP/source"
+git -C "$REPO_SCAN_TMP/source" checkout --detach "$REPO_SCAN_COMMIT"
+
+# Review "$REPO_SCAN_TMP/source", then install tracked files without .git metadata
+mkdir -p "$REPO_SCAN_INSTALL_DIR"
+git -C "$REPO_SCAN_TMP/source" archive HEAD | tar -xf - -C "$REPO_SCAN_INSTALL_DIR"
 ```
 
 > 安装任何代理技能前，请先审查源码。
