@@ -215,6 +215,29 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('preserves legacy AGENTS.md when the native layout has no replacement', () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-agents-md-'));
+    try {
+      const legacy = seedLegacyState(projectRoot, [{
+        relativePath: 'AGENTS.md',
+        sourceRelativePath: 'AGENTS.md',
+        recordedContent: fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8'),
+      }]);
+      const sourcePath = path.join(projectRoot, 'source.md');
+      fs.writeFileSync(sourcePath, 'canonical managed\n', 'utf8');
+
+      const result = applyInstallPlan(createCanonicalPlan(projectRoot, sourcePath));
+
+      assert.ok(fs.existsSync(legacy.operations[0].destinationPath));
+      assert.ok(fs.existsSync(legacy.installStatePath));
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'Legacy AGENTS.md has no native Antigravity replacement'
+      )));
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('preserves drifted and unmanaged legacy files and retains legacy state', () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-migrate-partial-'));
     try {

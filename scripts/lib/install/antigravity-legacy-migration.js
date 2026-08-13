@@ -222,6 +222,15 @@ function getVerifiedManagedFile(operation, legacyRoot, sourceRoot) {
     };
   }
 
+  if (operation.sourceRelativePath === 'AGENTS.md') {
+    return {
+      destinationPath,
+      fileStat: destination.stat,
+      missing: false,
+      retainedReason: 'Legacy AGENTS.md has no native Antigravity replacement, so it was preserved.',
+    };
+  }
+
   return { destinationPath, fileStat: destination.stat, missing: false };
 }
 
