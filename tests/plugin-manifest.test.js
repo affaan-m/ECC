@@ -448,6 +448,10 @@ test('Chinese capability matrix documents the native Codex learning lifecycle', 
     'Expected the Codex capability column to document context and continuous learning'
   );
   assert.ok(
+    source.includes('* Codex 通过原生 `SessionStart`、`PreToolUse`、`PostToolUse` 和 `SessionEnd` 四事件生命周期加载会话上下文并记录持续学习观察'),
+    'Expected the Chinese architecture note to describe the complete ECC-projected lifecycle'
+  );
+  assert.ok(
     !source.includes('Codex 缺少钩子功能'),
     'Codex architecture guidance must not contradict its native SessionStart hook'
   );

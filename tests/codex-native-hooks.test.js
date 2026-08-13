@@ -147,7 +147,8 @@ test('Codex lifecycle records tool observations and releases its session lease',
     assert.ok(observations.every(item => item.session === TEST_SESSION_ID));
     const serializedObservations = JSON.stringify(observations);
     assert.ok(!serializedObservations.includes('test-secret-value-123'));
-    assert.ok(serializedObservations.includes('[REDACTED]'));
+    const persistedInput = JSON.parse(observations[0].input);
+    assert.strictEqual(persistedInput.api_key, '[REDACTED]');
 
     const end = runHook('SessionEnd', { fixture });
     assert.strictEqual(end.status, 0, end.stderr || end.error?.message);
