@@ -29,10 +29,15 @@ mkdir -p "$REPO_SCAN_INSTALL_PARENT"
 REPO_SCAN_TMP="$(mktemp -d "$REPO_SCAN_INSTALL_PARENT/.repo-scan-install.XXXXXX")"
 REPO_SCAN_STAGE="$REPO_SCAN_TMP/install"
 REPO_SCAN_BACKUP="$REPO_SCAN_TMP/previous-install"
+REPO_SCAN_LOCK="$REPO_SCAN_INSTALL_PARENT/.repo-scan-install.lock"
 REPO_SCAN_KEEP_TMP=0
+REPO_SCAN_LOCK_HELD=0
 cleanup_repo_scan_install() {
   if [ "$REPO_SCAN_KEEP_TMP" -eq 0 ]; then
     rm -rf -- "$REPO_SCAN_TMP"
+  fi
+  if [ "$REPO_SCAN_LOCK_HELD" -eq 1 ] && ! rmdir -- "$REPO_SCAN_LOCK"; then
+    printf 'Could not release installation lock at %s\n' "$REPO_SCAN_LOCK" >&2
   fi
 }
 trap cleanup_repo_scan_install EXIT
@@ -52,13 +57,23 @@ if [ "$REPO_SCAN_CONFIRM" != install ]; then
   printf 'Installation cancelled.\n' >&2
   exit 1
 fi
+if ! mkdir -- "$REPO_SCAN_LOCK" 2>/dev/null; then
+  printf 'Another repo-scan installation holds the lock at %s\n' \
+    "$REPO_SCAN_LOCK" >&2
+  exit 1
+fi
+REPO_SCAN_LOCK_HELD=1
 
 if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
   mv -- "$REPO_SCAN_INSTALL_DIR" "$REPO_SCAN_BACKUP"
 fi
 if ! mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"; then
   if [ -e "$REPO_SCAN_BACKUP" ] || [ -L "$REPO_SCAN_BACKUP" ]; then
-    if ! mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"; then
+    if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
+      REPO_SCAN_KEEP_TMP=1
+      printf 'Replacement failed and target was recreated; previous installation preserved at %s\n' \
+        "$REPO_SCAN_BACKUP" >&2
+    elif ! mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"; then
       REPO_SCAN_KEEP_TMP=1
       printf 'Replacement and rollback failed; previous installation preserved at %s\n' \
         "$REPO_SCAN_BACKUP" >&2

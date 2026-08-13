@@ -87,7 +87,14 @@ if [ "\${1:-}" = -- ]; then shift; fi
 source_path="\${1:-}"
 case "$source_path" in
   */install)
-    if [ -n "\${REPO_SCAN_TEST_MV_FAILURE:-}" ]; then exit 73; fi
+    case "\${REPO_SCAN_TEST_MV_FAILURE:-}" in
+      replace|rollback) exit 73 ;;
+      target-conflict)
+        mkdir -p -- "\${2:-}"
+        printf 'concurrent installation\n' > "\${2:-}/concurrent-marker.txt"
+        exit 75
+        ;;
+    esac
     ;;
   */previous-install)
     if [ "\${REPO_SCAN_TEST_MV_FAILURE:-}" = rollback ]; then exit 74; fi
@@ -100,7 +107,69 @@ exec "$REAL_MV" -- "$source_path" "\${2:-}"
 
 function transactionDirs(installParent) {
   if (!fs.existsSync(installParent)) return [];
-  return fs.readdirSync(installParent).filter(name => name.startsWith('.repo-scan-install.'));
+  return fs.readdirSync(installParent).filter(
+    name => name.startsWith('.repo-scan-install.') && name !== '.repo-scan-install.lock'
+  );
+}
+
+function prepareInstallScenario(installParent, installDir, scenario) {
+  if (scenario === 'fresh') return;
+  fs.mkdirSync(installDir, { recursive: true });
+  fs.writeFileSync(path.join(installDir, 'old-marker.txt'), 'previous installation\n');
+  if (scenario === 'lock-held') {
+    fs.mkdirSync(path.join(installParent, '.repo-scan-install.lock'));
+  }
+}
+
+function failureMode(scenario) {
+  if (scenario === 'replacement-failure') return 'replace';
+  if (scenario === 'rollback-failure') return 'rollback';
+  if (scenario === 'target-conflict') return 'target-conflict';
+  return '';
+}
+
+function assertPreservedBackup(result, installParent) {
+  const workspaces = transactionDirs(installParent);
+  assert.strictEqual(workspaces.length, 1, result.stderr);
+  const preservedBackup = path.join(installParent, workspaces[0], 'previous-install');
+  assert.strictEqual(
+    fs.readFileSync(path.join(preservedBackup, 'old-marker.txt'), 'utf8'),
+    'previous installation\n'
+  );
+}
+
+function assertInstallationResult({ result, scenario, installDir, installParent }) {
+  const lockDir = path.join(installParent, '.repo-scan-install.lock');
+  if (scenario === 'fresh' || scenario === 'existing') {
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(fs.readFileSync(path.join(installDir, 'SKILL.md'), 'utf8').trim(), 'pinned fixture');
+    assert.ok(!fs.existsSync(path.join(installDir, '.git')));
+    assert.ok(!fs.existsSync(path.join(installDir, 'old-marker.txt')));
+    assert.deepStrictEqual(transactionDirs(installParent), []);
+    assert.ok(!fs.existsSync(lockDir));
+    return;
+  }
+
+  assert.notStrictEqual(result.status, 0, 'forced installation failure must propagate');
+  if (scenario === 'replacement-failure' || scenario === 'lock-held') {
+    assert.strictEqual(
+      fs.readFileSync(path.join(installDir, 'old-marker.txt'), 'utf8'),
+      'previous installation\n'
+    );
+    assert.deepStrictEqual(transactionDirs(installParent), []);
+    assert.strictEqual(fs.existsSync(lockDir), scenario === 'lock-held');
+    if (scenario === 'lock-held') assert.match(result.stderr, /holds the lock/);
+    return;
+  }
+
+  assertPreservedBackup(result, installParent);
+  assert.ok(!fs.existsSync(lockDir));
+  if (scenario === 'target-conflict') {
+    assert.ok(fs.existsSync(path.join(installDir, 'concurrent-marker.txt')));
+    assert.match(result.stderr, /target was recreated/);
+  } else {
+    assert.match(result.stderr, /previous installation preserved at/);
+  }
 }
 
 function executeInstallation(block, scenario) {
@@ -111,11 +180,7 @@ function executeInstallation(block, scenario) {
     const configDir = path.join(root, 'config');
     const installParent = path.join(configDir, 'skills');
     const installDir = path.join(installParent, 'repo-scan');
-    if (scenario !== 'fresh') {
-      fs.mkdirSync(installDir, { recursive: true });
-      fs.writeFileSync(path.join(installDir, 'old-marker.txt'), 'previous installation\n');
-    }
-
+    prepareInstallScenario(installParent, installDir, scenario);
     const result = run(bashBinary, ['-c', `export PATH="$SHIM_DIR:$PATH"\n${block}`], {
       input: 'install\n',
       cwd: repoRoot,
@@ -124,44 +189,12 @@ function executeInstallation(block, scenario) {
         LOCAL_REPO: toShellPath(sourceRepo),
         REAL_GIT: requireShellCommand('git'),
         REAL_MV: requireShellCommand('mv'),
-        REPO_SCAN_TEST_MV_FAILURE:
-          scenario === 'replacement-failure'
-            ? 'replace'
-            : scenario === 'rollback-failure'
-              ? 'rollback'
-              : '',
+        REPO_SCAN_TEST_MV_FAILURE: failureMode(scenario),
         SHIM_DIR: toShellPath(binDir),
       },
       timeout: 30000,
     });
-
-    if (scenario === 'fresh' || scenario === 'existing') {
-      assert.strictEqual(result.status, 0, result.stderr);
-      assert.strictEqual(fs.readFileSync(path.join(installDir, 'SKILL.md'), 'utf8').trim(), 'pinned fixture');
-      assert.ok(!fs.existsSync(path.join(installDir, '.git')));
-      assert.ok(!fs.existsSync(path.join(installDir, 'old-marker.txt')));
-      assert.deepStrictEqual(transactionDirs(installParent), []);
-      return;
-    }
-
-    assert.notStrictEqual(result.status, 0, 'forced replacement failure must propagate');
-    if (scenario === 'replacement-failure') {
-      assert.strictEqual(
-        fs.readFileSync(path.join(installDir, 'old-marker.txt'), 'utf8'),
-        'previous installation\n'
-      );
-      assert.deepStrictEqual(transactionDirs(installParent), []);
-      return;
-    }
-
-    const workspaces = transactionDirs(installParent);
-    assert.strictEqual(workspaces.length, 1, result.stderr);
-    const preservedBackup = path.join(installParent, workspaces[0], 'previous-install');
-    assert.strictEqual(
-      fs.readFileSync(path.join(preservedBackup, 'old-marker.txt'), 'utf8'),
-      'previous installation\n'
-    );
-    assert.match(result.stderr, /previous installation preserved at/);
+    assertInstallationResult({ result, scenario, installDir, installParent });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -189,6 +222,7 @@ for (const [index, block] of blocks.entries()) {
   assert.ok(block.includes('set -euo pipefail'), `${relativePath} must fail closed`);
   assert.ok(block.includes('mktemp -d "$REPO_SCAN_INSTALL_PARENT/'), `${relativePath} must stage on the target filesystem`);
   assert.ok(block.includes('REPO_SCAN_KEEP_TMP=0'), `${relativePath} must track cleanup safety`);
+  assert.ok(block.includes('REPO_SCAN_LOCK_HELD=0'), `${relativePath} must track lock ownership`);
   assert.ok(block.includes('trap cleanup_repo_scan_install EXIT'), `${relativePath} must use conditional cleanup`);
   assert.ok(block.includes('git clone --filter=blob:none --no-checkout'), `${relativePath} must clone before checkout`);
   assert.ok(block.includes('checkout --detach "$REPO_SCAN_COMMIT"'), `${relativePath} must detach at the pin`);
@@ -196,8 +230,10 @@ for (const [index, block] of blocks.entries()) {
   assert.ok(block.includes('tar -xf - -C "$REPO_SCAN_STAGE"'), `${relativePath} must extract into a fresh staging directory`);
   assert.ok(block.includes('# Review "$REPO_SCAN_TMP/source"'), `${relativePath} must instruct source review`);
   assert.ok(block.includes('read -r REPO_SCAN_CONFIRM'), `${relativePath} must require explicit confirmation`);
+  assert.ok(block.includes('mkdir -- "$REPO_SCAN_LOCK"'), `${relativePath} must serialize replacement`);
   assert.ok(block.includes('[ "$REPO_SCAN_CONFIRM" != install ]'), `${relativePath} must default-deny installation`);
   assert.ok(block.indexOf('read -r REPO_SCAN_CONFIRM') < block.indexOf('mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must confirm before replacing the target`);
+  assert.ok(block.indexOf('mkdir -- "$REPO_SCAN_LOCK"') < block.indexOf('mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must lock before replacing the target`);
   assert.ok(!block.includes('rm -rf "$REPO_SCAN_INSTALL_DIR"'), `${relativePath} must preserve the old target until replacement succeeds`);
   assert.ok(block.includes('${CLAUDE_CONFIG_DIR:-$HOME/.claude}'), `${relativePath} must honor CLAUDE_CONFIG_DIR`);
   assert.ok(!block.includes('cp -r .'), `${relativePath} must not copy .git metadata`);
@@ -216,7 +252,14 @@ if (bashBinary) {
     const syntax = run(bashBinary, ['-n'], { input: block });
     assert.strictEqual(syntax.status, 0, syntax.stderr);
     passed++;
-    for (const scenario of ['fresh', 'existing', 'replacement-failure', 'rollback-failure']) {
+    for (const scenario of [
+      'fresh',
+      'existing',
+      'replacement-failure',
+      'rollback-failure',
+      'target-conflict',
+      'lock-held',
+    ]) {
       executeInstallation(block, scenario);
       passed++;
     }
