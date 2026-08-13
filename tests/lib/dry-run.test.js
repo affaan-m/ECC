@@ -91,13 +91,17 @@ function runTests() {
       `Expected stderr to contain tool name, got: ${result.stderr}`
     );
     assert.ok(
-      result.stderr.includes('target=/tmp/test.md'),
-      `Expected stderr to contain target file path, got: ${result.stderr}`
+      result.stderr.includes('target=[redacted]'),
+      `Expected stderr to redact the target file path, got: ${result.stderr}`
+    );
+    assert.ok(
+      !result.stderr.includes('/tmp/test.md'),
+      'Dry-run stderr must not expose file paths'
     );
     assert.strictEqual(result.stdout, '', 'Dry-run hook should not echo stdin');
   })) passed++; else failed++;
 
-  if (test('flushes a large dry-run preview when oversized stdout is suppressed', () => {
+  if (test('bounds dry-run diagnostics when oversized stdout is suppressed', () => {
     const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
     const hookScript = 'scripts/hooks/block-no-verify.js';
     const command = 'x'.repeat(900 * 1024);
@@ -119,13 +123,18 @@ function runTests() {
 
     assert.strictEqual(result.status, 0, `Expected exit 0, got ${result.status}`);
     assert.strictEqual(result.stdout, '', 'Oversized dry-run input must keep stdout suppressed');
+    assert.ok(result.stderr.includes('command=[redacted]'), result.stderr);
     assert.ok(
-      result.stderr.endsWith(`command=${command}\n`),
-      `Expected the complete dry-run preview on stderr, got ${result.stderr.length} characters`
+      !result.stderr.includes(command.slice(0, 100)),
+      'Dry-run stderr must not expose commands'
+    );
+    assert.ok(
+      result.stderr.length < 1024,
+      `Dry-run stderr must stay bounded, got ${result.stderr.length} characters`
     );
   })) passed++; else failed++;
 
-  if (test('dry-run preview includes command for bash hooks', () => {
+  if (test('dry-run preview indicates a redacted command for bash hooks', () => {
     const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
     const hookScript = 'scripts/hooks/block-no-verify.js';
     const input = JSON.stringify({ tool: 'Bash', tool_input: { command: 'git commit --no-verify -m "test"' } });
@@ -148,10 +157,45 @@ function runTests() {
       `Expected stderr to contain tool=Bash, got: ${result.stderr}`
     );
     assert.ok(
-      result.stderr.includes('command=git commit --no-verify'),
-      `Expected stderr to contain command, got: ${result.stderr}`
+      result.stderr.includes('command=[redacted]'),
+      `Expected stderr to indicate a redacted command, got: ${result.stderr}`
+    );
+    assert.ok(
+      !result.stderr.includes('git commit --no-verify'),
+      'Dry-run stderr must not expose commands'
     );
     assert.strictEqual(result.stdout, '', 'Dry-run hook should not echo stdin');
+  })) passed++; else failed++;
+
+  if (test('dry-run preview omits secrets and escapes multiline diagnostic fields', () => {
+    const runWithFlags = path.resolve(__dirname, '..', '..', 'scripts', 'hooks', 'run-with-flags.js');
+    const secret = 'preview-secret-value';
+    const input = JSON.stringify({
+      tool: 'Bash\nInjected',
+      tool_input: {
+        command: `echo ${secret}\nsecond line`,
+        file_path: `/tmp/${secret}`,
+      },
+    });
+
+    const result = spawnSync(process.execPath, [
+      runWithFlags,
+      'pre:bash:block-no-verify',
+      'scripts/hooks/block-no-verify.js',
+      'standard,strict',
+    ], {
+      input,
+      encoding: 'utf8',
+      env: { ...process.env, ECC_DRY_RUN: '1' },
+      cwd: path.resolve(__dirname, '..', '..'),
+    });
+
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.ok(!result.stderr.includes(secret), 'Dry-run stderr must not expose secret-bearing input');
+    assert.ok(result.stderr.includes('tool=Bash\\nInjected'), result.stderr);
+    assert.ok(result.stderr.includes('target=[redacted]'), result.stderr);
+    assert.ok(result.stderr.includes('command=[redacted]'), result.stderr);
+    assert.strictEqual(result.stderr.trim().split('\n').length, 1, 'Preview must remain one line');
   })) passed++; else failed++;
 
   if (test('dry-run preview handles non-JSON stdin gracefully', () => {

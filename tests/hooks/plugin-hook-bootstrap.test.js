@@ -160,6 +160,23 @@ process.stdout.write(JSON.stringify({
     }
   })) passed++; else failed++;
 
+  if (test('node mode preserves child stdout equal to stdin', () => {
+    const root = createTempDir();
+    try {
+      writeFile(root, path.join('scripts', 'echo.js'), 'process.stdin.pipe(process.stdout);\n');
+
+      const result = run(['node', path.join('scripts', 'echo.js')], {
+        root,
+        input: 'raw-input',
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(result.stdout, 'raw-input');
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
   if (test('node mode forwards child stdout and exit status for blocking hooks', () => {
     const root = createTempDir();
     try {

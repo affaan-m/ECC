@@ -11,36 +11,62 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const DEFAULT_MAX_STDIN = 1024 * 1024;
 
 function resolveMaxStdin(value) {
+  if (value === undefined) return DEFAULT_MAX_STDIN;
+
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_STDIN;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    process.stderr.write(
+      '[Hook] ECC_HOOK_INPUT_MAX_BYTES must be a positive safe integer; using the 1 MiB default\n'
+    );
+    return DEFAULT_MAX_STDIN;
+  }
+  if (parsed > DEFAULT_MAX_STDIN) {
+    process.stderr.write(
+      '[Hook] ECC_HOOK_INPUT_MAX_BYTES exceeds the 1 MiB safety maximum; clamping to 1 MiB\n'
+    );
+    return DEFAULT_MAX_STDIN;
+  }
+  return parsed;
 }
 
 const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES);
 
 function readStdinRaw() {
   return new Promise(resolve => {
+    const decoder = new StringDecoder('utf8');
     let raw = '';
+    let acceptedBytes = 0;
+    let finished = false;
     let truncated = false;
-    process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (raw.length < MAX_STDIN) {
-        const remaining = MAX_STDIN - raw.length;
-        raw += chunk.substring(0, remaining);
-        if (chunk.length > remaining) {
-          truncated = true;
-        }
-      } else {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = MAX_STDIN - acceptedBytes;
+      if (remaining <= 0) {
         truncated = true;
+        return;
       }
+
+      const accepted = buffer.subarray(0, remaining);
+      acceptedBytes += accepted.length;
+      raw += decoder.write(accepted);
+      if (accepted.length < buffer.length) truncated = true;
     });
-    process.stdin.on('end', () => resolve({ raw, truncated }));
-    process.stdin.on('error', () => resolve({ raw, truncated }));
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      const finalText = decoder.end();
+      if (!truncated) raw += finalText;
+      resolve({ raw, truncated });
+    };
+    process.stdin.once('end', finish);
+    process.stdin.once('error', finish);
   });
 }
 
@@ -130,20 +156,33 @@ function extractTargetContext(raw) {
   return result;
 }
 
+function escapeDiagnostic(value, maxLength = 160) {
+  const escaped = String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, character => {
+    if (character === '\n') return '\\n';
+    if (character === '\r') return '\\r';
+    if (character === '\t') return '\\t';
+    return `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  });
+  return escaped.length > maxLength ? `${escaped.slice(0, maxLength)}...` : escaped;
+}
+
 // Build the [DryRun] preview line for stderr.
 
 function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
   const ctx = extractTargetContext(raw);
-  const parts = [`[DryRun] Hook "${hookId}" would execute: ${relScriptPath}`, `(enabled=true, profiles=${profilesCsv || 'default'})`];
+  const parts = [
+    `[DryRun] Hook "${escapeDiagnostic(hookId)}" would execute: ${escapeDiagnostic(relScriptPath)}`,
+    `(enabled=true, profiles=${escapeDiagnostic(profilesCsv || 'default')})`
+  ];
 
   if (ctx.tool) {
-    parts.push(`tool=${ctx.tool}`);
+    parts.push(`tool=${escapeDiagnostic(ctx.tool, 64)}`);
   }
   if (ctx.filePath) {
-    parts.push(`target=${ctx.filePath}`);
+    parts.push('target=[redacted]');
   }
   if (ctx.command) {
-    parts.push(`command=${ctx.command}`);
+    parts.push('command=[redacted]');
   }
 
   return parts.join(' ') + '\n';
