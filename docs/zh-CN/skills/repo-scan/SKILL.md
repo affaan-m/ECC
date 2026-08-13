@@ -19,18 +19,43 @@ origin: community
 
 ```bash
 # Clone first so the pinned commit can be reviewed before installation
+set -euo pipefail
+
 REPO_SCAN_COMMIT=2742664ebcad1450c208eda0ae45d3c17fad5dd8
 REPO_SCAN_TMP="$(mktemp -d)"
 REPO_SCAN_INSTALL_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-scan"
+REPO_SCAN_STAGE="$REPO_SCAN_TMP/install"
+REPO_SCAN_BACKUP=""
 trap 'rm -rf "$REPO_SCAN_TMP"' EXIT
 
 git clone --filter=blob:none --no-checkout \
   https://github.com/haibindev/repo-scan.git "$REPO_SCAN_TMP/source"
 git -C "$REPO_SCAN_TMP/source" checkout --detach "$REPO_SCAN_COMMIT"
+mkdir -p "$REPO_SCAN_STAGE"
+git -C "$REPO_SCAN_TMP/source" archive "$REPO_SCAN_COMMIT" | \
+  tar -xf - -C "$REPO_SCAN_STAGE"
 
-# Review "$REPO_SCAN_TMP/source", then install tracked files without .git metadata
-mkdir -p "$REPO_SCAN_INSTALL_DIR"
-git -C "$REPO_SCAN_TMP/source" archive HEAD | tar -xf - -C "$REPO_SCAN_INSTALL_DIR"
+# Review "$REPO_SCAN_TMP/source" before approving installation.
+printf 'Type install to replace %s after reviewing the pinned source: ' \
+  "$REPO_SCAN_INSTALL_DIR" >&2
+read -r REPO_SCAN_CONFIRM
+if [ "$REPO_SCAN_CONFIRM" != install ]; then
+  printf 'Installation cancelled.\n' >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$REPO_SCAN_INSTALL_DIR")"
+if [ -e "$REPO_SCAN_INSTALL_DIR" ] || [ -L "$REPO_SCAN_INSTALL_DIR" ]; then
+  REPO_SCAN_BACKUP="$REPO_SCAN_TMP/previous-install"
+  mv -- "$REPO_SCAN_INSTALL_DIR" "$REPO_SCAN_BACKUP"
+fi
+if ! mv -- "$REPO_SCAN_STAGE" "$REPO_SCAN_INSTALL_DIR"; then
+  if [ -n "$REPO_SCAN_BACKUP" ] && \
+    { [ -e "$REPO_SCAN_BACKUP" ] || [ -L "$REPO_SCAN_BACKUP" ]; }; then
+    mv -- "$REPO_SCAN_BACKUP" "$REPO_SCAN_INSTALL_DIR"
+  fi
+  exit 1
+fi
 ```
 
 > 安装任何代理技能前，请先审查源码。
