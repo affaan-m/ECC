@@ -157,7 +157,7 @@ function extractTargetContext(raw) {
 }
 
 function escapeDiagnostic(value, maxLength = 160) {
-  const escaped = Array.from(String(value), character => {
+  const escapedTokens = Array.from(String(value), character => {
     const codePoint = character.codePointAt(0);
     if (codePoint > 0x1f && (codePoint < 0x7f || codePoint > 0x9f)) {
       return character;
@@ -166,8 +166,16 @@ function escapeDiagnostic(value, maxLength = 160) {
     if (character === '\r') return '\\r';
     if (character === '\t') return '\\t';
     return `\\x${codePoint.toString(16).padStart(2, '0')}`;
-  }).join('');
-  return escaped.length > maxLength ? `${escaped.slice(0, maxLength)}...` : escaped;
+  });
+
+  let escaped = '';
+  for (const token of escapedTokens) {
+    if (escaped.length + token.length > maxLength) {
+      return `${escaped}...`;
+    }
+    escaped += token;
+  }
+  return escaped;
 }
 
 // Build the [DryRun] preview line for stderr.
