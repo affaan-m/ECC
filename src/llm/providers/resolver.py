@@ -12,6 +12,7 @@ from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
+from llm.providers.orcarouter import OrcaRouterProvider
 
 _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.ASTRAFLOW: AstraflowProvider,
@@ -20,6 +21,7 @@ _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.CLAUDE: ClaudeProvider,
     ProviderType.OPENAI: OpenAIProvider,
     ProviderType.OLLAMA: OllamaProvider,
+    ProviderType.ORCAROUTER: OrcaRouterProvider,
 }
 
 LLM_ENV_FILE = ".llm.env"

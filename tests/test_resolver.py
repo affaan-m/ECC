@@ -8,6 +8,7 @@ from llm.providers import (
     ClaudeProvider,
     OllamaProvider,
     OpenAIProvider,
+    OrcaRouterProvider,
     get_provider,
 )
 
@@ -42,6 +43,11 @@ class TestGetProvider:
         provider = get_provider("atlas")
         assert isinstance(provider, AtlasProvider)
         assert provider.provider_type == ProviderType.ATLAS
+
+    def test_get_orcarouter_provider(self):
+        provider = get_provider("orcarouter")
+        assert isinstance(provider, OrcaRouterProvider)
+        assert provider.provider_type == ProviderType.ORCAROUTER
 
     def test_get_provider_by_enum(self):
         provider = get_provider(ProviderType.CLAUDE)
