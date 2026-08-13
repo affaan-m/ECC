@@ -1,12 +1,9 @@
 /**
  * Regression tests for #2090: "Stop hook error: JSON validation failed".
  *
- * Stop hooks follow the ECC pass-through convention (echo stdin on stdout).
- * The Stop payload carries `last_assistant_message`, which can be large; any
- * hook that caps stdin and echoes the capped string emits a JSON document cut
- * mid-stream, which the harness reports as a Stop hook JSON validation
- * failure. Worst offender: cost-tracker capped stdin at 64KB, so any Stop
- * payload with a >64KB final assistant message broke the whole Stop chain.
+ * Stop payloads carry `last_assistant_message`, which can be large. Silent
+ * wrapper paths must emit nothing; explicit hook output must remain complete
+ * and valid JSON so the harness never sees a truncated document.
  *
  * Contract under test: for every Stop hook, stdout is either empty or valid
  * JSON, and the exit code is 0 — for realistic large payloads and for
@@ -160,18 +157,14 @@ const realisticPayload = stopPayload(100 * 1024);
 // OS pipe buffer and reintroducing #2222 above the tested runner layer.
 for (const entry of hooksConfig.hooks.Stop) {
   if (
-    test(`${entry.id} registered wrapper flushes a 100KB Stop payload`, () => {
+    test(`${entry.id} disabled registered wrapper stays silent for a 100KB Stop payload`, () => {
       const result = runRegisteredStopHook(entry, realisticPayload);
       assert.strictEqual(
         result.status,
         0,
         `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
       );
-      assert.ok(
-        result.stdout === realisticPayload,
-        `${entry.id}: registered wrapper must echo ${realisticPayload.length} characters uncut (got ${result.stdout.length})`
-      );
-      JSON.parse(result.stdout);
+      assert.strictEqual(result.stdout, '', `${entry.id}: disabled wrapper must stay silent`);
     })
   )
     passed++;
@@ -183,17 +176,13 @@ const representativeStopEntry = hooksConfig.hooks.Stop.find(
 );
 
 if (
-  test('registered Stop wrapper flushes a 100KB dry-run payload', () => {
+  test('registered Stop wrapper stays silent for a 100KB dry-run payload', () => {
     const result = runRegisteredStopHook(representativeStopEntry, realisticPayload, {
       ECC_DISABLED_HOOKS: '',
       ECC_DRY_RUN: '1'
     });
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
-    assert.ok(
-      result.stdout === realisticPayload,
-      `dry-run wrapper must echo ${realisticPayload.length} characters uncut (got ${result.stdout.length})`
-    );
-    JSON.parse(result.stdout);
+    assert.strictEqual(result.stdout, '', 'dry-run wrapper must stay silent');
   })
 )
   passed++;
@@ -208,18 +197,14 @@ assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed 
 
 for (const entry of hooksConfig.hooks.Stop) {
   if (
-    test(`${entry.id} registered wrapper preserves a multibyte sub-cap payload`, () => {
+    test(`${entry.id} disabled registered wrapper stays silent for a multibyte payload`, () => {
       const result = runRegisteredStopHook(entry, multibytePayload);
       assert.strictEqual(
         result.status,
         0,
         `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
       );
-      assert.ok(
-        result.stdout === multibytePayload,
-        `${entry.id}: registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-      );
-      JSON.parse(result.stdout);
+      assert.strictEqual(result.stdout, '', `${entry.id}: disabled wrapper must stay silent`);
     })
   )
     passed++;

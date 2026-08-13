@@ -247,7 +247,7 @@ function runTests() {
         encoding: 'utf8',
       });
       assert.strictEqual(result.status, 0, result.stderr);
-      assert.strictEqual(result.stdout, raw);
+      assert.strictEqual(result.stdout, '', 'disabled wrapper hook must not echo stdin');
       assert.ok(!fs.existsSync(markerPath), 'disabled wrapper hook must not execute');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

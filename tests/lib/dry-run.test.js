@@ -94,7 +94,7 @@ function runTests() {
       result.stderr.includes('target=/tmp/test.md'),
       `Expected stderr to contain target file path, got: ${result.stderr}`
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    assert.strictEqual(result.stdout, '', 'Dry-run hook should not echo stdin');
   })) passed++; else failed++;
 
   if (test('flushes a large dry-run preview when oversized stdout is suppressed', () => {
@@ -151,7 +151,7 @@ function runTests() {
       result.stderr.includes('command=git commit --no-verify'),
       `Expected stderr to contain command, got: ${result.stderr}`
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    assert.strictEqual(result.stdout, '', 'Dry-run hook should not echo stdin');
   })) passed++; else failed++;
 
   if (test('dry-run preview handles non-JSON stdin gracefully', () => {
@@ -180,7 +180,7 @@ function runTests() {
       !result.stderr.includes('tool='),
       'Expected no tool= when stdin is not JSON'
     );
-    assert.strictEqual(result.stdout, input, 'Expected stdin to be passed through unchanged');
+    assert.strictEqual(result.stdout, '', 'Dry-run hook should not echo stdin');
   })) passed++; else failed++;
 
   if (test('dry-run preview handles empty stdin gracefully', () => {

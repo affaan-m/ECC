@@ -22,15 +22,10 @@ function writeStderr(stderr) {
   }
 }
 
-function passthrough(raw, result) {
+function forwardStdout(result) {
   const stdout = typeof result?.stdout === 'string' ? result.stdout : '';
   if (stdout) {
     process.stdout.write(stdout);
-    return;
-  }
-
-  if (!Number.isInteger(result?.status) || result.status === 0) {
-    process.stdout.write(raw);
   }
 }
 
@@ -224,7 +219,6 @@ function main() {
   );
 
   if (!mode || !relPath || !rootDir) {
-    process.stdout.write(raw);
     process.exit(0);
   }
 
@@ -236,16 +230,14 @@ function main() {
       result = spawnShell(rootDir, relPath, raw, args);
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}\n`);
-      process.stdout.write(raw);
       process.exit(0);
     }
   } catch (error) {
     writeStderr(`[Hook] bootstrap resolution failed: ${error.message}\n`);
-    process.stdout.write(raw);
     process.exit(0);
   }
 
-  passthrough(raw, result);
+  forwardStdout(result);
   writeStderr(result.stderr);
 
   if (result.error || result.signal || result.status === null) {

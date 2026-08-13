@@ -22,8 +22,8 @@
  *   3. Delegates to `scripts/hooks/run-with-flags.js` with the `session:start`
  *      event, which applies hook-profile gating and then runs session-start.js.
  *   4. Passes stdout/stderr through and forwards the child exit code.
- *   5. If the plugin root cannot be found, emits a warning and passes stdin
- *      through unchanged so Claude Code can continue normally.
+ *   5. If the plugin root cannot be found, emits a warning and no stdout so
+ *      Claude Code can continue normally.
  */
 
 const fs = require('fs');
@@ -58,8 +58,6 @@ if (fs.existsSync(script)) {
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
   if (stdout) {
     process.stdout.write(stdout);
-  } else {
-    process.stdout.write(raw);
   }
 
   if (result.stderr) {
@@ -82,4 +80,3 @@ if (fs.existsSync(script)) {
 process.stderr.write(
   '[SessionStart] WARNING: could not resolve ECC plugin root; skipping session-start hook\n'
 );
-process.stdout.write(raw);

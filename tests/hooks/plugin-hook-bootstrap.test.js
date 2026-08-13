@@ -61,11 +61,11 @@ function runTests() {
   let passed = 0;
   let failed = 0;
 
-  if (test('passes stdin through when required bootstrap inputs are missing', () => {
+  if (test('stays silent when required bootstrap inputs are missing', () => {
     const result = run([], { input: '{"ok":true}' });
 
     assert.strictEqual(result.status, 0);
-    assert.strictEqual(result.stdout, '{"ok":true}');
+    assert.strictEqual(result.stdout, '');
     assert.strictEqual(result.stderr, '');
   })) passed++; else failed++;
 
@@ -143,7 +143,7 @@ process.stdout.write(JSON.stringify({
     }
   })) passed++; else failed++;
 
-  if (test('node mode passes original stdin when child exits cleanly without stdout', () => {
+  if (test('node mode stays silent when child exits cleanly without stdout', () => {
     const root = createTempDir();
     try {
       writeFile(root, path.join('scripts', 'silent.js'), 'process.exit(0);\n');
@@ -154,7 +154,7 @@ process.stdout.write(JSON.stringify({
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      assert.strictEqual(result.stdout, '');
     } finally {
       cleanup(root);
     }
@@ -237,7 +237,7 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('shell runtime unavailable'));
     } finally {
       cleanup(root);
@@ -253,7 +253,7 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('Path traversal rejected'));
     } finally {
       cleanup(root);
@@ -269,7 +269,7 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('unknown bootstrap mode: python'));
     } finally {
       cleanup(root);
@@ -375,7 +375,7 @@ process.exit(7);
         });
 
         assert.strictEqual(result.status, 0);
-        assert.strictEqual(result.stdout, 'raw-input');
+        assert.strictEqual(result.stdout, '');
         assert.ok(
           result.stderr.includes('no bash binary found') ||
           result.stderr.includes('shell runtime unavailable'),

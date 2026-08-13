@@ -181,7 +181,7 @@ function runTests() {
         });
 
         assert.strictEqual(output.exitCode, 0);
-        assert.ok(!Object.prototype.hasOwnProperty.call(output, 'stdout'), 'disabled observe should preserve stdin via runner passthrough');
+        assert.ok(!Object.prototype.hasOwnProperty.call(output, 'stdout'), 'disabled observe should stay silent through the runner');
         assert.ok(output.stderr.includes('shell runtime unavailable'));
       });
     });

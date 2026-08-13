@@ -14,7 +14,14 @@ const { spawnSync } = require('child_process');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
-const MAX_STDIN = 1024 * 1024;
+const DEFAULT_MAX_STDIN = 1024 * 1024;
+
+function resolveMaxStdin(value) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_STDIN;
+}
+
+const MAX_STDIN = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES);
 
 function readStdinRaw() {
   return new Promise(resolve => {
@@ -68,7 +75,7 @@ function exitWithStdout(text, exitCode) {
   process.stderr.write('', exitWhenFlushed);
 }
 
-function resolveHookResult(raw, output) {
+function resolveHookResult(output) {
   if (typeof output === 'string' || Buffer.isBuffer(output)) {
     return { stdout: String(output), exitCode: 0 };
   }
@@ -83,23 +90,15 @@ function resolveHookResult(raw, output) {
     if (Object.prototype.hasOwnProperty.call(output, 'stdout')) {
       return { stdout: String(output.stdout ?? ''), exitCode };
     }
-    return { stdout: exitCode === 0 ? raw : '', exitCode };
+    return { stdout: '', exitCode };
   }
 
-  return { stdout: raw, exitCode: 0 };
+  return { stdout: '', exitCode: 0 };
 }
 
-function resolveLegacySpawnStdout(raw, result) {
+function resolveLegacySpawnStdout(result) {
   const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-  if (stdout) {
-    return stdout;
-  }
-
-  if (Number.isInteger(result.status) && result.status === 0) {
-    return raw;
-  }
-
-  return '';
+  return stdout || '';
 }
 
 function getPluginRoot() {
@@ -157,7 +156,7 @@ async function main() {
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
   // tool call (#2222). Empty stdout + exit 0 means "no opinion", so
-  // pass-through paths fail open. The hook itself still runs and receives
+  // silent paths fail open. The hook itself still runs and receives
   // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
   // security hooks like config-protection can still choose to block.
   const sanitizeEcho = text => (truncated && text === raw ? '' : text);
@@ -166,19 +165,19 @@ async function main() {
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
   if (isDryRun()) {
     const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
     process.stderr.write(preview);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
@@ -189,13 +188,13 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout('', 0);
     return;
   }
 
@@ -231,11 +230,11 @@ async function main() {
         truncated,
         maxStdin: MAX_STDIN
       });
-      const result = resolveHookResult(raw, output);
+      const result = resolveHookResult(output);
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout(sanitizeEcho(raw), 0);
+      exitWithStdout('', 0);
     }
     return;
   }
@@ -256,7 +255,7 @@ async function main() {
     timeout: 30000
   });
 
-  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
+  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(result));
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {

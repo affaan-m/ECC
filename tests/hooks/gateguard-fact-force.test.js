@@ -207,13 +207,7 @@ function runTests() {
       };
       const result = runHook(input, { GATEGUARD_STATE_DIR: invalidStateDir });
       assert.strictEqual(result.code, 0, 'exit code should be 0');
-      const output = parseOutput(result.stdout);
-      assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'unpersistable state must not deny a retry that can never be recorded');
-      } else {
-        assert.strictEqual(output.tool_name, 'Write', 'pass-through should preserve input');
-      }
+      assert.strictEqual(result.stdout, '', 'fail-open path should stay silent');
       assert.ok(result.stderr.includes('GateGuard state could not be persisted'), 'should warn that state persistence failed');
     })
   )
@@ -453,14 +447,7 @@ function runTests() {
       });
 
       assert.strictEqual(result.code, 0, 'exit code should be 0');
-      const output = parseOutput(result.stdout);
-      assert.ok(output, 'should produce valid JSON output');
-      if (output.hookSpecificOutput) {
-        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'should not deny when hook is disabled');
-      } else {
-        // When disabled, hook passes through raw input
-        assert.strictEqual(output.tool_name, 'Edit', 'pass-through should preserve input');
-      }
+      assert.strictEqual(result.stdout, '', 'disabled hook should not echo stdin');
     })
   )
     passed++;
