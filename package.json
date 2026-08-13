@@ -383,6 +383,7 @@
     "skills/homelab-vlan-segmentation/",
     "skills/homelab-wireguard-vpn/",
     "skills/inherit-legacy-style/",
+    "skills/install-ecc-rules/",
     "skills/intent-driven-development/",
     "skills/ios-icon-gen/",
     "skills/kubernetes-patterns/",

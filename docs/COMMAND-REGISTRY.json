@@ -370,11 +370,13 @@
     },
     {
       "command": "install-ecc-rules",
-      "description": "Detect the project's tech stack and install only the matching ECC rule directories into .claude/rules/ecc/ (or ~/.claude/rules/ecc/), using ECC's documented manual-copy method.",
-      "type": "testing",
+      "description": "Detect the project's tech stack (informational preview) and install ECC's rules-core module via the canonical scripts/install-apply.js --modules flow.",
+      "type": "review",
       "primaryAgents": [],
       "allAgents": [],
-      "skills": [],
+      "skills": [
+        "install-ecc-rules"
+      ],
       "path": "commands/install-ecc-rules.md"
     },
     {
@@ -1042,8 +1044,8 @@
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 15,
-      "testing": 54
+      "review": 16,
+      "testing": 53
     },
     "topAgents": [
       {
