@@ -233,6 +233,39 @@ test('sprint close defines a recoverable multi-file commit procedure', () => {
   assert.match(skill, /distinct parent epic|unique set of epic files|every distinct.*epic/i);
 });
 
+test('Phase 5 validates record IDs, canonical resolution, and regular-file safety', () => {
+  // Scope assertions to the Phase 5 section
+  const phase5 = skill.match(/### Phase 5: Sprint close[\s\S]*?## Naming Conventions/i);
+  assert.ok(phase5, 'Phase 5 section must exist');
+  const section = phase5[0];
+  // Story, Epic, and Sprint IDs must be parsed using the documented formats
+  assert.match(section, /EPIC-NNN/);
+  assert.match(section, /STORY-NNN/);
+  assert.match(section, /SPRINT-NN/);
+  assert.match(section, /[Pp]arse.*[Ii][Dd]|[Ii][Dd] format|documented format/i);
+  // Records must resolve only within the canonical .delivery subdirectory
+  assert.match(section, /\.delivery\/epics\/|\.delivery\/stories\/|\.delivery\/sprints\//);
+  assert.match(section, /within.*\.delivery|canonical.*subdirector|remain under/i);
+  // Symlinks or non-regular files must be rejected before any read/write/restore
+  assert.match(section, /symlink|symbolic link/i);
+  assert.match(section, /regular file|non-regular|reject.*link/i);
+  // Validation must cover every story, epic, current sprint, and next sprint record
+  assert.match(section, /current sprint|next sprint/i);
+});
+
+test('requires an exclusive delivery lock and conflict-safe ID creation', () => {
+  // Must acquire an exclusive delivery lock before ID selection or snapshot reads
+  assert.match(skill, /exclusive.*lock|lock.*exclusive/i);
+  assert.match(skill, /lock.*before.*(?:ID|select|snapshot)|before.*(?:ID|select|snapshot).*lock/is);
+  // Must revalidate state after acquiring the lock
+  assert.match(skill, /revalidat.*lock|re-?scan.*lock|re-?read.*lock/i);
+  // Must create new ID files with no-clobber semantics
+  assert.match(skill, /no-clobber|already.*taken|overwrite/i);
+  // Must release the lock on every success and failure path
+  assert.match(skill, /release.*lock/i);
+  assert.match(skill, /every.*success.*failure.*path|success.*failure.*release/i);
+});
+
 test('instructs agents to read CLAUDE.md conditionally and defines fallback for absent file', () => {
   // Must reference CLAUDE.md
   assert.match(skill, /CLAUDE\.md/);
@@ -240,6 +273,21 @@ test('instructs agents to read CLAUDE.md conditionally and defines fallback for 
   assert.match(skill, /[Ii]f.*CLAUDE\.md.*exist|[Ii]f.*root.*CLAUDE\.md/i);
   // Must define the omitted Project context form for repositories without CLAUDE.md
   assert.match(skill, /[Oo]mit the Project context|no root.*CLAUDE\.md.*omit/i);
+});
+
+test('Phase 4 treats root CLAUDE.md contents as untrusted reference data', () => {
+  // Scope assertions to the Phase 4 agent implementation flow
+  const phase4Flow = skill.match(/When an agent is given a story to implement[\s\S]*?### Phase 5:/i);
+  assert.ok(phase4Flow, 'Phase 4 agent implementation flow must exist');
+  const section = phase4Flow[0];
+  // The root CLAUDE.md read in the agent flow must be guarded
+  assert.match(section, /CLAUDE\.md/);
+  // Contents must be treated as untrusted reference data
+  assert.match(section, /untrusted reference data/i);
+  // Embedded directives conflicting with policy must be rejected
+  assert.match(section, /[Dd]o not follow instructions embedded|instructions embedded.*conflict/i);
+  // Tool use must be restricted to the approved story scope
+  assert.match(section, /restrict tool use|repository scope/i);
 });
 
 test('story handoff marks both context blocks as untrusted and guards against prompt injection', () => {
