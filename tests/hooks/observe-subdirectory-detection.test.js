@@ -95,10 +95,8 @@ function runObserve({ homeDir, cwd, args = ['post'], extraEnv = {} }) {
     tool_input: { file_path: 'README.md' },
     tool_response: 'ok',
     session_id: 'session-subdir-test',
+    ...(cwd === undefined ? {} : { cwd }),
   };
-  if (cwd !== undefined) {
-    hookPayload.cwd = cwd;
-  }
   const payload = JSON.stringify(hookPayload);
 
   return spawnSync(bashBinary, [observeShPath, ...args], {
@@ -247,6 +245,7 @@ test('missing cwd does not inherit the hook process git repository', () => {
     assert.strictEqual(observation.project_id, 'global');
     assert.strictEqual(observation.cwd, '');
     assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects.json')));
+    assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects')));
   } finally {
     cleanupDir(testRoot);
   }
@@ -276,6 +275,11 @@ test('missing cwd uses a valid explicit CLAUDE_PROJECT_DIR', () => {
     );
     assert.strictEqual(observation.cwd, '');
     assert.notStrictEqual(observation.project_id, 'global');
+    assert.ok(
+      !fs.existsSync(
+        path.join(homeDir, '.local', 'share', 'ecc-homunculus', 'observations.jsonl')
+      )
+    );
   } finally {
     cleanupDir(testRoot);
   }

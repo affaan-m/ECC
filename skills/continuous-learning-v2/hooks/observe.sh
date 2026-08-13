@@ -335,14 +335,6 @@ except Exception:
     pass
 
 parsed = json.load(sys.stdin)
-observation = {
-    "timestamp": os.environ["TIMESTAMP"],
-    "event": parsed["event"],
-    "tool": parsed["tool"],
-    "session": parsed["session"],
-    "project_id": os.environ.get("PROJECT_ID_ENV", "global"),
-    "project_name": os.environ.get("PROJECT_NAME_ENV", "global")
-}
 
 # Scrub secrets: match common key=value, key: value, and key"value patterns
 # Includes optional auth scheme (e.g., "Bearer", "Basic") before token
@@ -361,11 +353,17 @@ def scrub(val):
         return None
     return _SECRET_RE.sub(lambda m: m.group(1) + m.group(2) + (m.group(3) or "") + "[REDACTED]", str(val))
 
-observation["cwd"] = scrub(parsed.get("cwd", ""))
-if parsed["input"]:
-    observation["input"] = scrub(parsed["input"])
-if parsed["output"] is not None:
-    observation["output"] = scrub(parsed["output"])
+observation = {
+    "timestamp": os.environ["TIMESTAMP"],
+    "event": parsed["event"],
+    "tool": parsed["tool"],
+    "session": parsed["session"],
+    "project_id": os.environ.get("PROJECT_ID_ENV", "global"),
+    "project_name": os.environ.get("PROJECT_NAME_ENV", "global"),
+    "cwd": scrub(parsed.get("cwd", "")),
+    **({"input": scrub(parsed["input"])} if parsed["input"] else {}),
+    **({"output": scrub(parsed["output"])} if parsed["output"] is not None else {})
+}
 
 print(json.dumps(observation))
 ' >> "$OBSERVATIONS_FILE"
@@ -656,27 +654,21 @@ fi
 
 # Signal only the observer that owns this observation's project scope.
 if [ "$should_signal" -eq 1 ]; then
-  signaled_pids=" "
-  for pid_file in "${PROJECT_DIR}/.observer.pid"; do
-    if [ -f "$pid_file" ]; then
-      observer_pid=$(cat "$pid_file" 2>/dev/null || true)
-      # Validate PID is a positive integer (>1)
-      case "$observer_pid" in
-        ''|*[!0-9]*|0|1)
-          _REMOVE_FILE_IF_PRESENT "$pid_file"
-          continue
-          ;;
-      esac
-      # Deduplicate: skip if already signaled this pass
-      case "$signaled_pids" in
-        *" $observer_pid "*) continue ;;
-      esac
-      if kill -0 "$observer_pid" 2>/dev/null; then
-        kill -USR1 "$observer_pid" 2>/dev/null || true
-        signaled_pids="${signaled_pids}${observer_pid} "
-      fi
-    fi
-  done
+  pid_file="${PROJECT_DIR}/.observer.pid"
+  if [ -f "$pid_file" ]; then
+    observer_pid=$(cat "$pid_file" 2>/dev/null || true)
+    # Validate PID is a positive integer (>1)
+    case "$observer_pid" in
+      ''|*[!0-9]*|0|1)
+        _REMOVE_FILE_IF_PRESENT "$pid_file"
+        ;;
+      *)
+        if kill -0 "$observer_pid" 2>/dev/null; then
+          kill -USR1 "$observer_pid" 2>/dev/null || true
+        fi
+        ;;
+    esac
+  fi
 fi
 
 exit 0
