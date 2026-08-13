@@ -87,17 +87,18 @@ Sample role configs in this repo:
 
 | Feature | Claude Code | Codex CLI |
 |---------|------------|-----------|
-| Hooks | 8+ event types | Not yet supported |
+| Hooks | 8+ event types | 4 native lifecycle events for context and continuous learning |
 | Context file | CLAUDE.md + AGENTS.md | AGENTS.md only |
 | Skills | Skills loaded via plugin | `.agents/skills/` directory |
 | Commands | `/slash` commands | Instruction-based |
 | Agents | Subagent Task tool | Multi-agent via `/agent` and `[agents.<name>]` roles |
-| Security | Hook-based enforcement | Instruction + sandbox |
+| Security | Hook-based enforcement | Instruction + sandbox; native learning hooks are non-blocking |
 | MCP | Full support | Supported via `config.toml` and `codex mcp add` |
 
-## Security Without Hooks
+## Security Boundary
 
-Since Codex lacks hooks, security enforcement is instruction-based:
+The native Codex hook bundle intentionally does not port Claude's blocking
+security handlers. Security enforcement remains instruction-based:
 1. Always validate inputs at system boundaries
 2. Never hardcode secrets — use environment variables
 3. Run `npm audit` / `pip audit` before committing

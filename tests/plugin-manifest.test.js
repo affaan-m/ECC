@@ -366,14 +366,18 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
   ]);
   assert.deepStrictEqual(
     Object.keys(config.hooks || {}),
-    ['SessionStart'],
-    'Only the verified, non-blocking SessionStart hook ships natively; Claude hook profiles are not Codex hook profiles'
+    ['SessionStart', 'PreToolUse', 'PostToolUse', 'SessionEnd'],
+    'Only the verified Codex context and continuous-learning lifecycle hooks ship natively'
   );
-  assert.deepStrictEqual(
-    config.hooks.SessionStart.map(group => group.id),
-    ['session:start'],
-    'Do not ship Claude handlers that surface hook failures in Codex'
-  );
+  const expectedHookIds = {
+    SessionStart: ['session:start'],
+    PreToolUse: ['pre:observe:continuous-learning'],
+    PostToolUse: ['post:observe:continuous-learning'],
+    SessionEnd: ['session:end:marker'],
+  };
+  for (const [event, ids] of Object.entries(expectedHookIds)) {
+    assert.deepStrictEqual(config.hooks[event].map(group => group.id), ids, `Unexpected native Codex ${event} handlers`);
+  }
 
   for (const [event, groups] of Object.entries(config.hooks || {})) {
     assert.ok(supportedEvents.has(event), `Unsupported Codex hook event: ${event}`);
@@ -407,6 +411,19 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
     }))
   };
   assert.deepStrictEqual(config.hooks.SessionStart[0], expectedSessionStart, 'Codex SessionStart hook must track its canonical implementation with a Codex-root bootstrap');
+
+  assert.ok(
+    config.hooks.PreToolUse[0].hooks[0].command.includes('pre:observe:continuous-learning scripts/hooks/observe-runner.js standard,strict'),
+    'Codex PreToolUse must use the shared continuous-learning observer'
+  );
+  assert.ok(
+    config.hooks.PostToolUse[0].hooks[0].command.includes('post:observe:continuous-learning scripts/hooks/observe-runner.js standard,strict'),
+    'Codex PostToolUse must use the shared continuous-learning observer'
+  );
+  assert.ok(
+    config.hooks.SessionEnd[0].hooks[0].command.includes('session:end:marker scripts/hooks/session-end-marker.js minimal,standard,strict'),
+    'Codex SessionEnd must use the shared observer lease cleanup'
+  );
 });
 
 test('hook documentation distinguishes the Claude off setting from runtime profiles', () => {
@@ -420,15 +437,15 @@ test('hook documentation distinguishes the Claude off setting from runtime profi
   }
 });
 
-test('Chinese capability matrix documents the native Codex SessionStart hook', () => {
+test('Chinese capability matrix documents the native Codex learning lifecycle', () => {
   const source = fs.readFileSync(zhCnReadmePath, 'utf8');
   assert.ok(
-    source.includes('| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |'),
-    'Expected the Codex capability column to document one native SessionStart event'
+    source.includes('| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart、PreToolUse、PostToolUse、SessionEnd（4 种类型） | 11 种类型 |'),
+    'Expected the Codex capability column to document the native learning lifecycle'
   );
   assert.ok(
-    source.includes('| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |'),
-    'Expected the Codex capability column to document the SessionStart bootstrap script'
+    source.includes('| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 会话上下文和持续学习 | 插件钩子 |'),
+    'Expected the Codex capability column to document context and continuous learning'
   );
   assert.ok(
     !source.includes('Codex 缺少钩子功能'),

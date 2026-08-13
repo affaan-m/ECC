@@ -128,6 +128,23 @@ function resolveSessionId(rawSessionId = process.env.CLAUDE_SESSION_ID) {
   return sanitizeSessionId(rawSessionId || '') || '';
 }
 
+function resolveHookSessionId(rawInput, env = process.env) {
+  let payload = rawInput;
+  if (typeof rawInput === 'string') {
+    try {
+      payload = JSON.parse(rawInput);
+    } catch {
+      payload = {};
+    }
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    payload = {};
+  }
+
+  const rawSessionId = payload.session_id ?? payload.sessionId ?? env.ECC_SESSION_ID ?? env.CLAUDE_SESSION_ID;
+  return resolveSessionId(rawSessionId);
+}
+
 function getSessionLeaseFile(context, rawSessionId = process.env.CLAUDE_SESSION_ID) {
   const sessionId = resolveSessionId(rawSessionId);
   if (!sessionId) return '';
@@ -208,5 +225,6 @@ module.exports = {
   removeSessionLease,
   listSessionLeases,
   stopObserverForContext,
-  resolveSessionId
+  resolveSessionId,
+  resolveHookSessionId
 };

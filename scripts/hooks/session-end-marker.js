@@ -11,7 +11,7 @@ const {
   removeSessionLease,
   listSessionLeases,
   stopObserverForContext,
-  resolveSessionId
+  resolveHookSessionId
 } = require('../lib/observer-sessions');
 
 function log(message) {
@@ -20,10 +20,10 @@ function log(message) {
 
 function run(rawInput) {
   const output = rawInput || '';
-  const sessionId = resolveSessionId();
+  const sessionId = resolveHookSessionId(output);
 
   if (!sessionId) {
-    log('No CLAUDE_SESSION_ID available; skipping observer cleanup');
+    log('No hook session id available; skipping observer cleanup');
     return output;
   }
 

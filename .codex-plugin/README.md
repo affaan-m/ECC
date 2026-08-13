@@ -63,12 +63,16 @@ Codex sessions using that home.
 
 The Codex manifest uses the documented `hooks` field to bundle
 `./hooks/codex-hooks.json`. This provider-specific projection keeps the
-synchronous `SessionStart` bootstrap verified against Codex 0.146. Claude hook
-profiles are not Codex hook profiles: handlers that block tools, use unsupported
-events, run asynchronously, or fail Codex's hook protocol stay out of the native
-bundle. Codex enables hook support by default, but native plugin installation
-does not silently authorize commands. Start a new Codex session, open `/hooks`,
-then review and trust the ECC hook definition before enabling it.
+synchronous context and continuous-learning lifecycle verified against Codex
+0.146: `SessionStart` loads context and registers an observer lease,
+`PreToolUse` and `PostToolUse` capture observations, and `SessionEnd` releases
+the lease. `ECC_HOOK_PROFILE` still gates the shared handlers, but Codex hook
+trust is independent from Claude setup scopes. Blocking handlers, unsupported
+events, asynchronous handlers, and commands that fail Codex's hook protocol
+stay out of the native bundle. Codex enables hook support by default, but native
+plugin installation does not silently authorize commands. Start a new Codex
+session, open `/hooks`, then review and trust the ECC hook definitions before
+enabling them.
 Codex records trust against each definition's hash, so changed hooks require
 review again. Use `/plugins` for plugin enablement and `/hooks` for hook trust;
 these are separate controls.

@@ -34,7 +34,7 @@ policy belongs in `AGENTS.md` and `CONTRIBUTING.md`.
 | `commands/` | Legacy slash-command shims | Update only when command compatibility is needed |
 | `docs/COMMAND-AGENT-MAP.md` | Command to agent and skill relationships | Check before renaming or adding workflow surfaces |
 | `rules/` | Shared coding, security, and workflow rules | Read language or domain rules before implementation |
-| `hooks/` | Claude Code hook workflows | Do not assume Codex hook parity |
+| `hooks/` | Shared hook workflows and the native `codex-hooks.json` projection | Inspect the provider-specific projection; do not assume full hook parity |
 | `scripts/` | Install, validation, sync, and CLI utilities | Follow existing Node script patterns |
 | `manifests/` | Install component and module registration | Update when adding installable surfaces |
 | `.github/PULL_REQUEST_TEMPLATE.md` | Required PR body checklist | Preserve sections when creating PRs |
@@ -47,7 +47,7 @@ Use this quick routing before editing:
 |------|-------------|---------------------|
 | Add or update a skill | `skills/<name>/`, `.agents/skills/<name>/`, `manifests/`, `agent.yaml` | `node scripts/ci/validate-skills.js`, `node tests/ci/codex-skill-surface.test.js` |
 | Add or update a command | `commands/`, `docs/COMMAND-AGENT-MAP.md`, `COMMANDS-QUICK-REF.md` | `node scripts/ci/validate-commands.js`, `npm run command-registry:check` |
-| Add a Codex setup change | `.codex/`, `scripts/codex/`, `scripts/lib/install-targets/codex-home.js` | `node tests/scripts/codex-hooks.test.js`, `node tests/codex-config.test.js` |
+| Add a Codex setup or native hook change | `.codex/`, `.codex-plugin/`, `hooks/codex-hooks.json`, `scripts/codex/`, `scripts/lib/install-targets/codex-home.js` | `node tests/codex-native-hooks.test.js`, `node tests/plugin-manifest.test.js`, `node tests/scripts/codex-hooks.test.js` |
 | Add installable content | `manifests/`, `scripts/lib/install-*`, `package.json` | `node scripts/ci/validate-install-manifests.js`, targeted install tests |
 | Add docs-only guidance | `docs/`, `README.md`, harness supplement files | Targeted docs test plus `markdownlint` if available |
 | Review a PR | `commands/review-pr.md`, `agents/*reviewer.md`, `agents/pr-test-analyzer.md` | Diff review plus relevant tests |
@@ -145,8 +145,9 @@ docs-only changes, run the targeted docs test and review links for drift.
 
 - Do not treat `commands/` as the canonical place for new workflow knowledge.
   Prefer `skills/` first.
-- Do not copy Claude hook claims into Codex docs. Codex enforcement is based on
-  instructions, sandbox settings, and optional MCP config.
+- Do not copy Claude hook claims into Codex docs. Only the provider-specific
+  context and continuous-learning lifecycle in `hooks/codex-hooks.json` is
+  native; blocking enforcement remains instruction- and sandbox-based.
 - Do not update `.agents/skills/` without checking the canonical `skills/`
   source and Codex `agents/openai.yaml` metadata expectations.
 - Do not open broad PRs that mix unrelated skill, command, install, and release
