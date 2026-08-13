@@ -5,7 +5,9 @@
  * root when cwd is a subdirectory inside a repository.
  */
 
-if (process.platform === 'win32') {
+const bashBinary = process.env.ECC_TEST_BASH || 'bash';
+
+if (process.platform === 'win32' && !process.env.ECC_TEST_BASH) {
   console.log('Skipping bash-dependent observe tests on Windows');
   process.exit(0);
 }
@@ -57,7 +59,8 @@ function normalizeComparablePath(filePath) {
     return filePath;
   }
 
-  const normalized = fs.realpathSync(filePath);
+  const resolver = fs.realpathSync.native || fs.realpathSync;
+  const normalized = resolver(filePath);
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
@@ -87,15 +90,18 @@ function gitInit(dir) {
 }
 
 function runObserve({ homeDir, cwd, args = ['post'], extraEnv = {} }) {
-  const payload = JSON.stringify({
+  const hookPayload = {
     tool_name: 'Read',
     tool_input: { file_path: 'README.md' },
     tool_response: 'ok',
     session_id: 'session-subdir-test',
-    cwd,
-  });
+  };
+  if (cwd !== undefined) {
+    hookPayload.cwd = cwd;
+  }
+  const payload = JSON.stringify(hookPayload);
 
-  return spawnSync('bash', [observeShPath, ...args], {
+  return spawnSync(bashBinary, [observeShPath, ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     input: payload,
@@ -169,7 +175,7 @@ test('git rev-parse fails cleanly outside a repo when discovery is bounded', () 
 
   try {
     const result = spawnSync(
-      'bash',
+      bashBinary,
       ['-lc', 'git -C "$TARGET_DIR" rev-parse --show-toplevel 2>/dev/null || echo ""'],
       {
         encoding: 'utf8',
@@ -211,6 +217,65 @@ test('observe.sh writes project metadata for the git root when cwd is a subdirec
 
     const observationsPath = path.join(projectDir, 'observations.jsonl');
     assert.ok(fs.existsSync(observationsPath), 'observe.sh should append an observation');
+    const observation = JSON.parse(fs.readFileSync(observationsPath, 'utf8').trim());
+    assert.strictEqual(
+      normalizeComparablePath(observation.cwd),
+      normalizeComparablePath(subDir),
+      'stored observation should retain the payload cwd for diagnosis'
+    );
+  } finally {
+    cleanupDir(testRoot);
+  }
+});
+
+test('missing cwd does not inherit the hook process git repository', () => {
+  const testRoot = createTempDir();
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    fs.mkdirSync(homeDir, { recursive: true });
+
+    // runObserve executes from repoRoot, which is itself a git repository.
+    // A missing payload cwd must not let detect-project.sh inherit that scope.
+    const result = runObserve({ homeDir, cwd: undefined });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const homunculusDir = path.join(homeDir, '.local', 'share', 'ecc-homunculus');
+    const observation = JSON.parse(
+      fs.readFileSync(path.join(homunculusDir, 'observations.jsonl'), 'utf8').trim()
+    );
+    assert.strictEqual(observation.project_id, 'global');
+    assert.strictEqual(observation.cwd, '');
+    assert.ok(!fs.existsSync(path.join(homunculusDir, 'projects.json')));
+  } finally {
+    cleanupDir(testRoot);
+  }
+});
+
+test('missing cwd uses a valid explicit CLAUDE_PROJECT_DIR', () => {
+  const testRoot = createTempDir();
+
+  try {
+    const homeDir = path.join(testRoot, 'home');
+    const repoDir = path.join(testRoot, 'repo');
+    fs.mkdirSync(homeDir, { recursive: true });
+    fs.mkdirSync(repoDir, { recursive: true });
+    gitInit(repoDir);
+
+    const result = runObserve({
+      homeDir,
+      cwd: undefined,
+      extraEnv: { CLAUDE_PROJECT_DIR: repoDir },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const { metadata, projectDir } = readSingleProjectMetadata(homeDir);
+    assert.strictEqual(normalizeComparablePath(metadata.root), normalizeComparablePath(repoDir));
+    const observation = JSON.parse(
+      fs.readFileSync(path.join(projectDir, 'observations.jsonl'), 'utf8').trim()
+    );
+    assert.strictEqual(observation.cwd, '');
+    assert.notStrictEqual(observation.project_id, 'global');
   } finally {
     cleanupDir(testRoot);
   }
