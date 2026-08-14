@@ -10,6 +10,7 @@ set -eu
 ROOT=$(git rev-parse --show-toplevel)
 MAP_REL=".governance/docs-map.json"
 LOG_PATH="PROJECT_LOG.md"
+HISTORY_ROLE_IS_MAPPED=0
 
 if git cat-file -e ":$MAP_REL" 2>/dev/null; then
   if ! MAPPED=$(git show ":$MAP_REL" | python3 -c '
@@ -21,6 +22,7 @@ root = pathlib.Path(sys.argv[1]).resolve()
 mapping = json.load(sys.stdin)
 if not isinstance(mapping, dict):
     raise ValueError("documentation map must be an object")
+HISTORY_ROLE_IS_MAPPED = "history" in mapping
 value = mapping.get("history", "PROJECT_LOG.md")
 if not isinstance(value, str) or not value.strip():
     raise ValueError("history must be a non-empty path")
@@ -30,13 +32,17 @@ if path.is_absolute():
 resolved = (root / path).resolve()
 if resolved != root and root not in resolved.parents:
     raise ValueError("history escapes project root")
+print("mapped" if HISTORY_ROLE_IS_MAPPED else "default")
 print(path.as_posix())
 ' "$ROOT")
   then
     echo "docs-governance: invalid .governance/docs-map.json; refusing to bypass history enforcement" >&2
     exit 1
   fi
-  [ -n "$MAPPED" ] && LOG_PATH="$MAPPED"
+  HISTORY_ROLE_MODE=$(printf '%s\n' "$MAPPED" | sed -n '1p')
+  MAPPED_PATH=$(printf '%s\n' "$MAPPED" | sed -n '2p')
+  [ "$HISTORY_ROLE_MODE" = "mapped" ] && HISTORY_ROLE_IS_MAPPED=1
+  [ -n "$MAPPED_PATH" ] && LOG_PATH="$MAPPED_PATH"
 elif git cat-file -e "HEAD:$MAP_REL" 2>/dev/null; then
   echo "docs-governance: staged deletion of $MAP_REL requires explicit human review; refusing to bypass history enforcement" >&2
   exit 1
@@ -46,6 +52,10 @@ fi
 if ! git cat-file -e ":$LOG_PATH" 2>/dev/null; then
   if git cat-file -e "HEAD:$LOG_PATH" 2>/dev/null; then
     echo "docs-governance: staged deletion of the history artifact requires explicit human review: $LOG_PATH" >&2
+    exit 1
+  fi
+  if [ "$HISTORY_ROLE_IS_MAPPED" -eq 1 ]; then
+    echo "docs-governance: mapped history artifact is missing from the index: $LOG_PATH" >&2
     exit 1
   fi
   exit 0

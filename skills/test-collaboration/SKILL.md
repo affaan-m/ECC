@@ -85,7 +85,7 @@ Rescan by event, not by calendar:
 
 Use a stable ID such as `TEST-ORDER-001`. Record at least:
 
-- state: `missing`, `in progress`, `covered`, or `not applicable`;
+- state: `missing`, `in progress`, `unverified`, `covered`, or `not applicable`;
 - source requirement, rule, risk, bug, or incident;
 - representative input and observable expected behavior;
 - level and purpose;

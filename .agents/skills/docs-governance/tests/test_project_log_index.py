@@ -4,8 +4,8 @@ import os
 import sqlite3
 import subprocess
 import sys
-import tempfile
-import unittest
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,13 +20,11 @@ def render_log(count: int) -> str:
     return "# PROJECT_LOG.md — Append-only\n\n" + "\n".join(entries) + "\n"
 
 
-class ProjectLogIndexTest(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.project = Path(self.temp_dir.name)
-
-    def tearDown(self):
-        self.temp_dir.cleanup()
+@pytest.mark.unit
+class TestProjectLogIndex:
+    @pytest.fixture(autouse=True)
+    def project_root(self, tmp_path: Path) -> None:
+        self.project = tmp_path
 
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -36,67 +34,64 @@ class ProjectLogIndexTest(unittest.TestCase):
             check=False,
         )
 
-    def test_status_counts_events_not_lines(self):
+    def test_status_counts_events_not_lines(self) -> None:
         (self.project / "PROJECT_LOG.md").write_text(render_log(201), encoding="utf-8")
         result = self.run_script("status")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("events: 201", result.stdout)
-        self.assertIn("above threshold", result.stdout)
+        assert result.returncode == 0, result.stderr
+        assert "events: 201" in result.stdout
+        assert "above threshold" in result.stdout
 
-    def test_rebuild_is_idempotent_and_indexes_refs(self):
+    def test_rebuild_is_idempotent_and_indexes_refs(self) -> None:
         (self.project / "PROJECT_LOG.md").write_text(render_log(3), encoding="utf-8")
         first = self.run_script("rebuild")
         second = self.run_script("rebuild")
-        self.assertEqual(first.returncode, 0, first.stderr)
-        self.assertEqual(second.returncode, 0, second.stderr)
+        assert first.returncode == 0, first.stderr
+        assert second.returncode == 0, second.stderr
 
         database = self.project / ".governance" / "project-log.sqlite"
         connection = sqlite3.connect(database)
         try:
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0], 3)
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM event_refs WHERE ref_type='test'").fetchone()[0], 3)
-            self.assertEqual(connection.execute("SELECT DISTINCT module FROM events").fetchone()[0], "orders")
+            assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 3
+            assert connection.execute("SELECT COUNT(*) FROM event_refs WHERE ref_type='test'").fetchone()[0] == 3
+            assert connection.execute("SELECT DISTINCT module FROM events").fetchone()[0] == "orders"
         finally:
             connection.close()
 
-    def test_archive_requires_confirmation_and_preserves_every_event(self):
+    def test_archive_requires_confirmation_and_preserves_every_event(self) -> None:
         log = self.project / "PROJECT_LOG.md"
         log.write_text(render_log(201), encoding="utf-8")
         original = log.read_text(encoding="utf-8")
 
         blocked = self.run_script("archive", "--keep", "100")
-        self.assertNotEqual(blocked.returncode, 0)
-        self.assertEqual(log.read_text(encoding="utf-8"), original)
-        self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
+        assert blocked.returncode != 0
+        assert log.read_text(encoding="utf-8") == original
+        assert not (self.project / "PROJECT_LOG.archive.md").exists()
 
         archived = self.run_script("archive", "--keep", "100", "--yes")
-        self.assertEqual(archived.returncode, 0, archived.stderr)
+        assert archived.returncode == 0, archived.stderr
         active_text = log.read_text(encoding="utf-8")
         archive_text = (self.project / "PROJECT_LOG.archive.md").read_text(encoding="utf-8")
-        self.assertEqual(active_text.count("\n## ["), 100)
-        self.assertEqual(archive_text.count("\n## ["), 101)
-        self.assertIn("Historical events are archived", active_text)
+        assert active_text.count("\n## [") == 100
+        assert archive_text.count("\n## [") == 101
+        assert "Historical events are archived" in active_text
 
         connection = sqlite3.connect(self.project / ".governance" / "project-log.sqlite")
         try:
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0], 201)
-            self.assertEqual(
-                connection.execute(
-                    "SELECT COUNT(*) FROM events WHERE source_file='PROJECT_LOG.archive.md'"
-                ).fetchone()[0],
-                101,
-            )
+            assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 201
+            assert connection.execute(
+                "SELECT COUNT(*) FROM events WHERE source_file='PROJECT_LOG.archive.md'"
+            ).fetchone()[0] == 101
         finally:
             connection.close()
 
-    def test_archive_below_threshold_does_not_mutate_log(self):
+    def test_archive_below_threshold_does_not_mutate_log(self) -> None:
         log = self.project / "PROJECT_LOG.md"
         log.write_text(render_log(20), encoding="utf-8")
         before = log.read_text(encoding="utf-8")
         result = self.run_script("archive", "--yes")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(log.read_text(encoding="utf-8"), before)
-        self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
+        assert result.returncode == 0, result.stderr
+        assert log.read_text(encoding="utf-8") == before
+        assert not (self.project / "PROJECT_LOG.archive.md").exists()
 
     def test_archive_rejects_negative_threshold_without_mutation(self) -> None:
         log = self.project / "PROJECT_LOG.md"
@@ -105,12 +100,12 @@ class ProjectLogIndexTest(unittest.TestCase):
 
         result = self.run_script("archive", "--threshold", "-1", "--yes")
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--threshold must be greater than or equal to 0", result.stderr)
-        self.assertEqual(log.read_text(encoding="utf-8"), before)
-        self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
+        assert result.returncode != 0
+        assert "--threshold must be greater than or equal to 0" in result.stderr
+        assert log.read_text(encoding="utf-8") == before
+        assert not (self.project / "PROJECT_LOG.archive.md").exists()
 
-    def test_archive_preserves_existing_file_permissions(self):
+    def test_archive_preserves_existing_file_permissions(self) -> None:
         log = self.project / "PROJECT_LOG.md"
         archive = self.project / "PROJECT_LOG.archive.md"
         log.write_text(render_log(201), encoding="utf-8")
@@ -119,11 +114,11 @@ class ProjectLogIndexTest(unittest.TestCase):
         os.chmod(archive, 0o644)
 
         result = self.run_script("archive", "--keep", "100", "--yes")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(log.stat().st_mode & 0o777, 0o640)
-        self.assertEqual(archive.stat().st_mode & 0o777, 0o644)
+        assert result.returncode == 0, result.stderr
+        assert log.stat().st_mode & 0o777 == 0o640
+        assert archive.stat().st_mode & 0o777 == 0o644
 
-    def test_archive_preserves_duplicate_events_in_markdown(self):
+    def test_archive_preserves_duplicate_events_in_markdown(self) -> None:
         duplicate = "## [2026-01-01] fix | repeated evidence\n"
         unique = [
             f"## [2026-02-{(index % 28) + 1:02d}] fix | unique {index:03d}\n"
@@ -133,11 +128,11 @@ class ProjectLogIndexTest(unittest.TestCase):
         log.write_text("# LOG\n\n" + duplicate + duplicate + "".join(unique), encoding="utf-8")
 
         result = self.run_script("archive", "--keep", "100", "--yes")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        assert result.returncode == 0, result.stderr
         archive_text = (self.project / "PROJECT_LOG.archive.md").read_text(encoding="utf-8")
-        self.assertEqual(archive_text.count("repeated evidence"), 2)
+        assert archive_text.count("repeated evidence") == 2
 
-    def test_role_map_rejects_relative_history_path_outside_project(self):
+    def test_role_map_rejects_relative_history_path_outside_project(self) -> None:
         (self.project / "PROJECT_LOG.md").write_text(render_log(1), encoding="utf-8")
         outside = self.project.parent / f"{self.project.name}-outside.md"
         governance = self.project / ".governance"
@@ -146,11 +141,11 @@ class ProjectLogIndexTest(unittest.TestCase):
             json.dumps({"history": f"../{outside.name}"}), encoding="utf-8"
         )
         result = self.run_script("status")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must stay inside the project root", result.stderr)
-        self.assertFalse(outside.exists())
+        assert result.returncode != 0
+        assert "must stay inside the project root" in result.stderr
+        assert not outside.exists()
 
-    def test_role_map_rejects_absolute_history_path_outside_project(self):
+    def test_role_map_rejects_absolute_history_path_outside_project(self) -> None:
         (self.project / "PROJECT_LOG.md").write_text(render_log(1), encoding="utf-8")
         outside = self.project.parent / f"{self.project.name}-absolute-outside.md"
         governance = self.project / ".governance"
@@ -160,11 +155,11 @@ class ProjectLogIndexTest(unittest.TestCase):
         )
 
         result = self.run_script("status")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must stay inside the project root", result.stderr)
-        self.assertFalse(outside.exists())
+        assert result.returncode != 0
+        assert "must stay inside the project root" in result.stderr
+        assert not outside.exists()
 
-    def test_role_map_controls_history_status_rebuild_and_archive(self):
+    def test_role_map_controls_history_status_rebuild_and_archive(self) -> None:
         docs = self.project / "docs"
         docs.mkdir()
         log = docs / "history.md"
@@ -183,23 +178,19 @@ class ProjectLogIndexTest(unittest.TestCase):
         )
 
         status = self.run_script("status")
-        self.assertEqual(status.returncode, 0, status.stderr)
-        self.assertIn("events: 201", status.stdout)
+        assert status.returncode == 0, status.stderr
+        assert "events: 201" in status.stdout
 
         archived = self.run_script("archive", "--keep", "100", "--yes")
-        self.assertEqual(archived.returncode, 0, archived.stderr)
-        self.assertTrue(archive.exists())
-        self.assertIn("docs/history-archive.md", log.read_text(encoding="utf-8"))
+        assert archived.returncode == 0, archived.stderr
+        assert archive.exists()
+        assert "docs/history-archive.md" in log.read_text(encoding="utf-8")
 
         connection = sqlite3.connect(governance / "project-log.sqlite")
         try:
             sources = {
                 row[0] for row in connection.execute("SELECT DISTINCT source_file FROM events")
             }
-            self.assertEqual(sources, {"docs/history.md", "docs/history-archive.md"})
+            assert sources == {"docs/history.md", "docs/history-archive.md"}
         finally:
             connection.close()
-
-
-if __name__ == "__main__":
-    unittest.main()

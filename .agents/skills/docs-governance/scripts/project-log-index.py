@@ -6,11 +6,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import sqlite3
 import stat
+import sys
 import tempfile
 from dataclasses import dataclass
 
@@ -24,6 +26,16 @@ TEST_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b", re.IGNORECASE)
 COMMIT_RE = re.compile(r"(?<![0-9a-f])(?:[0-9a-f]{7,40})(?![0-9a-f])", re.IGNORECASE)
 ADR_RE = re.compile(r"(?:docs/adr/\d{4}-[a-z0-9-]+\.md|\bADR-?\d{4}\b)", re.IGNORECASE)
 CONTRACT_RE = re.compile(r"\bCONTRACT\.md\b", re.IGNORECASE)
+LOGGER = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    """Emit CLI status messages to stdout without configuring the root logger."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    LOGGER.handlers[:] = [handler]
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.propagate = False
 
 
 @dataclass(frozen=True)
@@ -215,13 +227,13 @@ def render(preamble: str, entries: list[Entry]) -> str:
 
 def command_status(active: list[Entry], threshold: int) -> None:
     state = "above threshold; create a structured archive/index" if len(active) > threshold else "within threshold"
-    print(f"PROJECT_LOG events: {len(active)}; threshold: {threshold}; {state}.")
+    LOGGER.info("PROJECT_LOG events: %s; threshold: %s; %s.", len(active), threshold, state)
 
 
 def command_rebuild(database: Path, archive: list[Entry], active: list[Entry]) -> None:
     entries = deduplicate(archive + active)
     build_database(database, entries)
-    print(f"Rebuilt {database}: {len(entries)} events.")
+    LOGGER.info("Rebuilt %s: %s events.", database, len(entries))
 
 
 def command_archive(
@@ -250,7 +262,7 @@ def command_archive(
     )
 
     if len(active) <= threshold:
-        print(f"PROJECT_LOG has {len(active)} events, within threshold {threshold}; no archive is needed.")
+        LOGGER.info("PROJECT_LOG has %s events, within threshold %s; no archive is needed.", len(active), threshold)
         return
     if not confirmed:
         raise SystemExit("Archiving rewrites the active log event set; add --yes only after user confirmation.")
@@ -287,10 +299,11 @@ def command_archive(
             atomic_write(archive_path, before_archive.decode("utf-8"))
         raise
 
-    print(f"Archived {len(moved)} events; the active log retains the newest {len(recent)}.")
+    LOGGER.info("Archived %s events; the active log retains the newest %s.", len(moved), len(recent))
 
 
 def main() -> int:
+    configure_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("status", "rebuild", "archive"), nargs="?", default="status")
     parser.add_argument("--root", type=Path, default=Path.cwd())

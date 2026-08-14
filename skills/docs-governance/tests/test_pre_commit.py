@@ -94,6 +94,23 @@ class PreCommitGuardTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("staged deletion of the history artifact", result.stderr)
 
+    def test_mapped_history_missing_from_index_fails_closed(self) -> None:
+        (self.project / ".governance" / "docs-map.json").write_text(
+            json.dumps({"history": "docs/CHANGELOG.md"}),
+            encoding="utf-8",
+        )
+        (self.project / "app.py").write_text("value = 2\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", ".governance/docs-map.json", "app.py"],
+            cwd=self.project,
+            check=True,
+        )
+
+        result = self.run_hook()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mapped history artifact is missing from the index", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
