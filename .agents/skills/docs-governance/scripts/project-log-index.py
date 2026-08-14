@@ -229,16 +229,26 @@ def command_archive(
     log_path: Path,
     archive_path: Path,
     database: Path,
-    preamble: str,
-    active: list[Entry],
-    archive_preamble: str,
-    archived: list[Entry],
     threshold: int,
     keep: int,
     confirmed: bool,
     archive_note: str,
     archive_preamble_default: str,
 ) -> None:
+    if threshold < 0:
+        raise SystemExit("--threshold must be greater than or equal to 0.")
+
+    before_log = log_path.read_bytes()
+    before_archive = archive_path.read_bytes() if archive_path.exists() else None
+    log_source = log_path.relative_to(root).as_posix()
+    archive_source = archive_path.relative_to(root).as_posix()
+    preamble, active = parse_entries(before_log.decode("utf-8"), log_source)
+    archive_preamble, archived = (
+        parse_entries(before_archive.decode("utf-8"), archive_source)
+        if before_archive is not None
+        else ("", [])
+    )
+
     if len(active) <= threshold:
         print(f"PROJECT_LOG has {len(active)} events, within threshold {threshold}; no archive is needed.")
         return
@@ -257,8 +267,11 @@ def command_archive(
 
     active_content = render(preamble, recent)
     archive_content = render(archive_preamble, merged_archive)
-    before_log = log_path.read_bytes()
-    before_archive = archive_path.read_bytes() if archive_path.exists() else None
+
+    current_log = log_path.read_bytes()
+    current_archive = archive_path.read_bytes() if archive_path.exists() else None
+    if current_log != before_log or current_archive != before_archive:
+        raise SystemExit("Project history changed while the archive was prepared; retry the command.")
 
     try:
         atomic_write(archive_path, archive_content)
@@ -304,10 +317,6 @@ def main() -> int:
             log_path,
             archive_path,
             database,
-            preamble,
-            active,
-            archive_preamble,
-            archived,
             args.threshold,
             args.keep,
             args.yes,

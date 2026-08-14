@@ -98,6 +98,18 @@ class ProjectLogIndexTest(unittest.TestCase):
         self.assertEqual(log.read_text(encoding="utf-8"), before)
         self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
 
+    def test_archive_rejects_negative_threshold_without_mutation(self) -> None:
+        log = self.project / "PROJECT_LOG.md"
+        log.write_text(render_log(20), encoding="utf-8")
+        before = log.read_text(encoding="utf-8")
+
+        result = self.run_script("archive", "--threshold", "-1", "--yes")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--threshold must be greater than or equal to 0", result.stderr)
+        self.assertEqual(log.read_text(encoding="utf-8"), before)
+        self.assertFalse((self.project / "PROJECT_LOG.archive.md").exists())
+
     def test_archive_preserves_existing_file_permissions(self):
         log = self.project / "PROJECT_LOG.md"
         archive = self.project / "PROJECT_LOG.archive.md"

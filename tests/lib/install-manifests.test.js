@@ -93,6 +93,8 @@ function runTests() {
   if (test('resolves documentation-governance for every advertised target', () => {
     const module = loadInstallManifests().modulesById.get('documentation-governance');
     assert.ok(module, 'Should include documentation-governance');
+    assert.ok(Array.isArray(module.targets) && module.targets.length > 0,
+      'documentation-governance should advertise at least one install target');
     for (const target of module.targets) {
       const plan = resolveInstallPlan({ moduleIds: [module.id], target });
       assert.ok(plan.selectedModuleIds.includes(module.id),

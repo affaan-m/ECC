@@ -32,7 +32,7 @@ class AuditDocsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Broken Markdown link", result.stdout)
 
-    def test_artifact_scope_resolves_root_relative_links_inside_project(self):
+    def test_artifact_scope_resolves_root_relative_links_inside_project(self) -> None:
         docs = self.project / "docs"
         docs.mkdir()
         (docs / "guide.md").write_text("[status](/PROJECT_STATUS.md)\n", encoding="utf-8")
@@ -40,7 +40,7 @@ class AuditDocsTest(unittest.TestCase):
         result = self.run_audit("artifacts")
         self.assertEqual(result.returncode, 0, result.stdout)
 
-    def test_artifact_scope_rejects_links_that_escape_project(self):
+    def test_artifact_scope_rejects_links_that_escape_project(self) -> None:
         outside = self.project.parent / "outside.md"
         outside.write_text("# Outside\n", encoding="utf-8")
         try:
@@ -50,6 +50,14 @@ class AuditDocsTest(unittest.TestCase):
             self.assertIn("Broken Markdown link", result.stdout)
         finally:
             outside.unlink(missing_ok=True)
+
+    def test_artifact_scope_ignores_protocol_relative_external_links(self) -> None:
+        (self.project / "guide.md").write_text(
+            "[asset](//cdn.example.com/file.js)\n",
+            encoding="utf-8",
+        )
+        result = self.run_audit("artifacts")
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_adr_scope_requires_every_file_in_index(self):
         adr_dir = self.project / "docs" / "adr"
@@ -144,7 +152,7 @@ class AuditDocsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("Active and archived history remain append-only when combined", result.stdout)
 
-    def test_log_duplicate_removal_is_detected(self):
+    def test_log_duplicate_removal_is_detected(self) -> None:
         subprocess.run(["git", "init"], cwd=self.project, capture_output=True, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.project, check=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=self.project, check=True)

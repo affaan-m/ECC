@@ -94,6 +94,6 @@ Claude Code can invoke `/regression-audit` and the `regression-auditor`. Codex a
 
 ## Progressive Adoption
 
-- Fewer than three modules, or no cross-module references: do not create a ledger.
+- Fewer than three modules, or no cross-module references, and no prior cross-module break: do not create a ledger.
 - First “A broke B” incident: establish the ledger that day.
 - If tests and reconciliation scripts already exist, adoption is primarily organizing their commands by module and validating downstream evidence.
