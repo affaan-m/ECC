@@ -59,6 +59,14 @@ class AuditDocsTest(unittest.TestCase):
         result = self.run_audit("artifacts")
         self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_artifact_scope_ignores_external_uri_schemes_case_insensitively(self) -> None:
+        (self.project / "guide.md").write_text(
+            "[secure](HTTPS://example.com/guide)\n[transfer](ftp://example.com/file)\n",
+            encoding="utf-8",
+        )
+        result = self.run_audit("artifacts")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_adr_scope_requires_every_file_in_index(self):
         adr_dir = self.project / "docs" / "adr"
         adr_dir.mkdir(parents=True)

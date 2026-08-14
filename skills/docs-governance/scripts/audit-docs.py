@@ -34,6 +34,7 @@ ENTRY_RE = re.compile(
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 CODE_PATH_RE = re.compile(r"`([^`\n]+)`")
 TEST_ID_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b", re.IGNORECASE)
+URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 ADR_FILE_RE = re.compile(r"^\d{4}-[a-z0-9-]+\.md$")
 ADR_TARGET_RE = re.compile(r"\b\d{4}-[a-z0-9-]+\.md\b")
 IGNORED_DIRS = {".git", ".governance", ".venv", "node_modules", "vendor", "__pycache__"}
@@ -121,7 +122,7 @@ def git_show(root: Path, relative: str) -> str | None:
 def normalize_link_target(raw: str) -> str | None:
     target = raw.strip().split(maxsplit=1)[0].strip("<>")
     target = unquote(target.split("#", 1)[0])
-    if not target or target.startswith(("#", "//", "http://", "https://", "mailto:", "tel:", "data:")):
+    if not target or target.startswith("//") or URI_SCHEME_RE.match(target):
         return None
     return target
 
