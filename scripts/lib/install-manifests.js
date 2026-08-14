@@ -65,6 +65,8 @@ const LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET = Object.freeze({
     'rules-core',
     'agents-core',
     'commands-core',
+    'skill-unified-memory',
+    'workflow-quality',
   ],
   zed: [
     'rules-core',
@@ -131,6 +133,14 @@ const LEGACY_LANGUAGE_EXTRA_MODULE_IDS = Object.freeze({
   rust: ['framework-language'],
   swift: [],
   typescript: ['framework-language'],
+});
+const LEGACY_LANGUAGE_RULE_NAMESPACES = Object.freeze({
+  c: 'cpp',
+  harmonyos: 'arkts',
+  javascript: 'typescript',
+  go: 'golang',
+  golang: 'golang',
+  rails: 'ruby',
 });
 const TARGET_DEFAULT_PROFILE_IDS = Object.freeze({
   opencode: 'opencode',
@@ -500,6 +510,9 @@ function resolveLegacyCompatibilitySelection(options = {}) {
 
   const canonicalLegacyLanguages = normalizedLegacyLanguages
     .map(language => LEGACY_LANGUAGE_ALIAS_TO_CANONICAL[language]);
+  const ruleLanguages = normalizedLegacyLanguages.map(language => (
+    LEGACY_LANGUAGE_RULE_NAMESPACES[language] || language
+  ));
   const baseModuleIds = LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET[target || 'claude']
     || LEGACY_COMPAT_BASE_MODULE_IDS_BY_TARGET.claude;
   const moduleIds = dedupeStrings([
@@ -514,6 +527,7 @@ function resolveLegacyCompatibilitySelection(options = {}) {
   return {
     legacyLanguages: normalizedLegacyLanguages,
     canonicalLegacyLanguages,
+    ruleLanguages,
     moduleIds,
   };
 }

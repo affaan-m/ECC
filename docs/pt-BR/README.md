@@ -477,7 +477,7 @@ Sim. O ECC é multiplataforma:
 - **Cursor**: Configs pré-traduzidas em `.cursor/`
 - **OpenCode**: Suporte completo a plugins em `.opencode/`
 - **Codex**: Suporte de primeira classe para app macOS e CLI
-- **Antigravity**: Configuração integrada em `.agent/`
+- **Antigravity**: Configuração integrada em `.agents/`
 - **Claude Code**: Nativo — este é o alvo principal
 </details>
 

@@ -54,7 +54,8 @@ for (const workflow of [
   });
 
   test(`${workflow} publishes new tag versions to npm`, () => {
-    assert.match(content, /npm publish "\$\{\{ needs\.verify\.outputs\.package_file \}\}" --access public --provenance/);
+    assert.match(content, /ECC_RELEASE_PACKAGE:\s*\$\{\{ needs\.verify\.outputs\.package_file \}\}/);
+    assert.match(content, /npm publish "\.\/\$\{ECC_RELEASE_PACKAGE\}" --access public --provenance/);
     assert.match(content, /NODE_AUTH_TOKEN:\s*\$\{\{\s*secrets\.NPM_TOKEN\s*\}\}/);
   });
 

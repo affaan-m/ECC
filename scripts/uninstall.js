@@ -4,12 +4,14 @@ const os = require('os');
 const { uninstallInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { exitFeedbackLines } = require('./lib/feedback-links');
+const { uninstallLegacyCodexSync } = require('./lib/codex-legacy-sync');
 
 function showHelp(exitCode = 0) {
   console.log(`
-Usage: node scripts/uninstall.js [--target <${SUPPORTED_INSTALL_TARGETS.join('|')}>] [--dry-run] [--json]
+Usage: node scripts/uninstall.js [--target <${SUPPORTED_INSTALL_TARGETS.join('|')}>] [--legacy-codex-sync] [--dry-run] [--json]
 
 Remove ECC-managed files recorded in install-state for the current context.
+Use --legacy-codex-sync explicitly for the older sync-ecc-to-codex.sh installation.
 `);
   process.exit(exitCode);
 }
@@ -20,6 +22,7 @@ function parseArgs(argv) {
     targets: [],
     dryRun: false,
     json: false,
+    legacyCodexSync: false,
     help: false,
   };
 
@@ -33,6 +36,8 @@ function parseArgs(argv) {
       parsed.dryRun = true;
     } else if (arg === '--json') {
       parsed.json = true;
+    } else if (arg === '--legacy-codex-sync') {
+      parsed.legacyCodexSync = true;
     } else if (arg === '--help' || arg === '-h') {
       parsed.help = true;
     } else {
@@ -60,34 +65,73 @@ function printHuman(result) {
       continue;
     }
 
-    const paths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
+    if (entry.warning) {
+      console.log(`  Warning: ${entry.warning}`);
+    }
+    if (Array.isArray(entry.retainedPaths) && entry.retainedPaths.length > 0) {
+      console.log(`  Retained paths: ${entry.retainedPaths.length}`);
+      for (const retainedPath of entry.retainedPaths) {
+        console.log(`    - ${retainedPath}`);
+      }
+    }
+
+    const candidatePaths = result.dryRun ? entry.plannedRemovals : entry.removedPaths;
+    const paths = Array.isArray(candidatePaths) ? candidatePaths : [];
     console.log(`  ${result.dryRun ? 'Planned removals' : 'Removed paths'}: ${paths.length}`);
   }
 
-  console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, errors=${result.summary.errorCount}`);
+  console.log(`\nSummary: checked=${result.summary.checkedCount}, ${result.dryRun ? 'planned' : 'uninstalled'}=${result.dryRun ? result.summary.plannedRemovalCount : result.summary.uninstalledCount}, partial=${result.summary.partialCount}, errors=${result.summary.errorCount}`);
 
   if (!result.dryRun) {
     console.log(`\n${exitFeedbackLines().join('\n')}`);
   }
 }
 
-function main() {
+async function main() {
   try {
     const options = parseArgs(process.argv);
     if (options.help) {
       showHelp(0);
     }
 
-    const result = uninstallInstalledStates({
-      homeDir: process.env.HOME || os.homedir(),
-      projectRoot: process.cwd(),
-      targets: options.targets,
-      dryRun: options.dryRun,
-    });
-    const hasErrors = result.summary.errorCount > 0;
+    if (options.legacyCodexSync && options.targets.length > 0) {
+      throw new Error('--legacy-codex-sync cannot be combined with --target');
+    }
+    const result = options.legacyCodexSync
+      ? uninstallLegacyCodexSync({
+          codexHome: process.env.CODEX_HOME,
+          dryRun: options.dryRun,
+        })
+      : uninstallInstalledStates({
+          homeDir: process.env.HOME || os.homedir(),
+          projectRoot: process.cwd(),
+          targets: options.targets,
+          dryRun: options.dryRun,
+        });
+    if (!options.dryRun && !options.legacyCodexSync) {
+      const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
+      result.installStateProjection = await reconcileCanonicalInstallStates({
+        homeDir: process.env.HOME || os.homedir(),
+        projectRoot: process.cwd(),
+        targets: options.targets,
+      });
+    }
+    const hasErrors = options.legacyCodexSync
+      ? result.status === 'partial'
+      : result.summary.errorCount > 0 || result.summary.partialCount > 0;
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
+    } else if (options.legacyCodexSync) {
+      console.log('Legacy Codex sync cleanup summary:\n');
+      console.log(`Status: ${result.status.toUpperCase()}`);
+      const paths = options.dryRun ? result.plannedRemovals : result.removedPaths;
+      console.log(`${options.dryRun ? 'Planned changes' : 'Removed paths'}: ${paths.length}`);
+      if (result.retainedPaths.length > 0) {
+        console.log(`Retained paths: ${result.retainedPaths.length}`);
+        for (const retainedPath of result.retainedPaths) console.log(`  - ${retainedPath}`);
+      }
+      for (const warning of result.warnings) console.log(`Warning: ${warning}`);
     } else {
       printHuman(result);
     }

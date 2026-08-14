@@ -236,7 +236,7 @@ node scripts/codex/check-plugin-cache.js
 
 Both add commands are idempotent. To refresh later, run `codex plugin marketplace upgrade ecc` followed by `codex plugin add ecc@ecc`. Codex stores one enabled plugin state in the active `CODEX_HOME`; it does not offer Claude's `user`, `project`, and `local` scopes. Its native hooks require an explicit trust decision and do not use Claude's four ECC hook profiles. Inside Codex, invoke `$configure-ecc` for the guided provider-aware flow.
 
-The older `scripts/sync-ecc-to-codex.sh` path remains a separate compatibility option for users who intentionally want copied and merged configuration in `~/.codex`; it is not required for the native plugin. Run Codex once first so `~/.codex/config.toml` exists, then:
+The older `scripts/sync-ecc-to-codex.sh` path is a deprecated compatibility option for users who intentionally need copied and merged configuration in `~/.codex`; it is not required for the native plugin. New sync runs write an ownership manifest so cleanup can preserve modified user files. Run Codex once first so `~/.codex/config.toml` exists, then:
 
 ```bash
 git clone https://github.com/affaan-m/ECC.git
@@ -244,6 +244,15 @@ cd ECC
 npm install
 bash scripts/sync-ecc-to-codex.sh
 ```
+
+To inspect or remove that legacy layer without touching Codex conversations or native plugin caches:
+
+```bash
+node scripts/ecc.js uninstall --legacy-codex-sync --dry-run
+node scripts/ecc.js uninstall --legacy-codex-sync
+```
+
+Pre-manifest installations are handled conservatively: ECC removes its marked `AGENTS.md` block but preserves copied files it cannot prove it owns and reports them for review.
 
 You can also open the ECC repository directly in Codex for a project-local setup. Codex reads the root `AGENTS.md` and the trusted project configuration in `.codex/` without a global sync. Do not add the native marketplace plugin on top of the sync flow.
 
@@ -2014,7 +2023,7 @@ Yes. ECC is cross-platform:
 - **OpenCode**: Beta plugin integration in `.opencode/`; provider model selection and catalog parity remain limited.
 - **Codex**: Supported repo/sync path for macOS app and CLI; ECC's marketplace package remains experimental.
 - **GitHub Copilot (VS Code)**: Instruction and prompt layer via `.github/copilot-instructions.md`, `.vscode/settings.json`, and `.github/prompts/`.
-- **Antigravity**: Tightly integrated setup for workflows, skills, and flattened rules in `.agent/`. See [Antigravity Guide](docs/ANTIGRAVITY-GUIDE.md).
+- **Antigravity**: Native Antigravity 2.0 setup for workflows, skills, custom agents, and flattened rules in `.agents/`. See [Antigravity Guide](docs/ANTIGRAVITY-GUIDE.md).
 - **JoyCode / CodeBuddy**: Project-local selective install adapters for commands, agents, skills, and flattened rules. See [JoyCode Adapter Guide](docs/JOYCODE-GUIDE.md).
 - **Qwen CLI**: Home-directory selective install adapter for commands, agents, skills, rules, and Qwen config. See [Qwen CLI Adapter Guide](docs/QWEN-GUIDE.md).
 - **Zed**: Project-local selective install adapter for `.zed/settings.json`, flattened rules, commands, agents, and skills.

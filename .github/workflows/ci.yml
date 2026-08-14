@@ -108,6 +108,74 @@ jobs:
             tests/
             !tests/node_modules/
 
+  pack-installer:
+    name: Pack Installer Artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      package_file: ${{ steps.pack.outputs.package_file }}
+      package_sha256: ${{ steps.pack.outputs.package_sha256 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.x'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Pack exact installer artifact
+        id: pack
+        run: |
+          npm pack --json > npm-pack.json
+          node -e "const crypto = require('crypto'); const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); const file = data[0]?.filename; if (!/^ecc-universal-[0-9A-Za-z.+-]+\.tgz$/.test(file || '')) throw new Error('Unexpected packed filename'); const archives = fs.readdirSync('.').filter(name => name.endsWith('.tgz')); if (archives.length !== 1 || archives[0] !== file) throw new Error('Expected exactly one packed archive'); const digest = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'package_file=' + file + '\npackage_sha256=' + digest + '\n')"
+
+      - name: Upload exact installer artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ecc-ci-installer-artifact
+          path: ${{ steps.pack.outputs.package_file }}
+          if-no-files-found: error
+
+  packed-install-lifecycle:
+    name: Packed Install (${{ matrix.os }})
+    needs: pack-installer
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout lifecycle test
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.x'
+
+      - name: Download exact installer artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ecc-ci-installer-artifact
+          path: release-artifacts
+
+      - name: Verify packed install lifecycle
+        env:
+          ECC_RELEASE_PACKAGE: release-artifacts/${{ needs.pack-installer.outputs.package_file }}
+          ECC_RELEASE_SHA256: ${{ needs.pack-installer.outputs.package_sha256 }}
+        run: node tests/ci/packed-artifact-lifecycle.js
+
   validate:
     name: Validate Components
     runs-on: ubuntu-latest

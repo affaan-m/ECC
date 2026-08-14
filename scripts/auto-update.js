@@ -179,11 +179,18 @@ function runAutoUpdate(options = {}, dependencies = {}) {
   const homeDir = options.homeDir || process.env.HOME || os.homedir();
   const projectRoot = options.projectRoot || process.cwd();
   const requestedRepoRoot = options.repoRoot ? validateRepoRoot(options.repoRoot) : null;
-  const records = discover({
+  const discoveredRecords = discover({
     homeDir,
     projectRoot,
     targets: options.targets
-  }).filter(record => record.exists);
+  });
+  const records = discoveredRecords.filter(record => record.exists && !record.legacy);
+  const legacyRecords = discoveredRecords.filter(record => record.exists && record.legacy);
+  const warnings = records.length === 0 && legacyRecords.length > 0
+    ? [
+        'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.',
+      ]
+    : [];
 
   const results = [];
   if (records.length === 0) {
@@ -191,6 +198,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
       dryRun: Boolean(options.dryRun),
       repoRoot: requestedRepoRoot,
       results,
+      warnings,
       summary: {
         checkedCount: 0,
         updatedCount: 0,
@@ -233,6 +241,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
       dryRun: Boolean(options.dryRun),
       repoRoot,
       results,
+      warnings,
       summary: {
         checkedCount: results.length,
         updatedCount: 0,
@@ -296,6 +305,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
     dryRun: Boolean(options.dryRun),
     repoRoot,
     results,
+    warnings,
     summary: {
       checkedCount: results.length,
       updatedCount: results.filter(result => result.status === 'updated' || result.status === 'planned').length,
@@ -306,7 +316,13 @@ function runAutoUpdate(options = {}, dependencies = {}) {
 
 function printHuman(result) {
   if (result.results.length === 0) {
-    console.log('No ECC install-state files found for the current home/project context.');
+    const hasWarnings = Array.isArray(result.warnings) && result.warnings.length > 0;
+    console.log(hasWarnings
+      ? 'No active ECC install-state files found for the current home/project context.'
+      : 'No ECC install-state files found for the current home/project context.');
+    for (const warning of Array.isArray(result.warnings) ? result.warnings : []) {
+      console.log(`Warning: ${warning}`);
+    }
     return;
   }
 
