@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 95,
   "commands": [
     {
       "command": "aside",
@@ -662,6 +662,17 @@
       "path": "commands/plan.md"
     },
     {
+      "command": "plugin-profiles",
+      "description": "Generate and manage slim ECC profile plugins - list profiles, plan token impact, generate a plugin, and activate it per project.",
+      "type": "planning",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "react-patterns"
+      ],
+      "path": "commands/plugin-profiles.md"
+    },
+    {
       "command": "pm2",
       "description": "Analyze a project and generate PM2 service commands for detected frontend, backend, or database services.",
       "type": "general",
@@ -1031,7 +1042,7 @@
       "build": 2,
       "general": 10,
       "orchestration": 11,
-      "planning": 2,
+      "planning": 3,
       "refactoring": 1,
       "review": 15,
       "testing": 53
@@ -1108,15 +1119,15 @@
         "count": 3
       },
       {
+        "skill": "react-patterns",
+        "count": 3
+      },
+      {
         "skill": "rust-patterns",
         "count": 3
       },
       {
         "skill": "cpp-coding-standards",
-        "count": 2
-      },
-      {
-        "skill": "cpp-testing",
         "count": 2
       }
     ]
