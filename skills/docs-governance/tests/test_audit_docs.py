@@ -76,6 +76,13 @@ def test_artifact_scope_ignores_external_uri_schemes_case_insensitively(project:
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_ignores_query_and_fragment_in_local_links(project: Path) -> None:
+    (project / "guide.md").write_text("[details](target.md?version=2#usage)\n", encoding="utf-8")
+    (project / "target.md").write_text("# Target\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
 def test_adr_scope_requires_every_file_in_index(project: Path) -> None:
     adr_dir = project / "docs" / "adr"
     adr_dir.mkdir(parents=True)

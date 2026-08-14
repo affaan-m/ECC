@@ -121,7 +121,7 @@ def git_show(root: Path, relative: str) -> str | None:
 
 def normalize_link_target(raw: str) -> str | None:
     target = raw.strip().split(maxsplit=1)[0].strip("<>")
-    target = unquote(target.split("#", 1)[0])
+    target = unquote(target.split("#", 1)[0].split("?", 1)[0])
     if not target or target.startswith("//") or URI_SCHEME_RE.match(target):
         return None
     return target
