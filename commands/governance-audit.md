@@ -28,7 +28,7 @@ Optional semantic focus:
 
 - no argument: `full`;
 - a scope: review only that scope;
-- `focus: <path or topic>`: emphasize that object without changing the read-only boundary.
+- `focus: <path or topic>`: emphasize that object without changing the read-only boundary. When the focus names a path, resolve it from the repository root before reading it: reject absolute paths, `..` traversal, nonexistent paths, and any symlink whose resolved target escapes the root. A free-form topic is not a filesystem path and must never be opened as one. Report an invalid path instead of treating it as a topic.
 
 Requirements:
 
