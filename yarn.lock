@@ -5,6 +5,15 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@ai-sdk/provider@npm:3.0.8":
+  version: 3.0.8
+  resolution: "@ai-sdk/provider@npm:3.0.8"
+  dependencies:
+    json-schema: "npm:^0.4.0"
+  checksum: 10c0/c68637c0139a6ce8af17bac1d7d539f531860026237c5c971dcecda2daa8b1e42d8c05e1e664ece60c15edb325c0253fd5b091ee54d32f870a750a493acbb0b7
+  languageName: node
+  linkType: hard
+
 "@bcoe/v8-coverage@npm:^1.0.1":
   version: 1.0.2
   resolution: "@bcoe/v8-coverage@npm:1.0.2"
@@ -203,17 +212,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@opencode-ai/plugin@npm:1.17.3":
-  version: 1.17.3
-  resolution: "@opencode-ai/plugin@npm:1.17.3"
+"@opencode-ai/plugin@npm:1.18.18":
+  version: 1.18.18
+  resolution: "@opencode-ai/plugin@npm:1.18.18"
   dependencies:
-    "@opencode-ai/sdk": "npm:1.17.3"
-    effect: "npm:4.0.0-beta.74"
+    "@ai-sdk/provider": "npm:3.0.8"
+    "@opencode-ai/sdk": "npm:1.18.18"
+    effect: "npm:4.0.0-beta.83"
     zod: "npm:4.1.8"
   peerDependencies:
-    "@opentui/core": ">=0.3.4"
-    "@opentui/keymap": ">=0.3.4"
-    "@opentui/solid": ">=0.3.4"
+    "@opentui/core": ">=0.4.5"
+    "@opentui/keymap": ">=0.4.5"
+    "@opentui/solid": ">=0.4.5"
   peerDependenciesMeta:
     "@opentui/core":
       optional: true
@@ -221,16 +231,16 @@ __metadata:
       optional: true
     "@opentui/solid":
       optional: true
-  checksum: 10c0/c78d3915ca1e479d638230d4f4a2f439163691c45e88284a6862f53ca349916845bf97ea08b40d59acb00b9af7522d2b45f399b420cfb17cfc2a3db3b02653cc
+  checksum: 10c0/4182cd60b7c8c316a7ac9f0dfaa056852b817753cca03a8fb0850ee3a6f7aab590b67db0c72b02ced800288e37d9a088dc0302d277ac0ac7271906efec801b75
   languageName: node
   linkType: hard
 
-"@opencode-ai/sdk@npm:1.17.3":
-  version: 1.17.3
-  resolution: "@opencode-ai/sdk@npm:1.17.3"
+"@opencode-ai/sdk@npm:1.18.18":
+  version: 1.18.18
+  resolution: "@opencode-ai/sdk@npm:1.18.18"
   dependencies:
     cross-spawn: "npm:7.0.6"
-  checksum: 10c0/5de73b708545623640a03bafd0618961777201c82d542570eca65fe43a485e095ce74d687042cb290fa9a8c3c480e2ed2dba7b02a951ea2f0f3c68cdc7208560
+  checksum: 10c0/9334719c34d7f7dbda6276901a4b7bfeb18c7c451bb8ecb2b34cae79735f8d853f0401b8083ed6c395d94e29367782ae44d482bbc9afd89c914c03b8c5cd127b
   languageName: node
   linkType: hard
 
@@ -580,7 +590,7 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:9.39.2"
     "@iarna/toml": "npm:2.2.5"
-    "@opencode-ai/plugin": "npm:1.17.3"
+    "@opencode-ai/plugin": "npm:1.18.18"
     "@types/node": "npm:26.1.2"
     ajv: "npm:8.20.0"
     c8: "npm:11.0.0"
@@ -600,9 +610,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"effect@npm:4.0.0-beta.74":
-  version: 4.0.0-beta.74
-  resolution: "effect@npm:4.0.0-beta.74"
+"effect@npm:4.0.0-beta.83":
+  version: 4.0.0-beta.83
+  resolution: "effect@npm:4.0.0-beta.83"
   dependencies:
     "@standard-schema/spec": "npm:^1.1.0"
     fast-check: "npm:^4.8.0"
@@ -614,7 +624,7 @@ __metadata:
     toml: "npm:^4.1.1"
     uuid: "npm:^14.0.0"
     yaml: "npm:^2.9.0"
-  checksum: 10c0/3dfc7ce7b58bbe9e8459ea9eba0abdcef7d9e7082643c64f4cc5165632777aa163f20d7b5f86372f819e6b60154e44cea125abb71be01da667a330c10a9b5892
+  checksum: 10c0/1eaa03aee6e8bf7190645fc032cb7541aafe2b07ed9de8ebe13525971cd5fcea2d003b327fbed626439458dc619ef5c1371f27f6d1ec52c8acf851ead1237c22
   languageName: node
   linkType: hard
 
@@ -1098,6 +1108,13 @@ __metadata:
   version: 1.0.0
   resolution: "json-schema-traverse@npm:1.0.0"
   checksum: 10c0/71e30015d7f3d6dc1c316d6298047c8ef98a06d31ad064919976583eb61e1018a60a0067338f0f79cabc00d84af3fcc489bd48ce8a46ea165d9541ba17fb30c6
+  languageName: node
+  linkType: hard
+
+"json-schema@npm:^0.4.0":
+  version: 0.4.0
+  resolution: "json-schema@npm:0.4.0"
+  checksum: 10c0/d4a637ec1d83544857c1c163232f3da46912e971d5bf054ba44fdb88f07d8d359a462b4aec46f2745efbc57053365608d88bc1d7b1729f7b4fc3369765639ed3
   languageName: node
   linkType: hard
 
