@@ -200,6 +200,7 @@ const UNSUPPORTED_ACCESS = [
   { label: 'process.env aliased to a binding', pattern: /(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*process\.env\s*(?:[;,)\]]|$)/m },
   { label: 'spread of process.env', pattern: /\.\.\.\s*process\.env\b/ },
   { label: 'enumeration of process.env', pattern: /Object\.(?:keys|values|entries|assign|fromEntries)\(\s*process\.env\b/ },
+  { label: 'Reflect access on process.env', pattern: /Reflect\.(?:get|has|set|deleteProperty|defineProperty|getOwnPropertyDescriptor|ownKeys)\(\s*process\.env\b/ },
 ];
 
 /** `process.env[...]` whose key is not a plain quoted string. */
@@ -298,6 +299,9 @@ if (test('the access guard rejects every form the parser cannot follow', () => {
     ['computed variable', 'const v = process.env[name];'],
     ['spread', 'const all = { ...process.env };'],
     ['enumeration', 'const ks = Object.keys(process.env);'],
+    ['Reflect.get', "const v = Reflect.get(process.env, 'GATEGUARD_HIDDEN');"],
+    ['Reflect.has', "const v = Reflect.has(process.env, 'GATEGUARD_HIDDEN');"],
+    ['Reflect.ownKeys', 'const ks = Reflect.ownKeys(process.env);'],
   ];
   const missed = cases.filter(([, code]) => findUnsupportedAccess(code).length === 0).map(([label]) => label);
   assert.deepStrictEqual(missed, [], `access guard missed: ${missed.join(', ')}`);
