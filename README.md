@@ -1508,7 +1508,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Harness | Status | Recommended distribution | Important limitation |
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
-| Codex | Supported sync; marketplace experimental | Repo config or `sync-ecc-to-codex.sh` | No ECC hook runtime. The marketplace package can omit shared repository content from Codex's cache; use sync for the reliable path. |
+| Codex | Native marketplace; managed sync available | Native marketplace plugin | Four verified lifecycle hooks provide session context and continuous learning. Broader Claude hook enforcement and slash-command parity are not included, and Codex requires explicit hook trust. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog and the reference config pins Anthropic models; select models available to your provider ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot | Instruction-only | Checked-in instructions and prompt files | No ECC hooks, runtime agents, delegation, or native skill discovery. |
@@ -1521,7 +1521,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Instructions | Native | Native `AGENTS.md` | Project rules | Plugin instructions | Native instruction file |
 | Skills | Native installed set | Native synced set | Build-dependent/project set | Built subset | Prompt/instruction references only |
 | Agents/delegation | Native agents | Codex multi-agent roles | Build-dependent project agents | Plugin agents | Not supported |
-| ECC hooks | Native plugin hooks | Not supported | Cursor hook adapter; install-path differences remain | Plugin events | Not supported |
+| ECC hooks | Native plugin hooks | Native context and continuous-learning lifecycle | Cursor hook adapter; install-path differences remain | Plugin events | Not supported |
 | MCP configuration | Available, explicit activation | TOML merge through sync | Explicit project/user config | Provider/plugin config | Not supplied by ECC |
 | Parity with Claude Code | Primary reference | Partial | Partial | Partial | Not a parity target |
 
@@ -1529,7 +1529,8 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode; GitHub Copilot uses `.github/copilot-instructions.md` instead)
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
 - **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
-- Codex's lack of hooks is compensated by `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
+- Codex runs four verified non-blocking lifecycle hooks; blocking security policy still relies on `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
+- Codex hook activation requires opening `/hooks`, reviewing and trusting each ECC hook definition, and repeating that review whenever a definition hash changes
 
 <details>
 <summary><strong>Cursor IDE support in depth</strong></summary>
@@ -1656,7 +1657,12 @@ Skills at `.agents/skills/` are auto-loaded by Codex. Canonical Anthropic skills
 
 #### Key limitation
 
-Codex does **not yet provide Claude-style hook execution parity**. ECC enforcement there is instruction-based via `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox/approval settings.
+Codex does **not provide full Claude-style hook parity**. Its native ECC bundle
+loads session context and records continuous-learning observations through four
+non-blocking lifecycle hooks. Blocking enforcement remains instruction-based via
+`AGENTS.md`, optional `model_instructions_file` overrides, and sandbox/approval
+settings. Open `/hooks` to review and trust each ECC hook definition, and repeat
+that review whenever a definition hash changes.
 
 #### Multi-agent support
 

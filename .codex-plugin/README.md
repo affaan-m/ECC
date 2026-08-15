@@ -63,15 +63,38 @@ Codex sessions using that home.
 
 The Codex manifest uses the documented `hooks` field to bundle
 `./hooks/codex-hooks.json`. This provider-specific projection keeps the
-synchronous `SessionStart` bootstrap verified against Codex 0.146. Claude hook
-profiles are not Codex hook profiles: handlers that block tools, use unsupported
-events, run asynchronously, or fail Codex's hook protocol stay out of the native
-bundle. Codex enables hook support by default, but native plugin installation
-does not silently authorize commands. Start a new Codex session, open `/hooks`,
-then review and trust the ECC hook definition before enabling it.
+synchronous context and continuous-learning lifecycle verified against Codex
+0.146: `SessionStart` loads context and registers an observer lease,
+`PreToolUse` and `PostToolUse` capture observations, and `SessionEnd` releases
+the lease. `ECC_HOOK_PROFILE` still gates the shared handlers, but Codex hook
+trust is independent from Claude setup scopes. Blocking handlers, unsupported
+events, asynchronous handlers, and commands that fail Codex's hook protocol
+stay out of the native bundle. Codex enables hook support by default, but native
+plugin installation does not silently authorize commands. Start a new Codex
+session, open `/hooks`, then review and trust the ECC hook definitions before
+enabling them.
 Codex records trust against each definition's hash, so changed hooks require
 review again. Use `/plugins` for plugin enablement and `/hooks` for hook trust;
 these are separate controls.
+
+### Local observation data
+
+The `PreToolUse` and `PostToolUse` hooks store bounded tool inputs and outputs
+in the local continuous-learning data directory. By default, project-scoped
+observations are written under
+`~/.local/share/ecc-homunculus/projects/<project-id>/observations.jsonl`;
+`CLV2_HOMUNCULUS_DIR` or `XDG_DATA_HOME` can relocate that directory. Common
+credential patterns are redacted before persistence, but heuristic redaction is
+not a substitute for keeping secrets out of tool input and output. Review the
+hook definitions before trusting them.
+
+To keep the SessionStart context hook while disabling observation capture, set:
+
+```bash
+export ECC_DISABLED_HOOKS="pre:observe:continuous-learning,post:observe:continuous-learning"
+```
+
+Setting `ECC_HOOK_PROFILE=minimal` also skips both observation hooks.
 
 Once the cached skills are available, invoke `$configure-ecc` inside Codex for
 ECC's guided configuration. Installing the plugin again is idempotent and does

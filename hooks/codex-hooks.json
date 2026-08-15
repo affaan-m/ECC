@@ -1,5 +1,5 @@
 {
-  "description": "ECC native Codex hook: verified SessionStart bootstrap. Claude hook profiles remain separate.",
+  "description": "ECC native Codex lifecycle hooks for session context and continuous learning. Claude hook profiles remain separate.",
   "hooks": {
     "SessionStart": [
       {
@@ -12,6 +12,48 @@
         ],
         "description": "Load previous context and detect package manager on new session",
         "id": "session:start"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;const p=require('path');const s=p.join(process.env.PLUGIN_ROOT,'scripts/hooks/plugin-hook-bootstrap.js');process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js pre:observe:continuous-learning scripts/hooks/observe-runner.js standard,strict",
+            "timeout": 10
+          }
+        ],
+        "description": "Capture tool input for continuous learning",
+        "id": "pre:observe:continuous-learning"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;const p=require('path');const s=p.join(process.env.PLUGIN_ROOT,'scripts/hooks/plugin-hook-bootstrap.js');process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js post:observe:continuous-learning scripts/hooks/observe-runner.js standard,strict",
+            "timeout": 10
+          }
+        ],
+        "description": "Capture tool output for continuous learning",
+        "id": "post:observe:continuous-learning"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"if(!process.env.PLUGIN_ROOT)throw new Error('Missing Codex PLUGIN_ROOT');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;const p=require('path');const s=p.join(process.env.PLUGIN_ROOT,'scripts/hooks/plugin-hook-bootstrap.js');process.argv.splice(1,0,s);require(s)\" node scripts/hooks/run-with-flags.js session:end:marker scripts/hooks/session-end-marker.js minimal,standard,strict",
+            "timeout": 3
+          }
+        ],
+        "description": "Release the continuous-learning observer session lease",
+        "id": "session:end:marker"
       }
     ]
   }

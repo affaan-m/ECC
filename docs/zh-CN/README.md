@@ -1283,8 +1283,8 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 | **智能体** | 68                    | 共享 (AGENTS.md) | 共享 (AGENTS.md) | 12 |
 | **命令** | 94                    | 共享 | 基于指令 | 35 |
 | **技能** | 284                   | 共享 | 10 (原生格式) | 37 |
-| **钩子事件** | 8 种类型                 | 15 种类型 | SessionStart（1 种类型） | 11 种类型 |
-| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 1 个 SessionStart 引导脚本 | 插件钩子 |
+| **钩子事件** | 8 种类型                 | 15 种类型 | ECC 当前投射的 SessionStart、PreToolUse、PostToolUse、SessionEnd（4 种生命周期事件，并非 Codex 的全部钩子） | 11 种类型 |
+| **钩子脚本** | 20+ 个脚本               | 16 个脚本 (DRY 适配器) | 会话上下文和持续学习 | 插件钩子 |
 | **规则** | 34 (通用 + 语言)          | 34 (YAML 前页) | 基于指令 | 13 条指令 |
 | **自定义工具** | 通过钩子                  | 通过钩子 | N/A | 6 个原生工具 |
 | **MCP 服务器** | 14                    | 共享 (mcp.json) | 4 (基于命令) | 完整 |
@@ -1299,7 +1299,7 @@ ECC 是**第一个最大化利用每个主要 AI 编码工具的插件**。以�
 * **AGENTS.md** 在根目录是通用的跨工具文件（所有 4 个工具都能读取）
 * **DRY 适配器模式** 让 Cursor 可以重用 Claude Code 的钩子脚本而无需重复
 * **技能格式**（带有 YAML 前言的 SKILL.md）在 Claude Code、Codex 和 OpenCode 中都能工作
-* Codex 通过原生 `SessionStart` 引导钩子初始化 ECC；其余行为由 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限提供
+* Codex 通过原生 `SessionStart`、`PreToolUse`、`PostToolUse` 和 `SessionEnd` 四事件生命周期加载会话上下文并记录持续学习观察；阻塞式安全行为仍由 `AGENTS.md`、可选的 `model_instructions_file` 覆盖以及沙箱权限提供
 
 ***
 

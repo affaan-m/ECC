@@ -74,25 +74,38 @@ const ADAPTER_RECORDS = Object.freeze([
   {
     id: 'codex',
     harness: 'Codex',
-    state: 'Instruction-backed',
+    state: 'Adapter-backed',
     supported_assets: [
       '`AGENTS.md`',
       'Codex plugin metadata',
       'skills',
       'MCP reference config',
       'command patterns',
+      'native session context hooks',
+      'native continuous-learning lifecycle hooks',
     ],
-    unsupported_surfaces: ['Native hook enforcement and Claude slash-command semantics are not equivalent'],
+    unsupported_surfaces: [
+      'Blocking Claude hook enforcement is not projected',
+      'Claude slash-command semantics are not equivalent',
+    ],
     install_or_onramp: [
       '`./install.sh --profile minimal --target codex`',
       'repo-local `AGENTS.md` review',
     ],
-    verification_commands: ['`npm run harness:audit -- --format json`'],
-    risk_notes: ['Treat hooks as policy text unless a native Codex hook surface exists.'],
-    last_verified_at: '2026-05-12',
+    verification_commands: [
+      '`node tests/codex-native-hooks.test.js`',
+      '`npm run harness:audit -- --format json`',
+    ],
+    risk_notes: [
+      'Codex requires explicit trust for native hook commands',
+      'Only the context and continuous-learning lifecycle is projected.',
+    ],
+    last_verified_at: '2026-08-13',
     owner: 'ECC maintainers',
     source_docs: [
       '.codex-plugin/plugin.json',
+      '.codex-plugin/README.md',
+      'hooks/codex-hooks.json',
       'AGENTS.md',
       'scripts/lib/install-targets/codex-home.js',
     ],

@@ -20,7 +20,7 @@ const {
   stripAnsi,
   log
 } = require('../lib/utils');
-const { resolveProjectContext, writeSessionLease, resolveSessionId, getHomunculusDir } = require('../lib/observer-sessions');
+const { resolveProjectContext, writeSessionLease, resolveHookSessionId, getHomunculusDir } = require('../lib/observer-sessions');
 const { getPackageManager, getSelectionPrompt } = require('../lib/package-manager');
 const { listAliases } = require('../lib/session-aliases');
 const { detectProjectType } = require('../lib/project-detect');
@@ -599,6 +599,7 @@ function summarizeLearnedSkills(learnedDir, learnedSkillFiles = collectLearnedSk
 }
 
 async function main() {
+  const rawInput = fs.readFileSync(0, 'utf8');
   const sessionsDir = getSessionsDir();
   const sessionSearchDirs = getSessionSearchDirs();
   const learnedDir = getLearnedSkillsDir();
@@ -607,7 +608,7 @@ async function main() {
   const maxContextChars = getSessionStartMaxContextChars();
   const explicitContextDisabled = isSessionStartContextDisabled();
   const shouldInjectContext = !explicitContextDisabled && maxContextChars !== 0;
-  const sessionStartMode = getSessionStartMode(fs.readFileSync(0, 'utf8'));
+  const sessionStartMode = getSessionStartMode(rawInput);
 
   // Ensure directories exist
   ensureDir(sessionsDir);
@@ -623,7 +624,7 @@ async function main() {
     }
   }
 
-  const observerSessionId = resolveSessionId();
+  const observerSessionId = resolveHookSessionId(rawInput);
   if (observerSessionId) {
     writeSessionLease(observerContext, observerSessionId, {
       hook: 'SessionStart',
@@ -631,7 +632,7 @@ async function main() {
     });
     log(`[SessionStart] Registered observer lease for ${observerSessionId}`);
   } else {
-    log('[SessionStart] No CLAUDE_SESSION_ID available; skipping observer lease registration');
+    log('[SessionStart] No hook session id available; skipping observer lease registration');
   }
 
   if (explicitContextDisabled) {
