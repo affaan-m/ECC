@@ -26,7 +26,7 @@ Interact with Jira tickets directly from your workflow — fetch tickets, analyz
 
 ### `/jira get <TICKET-KEY>`
 
-1. Fetch the ticket from Jira (via MCP `jira_get_issue` or REST API)
+1. Fetch the ticket from Jira (via MCP `get_issue` or REST API)
 2. Extract all fields: summary, description, acceptance criteria, priority, labels, linked issues
 3. Optionally fetch comments for additional context
 4. Produce a structured analysis:
@@ -80,7 +80,11 @@ Recommended Next Steps:
 This command requires Jira credentials. Choose one:
 
 **Option A — MCP Server (recommended):**
-Add `jira` to your `mcpServers` config (see `mcp-configs/mcp-servers.json` for the template).
+Use the jira-cli MCP server (see `mcp-configs/mcp-servers.json` for the template). Setup:
+
+1. Install the `jira` binary from <https://github.com/LuPaLa-Coder/mcp_jira> (self-contained binaries in `publish/`, or build with `dotnet publish`)
+2. Register your instance — Cloud: `jira config add --site <name> --url <url> --email <email> --token <token>`; Server/Data Center: add `--auth-mode bearer`
+3. Verify with `jira context`, then start the MCP server with `jira mcp serve`
 
 **Option B — Environment variables:**
 ```bash

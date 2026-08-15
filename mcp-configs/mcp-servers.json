@@ -11,14 +11,9 @@
       "description": "Opt-in local Itô compute MCP. The canonical package is unpublished and must be built from Ito-Markets/ito-cloud-runtime/cli/ito-compute-cli. Exposes only ito_auth, ito_find, and ito_status. ito_auth validates existing credentials; it does not start device login. Use ecc ito login [--no-browser] for device authorization, which stores tokens in macOS Keychain by default; explicit file fallback must retain owner-only settings. ECC itself performs no browser automation. ITO_API_KEY is forwarded directly to auth, find, and status when configured; ITO_AUTH_MODE=legacy is not required."
     },
     "jira": {
-      "command": "uvx",
-      "args": ["mcp-atlassian==0.21.0"],
-      "env": {
-        "JIRA_URL": "YOUR_JIRA_URL_HERE",
-        "JIRA_EMAIL": "YOUR_JIRA_EMAIL_HERE",
-        "JIRA_API_TOKEN": "YOUR_JIRA_API_TOKEN_HERE"
-      },
-      "description": "Jira issue tracking — search, create, update, comment, transition issues"
+      "command": "jira",
+      "args": ["mcp", "serve"],
+      "description": "jira-cli MCP server — issues, projects, boards, sprints, users, fields, webhooks. Install the binary from https://github.com/LuPaLa-Coder/mcp_jira and register instances with `jira config add` (credentials live in ~/.config/jira-cli/config.json, never here)"
     },
     "github": {
       "command": "npx",

@@ -22,35 +22,51 @@ Retrieve, analyze, and update Jira tickets directly from your AI coding workflow
 
 ### Option A: MCP Server (Recommended)
 
-Install the `mcp-atlassian` MCP server. This exposes Jira tools directly to your AI agent.
+Use **jira-cli** (<https://github.com/LuPaLa-Coder/mcp_jira>) — a dual-mode CLI and MCP server in C#/.NET 8 exposing 68 MCP tools (30 core documented in the repo's `SERVICES.md`). Single self-contained binary; no Python/uvx runtime required.
 
 **Requirements:**
-- Python 3.10+
-- `uvx` (from `uv`), installed via your package manager or the official `uv` installation documentation
+- The `jira` binary on PATH (per-platform binaries in the repo's `publish/` folder, or build from source with `dotnet publish`)
 
 **Add to your MCP config** (e.g., `~/.claude.json` → `mcpServers`):
 
 ```json
 {
   "jira": {
-    "command": "uvx",
-    "args": ["mcp-atlassian==0.21.0"],
-    "env": {
-      "JIRA_URL": "https://YOUR_ORG.atlassian.net",
-      "JIRA_EMAIL": "your.email@example.com",
-      "JIRA_API_TOKEN": "your-api-token"
-    },
-    "description": "Jira issue tracking — search, create, update, comment, transition"
+    "command": "jira",
+    "args": ["mcp", "serve"]
   }
 }
 ```
 
-> **Security:** Never hardcode secrets. Prefer setting `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` in your system environment (or a secrets manager). Only use the MCP `env` block for local, uncommitted config files.
+> **Security:** Credentials never go in the MCP config. jira-cli reads them from its own local config (`~/.config/jira-cli/config.json`; `jira config path` prints the location). Never hardcode tokens in source code or committed files.
+
+**Register your Jira instance:**
+
+```bash
+# Jira Cloud (Basic Auth → REST v3 auto)
+jira config add --site myco \
+  --url https://YOUR_ORG.atlassian.net \
+  --email your.email@example.com \
+  --token <api-token>
+
+# Jira Server / Data Center (Bearer PAT → REST v2 auto)
+jira config add --site eng \
+  --url https://jira.yourcompany.com/jira \
+  --token <personal-access-token> \
+  --auth-mode bearer
+
+# Verify
+jira context
+```
+
+Multi-site: configure several sites and switch with `--site` on any tool, the `JIRA_SITE` env var, or the `defaultSite` config key.
 
 **To get a Jira API token:**
 1. Go to <https://id.atlassian.com/manage-profile/security/api-tokens>
 2. Click **Create API token**
-3. Copy the token — store it in your environment, never in source code
+3. Copy the token — store it in jira-cli's local config, never in source code
+
+For Jira Server/Data Center, create a Personal Access Token from your instance profile (Profile → Personal Access Tokens) instead.
 
 ### Option B: Direct REST API
 
@@ -77,21 +93,25 @@ jira_curl() {
 
 ## MCP Tools Reference
 
-When the `mcp-atlassian` MCP server is configured, these tools are available:
+When the jira-cli MCP server is configured, these core tools are available (30 core of 68 total; the full surface is documented in the jira-cli repo's `SERVICES.md`):
 
 | Tool | Purpose | Example |
 |------|---------|---------|
-| `jira_search` | JQL queries | `project = PROJ AND status = "In Progress"` |
-| `jira_get_issue` | Fetch full issue details by key | `PROJ-1234` |
-| `jira_create_issue` | Create issues (Task, Bug, Story, Epic) | New bug report |
-| `jira_update_issue` | Update fields (summary, description, assignee) | Change assignee |
-| `jira_transition_issue` | Change status | Move to "In Review" |
-| `jira_add_comment` | Add comments | Progress update |
-| `jira_get_sprint_issues` | List issues in a sprint | Active sprint review |
-| `jira_create_issue_link` | Link issues (Blocks, Relates to) | Dependency tracking |
-| `jira_get_issue_development_info` | See linked PRs, branches, commits | Dev context |
+| `get_issue` | Fetch full issue details by key | `PROJ-1234` |
+| `create_issue` | Create issues (Task, Bug, Story) | New bug report |
+| `update_issue` | Update fields (summary, description, assignee) | Change assignee |
+| `search_issues_jql` | JQL queries (GET, classic pagination) | `project = PROJ AND status = "In Progress"` |
+| `search_issues_jql_post` | JQL queries (POST, cursor-based pagination) | Large result sets |
+| `transition_issue` | Change status | Move to "In Review" |
+| `get_issue_transitions` | List available transitions | Before transitioning |
+| `add_comment` | Add comments | Progress update |
+| `add_worklog` | Log work time | `2h 30m` |
+| `get_sprint` | Sprint details | Active sprint review |
+| `get_board_issues` | Issues on a board | Board review |
+| `create_issue_link` | Link issues (Blocks, Relates to) | Dependency tracking |
+| `get_remote_links` | Linked remote resources | Dev context |
 
-> **Tip:** Always call `jira_get_transitions` before transitioning — transition IDs vary per project workflow.
+> **Tip:** Always call `get_issue_transitions` before transitioning — transition IDs vary per project workflow.
 
 ## Direct REST API Reference
 
@@ -290,7 +310,7 @@ Coverage: XX%
 | `401 Unauthorized` | Invalid or expired API token | Regenerate at id.atlassian.com |
 | `403 Forbidden` | Token lacks project permissions | Check token scopes and project access |
 | `404 Not Found` | Wrong ticket key or base URL | Verify `JIRA_URL` and ticket key |
-| `spawn uvx ENOENT` | IDE cannot find `uvx` on PATH | Use full path (e.g., `~/.local/bin/uvx`) or set PATH in `~/.zprofile` |
+| `jira: command not found` | jira-cli binary not on PATH | Install from the repo `publish/` folder (or build from source) and add it to PATH |
 | Connection timeout | Network/VPN issue | Check VPN connection and firewall rules |
 
 ## Best Practices
