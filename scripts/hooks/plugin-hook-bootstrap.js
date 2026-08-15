@@ -22,14 +22,37 @@ function writeStderr(stderr) {
   }
 }
 
+// Events whose stdout the harness parses strictly as hook-output JSON.
+// Echoing the stdin payload back on these events is invalid output — Claude
+// Code rejects it as "invalid stop hook JSON output" on every turn stop —
+// so "no opinion" must be empty stdout there.
+const STRICT_OUTPUT_EVENTS = new Set(['Stop', 'SubagentStop']);
+
+function isStrictOutputEvent(raw) {
+  if (!raw || typeof raw !== 'string') return false;
+  try {
+    const payload = JSON.parse(raw);
+    return (
+      payload !== null &&
+      typeof payload === 'object' &&
+      STRICT_OUTPUT_EVENTS.has(String(payload.hook_event_name || ''))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function passthrough(raw, result) {
+  const strict = isStrictOutputEvent(raw);
   const stdout = typeof result?.stdout === 'string' ? result.stdout : '';
   if (stdout) {
-    process.stdout.write(stdout);
+    if (!(strict && stdout === raw)) {
+      process.stdout.write(stdout);
+    }
     return;
   }
 
-  if (!Number.isInteger(result?.status) || result.status === 0) {
+  if (!strict && (!Number.isInteger(result?.status) || result.status === 0)) {
     process.stdout.write(raw);
   }
 }
@@ -224,7 +247,9 @@ function main() {
   );
 
   if (!mode || !relPath || !rootDir) {
-    process.stdout.write(raw);
+    if (!isStrictOutputEvent(raw)) {
+      process.stdout.write(raw);
+    }
     process.exit(0);
   }
 
@@ -236,12 +261,16 @@ function main() {
       result = spawnShell(rootDir, relPath, raw, args);
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}\n`);
-      process.stdout.write(raw);
+      if (!isStrictOutputEvent(raw)) {
+        process.stdout.write(raw);
+      }
       process.exit(0);
     }
   } catch (error) {
     writeStderr(`[Hook] bootstrap resolution failed: ${error.message}\n`);
-    process.stdout.write(raw);
+    if (!isStrictOutputEvent(raw)) {
+      process.stdout.write(raw);
+    }
     process.exit(0);
   }
 

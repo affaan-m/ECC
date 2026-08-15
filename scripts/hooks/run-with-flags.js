@@ -16,6 +16,22 @@ const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-outpu
 
 const MAX_STDIN = 1024 * 1024;
 
+// Events whose stdout the harness parses strictly as hook-output JSON.
+// Echoing the stdin payload back on these events is invalid output — Claude
+// Code rejects it as "invalid stop hook JSON output" on every turn stop.
+const STRICT_OUTPUT_EVENTS = new Set(['Stop', 'SubagentStop']);
+
+// Hook event name from stdin JSON; '' when absent or unparseable.
+function extractHookEventName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  try {
+    const payload = JSON.parse(raw);
+    return payload && typeof payload === 'object' ? String(payload.hook_event_name || '') : '';
+  } catch {
+    return '';
+  }
+}
+
 function readStdinRaw() {
   return new Promise(resolve => {
     let raw = '';
@@ -160,7 +176,14 @@ async function main() {
   // pass-through paths fail open. The hook itself still runs and receives
   // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
   // security hooks like config-protection can still choose to block.
-  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
+  //
+  // Strict-output events (Stop/SubagentStop): the harness parses stdout as
+  // hook-output JSON, so the passthrough convention is invalid there at ANY
+  // payload size — a disabled or no-opinion Stop hook that echoed its stdin
+  // surfaced as "invalid stop hook JSON output" on every turn stop. For
+  // those events "no opinion" must be empty stdout.
+  const strictOutputEvent = STRICT_OUTPUT_EVENTS.has(extractHookEventName(raw));
+  const sanitizeEcho = text => ((truncated || strictOutputEvent) && text === raw ? '' : text);
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
   }

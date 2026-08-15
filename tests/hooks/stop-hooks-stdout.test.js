@@ -8,10 +8,13 @@
  * failure. Worst offender: cost-tracker capped stdin at 64KB, so any Stop
  * payload with a >64KB final assistant message broke the whole Stop chain.
  *
- * Contract under test: for every Stop hook, stdout is either empty or valid
- * JSON, and the exit code is 0 — for realistic large payloads and for
- * oversized (>1MB) payloads, via the production runner and via direct
- * invocation.
+ * Contract under test: the harness parses Stop stdout strictly as
+ * hook-output JSON, so the harness-facing boundary (registered wrapper /
+ * production runner) must emit EMPTY stdout unless the hook produced real
+ * output — an echoed stdin payload of any size surfaces as "invalid stop
+ * hook JSON output" on every turn stop. Direct script invocation may keep
+ * the legacy echo convention; the boundary suppresses it. Exit code stays 0
+ * for realistic large payloads and oversized (>1MB) payloads alike.
  */
 
 'use strict';
@@ -24,9 +27,7 @@ const { spawnSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const runner = path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js');
-const hooksConfig = JSON.parse(
-  fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8')
-);
+const hooksConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'hooks', 'hooks.json'), 'utf8'));
 
 const MAX_STDIN = 1024 * 1024;
 
@@ -137,12 +138,7 @@ const STOP_HOOKS = [
 ];
 
 // Direct-invocation legacy paths that echo stdin.
-const ECHOING_STOP_HOOKS = [
-  'scripts/hooks/stop-format-typecheck.js',
-  'scripts/hooks/check-console-log.js',
-  'scripts/hooks/cost-tracker.js',
-  'scripts/hooks/desktop-notify.js'
-];
+const ECHOING_STOP_HOOKS = ['scripts/hooks/stop-format-typecheck.js', 'scripts/hooks/check-console-log.js', 'scripts/hooks/cost-tracker.js', 'scripts/hooks/desktop-notify.js'];
 
 console.log('\nStop hook stdout contract tests (#2090):');
 
@@ -154,46 +150,32 @@ let failed = 0;
 // runner path, making the harness report "JSON validation failed".
 const realisticPayload = stopPayload(100 * 1024);
 
-// Exercise the command users actually run from hooks.json. The runner already
-// flushes large stdout before exiting, but the outer lifecycle wrapper used to
-// call process.exit() immediately after forwarding it, cutting the JSON at the
-// OS pipe buffer and reintroducing #2222 above the tested runner layer.
+// Exercise the command users actually run from hooks.json. A disabled or
+// no-opinion Stop hook must emit empty stdout: the harness parses Stop
+// stdout strictly, and the old echo-through behavior surfaced as
+// "invalid stop hook JSON output" on every turn stop.
 for (const entry of hooksConfig.hooks.Stop) {
   if (
-    test(`${entry.id} registered wrapper flushes a 100KB Stop payload`, () => {
+    test(`${entry.id} registered wrapper emits empty stdout for a 100KB Stop payload`, () => {
       const result = runRegisteredStopHook(entry, realisticPayload);
-      assert.strictEqual(
-        result.status,
-        0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-      );
-      assert.ok(
-        result.stdout === realisticPayload,
-        `${entry.id}: registered wrapper must echo ${realisticPayload.length} characters uncut (got ${result.stdout.length})`
-      );
-      JSON.parse(result.stdout);
+      assert.strictEqual(result.status, 0, `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`);
+      assert.strictEqual(result.stdout, '', `${entry.id}: Stop boundary must not echo the payload (got ${result.stdout.length} characters)`);
     })
   )
     passed++;
   else failed++;
 }
 
-const representativeStopEntry = hooksConfig.hooks.Stop.find(
-  entry => entry.id === 'stop:cost-tracker'
-);
+const representativeStopEntry = hooksConfig.hooks.Stop.find(entry => entry.id === 'stop:cost-tracker');
 
 if (
-  test('registered Stop wrapper flushes a 100KB dry-run payload', () => {
+  test('registered Stop wrapper emits empty stdout for a 100KB dry-run payload', () => {
     const result = runRegisteredStopHook(representativeStopEntry, realisticPayload, {
       ECC_DISABLED_HOOKS: '',
       ECC_DRY_RUN: '1'
     });
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
-    assert.ok(
-      result.stdout === realisticPayload,
-      `dry-run wrapper must echo ${realisticPayload.length} characters uncut (got ${result.stdout.length})`
-    );
-    JSON.parse(result.stdout);
+    assert.strictEqual(result.stdout, '', `dry-run Stop wrapper must not echo the payload (got ${result.stdout.length} characters)`);
   })
 )
   passed++;
@@ -208,18 +190,10 @@ assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed 
 
 for (const entry of hooksConfig.hooks.Stop) {
   if (
-    test(`${entry.id} registered wrapper preserves a multibyte sub-cap payload`, () => {
+    test(`${entry.id} registered wrapper emits empty stdout for a multibyte sub-cap payload`, () => {
       const result = runRegisteredStopHook(entry, multibytePayload);
-      assert.strictEqual(
-        result.status,
-        0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-      );
-      assert.ok(
-        result.stdout === multibytePayload,
-        `${entry.id}: registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-      );
-      JSON.parse(result.stdout);
+      assert.strictEqual(result.status, 0, `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`);
+      assert.strictEqual(result.stdout, '', `${entry.id}: Stop boundary must not echo the payload (got ${Buffer.byteLength(result.stdout)} bytes)`);
     })
   )
     passed++;
@@ -249,11 +223,7 @@ if (
       ECC_DRY_RUN: '1'
     });
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
-    assert.strictEqual(
-      result.stdout.length,
-      0,
-      `dry-run wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`
-    );
+    assert.strictEqual(result.stdout.length, 0, `dry-run wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`);
   })
 )
   passed++;
@@ -263,16 +233,8 @@ for (const entry of hooksConfig.hooks.Stop) {
   if (
     test(`${entry.id} registered wrapper suppresses a >1MB Stop payload`, () => {
       const result = runRegisteredStopHook(entry, oversizedPayload);
-      assert.strictEqual(
-        result.status,
-        0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-      );
-      assert.strictEqual(
-        result.stdout.length,
-        0,
-        `${entry.id}: wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`
-      );
+      assert.strictEqual(result.status, 0, `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`);
+      assert.strictEqual(result.stdout.length, 0, `${entry.id}: wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`);
     })
   )
     passed++;

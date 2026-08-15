@@ -1,10 +1,15 @@
 /**
- * Regression tests for #2222: run-with-flags.js must fail open on >1MB stdin.
+ * Regression tests for run-with-flags.js fallthrough behavior.
  *
- * Before the fix, every fallthrough path echoed the truncated payload to
- * stdout. The harness parses hook stdout as JSON, got a document cut
- * mid-stream, and treated the hook as failed — blocking every Edit/Write
- * whose hook payload exceeded the 1MB cap.
+ * #2222: >1MB stdin must fail open — before the fix, every fallthrough path
+ * echoed the truncated payload to stdout, and the harness treated the
+ * mid-stream-cut JSON as a hook failure, blocking large Edit/Write calls.
+ *
+ * Strict-output events (Stop/SubagentStop): the harness parses hook stdout
+ * as hook-output JSON, so the passthrough convention is invalid there at any
+ * payload size — a disabled or no-opinion Stop hook that echoed its stdin
+ * surfaced as "invalid stop hook JSON output" on every turn stop. For those
+ * events "no opinion" must be empty stdout; other events keep passthrough.
  */
 
 'use strict';
@@ -97,6 +102,41 @@ if (
     assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
     assert.ok(result.stdout.length > 0, 'normal payloads keep the pass-through behavior');
     JSON.parse(result.stdout); // stdout must remain valid JSON
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('a hook with an opinion still emits its own stdout', () => {
+    const payload = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/tmp/NOTES.md', content: 'scratch\n' }
+    });
+    const result = runRunner(['pre:write:doc-file-warning', 'scripts/hooks/doc-file-warning.js', 'standard,strict'], payload);
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
+    assert.ok(result.stdout.length > 0, 'opinionated hook output must be forwarded');
+    const parsed = JSON.parse(result.stdout);
+    assert.ok(parsed.hookSpecificOutput, 'additionalContext output must survive as hook JSON');
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('disabled Stop hook emits empty stdout, never the Stop payload', () => {
+    // The exact live regression: a Stop event with the hook disabled used to
+    // echo the input payload, which the harness rejected as
+    // "invalid stop hook JSON output" on every turn stop.
+    const payload = JSON.stringify({
+      session_id: 'test-session',
+      transcript_path: '/tmp/transcript.jsonl',
+      hook_event_name: 'Stop',
+      stop_hook_active: false
+    });
+    const result = runRunner(['stop:desktop-notify', 'scripts/hooks/desktop-notify.js', 'standard,strict'], payload, { ECC_DISABLED_HOOKS: 'stop:desktop-notify' });
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
+    assert.strictEqual(result.stdout, '', 'disabled Stop hook must emit empty stdout');
   })
 )
   passed++;
