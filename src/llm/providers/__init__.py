@@ -5,6 +5,7 @@ from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
+from llm.providers.orcarouter import OrcaRouterProvider
 from llm.providers.resolver import get_provider, register_provider
 
 __all__ = (
@@ -14,6 +15,7 @@ __all__ = (
     "ClaudeProvider",
     "OpenAIProvider",
     "OllamaProvider",
+    "OrcaRouterProvider",
     "get_provider",
     "register_provider",
 )

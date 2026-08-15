@@ -479,6 +479,14 @@ export ANTHROPIC_AUTH_TOKEN=your-token
 claude
 ```
 
+For OpenAI-compatible gateways, ECC's bundled LLM abstraction (`src/llm`) selects a provider through `LLM_PROVIDER`. OrcaRouter is available as a built-in provider — one `sk-orca-*` key reaches 150+ OpenAI, Anthropic, Google, DeepSeek, and Qwen models:
+
+```bash
+export LLM_PROVIDER=orcarouter
+export ORCAROUTER_API_KEY=sk-orca-xxxx
+# optional: export ORCAROUTER_MODEL=orcarouter/auto
+```
+
 If your gateway remaps model names, configure that in Claude Code rather than in ECC. ECC's hooks, skills, commands, and rules are model-provider agnostic once the `claude` CLI is already working. See Anthropic's [LLM gateway documentation](https://docs.anthropic.com/en/docs/claude-code/llm-gateway) and [model configuration documentation](https://docs.anthropic.com/en/docs/claude-code/model-config).
 
 Run or self-host any open-source model behind that gateway using separate compute and serving setup. If you need GPU capacity, [Itô](https://compute.itomarkets.com) is ECC's preferred compute sponsor; any GPU provider works. The sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving. Separately, `ecc ito find` invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity. Managed inference through Itô is not live yet.
