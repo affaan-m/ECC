@@ -387,6 +387,162 @@ process.exit(7);
     })) passed++; else failed++;
   }
 
+  // ---------------------------------------------------------------------
+  // Large-output drain regression (#2796 review).
+  //
+  // Every exit path used to be `process.stdout.write(...)` followed by an
+  // immediate `process.exit()`, which discards whatever is still queued past
+  // the OS pipe buffer (64KB on macOS/Linux). A 262KB payload came back as
+  // 65,536 bytes with exit 0, so the harness received truncated hook JSON and
+  // treated a successful hook as malformed.
+  // ---------------------------------------------------------------------
+
+  const LARGE = 'A'.repeat(200000);
+
+  if (test('non-strict fallback passthrough survives a >64KB payload', () => {
+    const input = JSON.stringify({
+      session_id: 'x',
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { content: LARGE },
+    });
+
+    // No mode / relPath / plugin root: the missing-target fallback.
+    const result = run([], { input });
+
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+    assert.strictEqual(
+      result.stdout.length,
+      input.length,
+      `stdout truncated: ${result.stdout.length} of ${input.length} bytes`
+    );
+    assert.strictEqual(result.stdout, input, 'passthrough must be byte-identical');
+    assert.doesNotThrow(() => JSON.parse(result.stdout), 'passthrough must stay valid JSON');
+  })) passed++; else failed++;
+
+  if (test('unknown-mode fallback passthrough survives a >64KB payload', () => {
+    const input = JSON.stringify({ hook_event_name: 'PreToolUse', pad: LARGE });
+    const root = createTempDir();
+
+    try {
+      const result = run(['bogus-mode', 'scripts/hooks/whatever.js'], { root, input });
+
+      assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+      assert.strictEqual(result.stdout, input, 'unknown-mode fallback must not truncate');
+      assert.ok(result.stderr.includes('unknown bootstrap mode'), 'stderr warning must survive');
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
+  if (test('child stdout larger than the pipe buffer is forwarded whole', () => {
+    const root = createTempDir();
+
+    try {
+      writeFile(
+        root,
+        'scripts/hooks/big-output.js',
+        `process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: 'X'.repeat(200000) } }));\n`
+      );
+
+      const input = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Read' });
+      const result = run(['node', 'scripts/hooks/big-output.js'], { root, input });
+
+      assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+      assert.ok(result.stdout.length > 200000, `child stdout truncated at ${result.stdout.length} bytes`);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.hookSpecificOutput.additionalContext.length, 200000);
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
+  if (test('exit status is preserved when output exceeds the pipe buffer', () => {
+    const root = createTempDir();
+
+    try {
+      writeFile(
+        root,
+        'scripts/hooks/big-and-fail.js',
+        // `process.exitCode`, not `process.exit()`: a child that hard-exits
+        // truncates its own stdout before the bootstrap ever sees it, which is
+        // the hook's bug, not the boundary's.
+        `process.stdout.write(JSON.stringify({ pad: 'Y'.repeat(200000) }));\nprocess.exitCode = 7;\n`
+      );
+
+      const input = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Read' });
+      const result = run(['node', 'scripts/hooks/big-and-fail.js'], { root, input });
+
+      assert.strictEqual(result.status, 7, `expected exit 7, got ${result.status}`);
+      assert.ok(result.stdout.length > 200000, `stdout truncated at ${result.stdout.length} bytes`);
+    } finally {
+      cleanup(root);
+    }
+  })) passed++; else failed++;
+
+  // ---------------------------------------------------------------------
+  // Strict-output events at the bootstrap boundary (#2796).
+  // Direct bootstrap coverage: the registered-wrapper tests exercise
+  // run-with-flags.js, not these branches.
+  // ---------------------------------------------------------------------
+
+  for (const event of ['Stop', 'SubagentStop']) {
+    if (test(`${event} fallback emits empty stdout instead of echoing stdin`, () => {
+      const input = JSON.stringify({
+        session_id: 'x',
+        hook_event_name: event,
+        stop_hook_active: false,
+        pad: LARGE,
+      });
+
+      const result = run([], { input });
+
+      assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+      assert.strictEqual(result.stdout, '', `${event} must not echo stdin, got ${result.stdout.length} bytes`);
+    })) passed++; else failed++;
+
+    if (test(`${event} suppresses a child that echoes stdin by convention`, () => {
+      const root = createTempDir();
+
+      try {
+        writeFile(
+          root,
+          'scripts/hooks/echo-stdin.js',
+          `const fs = require('fs');\nprocess.stdout.write(fs.readFileSync(0, 'utf8'));\n`
+        );
+
+        const input = JSON.stringify({ hook_event_name: event, stop_hook_active: false, pad: LARGE });
+        const result = run(['node', 'scripts/hooks/echo-stdin.js'], { root, input });
+
+        assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+        assert.strictEqual(result.stdout, '', `echoed stdin must be suppressed on ${event}`);
+      } finally {
+        cleanup(root);
+      }
+    })) passed++; else failed++;
+
+    if (test(`${event} still forwards genuine hook output`, () => {
+      const root = createTempDir();
+
+      try {
+        writeFile(
+          root,
+          'scripts/hooks/opinionated.js',
+          `process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: 'real output' } }));\n`
+        );
+
+        const input = JSON.stringify({ hook_event_name: event, stop_hook_active: false });
+        const result = run(['node', 'scripts/hooks/opinionated.js'], { root, input });
+
+        assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}`);
+        const parsed = JSON.parse(result.stdout);
+        assert.strictEqual(parsed.hookSpecificOutput.additionalContext, 'real output');
+      } finally {
+        cleanup(root);
+      }
+    })) passed++; else failed++;
+  }
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

@@ -42,19 +42,46 @@ function isStrictOutputEvent(raw) {
   }
 }
 
-function passthrough(raw, result) {
+/**
+ * Exit only after stdout and any previously queued stderr have drained.
+ * `process.exit()` immediately after a stream write drops anything beyond the
+ * OS pipe buffer, which cut large passthrough output mid-payload and handed
+ * the harness malformed hook JSON while still exiting 0.
+ *
+ * `scripts/hooks/run-with-flags.js` already fixed this for the runner (#2493);
+ * the bootstrap never got the same treatment. It cannot import that helper —
+ * run-with-flags.js has no exports and calls main() at module scope — so the
+ * contract is mirrored here.
+ */
+function exitWithStdout(text, exitCode) {
+  process.exitCode = exitCode;
+  let pendingWrites = 1;
+  const exitWhenFlushed = () => {
+    pendingWrites -= 1;
+    if (pendingWrites === 0) {
+      process.exit(exitCode);
+    }
+  };
+
+  if (typeof text === 'string' && text.length > 0) {
+    pendingWrites += 1;
+    process.stdout.write(text, exitWhenFlushed);
+  }
+  process.stderr.write('', exitWhenFlushed);
+}
+
+function passthroughText(raw, result) {
   const strict = isStrictOutputEvent(raw);
   const stdout = typeof result?.stdout === 'string' ? result.stdout : '';
   if (stdout) {
-    if (!(strict && stdout === raw)) {
-      process.stdout.write(stdout);
-    }
-    return;
+    return strict && stdout === raw ? '' : stdout;
   }
 
   if (!strict && (!Number.isInteger(result?.status) || result.status === 0)) {
-    process.stdout.write(raw);
+    return raw;
   }
+
+  return '';
 }
 
 function normalizePluginRootForPlatform(rootDir, platform = process.platform) {
@@ -247,10 +274,8 @@ function main() {
   );
 
   if (!mode || !relPath || !rootDir) {
-    if (!isStrictOutputEvent(raw)) {
-      process.stdout.write(raw);
-    }
-    process.exit(0);
+    exitWithStdout(isStrictOutputEvent(raw) ? '' : raw, 0);
+    return;
   }
 
   let result;
@@ -261,20 +286,16 @@ function main() {
       result = spawnShell(rootDir, relPath, raw, args);
     } else {
       writeStderr(`[Hook] unknown bootstrap mode: ${mode}\n`);
-      if (!isStrictOutputEvent(raw)) {
-        process.stdout.write(raw);
-      }
-      process.exit(0);
+      exitWithStdout(isStrictOutputEvent(raw) ? '' : raw, 0);
+      return;
     }
   } catch (error) {
     writeStderr(`[Hook] bootstrap resolution failed: ${error.message}\n`);
-    if (!isStrictOutputEvent(raw)) {
-      process.stdout.write(raw);
-    }
-    process.exit(0);
+    exitWithStdout(isStrictOutputEvent(raw) ? '' : raw, 0);
+    return;
   }
 
-  passthrough(raw, result);
+  const stdoutText = passthroughText(raw, result);
   writeStderr(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
@@ -284,10 +305,11 @@ function main() {
         ? `terminated by signal ${result.signal}`
         : 'missing exit status';
     writeStderr(`[Hook] bootstrap execution failed: ${reason}\n`);
-    process.exit(0);
+    exitWithStdout(stdoutText, 0);
+    return;
   }
 
-  process.exit(Number.isInteger(result.status) ? result.status : 0);
+  exitWithStdout(stdoutText, Number.isInteger(result.status) ? result.status : 0);
 }
 
 // Run when invoked as a hook entry. Production hooks load this via
