@@ -353,7 +353,8 @@
         "skills/repo-scan",
         "skills/rules-distill",
         "skills/santa-method",
-        "skills/git-workflow"
+        "skills/git-workflow",
+        "skills/install-ecc-rules"
       ],
       "targets": [
         "claude",
