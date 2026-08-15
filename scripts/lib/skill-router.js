@@ -55,6 +55,12 @@ function tokenize(text) {
   return tokens;
 }
 
+/**
+ * List immediate skill directory names under a `skills/` root.
+ *
+ * @param {string} skillsRoot Absolute path to a `skills/` directory.
+ * @returns {Array<string>} Sorted directory names, empty when absent.
+ */
 function listSkillDirs(skillsRoot) {
   if (!fs.existsSync(skillsRoot)) {
     return [];
@@ -65,6 +71,12 @@ function listSkillDirs(skillsRoot) {
     .sort();
 }
 
+/**
+ * Scan every SKILL.md under a source root for its id and description.
+ *
+ * @param {string} sourceRoot Root of an ECC checkout.
+ * @returns {Array<{id: string, description: string}>} Catalog entries.
+ */
 function readCatalog(sourceRoot) {
   const skillsRoot = path.join(sourceRoot, 'skills');
   const entries = [];
@@ -79,6 +91,16 @@ function readCatalog(sourceRoot) {
   return entries;
 }
 
+/**
+ * Cheap fingerprint used to decide whether a cached catalog is still valid.
+ *
+ * Tracks only skill directory count and the `skills/` mtime, so adds and
+ * removes invalidate the cache while in-place description edits ride the
+ * TTL — the tradeoff that keeps this inside the blocking-hook budget.
+ *
+ * @param {string} sourceRoot Root of an ECC checkout.
+ * @returns {{dirCount: number, mtimeMs: number}} Signature for cache comparison.
+ */
 function catalogSignature(sourceRoot) {
   const skillsRoot = path.join(sourceRoot, 'skills');
   try {
@@ -89,9 +111,16 @@ function catalogSignature(sourceRoot) {
   }
 }
 
-// Cache lives under the user's home directory, NOT os.tmpdir(): a stable,
-// predictable filename in a shared /tmp would let another local user
-// pre-plant cache content that gets injected into this user's context.
+/**
+ * Resolve the cache file backing one source root.
+ *
+ * The cache lives under the user's home directory, NOT os.tmpdir(): a
+ * stable, predictable filename in a shared /tmp would let another local
+ * user pre-plant cache content that gets injected into this user's context.
+ *
+ * @param {string} sourceRoot Root of an ECC checkout.
+ * @returns {string} Absolute path to this root's cache file.
+ */
 function cachePathFor(sourceRoot) {
   const cacheDir = process.env.ECC_SKILL_ROUTER_CACHE_DIR
     || path.join(os.homedir(), '.claude', 'cache');
@@ -100,10 +129,36 @@ function cachePathFor(sourceRoot) {
 }
 
 /**
- * Catalog scan with a best-effort tmpdir cache. The signature only tracks
- * skill directory adds/removes, so edited descriptions can be stale for up
- * to the TTL — acceptable for routing hints, and it keeps the hook well
- * under the blocking-hook latency budget.
+ * Keep only well-formed {id, description} pairs.
+ *
+ * Applied to every catalog source that is not a fresh in-process scan — the
+ * on-disk cache and a plugin's embedded snapshot are both attacker-writable
+ * in the threat model, and a malformed entry would otherwise reach scoring
+ * (where a non-string id throws) or routed output.
+ *
+ * @param {unknown} entries Candidate catalog array.
+ * @returns {Array<{id: string, description: string}>} Validated entries.
+ */
+function sanitizeCatalogEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+  return entries
+    .filter(entry => entry
+      && typeof entry.id === 'string'
+      && entry.id.length > 0
+      && typeof entry.description === 'string')
+    .map(entry => ({ id: entry.id, description: entry.description }));
+}
+
+/**
+ * Catalog scan with a best-effort cache under the user's home directory.
+ * The signature only tracks skill directory adds/removes, so edited
+ * descriptions can be stale for up to the TTL — acceptable for routing
+ * hints, and it keeps the hook well under the blocking-hook latency budget.
+ *
+ * @param {string} sourceRoot Root of the ECC checkout holding `skills/`.
+ * @returns {Array<{id: string, description: string}>} Catalog entries.
  */
 function loadCatalog(sourceRoot) {
   const signature = catalogSignature(sourceRoot);
@@ -115,37 +170,58 @@ function loadCatalog(sourceRoot) {
       && cached.signature.dirCount === signature.dirCount
       && cached.signature.mtimeMs === signature.mtimeMs
       && Number.isFinite(cached.builtAt)
+      && cached.builtAt <= Date.now()
       && Date.now() - cached.builtAt < CACHE_TTL_MS
       && Array.isArray(cached.entries)) {
-      return cached.entries;
+      return sanitizeCatalogEntries(cached.entries);
     }
   } catch {
     // missing or unreadable cache: rebuild below
   }
 
   const entries = readCatalog(sourceRoot);
-  try {
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    let existing = null;
-    try {
-      existing = fs.lstatSync(cachePath);
-    } catch {
-      // no existing cache file
-    }
-    // Refuse to write through anything that is not a regular file (symlink
-    // planting) — writeFileSync would otherwise follow the link.
-    if (!existing || existing.isFile()) {
-      fs.writeFileSync(cachePath, JSON.stringify({ signature, builtAt: Date.now(), entries }), { mode: 0o600 });
-    }
-  } catch {
-    // cache write is best-effort only
-  }
+  writeCatalogCache(cachePath, { signature, builtAt: Date.now(), entries });
   return entries;
 }
 
-// A sourceRoot from ecc-profile.json is only honored when it looks like a
-// real ECC checkout. The metadata is plugin-supplied data, so an arbitrary
-// path must never end up in routed output (Prompt Defense Baseline).
+/**
+ * Persist the catalog cache without ever writing through a planted symlink.
+ *
+ * The payload is written to an exclusive per-process temp file and renamed
+ * over the target: `wx` fails rather than following an existing link, and
+ * the rename is atomic, so there is no lstat-then-write window for another
+ * local user to swap the path in between (TOCTOU). Best-effort throughout —
+ * a cache that cannot be written just means the next run rescans.
+ *
+ * @param {string} cachePath Destination cache file.
+ * @param {object} payload Cache document to serialize.
+ * @returns {void}
+ */
+function writeCatalogCache(cachePath, payload) {
+  const tempPath = `${cachePath}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(tempPath, JSON.stringify(payload), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tempPath, cachePath);
+  } catch {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // nothing to clean up
+    }
+  }
+}
+
+/**
+ * Verify a candidate path fingerprints as a real ECC checkout.
+ *
+ * A sourceRoot from ecc-profile.json is only honored when it looks like a
+ * real ECC checkout. The metadata is plugin-supplied data, so an arbitrary
+ * path must never end up in routed output (Prompt Defense Baseline).
+ *
+ * @param {string} candidate Path supplied by plugin metadata.
+ * @returns {boolean} Whether the path may be trusted as a catalog source.
+ */
 function isEccSourceRoot(candidate) {
   return fs.existsSync(path.join(candidate, 'skills'))
     && fs.existsSync(path.join(candidate, 'manifests', 'install-modules.json'));
@@ -169,9 +245,7 @@ function resolveRouterContext(pluginRoot) {
     if (metadata && typeof metadata.sourceRoot === 'string' && isEccSourceRoot(metadata.sourceRoot)) {
       sourceRoot = metadata.sourceRoot;
       if (Array.isArray(metadata.catalog)) {
-        embeddedCatalog = metadata.catalog.filter(
-          entry => entry && typeof entry.id === 'string' && typeof entry.description === 'string'
-        );
+        embeddedCatalog = sanitizeCatalogEntries(metadata.catalog);
       }
     }
   } catch {
@@ -235,6 +309,7 @@ function routePrompt(prompt, options = {}) {
 module.exports = {
   PROFILE_METADATA_FILE,
   tokenize,
+  sanitizeCatalogEntries,
   resolveRouterContext,
   routePrompt,
 };

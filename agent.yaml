@@ -220,6 +220,7 @@ commands:
   - plan
   - plan-canvas
   - plan-prd
+  - plugin-profiles
   - pm2
   - projects
   - promote

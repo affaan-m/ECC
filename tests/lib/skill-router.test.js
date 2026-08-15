@@ -20,6 +20,7 @@ const { test, banner } = require('./helpers/mini-test-runner');
 const {
   PROFILE_METADATA_FILE,
   tokenize,
+  sanitizeCatalogEntries,
   resolveRouterContext,
   routePrompt,
 } = require('../../scripts/lib/skill-router');
@@ -159,8 +160,101 @@ try {
   });
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
-  fs.rmSync(cacheDir, { recursive: true, force: true });
 }
+
+run('sanitizeCatalogEntries drops malformed entries', () => {
+  const entries = sanitizeCatalogEntries([
+    { id: 'good-skill', description: 'a real description' },
+    { id: 'no-description' },
+    { description: 'no id' },
+    { id: 42, description: 'numeric id' },
+    { id: 'null-description', description: null },
+    { id: '', description: 'empty id' },
+    null,
+    'not-an-object',
+  ]);
+  assert.deepStrictEqual(entries, [{ id: 'good-skill', description: 'a real description' }]);
+});
+
+run('sanitizeCatalogEntries keeps only id and description', () => {
+  const entries = sanitizeCatalogEntries([
+    { id: 'skill', description: 'desc', installed: true, sourceRoot: '/attacker/path' },
+  ]);
+  assert.deepStrictEqual(Object.keys(entries[0]).sort(), ['description', 'id']);
+});
+
+// A cache file is attacker-writable in the threat model: a malformed entry
+// must not reach scoring, where a non-string id would throw.
+run('a poisoned cache with malformed entries does not break routing', () => {
+  const poisonedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-poison-'));
+  try {
+    writeSkill(poisonedRoot, 'database-migration', 'Database schema migration workflow');
+    fs.mkdirSync(path.join(poisonedRoot, 'manifests'), { recursive: true });
+    fs.writeFileSync(path.join(poisonedRoot, 'manifests', 'install-modules.json'), '{}');
+
+    const { routePrompt: route } = require('../../scripts/lib/skill-router');
+    // Prime the cache, then corrupt it in place.
+    route('database migration workflow please', { pluginRoot: poisonedRoot });
+    const cacheFile = fs.readdirSync(cacheDir).map(f => path.join(cacheDir, f))
+      .find(f => f.endsWith('.json'));
+    assert.ok(cacheFile, 'Expected a cache file to have been written');
+    const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+    cached.entries = [{ id: 99, description: 'malformed' }, { id: 'ok-skill', description: 'fine' }];
+    fs.writeFileSync(cacheFile, JSON.stringify(cached));
+
+    assert.doesNotThrow(() => route('database migration workflow please', { pluginRoot: poisonedRoot }));
+  } finally {
+    fs.rmSync(poisonedRoot, { recursive: true, force: true });
+  }
+});
+
+// writeFileSync would follow a planted symlink; the temp-file + rename path
+// must leave the link target untouched.
+run('cache write never writes through a planted symlink', () => {
+  const linkRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-link-'));
+  const linkCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-linkcache-'));
+  const previousCacheDir = process.env.ECC_SKILL_ROUTER_CACHE_DIR;
+  try {
+    writeSkill(linkRoot, 'victim-skill', 'A skill used to trigger a catalog scan');
+    fs.mkdirSync(path.join(linkRoot, 'manifests'), { recursive: true });
+    fs.writeFileSync(path.join(linkRoot, 'manifests', 'install-modules.json'), '{}');
+
+    const victimFile = path.join(linkCacheDir, 'victim.txt');
+    fs.writeFileSync(victimFile, 'ORIGINAL');
+
+    const digest = require('crypto').createHash('sha1')
+      .update(path.resolve(linkRoot)).digest('hex').slice(0, 12);
+    const plantedLink = path.join(linkCacheDir, `ecc-skill-router-${digest}.json`);
+    try {
+      fs.symlinkSync(victimFile, plantedLink);
+    } catch {
+      return; // platform without symlink permission (Windows CI): nothing to assert
+    }
+
+    process.env.ECC_SKILL_ROUTER_CACHE_DIR = linkCacheDir;
+    delete require.cache[require.resolve('../../scripts/lib/skill-router')];
+    const { routePrompt: route } = require('../../scripts/lib/skill-router');
+    route('victim skill catalog scan trigger', { pluginRoot: linkRoot });
+
+    assert.strictEqual(fs.readFileSync(victimFile, 'utf8'), 'ORIGINAL',
+      'Cache write must not follow the symlink and clobber its target');
+    // The temp-file + rename path also *replaces* the planted link with a
+    // real file, so the cache still persists instead of silently rescanning
+    // on every prompt for as long as the link sits there.
+    assert.ok(fs.lstatSync(plantedLink).isFile(),
+      'Cache path must end up a regular file, not a lingering symlink');
+    assert.deepStrictEqual(fs.readdirSync(linkCacheDir).filter(f => f.endsWith('.tmp')), [],
+      'No temp files may be left behind');
+  } finally {
+    if (previousCacheDir === undefined) delete process.env.ECC_SKILL_ROUTER_CACHE_DIR;
+    else process.env.ECC_SKILL_ROUTER_CACHE_DIR = previousCacheDir;
+    delete require.cache[require.resolve('../../scripts/lib/skill-router')];
+    fs.rmSync(linkRoot, { recursive: true, force: true });
+    fs.rmSync(linkCacheDir, { recursive: true, force: true });
+  }
+});
+
+fs.rmSync(cacheDir, { recursive: true, force: true });
 
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);

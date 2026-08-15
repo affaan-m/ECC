@@ -67,11 +67,21 @@ For each selected module, paths are classified into the plugin surface:
 | `agents` / `agents/<f>.md` | `agents/` (copied) | frontmatter per agent |
 | `commands` / `commands/<f>.md` | `commands/` (copied) | frontmatter per command |
 | `hooks`, `scripts/**` | copied verbatim | zero (runtime only) |
+| command runtime closure | copied verbatim | zero (runtime only) |
 | `rules`, `.agents`, platform configs | skipped | installer-only surfaces |
 
 Hook runtime is included by default (`--no-hooks` to opt out): hooks cost no
 session context, so a slim profile keeps full GateGuard/session-hook parity
-with the monolith. The generated `.claude-plugin/plugin.json` follows the
+with the monolith.
+
+Some commands ship as Markdown under `commands/` but are backed by code that
+lives outside the modules a profile selects — `/plugin-profiles` is one, and
+the `minimal` and `opencode` profiles omit `hooks-runtime` (and with it
+`scripts/lib`) entirely. For those, the generator resolves the command's
+transitive `require()` graph at generation time and copies it alongside the
+command, so a generated profile never ships a slash command that fails on
+first use. Runtime paths cost zero session context, so this is free in the
+metric the profiles exist to optimize. The generated `.claude-plugin/plugin.json` follows the
 Claude validator rules pinned in `tests/plugin-manifest.test.js` (no `agents`
 or `hooks` keys, explicit empty `mcpServers`).
 
@@ -130,6 +140,23 @@ Two companions make profiles usable without leaving Claude Code:
   repository, so routing always covers the full catalog even under a minimal
   profile. It emits nothing when no skill clearly matches, and is disabled
   like any hook via `ECC_DISABLED_HOOKS=user-prompt:skill-router`.
+
+## Overwrite Safety
+
+`generate` replaces an existing plugin directory of the same name, but only
+after confirming it is one this tool produced — every generated plugin
+carries an `ecc-profile.json` marker naming `everything-claude-code` as its
+generator. A directory without that marker is refused:
+
+```text
+Refusing to overwrite /path/to/ecc-minimal: it is not a generated profile
+plugin (no ecc-profile.json marker). Choose another --name/--out, or pass
+--force to replace it.
+```
+
+This matters because `--out` and `--name` together address an arbitrary
+directory, and generation deletes the target tree before writing. Pass
+`--force` only when you intend to replace unrelated contents.
 
 ## Refreshing After Updates
 

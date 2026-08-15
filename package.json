@@ -108,6 +108,7 @@
     "scripts/observability-readiness.js",
     "scripts/operator-readiness-dashboard.js",
     "scripts/platform-audit.js",
+    "scripts/plugin-profiles.js",
     "scripts/preview-pack-smoke.js",
     "scripts/release-approval-gate.js",
     "scripts/release-video-suite.js",

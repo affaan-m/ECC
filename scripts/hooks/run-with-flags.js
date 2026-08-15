@@ -150,6 +150,21 @@ function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
   return parts.join(' ') + '\n';
 }
 
+/**
+ * True when the harness treats this hook's stdout as context injected into
+ * the model's turn rather than as an ignored side channel.
+ *
+ * Hook ids are namespaced by event (`pre:`, `post:`, `stop:`, `session:`,
+ * `user-prompt:`); only UserPromptSubmit feeds stdout back into the prompt,
+ * so only that prefix disables raw pass-through.
+ *
+ * @param {string} hookId Namespaced hook id from argv, e.g. `user-prompt:skill-router`.
+ * @returns {boolean} Whether stdout for this hook lands in model context.
+ */
+function injectsStdoutAsContext(hookId) {
+  return typeof hookId === 'string' && hookId.startsWith('user-prompt:');
+}
+
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
@@ -160,7 +175,19 @@ async function main() {
   // pass-through paths fail open. The hook itself still runs and receives
   // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
   // security hooks like config-protection can still choose to block.
-  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
+  //
+  // UserPromptSubmit is the exception to pass-through entirely: for that
+  // event the harness injects stdout into the model's context. Echoing the
+  // raw payload back would inject the whole hook JSON (prompt, cwd, session
+  // id, transcript path) into the turn whenever the hook is disabled,
+  // dry-run, missing, or misconfigured. Those paths must emit nothing.
+  const echoesIntoContext = injectsStdoutAsContext(hookId);
+  const sanitizeEcho = text => {
+    if (echoesIntoContext && text === raw) {
+      return '';
+    }
+    return truncated && text === raw ? '' : text;
+  };
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
   }

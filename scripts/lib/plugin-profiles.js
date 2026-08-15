@@ -20,7 +20,104 @@ const { DEFAULT_REPO_ROOT, resolveInstallPlan } = require('./install-manifests')
 const CATALOG_SKILL_ID = 'ecc-catalog';
 const PLUGIN_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const DEFAULT_MARKETPLACE_NAME = 'ecc-profiles';
+const PROFILE_METADATA_FILE = 'ecc-profile.json';
 
+// Commands whose Markdown ships via the `commands` module path but whose
+// backing code lives outside it. Without these, a profile that carries the
+// command file gets a slash command that fails on first use — the `minimal`
+// and `opencode` profiles omit `hooks-runtime` (and with it `scripts/lib`)
+// entirely. Runtime paths add zero session context, so shipping the
+// dependency closure is cheap; the alternative is a broken command.
+//
+// `script` entry points have their transitive require() graph resolved at
+// generation time rather than listed by hand — a hardcoded list silently
+// rots the first time someone adds a require to the chain. `data` paths are
+// non-code inputs the CLI reads at runtime.
+const COMMAND_RUNTIME_CLOSURE = {
+  'plugin-profiles.md': {
+    scripts: ['scripts/plugin-profiles.js'],
+    data: ['manifests'],
+  },
+};
+
+const RELATIVE_REQUIRE_PATTERN = /require\(\s*['"](\.[^'"]*)['"]\s*\)/g;
+
+/**
+ * Walk the transitive require() graph of one or more entry scripts.
+ *
+ * Only relative specifiers are followed — bare specifiers are Node builtins
+ * or npm packages, neither of which lives in the repo tree. Resolution
+ * mirrors CommonJS: exact path, then `.js`, then `/index.js`. Anything that
+ * escapes repoRoot or fails to resolve is skipped rather than thrown on, so
+ * a generation never dies over one unresolvable dynamic require.
+ *
+ * @param {Array<string>} entryPaths Repo-relative entry scripts.
+ * @param {string} repoRoot Absolute repository root.
+ * @returns {Array<string>} Sorted repo-relative paths of every reachable file.
+ */
+function resolveScriptClosure(entryPaths, repoRoot) {
+  const resolvedRoot = path.resolve(repoRoot);
+  const seen = new Set();
+  const queue = [];
+
+  const toRelative = absPath => toPosix(path.relative(resolvedRoot, absPath));
+  const resolveCandidate = absPath => {
+    for (const candidate of [absPath, `${absPath}.js`, path.join(absPath, 'index.js')]) {
+      try {
+        if (fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {
+        // try the next candidate shape
+      }
+    }
+    return null;
+  };
+
+  for (const entryPath of entryPaths) {
+    const resolved = resolveCandidate(path.join(resolvedRoot, ...entryPath.split('/')));
+    if (resolved) {
+      queue.push(resolved);
+    }
+  }
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    const relative = toRelative(current);
+    if (seen.has(relative) || relative.startsWith('..') || path.isAbsolute(relative)) {
+      continue;
+    }
+    seen.add(relative);
+
+    let source;
+    try {
+      source = fs.readFileSync(current, 'utf8');
+    } catch {
+      continue;
+    }
+
+    RELATIVE_REQUIRE_PATTERN.lastIndex = 0;
+    let match = RELATIVE_REQUIRE_PATTERN.exec(source);
+    while (match !== null) {
+      const next = resolveCandidate(path.resolve(path.dirname(current), match[1]));
+      if (next) {
+        queue.push(next);
+      }
+      match = RELATIVE_REQUIRE_PATTERN.exec(source);
+    }
+  }
+
+  return [...seen].sort();
+}
+
+/**
+ * Read and parse a JSON file, reporting the logical name on failure.
+ *
+ * @param {string} filePath Absolute path to the JSON file.
+ * @param {string} label Human-readable name used in the error message.
+ * @returns {object} Parsed JSON.
+ * @throws {Error} When the file cannot be read or parsed.
+ */
 function readJson(filePath, label) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -29,22 +126,88 @@ function readJson(filePath, label) {
   }
 }
 
+/**
+ * Read a `description:` out of YAML frontmatter without a YAML dependency.
+ *
+ * Handles the three shapes that actually occur across the catalog: an inline
+ * scalar, a quoted scalar, and a block scalar (`>`, `>-`, `|`, `|-`, and the
+ * `+` keep variants) whose text lives on the following indented lines. The
+ * block form matters — 16 catalog skills use `>-`, and reading only the
+ * first line yields the literal indicator instead of the description, which
+ * silently makes those skills unroutable.
+ *
+ * @param {string} source Full file contents.
+ * @returns {{raw: string, description: string}} Frontmatter block and description.
+ */
 function parseFrontmatter(source) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
   if (!match) {
     return { raw: '', description: '' };
   }
-  const descriptionMatch = /^description:\s*(.+)$/m.exec(match[1]);
-  const description = descriptionMatch
-    ? descriptionMatch[1].trim().replace(/^["']|["']$/g, '')
-    : '';
-  return { raw: match[0], description };
+
+  const lines = match[1].split(/\r?\n/);
+  const startIndex = lines.findIndex(line => /^description:/.test(line));
+  if (startIndex === -1) {
+    return { raw: match[0], description: '' };
+  }
+
+  const inline = lines[startIndex].slice('description:'.length).trim();
+  const blockScalar = /^([>|])([-+]?)$/.exec(inline);
+  if (!blockScalar) {
+    return { raw: match[0], description: inline.replace(/^["']|["']$/g, '') };
+  }
+
+  // Block scalar: consume the following lines that are indented deeper than
+  // the key, stopping at the next top-level key. Folded (`>`) joins on
+  // spaces with blank lines as paragraph breaks; literal (`|`) keeps them.
+  const isFolded = blockScalar[1] === '>';
+  const body = [];
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      body.push('');
+      continue;
+    }
+    if (!/^\s/.test(line)) {
+      break;
+    }
+    body.push(line.trim());
+  }
+
+  while (body.length > 0 && body[body.length - 1] === '') {
+    body.pop();
+  }
+
+  let description = '';
+  for (const line of body) {
+    if (line === '') {
+      description += '\n';
+    } else if (description === '' || description.endsWith('\n')) {
+      description += line;
+    } else {
+      description += isFolded ? ` ${line}` : `\n${line}`;
+    }
+  }
+
+  return { raw: match[0], description: description.trim() };
 }
 
+/**
+ * Approximate token count for a block of frontmatter (~4 chars per token).
+ *
+ * @param {string} text Text to measure.
+ * @returns {number} Estimated tokens.
+ */
 function estimateTokens(text) {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Normalize a filesystem path to forward slashes.
+ *
+ * @param {string} relPath Path in platform-native form.
+ * @returns {string} Path with POSIX separators.
+ */
 function toPosix(relPath) {
   return String(relPath).split(path.sep).join('/');
 }
@@ -71,6 +234,12 @@ function classifyModulePath(rawPath) {
   return { surface: 'skipped', relPath };
 }
 
+/**
+ * List immediate child directory names.
+ *
+ * @param {string} rootDir Directory to scan.
+ * @returns {Array<string>} Sorted names, empty when the directory is absent.
+ */
 function listChildDirectories(rootDir) {
   if (!fs.existsSync(rootDir)) {
     return [];
@@ -81,6 +250,12 @@ function listChildDirectories(rootDir) {
     .sort();
 }
 
+/**
+ * List Markdown file names directly inside a directory.
+ *
+ * @param {string} rootDir Directory to scan.
+ * @returns {Array<string>} Sorted `.md` file names, empty when absent.
+ */
 function listMarkdownFiles(rootDir) {
   if (!fs.existsSync(rootDir)) {
     return [];
@@ -185,6 +360,34 @@ function resolvePluginProfilePlan(options = {}) {
     }
   }
 
+  // Pull in the backing code for any shipped command that needs it, so a
+  // generated profile never carries a slash command it cannot run.
+  for (const commandFile of commandFiles) {
+    const closure = COMMAND_RUNTIME_CLOSURE[commandFile];
+    if (!closure) {
+      continue;
+    }
+    const depPaths = [
+      ...resolveScriptClosure(closure.scripts || [], repoRoot),
+      ...(closure.data || []),
+    ];
+    for (const depPath of depPaths) {
+      // Already covered when the path itself, or a parent directory of it,
+      // is being copied (e.g. `scripts/lib` subsumes `scripts/lib/*.js`).
+      const covered = [...runtimePaths].some(
+        existing => existing === depPath || depPath.startsWith(`${existing}/`)
+      );
+      if (covered) {
+        continue;
+      }
+      if (fs.existsSync(path.join(repoRoot, ...depPath.split('/')))) {
+        runtimePaths.add(depPath);
+      } else {
+        warnings.push(`Command ${commandFile}: missing runtime dependency ${depPath}`);
+      }
+    }
+  }
+
   const rootPackage = readJson(path.join(repoRoot, 'package.json'), 'package.json');
 
   return {
@@ -255,6 +458,18 @@ function readCatalogEntries(repoRoot) {
   return entries;
 }
 
+/**
+ * Write the `ecc-catalog` escape-hatch skill into a generated plugin.
+ *
+ * One cheap frontmatter entry whose body indexes the FULL upstream catalog,
+ * so a slim profile never loses access to a skill — it loads on demand from
+ * the recorded source root instead of being installed.
+ *
+ * @param {object} plan Resolved plugin plan.
+ * @param {string} pluginRoot Destination plugin directory.
+ * @param {Array<{id: string, description: string}>} catalogEntries Full catalog.
+ * @returns {number} Number of catalog rows written.
+ */
 function writeCatalogSkill(plan, pluginRoot, catalogEntries) {
   const installed = new Set(plan.skills);
   const rows = [];
@@ -293,6 +508,15 @@ function writeCatalogSkill(plan, pluginRoot, catalogEntries) {
   return rows.length;
 }
 
+/**
+ * Build the `.claude-plugin/plugin.json` document for a generated plugin.
+ *
+ * @param {object} plan Resolved plugin plan.
+ * @param {object} surfaces Which optional surfaces exist on disk.
+ * @param {boolean} surfaces.hasSkills Declare a `skills` directory.
+ * @param {boolean} surfaces.hasCommands Declare a `commands` directory.
+ * @returns {object} Plugin manifest.
+ */
 function buildPluginManifest(plan, { hasSkills, hasCommands }) {
   const rootPluginPath = path.join(plan.repoRoot, '.claude-plugin', 'plugin.json');
   const rootPlugin = fs.existsSync(rootPluginPath)
@@ -321,8 +545,40 @@ function buildPluginManifest(plan, { hasSkills, hasCommands }) {
 }
 
 /**
+ * True when a directory looks like output this generator previously wrote.
+ *
+ * Regeneration deletes the target tree, so it must first prove the target is
+ * a generated profile plugin and not a directory the user happens to own.
+ * The `ecc-profile.json` marker is written by every generated plugin and by
+ * nothing else, which makes it a reliable ownership signal.
+ *
+ * @param {string} pluginRoot Candidate plugin directory.
+ * @returns {boolean} Whether the directory is safe to replace.
+ */
+function isGeneratedProfilePlugin(pluginRoot) {
+  try {
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(pluginRoot, PROFILE_METADATA_FILE), 'utf8')
+    );
+    return metadata && metadata.generatedFrom === 'everything-claude-code';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Materialize a resolved plan as a plugin directory under outRoot.
- * Existing content for the same plugin name is replaced.
+ *
+ * A previously generated plugin of the same name is replaced. Any other
+ * existing directory is refused unless `force` is set, so a stray
+ * `--name`/`--out` combination cannot silently delete unrelated files.
+ *
+ * @param {object} options Generation options.
+ * @param {object} options.plan Resolved plan from resolvePluginProfilePlan().
+ * @param {string} options.outRoot Marketplace root to write into.
+ * @param {boolean} [options.includeCatalogSkill=true] Emit the ecc-catalog skill.
+ * @param {boolean} [options.force=false] Replace a non-generated directory.
+ * @returns {object} Generation result including pluginRoot and manifest.
  */
 function generateProfilePlugin(options = {}) {
   const plan = options.plan;
@@ -336,6 +592,13 @@ function generateProfilePlugin(options = {}) {
   const includeCatalogSkill = options.includeCatalogSkill !== false;
   const { repoRoot } = plan;
   const pluginRoot = path.join(outRoot, plan.pluginName);
+
+  if (fs.existsSync(pluginRoot) && !options.force && !isGeneratedProfilePlugin(pluginRoot)) {
+    throw new Error(
+      `Refusing to overwrite ${pluginRoot}: it is not a generated profile plugin `
+      + `(no ${PROFILE_METADATA_FILE} marker). Choose another --name/--out, or pass --force to replace it.`
+    );
+  }
 
   fs.rmSync(pluginRoot, { recursive: true, force: true });
   fs.mkdirSync(pluginRoot, { recursive: true });
@@ -382,7 +645,7 @@ function generateProfilePlugin(options = {}) {
   // at prompt time; sourceRoot is machine-local, so generated plugins must
   // be regenerated rather than copied between machines.
   fs.writeFileSync(
-    path.join(pluginRoot, 'ecc-profile.json'),
+    path.join(pluginRoot, PROFILE_METADATA_FILE),
     `${JSON.stringify({
       generatedFrom: 'everything-claude-code',
       profileId: plan.profileId,
@@ -457,6 +720,10 @@ function writeMarketplaceManifest(options = {}) {
 module.exports = {
   CATALOG_SKILL_ID,
   DEFAULT_MARKETPLACE_NAME,
+  PROFILE_METADATA_FILE,
+  COMMAND_RUNTIME_CLOSURE,
+  resolveScriptClosure,
+  isGeneratedProfilePlugin,
   classifyModulePath,
   parseFrontmatter,
   estimateTokens,

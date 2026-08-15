@@ -16,6 +16,7 @@
  *   --name <plugin-name>      Generated plugin name (default: ecc-<profile>)
  *   --out <dir>               Output marketplace root (default: ~/.claude/ecc-profiles)
  *   --marketplace-name <name> Marketplace name to write (default: ecc-profiles)
+ *   --force                   Replace a directory that is not a generated plugin
  *   --no-catalog              Skip the generated ecc-catalog escape-hatch skill
  *   --no-hooks                Skip hooks/ and scripts/hooks/ runtime copies
  *   --json                    (plan) print the resolved plan as JSON
@@ -39,6 +40,12 @@ const DEFAULT_OUT_ROOT = path.join(os.homedir(), '.claude', 'ecc-profiles');
 const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json'];
 const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root'];
 
+/**
+ * Parse the CLI's `<command> [--flag value]` argv form.
+ *
+ * @param {Array<string>} argv Arguments after the script path.
+ * @returns {{command: string, flags: object}} Command and parsed flags.
+ */
 function parseArgs(argv) {
   const args = { command: argv[0] || 'help', flags: {} };
   for (let i = 1; i < argv.length; i += 1) {
@@ -63,10 +70,22 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * Split a comma-separated flag value into trimmed, non-empty items.
+ *
+ * @param {string|undefined} value Raw flag value.
+ * @returns {Array<string>} Parsed list.
+ */
 function splitList(value) {
   return value ? value.split(',').map(entry => entry.trim()).filter(Boolean) : [];
 }
 
+/**
+ * Translate parsed CLI flags into resolvePluginProfilePlan() options.
+ *
+ * @param {object} flags Parsed CLI flags.
+ * @returns {object} Plan options.
+ */
 function buildPlanOptions(flags) {
   return {
     repoRoot: flags['repo-root'] || undefined,
@@ -79,6 +98,12 @@ function buildPlanOptions(flags) {
   };
 }
 
+/**
+ * Print a human-readable summary of a resolved plan, warnings included.
+ *
+ * @param {object} plan Resolved plugin plan.
+ * @returns {void}
+ */
 function printPlanSummary(plan) {
   console.log(`Plugin:   ${plan.pluginName} (ecc@${plan.version}${plan.profileId ? `, profile "${plan.profileId}"` : ''})`);
   console.log(`Modules:  ${plan.selectedModuleIds.join(', ')}`);
@@ -92,6 +117,11 @@ function printPlanSummary(plan) {
   }
 }
 
+/**
+ * `list` subcommand: show the install profiles available for generation.
+ *
+ * @returns {void}
+ */
 function runList() {
   console.log('Available install profiles:\n');
   for (const profile of listInstallProfiles()) {
@@ -100,6 +130,12 @@ function runList() {
   console.log('\nGenerate one with: node scripts/plugin-profiles.js generate --profile <id>');
 }
 
+/**
+ * `plan` subcommand: resolve a selection and report it without writing.
+ *
+ * @param {object} flags Parsed CLI flags.
+ * @returns {void}
+ */
 function runPlan(flags) {
   const plan = resolvePluginProfilePlan(buildPlanOptions(flags));
   if (flags.json) {
@@ -109,6 +145,12 @@ function runPlan(flags) {
   printPlanSummary(plan);
 }
 
+/**
+ * `generate` subcommand: materialize the plugin and refresh the marketplace.
+ *
+ * @param {object} flags Parsed CLI flags.
+ * @returns {void}
+ */
 function runGenerate(flags) {
   const outRoot = flags.out || DEFAULT_OUT_ROOT;
   const marketplaceName = flags['marketplace-name'] || DEFAULT_MARKETPLACE_NAME;
@@ -125,6 +167,7 @@ function runGenerate(flags) {
     plan,
     outRoot,
     includeCatalogSkill: !flags['no-catalog'],
+    force: Boolean(flags.force),
   });
   writeMarketplaceManifest({ outRoot, marketplaceName });
 
@@ -143,6 +186,11 @@ function runGenerate(flags) {
   console.log('\nRe-run this command after updating ECC to refresh the generated plugin.');
 }
 
+/**
+ * CLI entry point: dispatch to the requested subcommand.
+ *
+ * @returns {void}
+ */
 function main() {
   const { command, flags } = parseArgs(process.argv.slice(2));
 

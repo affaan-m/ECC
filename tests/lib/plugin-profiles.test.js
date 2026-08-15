@@ -20,6 +20,9 @@ const {
   resolvePluginProfilePlan,
   generateProfilePlugin,
   writeMarketplaceManifest,
+  resolveScriptClosure,
+  isGeneratedProfilePlugin,
+  PROFILE_METADATA_FILE,
 } = require('../../scripts/lib/plugin-profiles');
 
 const repoRoot = path.resolve(__dirname, '../..');
@@ -194,6 +197,175 @@ try {
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
+
+// --- frontmatter block scalars -------------------------------------------
+// 16 catalog skills declare `description: >-`; reading only the key's own
+// line yields the literal indicator and makes those skills unroutable.
+
+run('parseFrontmatter reads a folded (>-) block scalar', () => {
+  const { description } = parseFrontmatter(
+    '---\nname: demo\ndescription: >-\n  First line of the description\n  continued on a second line.\ntools: Read\n---\n\n# Demo\n'
+  );
+  assert.strictEqual(description, 'First line of the description continued on a second line.');
+});
+
+run('parseFrontmatter reads a literal (|) block scalar', () => {
+  const { description } = parseFrontmatter(
+    '---\ndescription: |\n  Line one\n  Line two\n---\n'
+  );
+  assert.strictEqual(description, 'Line one\nLine two');
+});
+
+run('parseFrontmatter stops a block scalar at the next top-level key', () => {
+  const { description } = parseFrontmatter(
+    '---\ndescription: >\n  Only this text belongs to the description.\nmodel: opus\ntools: Read\n---\n'
+  );
+  assert.strictEqual(description, 'Only this text belongs to the description.');
+});
+
+run('parseFrontmatter still handles inline and quoted scalars', () => {
+  assert.strictEqual(parseFrontmatter('---\ndescription: Plain inline text\n---\n').description, 'Plain inline text');
+  assert.strictEqual(parseFrontmatter('---\ndescription: "Quoted text"\n---\n').description, 'Quoted text');
+});
+
+run('every catalog skill resolves a usable description', () => {
+  const skillsRoot = path.join(repoRoot, 'skills');
+  const unresolved = [];
+  for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillPath = path.join(skillsRoot, entry.name, 'SKILL.md');
+    if (!fs.existsSync(skillPath)) continue;
+    const { description } = parseFrontmatter(fs.readFileSync(skillPath, 'utf8'));
+    if (!description || /^[>|][-+]?$/.test(description.trim())) {
+      unresolved.push(entry.name);
+    }
+  }
+  assert.deepStrictEqual(unresolved, [], `Skills with an unusable description: ${unresolved.join(', ')}`);
+});
+
+// --- command runtime closure ---------------------------------------------
+
+run('resolveScriptClosure walks transitive relative requires', () => {
+  const closure = resolveScriptClosure(['scripts/plugin-profiles.js'], repoRoot);
+  assert.ok(closure.includes('scripts/plugin-profiles.js'), 'Entry point must be included');
+  assert.ok(closure.includes('scripts/lib/plugin-profiles.js'), 'Direct require must be included');
+  assert.ok(closure.includes('scripts/lib/install-manifests.js'), 'Transitive require must be included');
+  assert.ok(
+    closure.some(f => f.startsWith('scripts/lib/install-targets/')),
+    'Deeper transitive requires must be included'
+  );
+  assert.ok(closure.every(f => !f.startsWith('..')), 'Closure must stay inside the repo');
+});
+
+run('resolveScriptClosure ignores unresolvable and bare specifiers', () => {
+  assert.deepStrictEqual(resolveScriptClosure(['scripts/does-not-exist.js'], repoRoot), []);
+  const closure = resolveScriptClosure(['scripts/plugin-profiles.js'], repoRoot);
+  assert.ok(closure.every(f => f.endsWith('.js')), 'Only real files may appear');
+});
+
+// The `minimal` profile omits hooks-runtime, so it never receives
+// `scripts/lib` — without the closure its /plugin-profiles command is dead.
+run('a profile without hooks-runtime still ships a runnable /plugin-profiles', () => {
+  const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-profile-closure-'));
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+    assert.ok(plan.commands.includes('plugin-profiles.md'), 'minimal ships the command file');
+    assert.ok(
+      !plan.runtimePaths.includes('scripts/lib'),
+      'minimal must not pull all of scripts/lib -- that would defeat the closure test'
+    );
+    for (const required of ['scripts/plugin-profiles.js', 'scripts/lib/plugin-profiles.js', 'manifests']) {
+      assert.ok(plan.runtimePaths.includes(required), `Plan must ship ${required}`);
+    }
+
+    const { pluginRoot } = generateProfilePlugin({ plan, outRoot });
+    const { execFileSync } = require('child_process');
+    const stdout = execFileSync(process.execPath, ['scripts/plugin-profiles.js', 'list'], {
+      cwd: pluginRoot,
+      encoding: 'utf8',
+    });
+    assert.match(stdout, /Available install profiles/, 'Shipped CLI must run from inside the generated plugin');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('closure paths already covered by a parent runtime path are not duplicated', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'core' });
+  assert.ok(plan.runtimePaths.includes('scripts/lib'), 'core ships all of scripts/lib');
+  assert.ok(
+    !plan.runtimePaths.includes('scripts/lib/plugin-profiles.js'),
+    'A file under an already-copied directory must not be listed separately'
+  );
+});
+
+// --- destructive overwrite guard -----------------------------------------
+
+run('generateProfilePlugin refuses to overwrite a directory it did not generate', () => {
+  const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-profile-guard-'));
+  try {
+    const victim = path.join(outRoot, 'ecc-minimal');
+    fs.mkdirSync(victim, { recursive: true });
+    fs.writeFileSync(path.join(victim, 'important.txt'), 'DO NOT DELETE');
+
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+    assert.throws(
+      () => generateProfilePlugin({ plan, outRoot }),
+      /Refusing to overwrite/,
+      'Must refuse a directory with no generated-plugin marker'
+    );
+    assert.strictEqual(fs.readFileSync(path.join(victim, 'important.txt'), 'utf8'), 'DO NOT DELETE');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('generateProfilePlugin replaces a plugin it generated earlier', () => {
+  const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-profile-regen-'));
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+    const first = generateProfilePlugin({ plan, outRoot });
+    assert.ok(isGeneratedProfilePlugin(first.pluginRoot), 'Generated plugin carries its marker');
+    fs.writeFileSync(path.join(first.pluginRoot, 'stale.txt'), 'from the previous run');
+
+    const second = generateProfilePlugin({ plan, outRoot });
+    assert.ok(
+      !fs.existsSync(path.join(second.pluginRoot, 'stale.txt')),
+      'Regeneration must clear stale files from the previous run'
+    );
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('generateProfilePlugin --force replaces a non-generated directory', () => {
+  const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-profile-force-'));
+  try {
+    const victim = path.join(outRoot, 'ecc-minimal');
+    fs.mkdirSync(victim, { recursive: true });
+    fs.writeFileSync(path.join(victim, 'important.txt'), 'replaceable');
+
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+    const result = generateProfilePlugin({ plan, outRoot, force: true });
+    assert.ok(!fs.existsSync(path.join(victim, 'important.txt')), '--force replaces the directory');
+    assert.ok(fs.existsSync(path.join(result.pluginRoot, PROFILE_METADATA_FILE)), 'Marker is written');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('isGeneratedProfilePlugin rejects a lookalike marker', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-profile-lookalike-'));
+  try {
+    assert.strictEqual(isGeneratedProfilePlugin(dir), false, 'No marker at all');
+    fs.writeFileSync(path.join(dir, PROFILE_METADATA_FILE), JSON.stringify({ generatedFrom: 'something-else' }));
+    assert.strictEqual(isGeneratedProfilePlugin(dir), false, 'Wrong generatedFrom value');
+    fs.writeFileSync(path.join(dir, PROFILE_METADATA_FILE), 'not json at all');
+    assert.strictEqual(isGeneratedProfilePlugin(dir), false, 'Unparseable marker');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);

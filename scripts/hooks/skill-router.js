@@ -21,20 +21,52 @@ const MAX_STDIN = 1024 * 1024;
 const MIN_PROMPT_LENGTH = 12;
 const MAX_DESCRIPTION_CHARS = 120;
 
+/**
+ * Normalize a filesystem path to forward slashes for display.
+ *
+ * @param {string} anyPath Path in platform-native form.
+ * @returns {string} Path with POSIX separators.
+ */
 function toPosix(anyPath) {
   return String(anyPath).split(path.sep).join('/');
 }
 
+/**
+ * Flatten untrusted catalog text to a single safe line.
+ *
+ * Descriptions and ids reach this hook from SKILL.md frontmatter and from a
+ * slim profile's ecc-profile.json catalog snapshot — plugin-supplied data
+ * that lands directly in model context. A description carrying newlines,
+ * carriage returns, or ANSI/C0 control bytes could otherwise forge extra
+ * routing bullets or terminal escapes, so collapse all of it to spaces and
+ * drop the control range entirely (Prompt Defense Baseline).
+ *
+ * @param {string} text Untrusted catalog text.
+ * @returns {string} Single-line text with control characters removed.
+ */
+function sanitizeLine(text) {
+  // eslint-disable-next-line no-control-regex
+  return String(text || '').replace(/[\u0000-\u001F\u007F-\u009F]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Render the routing note injected into the turn.
+ *
+ * @param {Array<object>} matches Scored matches from routePrompt().
+ * @returns {string} Newline-terminated routing note.
+ */
 function buildMessage(matches) {
   const lines = ['[SkillRouter] Skills matching this prompt — use them if relevant:'];
   for (const match of matches) {
+    const id = sanitizeLine(match.id);
     if (match.installed) {
-      const summary = match.description.length > MAX_DESCRIPTION_CHARS
-        ? `${match.description.slice(0, MAX_DESCRIPTION_CHARS - 3)}...`
-        : match.description;
-      lines.push(`- ${match.id} (installed): ${summary}`);
+      const description = sanitizeLine(match.description);
+      const summary = description.length > MAX_DESCRIPTION_CHARS
+        ? `${description.slice(0, MAX_DESCRIPTION_CHARS - 3)}...`
+        : description;
+      lines.push(`- ${id} (installed): ${summary}`);
     } else {
-      lines.push(`- ${match.id} (on demand): definition at ${toPosix(match.sourceRoot)}/skills/${match.id}/SKILL.md`);
+      lines.push(`- ${id} (on demand): definition at ${sanitizeLine(toPosix(match.sourceRoot))}/skills/${id}/SKILL.md`);
     }
   }
   return `${lines.join('\n')}\n`;
