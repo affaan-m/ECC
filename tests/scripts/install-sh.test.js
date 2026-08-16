@@ -22,10 +22,11 @@ function run(args = [], options = {}) {
   const env = {
     ...process.env,
     HOME: options.homeDir || process.env.HOME,
+    ...(options.env || {}),
   };
 
   try {
-    const stdout = execFileSync('bash', [SCRIPT, ...args], {
+    const stdout = execFileSync('bash', [options.scriptPath || SCRIPT, ...args], {
       cwd: options.cwd,
       env,
       encoding: 'utf8',
@@ -82,6 +83,49 @@ function runTests() {
       assert.ok(!fs.existsSync(path.join(projectDir, '.cursor', 'hooks.json')));
     } finally {
       cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('absolute wrapper bootstraps a fresh source while preserving the target project cwd', () => {
+    const sourceDir = createTempDir('install-sh-source-');
+    const projectDir = createTempDir('install-sh-target-');
+    const binDir = path.join(sourceDir, 'test-bin');
+    const scriptsDir = path.join(sourceDir, 'scripts');
+    const npmCwdPath = path.join(sourceDir, 'npm-cwd.txt');
+    const fixtureScript = path.join(sourceDir, 'install.sh');
+
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.mkdirSync(scriptsDir, { recursive: true });
+      fs.copyFileSync(SCRIPT, fixtureScript);
+      fs.writeFileSync(
+        path.join(binDir, 'npm'),
+        `#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "$PWD/node_modules"\nprintf '%s\\n' "$PWD" > "$ECC_TEST_NPM_CWD"\n`,
+        { mode: 0o755 }
+      );
+      fs.writeFileSync(
+        path.join(scriptsDir, 'install-apply.js'),
+        'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n'
+      );
+
+      const result = run(['--target', 'antigravity', '--dry-run', 'typescript'], {
+        cwd: projectDir,
+        scriptPath: fixtureScript,
+        env: {
+          ECC_TEST_NPM_CWD: npmCwdPath,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+        },
+      });
+
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout.trim().split('\n').at(-1));
+      assert.strictEqual(payload.cwd, fs.realpathSync(projectDir));
+      assert.deepStrictEqual(payload.args, ['--target', 'antigravity', '--dry-run', 'typescript']);
+      assert.strictEqual(fs.readFileSync(npmCwdPath, 'utf8').trim(), sourceDir);
+      assert.ok(fs.existsSync(path.join(sourceDir, 'node_modules')));
+    } finally {
+      cleanup(sourceDir);
       cleanup(projectDir);
     }
   })) passed++; else failed++;

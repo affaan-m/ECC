@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
@@ -8,8 +9,177 @@ const initSqlJs = require('sql.js');
 const { applyMigrations, getAppliedMigrations } = require('./migrations');
 const { createQueryApi } = require('./queries');
 const { assertValidEntity, validateEntity } = require('./schema');
+const {
+  buildInstallStateStoreRecord,
+  projectInstallState,
+  reconcileCurrentInstallState,
+  reconcileInstallStateProjections,
+  removeInstallStateProjection,
+  summarizeProjectedInstallHealth,
+} = require('./install-state-projection');
 
 const DEFAULT_STATE_STORE_RELATIVE_PATH = path.join('.claude', 'ecc', 'state.db');
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+function stateStorePathError(targetPath, detail) {
+  return new Error(`Unsafe state-store path '${targetPath}': ${detail}`);
+}
+
+function lstatIfPresent(targetPath) {
+  try {
+    return fs.lstatSync(targetPath);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isAllowedPlatformSymlink(targetPath, stats) {
+  if (process.platform !== 'darwin' || !stats || stats.uid !== 0) {
+    return false;
+  }
+
+  const allowedTargets = new Map([
+    ['/var', '/private/var'],
+    ['/tmp', '/private/tmp'],
+    ['/etc', '/private/etc'],
+  ]);
+  const expectedTarget = allowedTargets.get(targetPath);
+  if (!expectedTarget) {
+    return false;
+  }
+
+  try {
+    return fs.realpathSync(targetPath) === expectedTarget;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function assertNotSymlink(targetPath, stats) {
+  if (stats && stats.isSymbolicLink()) {
+    if (isAllowedPlatformSymlink(targetPath, stats)) {
+      return;
+    }
+    throw stateStorePathError(targetPath, 'a symlink is not allowed');
+  }
+}
+
+function ensurePrivateDirectory(directoryPath) {
+  const absolutePath = path.resolve(directoryPath);
+  const parsed = path.parse(absolutePath);
+  const segments = absolutePath.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  let currentPath = parsed.root;
+
+  for (const segment of segments) {
+    currentPath = path.join(currentPath, segment);
+    let stats = lstatIfPresent(currentPath);
+    assertNotSymlink(currentPath, stats);
+
+    if (!stats) {
+      try {
+        fs.mkdirSync(currentPath, { mode: PRIVATE_DIRECTORY_MODE });
+      } catch (error) {
+        if (!error || error.code !== 'EEXIST') {
+          throw error;
+        }
+      }
+      stats = fs.lstatSync(currentPath);
+      assertNotSymlink(currentPath, stats);
+    }
+
+    if (!stats.isDirectory() && !isAllowedPlatformSymlink(currentPath, stats)) {
+      throw stateStorePathError(currentPath, 'an intermediate component is not a directory');
+    }
+  }
+
+  return absolutePath;
+}
+
+function assertSafeDatabaseFile(dbPath) {
+  const stats = lstatIfPresent(dbPath);
+  assertNotSymlink(dbPath, stats);
+  if (stats && !stats.isFile()) {
+    throw stateStorePathError(dbPath, 'database path is not a regular file');
+  }
+  return stats;
+}
+
+function readDatabaseFile(dbPath) {
+  assertSafeDatabaseFile(dbPath);
+  const noFollow = fs.constants.O_NOFOLLOW || 0;
+  const fileDescriptor = fs.openSync(dbPath, fs.constants.O_RDONLY | noFollow);
+  try {
+    const stats = fs.fstatSync(fileDescriptor);
+    if (!stats.isFile()) {
+      throw stateStorePathError(dbPath, 'database path is not a regular file');
+    }
+    return fs.readFileSync(fileDescriptor);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
+function syncDirectory(directoryPath) {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  let fileDescriptor;
+  try {
+    fileDescriptor = fs.openSync(directoryPath, fs.constants.O_RDONLY);
+    fs.fsyncSync(fileDescriptor);
+  } catch (_error) {
+    // Some filesystems do not permit directory fsync. The file was still
+    // atomically replaced and fsynced before this durability best effort.
+  } finally {
+    if (fileDescriptor !== undefined) {
+      fs.closeSync(fileDescriptor);
+    }
+  }
+}
+
+function writeDatabaseFileAtomic(dbPath, data) {
+  const directoryPath = ensurePrivateDirectory(path.dirname(dbPath));
+  assertSafeDatabaseFile(dbPath);
+  const temporaryPath = path.join(
+    directoryPath,
+    `.${path.basename(dbPath)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`
+  );
+  const noFollow = fs.constants.O_NOFOLLOW || 0;
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollow;
+  let fileDescriptor;
+
+  try {
+    fileDescriptor = fs.openSync(temporaryPath, flags, PRIVATE_FILE_MODE);
+    fs.writeFileSync(fileDescriptor, data);
+    fs.fchmodSync(fileDescriptor, PRIVATE_FILE_MODE);
+    fs.fsyncSync(fileDescriptor);
+    fs.closeSync(fileDescriptor);
+    fileDescriptor = undefined;
+
+    // A final-path symlink is never followed. If one appeared after this
+    // check, rename replaces the link itself rather than its target.
+    assertSafeDatabaseFile(dbPath);
+    fs.renameSync(temporaryPath, dbPath);
+    syncDirectory(directoryPath);
+  } finally {
+    if (fileDescriptor !== undefined) {
+      fs.closeSync(fileDescriptor);
+    }
+    try {
+      fs.unlinkSync(temporaryPath);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        // Preserve the original persistence result. The temporary file is
+        // private, exclusively created, and never used as canonical state.
+      }
+    }
+  }
+}
 
 function resolveStateStorePath(options = {}) {
   if (options.dbPath) {
@@ -40,7 +210,7 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
     }
     const data = rawDb.export();
     const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
+    writeDatabaseFileAtomic(dbPath, buffer);
   }
 
   const db = {
@@ -140,12 +310,12 @@ function wrapSqlJsDatabase(rawDb, dbPath) {
 
 async function openDatabase(SQL, dbPath) {
   if (dbPath !== ':memory:') {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    ensurePrivateDirectory(path.dirname(dbPath));
   }
 
   let rawDb;
-  if (dbPath !== ':memory:' && fs.existsSync(dbPath)) {
-    const fileBuffer = fs.readFileSync(dbPath);
+  if (dbPath !== ':memory:' && assertSafeDatabaseFile(dbPath)) {
+    const fileBuffer = readDatabaseFile(dbPath);
     rawDb = new SQL.Database(fileBuffer);
   } else {
     rawDb = new SQL.Database();
@@ -186,6 +356,12 @@ async function createStateStore(options = {}) {
 
 module.exports = {
   DEFAULT_STATE_STORE_RELATIVE_PATH,
+  buildInstallStateStoreRecord,
   createStateStore,
+  projectInstallState,
+  reconcileCurrentInstallState,
+  reconcileInstallStateProjections,
+  removeInstallStateProjection,
   resolveStateStorePath,
+  summarizeProjectedInstallHealth,
 };

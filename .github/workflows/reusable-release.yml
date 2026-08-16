@@ -38,13 +38,14 @@ jobs:
       already_published: ${{ steps.npm_publish_state.outputs.already_published }}
       dist_tag: ${{ steps.npm_publish_state.outputs.dist_tag }}
       package_file: ${{ steps.pack.outputs.package_file }}
+      package_sha256: ${{ steps.pack.outputs.package_sha256 }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -61,9 +62,6 @@ jobs:
 
       - name: Verify OpenCode package payload
         run: node tests/scripts/build-opencode.test.js
-
-      - name: Verify OMP adapter payload
-        run: node tests/omp/omp-plugin.test.js
 
       - name: Validate version tag
         env:
@@ -124,8 +122,7 @@ jobs:
         id: pack
         run: |
           npm pack --json > npm-pack.json
-          PACKAGE_FILE=$(node -e "const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); console.log(data[0].filename)")
-          echo "package_file=${PACKAGE_FILE}" >> "$GITHUB_OUTPUT"
+          node -e "const crypto = require('crypto'); const fs = require('fs'); const data = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); const file = data[0]?.filename; if (!/^ecc-universal-[0-9A-Za-z.+-]+\.tgz$/.test(file || '')) throw new Error('Unexpected packed filename'); const archives = fs.readdirSync('.').filter(name => name.endsWith('.tgz')); if (archives.length !== 1 || archives[0] !== file) throw new Error('Expected exactly one packed archive'); const digest = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'package_file=' + file + '\npackage_sha256=' + digest + '\n')"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -134,12 +131,52 @@ jobs:
           path: |
             release_body.md
             ${{ steps.pack.outputs.package_file }}
+            tests/ci/packed-artifact-lifecycle.js
           if-no-files-found: error
+
+      - name: Verify existing npm artifact matches candidate
+        if: steps.npm_publish_state.outputs.already_published == 'true'
+        env:
+          ECC_RELEASE_PACKAGE: ${{ steps.pack.outputs.package_file }}
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          REGISTRY_INTEGRITY=$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity)
+          ECC_REGISTRY_INTEGRITY="$REGISTRY_INTEGRITY" node -e "const crypto = require('crypto'); const fs = require('fs'); const expected = process.env.ECC_REGISTRY_INTEGRITY; if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(expected || '')) throw new Error('Invalid registry integrity'); const actual = 'sha512-' + crypto.createHash('sha512').update(fs.readFileSync(process.env.ECC_RELEASE_PACKAGE)).digest('base64'); if (actual !== expected) throw new Error('Existing npm artifact does not match tested candidate')"
+
+  lifecycle:
+    name: Packed Lifecycle (${{ matrix.os }})
+    needs: verify
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.x'
+
+      - name: Download exact packed artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ecc-release-artifacts
+          path: release-artifacts
+
+      - name: Verify packed install lifecycle
+        env:
+          ECC_RELEASE_PACKAGE: release-artifacts/${{ needs.verify.outputs.package_file }}
+          ECC_RELEASE_SHA256: ${{ needs.verify.outputs.package_sha256 }}
+        run: node release-artifacts/tests/ci/packed-artifact-lifecycle.js
 
   publish:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, lifecycle]
     permissions:
       contents: write
       id-token: write
@@ -156,6 +193,12 @@ jobs:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Verify artifact before publish
+        env:
+          ECC_RELEASE_PACKAGE: ${{ needs.verify.outputs.package_file }}
+          ECC_RELEASE_SHA256: ${{ needs.verify.outputs.package_sha256 }}
+        run: node -e "const crypto = require('crypto'); const fs = require('fs'); const file = process.env.ECC_RELEASE_PACKAGE; const expected = process.env.ECC_RELEASE_SHA256; if (!/^ecc-universal-[0-9A-Za-z.+-]+\.tgz$/.test(file || '')) throw new Error('Unexpected packed filename'); if (!/^[a-f0-9]{64}$/.test(expected || '')) throw new Error('Invalid packed SHA-256'); const archives = fs.readdirSync('.').filter(name => name.endsWith('.tgz')); if (archives.length !== 1 || archives[0] !== file) throw new Error('Expected exactly one downloaded archive'); const actual = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); if (actual !== expected) throw new Error('Downloaded publish artifact SHA-256 mismatch')"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -169,4 +212,6 @@ jobs:
         if: needs.verify.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish "${{ needs.verify.outputs.package_file }}" --access public --provenance --tag "${{ needs.verify.outputs.dist_tag }}"
+          ECC_RELEASE_PACKAGE: ${{ needs.verify.outputs.package_file }}
+          NPM_DIST_TAG: ${{ needs.verify.outputs.dist_tag }}
+        run: npm publish "./${ECC_RELEASE_PACKAGE}" --access public --provenance --tag "${NPM_DIST_TAG}"

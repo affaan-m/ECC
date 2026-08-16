@@ -265,7 +265,7 @@ function runTests() {
     assert.ok(!plan.skippedModuleIds.includes('platform-configs'));
     assert.ok(!plan.skippedModuleIds.includes('workflow-quality'));
     assert.strictEqual(plan.targetAdapterId, 'antigravity-project');
-    assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.agent'));
+    assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.agents'));
   })) passed++; else failed++;
 
   if (test('resolves minimal profile without the hook runtime', () => {
@@ -529,10 +529,14 @@ function runTests() {
   if (test('keeps antigravity legacy compatibility selections target-safe', () => {
     const selection = resolveLegacyCompatibilitySelection({
       target: 'antigravity',
-      legacyLanguages: ['typescript'],
+      legacyLanguages: ['c', 'go', 'kotlin'],
     });
 
-    assert.deepStrictEqual(selection.moduleIds, ['rules-core', 'agents-core', 'commands-core']);
+    assert.deepStrictEqual(selection.ruleLanguages, ['cpp', 'golang', 'kotlin']);
+    assert.deepStrictEqual(
+      selection.moduleIds,
+      ['rules-core', 'agents-core', 'commands-core', 'skill-unified-memory', 'workflow-quality']
+    );
   })) passed++; else failed++;
 
   if (test('rejects unknown legacy compatibility languages', () => {
@@ -875,8 +879,11 @@ function runTests() {
         'Unsupported antigravity paths should be filtered from planned operations'
       );
       assert.ok(
-        plan.operations.every(operation => operation.sourceRelativePath !== 'skills/example'),
-        'ECC skills should be filtered: antigravity .agent/skills holds ECC agents'
+        plan.operations.some(operation => (
+          operation.sourceRelativePath === 'skills/example'
+          && operation.destinationPath === path.join('/workspace/app', '.agents', 'skills', 'example')
+        )),
+        'Canonical skill sources should be installed into native Antigravity skills'
       );
       assert.ok(
         plan.operations.some(operation => operation.sourceRelativePath === 'commands/example'),

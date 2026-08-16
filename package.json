@@ -50,6 +50,7 @@
     ".hermes/",
     ".kimi/",
     ".opencode/",
+    ".pi/",
     ".openclaw/",
     ".qwen/",
     ".zed/",
@@ -117,6 +118,7 @@
     "scripts/install-guided.js",
     "scripts/install-plan.js",
     "scripts/ito.js",
+    "scripts/nasiko.js",
     "scripts/lib/",
     "scripts/list-installed.js",
     "scripts/loop-status.js",
@@ -133,6 +135,10 @@
     "scripts/skill-create-output.js",
     "scripts/status.js",
     "scripts/sync-ecc-to-codex.sh",
+    "scripts/codex/legacy-sync-state.js",
+    "scripts/codex/install-global-git-hooks.sh",
+    "scripts/codex/check-codex-global-state.sh",
+    "scripts/codex-git-hooks/",
     "scripts/work-items.js",
     "scripts/uninstall.js",
     "skills/agent-architecture-audit/",
@@ -224,13 +230,11 @@
     "skills/homelab-network-setup/",
     "skills/hookify-rules/",
     "skills/inventory-demand-planning/",
-    "skills/ito-basket-compare/",
+    "skills/ito-baskets/",
     "skills/ito-compute/",
-    "skills/ito-data-atlas-agent/",
     "skills/ito-inference/",
-    "skills/ito-market-intelligence/",
-    "skills/ito-trade-planner/",
     "skills/ito-training/",
+    "skills/nasiko-control-plane/",
     "skills/investor-materials/",
     "skills/investor-outreach/",
     "skills/iterative-retrieval/",
@@ -472,7 +476,19 @@
   "dependencies": {
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
+    "js-yaml": "4.3.1",
     "sql.js": "1.14.1"
+  },
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./commands"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
@@ -490,12 +506,12 @@
   "overrides": {
     "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
-    "js-yaml": "4.3.0"
+    "js-yaml": "4.3.1"
   },
   "resolutions": {
     "fast-uri": "3.1.5",
     "markdown-it": "14.3.0",
-    "js-yaml": "4.3.0"
+    "js-yaml": "4.3.1"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
 }

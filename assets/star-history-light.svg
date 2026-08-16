@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="800" height="400" fill="#ffffff"/>
+<line x1="70" y1="348.0" x2="772" y2="348.0" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="352.0" fill="#59636e" font-size="12" text-anchor="end">0</text>
+<line x1="70" y1="284.4" x2="772" y2="284.4" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="288.4" fill="#59636e" font-size="12" text-anchor="end">10k</text>
+<line x1="70" y1="220.8" x2="772" y2="220.8" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="224.8" fill="#59636e" font-size="12" text-anchor="end">20k</text>
+<line x1="70" y1="157.2" x2="772" y2="157.2" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="161.2" fill="#59636e" font-size="12" text-anchor="end">30k</text>
+<line x1="70" y1="93.6" x2="772" y2="93.6" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="97.6" fill="#59636e" font-size="12" text-anchor="end">40k</text>
+<line x1="70" y1="30.0" x2="772" y2="30.0" stroke="#d8dee4" stroke-width="1"/>
+<text x="60" y="34.0" fill="#59636e" font-size="12" text-anchor="end">50k</text>
+<line x1="70.0" y1="30" x2="70.0" y2="348" stroke="#d8dee4" stroke-width="1" stroke-dasharray="2 4"/>
+<text x="70.0" y="370" fill="#59636e" font-size="12" text-anchor="middle">Jan 18</text>
+<line x1="238.7" y1="30" x2="238.7" y2="348" stroke="#d8dee4" stroke-width="1" stroke-dasharray="2 4"/>
+<text x="238.7" y="370" fill="#59636e" font-size="12" text-anchor="middle">Jan 23</text>
+<line x1="407.3" y1="30" x2="407.3" y2="348" stroke="#d8dee4" stroke-width="1" stroke-dasharray="2 4"/>
+<text x="407.3" y="370" fill="#59636e" font-size="12" text-anchor="middle">Jan 28</text>
+<line x1="576.0" y1="30" x2="576.0" y2="348" stroke="#d8dee4" stroke-width="1" stroke-dasharray="2 4"/>
+<text x="576.0" y="370" fill="#59636e" font-size="12" text-anchor="middle">Feb 2</text>
+<line x1="744.7" y1="30" x2="744.7" y2="348" stroke="#d8dee4" stroke-width="1" stroke-dasharray="2 4"/>
+<text x="744.7" y="370" fill="#59636e" font-size="12" text-anchor="middle">Feb 7</text>
+<polygon points="70,348 70.0,348.0 123.9,332.7 137.9,327.6 149.4,322.6 171.9,307.3 177.3,302.2 187.8,292.0 192.2,286.9 198.6,281.8 212.6,266.6 222.0,256.4 226.3,251.3 234.5,246.2 239.6,241.1 244.2,236.1 247.5,231.0 251.4,225.9 274.2,210.6 282.2,205.5 290.0,200.4 300.7,195.4 312.3,190.3 320.2,185.2 355.4,164.8 373.7,159.7 409.0,149.6 430.4,144.5 458.7,139.4 492.0,134.3 526.5,129.2 559.4,124.1 618.6,113.9 685.6,103.8 718.9,98.7 772.0,93.6 772,348" fill="#1a7f3720"/>
+<polyline points="70.0,348.0 123.9,332.7 137.9,327.6 149.4,322.6 171.9,307.3 177.3,302.2 187.8,292.0 192.2,286.9 198.6,281.8 212.6,266.6 222.0,256.4 226.3,251.3 234.5,246.2 239.6,241.1 244.2,236.1 247.5,231.0 251.4,225.9 274.2,210.6 282.2,205.5 290.0,200.4 300.7,195.4 312.3,190.3 320.2,185.2 355.4,164.8 373.7,159.7 409.0,149.6 430.4,144.5 458.7,139.4 492.0,134.3 526.5,129.2 559.4,124.1 618.6,113.9 685.6,103.8 718.9,98.7 772.0,93.6" fill="none" stroke="#1a7f37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="772.0" cy="93.6" r="4" fill="#1a7f37"/>
+<text x="400.0" y="20" fill="#1f2328" font-size="14" font-weight="600" text-anchor="middle">affaan-m/ECC &#183; first 40,000 stars</text>
+<text x="70" y="390" fill="#59636e" font-size="11">Jan 18, 2026 &#8211; Feb 7, 2026 &#183; source: GitHub stargazers API</text>
+</svg>

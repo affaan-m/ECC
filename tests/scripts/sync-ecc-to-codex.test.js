@@ -104,6 +104,28 @@ function runTests() {
     assert.ok(source.includes('node - "$file"'), 'extract_context7_key should use Node-based parsing');
   })) passed++; else failed++;
 
+  if (test('sync records a versioned ownership manifest before mutating Codex state', () => {
+    const beginIndex = source.indexOf('"$LEGACY_STATE_HELPER" begin');
+    const configMergeIndex = source.indexOf('node "$BASELINE_MERGE_SCRIPT" "$CONFIG_FILE"');
+    const finalizeIndex = source.indexOf('"$LEGACY_STATE_HELPER" finalize');
+    assert.ok(beginIndex > -1, 'legacy manifest begin is missing');
+    assert.ok(configMergeIndex > beginIndex, 'manifest must begin before config mutation');
+    assert.ok(finalizeIndex > configMergeIndex, 'manifest must finalize after managed writes');
+    assert.ok(source.includes('record_managed_path "$out"'), 'generated prompts must be recorded');
+    assert.ok(source.includes('record_managed_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}/pre-commit"'));
+  })) passed++; else failed++;
+
+  if (test('sync inherits its ERR trap so helper failures trigger rollback', () => {
+    assert.match(source, /^set -Eeuo pipefail$/m);
+    assert.ok(source.includes("trap 'rollback_legacy_sync $?' ERR"));
+    assert.ok(source.includes('node "$LEGACY_STATE_HELPER" rollback --state "$LEGACY_STATE_PATH"'));
+    assert.ok(
+      source.indexOf("trap 'rollback_legacy_sync $?' ERR")
+        < source.indexOf('record_managed_path "$CONFIG_FILE"'),
+      'rollback trap must be active before the first ownership record'
+    );
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }

@@ -71,7 +71,7 @@ function printHuman(result) {
   }
 }
 
-function main() {
+async function main() {
   try {
     const options = parseArgs(process.argv);
     if (options.help) {
@@ -85,6 +85,14 @@ function main() {
       targets: options.targets,
       dryRun: options.dryRun,
     });
+    if (!options.dryRun) {
+      const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
+      result.installStateProjection = await reconcileCanonicalInstallStates({
+        homeDir: process.env.HOME || os.homedir(),
+        projectRoot: process.cwd(),
+        targets: options.targets,
+      });
+    }
     const hasErrors = result.summary.errorCount > 0;
 
     if (options.json) {

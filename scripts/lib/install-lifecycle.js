@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const os = require('os');
@@ -10,6 +11,12 @@ const { createManifestInstallPlan } = require('./install-executor');
 const {
   prepareClaudeSkillMigration,
 } = require('./install/claude-skill-migration');
+const {
+  getLegacyAntigravityLocation,
+  inspectLegacyAntigravityState,
+} = require('./install/antigravity-legacy-migration');
+const { adaptAntigravityAgent } = require('./install/antigravity-agent');
+const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const OPENCODE_BUILD_ARTIFACT = path.join('.opencode', 'dist');
 const OPENCODE_BUILD_SCRIPT = path.join('scripts', 'build-opencode.js');
@@ -136,6 +143,59 @@ function areFilesEqual(leftPath, rightPath) {
   } catch (_error) {
     return false;
   }
+}
+
+function hasRecordedContentDigest(operation) {
+  return /^[a-f0-9]{64}$/i.test(String(operation && operation.contentSha256 || ''));
+}
+
+function fileMatchesRecordedContent(filePath, operation) {
+  if (!hasRecordedContentDigest(operation)) {
+    return false;
+  }
+
+  try {
+    return crypto.createHash('sha256')
+      .update(readFileNoFollow(filePath))
+      .digest('hex') === operation.contentSha256.toLowerCase();
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isMarkdownPath(filePath) {
+  return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
+}
+
+function buildLinkIndexForOperations(operations, trustedRoot) {
+  const mappings = (operations || [])
+    .filter(operation => operation.kind === 'copy-file' && operation.sourceRelativePath)
+    .map(operation => ({
+      sourceRel: operation.sourceRelativePath,
+      destRel: path.relative(trustedRoot, operation.destinationPath),
+    }));
+  return buildInstallIndex(mappings);
+}
+
+function transformCopyFileContent(operation, content) {
+  if (!operation.contentTransform) {
+    return content;
+  }
+  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
+    return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
+}
+
+function getExpectedCopyFileContent(operation, content, linkIndex) {
+  const transformed = transformCopyFileContent(operation, content);
+  if (!linkIndex || !operation.sourceRelativePath || !isMarkdownPath(operation.destinationPath)) {
+    return transformed;
+  }
+  return rewriteRelativeLinks(transformed, {
+    sourceRel: operation.sourceRelativePath,
+    index: linkIndex,
+  });
 }
 
 function isPlainObject(value) {
@@ -469,13 +529,46 @@ function removeContainedPath(destinationPath, trustedRoot, action, options = {})
     return null;
   }
 
-  const finalDestination = getManagedDestination(
+  const managedDestination = getManagedDestination(
     existingDestination,
     trustedRoot,
     action,
     { allowFinalSymlink: true }
-  ).managedPath;
-  fs.rmSync(finalDestination, options);
+  );
+  const finalDestination = managedDestination.managedPath;
+  const expectedStat = fs.lstatSync(finalDestination, { bigint: true });
+  const quarantineDir = fs.mkdtempSync(path.join(
+    path.dirname(managedDestination.canonicalRoot),
+    '.ecc-remove-'
+  ));
+  const quarantinePath = path.join(quarantineDir, path.basename(finalDestination));
+
+  try {
+    fs.renameSync(finalDestination, quarantinePath);
+  } catch (error) {
+    fs.rmdirSync(quarantineDir);
+    throw error;
+  }
+
+  const quarantinedStat = fs.lstatSync(quarantinePath, { bigint: true });
+  if (!hasSameFileIdentity(expectedStat, quarantinedStat)) {
+    try {
+      fs.renameSync(quarantinePath, finalDestination);
+      fs.rmdirSync(quarantineDir);
+    } catch (_restoreError) {
+      throw new Error(
+        `Refusing to ${action}: managed destination changed before removal; replacement preserved at ${quarantinePath}.`
+      );
+    }
+    throw createChangedDestinationError(action);
+  }
+
+  if (quarantinedStat.isDirectory() && !options.recursive) {
+    fs.rmdirSync(quarantinePath);
+  } else {
+    fs.rmSync(quarantinePath, options);
+  }
+  fs.rmdirSync(quarantineDir);
   return finalDestination;
 }
 
@@ -591,7 +684,7 @@ function shouldRepairFromRecordedOperations(state) {
   return getManagedOperations(state).some(operation => operation.kind !== 'copy-file');
 }
 
-function executeRepairOperation(repoRoot, operation, trustedRoot) {
+function executeRepairOperation(repoRoot, operation, trustedRoot, linkIndex = null) {
   // Install-state is attacker-controllable; never write/delete outside the
   // adapter-derived trusted root, regardless of what the state file claims
   // (GHSA-hfpv-w6mp-5g95).
@@ -601,7 +694,18 @@ function executeRepairOperation(repoRoot, operation, trustedRoot) {
       throw new Error(`Missing source file for repair: ${sourcePath || operation.sourceRelativePath}`);
     }
 
-    copyContainedFile(sourcePath, operation.destinationPath, trustedRoot, 'repair');
+    if (operation.contentTransform || isMarkdownPath(operation.destinationPath)) {
+      const source = readFileWithMetadataNoFollow(sourcePath, 'utf8');
+      writeContainedFile(
+        operation.destinationPath,
+        getExpectedCopyFileContent(operation, source.content, linkIndex),
+        trustedRoot,
+        'repair',
+        source.mode & 0o777
+      );
+    } else {
+      copyContainedFile(sourcePath, operation.destinationPath, trustedRoot, 'repair');
+    }
     return operation.destinationPath;
   }
 
@@ -646,9 +750,44 @@ function executeRepairOperation(repoRoot, operation, trustedRoot) {
   throw new Error(`Unsupported repair operation kind: ${operation.kind}`);
 }
 
-function executeUninstallOperation(operation, trustedRoot) {
+function executeUninstallOperation(operation, trustedRoot, options = {}) {
   // Confine deletes to the trusted install root (GHSA-hfpv-w6mp-5g95).
   if (operation.kind === 'copy-file') {
+    if (options.preserveDriftedCopies) {
+      const existingDestination = getContainedExistingPath(
+        operation.destinationPath,
+        trustedRoot,
+        'uninstall',
+        { allowFinalSymlink: true }
+      );
+      if (!existingDestination) {
+        return {
+          removedPaths: [],
+          cleanupTargets: []
+        };
+      }
+      if (fs.lstatSync(existingDestination).isSymbolicLink()) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath]
+        };
+      }
+      const recordedDigest = operation.contentSha256;
+      const currentDigest = /^[a-f0-9]{64}$/i.test(recordedDigest || '')
+        ? crypto.createHash('sha256')
+          .update(readFileNoFollow(existingDestination))
+          .digest('hex')
+        : null;
+      if (!currentDigest || currentDigest !== recordedDigest.toLowerCase()) {
+        return {
+          removedPaths: [],
+          cleanupTargets: [],
+          retainedPaths: [operation.destinationPath]
+        };
+      }
+    }
+
     const removedPath = removeContainedPath(
       operation.destinationPath,
       trustedRoot,
@@ -794,7 +933,7 @@ function executeUninstallOperation(operation, trustedRoot) {
   throw new Error(`Unsupported uninstall operation kind: ${operation.kind}`);
 }
 
-function inspectManagedOperation(repoRoot, trustedRoot, operation) {
+function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = null) {
   const destinationPath = operation.destinationPath;
   if (!destinationPath) {
     return {
@@ -871,7 +1010,27 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation) {
       };
     }
 
-    if (!areFilesEqual(copySourcePath, inspectedPath)) {
+    let contentMatches;
+    try {
+      contentMatches = hasRecordedContentDigest(operation)
+        ? fileMatchesRecordedContent(inspectedPath, operation)
+        : operation.contentTransform || isMarkdownPath(operation.destinationPath)
+          ? readFileNoFollow(inspectedPath, 'utf8') === getExpectedCopyFileContent(
+            operation,
+            readFileNoFollow(copySourcePath, 'utf8'),
+            linkIndex
+          )
+          : areFilesEqual(copySourcePath, inspectedPath);
+    } catch (_error) {
+      return {
+        status: 'unverified',
+        operation,
+        destinationPath,
+        sourcePath: copySourcePath
+      };
+    }
+
+    if (!contentMatches) {
       return {
         status: 'drifted',
         operation,
@@ -963,9 +1122,10 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation) {
 }
 
 function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations) {
+  const linkIndex = buildLinkIndexForOperations(operations, trustedRoot);
   return operations.reduce(
     (summary, operation) => {
-      const inspection = inspectManagedOperation(repoRoot, trustedRoot, operation);
+      const inspection = inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex);
       if (inspection.status === 'missing') {
         summary.missing.push(inspection);
       } else if (inspection.status === 'drifted') {
@@ -1023,14 +1183,18 @@ function getUnsafeOperationResult(record, operationHealth) {
   };
 }
 
-function buildDiscoveryRecord(adapter, context) {
+function buildDiscoveryRecord(adapter, context, location = null, knownState = null) {
   const installTargetInput = {
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
     repoRoot: context.projectRoot
   };
-  const targetRoot = adapter.resolveRoot(installTargetInput);
-  const installStatePath = adapter.getInstallStatePath(installTargetInput);
+  const targetRoot = location
+    ? location.targetRoot
+    : adapter.resolveRoot(installTargetInput);
+  const installStatePath = location
+    ? location.installStatePath
+    : adapter.getInstallStatePath(installTargetInput);
   const exists = fs.existsSync(installStatePath);
 
   if (!exists) {
@@ -1044,7 +1208,24 @@ function buildDiscoveryRecord(adapter, context) {
       installStatePath,
       exists: false,
       state: null,
-      error: null
+      error: null,
+      legacy: Boolean(location)
+    };
+  }
+
+  if (knownState) {
+    return {
+      adapter: {
+        id: adapter.id,
+        target: adapter.target,
+        kind: adapter.kind
+      },
+      targetRoot,
+      installStatePath,
+      exists: true,
+      state: knownState,
+      error: null,
+      legacy: Boolean(location)
     };
   }
 
@@ -1060,7 +1241,8 @@ function buildDiscoveryRecord(adapter, context) {
       installStatePath,
       exists: true,
       state,
-      error: null
+      error: null,
+      legacy: Boolean(location)
     };
   } catch (error) {
     return {
@@ -1073,7 +1255,8 @@ function buildDiscoveryRecord(adapter, context) {
       installStatePath,
       exists: true,
       state: null,
-      error: error.message
+      error: error.message,
+      legacy: Boolean(location)
     };
   }
 }
@@ -1085,9 +1268,43 @@ function discoverInstalledStates(options = {}) {
   };
   const targets = normalizeTargets(options.targets);
 
-  return targets.map(target => {
+  return targets.flatMap(target => {
     const adapter = getInstallTargetAdapter(target);
-    return buildDiscoveryRecord(adapter, context);
+    const canonicalRecord = buildDiscoveryRecord(adapter, context);
+    if (adapter.target !== 'antigravity') {
+      return [canonicalRecord];
+    }
+
+    const legacyLocation = getLegacyAntigravityLocation(context.projectRoot);
+    const legacyInspection = inspectLegacyAntigravityState(legacyLocation);
+    if (
+      path.resolve(legacyLocation.installStatePath) === path.resolve(canonicalRecord.installStatePath)
+      || legacyInspection.status === 'absent'
+      || legacyInspection.status === 'invalid'
+    ) {
+      return [canonicalRecord];
+    }
+
+    if (legacyInspection.status === 'unreadable') {
+      return [canonicalRecord, {
+        adapter: {
+          id: adapter.id,
+          target: adapter.target,
+          kind: adapter.kind,
+        },
+        targetRoot: legacyLocation.targetRoot,
+        installStatePath: legacyLocation.installStatePath,
+        exists: true,
+        state: null,
+        error: legacyInspection.error,
+        legacy: true,
+      }];
+    }
+
+    return [
+      canonicalRecord,
+      buildDiscoveryRecord(adapter, context, legacyLocation, legacyInspection.state),
+    ];
   });
 }
 
@@ -1114,6 +1331,14 @@ function determineStatus(issues) {
 
 function analyzeRecord(record, context) {
   const issues = [];
+
+  if (record.legacy) {
+    issues.push(buildIssue(
+      'warning',
+      'legacy-antigravity-layout',
+      'Legacy Antigravity install-state remains under .agent. Review and move any preserved modified or unmanaged files out of .agent, then rerun the Antigravity install to finish migration.'
+    ));
+  }
 
   if (record.error) {
     issues.push(buildIssue('error', 'invalid-install-state', record.error));
@@ -1377,10 +1602,27 @@ function assertValidInstallStateForWrite(state, label) {
 
 function writeRefreshedInstallState(record, statePreview) {
   const trustedStatePreview = buildAdapterDerivedStatePreview(statePreview, record);
-  assertValidInstallStateForWrite(trustedStatePreview, record.installStatePath);
+  const stateWithCurrentDigests = {
+    ...trustedStatePreview,
+    operations: (trustedStatePreview.operations || []).map(operation => {
+      if (!operation.destinationPath) {
+        return { ...operation };
+      }
+      try {
+        const contentSha256 = crypto.createHash('sha256')
+          .update(readFileNoFollow(operation.destinationPath))
+          .digest('hex');
+        return { ...operation, contentSha256 };
+      } catch (_error) {
+        const { contentSha256: _staleDigest, ...operationWithoutDigest } = operation;
+        return operationWithoutDigest;
+      }
+    }),
+  };
+  assertValidInstallStateForWrite(stateWithCurrentDigests, record.installStatePath);
   return writeContainedFile(
     record.installStatePath,
-    formatJson(trustedStatePreview),
+    formatJson(stateWithCurrentDigests),
     record.targetRoot,
     'repair'
   );
@@ -1427,7 +1669,7 @@ function repairInstalledStates(options = {}) {
     homeDir: context.homeDir,
     projectRoot: context.projectRoot,
     targets: options.targets
-  }).filter(record => record.exists);
+  }).filter(record => record.exists && !record.legacy);
 
   const results = records.map(record => {
     if (record.error) {
@@ -1525,6 +1767,7 @@ function repairInstalledStates(options = {}) {
       }
 
       const repairOperations = [...operationHealth.missing.map(entry => ({ ...entry.operation })), ...operationHealth.drifted.map(entry => ({ ...entry.operation }))];
+      const repairLinkIndex = buildLinkIndexForOperations(desiredPlan.operations, record.targetRoot);
       const legacyMigrationPaths = migration.legacyOperationsToRemove.map(
         operation => operation.destinationPath
       );
@@ -1557,7 +1800,8 @@ function repairInstalledStates(options = {}) {
         const repairedPath = executeRepairOperation(
           context.repoRoot,
           operation,
-          record.targetRoot
+          record.targetRoot,
+          repairLinkIndex
         );
         if (repairedPath) {
           repairedPaths.push(repairedPath);
@@ -1576,7 +1820,17 @@ function repairInstalledStates(options = {}) {
           }
         }
       }
-      writeRefreshedInstallState(record, desiredPlan.statePreview);
+      const changedInstalledBytes = repairOperations.length > 0
+        || needsOpencodeBuild
+        || hasLegacyMigration;
+      const statePreviewToWrite = changedInstalledBytes
+        ? desiredPlan.statePreview
+        : {
+            ...desiredPlan.statePreview,
+            installedAt: record.state.installedAt,
+            source: { ...record.state.source },
+          };
+      writeRefreshedInstallState(record, statePreviewToWrite);
 
       return {
         adapter: record.adapter,
@@ -1657,8 +1911,9 @@ function cleanupEmptyParentDirs(filePath, stopAt) {
     }
 
     const finalPath = assertWithinTrustedRoot(validatedPath, trustedStopAt, 'clean up');
-    fs.rmdirSync(finalPath);
-    currentPath = path.dirname(finalPath);
+    const removedPath = removeContainedPath(finalPath, trustedStopAt, 'clean up');
+    if (!removedPath) break;
+    currentPath = path.dirname(removedPath);
   }
 }
 
@@ -1682,8 +1937,21 @@ function uninstallInstalledStates(options = {}) {
     }
 
     const state = record.state;
+    const managedOperations = getManagedOperations(state);
+    if (record.legacy && managedOperations.length > 0) {
+      return {
+        adapter: record.adapter,
+        status: 'partial',
+        installStatePath: record.installStatePath,
+        removedPaths: [],
+        plannedRemovals: [],
+        retainedPaths: managedOperations.map(operation => operation.destinationPath),
+        warning: 'Legacy Antigravity files were preserved because their provenance cannot be revalidated during uninstall. Rerun the Antigravity installer to migrate verified files, then review .agent manually.',
+        error: null
+      };
+    }
     const plannedRemovals = Array.from(new Set([
-      ...getManagedOperations(state).map(operation => operation.destinationPath),
+      ...managedOperations.map(operation => operation.destinationPath),
       record.installStatePath
     ]));
 
@@ -1701,23 +1969,29 @@ function uninstallInstalledStates(options = {}) {
     try {
       const removedPaths = [];
       const cleanupTargets = [];
+      const retainedPaths = [];
       const operations = getManagedOperations(state);
 
       for (const operation of operations) {
-        const outcome = executeUninstallOperation(operation, record.targetRoot);
+        const outcome = executeUninstallOperation(operation, record.targetRoot, {
+          preserveDriftedCopies: true,
+        });
         removedPaths.push(...outcome.removedPaths);
         cleanupTargets.push(...outcome.cleanupTargets);
+        retainedPaths.push(...(outcome.retainedPaths || []));
       }
 
-      const removedStatePath = removeContainedPath(
-        record.installStatePath,
-        record.targetRoot,
-        'uninstall',
-        { force: true }
-      );
-      if (removedStatePath) {
-        removedPaths.push(record.installStatePath);
-        cleanupTargets.push(removedStatePath);
+      if (retainedPaths.length === 0) {
+        const removedStatePath = removeContainedPath(
+          record.installStatePath,
+          record.targetRoot,
+          'uninstall',
+          { force: true }
+        );
+        if (removedStatePath) {
+          removedPaths.push(record.installStatePath);
+          cleanupTargets.push(removedStatePath);
+        }
       }
 
       for (const cleanupTarget of cleanupTargets) {
@@ -1726,10 +2000,14 @@ function uninstallInstalledStates(options = {}) {
 
       return {
         adapter: record.adapter,
-        status: 'uninstalled',
+        status: retainedPaths.length > 0 ? 'partial' : 'uninstalled',
         installStatePath: record.installStatePath,
         removedPaths,
+        retainedPaths: [...new Set(retainedPaths)].sort(),
         plannedRemovals: [],
+        warning: retainedPaths.length > 0
+          ? 'Modified or unverifiable managed files were preserved together with install-state for review.'
+          : null,
         error: null
       };
     } catch (error) {
@@ -1749,12 +2027,14 @@ function uninstallInstalledStates(options = {}) {
       checkedCount: accumulator.checkedCount + 1,
       uninstalledCount: accumulator.uninstalledCount + (result.status === 'uninstalled' ? 1 : 0),
       plannedRemovalCount: accumulator.plannedRemovalCount + (result.status === 'planned' ? 1 : 0),
+      partialCount: accumulator.partialCount + (result.status === 'partial' ? 1 : 0),
       errorCount: accumulator.errorCount + (result.status === 'error' ? 1 : 0)
     }),
     {
       checkedCount: 0,
       uninstalledCount: 0,
       plannedRemovalCount: 0,
+      partialCount: 0,
       errorCount: 0
     }
   );

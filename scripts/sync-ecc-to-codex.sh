@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # Sync Everything Claude Code (ECC) assets into a local Codex CLI setup.
 # - Backs up ~/.codex config and AGENTS.md
@@ -44,6 +44,7 @@ PROMPTS_DEST="$CODEX_HOME/prompts"
 BASELINE_MERGE_SCRIPT="$REPO_ROOT/scripts/codex/merge-codex-config.js"
 HOOKS_INSTALLER="$REPO_ROOT/scripts/codex/install-global-git-hooks.sh"
 SANITY_CHECKER="$REPO_ROOT/scripts/codex/check-codex-global-state.sh"
+LEGACY_STATE_HELPER="$REPO_ROOT/scripts/codex/legacy-sync-state.js"
 CURSOR_RULES_DIR="$REPO_ROOT/.cursor/rules"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -169,6 +170,7 @@ require_path "$PROMPTS_SRC" "ECC commands directory"
 require_path "$BASELINE_MERGE_SCRIPT" "ECC Codex baseline merge script"
 require_path "$HOOKS_INSTALLER" "ECC global git hooks installer"
 require_path "$SANITY_CHECKER" "ECC global sanity checker"
+require_path "$LEGACY_STATE_HELPER" "ECC legacy sync state helper"
 require_path "$CURSOR_RULES_DIR" "ECC Cursor rules directory"
 require_path "$CONFIG_FILE" "Codex config.toml"
 require_path "$MCP_MERGE_SCRIPT" "ECC MCP merge script"
@@ -187,6 +189,40 @@ run_or_echo mkdir -p "$BACKUP_DIR"
 run_or_echo cp "$CONFIG_FILE" "$BACKUP_DIR/config.toml"
 if [[ -f "$AGENTS_FILE" ]]; then
   run_or_echo cp "$AGENTS_FILE" "$BACKUP_DIR/AGENTS.md"
+fi
+
+LEGACY_STATE_PATH=""
+record_managed_path() {
+  local managed_path="$1"
+  if [[ "$MODE" == "apply" ]]; then
+    node "$LEGACY_STATE_HELPER" record --state "$LEGACY_STATE_PATH" --path "$managed_path"
+  fi
+}
+
+if [[ "$MODE" == "apply" ]]; then
+  previous_hooks_path="$(git config --global core.hooksPath || true)"
+  LEGACY_STATE_PATH="$(
+    node "$LEGACY_STATE_HELPER" begin \
+      --codex-home "$CODEX_HOME" \
+      --backup-dir "$BACKUP_DIR" \
+      --previous-hooks-path "$previous_hooks_path" \
+      --installed-hooks-path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}"
+  )"
+  rollback_legacy_sync() {
+    local exit_status="${1:-1}"
+    trap - ERR INT TERM
+    log "Install interrupted; restoring the pre-sync Codex state"
+    if ! node "$LEGACY_STATE_HELPER" rollback --state "$LEGACY_STATE_PATH"; then
+      log "ERROR: Automatic rollback was partial. Review: $LEGACY_STATE_PATH"
+    fi
+    exit "$exit_status"
+  }
+  trap 'rollback_legacy_sync $?' ERR
+  trap 'rollback_legacy_sync 130' INT
+  trap 'rollback_legacy_sync 143' TERM
+
+  record_managed_path "$CONFIG_FILE"
+  record_managed_path "$AGENTS_FILE"
 fi
 
 ECC_BEGIN_MARKER="<!-- BEGIN ECC -->"
@@ -276,11 +312,16 @@ fi
 
 log "Syncing Codex navigation guide"
 run_or_echo mkdir -p "$(dirname "$CODEX_NAV_GUIDE_DEST")"
+record_managed_path "$CODEX_NAV_GUIDE_DEST"
 run_or_echo cp "$CODEX_NAV_GUIDE_SRC" "$CODEX_NAV_GUIDE_DEST"
+record_managed_path "$CODEX_COMMAND_AGENT_MAP_DEST"
 run_or_echo cp "$CODEX_COMMAND_AGENT_MAP_SRC" "$CODEX_COMMAND_AGENT_MAP_DEST"
+record_managed_path "$CODEX_COMMANDS_QUICK_REF_DEST"
 run_or_echo cp "$CODEX_COMMANDS_QUICK_REF_SRC" "$CODEX_COMMANDS_QUICK_REF_DEST"
+record_managed_path "$CODEX_CONTRIBUTING_DEST"
 run_or_echo cp "$CODEX_CONTRIBUTING_SRC" "$CODEX_CONTRIBUTING_DEST"
 run_or_echo mkdir -p "$(dirname "$CODEX_PR_TEMPLATE_DEST")"
+record_managed_path "$CODEX_PR_TEMPLATE_DEST"
 run_or_echo cp "$CODEX_PR_TEMPLATE_SRC" "$CODEX_PR_TEMPLATE_DEST"
 
 log "Syncing sample Codex agent role files"
@@ -292,6 +333,7 @@ for agent_file in "$CODEX_AGENTS_SRC"/*.toml; do
   if [[ -e "$dest" ]]; then
     log "Keeping existing Codex agent role file: $dest"
   else
+    record_managed_path "$dest"
     run_or_echo cp "$agent_file" "$dest"
   fi
 done
@@ -303,6 +345,7 @@ done
 log "Generating prompt files from ECC commands"
 run_or_echo mkdir -p "$PROMPTS_DEST"
 manifest="$PROMPTS_DEST/ecc-prompts-manifest.txt"
+record_managed_path "$manifest"
 if [[ "$MODE" == "dry-run" ]]; then
   printf '[dry-run] > %s\n' "$manifest"
 else
@@ -316,6 +359,7 @@ while IFS= read -r -d '' command_file; do
   if [[ "$MODE" == "dry-run" ]]; then
     printf '[dry-run] generate %s from %s\n' "$out" "$command_file"
   else
+    record_managed_path "$out"
     generate_prompt_file "$command_file" "$out" "$name"
     printf 'ecc-%s.md\n' "$name" >> "$manifest"
   fi
@@ -328,6 +372,7 @@ fi
 
 log "Generating Codex tool prompts + optional rule-pack prompts"
 extension_manifest="$PROMPTS_DEST/ecc-extension-prompts-manifest.txt"
+record_managed_path "$extension_manifest"
 if [[ "$MODE" == "dry-run" ]]; then
   printf '[dry-run] > %s\n' "$extension_manifest"
 else
@@ -342,6 +387,7 @@ write_extension_prompt() {
   if [[ "$MODE" == "dry-run" ]]; then
     printf '[dry-run] generate %s\n' "$file"
   else
+    record_managed_path "$file"
     cat > "$file"
     printf '%s\n' "$name" >> "$extension_manifest"
   fi
@@ -531,6 +577,8 @@ if [[ "$MODE" == "dry-run" ]]; then
   ECC_GLOBAL_HOOKS_DIR="${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}" \
     "$HOOKS_INSTALLER" --dry-run
 else
+  record_managed_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}/pre-commit"
+  record_managed_path "${ECC_GLOBAL_HOOKS_DIR:-$CODEX_HOME/git-hooks}/pre-push"
   HOME="$HOME" \
   CODEX_HOME="$CODEX_HOME" \
   AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}" \
@@ -554,5 +602,7 @@ log "Backup saved at: $BACKUP_DIR"
 log "Prompts generated: $((prompt_count + extension_count)) (commands: $prompt_count, extensions: $extension_count)"
 
 if [[ "$MODE" == "apply" ]]; then
+  node "$LEGACY_STATE_HELPER" finalize --state "$LEGACY_STATE_PATH"
+  trap - ERR INT TERM
   log "Done. Restart Codex CLI to reload AGENTS, prompts, and MCP servers."
 fi

@@ -161,11 +161,11 @@ function runTests() {
 
   if (test('reusable release checks out the requested tag before validating and publishing', () => {
     const checkoutIndex = reusableReleaseWorkflowSource.indexOf('uses: actions/checkout@');
-    const refIndex = reusableReleaseWorkflowSource.indexOf('ref: ${{ inputs.tag }}');
+    const refIndex = reusableReleaseWorkflowSource.indexOf('ref: refs/tags/${{ inputs.tag }}');
     const validateIndex = reusableReleaseWorkflowSource.indexOf('name: Validate version tag');
 
     assert.ok(checkoutIndex >= 0, 'reusable-release.yml should check out repository content');
-    assert.ok(refIndex >= 0, 'reusable-release.yml checkout should use inputs.tag as ref');
+    assert.ok(refIndex >= 0, 'reusable-release.yml checkout should require inputs.tag to resolve as a tag');
     assert.ok(validateIndex >= 0, 'reusable-release.yml should validate requested tag');
     assert.ok(
       checkoutIndex < refIndex && refIndex < validateIndex,
