@@ -7,9 +7,8 @@
 
 const assert = require("assert");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { authorizeEccCapability } = require("../../scripts/lib/ito-capabilities");
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
 
@@ -77,32 +76,19 @@ test("labels backend stages as future and keeps eval gates human-honest", () => 
   assert.match(skill, /Loss-spike restart is a proposed, human-gated action/i);
 });
 
-test("keeps unsupported training outside the executable bridge", () => {
-  const bridge = read("scripts/ito.js");
-  assert.match(bridge, /SUPPORTED_COMMANDS[^\n]+login[^\n]+auth[^\n]+find[^\n]+status[^\n]+evals/);
-  assert.doesNotMatch(bridge, /SUPPORTED_COMMANDS[^\n]+train/);
-  assert.match(bridge, /Unsupported Itô command/);
-
-  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-ito-train-reject-"));
-  try {
-    const canonicalDir = path.join(fixtureRoot, "cli", "ito-compute-cli", "dist", "bin");
-    fs.mkdirSync(canonicalDir, { recursive: true });
-    const marker = path.join(fixtureRoot, "spawned");
-    const executable = path.join(canonicalDir, "ito.js");
-    fs.writeFileSync(executable, `require("fs").writeFileSync(${JSON.stringify(marker)}, "spawned");\n`);
-    const result = spawnSync(process.execPath, [
-      path.join(REPO_ROOT, "scripts", "ecc.js"), "ito", "train",
-      "--booking", "booking_test", "--model-size", "8B",
-    ], {
-      encoding: "utf8",
-      env: { ...process.env, ECC_ITO_CLI_EXECUTABLE: executable },
-    });
-    assert.notStrictEqual(result.status, 0);
-    assert.match(result.stderr, /Unsupported Itô command "train"/);
-    assert.ok(!fs.existsSync(marker), "unsupported train spawned the canonical child");
-  } finally {
-    fs.rmSync(fixtureRoot, { recursive: true, force: true });
-  }
+test("keeps workload-training effects outside the executable policy", () => {
+  const capability = Object.freeze({
+    name: "train",
+    availability: "supported",
+    auth: "required",
+    network: "ito_api",
+    side_effect: "workload_start",
+    authority: "entitled_workload",
+  });
+  assert.throws(
+    () => authorizeEccCapability({ commands: [capability] }, "train"),
+    /outside ECC's safe policy: workload_start/,
+  );
 });
 
 test("ships through the existing opt-in compute module and npm package", () => {

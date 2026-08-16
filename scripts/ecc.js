@@ -275,6 +275,7 @@ function runCommand(commandName, args) {
       env: commandName === 'ito'
         ? {
           ...createSafeItoInvocationEnvironment(process.env, args, {
+            deferCapabilityPolicy: true,
             includeControls: true,
           }),
         }

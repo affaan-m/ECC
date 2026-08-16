@@ -23,6 +23,10 @@ const {
   getInvocationCommand,
   ITO_RUNTIME_ENVIRONMENT_KEYS,
 } = require("../../scripts/lib/ito-environment");
+const {
+  authorizeEccCapability,
+  parseItoCapabilities,
+} = require("../../scripts/lib/ito-capabilities");
 
 function runCli(args, environment = {}) {
   return spawnSync(process.execPath, [ECC_SCRIPT, ...args], {
@@ -64,9 +68,44 @@ function runCliAndObserveFirstOutput(args, environment = {}) {
   });
 }
 
-function makeItoProbe(exitCode = 0) {
+function capabilityEnvelope(commands) {
+  return {
+    ok: true,
+    live_api_contacted: false,
+    notice: "Static CLI capability contract; no credential or network access occurred.",
+    data: {
+      contract_version: "ito.cli.capabilities.v1",
+      cli: { name: "ito-compute-cli", version: "0.1.1", private: true },
+      commands,
+      mcp_tools: ["ito_auth", "ito_find", "ito_status"],
+      output_contract: {
+        json_success_envelope: true,
+        errors_on_stderr: true,
+        unsupported_commands_contact_nothing: true,
+      },
+    },
+  };
+}
+
+const DEFAULT_CAPABILITY_COMMANDS = Object.freeze([
+  { name: "capabilities", availability: "supported", auth: "none", network: "none", side_effect: "none", authority: "none" },
+  { name: "login", availability: "supported", auth: "device_bootstrap", network: "ito_api", side_effect: "credential_write", authority: "device_owner" },
+  { name: "logout", availability: "supported", auth: "none", network: "ito_api", side_effect: "credential_revoke", authority: "device_owner" },
+  { name: "auth", availability: "supported", auth: "required", network: "ito_api", side_effect: "none", authority: "none" },
+  { name: "find", availability: "supported", auth: "required", network: "ito_api", side_effect: "rfq_submit", authority: "buyer_rfq" },
+  { name: "status", availability: "supported", auth: "required", network: "ito_api", side_effect: "provisioning_reconcile", authority: "buyer_rfq" },
+  { name: "serve", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_start", authority: "entitled_workload" },
+  { name: "train", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_start", authority: "entitled_workload" },
+  { name: "workload-status", availability: "supported", auth: "required", network: "ito_api", side_effect: "none", authority: "none" },
+  { name: "workload-cancel", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_cancel", authority: "entitled_workload" },
+  { name: "workload-cleanup", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_cleanup", authority: "entitled_workload" },
+  { name: "evals", availability: "supported", auth: "none", network: "explicit_nodes", side_effect: "node_qualification", authority: "named_node_operator" },
+]);
+
+function makeItoProbe(exitCode = 0, options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-ito-cli-"));
   const log = path.join(directory, "invocation.json");
+  const capabilityLog = path.join(directory, "capability-invocation.json");
   const script = path.join(
     directory,
     "ito-cloud-runtime",
@@ -84,6 +123,13 @@ function makeItoProbe(exitCode = 0) {
       `#!${process.execPath}`,
       '"use strict";',
       'const fs = require("fs");',
+      'const argv = process.argv.slice(2);',
+      'const command = argv.filter((value) => value !== "--json")[0];',
+      'if (command === "capabilities") {',
+      `  fs.writeFileSync(${JSON.stringify(capabilityLog)}, JSON.stringify({ argv, env: process.env }));`,
+      `  process.stdout.write(${JSON.stringify(`${JSON.stringify(options.capabilityEnvelope ?? capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS))}\n`)});`,
+      '  process.exit(0);',
+      '}',
       `fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), env: process.env }));`,
       'process.stdout.write(`ito-probe:${process.argv.slice(2).join("|")}\\n`);',
       'process.stderr.write("ito-probe-stderr\\n");',
@@ -94,7 +140,7 @@ function makeItoProbe(exitCode = 0) {
   if (process.platform !== "win32") {
     fs.chmodSync(script, 0o755);
   }
-  return Object.freeze({ directory, executable, log });
+  return Object.freeze({ capabilityLog, directory, executable, log });
 }
 
 function readInvocation(probe) {
@@ -130,6 +176,92 @@ async function main() {
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
         }
+      }
+    }],
+    ["derives a newly supported read-only command from a credential-free capability probe", () => {
+      const probe = makeItoProbe();
+      try {
+        const result = runCli(["ito", "workload-status", "run_123", "--json"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+          ITO_API_KEY: "ito_test_key",
+          ITO_API_URL: "https://compute.example.test",
+          AWS_SECRET_ACCESS_KEY: "must-not-cross",
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const capabilityInvocation = JSON.parse(fs.readFileSync(probe.capabilityLog, "utf8"));
+        assert.deepStrictEqual(capabilityInvocation.argv, ["capabilities", "--json"]);
+        assert.strictEqual(capabilityInvocation.env.ITO_API_KEY, undefined);
+        assert.strictEqual(capabilityInvocation.env.ITO_API_URL, undefined);
+        assert.strictEqual(capabilityInvocation.env.AWS_SECRET_ACCESS_KEY, undefined);
+        assert.strictEqual(capabilityInvocation.env.ECC_ITO_CLI_EXECUTABLE, undefined);
+        const targetInvocation = readInvocation(probe);
+        assert.deepStrictEqual(targetInvocation.argv, ["--json", "workload-status", "run_123"]);
+        assert.strictEqual(targetInvocation.env.ITO_API_KEY, "ito_test_key");
+        assert.strictEqual(targetInvocation.env.ITO_API_URL, "https://compute.example.test");
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
+      }
+    }],
+    ["blocks advertised workload mutations after capability discovery", () => {
+      const probe = makeItoProbe();
+      try {
+        const result = runCli([
+          "ito", "serve", "--model", "org/model", "--entitlement", "ent_123", "--confirm",
+        ], { ECC_ITO_CLI_EXECUTABLE: probe.executable });
+        assert.notStrictEqual(result.status, 0);
+        assert.match(result.stderr, /workload_start|safe policy/i);
+        assert.ok(fs.existsSync(probe.capabilityLog), "capability discovery did not run");
+        assert.ok(!fs.existsSync(probe.log), "blocked workload command reached the target invocation");
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
+      }
+    }],
+    ["requires exact tuples for every explicitly reviewed effectful command", () => {
+      for (const commandName of ["login", "logout", "find", "evals"]) {
+        const commands = DEFAULT_CAPABILITY_COMMANDS.map((command) => (
+          command.name === commandName
+            ? { ...command, auth: "none", network: "none", side_effect: "none", authority: "none" }
+            : command
+        ));
+        const manifest = parseItoCapabilities(JSON.stringify(capabilityEnvelope(commands)));
+        assert.throws(
+          () => authorizeEccCapability(manifest, commandName),
+          /outside ECC's safe policy/i,
+          commandName,
+        );
+      }
+    }],
+    ["allows status only under the exact provisioning-reconcile tuple", () => {
+      const manifest = parseItoCapabilities(JSON.stringify(capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS)));
+      assert.strictEqual(authorizeEccCapability(manifest, "status").side_effect, "provisioning_reconcile");
+      const mislabeled = DEFAULT_CAPABILITY_COMMANDS.map((command) => (
+        command.name === "status"
+          ? { ...command, side_effect: "none", authority: "none" }
+          : command
+      ));
+      assert.throws(
+        () => authorizeEccCapability(
+          parseItoCapabilities(JSON.stringify(capabilityEnvelope(mislabeled))),
+          "status",
+        ),
+        /outside ECC's safe policy/i,
+      );
+    }],
+    ["fails closed on duplicate command records in the installed manifest", () => {
+      const duplicateAuth = DEFAULT_CAPABILITY_COMMANDS.find(({ name }) => name === "auth");
+      const probe = makeItoProbe(0, {
+        capabilityEnvelope: capabilityEnvelope([duplicateAuth, duplicateAuth]),
+      });
+      try {
+        const result = runCli(["ito", "auth"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+          ITO_API_KEY: "must-not-cross-after-invalid-contract",
+        });
+        assert.notStrictEqual(result.status, 0);
+        assert.match(result.stderr, /duplicate|capabilit/i);
+        assert.ok(!fs.existsSync(probe.log), "invalid capability contract reached target invocation");
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
       }
     }],
     ["forwards logout with device-token settings but never an API key", () => {
@@ -263,6 +395,11 @@ async function main() {
           probe.executable,
           [
             '"use strict";',
+            'const argv = process.argv.slice(2);',
+            'if (argv.filter((value) => value !== "--json")[0] === "capabilities") {',
+            `  process.stdout.write(${JSON.stringify(`${JSON.stringify(capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS))}\n`)});`,
+            '  process.exit(0);',
+            '}',
             'process.stdout.write("device-code-now\\n");',
             'setTimeout(() => process.exit(7), 500);',
             "",
@@ -472,7 +609,7 @@ async function main() {
         /timeout: isNodeQualification \? NODE_QUALIFICATION_TIMEOUT_MS : undefined/,
       );
     }],
-    ["rejects unsupported browser, paper, and execution operations before spawning", () => {
+    ["rejects unsupported browser, paper, and execution operations after safe discovery", () => {
       for (const command of ["rent", "lock", "purchase", "run", "inference", "mcp"]) {
         const probe = makeItoProbe();
         try {
@@ -480,8 +617,9 @@ async function main() {
             ECC_ITO_CLI_EXECUTABLE: probe.executable,
           });
           assert.notStrictEqual(result.status, 0, command);
-          assert.match(result.stderr, /only login, logout, auth, find, status, and evals/i);
-          assert.ok(!fs.existsSync(probe.log), `${command} must not spawn the Itô CLI`);
+          assert.match(result.stderr, /does not advertise|safe policy/i);
+          assert.ok(fs.existsSync(probe.capabilityLog), `${command} must inspect capabilities`);
+          assert.ok(!fs.existsSync(probe.log), `${command} must not reach target execution`);
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
         }

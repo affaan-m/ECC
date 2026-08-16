@@ -1,6 +1,6 @@
 ---
 name: ito-compute
-description: Query live GPU inventory, submit an authenticated Itô fixed-rate RFQ, inspect RFQ or procurement status, revoke device credentials, and run explicitly gated node qualification through the separately installed canonical CLI. Use when a user asks to find H100/H200 capacity, request a fixed compute rate, check Itô compute status, validate GPU nodes, revoke Itô access, or rent or purchase GPU compute and needs the supported boundary explained.
+description: Query live GPU inventory, submit an authenticated Itô fixed-rate RFQ, inspect RFQ, procurement, or existing workload status, revoke device credentials, and run explicitly gated node qualification through the separately installed canonical CLI. Use when a user asks to find H100/H200 capacity, request a fixed compute rate, check Itô compute or workload status, validate GPU nodes, revoke Itô access, or rent or purchase GPU compute and needs the supported boundary explained.
 ---
 
 # Itô Compute
@@ -29,9 +29,16 @@ Set `ECC_ITO_CLI_EXECUTABLE` to the explicit absolute built entry:
 
 ECC never discovers this credential-bearing client through `PATH`.
 `ecc ito login` performs device authorization and never inherits `ITO_API_KEY`.
-The validation-only `auth`, plus `find` and `status`, forward `ITO_API_KEY`
-directly when configured; `ITO_AUTH_MODE=legacy` is not required. Never put a
+The validation-only `auth`, plus `find`, `status`, and `workload-status`, forward
+`ITO_API_KEY` directly when configured; `ITO_AUTH_MODE=legacy` is not required. Never put a
 key or token in arguments, tracked files, MCP results, logs, or chat.
+
+Before every forwarded operation, ECC invokes `capabilities --json` with a
+credential-free environment and validates the closed `ito.cli.capabilities.v1`
+contract. Run `ecc ito capabilities --json` to inspect that installed contract
+directly. ECC automatically accepts supported no-side-effect commands and keeps
+explicit policy only for login, logout, RFQ submission, and node qualification.
+Workload start, cancel, and cleanup effects remain blocked.
 
 ## CLI workflow
 
@@ -73,7 +80,9 @@ key or token in arguments, tracked files, MCP results, logs, or chat.
 
 5. Run `ecc ito status` to inspect RFQs and procurement orders.
    After an ambiguous transport failure, check status before repeating `find`.
-6. Run `ecc ito logout` when the user explicitly asks to revoke this device.
+6. Run `ecc ito workload-status <run-id>` to inspect an already existing
+   entitled workload without starting, stopping, or cleaning it up.
+7. Run `ecc ito logout` when the user explicitly asks to revoke this device.
    The canonical CLI keeps the local credential when remote revocation fails so
    the operator can retry; never delete the token manually as a substitute.
 
@@ -144,8 +153,10 @@ operate it as a substitute for a missing CLI capability.
 
 ## Unsupported operations
 
-The supported client surface cannot lock quotes, reserve capacity, execute
-workloads, or serve inference. The MCP server does not expose qualification;
+The ECC bridge cannot lock quotes, reserve capacity, start, cancel, or clean up
+workloads, or serve inference. It may inspect an already existing workload when
+the installed v1 capability contract advertises that no-side-effect command.
+The MCP server does not expose qualification;
 use the explicit CLI command above. Do not invent additional tools or a
 purchase path. Do not substitute a browser or fixture when the local CLI is
 missing or a live operation fails. Report the missing capability and stop.

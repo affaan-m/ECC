@@ -6,11 +6,15 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const {
+  createSafeItoEnvironment,
   createSafeItoInvocationEnvironment,
   getInvocationCommand,
 } = require("./lib/ito-environment");
+const {
+  authorizeEccCapability,
+  parseItoCapabilities,
+} = require("./lib/ito-capabilities");
 
-const SUPPORTED_COMMANDS = Object.freeze(["login", "logout", "auth", "find", "status", "evals"]);
 const CANONICAL_REPOSITORY = "https://github.com/Ito-Markets/ito-cloud-runtime.git";
 const CANONICAL_PACKAGE_PATH = "cli/ito-compute-cli";
 const CANONICAL_ENTRY_SEGMENTS = Object.freeze([
@@ -21,6 +25,7 @@ const CANONICAL_ENTRY_SEGMENTS = Object.freeze([
 ]);
 const EXECUTABLE_OVERRIDE = "ECC_ITO_CLI_EXECUTABLE";
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+const CAPABILITY_TIMEOUT_MS = 10 * 1000;
 const NODE_QUALIFICATION_TIMEOUT_MS = 31 * 60 * 1000;
 
 function showHelp() {
@@ -33,8 +38,10 @@ Usage:
   ecc ito auth
   ecc ito find <all required RFQ options>
   ecc ito status
+  ecc ito workload-status <run-id>
+  ecc ito capabilities
   ecc ito evals --cluster <id> --live-sixtytwo --nodes <list> --config-dir <dir>
-  ecc ito <login|logout|auth|find|status|evals> --json
+  ecc ito <command> --json
 
 The bridge invokes the separately installed canonical Itô CLI and returns its
 real stdout, stderr, and exit code unchanged. "ecc ito login" delegates to the
@@ -50,6 +57,10 @@ Important:
   - "find" reads live inventory and submits an authenticated RFQ.
   - Obtain explicit buyer authority and every hard constraint before invoking it.
   - "status" reads live RFQ and procurement status.
+  - "workload-status" reads an existing entitled workload without changing it.
+  - The installed canonical CLI must advertise every command through the local-only
+    ito.cli.capabilities.v1 contract. ECC derives read-only forwarding from that
+    contract and blocks workload start, cancel, cleanup, purchase, and unknown effects.
   - "evals" invokes only the canonical CLI's double-opt-in, pinned
     sixtytwo-cli node-qualification adapter against explicit nodes.
   - Node qualification cannot rent, launch, recover, repair, or purchase.
@@ -162,10 +173,8 @@ function parseArgs(argv, environment = process.env) {
   }
   const withoutJson = args.filter((value) => value !== "--json");
   const command = withoutJson.shift();
-  if (!SUPPORTED_COMMANDS.includes(command)) {
-    throw new Error(
-      `Unsupported Itô command "${command || "(missing)"}"; ECC permits only login, logout, auth, find, status, and evals.`
-    );
+  if (typeof command !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(command)) {
+    throw new Error(`Invalid Itô command ${JSON.stringify(command || "(missing)")}.`);
   }
   if (command === "auth" && withoutJson.includes("--no-browser")) {
     throw new Error("--no-browser is valid only for ecc ito login; auth is validation-only.");
@@ -176,6 +185,7 @@ function parseArgs(argv, environment = process.env) {
 
   return Object.freeze({
     help: false,
+    command,
     invocationArgs: Object.freeze([
       ...(jsonIndexes.length === 1 ? ["--json"] : []),
       command,
@@ -264,7 +274,28 @@ function buildInvocation(executable, args) {
   });
 }
 
-function invokeIto(executable, args, environment = process.env) {
+function discoverItoCapabilities(executable, environment = process.env) {
+  const invocation = buildInvocation(executable, ["capabilities", "--json"]);
+  const result = spawnSync(invocation.executable, invocation.args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...createSafeItoEnvironment(environment) },
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: MAX_OUTPUT_BYTES,
+    timeout: CAPABILITY_TIMEOUT_MS,
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.error) {
+    throw new Error(`The local Itô capability contract could not be read: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error("The local Itô CLI rejected credential-free capability discovery.");
+  }
+  return parseItoCapabilities(result.stdout || "");
+}
+
+function invokeIto(executable, args, environment = process.env, capability) {
   const invocation = buildInvocation(executable, args);
   const command = getInvocationCommand(args);
   const isNodeQualification = command === "evals";
@@ -274,7 +305,9 @@ function invokeIto(executable, args, environment = process.env) {
     encoding: "utf8",
     // Keep policy helpers immutable for callers, but give child-process
     // instrumentation its own mutable copy (for example NODE_V8_COVERAGE).
-    env: { ...createSafeItoInvocationEnvironment(environment, args) },
+    env: {
+      ...createSafeItoInvocationEnvironment(environment, args, { capability }),
+    },
     stdio: isDeviceLogin ? "inherit" : ["pipe", "pipe", "pipe"],
     maxBuffer: MAX_OUTPUT_BYTES,
     timeout: isNodeQualification ? NODE_QUALIFICATION_TIMEOUT_MS : undefined,
@@ -302,7 +335,9 @@ function main(argv = process.argv.slice(2), environment = process.env) {
       return 0;
     }
     const executable = resolveItoExecutable(environment);
-    return invokeIto(executable, parsed.invocationArgs, environment);
+    const manifest = discoverItoCapabilities(executable, environment);
+    const capability = authorizeEccCapability(manifest, parsed.command);
+    return invokeIto(executable, parsed.invocationArgs, environment, capability);
   } catch (error) {
     console.error(`Error: ${error.message}`);
     return 1;
@@ -316,10 +351,11 @@ if (require.main === module) {
 module.exports = Object.freeze({
   CANONICAL_PACKAGE_PATH,
   CANONICAL_REPOSITORY,
+  CAPABILITY_TIMEOUT_MS,
   EXECUTABLE_OVERRIDE,
   NODE_QUALIFICATION_TIMEOUT_MS,
-  SUPPORTED_COMMANDS,
   buildInvocation,
+  discoverItoCapabilities,
   invokeIto,
   main,
   parseArgs,

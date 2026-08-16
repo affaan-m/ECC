@@ -4,9 +4,8 @@
 
 const assert = require("assert");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { authorizeEccCapability } = require("../../scripts/lib/ito-capabilities");
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
 
@@ -64,32 +63,19 @@ const results = [
     assert.match(skill, /--confirmation-ref <opaque-non-authorizing-reference>/i);
     assert.doesNotMatch(skill, /--confirmation-token|--api-key|--access-token/i);
   }),
-  test("keeps unsupported serving outside the executable bridge", () => {
-    const bridge = read("scripts/ito.js");
-    assert.match(bridge, /SUPPORTED_COMMANDS[^\n]+login[^\n]+auth[^\n]+find[^\n]+status[^\n]+evals/);
-    assert.doesNotMatch(bridge, /SUPPORTED_COMMANDS[^\n]+serve/);
-    assert.match(bridge, /Unsupported Itô command/);
-
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ecc-ito-serve-reject-"));
-    try {
-      const canonicalDir = path.join(fixtureRoot, "cli", "ito-compute-cli", "dist", "bin");
-      fs.mkdirSync(canonicalDir, { recursive: true });
-      const marker = path.join(fixtureRoot, "spawned");
-      const executable = path.join(canonicalDir, "ito.js");
-      fs.writeFileSync(executable, `require("fs").writeFileSync(${JSON.stringify(marker)}, "spawned");\n`);
-      const result = spawnSync(process.execPath, [
-        path.join(REPO_ROOT, "scripts", "ecc.js"), "ito", "serve",
-        "--booking", "booking_test", "--model", "model_test",
-      ], {
-        encoding: "utf8",
-        env: { ...process.env, ECC_ITO_CLI_EXECUTABLE: executable },
-      });
-      assert.notStrictEqual(result.status, 0);
-      assert.match(result.stderr, /Unsupported Itô command "serve"/);
-      assert.ok(!fs.existsSync(marker), "unsupported serve spawned the canonical child");
-    } finally {
-      fs.rmSync(fixtureRoot, { recursive: true, force: true });
-    }
+  test("keeps workload-serving effects outside the executable policy", () => {
+    const capability = Object.freeze({
+      name: "serve",
+      availability: "supported",
+      auth: "required",
+      network: "ito_api",
+      side_effect: "workload_start",
+      authority: "entitled_workload",
+    });
+    assert.throws(
+      () => authorizeEccCapability({ commands: [capability] }, "serve"),
+      /outside ECC's safe policy: workload_start/,
+    );
   }),
   test("ships canonical inference through the existing opt-in compute module", () => {
     const modules = readJson("manifests/install-modules.json").modules;
@@ -110,7 +96,7 @@ const results = [
       {
         id: "capability:ito-compute",
         family: "capability",
-        description: "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+        description: "Capability-validated Itô GPU inventory, RFQ, status, read-only workload inspection, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
         modules: ["ito-compute"],
       }
     );

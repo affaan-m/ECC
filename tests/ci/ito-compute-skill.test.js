@@ -40,6 +40,8 @@ function main() {
         "ecc ito auth",
         "ecc ito find",
         "ecc ito status",
+        "ecc ito workload-status",
+        "ecc ito capabilities",
         "ecc ito evals",
       ]) {
         assert.match(skill, new RegExp(command.replace(" ", "\\s+")));
@@ -67,6 +69,8 @@ function main() {
       assert.match(skill, /--no-browser/);
       assert.match(skill, /macOS Keychain/i);
       assert.match(skill, /(?:auth|find|status).*ITO_API_KEY/i);
+      assert.match(skill, /ito\.cli\.capabilities\.v1/);
+      assert.match(skill, /workload start, cancel, and cleanup effects remain blocked/i);
       assert.match(skill, /ITO_AUTH_MODE=legacy[^.]*not required/i);
       assert.match(skill, /ECC (?:itself )?(?:does|performs) no browser automation/i);
       assert.match(skill, /ITO_ENABLE_SIXTYTWO_LIVE/);
@@ -93,6 +97,8 @@ function main() {
         assert.doesNotMatch(source, /ecc ito auth --no-browser/i, relativePath);
         assert.match(source, /ITO_API_KEY.*(?:auth|find|status)/is, relativePath);
         assert.match(source, /ITO_AUTH_MODE=legacy[^.]*not required/i, relativePath);
+        assert.match(source, /ito\.cli\.capabilities\.v1/i, relativePath);
+        assert.match(source, /workload-status/i, relativePath);
       }
     }],
     ["registers one opt-in install module and capability", () => {
@@ -117,7 +123,7 @@ function main() {
         {
           id: "capability:ito-compute",
           family: "capability",
-          description: "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+          description: "Capability-validated Itô GPU inventory, RFQ, status, read-only workload inspection, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
           modules: ["ito-compute"],
         }
       );

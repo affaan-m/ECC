@@ -94,11 +94,27 @@ function createSafeItoInvocationEnvironment(
   options = {},
 ) {
   const command = getInvocationCommand(args);
+  const capability = options.capability;
+  const deferCapabilityPolicy = options.deferCapabilityPolicy === true;
+  const includeItoRuntime = deferCapabilityPolicy
+    ? command !== "evals"
+    : capability
+      ? capability.network === "ito_api"
+      : ITO_RUNTIME_COMMANDS.has(command);
+  const includeItoApiKey = deferCapabilityPolicy
+    ? !["login", "logout", "evals"].includes(command)
+    : capability
+      ? capability.auth === "required"
+      : ["auth", "find", "status"].includes(command);
   return createSafeItoEnvironment(source, {
     includeControls: options.includeControls === true,
-    includeItoRuntime: ITO_RUNTIME_COMMANDS.has(command),
-    includeItoApiKey: ["auth", "find", "status"].includes(command),
-    includeItoEvals: command === "evals",
+    includeItoRuntime,
+    includeItoApiKey,
+    includeItoEvals: deferCapabilityPolicy
+      ? command === "evals"
+      : capability
+        ? capability.network === "explicit_nodes"
+        : command === "evals",
   });
 }
 

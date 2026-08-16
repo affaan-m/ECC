@@ -103,7 +103,15 @@ Itô platform. ECC adds no shadow store.
 
 ## Unsupported in this slice
 
-ECC exposes no quote lock, purchase, workload execution, or inference command.
+ECC validates the canonical CLI's local-only `ito.cli.capabilities.v1` manifest
+before forwarding. Supported commands with `side_effect: none` and `authority:
+none` are derived from that manifest; this currently
+adds `capabilities` and read-only `workload-status` without a handwritten
+allowlist update.
+
+ECC exposes no quote lock, purchase, workload start, cancel, cleanup, or
+inference command. Those advertised effects remain outside the explicit ECC
+policy.
 Node qualification is live-only through the separately gated canonical
 adapter; the ECC bridge does not expose its paper fixture mode.
 
@@ -164,7 +172,7 @@ after review.
 
 The local contract suite proves:
 
-- only the six supported operations spawn;
+- capability discovery plus seven reviewed target operations spawn;
 - RFQ arguments are forwarded without economic reinterpretation;
 - only approved Itô runtime or isolated node-qualification variables cross the
   process boundary;
