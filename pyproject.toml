@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "anthropic>=0.120.2",
+    "anthropic>=0.122.0",
     "openai>=1.30.0",
 ]
 
