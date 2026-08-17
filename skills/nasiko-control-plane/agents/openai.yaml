@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nasiko Control Plane"
+  short_description: "Safely install and inspect the optional Nasiko control plane"
+  default_prompt: "Use $nasiko-control-plane to inspect or explicitly install the pinned Nasiko CLI without enabling telemetry or exposing secrets."

@@ -676,6 +676,36 @@
       "stability": "beta"
     },
     {
+      "id": "nasiko-control-plane",
+      "kind": "skills",
+      "description": "Explicitly gated Nasiko control-plane installation, status, and agent-operations guidance with pinned artifact verification and opt-in telemetry boundaries.",
+      "paths": [
+        "skills/nasiko-control-plane"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "experimental"
+    },
+    {
       "id": "social-distribution",
       "kind": "skills",
       "description": "Social publishing and distribution skills.",
