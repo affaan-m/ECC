@@ -38,6 +38,23 @@ Routine implementation details, easily reversible changes, and short-lived exper
 - The project needs a stable domain-language entry point but has no equivalent document.
 - Context work uncovers a durable decision that should be handed to `architecture-decision-records`.
 
+## When to Use
+
+Use this skill when stable domain language needs one evidence-backed home, or when context work reveals a hard-to-reverse decision that belongs in the repository's existing ADR system.
+
+## How It Works
+
+1. Reuse the mapped context or glossary artifact when one exists; create `CONTEXT.md` only when no equivalent source of truth is available.
+2. Record precise domain definitions, relationships, confirmed interpretations, and explicitly unconfirmed ambiguities without mixing in implementation or task state.
+3. Route durable tradeoffs to `architecture-decision-records` and link the resulting ADR instead of copying its rationale into context documents.
+4. Keep schedules, blockers, and execution status in the existing issue tracker.
+
+## Examples
+
+- Define an overloaded business term once and link it to the code or contract that proves its meaning.
+- Mark a domain interpretation as `needs confirmation` until a domain owner resolves it.
+- Hand off a durable storage or boundary decision to the existing ADR workflow and link it from the context artifact.
+
 ## Anti-Patterns
 
 - Copying current tasks, schedules, full requirements, or implementation details into `CONTEXT.md`.

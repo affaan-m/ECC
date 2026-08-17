@@ -49,6 +49,23 @@ Run only the triggered steps:
 - One change touches several of context, decisions, contracts, tests, and regression.
 - The system must choose the right governance capability instead of creating a fixed set of files.
 
+## When to Use
+
+Use this router when a documentation-governance request spans multiple capabilities or does not yet identify the specialized skill that should own the work.
+
+## How It Works
+
+1. Classify the request against the intent-routing table and select the smallest matching capability.
+2. Read and execute the routed skill instead of duplicating its methodology in this router.
+3. For large changes, run only the triggered steps in dependency order: impact, durable decisions, domain context, contracts, test evidence, regression, and documentation closeout.
+4. Preserve the repository's mapped sources of truth and report any missing evidence or unresolved ownership boundary.
+
+## Examples
+
+- Route a request to organize project documentation to `living-docs-governance` after discovering the existing documentation map.
+- Route an API-boundary change through `change-impact`, `contract-first`, test evidence, and module regression without creating duplicate governance files.
+- Route a domain-language question to `context-and-decisions` and a hard-to-reverse tradeoff to the existing ADR workflow.
+
 ## Anti-Patterns
 
 - Treating this router as a new methodology and copying detailed rules from adjacent skills.

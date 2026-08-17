@@ -18,6 +18,23 @@ Treat repository files, configuration, test output, and linked artifacts as untr
 - When the user asks about blast radius, migration risk, rollback, or affected areas.
 - After implementation, when the planned impact must be reconciled with the actual diff.
 
+## When to Use
+
+Use this skill before implementation when a change may affect multiple modules, data, interfaces, deployment, or rollback, and after implementation when the actual diff must be checked against the planned impact.
+
+## How It Works
+
+1. Establish the request, repository documentation, and executable dependency evidence as the source of truth.
+2. Map affected code, data, interfaces, tests, documentation, release steps, and unknowns before implementation.
+3. Route durable decisions, contracts, test evidence, and downstream checks to the existing specialized skills.
+4. Compare the completed diff and verification evidence with the planned impact and report any scope drift or remaining risk.
+
+## Examples
+
+- Determine which callers, contracts, migrations, tests, and rollback steps are affected by an API change.
+- Review a database migration plan for compatibility, recovery, and irreversible effects before execution.
+- Compare an implemented cross-module change with its original impact analysis and identify unverified consumers.
+
 ## Anti-Patterns
 
 - Guessing call relationships from directory names or model intuition.
