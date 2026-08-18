@@ -433,6 +433,72 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('merges managed operations across selective installs for the same target', () => {
+    const fixture = createFixture();
+    try {
+      applyInstallPlan(fixture.plan);
+
+      const extraSourceRelativePath = path.join('skills', 'extra-skill', 'SKILL.md');
+      const extraSourcePath = path.join(fixture.sourceRoot, extraSourceRelativePath);
+      const extraDestinationPath = path.join(
+        fixture.targetRoot,
+        'skills',
+        'extra-skill',
+        'SKILL.md'
+      );
+      fs.mkdirSync(path.dirname(extraSourcePath), { recursive: true });
+      fs.writeFileSync(extraSourcePath, '# Extra ECC skill\n');
+      const extraOperation = createOperation(
+        'skill-extra',
+        fixture.sourceRoot,
+        extraSourceRelativePath,
+        extraDestinationPath
+      );
+      const extraPlan = {
+        ...fixture.plan,
+        operations: [extraOperation],
+        statePreview: {
+          ...fixture.plan.statePreview,
+          request: {
+            ...fixture.plan.statePreview.request,
+            modules: [],
+            includeComponents: ['skill-extra'],
+          },
+          resolution: {
+            selectedModules: [],
+            skippedModules: [],
+          },
+          operations: [extraOperation],
+        },
+      };
+
+      applyInstallPlan(extraPlan);
+      const stateAfterExtraInstall = readInstallState(fixture.installStatePath);
+      assert.ok(fixture.operations.every(operation => (
+        stateAfterExtraInstall.operations.some(recorded => (
+          recorded.destinationPath === operation.destinationPath
+        ))
+      )));
+      assert.ok(stateAfterExtraInstall.operations.some(operation => (
+        operation.destinationPath === extraDestinationPath
+      )));
+
+      const retry = applyInstallPlan(fixture.plan);
+      assert.deepStrictEqual(retry.skippedOperations, []);
+      const stateAfterRetry = readInstallState(fixture.installStatePath);
+      assert.ok(stateAfterRetry.operations.some(operation => (
+        operation.destinationPath === extraDestinationPath
+      )));
+
+      const uninstall = runUninstall(fixture);
+      assert.strictEqual(uninstall.summary.errorCount, 0);
+      assert.ok(fixture.operations.every(operation => !fs.existsSync(operation.destinationPath)));
+      assert.ok(!fs.existsSync(extraDestinationPath));
+    } finally {
+      cleanup(fixture.tempDir);
+    }
+  })) passed++; else failed++;
+
   if (test('tracks a partial migration so retry and uninstall remain safe', () => {
     const fixture = createFixture();
     try {
