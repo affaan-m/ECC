@@ -384,7 +384,7 @@ function main() {
       assert.match(record, /-> any open-source model/);
       assert.doesNotMatch(record, /public Kimi|Moonshot|video and sponsorship/i);
       assert.match(record, /Status: \*\*Implemented local CLI bridge/i);
-      assert.match(record, /auth`, `find`, `status`, and `evals/);
+      assert.match(record, /`capabilities`, `login`, `logout`,\s*`auth`, `find`, `status`, read-only `workload-status`, and `evals`/);
       assert.match(record, /ito_auth`, `ito_find`, and `ito_status/);
       assert.match(record, /sixtytwo-cli==0\.3\.33/);
       assert.match(record, /explicit node/i);

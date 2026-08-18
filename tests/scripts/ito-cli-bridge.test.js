@@ -258,8 +258,42 @@ async function main() {
           ITO_API_KEY: "must-not-cross-after-invalid-contract",
         });
         assert.notStrictEqual(result.status, 0);
-        assert.match(result.stderr, /duplicate|capabilit/i);
+        assert.match(result.stderr, /duplicate command/i);
         assert.ok(!fs.existsSync(probe.log), "invalid capability contract reached target invocation");
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
+      }
+    }],
+    ["rejects embedded-newline aliases in the exact MCP tool surface", () => {
+      const envelope = capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS);
+      envelope.data.mcp_tools = ["ito_auth\nito_find", "ito_status"];
+      assert.throws(
+        () => parseItoCapabilities(JSON.stringify(envelope)),
+        /MCP tool surface changed/i,
+      );
+    }],
+    ["never auto-authorizes read-only commands that contact explicit nodes", () => {
+      const explicitNodeRead = {
+        name: "topology",
+        availability: "supported",
+        auth: "none",
+        network: "explicit_nodes",
+        side_effect: "none",
+        authority: "none",
+      };
+      const probe = makeItoProbe(0, {
+        capabilityEnvelope: capabilityEnvelope([...DEFAULT_CAPABILITY_COMMANDS, explicitNodeRead]),
+      });
+      try {
+        const result = runCli(["ito", "topology"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+          SIXTYTWO_API_TOKEN: "must-not-cross-outside-evals",
+          SSH_AUTH_SOCK: "/tmp/must-not-cross-outside-evals.sock",
+        });
+        assert.notStrictEqual(result.status, 0);
+        assert.match(result.stderr, /outside ECC's safe policy/i);
+        assert.ok(fs.existsSync(probe.capabilityLog), "capability discovery did not run");
+        assert.ok(!fs.existsSync(probe.log), "explicit-node command reached target invocation");
       } finally {
         fs.rmSync(probe.directory, { recursive: true, force: true });
       }

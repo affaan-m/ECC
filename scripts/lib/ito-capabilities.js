@@ -3,6 +3,7 @@
 const CONTRACT_VERSION = "ito.cli.capabilities.v1";
 const MAX_COMMANDS = 64;
 const COMMAND_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const MCP_TOOLS = Object.freeze(["ito_auth", "ito_find", "ito_status"]);
 const ENUMS = Object.freeze({
   availability: new Set(["supported", "unsupported"]),
   auth: new Set(["none", "required", "device_bootstrap"]),
@@ -135,7 +136,8 @@ function parseItoCapabilities(stdout) {
 
   if (
     !Array.isArray(data.mcp_tools)
-    || data.mcp_tools.join("\n") !== "ito_auth\nito_find\nito_status"
+    || data.mcp_tools.length !== MCP_TOOLS.length
+    || data.mcp_tools.some((tool, index) => tool !== MCP_TOOLS[index])
   ) {
     throw new Error("Invalid Itô capability contract: MCP tool surface changed.");
   }
@@ -194,7 +196,11 @@ function authorizeEccCapability(manifest, requestedCommand) {
       `Itô command ${JSON.stringify(requestedCommand)} is outside ECC's safe policy: ${capability.side_effect}.`,
     );
   }
-  if (capability.side_effect === "none" && capability.authority === "none") {
+  if (
+    capability.side_effect === "none"
+    && capability.authority === "none"
+    && capability.network !== "explicit_nodes"
+  ) {
     return capability;
   }
   throw new Error(

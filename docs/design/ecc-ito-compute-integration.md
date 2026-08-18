@@ -24,14 +24,16 @@ ECC delegates to the canonical Itô package in
 `Ito-Markets/ito-cloud-runtime/cli/ito-compute-cli`. ECC does not maintain a
 second API client or response schema.
 
-The wrapper exposes only the canonical CLI's `login`, `logout`, `auth`, `find`, `status`, and `evals`
-operations:
+The wrapper exposes only the canonical CLI's `capabilities`, `login`, `logout`,
+`auth`, `find`, `status`, read-only `workload-status`, and `evals` operations:
 
+    ecc ito capabilities
     ecc ito login [--no-browser]
     ecc ito logout
     ecc ito auth
     ecc ito find <all required RFQ constraints>
     ecc ito status
+    ecc ito workload-status <run-id>
     ecc ito evals --cluster <id> --live-sixtytwo --nodes <list> --config-dir <dir>
 
 The canonical MCP server exposes only `ito_auth`, `ito_find`, and `ito_status`.
@@ -122,7 +124,8 @@ model endpoint, deployed a workload, reserved capacity, or moved funds.
 
 `skills/ito-inference` is the only canonical serving skill; `ito-serve` is
 trigger language, not a second installed skill. The current ECC bridge has no
-`serve` verb and rejects it before resolving or spawning the canonical client.
+`serve` target and rejects it after credential-free capability discovery but
+before any credential-bearing target invocation.
 The canonical runtime documents `inference` only as an unsupported compatibility
 probe, and MCP remains limited to auth, find, and status. Serving requests
 therefore stop before login.

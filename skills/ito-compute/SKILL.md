@@ -1,6 +1,6 @@
 ---
 name: ito-compute
-description: Query live GPU inventory, submit an authenticated Itô fixed-rate RFQ, inspect RFQ, procurement, or existing workload status, revoke device credentials, and run explicitly gated node qualification through the separately installed canonical CLI. Use when a user asks to find H100/H200 capacity, request a fixed compute rate, check Itô compute or workload status, validate GPU nodes, revoke Itô access, or rent or purchase GPU compute and needs the supported boundary explained.
+description: Use the canonical Itô CLI for authenticated compute reads, RFQs, status, and gated node qualification.
 ---
 
 # Itô Compute
@@ -8,6 +8,22 @@ description: Query live GPU inventory, submit an authenticated Itô fixed-rate R
 Use the canonical Itô compute CLI or MCP server. ECC does not implement a
 parallel client, local simulation, reservation, workload runner, or inference
 server. ECC itself does no browser automation.
+
+## When to Use
+
+Use this skill to validate Itô device authorization, inspect capabilities,
+submit an explicitly authorized fixed-rate RFQ, read RFQ/procurement/workload
+status, revoke a device credential, or qualify named GPU nodes. Do not use it
+to reserve or purchase capacity, move funds, or start, cancel, or clean up a
+workload.
+
+## How It Works
+
+ECC resolves only the explicitly configured canonical CLI entry. Before each
+target operation, it runs credential-free capability discovery, validates the
+closed provider contract, applies ECC's stricter effect policy, and forwards a
+least-privilege child environment. Unknown effects and direct-node commands
+outside the exact `evals` policy fail closed.
 
 ## Install the canonical local package
 
@@ -37,10 +53,13 @@ Before every forwarded operation, ECC invokes `capabilities --json` with a
 credential-free environment and validates the closed `ito.cli.capabilities.v1`
 contract. Run `ecc ito capabilities --json` to inspect that installed contract
 directly. ECC automatically accepts supported no-side-effect commands and keeps
-explicit policy only for login, logout, RFQ submission, and node qualification.
+explicit policy for login, logout, RFQ submission, status reconciliation, and
+node qualification.
 Workload start, cancel, and cleanup effects remain blocked.
 
-## CLI workflow
+## Examples
+
+### CLI workflow
 
 1. Run `ecc ito login` before the first operation. ECC delegates this to the
    canonical CLI's device authorization, which opens the Itô verification page
