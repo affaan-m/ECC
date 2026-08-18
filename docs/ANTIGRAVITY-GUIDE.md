@@ -8,6 +8,14 @@ Native Antigravity 2.0 installation requires ECC 2.2.0 or newer. ECC 2.1.0 uses
 the legacy `.agent/` adapter and does not provide the native layout described
 below.
 
+> [!IMPORTANT]
+> **Temporary release status:** npm latest is currently `ecc-universal@2.1.0`.
+> ECC 2.2.0 has not been published to npm yet. Until it is published, use a
+> current source checkout of `main` for native `.agents` support or wait for the
+> release.
+
+<!-- Temporary: remove this release-status paragraph only after `ecc-universal@2.2.0` is published and registry readback succeeds. -->
+
 ## Quick start
 
 ```bash

@@ -203,6 +203,14 @@
       ]
     },
     {
+      "id": "capability:nasiko-control-plane",
+      "family": "capability",
+      "description": "Explicitly gated Nasiko control-plane installation, status, and agent-operations guidance with pinned artifact verification and opt-in telemetry boundaries.",
+      "modules": [
+        "nasiko-control-plane"
+      ]
+    },
+    {
       "id": "capability:social",
       "family": "capability",
       "description": "Social publishing and distribution skills.",

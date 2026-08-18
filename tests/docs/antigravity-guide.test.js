@@ -33,6 +33,25 @@ test('guide requires an installer with native Antigravity 2.0 support', () => {
   );
 });
 
+test('guide states the temporary npm release boundary', () => {
+  assert.ok(
+    guide.includes('npm latest is currently `ecc-universal@2.1.0`'),
+    'Guide should identify the package version users receive from npm today'
+  );
+  assert.ok(
+    guide.includes('ECC 2.2.0 has not been published to npm yet'),
+    'Guide should not imply that native Antigravity support is already published'
+  );
+  assert.ok(
+    guide.includes('current source checkout of `main` for native `.agents` support'),
+    'Guide should direct users to the main source checkout until ECC 2.2.0 is published'
+  );
+  assert.ok(
+    guide.includes('remove this release-status paragraph only after `ecc-universal@2.2.0` is published and registry readback succeeds'),
+    'Guide should retain a removal condition for the temporary release warning'
+  );
+});
+
 test('guide keeps the target project as the working directory', () => {
   assert.ok(
     guide.includes('Run every command below from the project you want to configure'),

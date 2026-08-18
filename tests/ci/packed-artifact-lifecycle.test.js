@@ -125,6 +125,25 @@ test('public CLI invocations use npm exec instead of internal package paths', ()
   assert.ok(!unixInvocation.args.some(argument => argument.includes('node_modules')));
 });
 
+test('Windows public CLI invocation accepts the exact Itô capability selection', () => {
+  const invocation = lifecycle.getNpmExecInvocation(
+    [
+      'ecc', 'install', '--profile', 'core',
+      '--with', 'capability:ito-compute',
+      '--with', 'capability:prediction-markets',
+      '--target', 'cursor', '--json',
+    ],
+    { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
+    'win32'
+  );
+
+  assert.strictEqual(invocation.command, 'C:\\Windows\\System32\\cmd.exe');
+  assert.strictEqual(
+    invocation.args[3],
+    'npm exec --offline --yes=false -- ecc install --profile core --with capability:ito-compute --with capability:prediction-markets --target cursor --json'
+  );
+});
+
 test('lifecycle cleanup retries Windows file locks without masking results', () => {
   const source = fs.readFileSync(
     path.join(__dirname, 'packed-artifact-lifecycle.js'),

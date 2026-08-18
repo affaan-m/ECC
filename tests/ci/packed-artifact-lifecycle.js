@@ -135,7 +135,7 @@ function getNpmExecInvocation(publicArgs, environment, platform = process.platfo
 
   const commandParts = ['npm', ...npmArgs];
   for (const part of commandParts) {
-    if (!/^[A-Za-z0-9_.=+/-]+$/.test(part)) {
+    if (!/^[A-Za-z0-9_.=+,:/-]+$/.test(part)) {
       throw new Error(`Unsafe npm exec argument for Windows lifecycle: ${part}`);
     }
   }
@@ -292,18 +292,70 @@ function runLifecycle(options) {
     assert.match(setupHelp.stdout, /ECC guided setup/);
     assert.match(setupHelp.stdout, /ecc setup --mode claude-plugin/);
 
+    const itoInstallArgs = [
+      'install',
+      '--profile', 'core',
+      '--with', 'capability:ito-compute',
+      '--with', 'capability:prediction-markets',
+      '--target', 'cursor',
+      '--json',
+    ];
     parseJsonOutput(
-      runCli(['install', '--profile', 'core', '--target', 'cursor', '--json']),
-      'initial install'
+      runCli(itoInstallArgs),
+      'initial Itô install'
     );
     assert.ok(fs.existsSync(statePath), 'initial install must write Cursor install-state');
     const initialState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     const initialLedger = getOperationLedger(initialState);
+    assert.ok(
+      initialState.operations.some(operation => operation.moduleId === 'ito-compute'),
+      'installed ledger must include the Itô compute module'
+    );
+    assert.ok(
+      initialState.operations.some(operation => operation.moduleId === 'prediction-market-skills'),
+      'installed ledger must include the Itô baskets module'
+    );
+    for (const relativePath of [
+      'skills/ito-baskets/SKILL.md',
+      'skills/ito-baskets/agents/openai.yaml',
+      'skills/ito-baskets/scripts/ito-baskets.js',
+      'skills/ito-compute/SKILL.md',
+      'skills/ito-compute/agents/openai.yaml',
+      'skills/ito-inference/SKILL.md',
+      'skills/ito-training/SKILL.md',
+    ]) {
+      const installedPath = path.join(cursorRoot, relativePath);
+      const installedStat = fs.lstatSync(installedPath);
+      assert.ok(installedStat.isFile(), `packed Itô asset is not a file: ${relativePath}`);
+      assert.ok(!installedStat.isSymbolicLink(), `packed Itô asset is a symlink: ${relativePath}`);
+      assert.ok(installedStat.size > 0, `packed Itô asset is empty: ${relativePath}`);
+    }
+    const hostileBin = path.join(tempRoot, 'hostile-bin');
+    const hostileItoSentinel = path.join(tempRoot, 'hostile-ito-spawned');
+    fs.mkdirSync(hostileBin, { recursive: true });
+    const hostileIto = path.join(hostileBin, process.platform === 'win32' ? 'ito.cmd' : 'ito');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(hostileIto, `@echo hostile>"${hostileItoSentinel}"\r\n`, 'utf8');
+    } else {
+      fs.writeFileSync(hostileIto, `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(hostileItoSentinel)}, 'spawned');\n`, 'utf8');
+      fs.chmodSync(hostileIto, 0o755);
+    }
+    const itoStatus = runCli(['ito', 'status'], {
+      expectedStatus: 1,
+      env: {
+        ...environment,
+        PATH: `${hostileBin}${path.delimiter}${environment.PATH || environment.Path || ''}`,
+        ITO_API_KEY: 'must-not-reach-hostile-path',
+      },
+    });
+    assert.match(itoStatus.stderr, /canonical ito-compute-cli is unpublished/i);
+    assert.doesNotMatch(itoStatus.stderr, /npx|npm exec|npm link|install -g/i);
+    assert.ok(!fs.existsSync(hostileItoSentinel), 'packed Itô bridge executed a PATH collision');
     const managedSnapshot = getManagedOperationSnapshot(initialState, cursorRoot);
     assert.ok(managedSnapshot.length > 0, 'initial install must create managed Cursor files');
 
     parseJsonOutput(
-      runCli(['install', '--profile', 'core', '--target', 'cursor', '--json']),
+      runCli(itoInstallArgs),
       'repeat install'
     );
     const repeatState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -405,7 +457,8 @@ function runLifecycle(options) {
       lifecycle: [
         'npm-install',
         'public-ecc-universal-setup',
-        'cursor-install',
+        'cursor-ito-install',
+        'public-ecc-ito-fail-closed',
         'cursor-repeat-install',
         'doctor-clean',
         'status-installed',
