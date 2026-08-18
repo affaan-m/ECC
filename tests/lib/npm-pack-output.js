@@ -3,19 +3,23 @@ function isPackEntry(value) {
 }
 
 function getNpmPackEntry(output, packageName) {
+  const matchesPackage = value => (
+    isPackEntry(value) && value.name === packageName
+  );
+
   if (Array.isArray(output)) {
-    return output.find(isPackEntry);
+    return output.find(matchesPackage);
   }
 
   if (!isPackEntry(output)) {
     return undefined;
   }
 
-  if (isPackEntry(output[packageName])) {
+  if (matchesPackage(output[packageName])) {
     return output[packageName];
   }
 
-  return Object.values(output).find(isPackEntry);
+  return Object.values(output).find(matchesPackage);
 }
 
 module.exports = { getNpmPackEntry };
