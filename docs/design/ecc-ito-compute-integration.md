@@ -106,8 +106,9 @@ Itô platform. ECC adds no shadow store.
 ## Unsupported in this slice
 
 ECC validates the canonical CLI's local-only `ito.cli.capabilities.v1` manifest
-before forwarding. Supported commands with `side_effect: none` and `authority:
-none` are derived from that manifest; this currently
+before forwarding. Supported commands are derived automatically only when they
+declare `side_effect: none`, `authority: none`, and a network policy other than
+`explicit_nodes`; this currently
 adds `capabilities` and read-only `workload-status` without a handwritten
 allowlist update.
 

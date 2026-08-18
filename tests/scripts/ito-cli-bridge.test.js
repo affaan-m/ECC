@@ -265,8 +265,14 @@ async function main() {
       }
     }],
     ["rejects embedded-newline aliases in the exact MCP tool surface", () => {
-      const envelope = capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS);
-      envelope.data.mcp_tools = ["ito_auth\nito_find", "ito_status"];
+      const baseline = capabilityEnvelope(DEFAULT_CAPABILITY_COMMANDS);
+      const envelope = {
+        ...baseline,
+        data: {
+          ...baseline.data,
+          mcp_tools: ["ito_auth\nito_find", "ito_status"],
+        },
+      };
       assert.throws(
         () => parseItoCapabilities(JSON.stringify(envelope)),
         /MCP tool surface changed/i,

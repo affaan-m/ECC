@@ -52,7 +52,8 @@ key or token in arguments, tracked files, MCP results, logs, or chat.
 Before every forwarded operation, ECC invokes `capabilities --json` with a
 credential-free environment and validates the closed `ito.cli.capabilities.v1`
 contract. Run `ecc ito capabilities --json` to inspect that installed contract
-directly. ECC automatically accepts supported no-side-effect commands and keeps
+directly. ECC automatically accepts supported commands only when they declare
+no side effect, no authority, and no `explicit_nodes` network access. It keeps
 explicit policy for login, logout, RFQ submission, status reconciliation, and
 node qualification.
 Workload start, cancel, and cleanup effects remain blocked.
