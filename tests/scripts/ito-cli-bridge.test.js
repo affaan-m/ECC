@@ -90,13 +90,13 @@ function capabilityEnvelope(commands) {
 const DEFAULT_CAPABILITY_COMMANDS = Object.freeze([
   { name: "capabilities", availability: "supported", auth: "none", network: "none", side_effect: "none", authority: "none" },
   { name: "login", availability: "supported", auth: "device_bootstrap", network: "ito_api", side_effect: "credential_write", authority: "device_owner" },
-  { name: "logout", availability: "supported", auth: "none", network: "ito_api", side_effect: "credential_revoke", authority: "device_owner" },
+  { name: "logout", availability: "supported", auth: "required", network: "ito_api", side_effect: "credential_revoke", authority: "device_owner" },
   { name: "auth", availability: "supported", auth: "required", network: "ito_api", side_effect: "none", authority: "none" },
   { name: "find", availability: "supported", auth: "required", network: "ito_api", side_effect: "rfq_submit", authority: "buyer_rfq" },
   { name: "status", availability: "supported", auth: "required", network: "ito_api", side_effect: "provisioning_reconcile", authority: "buyer_rfq" },
   { name: "serve", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_start", authority: "entitled_workload" },
   { name: "train", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_start", authority: "entitled_workload" },
-  { name: "workload-status", availability: "supported", auth: "required", network: "ito_api", side_effect: "none", authority: "none" },
+  { name: "workload-status", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_reconcile", authority: "entitled_workload" },
   { name: "workload-cancel", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_cancel", authority: "entitled_workload" },
   { name: "workload-cleanup", availability: "supported", auth: "required", network: "ito_api", side_effect: "workload_cleanup", authority: "entitled_workload" },
   { name: "evals", availability: "supported", auth: "none", network: "explicit_nodes", side_effect: "node_qualification", authority: "named_node_operator" },
@@ -178,7 +178,7 @@ async function main() {
         }
       }
     }],
-    ["derives a newly supported read-only command from a credential-free capability probe", () => {
+    ["forwards explicitly reviewed workload reconciliation from a credential-free capability probe", () => {
       const probe = makeItoProbe();
       try {
         const result = runCli(["ito", "workload-status", "run_123", "--json"], {
@@ -217,7 +217,7 @@ async function main() {
       }
     }],
     ["requires exact tuples for every explicitly reviewed effectful command", () => {
-      for (const commandName of ["login", "logout", "find", "evals"]) {
+      for (const commandName of ["login", "logout", "find", "workload-status", "evals"]) {
         const commands = DEFAULT_CAPABILITY_COMMANDS.map((command) => (
           command.name === commandName
             ? { ...command, auth: "none", network: "none", side_effect: "none", authority: "none" }

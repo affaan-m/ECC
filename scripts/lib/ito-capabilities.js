@@ -16,6 +16,7 @@ const ENUMS = Object.freeze({
     "workload_start",
     "workload_cancel",
     "workload_cleanup",
+    "workload_reconcile",
     "provisioning_reconcile",
     "node_qualification",
   ]),
@@ -35,7 +36,7 @@ const EXPLICIT_EFFECT_POLICY = Object.freeze({
     authority: "device_owner",
   }),
   logout: Object.freeze({
-    auth: "none",
+    auth: "required",
     network: "ito_api",
     side_effect: "credential_revoke",
     authority: "device_owner",
@@ -51,6 +52,12 @@ const EXPLICIT_EFFECT_POLICY = Object.freeze({
     network: "ito_api",
     side_effect: "provisioning_reconcile",
     authority: "buyer_rfq",
+  }),
+  "workload-status": Object.freeze({
+    auth: "required",
+    network: "ito_api",
+    side_effect: "workload_reconcile",
+    authority: "entitled_workload",
   }),
   evals: Object.freeze({
     auth: "none",

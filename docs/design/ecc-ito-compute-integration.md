@@ -106,11 +106,13 @@ Itô platform. ECC adds no shadow store.
 ## Unsupported in this slice
 
 ECC validates the canonical CLI's local-only `ito.cli.capabilities.v1` manifest
-before forwarding. Supported commands are derived automatically only when they
-declare `side_effect: none`, `authority: none`, and a network policy other than
-`explicit_nodes`; this currently
-adds `capabilities` and read-only `workload-status` without a handwritten
-allowlist update.
+before forwarding. Commands are derived automatically only when they declare
+`side_effect: none`, `authority: none`, and a network policy other than
+`explicit_nodes`; this currently adds only credential-free local operations such
+as `capabilities`. `workload-status` instead requires the exact reviewed tuple
+`auth: required`, `network: ito_api`, `side_effect: workload_reconcile`, and
+`authority: entitled_workload`, because reading current executor state also
+persists the canonical runtime's reconciliation result.
 
 ECC exposes no quote lock, purchase, workload start, cancel, cleanup, or
 inference command. Those advertised effects remain outside the explicit ECC
