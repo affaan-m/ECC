@@ -38,8 +38,14 @@ function createFixture(options = {}) {
   const target = options.target || 'claude';
   const targetRoot = target === 'claude'
     ? path.join(homeDir, '.claude')
-    : path.join(projectRoot, '.claude');
-  const installStatePath = path.join(targetRoot, 'ecc', 'install-state.json');
+    : path.join(projectRoot, target === 'cursor' ? '.cursor' : '.claude');
+  const installStatePath = target === 'cursor'
+    ? path.join(targetRoot, 'ecc-install-state.json')
+    : path.join(targetRoot, 'ecc', 'install-state.json');
+  const adapterId = target === 'claude'
+    ? 'claude-home'
+    : target === 'cursor' ? 'cursor-project' : 'claude-project';
+  const adapterKind = target === 'claude' ? 'home' : 'project';
   const skillFiles = options.skillFiles || {
     'SKILL.md': '# Current ECC skill\n',
     'references/guide.md': '# Current ECC guide\n',
@@ -61,9 +67,9 @@ function createFixture(options = {}) {
     schemaVersion: 'ecc.install.v1',
     installedAt: new Date().toISOString(),
     target: {
-      id: target === 'claude' ? 'claude-home' : 'claude-project',
+      id: adapterId,
       target,
-      kind: target === 'claude' ? 'home' : 'project',
+      kind: adapterKind,
       root: targetRoot,
       installStatePath,
     },
@@ -100,9 +106,9 @@ function createFixture(options = {}) {
       mode: 'manifest',
       target,
       adapter: {
-        id: target === 'claude' ? 'claude-home' : 'claude-project',
+        id: adapterId,
         target,
-        kind: target === 'claude' ? 'home' : 'project',
+        kind: adapterKind,
       },
       targetRoot,
       installRoot: targetRoot,
@@ -433,69 +439,71 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('merges managed operations across selective installs for the same target', () => {
-    const fixture = createFixture();
-    try {
-      applyInstallPlan(fixture.plan);
+  if (test('merges managed operations across selective installs for enabled and disabled migrations', () => {
+    for (const target of ['claude', 'cursor']) {
+      const fixture = createFixture({ target });
+      try {
+        applyInstallPlan(fixture.plan);
 
-      const extraSourceRelativePath = path.join('skills', 'extra-skill', 'SKILL.md');
-      const extraSourcePath = path.join(fixture.sourceRoot, extraSourceRelativePath);
-      const extraDestinationPath = path.join(
-        fixture.targetRoot,
-        'skills',
-        'extra-skill',
-        'SKILL.md'
-      );
-      fs.mkdirSync(path.dirname(extraSourcePath), { recursive: true });
-      fs.writeFileSync(extraSourcePath, '# Extra ECC skill\n');
-      const extraOperation = createOperation(
-        'skill-extra',
-        fixture.sourceRoot,
-        extraSourceRelativePath,
-        extraDestinationPath
-      );
-      const extraPlan = {
-        ...fixture.plan,
-        operations: [extraOperation],
-        statePreview: {
-          ...fixture.plan.statePreview,
-          request: {
-            ...fixture.plan.statePreview.request,
-            modules: [],
-            includeComponents: ['skill-extra'],
-          },
-          resolution: {
-            selectedModules: [],
-            skippedModules: [],
-          },
+        const extraSourceRelativePath = path.join('skills', 'extra-skill', 'SKILL.md');
+        const extraSourcePath = path.join(fixture.sourceRoot, extraSourceRelativePath);
+        const extraDestinationPath = path.join(
+          fixture.targetRoot,
+          'skills',
+          'extra-skill',
+          'SKILL.md'
+        );
+        fs.mkdirSync(path.dirname(extraSourcePath), { recursive: true });
+        fs.writeFileSync(extraSourcePath, '# Extra ECC skill\n');
+        const extraOperation = createOperation(
+          'skill-extra',
+          fixture.sourceRoot,
+          extraSourceRelativePath,
+          extraDestinationPath
+        );
+        const extraPlan = {
+          ...fixture.plan,
           operations: [extraOperation],
-        },
-      };
+          statePreview: {
+            ...fixture.plan.statePreview,
+            request: {
+              ...fixture.plan.statePreview.request,
+              modules: [],
+              includeComponents: ['skill-extra'],
+            },
+            resolution: {
+              selectedModules: [],
+              skippedModules: [],
+            },
+            operations: [extraOperation],
+          },
+        };
 
-      applyInstallPlan(extraPlan);
-      const stateAfterExtraInstall = readInstallState(fixture.installStatePath);
-      assert.ok(fixture.operations.every(operation => (
-        stateAfterExtraInstall.operations.some(recorded => (
-          recorded.destinationPath === operation.destinationPath
-        ))
-      )));
-      assert.ok(stateAfterExtraInstall.operations.some(operation => (
-        operation.destinationPath === extraDestinationPath
-      )));
+        applyInstallPlan(extraPlan);
+        const stateAfterExtraInstall = readInstallState(fixture.installStatePath);
+        assert.ok(fixture.operations.every(operation => (
+          stateAfterExtraInstall.operations.some(recorded => (
+            recorded.destinationPath === operation.destinationPath
+          ))
+        )));
+        assert.ok(stateAfterExtraInstall.operations.some(operation => (
+          operation.destinationPath === extraDestinationPath
+        )));
 
-      const retry = applyInstallPlan(fixture.plan);
-      assert.deepStrictEqual(retry.skippedOperations, []);
-      const stateAfterRetry = readInstallState(fixture.installStatePath);
-      assert.ok(stateAfterRetry.operations.some(operation => (
-        operation.destinationPath === extraDestinationPath
-      )));
+        const retry = applyInstallPlan(fixture.plan);
+        assert.deepStrictEqual(retry.skippedOperations, []);
+        const stateAfterRetry = readInstallState(fixture.installStatePath);
+        assert.ok(stateAfterRetry.operations.some(operation => (
+          operation.destinationPath === extraDestinationPath
+        )));
 
-      const uninstall = runUninstall(fixture);
-      assert.strictEqual(uninstall.summary.errorCount, 0);
-      assert.ok(fixture.operations.every(operation => !fs.existsSync(operation.destinationPath)));
-      assert.ok(!fs.existsSync(extraDestinationPath));
-    } finally {
-      cleanup(fixture.tempDir);
+        const uninstall = runUninstall(fixture);
+        assert.strictEqual(uninstall.summary.errorCount, 0);
+        assert.ok(fixture.operations.every(operation => !fs.existsSync(operation.destinationPath)));
+        assert.ok(!fs.existsSync(extraDestinationPath));
+      } finally {
+        cleanup(fixture.tempDir);
+      }
     }
   })) passed++; else failed++;
 
