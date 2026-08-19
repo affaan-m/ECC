@@ -43,6 +43,38 @@ Scan all component directories and estimate token consumption:
 - Estimate schema overhead at ~500 tokens per tool
 - Flag: servers with >20 tools, servers that wrap simple CLI commands (`gh`, `git`, `npm`, `supabase`, `vercel`)
 
+**Session scaffolding** (the transcript itself)
+
+Everything above is loaded once at startup. A *reconnect* re-injects a second copy of much of it into
+the session transcript as `attachment` lines, and that cost is charged to the same context window.
+Measure it directly rather than estimating:
+
+```sh
+# on the newest transcript for this project
+f=$(ls -t ~/.claude/projects/"${PWD//\//-}"/*.jsonl | head -1)
+python3 - "$f" <<'EOF'
+import json,sys
+tot=att=0
+for line in open(sys.argv[1]):
+    tot+=len(line)
+    try:
+        if json.loads(line).get('type')=='attachment': att+=len(line)
+    except: pass
+print(f"transcript {tot}B | scaffolding {att}B ({att*100//max(tot,1)}%) | conversation {tot-att}B")
+EOF
+```
+
+Measured on a session that had reconnected once: **33,884 of 49,830 bytes — 68% scaffolding**, broken
+down as `skill_listing` 14.6KB, `mcp_instructions_delta` 8.1KB, `deferred_tools_delta` 7.1KB,
+`agent_listing_delta` 2.6KB. The conversation itself was 15.9KB.
+
+- Flag: scaffolding >40% of the transcript — the session is paying more for its own inventory than for
+  the work
+- This is the strongest argument for the reductions elsewhere in this skill: trimming a skill or an
+  MCP server saves tokens *once per reconnect*, not once per session
+- It also means transcript file size is a poor proxy for how full a context window is. Count only
+  non-`attachment` lines when reporting "how much room is left"
+
 **CLAUDE.md** (project + user-level)
 - Count tokens per file in the CLAUDE.md chain
 - Flag: combined total >300 lines
