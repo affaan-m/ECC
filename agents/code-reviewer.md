@@ -145,7 +145,8 @@ const result = await db.query(query, [userId]);
 ### Code Quality (HIGH)
 
 - **Large functions** (>50 lines) — Split into smaller, focused functions
-- **Large files** (>800 lines) — Extract modules by responsibility
+- **Large files** (>400 **code** lines, comments and blanks excluded) — Extract by
+  responsibility; never by moving code to a sibling file to buy line budget
 - **Deep nesting** (>4 levels) — Use early returns, extract helpers
 - **Missing error handling** — Unhandled promise rejections, empty catch blocks
 - **Mutation patterns** — Prefer immutable operations (spread, map, filter)
@@ -300,7 +301,8 @@ Do not withhold approval to appear rigorous. If the diff is clean, approve it.
 
 When available, also check project-specific conventions from `CLAUDE.md` or project rules:
 
-- File size limits (e.g., 200-400 lines typical, 800 max)
+- File size limits (e.g., ~200 **code** lines typical; 400 is where a file owes a written
+  reason, counted with comment-only and blank lines excluded)
 - Emoji policy (many projects prohibit emojis in code)
 - Immutability requirements (spread operator over mutation)
 - Database policies (RLS, migration patterns)
