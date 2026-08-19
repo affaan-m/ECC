@@ -84,7 +84,7 @@ Measured on a session that had reconnected once: **33,884 of 49,830 bytes — 68
 - Report it as two separate figures — scaffolding share of the transcript, and conversation bytes —
   and treat both as diagnostics rather than as a fullness gauge.
 
-**CLAUDE.md** (project + user-level)**CLAUDE.md** (project + user-level)
+**CLAUDE.md** (project + user-level)
 - Count tokens per file in the CLAUDE.md chain
 - Flag: combined total >300 lines
 
