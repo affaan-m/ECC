@@ -43,39 +43,48 @@ Scan all component directories and estimate token consumption:
 - Estimate schema overhead at ~500 tokens per tool
 - Flag: servers with >20 tools, servers that wrap simple CLI commands (`gh`, `git`, `npm`, `supabase`, `vercel`)
 
-**Session scaffolding** (the transcript itself)
+**Session scaffolding** (measured from the transcript)
 
-Everything above is loaded once at startup. A *reconnect* re-injects a second copy of much of it into
-the session transcript as `attachment` lines, and that cost is charged to the same context window.
-Measure it directly rather than estimating:
+Everything above is loaded once at startup. A *reconnect* re-injects much of it again as `attachment`
+lines in the session transcript — and that re-injection is charged to the same context window.
 
 ```sh
-# on the newest transcript for this project
-f=$(ls -t ~/.claude/projects/"${PWD//\//-}"/*.jsonl | head -1)
+f=$(ls -t ~/.claude/projects/"${PWD//\//-}"/*.jsonl 2>/dev/null | head -1)
+[ -n "$f" ] || { echo "no transcript for this project yet"; exit 0; }
 python3 - "$f" <<'EOF'
 import json,sys
 tot=att=0
-for line in open(sys.argv[1]):
-    tot+=len(line)
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if not line.strip(): continue
+    tot+=len(line.encode())
     try:
-        if json.loads(line).get('type')=='attachment': att+=len(line)
-    except: pass
-print(f"transcript {tot}B | scaffolding {att}B ({att*100//max(tot,1)}%) | conversation {tot-att}B")
+        if json.loads(line).get("type")=="attachment": att+=len(line.encode())
+    except Exception: pass          # a malformed line counts as conversation, never crashes
+if tot==0: print("empty transcript"); raise SystemExit
+pct = att*100.0/tot
+print(f"transcript {tot}B | scaffolding {att}B ({pct:.1f}%) | rest {tot-att}B")
+if att*10 > tot*4: print(f"WARNING: scaffolding is {pct:.1f}% of the transcript (>40%)")
 EOF
 ```
 
-Measured on a session that had reconnected once: **33,884 of 49,830 bytes — 68% scaffolding**, broken
-down as `skill_listing` 14.6KB, `mcp_instructions_delta` 8.1KB, `deferred_tools_delta` 7.1KB,
-`agent_listing_delta` 2.6KB. The conversation itself was 15.9KB.
+Measured on a session that had reconnected once: **33,884 of 49,830 bytes — 68% scaffolding**
+(`skill_listing` 14.6KB, `mcp_instructions_delta` 8.1KB, `deferred_tools_delta` 7.1KB,
+`agent_listing_delta` 2.6KB) against 15.9KB of conversation.
 
-- Flag: scaffolding >40% of the transcript — the session is paying more for its own inventory than for
-  the work
-- This is the strongest argument for the reductions elsewhere in this skill: trimming a skill or an
-  MCP server saves tokens *once per reconnect*, not once per session
-- It also means transcript file size is a poor proxy for how full a context window is. Count only
-  non-`attachment` lines when reporting "how much room is left"
+**What this number is, and what it is not.**
 
-**CLAUDE.md** (project + user-level)
+- It *is* a cost signal. Scaffolding is real context spend, and it is rebuilt on every reconnect —
+  so trimming a skill or an MCP server saves tokens **once per reconnect**, not once per session.
+  That strengthens every recommendation elsewhere in this skill.
+- It is **not** a headroom estimate, in either direction. Attachments *are* charged, so excluding
+  them overstates free space. And after a compaction the pre-compaction turns remain in the JSONL
+  while the model's active context holds only the much smaller summary — so counting persisted bytes
+  overstates what is actually loaded. **A transcript is a durable log, not a view of the context
+  window; do not report remaining room from its size.**
+- Report it as two separate figures — scaffolding share of the transcript, and conversation bytes —
+  and treat both as diagnostics rather than as a fullness gauge.
+
+**CLAUDE.md** (project + user-level)**CLAUDE.md** (project + user-level)
 - Count tokens per file in the CLAUDE.md chain
 - Flag: combined total >300 lines
 
