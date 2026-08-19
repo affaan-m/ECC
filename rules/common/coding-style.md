@@ -36,9 +36,33 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 
 MANY SMALL FILES > FEW LARGE FILES:
 - High cohesion, low coupling
-- 200-400 lines typical, 800 max
+- **Count code lines, not total lines.** Exclude comment-only and blank lines before
+  comparing against any threshold. A file dense with hard-won explanation is not a large
+  file; taxing documentation at the same rate as code makes people delete the
+  explanations first — which is the opposite of what you want.
+- **~200 code lines typical. 400 code lines is where you owe a written reason, not
+  where you stop.**
+- **A type should not hold more than two independent lifecycles** (tasks, subscriptions,
+  timers, observers). Past that it is coordinating, not holding state — extract the
+  coordinator. This signal fires earlier and far more accurately than any line count:
+  bugs cluster in the interleaving of independent lifecycles, not in line 401.
 - Extract utilities from large modules
 - Organize by feature/domain, not by type
+
+A line threshold is a **smoke alarm, not a fire code** — its only job is to make someone
+look, and the value comes from what they find. **Never satisfy it by moving code between
+files or by compressing comments.** That is gaming the metric, not meeting it. Split by
+responsibility or don't split.
+
+Check the whole repo mechanically — never a hand-listed set of "suspects", which is how a
+breached limit gets reported as satisfied by everyone who looks at it:
+
+```bash
+# Adjust the file glob and the comment pattern per language.
+find src tests -name '*.ext' | while read -r f; do
+  n=$(grep -vcE '^[[:space:]]*(//|#|\*|$)' "$f"); [ "$n" -gt 400 ] && echo "$n $f"
+done
+```
 
 ## Error Handling
 
@@ -83,7 +107,8 @@ Split large functions into focused pieces with clear responsibilities.
 Before marking work complete:
 - [ ] Code is readable and well-named
 - [ ] Functions are small (<50 lines)
-- [ ] Files are focused (<800 lines)
+- [ ] No type holds more than two independent lifecycles (tasks/subscriptions/observers)
+- [ ] Files are focused (<400 **code** lines, comments excluded; over that, a written reason)
 - [ ] No deep nesting (>4 levels)
 - [ ] Proper error handling
 - [ ] No hardcoded values (use constants or config)

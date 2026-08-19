@@ -28,7 +28,7 @@ Before marking code complete:
 
 - [ ] Code is readable and well-named
 - [ ] Functions are focused (<50 lines)
-- [ ] Files are cohesive (<800 lines)
+- [ ] Files are cohesive (<400 **code** lines, comments excluded)
 - [ ] No deep nesting (>4 levels)
 - [ ] Errors are handled explicitly
 - [ ] No hardcoded secrets or credentials
@@ -95,7 +95,7 @@ Use these agents for code review:
 ### Code Quality
 
 - Large functions (>50 lines) - split into smaller
-- Large files (>800 lines) - extract modules
+- Large files (>400 code lines, comments excluded) - extract **by responsibility**, not to buy line budget
 - Deep nesting (>4 levels) - use early returns
 - Missing error handling - handle explicitly
 - Mutation patterns - prefer immutable operations

@@ -110,7 +110,9 @@ ArkTS is a strict, statically-typed subset of TypeScript. Violating these constr
 - Component files (`.ets`): one `@ComponentV2` per file
 - ViewModel files: one ViewModel class per file
 - Model files: related data models may share a file
-- Keep files under 400 lines; extract helpers for files approaching 800 lines
+- Keep files under 400 **code** lines (comments and blanks excluded); past that, extract by
+  responsibility and say why in the commit — never by moving code to a sibling file to buy
+  line budget. See [common/coding-style.md](../common/coding-style.md).
 
 ## Comments
 

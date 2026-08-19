@@ -59,7 +59,9 @@ const styles = StyleSheet.create({ card: { padding: 16, backgroundColor: '#fff' 
 ## Imports & Project Layout
 
 - Use the Expo/TS path alias (e.g. `@/components/...`) instead of long relative chains.
-- Organize by feature/domain, not by type. Keep files focused (200-400 lines typical, 800 max).
+- Organize by feature/domain, not by type. Keep files focused: ~200 **code** lines typical
+  (comments and blanks excluded); 400 is where you owe a written reason, not where you stop.
+  See [common/coding-style.md](../common/coding-style.md).
 
 ## Logging
 
