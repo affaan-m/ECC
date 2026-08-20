@@ -9,10 +9,6 @@ const {
   listInstallProfiles,
   resolveInstallPlan,
 } = require('./lib/install-manifests');
-const {
-  findDefaultInstallConfigPath,
-  loadInstallConfig,
-} = require('./lib/install/config');
 const { normalizeInstallRequest } = require('./lib/install/request');
 
 function showHelp() {
@@ -237,6 +233,10 @@ function main() {
       return;
     }
 
+    const {
+      findDefaultInstallConfigPath,
+      loadInstallConfig,
+    } = require('./lib/install/config');
     const defaultConfigPath = options.configPath
       ? null
       : findDefaultInstallConfigPath({ cwd: process.cwd() });

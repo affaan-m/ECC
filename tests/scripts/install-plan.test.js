@@ -3,8 +3,10 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-plan.js');
 
@@ -185,6 +187,57 @@ function runTests() {
     const result = run(['--profile', 'core', '--target', 'not-a-target']);
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('Unknown install target'));
+  })) passed++; else failed++;
+
+  if (test('lists profiles without runtime dependencies installed', () => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'install-plan-no-deps-'));
+    const scriptsDir = path.join(sandbox, 'scripts');
+    const libDir = path.join(scriptsDir, 'lib');
+
+    try {
+      fs.mkdirSync(libDir, { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'scripts', 'install-plan.js'), path.join(scriptsDir, 'install-plan.js'));
+      fs.cpSync(path.join(__dirname, '..', '..', 'scripts', 'lib'), libDir, { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'manifests'), path.join(sandbox, 'manifests'), { recursive: true });
+
+      const result = spawnSync('node', [path.join(scriptsDir, 'install-plan.js'), '--list-profiles'], {
+        encoding: 'utf8',
+        cwd: sandbox,
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.ok(result.stdout.includes('Install profiles'));
+    } finally {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('reports actionable error when config validation deps are missing', () => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'install-plan-missing-ajv-'));
+    const scriptsDir = path.join(sandbox, 'scripts');
+    const libDir = path.join(scriptsDir, 'lib');
+    const configPath = path.join(sandbox, 'ecc-install.json');
+
+    try {
+      fs.mkdirSync(libDir, { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'scripts', 'install-plan.js'), path.join(scriptsDir, 'install-plan.js'));
+      fs.cpSync(path.join(__dirname, '..', '..', 'scripts', 'lib'), libDir, { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'manifests'), path.join(sandbox, 'manifests'), { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'schemas'), path.join(sandbox, 'schemas'), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ version: 1, profile: 'core' }, null, 2));
+
+      const result = spawnSync('node', [path.join(scriptsDir, 'install-plan.js'), '--config', configPath], {
+        encoding: 'utf8',
+        cwd: sandbox,
+      });
+
+      assert.strictEqual(result.status, 1);
+      assert.ok(result.stderr.includes("Missing runtime dependency 'ajv'"));
+      assert.ok(result.stderr.includes('npm install'));
+      assert.ok(!result.stderr.includes('Unknown argument'));
+    } finally {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
