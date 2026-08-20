@@ -3,7 +3,8 @@
  */
 
 const assert = require('assert');
-const Module = require('module');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const {
@@ -51,42 +52,23 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('requireRuntime rethrows non-module errors', () => {
-  const original = Module._load;
-  Module._load = function fakeLoad(request, parent, isMain) {
-    if (request === 'ecc-test-broken-module') {
-      throw new Error('boom');
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'require-runtime-throws-'));
+    const modulePath = path.join(temp, 'throws.js');
+    fs.writeFileSync(modulePath, "throw new Error('boom');");
+    try {
+      assert.throws(() => requireRuntime(modulePath), /boom/);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
     }
-    return original.call(this, request, parent, isMain);
-  };
-
-  try {
-    assert.throws(() => requireRuntime('ecc-test-broken-module'), /boom/);
-  } finally {
-    Module._load = original;
-  }
   })) passed++; else failed++;
 
   if (test('requireRuntime wraps MODULE_NOT_FOUND with actionable text', () => {
-    const original = Module._load;
-    Module._load = function fakeLoad(request, parent, isMain) {
-      if (request === 'ecc-test-missing-module') {
-        const err = new Error("Cannot find module 'ecc-test-missing-module'");
-        err.code = 'MODULE_NOT_FOUND';
-        throw err;
-      }
-      return original.call(this, request, parent, isMain);
-    };
-
-    try {
-      assert.throws(() => requireRuntime('ecc-test-missing-module'), error => {
-        assert.strictEqual(error.code, 'ECC_RUNTIME_DEPENDENCY_MISSING');
-        assert.ok(error.message.includes('ecc-test-missing-module'));
-        assert.ok(error.message.includes('npm install'));
-        return true;
-      });
-    } finally {
-      Module._load = original;
-    }
+    assert.throws(() => requireRuntime('ecc-test-missing-module-xyz'), error => {
+      assert.strictEqual(error.code, 'ECC_RUNTIME_DEPENDENCY_MISSING');
+      assert.ok(error.message.includes('ecc-test-missing-module-xyz'));
+      assert.ok(error.message.includes('npm install'));
+      return true;
+    });
   })) passed++; else failed++;
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

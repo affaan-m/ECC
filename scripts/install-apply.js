@@ -195,8 +195,7 @@ async function main() {
       printHumanPlan(result, false);
     }
   } catch (error) {
-    const { isMissing } = require('./lib/require-runtime');
-    const suffix = error.code === 'ECC_RUNTIME_DEPENDENCY_MISSING' || isMissing(error)
+    const suffix = error.code === 'ECC_RUNTIME_DEPENDENCY_MISSING'
       ? '\n'
       : getHelpText();
     process.stderr.write(`Error: ${error.message}${suffix}`);
