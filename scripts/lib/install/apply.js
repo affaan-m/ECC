@@ -337,8 +337,12 @@ function previewInstallPlan(plan) {
 
 function applyInstallPlan(plan, dependencies = {}) {
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const beforeInstallStateRead = dependencies.beforeInstallStateRead;
   const beforeOperationWrite = dependencies.beforeOperationWrite;
   const beforeInstallStateWrite = dependencies.beforeInstallStateWrite;
+  if (typeof beforeInstallStateRead === 'function') {
+    beforeInstallStateRead({ plan });
+  }
   const migration = prepareClaudeSkillMigration(plan);
   const appliedPlan = {
     ...plan,

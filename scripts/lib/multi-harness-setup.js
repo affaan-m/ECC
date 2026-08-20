@@ -327,6 +327,7 @@ async function applyPreflightedManagedPlan(entry) {
   );
 
   const result = require('./install-executor').applyInstallPlan(preview.plan, {
+    beforeInstallStateRead: assertStateUnchanged,
     beforeOperationWrite({ operation }) {
       assertStateUnchanged();
       const expected = preview.operations[operationIndex];

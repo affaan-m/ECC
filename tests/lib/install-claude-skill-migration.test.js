@@ -490,12 +490,33 @@ function runTests() {
           operation.destinationPath === extraDestinationPath
         )));
 
+        const updatedExtraOperation = {
+          ...extraOperation,
+          moduleId: 'skill-extra-updated',
+        };
+        applyInstallPlan({
+          ...extraPlan,
+          operations: [updatedExtraOperation],
+          statePreview: {
+            ...extraPlan.statePreview,
+            operations: [updatedExtraOperation],
+          },
+        });
+        const stateAfterMetadataUpdate = readInstallState(fixture.installStatePath);
+        const updatedExtraRecords = stateAfterMetadataUpdate.operations.filter(operation => (
+          operation.destinationPath === extraDestinationPath
+        ));
+        assert.strictEqual(updatedExtraRecords.length, 1);
+        assert.strictEqual(updatedExtraRecords[0].moduleId, 'skill-extra-updated');
+
         const retry = applyInstallPlan(fixture.plan);
         assert.deepStrictEqual(retry.skippedOperations, []);
         const stateAfterRetry = readInstallState(fixture.installStatePath);
-        assert.ok(stateAfterRetry.operations.some(operation => (
+        const retainedExtraRecords = stateAfterRetry.operations.filter(operation => (
           operation.destinationPath === extraDestinationPath
-        )));
+        ));
+        assert.strictEqual(retainedExtraRecords.length, 1);
+        assert.strictEqual(retainedExtraRecords[0].moduleId, 'skill-extra-updated');
 
         const uninstall = runUninstall(fixture);
         assert.strictEqual(uninstall.summary.errorCount, 0);
