@@ -243,6 +243,71 @@ test('preview names match the files --generate writes', () => {
   }
 });
 
+function parseFrontmatter(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(raw);
+  if (!match) return null;
+  const fm = {};
+  for (const line of match[1].split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx > 0 && !line.startsWith(' ')) {
+      fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+    }
+  }
+  return fm;
+}
+
+test('generated skills carry loadable name + description frontmatter', () => {
+  const root = createTempDir();
+  try {
+    writeInstinct(root, 'first', 'when investigating complex systems');
+    writeInstinct(root, 'second', 'when investigating complex systems');
+    writeInstinct(root, 'third', 'when running tests');
+
+    assert.strictEqual(runCli(root, ['evolve', '--generate']).status, 0);
+
+    const skillsDir = path.join(root, 'evolved', 'skills');
+    const skillDirs = fs.existsSync(skillsDir) ? fs.readdirSync(skillsDir) : [];
+    assert.ok(skillDirs.length > 0, 'expected at least one generated skill');
+
+    for (const name of skillDirs) {
+      const skillFile = path.join(skillsDir, name, 'SKILL.md');
+      const fm = parseFrontmatter(skillFile);
+      assert.ok(fm, `${name}/SKILL.md has no frontmatter block`);
+      assert.strictEqual(fm.name, name, `${name}: frontmatter name must match its folder`);
+      assert.ok(fm.description && fm.description.length > 0, `${name}: description must not be empty`);
+      assert.ok(!/[<>]/.test(fm.description), `${name}: description must not contain < or >`);
+    }
+  } finally {
+    cleanupDir(root);
+  }
+});
+
+test('generated agents carry name + description alongside model/tools', () => {
+  const root = createTempDir();
+  try {
+    writeInstinct(root, 'a', 'when reviewing pull requests');
+    writeInstinct(root, 'b', 'when reviewing pull requests');
+    writeInstinct(root, 'c', 'when reviewing pull requests');
+
+    assert.strictEqual(runCli(root, ['evolve', '--generate']).status, 0);
+
+    const agentsDir = path.join(root, 'evolved', 'agents');
+    const agents = fs.existsSync(agentsDir) ? fs.readdirSync(agentsDir) : [];
+    assert.ok(agents.length > 0, 'expected at least one generated agent');
+
+    for (const file of agents) {
+      const fm = parseFrontmatter(path.join(agentsDir, file));
+      assert.ok(fm, `${file} has no frontmatter block`);
+      assert.strictEqual(fm.name, path.basename(file, '.md'));
+      assert.ok(fm.description && fm.description.length > 0, `${file}: description must not be empty`);
+      assert.strictEqual(fm.model, 'sonnet');
+    }
+  } finally {
+    cleanupDir(root);
+  }
+});
+
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}`);
 
