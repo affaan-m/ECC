@@ -268,8 +268,10 @@ function runTests() {
     'dd if="/dev/zero" of=/dev/sda',
     // Wrapped invocations must still resolve to the dd command word.
     'sudo dd if=/dev/zero of=/dev/sda',
-    // dd operands are order-free; a text pattern anchored on `dd if=` missed this.
-    'dd of=/dev/sda if=/dev/zero'
+    // dd operands are order-free; a text pattern anchored on `dd if=` missed
+    // both the reversed and the intervening-option spellings.
+    'dd of=/dev/sda if=/dev/zero',
+    'dd bs=1M if=/dev/zero of=/dev/sda'
   ]) {
     clearState();
     if (
