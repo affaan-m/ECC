@@ -2376,6 +2376,165 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Issue #2642: trailing \b on the `dd\s+if=` arm fails open when the
+  // argument begins with a non-word character (`/`, `.`, quote, ...), which
+  // covers every realistic disk-wipe spelling. The fix splits the alternation
+  // so the SQL arms keep their trailing word-boundary anchor (no
+  // `delete fromtable` / `truncatefile` false positives) while the `dd if=`
+  // arm matches whatever follows the `=`.
+
+  clearState();
+  if (
+    test('denies `dd if=/dev/zero of=/dev/sda` (issue #2642 disk-wipe spelling)', () => {
+      expectDestructiveDeny('dd if=/dev/zero of=/dev/sda', 'dd if=/dev/zero of=/dev/sda');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=/dev/urandom of=/dev/sdb`', () => {
+      expectDestructiveDeny('dd if=/dev/urandom of=/dev/sdb', 'dd if=/dev/urandom of=/dev/sdb');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=/dev/zero` (slash-prefixed argument)', () => {
+      expectDestructiveDeny('dd if=/dev/zero', 'dd if=/dev/zero');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=.` (dot-prefixed argument — `git checkout -- .` analogue)', () => {
+      expectDestructiveDeny('dd if=. of=/tmp/out.bin', 'dd if=. of=/tmp/out.bin');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=foo` (word-prefixed argument)', () => {
+      expectDestructiveDeny('dd if=foo', 'dd if=foo');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=backup.img of=/dev/sdc` (period in argument)', () => {
+      expectDestructiveDeny('dd if=backup.img of=/dev/sdc', 'dd if=backup.img of=/dev/sdc');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=` followed by `;` (compound form)', () => {
+      expectDestructiveDeny('echo start; dd if=/dev/zero of=/dev/sda', 'echo start; dd if=/dev/zero of=/dev/sda');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('denies `dd if=/dev/zero` inside command substitution `$(...)`', () => {
+      expectDestructiveDeny('echo $(dd if=/dev/zero of=/dev/sda)', 'echo $(dd if=/dev/zero of=/dev/sda)');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('still denies `dd if=x` (control: was already denied pre-fix)', () => {
+      expectDestructiveDeny('dd if=x', 'dd if=x');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('still denies plain `drop table users;` (SQL arm unaffected)', () => {
+      expectDestructiveDeny('drop table users;', 'drop table users;');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('still denies plain `delete from t` (SQL arm unaffected)', () => {
+      expectDestructiveDeny('delete from t', 'delete from t');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('still denies plain `truncate -s 0 f` (SQL arm unaffected)', () => {
+      expectDestructiveDeny('truncate -s 0 f', 'truncate -s 0 f');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // Anti-regression: dropping the trailing \b on the SQL arms would let
+  // benign substrings fire the gate (`delete fromtable`, `truncatefile`).
+  // The fix must keep `\b` on the SQL arms so these remain allowed.
+
+  clearState();
+  if (
+    test('allows `delete fromtable` (SQL arm keeps trailing \\b; not a false positive)', () => {
+      // Prime the routine gate so the destructive-gate outcome is the
+      // observable signal. `delete fromtable` is not a SQL statement.
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+      const input = { tool_name: 'Bash', tool_input: { command: 'echo "delete fromtable review"' } };
+      const result = runBashHook(input);
+      assert.strictEqual(result.code, 0, 'exit code should be 0');
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'delete fromtable should not be destructive');
+      } else {
+        assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('allows `truncatefile` (SQL arm keeps trailing \\b; not a false positive)', () => {
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+      const input = { tool_name: 'Bash', tool_input: { command: 'echo truncatefile.tmp' } };
+      const result = runBashHook(input);
+      assert.strictEqual(result.code, 0, 'exit code should be 0');
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'truncatefile should not be destructive');
+      } else {
+        assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // --- Exempt globs: GATEGUARD_EXEMPT_GLOBS skips first-touch fact-forcing ---
   clearState();
   if (
