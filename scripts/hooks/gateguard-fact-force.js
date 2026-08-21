@@ -376,6 +376,86 @@ function commandBasename(token) {
 }
 
 /**
+ * Command words that run ANOTHER command: the destructive check has to look
+ * past them, or the most dangerous spellings are the ones that slip through.
+ * Every token-based detector keys on `tokens[0]`, so `sudo rm -rf /` reads as
+ * an invocation of `sudo` and is allowed while the bare `rm -rf /` is denied.
+ */
+const COMMAND_WRAPPERS = new Set([
+  'sudo',
+  'doas',
+  'env',
+  'command',
+  'nohup',
+  'setsid',
+  'stdbuf',
+  'nice',
+  'ionice',
+]);
+
+/**
+ * Wrapper flags that consume the FOLLOWING token as their value, so the value
+ * is not mistaken for the wrapped command word (`sudo -u root rm -rf /`).
+ * Long `--flag=value` forms need no entry: they are a single token.
+ */
+const WRAPPER_FLAGS_WITH_VALUE = new Set([
+  '-u',
+  '-g',
+  '-p',
+  '-C',
+  '-h',
+  '-r',
+  '-t',
+  '-U',
+  '--user',
+  '--group',
+  '--prompt',
+  '--host',
+  '--role',
+  '--type',
+  '--chdir',
+]);
+
+/**
+ * Return `tokens` with any leading wrapper commands, their flags, and
+ * `VAR=value` assignment prefixes removed, so the caller sees the command that
+ * actually runs.
+ *
+ * Flags are only skipped once a wrapper has been seen, so this can never walk
+ * into an unwrapped command's own arguments. Returns the input array when
+ * there is nothing to strip.
+ *
+ * @param {string[]} tokens
+ * @returns {string[]}
+ */
+function stripCommandWrappers(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  let index = 0;
+  let sawWrapper = false;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (COMMAND_WRAPPERS.has(commandBasename(token))) {
+      sawWrapper = true;
+      index += 1;
+      continue;
+    }
+    // `FOO=bar rm -rf /` and `env FOO=bar rm -rf /` both put assignments before
+    // the command word.
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1;
+      continue;
+    }
+    if (sawWrapper && token.startsWith('-')) {
+      if (WRAPPER_FLAGS_WITH_VALUE.has(token)) index += 1;
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  return index === 0 ? tokens : tokens.slice(index);
+}
+
+/**
  * Detect `rm` invocations that recursively force-delete files. Handles
  * combined (`-rf`, `-fr`, `-Rf`) and split (`-r -f`) flag forms.
  *
@@ -613,12 +693,12 @@ function isDestructiveFindExec(command) {
   }
 
   // Tokenize the whole command line
-  const tokens = tokenize(trimmed);
+  const tokens = stripCommandWrappers(tokenize(trimmed));
   if (!tokens || tokens.length === 0) {
     return false;
   }
 
-  // Must start with `find`
+  // Must start with `find` — after any wrapper prefix (`sudo find . -exec rm`).
   if (commandBasename(tokens[0]) !== 'find') {
     return false;
   }
@@ -702,7 +782,9 @@ function isDestructiveBash(command) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
-    const tokens = tokenize(segment);
+    // Look past sudo/doas/env/... so a privileged spelling is not the one that
+    // gets through (the gate matters MORE for those, not less).
+    const tokens = stripCommandWrappers(tokenize(segment));
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
   }

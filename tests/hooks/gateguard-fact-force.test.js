@@ -253,6 +253,84 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Test 4d: wrapper-prefixed destructive commands ---
+  /**
+   * Every token-based detector keys on `tokens[0]`, so `sudo rm -rf /` read as
+   * an invocation of `sudo` and was ALLOWED while the bare `rm -rf /` was
+   * denied — the gate missed exactly the privileged spellings it matters most
+   * for. Same for doas/env/command/nohup, `VAR=value` prefixes, sudo's own
+   * flags, and a wrapper appearing after a compound separator.
+   */
+  for (const command of [
+    'sudo rm -rf /important/data',
+    'sudo -u root rm -rf /important/data',
+    'sudo --user=root rm -rf /important/data',
+    'doas rm -rf /important/data',
+    'env rm -rf /important/data',
+    'FOO=bar rm -rf /important/data',
+    'command rm -rf /important/data',
+    'nohup rm -rf /important/data',
+    'sudo git reset --hard',
+    'sudo git clean -fd',
+    'sudo git push --force',
+    'sudo find . -exec rm {} ;',
+    'echo hello && sudo rm -rf /important/data'
+  ]) {
+    clearState();
+    if (
+      test(`denies a wrapper-prefixed destructive command: ${command}`, () => {
+        // Prime the session so the separate first-command routine gate cannot
+        // be mistaken for a destructive denial.
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        assert.ok(output.hookSpecificOutput, `${command} should carry a permission decision`);
+        assert.strictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          `${command} must be gated as destructive`
+        );
+        assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  // --- Test 4e: looking past wrappers must not gate ordinary privileged work ---
+  for (const command of [
+    'sudo apt-get update',
+    'sudo systemctl restart nginx',
+    'sudo ls -la /etc',
+    'env NODE_ENV=production npm run build',
+    'command ls'
+  ]) {
+    clearState();
+    if (
+      test(`does not gate an ordinary wrapped command: ${command}`, () => {
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        const decision = output.hookSpecificOutput;
+        if (decision) {
+          const reason = decision.permissionDecisionReason || '';
+          assert.ok(
+            decision.permissionDecision !== 'deny' || !reason.includes('Destructive'),
+            `${command} must not be gated as destructive`
+          );
+        } else {
+          assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+        }
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
   // --- Test 5: denies first routine Bash, allows second ---
   clearState();
   if (
