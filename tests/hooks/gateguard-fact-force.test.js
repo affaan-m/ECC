@@ -313,13 +313,22 @@ function runTests() {
         // be mistaken for a destructive denial.
         runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
         const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        // Assert the hook actually answered before reading the decision: a
+        // crashed or silent hook makes parseOutput return null, and a bare
+        // `if (output)` would let this case pass without testing anything.
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
         const output = parseOutput(result.stdout);
-        if (output && output.hookSpecificOutput) {
-          const reason = output.hookSpecificOutput.permissionDecisionReason || '';
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        const decision = output.hookSpecificOutput;
+        if (decision) {
+          const reason = decision.permissionDecisionReason || '';
           assert.ok(
-            output.hookSpecificOutput.permissionDecision !== 'deny' || !reason.includes('Destructive'),
+            decision.permissionDecision !== 'deny' || !reason.includes('Destructive'),
             `${command} must not be gated as destructive`
           );
+        } else {
+          // Pass-through echoes the input back unchanged.
+          assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
         }
       })
     )
