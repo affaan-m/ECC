@@ -48,11 +48,13 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
-// The trailing \b applies only to the arms that end in a word character.
-// `dd\s+if=` ends in `=`, so a shared \b demanded that the NEXT character be a
-// word character and the disk-wipe spellings slipped through: `dd if=/dev/zero`
-// and `dd if=./img` were allowed while `dd if=x` was denied (#2642).
-const DESTRUCTIVE_SQL_DD = /\b(?:drop\s+table|delete\s+from|truncate)\b|\bdd\s+if=/i;
+// `dd if=` used to be a fourth arm here. Matching it as text could not work:
+// the arm ended in `=`, so the shared trailing \b required the NEXT character
+// to be a word character and `dd if=/dev/zero` slipped through while
+// `echo dd if=x` — which runs no dd at all — was gated. The boundary decided
+// the verdict instead of the command position, so dd moved to isDestructiveDd()
+// alongside the other token-based detectors (#2642).
+const DESTRUCTIVE_SQL = /\b(drop\s+table|delete\s+from|truncate)\b/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
@@ -352,6 +354,7 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
+    if (isDestructiveDd(tokens)) return true;
     if (isDestructiveFindExec(tokens.join(' '))) return true;
     const base = commandBasename(tokens[0]);
     if (SHELL_WRAPPERS.has(base)) {
@@ -377,6 +380,52 @@ function commandBasename(token) {
     .replace(/^.*[\\/]/, '')
     .replace(/\.exe$/i, '')
     .toLowerCase();
+}
+
+/**
+ * Detect a `dd` invocation carrying an `if=` operand.
+ *
+ * Token-based rather than a regex arm because the verdict has to depend on
+ * `dd` being the command, not on `dd if=` appearing anywhere in the line:
+ * `echo dd if=/dev/zero` executes nothing. dd operands are order-free, so
+ * `dd of=/dev/sda if=/dev/zero` counts too — a text pattern anchored on
+ * `dd\s+if=` missed that spelling entirely.
+ *
+ * Leading `sudo` / `doas` / `env`, their flags, and `VAR=value` assignment
+ * prefixes are skipped so `sudo dd if=/dev/zero` stays the dd invocation it is.
+ *
+ * @param {string[]} tokens
+ * @returns {boolean}
+ */
+function isDestructiveDd(tokens) {
+  let index = 0;
+  let sawWrapper = false;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    const name = commandBasename(token);
+    if (name === 'sudo' || name === 'doas' || name === 'env') {
+      sawWrapper = true;
+      index += 1;
+      continue;
+    }
+    // `FOO=bar dd if=…` and `env FOO=bar dd if=…` both put assignments before
+    // the command word. `dd`'s own operands are never reached here: the loop
+    // stops at the first token that is neither a wrapper nor an assignment.
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1;
+      continue;
+    }
+    // Only skip flags once a wrapper has been seen, so this cannot walk past
+    // an unrelated command's arguments.
+    if (sawWrapper && token.startsWith('-')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  if (index >= tokens.length || commandBasename(tokens[index]) !== 'dd') return false;
+  return tokens.slice(index + 1).some(operand => /^if=/i.test(operand));
 }
 
 /**
@@ -677,7 +726,7 @@ function isDestructiveBash(command) {
   // inside `$(...)` or backticks are also caught.
   const raw = String(command || '');
   const flattened = explodeSubshells(stripQuotedStrings(raw));
-  if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
+  if (DESTRUCTIVE_SQL.test(flattened)) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
   // built-in SQL/dd regex: matched against the quote-stripped, subshell-
@@ -704,7 +753,7 @@ function isDestructiveBash(command) {
   const segments = bodies.flatMap(splitCommandSegments);
   for (const segment of segments) {
     const stripped = stripQuotedStrings(segment);
-    if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
+    if (DESTRUCTIVE_SQL.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
     const tokens = tokenize(segment);
     if (isDestructiveRm(tokens)) return true;

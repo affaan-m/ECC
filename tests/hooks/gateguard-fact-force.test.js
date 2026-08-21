@@ -265,7 +265,11 @@ function runTests() {
   for (const command of [
     'dd if=/dev/zero of=/dev/sda',
     'dd if=./disk.img of=/dev/sdb',
-    'dd if="/dev/zero" of=/dev/sda'
+    'dd if="/dev/zero" of=/dev/sda',
+    // Wrapped invocations must still resolve to the dd command word.
+    'sudo dd if=/dev/zero of=/dev/sda',
+    // dd operands are order-free; a text pattern anchored on `dd if=` missed this.
+    'dd of=/dev/sda if=/dev/zero'
   ]) {
     clearState();
     if (
@@ -292,7 +296,16 @@ function runTests() {
    * a word character keep theirs. Without that split, `truncated` would match
    * `truncate`, and `add if=` would match `dd if=`.
    */
-  for (const command of ['echo add if=1', 'echo truncated output', 'git status']) {
+  for (const command of [
+    'echo add if=1',
+    'echo truncated output',
+    'git status',
+    // `dd if=` as another command's argument runs no dd at all. The old text
+    // match gated these; the command-word check is what keeps them out.
+    'echo dd if=/dev/zero',
+    'grep dd if=/dev/zero file',
+    'echo dd if=x'
+  ]) {
     clearState();
     if (
       test(`does not gate as destructive: ${command}`, () => {
