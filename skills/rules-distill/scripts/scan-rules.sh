@@ -19,7 +19,7 @@ fi
 files=()
 while IFS= read -r f; do
   files+=("$f")
-done < <(find "$RULES_DIR" -name '*.md' -not -path '*/_archived/*' -print | sort)
+done < <(find -L "$RULES_DIR" -name '*.md' -not -path '*/_archived/*' -print | sort)
 
 total=${#files[@]}
 
