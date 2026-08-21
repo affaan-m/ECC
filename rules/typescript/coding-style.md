@@ -113,6 +113,39 @@ export function formatUser(user) {
 }
 ```
 
+## Naming Conventions
+
+Follow standard TypeScript/JavaScript naming conventions:
+
+- Variables, functions, methods, and object properties: `camelCase` with descriptive names
+- Interfaces, type aliases, classes, enums, and React components: `PascalCase`
+- Constants and top-level immutable configurations: `UPPER_SNAKE_CASE`
+- Booleans: prefer `is`, `has`, `should`, or `can` prefixes (`isActive`, `hasPermission`, `shouldRetry`)
+- React custom hooks: `camelCase` with a `use` prefix (`useAuth`, `useLocalStorage`)
+- Generics: single uppercase letter (`T`, `K`, `V`) or descriptive PascalCase with `T` prefix (`TData`, `TError`)
+
+```typescript
+// Variables and functions
+const userProfile = await fetchUserProfile(userId)
+
+// Interfaces and types
+interface UserProfile {
+  userId: string
+  isActive: boolean
+}
+
+type QueryStatus = 'idle' | 'loading' | 'success' | 'error'
+
+// Constants
+const MAX_RETRY_COUNT = 3
+const DEFAULT_TIMEOUT_MS = 5000
+
+// React custom hooks
+function useDebounce<TValue>(value: TValue, delayMs: number): TValue {
+  // ...
+}
+```
+
 ## Immutability
 
 Use spread operator for immutable updates:
