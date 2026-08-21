@@ -69,11 +69,25 @@ def test_artifact_scope_ignores_protocol_relative_external_links(project: Path) 
 
 def test_artifact_scope_ignores_external_uri_schemes_case_insensitively(project: Path) -> None:
     (project / "guide.md").write_text(
-        "[secure](HTTPS://example.com/guide)\n[transfer](ftp://example.com/file)\n",
+        "[secure](HTTPS://example.com/guide)\n"
+        "[transfer](ftp://example.com/file)\n"
+        "[identifier](urn:isbn:9780140328721)\n"
+        "[text](sms:+15555550123)\n"
+        "[location](geo:37.786971,-122.399677)\n"
+        "[mail](mailto:docs@example.com)\n"
+        "[phone](tel:+15555550123)\n"
+        "[inline](data:text/plain,hello)\n",
         encoding="utf-8",
     )
     result = run_audit(project, "artifacts")
     assert result.returncode == 0, result.stdout
+
+
+def test_artifact_scope_checks_unknown_colon_targets_as_local_paths(project: Path) -> None:
+    (project / "guide.md").write_text("[missing](docs:guide.md)\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link" in result.stdout
 
 
 def test_artifact_scope_ignores_query_and_fragment_in_local_links(project: Path) -> None:
