@@ -274,7 +274,25 @@ function runTests() {
     'sudo git clean -fd',
     'sudo git push --force',
     'sudo find . -exec rm {} ;',
-    'echo hello && sudo rm -rf /important/data'
+    'echo hello && sudo rm -rf /important/data',
+    // A wrapper INSIDE `-exec` runs the same deletion as a bare one.
+    'find . -exec sudo rm {} ;',
+    'find . -exec doas rm {} ;',
+    'find . -exec sudo git reset --hard {} ;',
+    // Option arity is per wrapper: `command -p` is boolean and must leave `rm`
+    // in place, while `nice -n`, `stdbuf -o`, and `ionice -c` consume a value.
+    'command -p rm -rf /important/data',
+    'nice -n 10 rm -rf /important/data',
+    'stdbuf -o L rm -rf /important/data',
+    'stdbuf -oL rm -rf /important/data',
+    'ionice -c 3 rm -rf /important/data',
+    // Quoting the command word routes the check through the quote-aware pass,
+    // which needs the same wrapper normalization.
+    'sudo "rm" -rf /important/data',
+    "sudo 'rm' -rf /important/data",
+    'env "rm" -rf /important/data',
+    'doas "rm" -rf /important/data',
+    'sudo bash -c "rm -rf /important/data"'
   ]) {
     clearState();
     if (
@@ -304,8 +322,15 @@ function runTests() {
     'sudo apt-get update',
     'sudo systemctl restart nginx',
     'sudo ls -la /etc',
+    'sudo -u root ls -la /etc',
     'env NODE_ENV=production npm run build',
-    'command ls'
+    'command ls',
+    'command -p ls',
+    'command -v rm',
+    'nice -n 10 npm run build',
+    'ionice -c 3 npm test',
+    'stdbuf -o L npm test',
+    'find . -exec sudo chmod 644 {} ;'
   ]) {
     clearState();
     if (

@@ -344,7 +344,11 @@ const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
   if (depth > 4) return false;
-  for (const tokens of quoteAwareSegments(raw)) {
+  for (const segment of quoteAwareSegments(raw)) {
+    if (segment.length === 0) continue;
+    // A quoted command word survives this path as a plain token, so the
+    // wrapper prefix has to be normalized here too (`sudo "rm" -rf /`).
+    const tokens = stripCommandWrappers(segment);
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
@@ -380,50 +384,49 @@ function commandBasename(token) {
  * past them, or the most dangerous spellings are the ones that slip through.
  * Every token-based detector keys on `tokens[0]`, so `sudo rm -rf /` reads as
  * an invocation of `sudo` and is allowed while the bare `rm -rf /` is denied.
+ *
+ * The value is the set of that wrapper's OWN options which consume the
+ * following token, so the value is not mistaken for the wrapped command word.
+ * Arity is per wrapper because the same letter differs between them: `sudo -p`
+ * takes a prompt string, while `command -p` is a boolean that must leave `rm`
+ * as the next token. Long `--flag=value` forms need no entry (single token),
+ * and so do attached short forms (`stdbuf -oL`) — the flag token is skipped
+ * either way.
+ *
+ * @type {Map<string, Set<string>>}
  */
-const COMMAND_WRAPPERS = new Set([
-  'sudo',
-  'doas',
-  'env',
-  'command',
-  'nohup',
-  'setsid',
-  'stdbuf',
-  'nice',
-  'ionice',
+const COMMAND_WRAPPERS = new Map([
+  [
+    'sudo',
+    new Set([
+      '-a', '-C', '-c', '-D', '-g', '-h', '-p', '-R', '-r', '-T', '-t', '-U', '-u',
+      '--auth-type', '--close-from', '--login-class', '--chdir', '--group',
+      '--host', '--prompt', '--chroot', '--role', '--command-timeout', '--type',
+      '--other-user', '--user',
+    ]),
+  ],
+  ['doas', new Set(['-a', '-C', '-u'])],
+  ['env', new Set(['-u', '-C', '-S', '--unset', '--chdir', '--split-string'])],
+  ['command', new Set()],
+  ['nohup', new Set()],
+  ['setsid', new Set()],
+  ['stdbuf', new Set(['-i', '-o', '-e', '--input', '--output', '--error'])],
+  ['nice', new Set(['-n', '--adjustment'])],
+  [
+    'ionice',
+    new Set(['-c', '-n', '-p', '-P', '-u', '--class', '--classdata', '--pid', '--pgid', '--uid']),
+  ],
 ]);
 
 /**
- * Wrapper flags that consume the FOLLOWING token as their value, so the value
- * is not mistaken for the wrapped command word (`sudo -u root rm -rf /`).
- * Long `--flag=value` forms need no entry: they are a single token.
- */
-const WRAPPER_FLAGS_WITH_VALUE = new Set([
-  '-u',
-  '-g',
-  '-p',
-  '-C',
-  '-h',
-  '-r',
-  '-t',
-  '-U',
-  '--user',
-  '--group',
-  '--prompt',
-  '--host',
-  '--role',
-  '--type',
-  '--chdir',
-]);
-
-/**
- * Return `tokens` with any leading wrapper commands, their flags, and
+ * Return `tokens` with any leading wrapper commands, their options, and
  * `VAR=value` assignment prefixes removed, so the caller sees the command that
  * actually runs.
  *
- * Flags are only skipped once a wrapper has been seen, so this can never walk
- * into an unwrapped command's own arguments. Returns the input array when
- * there is nothing to strip.
+ * Options are only skipped once a wrapper has been seen, so this can never walk
+ * into an unwrapped command's own arguments, and an option's value is only
+ * consumed when the wrapper it belongs to declares that arity. Returns the
+ * input array when there is nothing to strip.
  *
  * @param {string[]} tokens
  * @returns {string[]}
@@ -431,11 +434,12 @@ const WRAPPER_FLAGS_WITH_VALUE = new Set([
 function stripCommandWrappers(tokens) {
   if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
   let index = 0;
-  let sawWrapper = false;
+  let valueFlags = null;
   while (index < tokens.length) {
     const token = tokens[index];
-    if (COMMAND_WRAPPERS.has(commandBasename(token))) {
-      sawWrapper = true;
+    const wrapperFlags = COMMAND_WRAPPERS.get(commandBasename(token));
+    if (wrapperFlags) {
+      valueFlags = wrapperFlags;
       index += 1;
       continue;
     }
@@ -445,8 +449,8 @@ function stripCommandWrappers(tokens) {
       index += 1;
       continue;
     }
-    if (sawWrapper && token.startsWith('-')) {
-      if (WRAPPER_FLAGS_WITH_VALUE.has(token)) index += 1;
+    if (valueFlags && token.startsWith('-')) {
+      if (valueFlags.has(token)) index += 1;
       index += 1;
       continue;
     }
@@ -723,7 +727,14 @@ function isDestructiveFindExec(command) {
     return false;
   }
 
-  const baseCmd = commandBasename(execTokens[0]);
+  // `find . -exec sudo rm {} \;` runs the same deletion as `-exec rm`, so the
+  // executed command needs the same wrapper normalization as a top-level one.
+  const execCommand = stripCommandWrappers(execTokens);
+  if (execCommand.length === 0) {
+    return false;
+  }
+
+  const baseCmd = commandBasename(execCommand[0]);
 
   // Directly destructive commands inside -exec
   if (baseCmd === 'rmdir' || baseCmd === 'unlink') {
@@ -737,7 +748,7 @@ function isDestructiveFindExec(command) {
 
   // `git reset --hard` inside -exec
   if (baseCmd === 'git') {
-    const sub = findGitSubcommand(execTokens);
+    const sub = findGitSubcommand(execCommand);
     if (sub && sub.command === 'reset' && sub.rest.includes('--hard')) {
       return true;
     }
