@@ -48,7 +48,11 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
-const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+// The trailing \b applies only to the arms that end in a word character.
+// `dd\s+if=` ends in `=`, so a shared \b demanded that the NEXT character be a
+// word character and the disk-wipe spellings slipped through: `dd if=/dev/zero`
+// and `dd if=./img` were allowed while `dd if=x` was denied (#2642).
+const DESTRUCTIVE_SQL_DD = /\b(?:drop\s+table|delete\s+from|truncate)\b|\bdd\s+if=/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
