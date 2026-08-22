@@ -115,6 +115,40 @@ if (test('still allows the literal text in a commit message', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Value-taking options must not have their VALUE read as a flag ---
+// `--push-option`/`-o`/`--trailer` consume the next token as data. Git sends it
+// verbatim and still runs the hooks, so refusing these is a false positive.
+// These were already refused for the full spelling before abbreviations were
+// matched; handling the option arity fixes both.
+
+for (const command of [
+  'git push --push-option --no-verify',
+  'git push --push-option --no-verif',
+  'git push -o --no-verify',
+  'git push --receive-pack --no-verify',
+  'git commit --trailer --no-verify -m "msg"',
+  'git commit --trailer --no-verif -m "msg"',
+]) {
+  if (test(`does not block a value-taking option's value: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+// The inline `=value` form consumes nothing, so a real flag after it must still
+// be caught — otherwise the arity handling above becomes its own bypass.
+if (test('still blocks --no-verify after an inline --push-option=value', () => {
+  const r = runHook({ tool_input: { command: 'git push --push-option=ci.skip --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks --no-verif after an inline --trailer=value', () => {
+  const r = runHook({ tool_input: { command: 'git commit --trailer=Key:val --no-verif -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
 // --- Chained command false positive prevention (Comment 2) ---
 
 if (test('does not false-positive on -n belonging to git log in a chain', () => {

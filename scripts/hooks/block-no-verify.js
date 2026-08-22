@@ -57,6 +57,9 @@ const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '--fixup',
   '--squash',
   '--pathspec-from-file',
+  // `git commit --trailer "Key: value"` — the value is data, so a token that
+  // looks like a flag must not be classified as one.
+  '--trailer',
 ]);
 
 const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
@@ -246,6 +249,21 @@ function getCommitShortValueOption(value) {
 
   return null;
 }
+
+/**
+ * `git push` options that consume the FOLLOWING token as their value. Without
+ * these, `git push --push-option --no-verify` reads the value as a flag and is
+ * refused even though git sends it verbatim to the server and still runs the
+ * hooks. Long `--flag=value` forms need no entry: they are a single token.
+ */
+const PUSH_OPTIONS_WITH_VALUE = new Set([
+  '-o',
+  '--push-option',
+  '--receive-pack',
+  '--exec',
+  '--repo',
+  '--force-with-lease',
+]);
 
 /**
  * Git resolves any UNAMBIGUOUS prefix of a long option, so `--no-verif` and
@@ -444,6 +462,11 @@ function hasNoVerifyFlag(input, command, offset) {
       if (commitOptionContainsInlineValue(value)) {
         continue;
       }
+    }
+
+    if (command === 'push' && PUSH_OPTIONS_WITH_VALUE.has(value)) {
+      skipNext = true;
+      continue;
     }
 
     if (isNoVerifyLongFlag(value)) return true;
