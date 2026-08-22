@@ -172,6 +172,41 @@ if (test('still blocks --no-verif after an inline --trailer=value', () => {
   assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
 })) passed++; else failed++;
 
+// Git resolves an unambiguous prefix of a long option, so the abbreviated
+// spelling of a value-taking option consumes the following token exactly like
+// the full one. Proven against git 2.51: `git commit --mes --no-verify` runs
+// the pre-commit hook and stores "--no-verify" as the commit message.
+//
+//   git push --push-opti  -> error: option `push-option' requires a value
+//   git commit --trail    -> error: option `trailer' requires a value
+for (const command of [
+  'git push --push-opti --no-verify',
+  'git push --push-o --no-verif',
+  'git commit --trail --no-verify -m "msg"',
+  'git commit --mes --no-verify',
+]) {
+  if (test(`does not block an abbreviated value-taking option: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+// The abbreviation must not weaken any of the three ways a real flag reaches
+// git: an inline value consumes nothing, and a prefix that is ambiguous among
+// the value-taking options resolves to none of them.
+for (const command of [
+  'git push --push-opti=ci.skip --no-verify',
+  'git commit --trail=Key:val --no-verify -m "msg"',
+  'git push --re --no-verify',
+  'git commit --f --no-verify -m "msg"',
+]) {
+  if (test(`abbreviation handling still blocks: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
 // --- Chained command false positive prevention (Comment 2) ---
 
 if (test('does not false-positive on -n belonging to git log in a chain', () => {

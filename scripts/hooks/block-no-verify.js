@@ -206,12 +206,52 @@ function findCommandSegmentEnd(input, start) {
   return input.length;
 }
 
+/**
+ * True when `value` is the option itself or an abbreviation git resolves to it.
+ *
+ * Git accepts any unambiguous prefix of a long option, so `--push-opti` is
+ * `--push-option` and consumes the following token exactly like the full
+ * spelling. An exact-name lookup missed that and refused
+ * `git push --push-opti --no-verify`, a command git runs with its hooks intact
+ * (the flag becomes the option's value).
+ *
+ * Only value-taking options are prefix-matched, and only when the prefix is
+ * unique among them. A prefix git itself rejects as ambiguous may still resolve
+ * here (`--rec` is also `--recurse-submodules`), but git refuses to run such a
+ * command at all, so it cannot skip a hook either way. The inline `=value` form
+ * is one token and consumes nothing, so it is never a match.
+ */
+function optionConsumesNextValue(value, optionsWithValue) {
+  if (optionsWithValue.has(value)) {
+    return true;
+  }
+
+  if (!value.startsWith('--') || value.length <= 2 || value.includes('=')) {
+    return false;
+  }
+
+  let resolved = null;
+  for (const option of optionsWithValue) {
+    if (!option.startsWith('--') || !option.startsWith(value)) {
+      continue;
+    }
+
+    if (resolved !== null) {
+      return false;
+    }
+
+    resolved = option;
+  }
+
+  return resolved !== null;
+}
+
 function commitOptionConsumesNextValue(value) {
   if (isCommitNoVerifyShortFlag(value)) {
     return false;
   }
 
-  if (COMMIT_OPTIONS_WITH_VALUE.has(value)) {
+  if (optionConsumesNextValue(value, COMMIT_OPTIONS_WITH_VALUE)) {
     return true;
   }
 
@@ -469,7 +509,7 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (command === 'push' && PUSH_OPTIONS_WITH_VALUE.has(value)) {
+    if (command === 'push' && optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) {
       skipNext = true;
       continue;
     }
