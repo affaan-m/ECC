@@ -247,6 +247,30 @@ function getCommitShortValueOption(value) {
   return null;
 }
 
+/**
+ * Git resolves any UNAMBIGUOUS prefix of a long option, so `--no-verif` and
+ * `--no-veri` bypass the hooks exactly as `--no-verify` does. Matching the full
+ * spelling alone let two characters off the end walk straight past this gate.
+ *
+ * Verified against real git with a failing pre-commit hook:
+ *   git commit                -> hook ran, commit refused
+ *   git commit --no-verif     -> committed, hook skipped
+ *   git commit --no-veri      -> committed, hook skipped
+ *
+ * Matching every prefix cannot catch `--no-verbose`, because that is not a
+ * prefix of `--no-verify`. The shortest forms (`--no-v`, `--no-ve`) are
+ * ambiguous and git rejects them itself, so treating them as a bypass attempt
+ * costs nothing — no working command uses them.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isNoVerifyLongFlag(value) {
+  // `--no-` alone is not an attempt at anything; require at least one more char.
+  if (value.length <= '--no-'.length) return false;
+  return '--no-verify'.startsWith(value);
+}
+
 function isCommitNoVerifyShortFlag(value) {
   if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
     return false;
@@ -422,7 +446,7 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (value === '--no-verify') return true;
+    if (isNoVerifyLongFlag(value)) return true;
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {

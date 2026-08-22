@@ -78,6 +78,43 @@ if (test('blocks quoted core.hooksPath override argument', () => {
   assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Abbreviated long flags ---
+// Git resolves any unambiguous prefix of a long option, so these bypass the
+// hooks exactly as the full spelling does. Verified against real git with a
+// failing pre-commit hook: `git commit --no-verif` and `--no-veri` both commit.
+
+for (const flag of ['--no-verif', '--no-veri', '--no-ver', '--no-ve', '--no-v']) {
+  if (test(`blocks abbreviated ${flag} on git commit`, () => {
+    const r = runHook({ tool_input: { command: `git commit ${flag} -m "msg"` } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+if (test('blocks abbreviated --no-verif on git push', () => {
+  const r = runHook({ tool_input: { command: 'git push --no-verif' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+// The guard must match prefixes OF --no-verify, not everything starting with
+// --no-. `--no-verbose` is a real, harmless git option and is not a prefix of
+// --no-verify, so it must stay allowed.
+if (test('still allows --no-verbose (not a prefix of --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-verbose -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows --no-edit', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-edit --amend' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows the literal text in a commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "no-verif was the bug"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 // --- Chained command false positive prevention (Comment 2) ---
 
 if (test('does not false-positive on -n belonging to git log in a chain', () => {
