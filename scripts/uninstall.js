@@ -5,7 +5,10 @@ const path = require('path');
 const { uninstallInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { exitFeedbackLines } = require('./lib/feedback-links');
-const { uninstallLegacyCodexSync } = require('./lib/codex-legacy-sync');
+const {
+  detectLegacyCodexSync,
+  uninstallLegacyCodexSync,
+} = require('./lib/codex-legacy-sync');
 
 function showHelp(exitCode = 0) {
   console.log(`
@@ -90,12 +93,8 @@ function printHuman(result) {
   }
 }
 
-function detectLegacyCodexSync(codexHome) {
-  const probe = uninstallLegacyCodexSync({
-    codexHome,
-    dryRun: true,
-  });
-  return probe.status !== 'not-found';
+function legacyCodexSyncDetected(codexHome) {
+  return detectLegacyCodexSync(codexHome);
 }
 
 function printLegacy(result, dryRun) {
@@ -149,7 +148,7 @@ async function main() {
       if (
         result.results.length === 0
         && includesCodexTarget(options.targets)
-        && detectLegacyCodexSync(codexHomePath())
+        && legacyCodexSyncDetected(codexHomePath())
       ) {
         result = uninstallLegacyCodexSync({
           codexHome: codexHomePath(),

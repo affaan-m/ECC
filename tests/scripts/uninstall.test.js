@@ -418,6 +418,56 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('does not misclassify a clean Codex home as a legacy install', () => {
+    const homeDir = createTempDir('uninstall-clean-codex-home-');
+    const projectRoot = createTempDir('uninstall-clean-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(!uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('explicit --legacy-codex-sync on a clean home reports not-found without removing files', () => {
+    const homeDir = createTempDir('uninstall-legacy-clean-home-');
+    const projectRoot = createTempDir('uninstall-legacy-clean-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+
+      const uninstallResult = run(['--legacy-codex-sync', '--json'], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      const parsed = JSON.parse(uninstallResult.stdout);
+      assert.strictEqual(parsed.status, 'not-found');
+      assert.deepStrictEqual(parsed.plannedRemovals, []);
+      assert.deepStrictEqual(parsed.retainedPaths, []);
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
