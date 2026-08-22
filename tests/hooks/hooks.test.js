@@ -2565,6 +2565,23 @@ async function runTests() {
   else failed++;
 
   if (
+    test('MCP health-check hooks use tight mcp__.* matcher instead of wildcard', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      const preMcp = hooks.hooks.PreToolUse.find(e => e.id === 'pre:mcp-health-check');
+      assert.ok(preMcp, 'Should define pre:mcp-health-check');
+      assert.strictEqual(preMcp.matcher, 'mcp__.*', 'pre:mcp-health-check should use mcp__.* matcher to avoid spawning on non-MCP tools');
+
+      const postMcp = hooks.hooks.PostToolUseFailure.find(e => e.id === 'post:mcp-health-check');
+      assert.ok(postMcp, 'Should define post:mcp-health-check');
+      assert.strictEqual(postMcp.matcher, 'mcp__.*', 'post:mcp-health-check should use mcp__.* matcher to avoid spawning on non-MCP tool failures');
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('SessionEnd marker hook is async and cleanup-safe', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
