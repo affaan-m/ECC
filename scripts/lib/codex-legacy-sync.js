@@ -483,8 +483,15 @@ function hasMarkerBlock(codexHome) {
       const stripped = stripMarkerBlock(snapshot.content);
       return stripped !== snapshot.content;
     }
-  } catch (_error) {
-    // Non-regular or unreadable AGENTS.md is not a clean marker signal.
+  } catch (error) {
+    // Only ENOENT means "no AGENTS.md" → no marker. Any other error
+    // (EACCES, EMFILE, EISDIR, symlink-ELOOP, ...) is an indeterminate
+    // inspection result and must propagate so callers do not read it as
+    // "clean home". Throwing here is intentional per the repo coding
+    // guideline: "Always handle errors explicitly at every level and never
+    // silently swallow errors."
+    if (error && error.code === 'ENOENT') return false;
+    throw error;
   }
   return false;
 }

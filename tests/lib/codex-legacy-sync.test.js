@@ -7,6 +7,7 @@ const path = require('path');
 
 const {
   beginLegacySyncState,
+  detectLegacyCodexSync,
   finalizeLegacySyncState,
   recordLegacySyncPath,
   rollbackLegacyCodexSync,
@@ -518,6 +519,53 @@ function runTests() {
     const uninstall = uninstallLegacyCodexSync({ codexHome });
     assert.strictEqual(uninstall.status, 'uninstalled');
     assert.strictEqual(fs.readFileSync(promptPath, 'utf8'), '# Original user prompt\n');
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  })) passed += 1; else failed += 1;
+
+  if (test('detectLegacyCodexSync surfaces unreadable AGENTS.md instead of reporting clean', () => {
+    // hasMarkerBlock previously swallowed every read/open error and returned false,
+    // which made detectLegacyCodexSync claim a clean home even when AGENTS.md was
+    // unreadable (EACCES, EMFILE, ...). The fix is to rethrow every error except
+    // ENOENT (a missing file is a legitimate "no marker" signal).
+    const homeDir = tempDir('legacy-codex-home-');
+    const codexHome = path.join(homeDir, '.codex');
+    const agentsPath = path.join(codexHome, 'AGENTS.md');
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(agentsPath, '# User instructions\n<!-- BEGIN ECC -->\n<!-- END ECC -->\n');
+
+    // chmod 000 to make AGENTS.md unreadable. Skip when running as root because
+    // root bypasses mode bits and the test would not exercise the error path.
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      fs.chmodSync(agentsPath, 0o000);
+      let threw = null;
+      try {
+        detectLegacyCodexSync(codexHome);
+      } catch (error) {
+        threw = error;
+      }
+      assert.ok(threw, 'detectLegacyCodexSync must propagate the read error');
+      assert.notStrictEqual(threw && threw.code, 'ENOENT');
+      fs.chmodSync(agentsPath, 0o600);
+    } else {
+      // Root path: simulate the same failure by replacing AGENTS.md with a
+      // directory — openRegularFileNoFollow then throws EACCES-on-open on
+      // Linux when the path resolves to a non-regular file.
+      fs.rmSync(agentsPath);
+      fs.mkdirSync(agentsPath);
+      let threw = null;
+      try {
+        detectLegacyCodexSync(codexHome);
+      } catch (error) {
+        threw = error;
+      }
+      assert.ok(threw, 'detectLegacyCodexSync must propagate the inspection error');
+      fs.rmSync(agentsPath, { recursive: true });
+    }
+
+    // Sanity check: a missing AGENTS.md is still treated as no-marker (not an error).
+    fs.rmSync(agentsPath, { force: true });
+    assert.strictEqual(detectLegacyCodexSync(codexHome), false);
+
     fs.rmSync(homeDir, { recursive: true, force: true });
   })) passed += 1; else failed += 1;
 
