@@ -489,8 +489,17 @@ function hasMarkerBlock(codexHome) {
   return false;
 }
 
+function resolveCodexHome(codexHome) {
+  return path.resolve(codexHome || process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex'));
+}
+
+function legacyCodexSyncStateExists(codexHome) {
+  const resolvedCodexHome = resolveCodexHome(codexHome);
+  return readStateIfPresent(getStatePath(resolvedCodexHome)) !== null;
+}
+
 function detectLegacyCodexSync(codexHome) {
-  const resolvedCodexHome = path.resolve(codexHome || process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex'));
+  const resolvedCodexHome = resolveCodexHome(codexHome);
   if (readStateIfPresent(getStatePath(resolvedCodexHome))) return true;
   return hasMarkerBlock(resolvedCodexHome);
 }
@@ -514,7 +523,10 @@ function uninstallLegacyCodexSync(options = {}) {
         const stripped = stripMarkerBlock(content);
         if (stripped !== content) {
           plannedRemovals.push(`${agentsPath}#ecc-marker-block`);
-          if (!dryRun) replaceOpenedRegularFile(openedAgents, stripped, openedAgents.stat.mode & 0o777);
+          if (!dryRun) {
+            replaceOpenedRegularFile(openedAgents, stripped, openedAgents.stat.mode & 0o777);
+            removedPaths.push(agentsPath);
+          }
         }
       }
     } catch (_error) {
@@ -621,6 +633,7 @@ module.exports = {
   detectLegacyCodexSync,
   finalizeLegacySyncState,
   getStatePath,
+  legacyCodexSyncStateExists,
   recordLegacySyncPath,
   rollbackLegacyCodexSync,
   stripMarkerBlock,

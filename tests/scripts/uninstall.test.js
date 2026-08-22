@@ -44,15 +44,9 @@ function writeState(filePath, options) {
 }
 
 function run(args = [], options = {}) {
-  const env = {
-    ...process.env,
-    HOME: options.homeDir || process.env.HOME,
-  };
-  if (options.homeDir) {
-    env.CODEX_HOME = path.join(options.homeDir, '.codex');
-  } else {
-    delete env.CODEX_HOME;
-  }
+  const env = options.homeDir
+    ? { ...process.env, HOME: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
+    : Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CODEX_HOME'))
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -462,6 +456,63 @@ function runTests() {
       assert.deepStrictEqual(parsed.plannedRemovals, []);
       assert.deepStrictEqual(parsed.retainedPaths, []);
       assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('does not auto-fallback to a marker-only AGENTS.md without a legacy ownership manifest', () => {
+    const homeDir = createTempDir('uninstall-marker-only-codex-home-');
+    const projectRoot = createTempDir('uninstall-marker-only-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(!uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n');
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('explicit --legacy-codex-sync removes a marker-only AGENTS.md block', () => {
+    const homeDir = createTempDir('uninstall-explicit-marker-codex-home-');
+    const projectRoot = createTempDir('uninstall-explicit-marker-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+
+      const uninstallResult = run(['--legacy-codex-sync'], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.ok(uninstallResult.stdout.includes('Status: UNINSTALLED'), uninstallResult.stdout);
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n\n');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

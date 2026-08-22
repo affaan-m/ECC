@@ -6,7 +6,7 @@ const { uninstallInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { exitFeedbackLines } = require('./lib/feedback-links');
 const {
-  detectLegacyCodexSync,
+  legacyCodexSyncStateExists,
   uninstallLegacyCodexSync,
 } = require('./lib/codex-legacy-sync');
 
@@ -16,8 +16,9 @@ Usage: node scripts/uninstall.js [--target <${SUPPORTED_INSTALL_TARGETS.join('|'
 
 Remove ECC-managed files recorded in install-state for the current context.
 When no install-state is found, the uninstaller also detects and removes
-artifacts left by the older scripts/sync-ecc-to-codex.sh installer.
-Use --legacy-codex-sync to force the legacy path explicitly.
+legacy sync-ecc-to-codex.sh artifacts, but only when a legacy ownership
+manifest is present. Use --legacy-codex-sync to force the legacy path
+explicitly, including marker-only AGENTS.md cleanup.
 `);
   process.exit(exitCode);
 }
@@ -93,8 +94,8 @@ function printHuman(result) {
   }
 }
 
-function legacyCodexSyncDetected(codexHome) {
-  return detectLegacyCodexSync(codexHome);
+function legacyCodexSyncStateDetected(codexHome) {
+  return legacyCodexSyncStateExists(codexHome);
 }
 
 function printLegacy(result, dryRun) {
@@ -148,7 +149,7 @@ async function main() {
       if (
         result.results.length === 0
         && includesCodexTarget(options.targets)
-        && legacyCodexSyncDetected(codexHomePath())
+        && legacyCodexSyncStateDetected(codexHomePath())
       ) {
         result = uninstallLegacyCodexSync({
           codexHome: codexHomePath(),
