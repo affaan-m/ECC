@@ -23,6 +23,11 @@ const {
   createInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
+const {
+  beginLegacySyncState,
+  recordLegacySyncPath,
+  finalizeLegacySyncState,
+} = require('../../scripts/lib/codex-legacy-sync');
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -43,6 +48,11 @@ function run(args = [], options = {}) {
     ...process.env,
     HOME: options.homeDir || process.env.HOME,
   };
+  if (options.homeDir) {
+    env.CODEX_HOME = path.join(options.homeDir, '.codex');
+  } else {
+    delete env.CODEX_HOME;
+  }
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -349,6 +359,59 @@ function runTests() {
       assert.ok(applied.stdout.includes(editedPath));
       assert.ok(fs.existsSync(editedPath));
       assert.ok(fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('auto-detects legacy sync-ecc-to-codex.sh install and removes artifacts without touching conversations or unrelated config keys', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const configPath = path.join(codexHome, 'config.toml');
+      const agentsPath = path.join(codexHome, 'AGENTS.md');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      const conversationPath = path.join(codexHome, 'conversations', 'keep-me.md');
+      const userFilePath = path.join(codexHome, 'user-owned.txt');
+
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(configPath, 'model = "user"\n');
+      fs.writeFileSync(agentsPath, '# User instructions\n');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: configPath });
+      recordLegacySyncPath({ statePath, filePath: agentsPath });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+
+      fs.writeFileSync(configPath, 'model = "user"\napproval_policy = "on-request"\n');
+      fs.writeFileSync(
+        agentsPath,
+        '# User instructions\n\n<!-- BEGIN ECC -->\n# ECC managed\n<!-- END ECC -->\n'
+      );
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      fs.mkdirSync(path.dirname(conversationPath), { recursive: true });
+      fs.writeFileSync(conversationPath, 'conversation history');
+      fs.writeFileSync(userFilePath, 'unrelated');
+
+      const uninstallResult = run([], { cwd: projectRoot, homeDir });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.ok(!uninstallResult.stdout.includes('No ECC install-state files found'), uninstallResult.stdout);
+      assert.ok(uninstallResult.stdout.includes('Legacy Codex sync cleanup summary'), uninstallResult.stdout);
+      assert.ok(!fs.existsSync(promptPath));
+      assert.strictEqual(fs.readFileSync(configPath, 'utf8'), 'model = "user"\n');
+      assert.strictEqual(fs.readFileSync(agentsPath, 'utf8'), '# User instructions\n');
+      assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
+      assert.strictEqual(fs.readFileSync(userFilePath, 'utf8'), 'unrelated');
+      assert.ok(!fs.existsSync(statePath));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
