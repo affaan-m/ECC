@@ -262,8 +262,13 @@ const PUSH_OPTIONS_WITH_VALUE = new Set([
   '--receive-pack',
   '--exec',
   '--repo',
-  '--force-with-lease',
 ]);
+// NOT in the set: `--force-with-lease`. Its value is OPTIONAL and inline-only,
+// so the bare form consumes nothing and the next token is a real flag. Listing
+// it would make `git push --force-with-lease --no-verify` skip the very flag
+// this hook exists to catch. Confirmed against git: every option above answers
+// "requires a value" when given none, while a bare `git push
+// --force-with-lease` parses and fails later on the push destination.
 
 /**
  * Git resolves any UNAMBIGUOUS prefix of a long option, so `--no-verif` and

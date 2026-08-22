@@ -135,6 +135,29 @@ for (const command of [
   })) passed++; else failed++;
 }
 
+// `--force-with-lease` takes an OPTIONAL, inline-only value, so the bare form
+// consumes nothing and the next token is a real flag. Confirmed against git:
+// every option in PUSH_OPTIONS_WITH_VALUE answers "requires a value" when given
+// none, while a bare `git push --force-with-lease` parses and fails later on the
+// push destination. Treating it as value-taking would skip the very flag this
+// hook exists to catch.
+for (const command of [
+  'git push --force-with-lease --no-verify',
+  'git push --force-with-lease --no-verif',
+  'git push --force-with-lease=main:abc123 --no-verify',
+]) {
+  if (test(`still blocks no-verify after --force-with-lease: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+if (test('still allows a bare --force-with-lease push', () => {
+  const r = runHook({ tool_input: { command: 'git push --force-with-lease' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 // The inline `=value` form consumes nothing, so a real flag after it must still
 // be caught — otherwise the arity handling above becomes its own bypass.
 if (test('still blocks --no-verify after an inline --push-option=value', () => {
