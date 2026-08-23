@@ -325,6 +325,39 @@ function runTests() {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
 
+  // 9b. Sonnet 5 cache write/read tokens use the correct rates.
+  (test('prices Sonnet 5 cache tokens at the documented rates', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5_cache',
+          model: 'claude-sonnet-5',
+          usage: {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_creation_input_tokens: 1_000_000,
+            cache_read_input_tokens: 1_000_000,
+          },
+        },
+      },
+    ]);
+
+    const result = runScript(
+      { session_id: 'sonnet5-cache-session', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 14.7, 'Expected Sonnet 5 1M input + 1M output + 1M cache write + 1M cache read to cost $14.70');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
   // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
   (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
@@ -349,6 +382,57 @@ function runTests() {
     const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
     const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
     assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  // 10b. Dated Sonnet 5 IDs and near-misses are matched correctly.
+  (test('prices dated Sonnet 5 IDs at $12 and rejects claude-sonnet-50 near-miss', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5_dated',
+          model: 'claude-sonnet-5-20261001',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    const result = runScript(
+      { session_id: 'sonnet5-dated-session', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 12, 'Expected dated Sonnet 5 1M/1M to cost $12.00');
+
+    // Near-miss `claude-sonnet-50` must fall through to the standard Sonnet rate.
+    const nearMissPath = path.join(tmpHome, 'near-miss.jsonl');
+    writeTranscript(nearMissPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet50',
+          model: 'claude-sonnet-50',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    const nearResult = runScript(
+      { session_id: 'sonnet50-near-miss-session', transcript_path: nearMissPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(nearResult.code, 0, `Expected exit code 0, got ${nearResult.code}`);
+
+    const lines = fs.readFileSync(metricsFile, 'utf8').trim().split('\n');
+    const nearRow = JSON.parse(lines[lines.length - 1]);
+    assert.strictEqual(nearRow.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
 
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }) ? passed++ : failed++);
