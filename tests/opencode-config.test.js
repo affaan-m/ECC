@@ -33,7 +33,15 @@ if (
     assert.ok(!Object.hasOwn(config, 'model'), 'Root config must not pin a provider-specific model');
     assert.ok(!Object.hasOwn(config, 'small_model'), 'Root config must not pin a provider-specific small model');
 
-    for (const [agentId, agent] of Object.entries(config.agent || {})) {
+    assert.ok(
+      config.agent &&
+        typeof config.agent === 'object' &&
+        !Array.isArray(config.agent) &&
+        Object.keys(config.agent).length > 0,
+      'Reference config must define registered agents'
+    );
+
+    for (const [agentId, agent] of Object.entries(config.agent)) {
       assert.ok(!Object.hasOwn(agent, 'model'), `Agent "${agentId}" must inherit the selected OpenCode model`);
     }
   })
