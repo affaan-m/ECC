@@ -71,15 +71,21 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
 // Approximate per-1M-token billing rates (USD).
 // Cache creation: 1.25x input rate. Cache read: 0.1x input rate.
 const RATE_TABLE = {
-  haiku:  { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
-  sonnet: { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
-  opus:   { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
+  haiku:    { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
+  sonnet:   { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
+  sonnet5:  { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.20 },
+  opus:     { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
 };
+
+function isSonnet5(model) {
+  return /(?:^|[^a-z0-9])sonnet-5(?:[^a-z0-9]|$)/.test(model);
+}
 
 function getRates(model) {
   const m = String(model || '').toLowerCase();
-  if (m.includes('haiku')) return RATE_TABLE.haiku;
-  if (m.includes('opus'))  return RATE_TABLE.opus;
+  if (m.includes('haiku'))  return RATE_TABLE.haiku;
+  if (isSonnet5(m))        return RATE_TABLE.sonnet5;
+  if (m.includes('opus'))   return RATE_TABLE.opus;
   return RATE_TABLE.sonnet;
 }
 

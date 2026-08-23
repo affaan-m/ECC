@@ -297,7 +297,63 @@ function runTests() {
     }
   }) ? passed++ : failed++);
 
-  // 9. Ignores stale harness-cost cache and falls back to transcript estimate
+  // 9. Prices Sonnet 5 at the documented $2/$10 rate.
+  (test('prices Sonnet 5 at $12 per 1M input + 1M output tokens', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet5',
+          model: 'claude-sonnet-5',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    const result = runScript(
+      { session_id: 'sonnet5-session', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 12, 'Expected Sonnet 5 1M/1M to cost $12.00');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
+  (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
+    const tmpHome = makeTempDir();
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet46',
+          model: 'claude-sonnet-4-6',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    const result = runScript(
+      { session_id: 'sonnet46-session', transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
+
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }) ? passed++ : failed++);
+
+  // 11. Ignores stale harness-cost cache and falls back to transcript estimate
   (test('ignores stale harness-cost cache (>300s) and uses transcript estimate', () => {
     const tmpHome = makeTempDir();
     const sessionId = 'harness-stale-' + Date.now();
