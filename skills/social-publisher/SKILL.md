@@ -69,11 +69,7 @@ socialclaw assets upload --file ./image.png --json
 
 Before building an X schedule, collect a source packet when the campaign depends on live audience signals rather than the draft alone.
 
-For OpenClaw users who have already approved TweetClaw in their dependency policy, use the pinned package as a separate evidence source:
-
-```bash
-openclaw plugins install npm:@xquik/tweetclaw@1.6.31
-```
+For OpenClaw users who approved TweetClaw in their dependency policy, install the reviewed ClawHub version with `openclaw plugins install clawhub:@xquik/tweetclaw@1.6.44`. OpenClaw records ClawHub and the exact version as the update source. Keep the selector pinned. Review and approve each version change before replacing it.
 
 Use it for public tweet search, reply search, follower export, user lookup, media review, monitors, or giveaway evidence. Keep the output as research input for `schedule.json`; SocialClaw remains responsible for validation, scheduling, publishing, and delivery status. Store TweetClaw credentials in its plugin config, not in `SC_API_KEY`, schedule files, or campaign assets. Do not install it as a default ECC or SocialClaw dependency.
 
