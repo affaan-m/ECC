@@ -300,6 +300,7 @@ function runTests() {
   // 9. Prices Sonnet 5 at the documented $2/$10 rate.
   (test('prices Sonnet 5 at $12 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
+    const sessionId = 'sonnet5-' + Date.now();
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -313,7 +314,7 @@ function runTests() {
     ]);
 
     const result = runScript(
-      { session_id: 'sonnet5-session', transcript_path: transcriptPath },
+      { session_id: sessionId, transcript_path: transcriptPath },
       withTempHome(tmpHome)
     );
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
@@ -328,6 +329,7 @@ function runTests() {
   // 9b. Sonnet 5 cache write/read tokens use the correct rates.
   (test('prices Sonnet 5 cache tokens at the documented rates', () => {
     const tmpHome = makeTempDir();
+    const sessionId = 'sonnet5-cache-' + Date.now();
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -346,7 +348,7 @@ function runTests() {
     ]);
 
     const result = runScript(
-      { session_id: 'sonnet5-cache-session', transcript_path: transcriptPath },
+      { session_id: sessionId, transcript_path: transcriptPath },
       withTempHome(tmpHome)
     );
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
@@ -361,6 +363,7 @@ function runTests() {
   // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
   (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
+    const sessionId = 'sonnet46-' + Date.now();
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -374,7 +377,7 @@ function runTests() {
     ]);
 
     const result = runScript(
-      { session_id: 'sonnet46-session', transcript_path: transcriptPath },
+      { session_id: sessionId, transcript_path: transcriptPath },
       withTempHome(tmpHome)
     );
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
@@ -389,6 +392,7 @@ function runTests() {
   // 10b. Dated Sonnet 5 IDs and near-misses are matched correctly.
   (test('prices dated Sonnet 5 IDs at $12 and rejects claude-sonnet-50 near-miss', () => {
     const tmpHome = makeTempDir();
+    const sessionId = 'sonnet5-dated-' + Date.now();
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -402,7 +406,7 @@ function runTests() {
     ]);
 
     const result = runScript(
-      { session_id: 'sonnet5-dated-session', transcript_path: transcriptPath },
+      { session_id: sessionId, transcript_path: transcriptPath },
       withTempHome(tmpHome)
     );
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
@@ -425,7 +429,7 @@ function runTests() {
     ]);
 
     const nearResult = runScript(
-      { session_id: 'sonnet50-near-miss-session', transcript_path: nearMissPath },
+      { session_id: 'sonnet50-near-miss-' + Date.now(), transcript_path: nearMissPath },
       withTempHome(tmpHome)
     );
     assert.strictEqual(nearResult.code, 0, `Expected exit code 0, got ${nearResult.code}`);
