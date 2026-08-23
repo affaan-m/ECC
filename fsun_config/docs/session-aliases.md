@@ -81,7 +81,7 @@ organized around aliases, and session IDs are hidden from the user.
 
 ## Machine wiring (per-computer, manual)
 
-`ecc.js sync` installs the code, but each machine needs four manual setup
+`ecc.js sync` installs the code, but each machine needs five manual setup
 steps (they are settings/folders, not repo files):
 
 1. **Stop hook -> gated save** (also fixes the phantom-stub bug, found
@@ -105,6 +105,12 @@ steps (they are settings/folders, not repo files):
 4. **Scratch folder**: `mkdir -p ~/claude_adhoc/.claude` with a local
    `settings.json` of `{"env": {"ECC_DISABLED_HOOKS": "stop:session-end,session:end:marker"}}`,
    plus `/sessions ignore ~/claude_adhoc`.
+
+5. **No AI attribution in commits/PRs**: in `~/.claude/settings.json` set
+   `"attribution": {"commit": "", "pr": "", "sessionUrl": false}` (the older
+   `"includeCoAuthoredBy": false` is deprecated but harmless to keep). Claude Code adds a
+   `Co-Authored-By: Claude` trailer and a "Generated with Claude Code" footer by default;
+   `rules/frank/preferences.md` forbids both.
 
 ## Verification & evidence
 

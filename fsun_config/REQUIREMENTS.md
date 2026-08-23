@@ -20,11 +20,9 @@
 - Cross-platform: macOS (zsh) + Ubuntu/Linux (zsh/bash)
 
 ## Custom overlays (`fsun_config/custom/`)
-- `commands/done.md` — append-to-CLAUDE.md session log
 - `commands/sessions.md` — context-rich `/sessions load` (overrides upstream)
 - `scripts/lib/session-manager-fsun.js` — extension lib backing the overlay
 - `rules/common/behavioral-guidelines.md` — Frank's behavioral rules
-- `rules/common/session-log.md` — session-log convention rule
 
 ## Session aliases (alias-first session management)
 See `fsun_config/docs/session-aliases.md` for the full spec. Shipped 2026-07-08 via PR #19.
