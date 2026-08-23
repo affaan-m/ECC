@@ -101,6 +101,7 @@
     "commands/done.md",
     "commands/product-cycle.md",
     "commands/sessions.md",
+    "commands/ticket-sizing.md",
     "rules/common/behavioral-guidelines.md",
     "rules/common/session-log.md",
     "rules/frank/agent-self-learning.md",
@@ -209,6 +210,6 @@
     "scripts/lib/llm-summary.js": "ca0c3ac06191",
     "scripts/lib/transcript-context.js": "a79572299eda"
   },
-  "lastSync": "2026-07-17T03:23:09.569Z",
+  "lastSync": "2026-08-07T05:44:11.047Z",
   "bible": []
 }
