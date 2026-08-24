@@ -187,6 +187,8 @@ function main() {
         ".claude-plugin/plugin.json",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".codex-plugin/plugin.json",
+        ".grok-plugin/plugin.json",
+        ".grok-plugin/marketplace.json",
         ".agents/skills/unified-memory/SKILL.md",
         ".agents/skills/unified-memory/agents/openai.yaml",
         ".cursor/skills/unified-memory/SKILL.md",

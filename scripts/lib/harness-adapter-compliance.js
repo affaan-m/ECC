@@ -98,6 +98,44 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'grok-build',
+    harness: 'Grok Build',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Grok plugin and marketplace manifests',
+      'shared skills',
+      'commands',
+      'hooks after `--trust`',
+      'root `.mcp.json` after trust',
+    ],
+    unsupported_surfaces: [
+      'Claude userConfig hook profiles are ignored; use ECC_HOOK_PROFILE',
+      'ECC agent tool allowlists use Claude names and are not mapped in Grok agent frontmatter',
+      'No plugin rules/ surface; no ecc install --target grok',
+    ],
+    install_or_onramp: [
+      '`grok plugin marketplace add affaan-m/ECC && grok plugin install ecc --trust && grok plugin enable ecc`',
+      '`grok plugin install /path/to/ECC --trust && grok plugin enable ecc`',
+    ],
+    verification_commands: [
+      '`grok plugin validate .`',
+      '`node tests/plugin-manifest.test.js`',
+      '`node tests/lib/resolve-ecc-root.test.js`',
+    ],
+    risk_notes: [
+      'Grok rejects Claude marketplace source "./"; keep a url catalog in .grok-plugin/marketplace.json',
+      'Trusted installs attach chrome-devtools from root .mcp.json; the full skill catalog is large',
+    ],
+    last_verified_at: '2026-08-24',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.grok-plugin/plugin.json',
+      '.grok-plugin/marketplace.json',
+      '.grok-plugin/README.md',
+      'scripts/lib/resolve-ecc-root.js',
+    ],
+  },
+  {
     id: 'opencode',
     harness: 'OpenCode',
     state: 'Adapter-backed',

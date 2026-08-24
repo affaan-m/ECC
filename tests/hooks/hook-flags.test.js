@@ -91,11 +91,42 @@ function runTests() {
       ECC_HOOKS_ENABLED: undefined,
       CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: undefined,
       ECC_HOOK_CONFIG: undefined,
+      GROK_PLUGIN_ROOT: undefined,
       CLAUDE_PLUGIN_ROOT: undefined,
       ECC_PLUGIN_ROOT: undefined,
     }, () => {
       assert.strictEqual(areHooksEnabled(), true);
     });
+  })) passed++; else failed++;
+
+  if (test('GROK_PLUGIN_ROOT locates managed hook config when Claude root is unset', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-flags-grok-'));
+    const configPath = path.join(root, 'ecc', 'setup.json');
+    try {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({
+        hooks: { enabled: false, profile: 'minimal' },
+      }));
+      withEnv({
+        ECC_HOOKS_ENABLED: undefined,
+        ECC_HOOK_PROFILE: undefined,
+        CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: undefined,
+        CLAUDE_PLUGIN_OPTION_HOOK_PROFILE: undefined,
+        ECC_HOOK_CONFIG: undefined,
+        CLAUDE_PLUGIN_ROOT: undefined,
+        ECC_PLUGIN_ROOT: undefined,
+        GROK_PLUGIN_ROOT: root,
+      }, () => {
+        assert.deepStrictEqual(readManagedHookConfig(), {
+          enabled: false,
+          profile: 'minimal',
+        });
+        assert.strictEqual(areHooksEnabled(), false);
+        assert.strictEqual(getHookProfile(), 'minimal');
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('Claude plugin options control enabled state and profile', () => {

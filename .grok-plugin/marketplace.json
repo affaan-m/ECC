@@ -1,0 +1,35 @@
+{
+  "name": "ecc",
+  "description": "Harness-native ECC skills, hooks, rules, MCP conventions, and operator workflows",
+  "owner": {
+    "name": "Affaan Mustafa",
+    "email": "me@affaanmustafa.com"
+  },
+  "plugins": [
+    {
+      "name": "ecc",
+      "description": "Harness-native ECC operator layer - 68 agents, 286 skills, 94 legacy command shims, reusable hooks, rules, selective install profiles, and production-ready workflows for Grok Build, Claude Code, Codex, OpenCode, Cursor, and related agent harnesses",
+      "version": "2.2.0",
+      "author": {
+        "name": "Affaan Mustafa",
+        "email": "me@affaanmustafa.com"
+      },
+      "homepage": "https://ecc.tools",
+      "repository": "https://github.com/affaan-m/ECC",
+      "license": "MIT",
+      "keywords": [
+        "ecc",
+        "agents",
+        "skills",
+        "hooks",
+        "tdd",
+        "code-review"
+      ],
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/affaan-m/ECC.git"
+      }
+    }
+  ]
+}

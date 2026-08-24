@@ -41,7 +41,7 @@ function sanitizeDiagnostic(value) {
 
 function readManagedHookConfig(env = process.env) {
   const pluginRoot = String(
-    env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || ''
+    env.GROK_PLUGIN_ROOT || env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || ''
   ).trim();
   const configPath = String(env.ECC_HOOK_CONFIG || '').trim()
     || (pluginRoot ? path.join(pluginRoot, 'ecc', 'setup.json') : '');

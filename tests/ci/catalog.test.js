@@ -80,6 +80,19 @@ function writePluginMetadata(root, counts) {
       description: `Fixture marketplace plugin — ${counts.agents} agents, ${counts.skills} skills, ${counts.commands} legacy command shims`,
     }],
   }, null, 2));
+
+  const grokDir = path.join(root, '.grok-plugin');
+  fs.mkdirSync(grokDir, { recursive: true });
+  fs.writeFileSync(path.join(grokDir, 'plugin.json'), JSON.stringify({
+    name: 'ecc',
+    description: `Fixture Grok plugin — ${counts.agents} agents, ${counts.skills} skills, ${counts.commands} legacy command shims`,
+  }, null, 2));
+  fs.writeFileSync(path.join(grokDir, 'marketplace.json'), JSON.stringify({
+    plugins: [{
+      name: 'ecc',
+      description: `Fixture Grok marketplace plugin — ${counts.agents} agents, ${counts.skills} skills, ${counts.commands} legacy command shims`,
+    }],
+  }, null, 2));
 }
 
 function writeEnglishAgents(root, counts, options = {}) {
@@ -226,6 +239,8 @@ function runTests() {
       assert.ok(formatted.includes('AGENTS.md summary'));
       assert.ok(formatted.includes('.claude-plugin/plugin.json description'));
       assert.ok(formatted.includes('.claude-plugin/marketplace.json plugin description'));
+      assert.ok(formatted.includes('.grok-plugin/plugin.json description'));
+      assert.ok(formatted.includes('.grok-plugin/marketplace.json plugin description'));
       assert.ok(formatted.includes('README.zh-CN.md quick-start summary'));
       assert.ok(formatted.includes('docs/zh-CN/README.md parity table'));
       assert.ok(formatted.includes('docs/zh-CN/AGENTS.md project structure'));
@@ -254,6 +269,8 @@ function runTests() {
       const zhAgentsDoc = fs.readFileSync(path.join(testDir, 'docs', 'zh-CN', 'AGENTS.md'), 'utf8');
       const pluginJson = fs.readFileSync(path.join(testDir, '.claude-plugin', 'plugin.json'), 'utf8');
       const marketplaceJson = fs.readFileSync(path.join(testDir, '.claude-plugin', 'marketplace.json'), 'utf8');
+      const grokPluginJson = fs.readFileSync(path.join(testDir, '.grok-plugin', 'plugin.json'), 'utf8');
+      const grokMarketplaceJson = fs.readFileSync(path.join(testDir, '.grok-plugin', 'marketplace.json'), 'utf8');
 
       assert.ok(readme.includes('Access to 1 agents, 1 skills, and 1 legacy command shims'));
       assert.ok(readme.includes('actual OSS surface: 7 agents, 7 skills, and 7 legacy command shims'));
@@ -266,6 +283,8 @@ function runTests() {
       assert.ok(zhAgentsDoc.includes('skills/ - 1+ 个工作流技能和领域知识'));
       assert.ok(pluginJson.includes('1 agents, 1 skills, 1 legacy command shims'));
       assert.ok(marketplaceJson.includes('1 agents, 1 skills, 1 legacy command shims'));
+      assert.ok(grokPluginJson.includes('1 agents, 1 skills, 1 legacy command shims'));
+      assert.ok(grokMarketplaceJson.includes('1 agents, 1 skills, 1 legacy command shims'));
     } finally {
       cleanupTestDir(testDir);
     }

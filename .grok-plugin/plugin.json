@@ -1,0 +1,23 @@
+{
+  "name": "ecc",
+  "version": "2.2.0",
+  "description": "Harness-native ECC plugin for engineering teams - 68 agents, 286 skills, 94 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Grok Build plus adjacent agent harnesses",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "ecc",
+    "agents",
+    "skills",
+    "hooks",
+    "tdd",
+    "code-review",
+    "security",
+    "workflow"
+  ],
+  "logo": "assets/ecc-icon.svg"
+}

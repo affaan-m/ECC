@@ -45,6 +45,7 @@
     ".claude-plugin/",
     ".codex/",
     ".codex-plugin/",
+    ".grok-plugin/",
     ".cursor/",
     ".gemini/",
     ".github/PULL_REQUEST_TEMPLATE.md",

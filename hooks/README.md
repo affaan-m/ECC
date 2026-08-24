@@ -92,6 +92,10 @@ Remove or comment out the hook entry in `hooks.json`. If installed as a plugin, 
 }
 ```
 
+Grok Build trusted plugin installs set `GROK_PLUGIN_ROOT` and the
+`CLAUDE_PLUGIN_ROOT` alias. Grok does not honor Claude `userConfig`; use the
+runtime variables below (`ECC_HOOK_PROFILE`, `ECC_HOOKS_ENABLED`) instead.
+
 ### Runtime Hook Controls (Recommended)
 
 Use environment variables to control hook behavior without editing `hooks.json`:
