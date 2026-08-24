@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECC Skill Profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "defaultProfile",
+    "profiles",
+    "minimalSkills",
+    "groups"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "defaultProfile": {
+      "type": "string",
+      "enum": ["minimal", "standard", "full"]
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "enum": ["minimal", "standard", "full"]
+      }
+    },
+    "minimalSkills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "groups": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["minimal", "standard", "full"]
+      }
+    }
+  }
+}

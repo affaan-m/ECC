@@ -55,6 +55,8 @@ Use skills for:
 
 Do not use skills as a dumping ground for static invariants that really want deterministic routing.
 
+ECC publishes hundreds of curated skills. Claude Code lists every skill the plugin declares, and that listing is budgeted. Use `ECC_SKILL_PROFILE=minimal|standard|full` (default `standard`) plus optional `ECC_ENABLED_SKILL_GROUPS` / `ECC_DISABLED_SKILL_GROUPS` to keep the listing inside the budget. Groups are the existing install-module IDs (`workflow-quality`, `framework-language`, `security`, ...). Apply the selection with `ecc skills-profile`.
+
 ### MCP
 
 Use MCP when the capability benefits from:

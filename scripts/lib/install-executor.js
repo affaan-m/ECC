@@ -773,6 +773,7 @@ function createManifestInstallPlan(options = {}) {
     moduleIds: options.moduleIds || [],
     includeComponentIds: options.includeComponentIds || [],
     excludeComponentIds: options.excludeComponentIds || [],
+    skillProfile: options.skillProfile || null,
     target,
     exemptValidationCodes: options.exemptValidationCodes || [],
   });

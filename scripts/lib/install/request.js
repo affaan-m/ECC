@@ -1,6 +1,7 @@
 'use strict';
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
+const { VALID_SKILL_PROFILES } = require('../skill-flags');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
 
@@ -28,6 +29,7 @@ function parseInstallArgs(argv) {
     excludeComponentIds: [],
     languages: [],
     locale: null,
+    skillProfile: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -61,6 +63,13 @@ function parseInstallArgs(argv) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
       index += 1;
+    } else if (arg === '--skill-profile') {
+      const skillProfile = args[index + 1] || '';
+      if (!skillProfile || skillProfile.startsWith('--')) {
+        throw new Error('Missing value for --skill-profile');
+      }
+      parsed.skillProfile = skillProfile;
+      index += 1;
     } else if (arg === '--locale') {
       const locale = args[index + 1] || '';
       if (!locale || locale.startsWith('--')) {
@@ -89,6 +98,13 @@ function normalizeInstallRequest(options = {}) {
     ? options.config
     : null;
   const profileId = options.profileId || config?.profileId || null;
+  const rawSkillProfile = options.skillProfile || config?.skillProfile || null;
+  const skillProfile = rawSkillProfile
+    ? String(rawSkillProfile).trim().toLowerCase()
+    : null;
+  if (skillProfile && !VALID_SKILL_PROFILES.has(skillProfile)) {
+    throw new Error(`Unknown skill profile: ${rawSkillProfile}. Expected minimal, standard, or full.`);
+  }
   const target = options.target || config?.target || 'claude';
   const moduleIds = validateInstallModuleIds(
     dedupeStrings([...(config?.moduleIds || []), ...(options.moduleIds || [])])
@@ -142,6 +158,7 @@ function normalizeInstallRequest(options = {}) {
       : (usingManifestMode ? 'manifest' : 'legacy-compat'),
     target,
     profileId,
+    skillProfile,
     moduleIds,
     includeComponentIds,
     excludeComponentIds,

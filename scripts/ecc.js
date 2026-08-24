@@ -103,6 +103,10 @@ const COMMANDS = {
     script: 'uninstall.js',
     description: 'Remove ECC-managed files recorded in install-state',
   },
+  'skills-profile': {
+    script: 'apply-skill-profile.js',
+    description: 'Apply ECC_SKILL_PROFILE to the Claude plugin skill listing',
+  },
 };
 
 const PRIMARY_COMMANDS = [
@@ -129,6 +133,7 @@ const PRIMARY_COMMANDS = [
   'session-inspect',
   'loop-status',
   'uninstall',
+  'skills-profile',
 ];
 
 function showHelp(exitCode = 0) {

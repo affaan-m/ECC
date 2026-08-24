@@ -114,6 +114,7 @@
     "scripts/dashboard-web.js",
     "scripts/skills-health.js",
     "scripts/hooks/",
+    "scripts/apply-skill-profile.js",
     "scripts/install-apply.js",
     "scripts/install-guided.js",
     "scripts/install-plan.js",

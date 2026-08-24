@@ -383,9 +383,11 @@ test("is discoverable in the source tree and in a simulated packed artifact", ()
   assert.ok(!ignoresSkill, ".npmignore must not exclude the skill");
 
   const claudePlugin = readJson(".claude-plugin/plugin.json");
+  const pluginSkills = claudePlugin.skills || [];
   assert.ok(
-    (claudePlugin.skills || []).includes("./skills/"),
-    "claude plugin skills must route to the root skills/ directory"
+    pluginSkills.includes("./skills/")
+      || pluginSkills.every(entry => String(entry).startsWith("./skills/")),
+    "claude plugin skills must stay under the root skills/ tree"
   );
 
   // Simulated installed layout: the files entry must name the skill dir and

@@ -417,6 +417,39 @@ function runTests() {
     )), 'Should install the MLE workflow skill');
   })) passed++; else failed++;
 
+  if (test('optional skill-profile filters skill copy operations', () => {
+    const unfiltered = resolveInstallPlan({
+      profileId: 'full',
+      target: 'claude',
+      projectRoot: '/workspace/app',
+    });
+    const filtered = resolveInstallPlan({
+      profileId: 'full',
+      skillProfile: 'minimal',
+      target: 'claude',
+      projectRoot: '/workspace/app',
+    });
+
+    assert.ok(
+      unfiltered.operations.some(operation => (
+        String(operation.sourceRelativePath).startsWith('skills/tasteforge-video')
+      )),
+      'full install should still copy full-only skills when no skill profile is set'
+    );
+    assert.ok(
+      !filtered.operations.some(operation => (
+        String(operation.sourceRelativePath).startsWith('skills/tasteforge-video')
+      )),
+      'minimal skill profile should drop full-only skills'
+    );
+    assert.ok(
+      filtered.operations.some(operation => (
+        String(operation.sourceRelativePath).startsWith('skills/tdd-workflow')
+      )),
+      'minimal skill profile should keep the daily-core skills'
+    );
+  })) passed++; else failed++;
+
   if (test('resolves explicit modules with dependency expansion', () => {
     const plan = resolveInstallPlan({ moduleIds: ['security'] });
     assert.ok(plan.selectedModuleIds.includes('security'), 'Should include requested module');

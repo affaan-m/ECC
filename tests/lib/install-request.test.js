@@ -75,6 +75,32 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('parses --skill-profile', () => {
+    const parsed = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--profile', 'developer',
+      '--skill-profile', 'minimal',
+    ]);
+
+    assert.strictEqual(parsed.skillProfile, 'minimal');
+  })) passed++; else failed++;
+
+  if (test('rejects an unknown --skill-profile', () => {
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: 'developer',
+        skillProfile: 'strict',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+      }),
+      /Unknown skill profile/
+    );
+  })) passed++; else failed++;
+
   if (test('normalizes legacy language installs into a canonical request', () => {
     const request = normalizeInstallRequest({
       target: 'claude',

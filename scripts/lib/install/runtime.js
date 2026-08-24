@@ -18,6 +18,7 @@ function createInstallPlanFromRequest(request, options = {}) {
       moduleIds: request.moduleIds,
       includeComponentIds: request.includeComponentIds,
       excludeComponentIds: request.excludeComponentIds,
+      skillProfile: request.skillProfile,
       projectRoot: options.projectRoot,
       homeDir: options.homeDir,
       sourceRoot: options.sourceRoot,

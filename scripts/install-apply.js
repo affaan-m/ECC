@@ -53,6 +53,8 @@ Options:
   --modules <ids>     Resolve and install explicit module IDs
   --with <component>  Include a user-facing install component
   --skills <ids>      Install one or more skill directories by ID, e.g. continuous-learning-v2
+  --skill-profile <name>
+                      Optional extra filter: copy only skills in minimal, standard, or full
   --without <component>
                       Exclude a user-facing install component
   --locale <code>     Install translated docs to ~/.claude/docs/<locale>/ (or ./.claude/docs/<locale>/ for claude-project)
