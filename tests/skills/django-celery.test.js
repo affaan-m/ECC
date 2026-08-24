@@ -57,6 +57,19 @@ function assertMarkersInOrder(source, markers) {
   }, -1);
 }
 
+function hasActiveAtomicScope(blocks) {
+  let executionScopeStart = 0;
+
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index].callable) {
+      executionScopeStart = index;
+      break;
+    }
+  }
+
+  return blocks.slice(executionScopeStart).some(block => block.atomic);
+}
+
 function findUnprotectedSelectForUpdateLines(source) {
   const blocks = [];
   const atomicDecoratorIndents = new Set();
@@ -76,13 +89,13 @@ function findUnprotectedSelectForUpdateLines(source) {
     }
 
     if (trimmed.startsWith('@')) {
-      if (/^@transaction\.atomic(?:\(\))?$/.test(trimmed)) {
+      if (/^@transaction\.atomic(?:\([^)]*\))?$/.test(trimmed)) {
         atomicDecoratorIndents.add(indent);
       }
       continue;
     }
 
-    if (trimmed.includes('.select_for_update(') && !blocks.some(block => block.atomic)) {
+    if (trimmed.includes('.select_for_update(') && !hasActiveAtomicScope(blocks)) {
       unsafeLines.push(index + 1);
     }
 
@@ -94,7 +107,7 @@ function findUnprotectedSelectForUpdateLines(source) {
     const isFunction = /^(?:async\s+)?def\s+/.test(trimmed);
     const isAtomicWith = /^with\s+transaction\.atomic\([^)]*\):$/.test(trimmed);
     const isAtomicFunction = isFunction && atomicDecoratorIndents.has(indent);
-    blocks.push({ indent, atomic: isAtomicWith || isAtomicFunction });
+    blocks.push({ indent, atomic: isAtomicWith || isAtomicFunction, callable: isFunction });
     atomicDecoratorIndents.delete(indent);
   }
 
@@ -137,9 +150,22 @@ test('keeps every select_for_update example inside an atomic block', () => {
     'with transaction.atomic():',
     '    audit_order(order)',
   ].join('\n');
+  const deferredCallableExample = [
+    'with transaction.atomic():',
+    '    def load_order():',
+    '        return Order.objects.select_for_update().get(pk=order_id)',
+    'load_order()',
+  ].join('\n');
+  const atomicCallableExample = [
+    "@transaction.atomic(using='default')",
+    'def load_order():',
+    '    return Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
 
   assert.ok(lockingExamples.length > 0, 'Expected at least one select_for_update example');
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(invalidExample), [1]);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(deferredCallableExample), [3]);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(atomicCallableExample), []);
   for (const block of lockingExamples) {
     assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(block), []);
   }
@@ -171,10 +197,13 @@ test('warns that a single beat scheduler does not prevent task overlap', () => {
 test('claims and owns a payment attempt around external I/O', () => {
   const antiPatterns = getMarkdownSection(skill, '## Anti-Patterns');
 
+  assert.match(antiPatterns, /@shared_task\(bind=True,\s*acks_late=True\)/);
   assertMarkersInOrder(antiPatterns, [
+    'self.request.id',
     '.select_for_update(',
     'claim_or_resume_charge',
     'gateway.charge',
+    "idempotency_key=f'order:{order_id}'",
     '.select_for_update(',
     'charge_attempt_id',
     'record_charge',
