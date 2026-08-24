@@ -349,60 +349,49 @@ function detectGitCommand(input, start = 0) {
       continue;
     }
 
-    // Find the first matching subcommand token after "git".
-    // We pick the one closest to "git" so that argument values like
-    // "git push origin commit" don't misclassify "commit" as the subcommand.
+    // The subcommand is the first non-flag token after "git". Tokenizing rather
+    // than splitting raw text matters: a quoted global option keeps its quotes
+    // under a plain split, so `git "-c" "core.hooksPath=/dev/null" commit` and
+    // `git "--config-env=core.hooksPath=MYVAR" commit` read as a bare word in
+    // subcommand position and the whole command escaped inspection. Verified
+    // against git 2.51: the shell strips those quotes, so git sees the option.
+    const segmentEnd = findCommandSegmentEnd(input, git.idx + git.len);
+    const tokens = tokenizeShellWords(input, git.idx + git.len, segmentEnd);
+
     let bestCmd = null;
     let bestIdx = Infinity;
+    let bestEnd = Infinity;
+    let expectFlagArg = false;
 
-    for (const cmd of GIT_COMMANDS_WITH_NO_VERIFY) {
-      let searchPos = git.idx + git.len;
-      while (searchPos < input.length) {
-        const cmdIdx = input.indexOf(cmd, searchPos);
-        if (cmdIdx === -1) break;
+    for (const token of tokens) {
+      if (expectFlagArg) { expectFlagArg = false; continue; }
 
-        const before = cmdIdx > 0 ? input[cmdIdx - 1] : ' ';
-        const after = input[cmdIdx + cmd.length] || ' ';
-        if (!/\s/.test(before)) { searchPos = cmdIdx + 1; continue; }
-        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') { searchPos = cmdIdx + 1; continue; }
-        if (/[;|]/.test(input.slice(git.idx + git.len, cmdIdx))) break;
-        if (isInComment(input, cmdIdx)) { searchPos = cmdIdx + 1; continue; }
-
-        // Verify this token is the first non-flag word after "git" — i.e. the
-        // actual subcommand, not an argument value to a different subcommand.
-        const gap = input.slice(git.idx + git.len, cmdIdx);
-        const tokens = gap.trim().split(/\s+/).filter(Boolean);
-        // Every token before the candidate must be a flag or a flag argument.
-        // Git global flags like -c take a value argument (e.g. -c key=value).
-        let onlyFlagsAndArgs = true;
-        let expectFlagArg = false;
-        for (const t of tokens) {
-          if (expectFlagArg) { expectFlagArg = false; continue; }
-          if (t.startsWith('-')) {
-            // These git global flags take the next token as their argument, so
-            // that token must not be mistaken for the subcommand position.
-            if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(t)) {
-              expectFlagArg = true;
-            }
-            continue;
-          }
-          onlyFlagsAndArgs = false;
-          break;
+      if (token.value.startsWith('-')) {
+        // These git global flags take the next token as their argument, so that
+        // token must not be mistaken for the subcommand position.
+        if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(token.value)) {
+          expectFlagArg = true;
         }
-        if (!onlyFlagsAndArgs) { searchPos = cmdIdx + 1; continue; }
-
-        if (cmdIdx < bestIdx) {
-          bestIdx = cmdIdx;
-          bestCmd = cmd;
-        }
-        break;
+        continue;
       }
+
+      // Whatever sits here occupies the subcommand slot; if it is not one we
+      // guard, there is no guarded subcommand in this segment.
+      if (GIT_COMMANDS_WITH_NO_VERIFY.includes(token.value) && !isInComment(input, token.start)) {
+        bestCmd = token.value;
+        bestIdx = token.start;
+        // token.end, not bestIdx + length: for a quoted subcommand the two differ
+        // by the quote characters, and a short offset leaves the closing quote in
+        // the flag scan's first token.
+        bestEnd = token.end;
+      }
+      break;
     }
 
     if (bestCmd) {
       return {
         command: bestCmd,
-        offset: bestIdx + bestCmd.length,
+        offset: bestEnd,
         gitStart: git.idx,
         gitEnd: git.idx + git.len,
         commandStart: bestIdx,

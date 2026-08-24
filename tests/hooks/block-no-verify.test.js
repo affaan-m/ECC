@@ -264,6 +264,52 @@ if (test('still allows --config-env that sets an unrelated key', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// Quoting is transparent to the shell but was not to the guard: detectGitCommand
+// split raw text on whitespace, so `"--config-env=core.hooksPath=MYVAR"` kept its
+// quotes, failed the `startsWith('-')` flag check and landed in subcommand position
+// -- the whole command then escaped inspection. The same hole covered `-c`, which
+// predates --config-env, and a quoted subcommand. Verified against git 2.51: the
+// shell strips these quotes, so git receives the option and skips the hooks.
+// (`git "-c core.hooksPath=..."` as ONE argv is not covered because git itself
+// rejects it: "unknown option: -c core.hooksPath=...", exit 129.)
+
+if (test('blocks a quoted --config-env=core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=core.hooksPath=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted space-separated --config-env override', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env" "core.hooksPath=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a single-quoted --config-env override', () => {
+  const r = runHook({ tool_input: { command: "git '--config-env=core.hooksPath=MYVAR' commit -m 'msg'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted -c core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git "-c" "core.hooksPath=/dev/null" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('sees --no-verify past a quoted global option', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=other.key=MYVAR" commit --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/no-verify/i.test(r.stderr), `stderr should mention --no-verify: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('sees --no-verify past a quoted subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git "commit" --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows a quoted global option that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git "--config-env=other.key=MYVAR" commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
