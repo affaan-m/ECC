@@ -194,13 +194,23 @@ const MANAGER_OPTIONS_WITH_VALUE = new Set([
 ]);
 
 /**
- * The script a package manager is being asked to run, or null.
+ * Every candidate script name in a package-manager invocation.
  *
- * Reads the tokens after the manager word: skips options (and the value of an
- * option known to take one), skips a `run` / `run-script` keyword, stops at a
- * `--` separator, and returns the first remaining token.
+ * Reads the tokens after the manager word, skipping options, the value of an
+ * option known to take one, and the `run` / `run-script` keyword, and stopping
+ * at a `--` separator (everything past it belongs to the script).
+ *
+ * It yields ALL remaining bare tokens rather than only the first, because npm
+ * takes any config key as `--key value`: with only the first token,
+ * `npm --userconfig /tmp/npmrc run dev` read the script name as `/tmp/npmrc`
+ * and let the dev server through. Enumerating npm's whole config surface is
+ * not winnable, so an unknown option simply does not consume its value — the
+ * value gets scanned too, which costs a false positive only when a config
+ * value is literally `dev`, and a false positive here is a refusal the user
+ * sees rather than a guard that silently did nothing.
  */
-function getRunScriptName(segment, managerWord) {
+function getRunScriptNames(segment, managerWord) {
+  const names = [];
   let index = 0;
   let seenManager = false;
   let skipNextValue = false;
@@ -224,7 +234,7 @@ function getRunScriptName(segment, managerWord) {
     }
 
     // Everything after `--` is an argument to the script, not the script name.
-    if (token === '--') return null;
+    if (token === '--') break;
 
     if (isOptionToken(token)) {
       if (MANAGER_OPTIONS_WITH_VALUE.has(token)) skipNextValue = true;
@@ -233,10 +243,10 @@ function getRunScriptName(segment, managerWord) {
 
     if (RUN_KEYWORDS.has(token.toLowerCase())) continue;
 
-    return token;
+    names.push(token);
   }
 
-  return null;
+  return names;
 }
 
 /**
@@ -277,8 +287,7 @@ function isDevServerSegment(segment) {
   if (TMUX_LAUNCHER.test(segment)) return false;
   if (!PACKAGE_MANAGERS.has(commandWord)) return false;
 
-  const script = getRunScriptName(segment, commandWord);
-  return Boolean(script) && DEV_SCRIPT_NAME.test(script);
+  return getRunScriptNames(segment, commandWord).some((name) => DEV_SCRIPT_NAME.test(name));
 }
 
 /** True when any segment of `command` starts a dev server. */

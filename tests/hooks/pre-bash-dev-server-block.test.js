@@ -279,7 +279,12 @@ function runTests() {
     'yarn run "dev"',
     'bun run "dev"',
     'npm --silent run dev',
-    'yarn --cwd app dev'
+    'yarn --cwd app dev',
+    // npm accepts any config key as `--key value`, so an option the parser does
+    // not know must not swallow the script name behind it.
+    'npm --userconfig /tmp/npmrc run dev',
+    'npm --registry https://registry.example run dev',
+    'npm --loglevel silly run dev'
   ]) {
     (test(`blocks a quoted or option-separated dev script: ${command}`, () => {
       const result = runScriptAsPosix(command);
@@ -298,6 +303,10 @@ function runTests() {
     // `--` ends the manager's own arguments: everything after it belongs to the
     // script, so a stray "dev" there is not a dev server.
     'npm test -- --grep dev',
+    // A known value-taking option still consumes its value, so a workspace or
+    // filter literally named `dev` is not mistaken for the dev script.
+    'npm run build --workspace dev',
+    'pnpm --filter dev run build',
     'tmux new-session -d -s dev "npm run dev"'
   ]) {
     (test(`still allows: ${command}`, () => {
