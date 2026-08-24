@@ -96,9 +96,10 @@ function trimBlocksForIndent(blocks, indent) {
 }
 
 function inspectPendingAtomicLine(state, code, lineNumber) {
-  const closingAtomic = code.match(/^\)\s*:\s*/);
+  const closingAtomic = code.match(/^\)\s*(?:as\s+[A-Za-z_]\w*\s*)?:\s*/);
   if (!closingAtomic) {
-    return state;
+    const unsafeQuery = code.includes('.select_for_update(');
+    return unsafeQuery ? { ...state, unsafeLines: [...state.unsafeLines, lineNumber] } : state;
   }
 
   const inlineBody = code.slice(closingAtomic[0].length);
@@ -126,7 +127,9 @@ function inspectPythonStatement(state, code, indent, lineNumber) {
     return { ...state, pendingAtomicWithIndent: indent };
   }
 
-  const atomicWith = code.match(/^with\s+transaction\.atomic\([^)]*\)\s*:\s*/);
+  const atomicWith = code.match(
+    /^with\s+transaction\.atomic\([^)]*\)\s*(?:as\s+[A-Za-z_]\w*\s*)?:\s*/,
+  );
   const inlineAtomicBody = atomicWith ? code.slice(atomicWith[0].length) : '';
   const isFunction = /^(?:async\s+)?def\s+/.test(code);
   const isAtomicFunction = isFunction && state.atomicDecoratorIndents.has(indent);
@@ -237,6 +240,30 @@ test('keeps every select_for_update example inside an atomic block', () => {
     '):',
     '    order = Order.objects.select_for_update().get(pk=order_id)',
   ].join('\n');
+  const multilineAtomicAliasExample = [
+    'with transaction.atomic(',
+    "    using='default',",
+    ') as atomic_context:',
+    '    order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
+  const sameLineAtomicAliasExample = [
+    'with transaction.atomic() as atomic_context:',
+    '    order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
+  const inlineAtomicAliasExample = [
+    'with transaction.atomic() as atomic_context: order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
+  const atomicArgumentQueryExample = [
+    'with transaction.atomic(',
+    '    using=Order.objects.select_for_update().get(pk=order_id)._state.db,',
+    '):',
+    '    process_order()',
+  ].join('\n');
+  const unterminatedAtomicExample = [
+    'with transaction.atomic(',
+    "    using='default',",
+    'order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
 
   assert.ok(lockingExamples.length > 0, 'Expected at least one select_for_update example');
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(invalidExample), [1]);
@@ -245,6 +272,11 @@ test('keeps every select_for_update example inside an atomic block', () => {
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(deferredLambdaExample), [2]);
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(sameLineAtomicExample), []);
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(multilineAtomicExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(multilineAtomicAliasExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(sameLineAtomicAliasExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(inlineAtomicAliasExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(atomicArgumentQueryExample), [2]);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(unterminatedAtomicExample), [3]);
   for (const block of lockingExamples) {
     assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(block), []);
   }
