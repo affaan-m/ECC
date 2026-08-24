@@ -84,6 +84,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/codex/check-codex-global-state.sh",
     "scripts/codex-git-hooks",
     "scripts/codex/check-plugin-cache.js",
+    "scripts/codex/generate-agent-roles.js",
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     ".codex-plugin",
