@@ -54,6 +54,15 @@ function runScript(input, envOverrides = {}) {
   return { code: result.status || 0, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
 
+function removeHarnessCostCache(sessionId) {
+  const cachePath = path.join(os.tmpdir(), `harness-cost-${sessionId}.json`);
+  try {
+    fs.unlinkSync(cachePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
 function runTests() {
   console.log('\n=== Testing cost-tracker.js ===\n');
 
@@ -300,7 +309,7 @@ function runTests() {
   // 9. Prices Sonnet 5 at the documented $2/$10 rate.
   (test('prices Sonnet 5 at $12 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
-    const sessionId = 'sonnet5-' + Date.now();
+    const sessionId = `sonnet5-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -313,23 +322,33 @@ function runTests() {
       },
     ]);
 
-    const result = runScript(
-      { session_id: sessionId, transcript_path: transcriptPath },
-      withTempHome(tmpHome)
+    fs.writeFileSync(
+      path.join(os.tmpdir(), `harness-cost-${sessionId}.json`),
+      JSON.stringify({ ts: Math.floor(Date.now() / 1000), cost_usd: 999 }),
+      'utf8'
     );
-    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
-    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
-    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
-    assert.strictEqual(row.estimated_cost_usd, 12, 'Expected Sonnet 5 1M/1M to cost $12.00');
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 12, 'Expected Sonnet 5 1M/1M to cost $12.00');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   }) ? passed++ : failed++);
 
   // 9b. Sonnet 5 cache write/read tokens use the correct rates.
   (test('prices Sonnet 5 cache tokens at the documented rates', () => {
     const tmpHome = makeTempDir();
-    const sessionId = 'sonnet5-cache-' + Date.now();
+    const sessionId = `sonnet5-cache-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -347,23 +366,27 @@ function runTests() {
       },
     ]);
 
-    const result = runScript(
-      { session_id: sessionId, transcript_path: transcriptPath },
-      withTempHome(tmpHome)
-    );
-    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
-    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
-    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
-    assert.strictEqual(row.estimated_cost_usd, 14.7, 'Expected Sonnet 5 1M input + 1M output + 1M cache write + 1M cache read to cost $14.70');
-
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 14.7, 'Expected Sonnet 5 1M input + 1M output + 1M cache write + 1M cache read to cost $14.70');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   }) ? passed++ : failed++);
 
   // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
   (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
-    const sessionId = 'sonnet46-' + Date.now();
+    const sessionId = `sonnet46-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -376,23 +399,28 @@ function runTests() {
       },
     ]);
 
-    const result = runScript(
-      { session_id: sessionId, transcript_path: transcriptPath },
-      withTempHome(tmpHome)
-    );
-    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
-    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
-    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
-    assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
-
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   }) ? passed++ : failed++);
 
   // 10b. Dated Sonnet 5 IDs and near-misses are matched correctly.
   (test('prices dated Sonnet 5 IDs at $12 and rejects claude-sonnet-50 near-miss', () => {
     const tmpHome = makeTempDir();
-    const sessionId = 'sonnet5-dated-' + Date.now();
+    const sessionId = `sonnet5-dated-${process.pid}-${Date.now()}`;
+    const nearMissSessionId = `sonnet50-near-miss-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -405,40 +433,46 @@ function runTests() {
       },
     ]);
 
-    const result = runScript(
-      { session_id: sessionId, transcript_path: transcriptPath },
-      withTempHome(tmpHome)
-    );
-    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+    try {
+      removeHarnessCostCache(sessionId);
+      removeHarnessCostCache(nearMissSessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
 
-    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
-    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
-    assert.strictEqual(row.estimated_cost_usd, 12, 'Expected dated Sonnet 5 1M/1M to cost $12.00');
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 12, 'Expected dated Sonnet 5 1M/1M to cost $12.00');
 
-    // Near-miss `claude-sonnet-50` must fall through to the standard Sonnet rate.
-    const nearMissPath = path.join(tmpHome, 'near-miss.jsonl');
-    writeTranscript(nearMissPath, [
-      {
-        type: 'assistant',
-        message: {
-          id: 'msg_sonnet50',
-          model: 'claude-sonnet-50',
-          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+      // Near-miss `claude-sonnet-50` must fall through to the standard Sonnet rate.
+      const nearMissPath = path.join(tmpHome, 'near-miss.jsonl');
+      writeTranscript(nearMissPath, [
+        {
+          type: 'assistant',
+          message: {
+            id: 'msg_sonnet50',
+            model: 'claude-sonnet-50',
+            usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+          },
         },
-      },
-    ]);
+      ]);
 
-    const nearResult = runScript(
-      { session_id: 'sonnet50-near-miss-' + Date.now(), transcript_path: nearMissPath },
-      withTempHome(tmpHome)
-    );
-    assert.strictEqual(nearResult.code, 0, `Expected exit code 0, got ${nearResult.code}`);
+      const nearResult = runScript(
+        { session_id: nearMissSessionId, transcript_path: nearMissPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(nearResult.code, 0, `Expected exit code 0, got ${nearResult.code}`);
 
-    const lines = fs.readFileSync(metricsFile, 'utf8').trim().split('\n');
-    const nearRow = JSON.parse(lines[lines.length - 1]);
-    assert.strictEqual(nearRow.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
-
-    fs.rmSync(tmpHome, { recursive: true, force: true });
+      const lines = fs.readFileSync(metricsFile, 'utf8').trim().split('\n');
+      const nearRow = JSON.parse(lines[lines.length - 1]);
+      assert.strictEqual(nearRow.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
+    } finally {
+      removeHarnessCostCache(sessionId);
+      removeHarnessCostCache(nearMissSessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   }) ? passed++ : failed++);
 
   // 11. Ignores stale harness-cost cache and falls back to transcript estimate
