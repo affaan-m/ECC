@@ -25,7 +25,8 @@ abruptly. Celery acknowledges worker-loss messages unless
 `CELERY_TASK_REJECT_ON_WORKER_LOST`) is enabled. That option can cause message loops
 for poison tasks, so enable it only after validating idempotency and monitoring the
 redelivery path. Failure and timeout acknowledgement behavior is controlled
-separately by `task_acks_on_failure_or_timeout`.
+separately by `task_acks_on_failure_or_timeout`, which applies only to tasks using
+late acknowledgement.
 
 ## Publish After the Database Commits
 

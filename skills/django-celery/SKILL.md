@@ -227,18 +227,17 @@ result = generate_pdf_report.apply(args=[report.pk])
 ### Publish After the Database Commits
 
 A task published inside a Django transaction can run before its rows are visible or
-can remain queued after the transaction rolls back. Use `delay_on_commit()` with
-Celery 5.4 or newer, or `transaction.on_commit()` when `apply_async()` options or
-older versions require it. See
+remain queued after rollback. Use `delay_on_commit()` with Celery 5.4 or newer; use
+`transaction.on_commit()` for `apply_async()` options or older versions. See
 [Delivery Reliability](references/reliability.md#publish-after-the-database-commits)
-for version, task-ID, custom-base, and transactional-outbox boundaries.
+for custom-base, task-ID, and transactional-outbox boundaries.
 
 ```python
 from django.db import transaction
 
 @transaction.atomic
-def create_user(request):
-    user = User.objects.create(username=request.POST['username'])
+def create_user(validated_username: str):
+    user = User.objects.create(username=validated_username)
     send_welcome_email.delay_on_commit(user.pk)
 ```
 
@@ -289,10 +288,10 @@ PeriodicTask.objects.update_or_create(
 )
 ```
 
-Run only one scheduler for a given schedule to avoid duplicate publications. That
-does not prevent execution overlap: periodic tasks may overlap when one run lasts
-longer than its interval. Use an ownership-safe locking strategy or a database
-uniqueness constraint, and keep the task idempotent in case a lock expires.
+Run only one scheduler for a given schedule to avoid duplicate publications, but this
+does not prevent execution overlap: periodic tasks may overlap. Atomically claim an
+active-run lease with an owner and expiry or recovery path; a unique schedule row
+alone does not serialize executions. Keep the task idempotent if the lease expires.
 
 ## Canvas: Chaining and Grouping Tasks
 
@@ -342,9 +341,8 @@ def on_task_failure(sender, task_id, exception, args, kwargs, traceback, einfo, 
         sentry_sdk.capture_exception(exception)
 ```
 
-Returning normally after recording a final error makes Celery record `SUCCESS`.
-Persist the failure and re-raise instead. Broker dead-letter queues live at the queue
-and exchange layer; they are not equivalent to a Django model used as an error log.
+Returning after recording a final error makes Celery record `SUCCESS`; persist and
+re-raise instead. Broker dead-letter queues are not Django model error logs.
 
 ## Testing Celery Tasks
 
@@ -448,25 +446,27 @@ def charge_and_fulfill(order_id):
     order.charge()     # May charge twice if task retries!
     order.fulfill()
 
-# GOOD: External idempotency key plus a short database transaction
+# GOOD: Claim ownership before external I/O, then finalize only as that owner
 from django.db import transaction
 from apps.payments.gateway import gateway
 
-@shared_task(acks_late=True)
-def charge_and_fulfill(order_id):
-    order = Order.objects.only('status').get(pk=order_id)
-    if order.status != Order.Status.PENDING:
-        return
+@shared_task(bind=True, acks_late=True)
+def charge_and_fulfill(self, order_id):
+    attempt_id = self.request.id  # Stable across Celery retry and redelivery
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order_id)
+        if not order.claim_or_resume_charge(attempt_id):
+            return
 
-    # Keep network I/O outside the database transaction. The provider must return
-    # the same charge for repeated calls with this stable idempotency key.
+    # The adapter validates provider data and returns the same charge on retry.
     receipt = gateway.charge(order_id, idempotency_key=f'order:{order_id}')
 
     with transaction.atomic():
         order = Order.objects.select_for_update().get(pk=order_id)
-        if order.status == Order.Status.PENDING:
-            order.record_charge(receipt)
-            order.fulfill()
+        if order.charge_attempt_id != attempt_id:
+            return
+        order.record_charge(receipt)
+        order.fulfill()
 ```
 
 ## Production Checklist

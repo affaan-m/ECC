@@ -9,7 +9,6 @@ const skillPath = path.join(repoRoot, 'skills', 'django-celery', 'SKILL.md');
 const reliabilityPath = path.join(repoRoot, 'skills', 'django-celery', 'references', 'reliability.md');
 const skill = fs.readFileSync(skillPath, 'utf8');
 const reliability = fs.readFileSync(reliabilityPath, 'utf8');
-const guidance = `${skill}\n${reliability}`;
 
 let passed = 0;
 let failed = 0;
@@ -26,42 +25,161 @@ function test(name, fn) {
   }
 }
 
+function getMarkdownSection(document, heading) {
+  const lines = document.split('\n');
+  const start = lines.indexOf(heading);
+  assert.notStrictEqual(start, -1, `Missing section: ${heading}`);
+  const level = heading.match(/^#+/)[0].length;
+  let end = start + 1;
+  let inFence = false;
+
+  while (end < lines.length) {
+    if (lines[end].startsWith('```')) {
+      inFence = !inFence;
+      end += 1;
+      continue;
+    }
+    const nextHeading = inFence ? null : lines[end].match(/^(#+)\s/);
+    if (nextHeading?.[1].length <= level) {
+      break;
+    }
+    end += 1;
+  }
+
+  return lines.slice(start + 1, end).join('\n');
+}
+
+function assertMarkersInOrder(source, markers) {
+  markers.reduce((previousIndex, marker) => {
+    const index = source.indexOf(marker, previousIndex + 1);
+    assert.ok(index > previousIndex, `Expected ${marker} after the previous marker`);
+    return index;
+  }, -1);
+}
+
+function findUnprotectedSelectForUpdateLines(source) {
+  const blocks = [];
+  const atomicDecoratorIndents = new Set();
+  const unsafeLines = [];
+  const lines = source.split('\n');
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const whitespace = line.match(/^[ \t]*/)[0];
+    const indent = whitespace.replaceAll('\t', '    ').length;
+    while (blocks.length > 0 && indent <= blocks[blocks.length - 1].indent) {
+      blocks.pop();
+    }
+
+    if (trimmed.startsWith('@')) {
+      if (/^@transaction\.atomic(?:\(\))?$/.test(trimmed)) {
+        atomicDecoratorIndents.add(indent);
+      }
+      continue;
+    }
+
+    if (trimmed.includes('.select_for_update(') && !blocks.some(block => block.atomic)) {
+      unsafeLines.push(index + 1);
+    }
+
+    if (!trimmed.endsWith(':')) {
+      atomicDecoratorIndents.delete(indent);
+      continue;
+    }
+
+    const isFunction = /^(?:async\s+)?def\s+/.test(trimmed);
+    const isAtomicWith = /^with\s+transaction\.atomic\([^)]*\):$/.test(trimmed);
+    const isAtomicFunction = isFunction && atomicDecoratorIndents.has(indent);
+    blocks.push({ indent, atomic: isAtomicWith || isAtomicFunction });
+    atomicDecoratorIndents.delete(indent);
+  }
+
+  return unsafeLines;
+}
+
 console.log('\n=== Django Celery skill tests ===\n');
 
 test('documents transaction-aware task publication', () => {
-  assert.match(skill, /references\/reliability\.md/);
-  assert.match(guidance, /delay_on_commit/);
-  assert.match(guidance, /transaction\.on_commit/);
-  assert.match(guidance, /does not return (?:a )?task ID/i);
-  assert.match(guidance, /transactional outbox/i);
+  const skillPublication = getMarkdownSection(skill, '### Publish After the Database Commits');
+  const reliabilityPublication = getMarkdownSection(reliability, '## Publish After the Database Commits');
+
+  assert.match(skillPublication, /references\/reliability\.md/);
+  assert.match(skillPublication, /delay_on_commit/);
+  assert.match(skillPublication, /validated_username/);
+  assert.doesNotMatch(skillPublication, /request\.POST/);
+  assert.match(reliabilityPublication, /transaction\.on_commit/);
+  assert.match(reliabilityPublication, /does not return (?:a )?task ID/i);
+  assert.match(reliabilityPublication, /transactional outbox/i);
 });
 
 test('states the worker-loss boundary for late acknowledgements', () => {
-  assert.doesNotMatch(guidance, /CELERY_TASK_ACKS_LATE\s*=\s*True[^\n]*re-queue on worker crash/i);
-  assert.match(guidance, /task_reject_on_worker_lost/i);
-  assert.match(guidance, /message loops/i);
-  assert.match(guidance, /idempotent/i);
+  const acknowledgements = getMarkdownSection(reliability, '## Acknowledgement and Worker Loss');
+
+  assert.doesNotMatch(acknowledgements, /late ack(?:nowledgement)?[^\n]*re-queue on worker crash/i);
+  assert.match(
+    acknowledgements,
+    /Late acknowledgement[\s\S]*does not by itself guarantee redelivery[\s\S]*task_reject_on_worker_lost/i,
+  );
+  assert.match(acknowledgements, /message loops/i);
+  assert.match(acknowledgements, /idempotent/i);
+  assert.match(acknowledgements, /task_acks_on_failure_or_timeout[\s\S]*only[\s\S]*late acknowledgement/i);
 });
 
 test('keeps every select_for_update example inside an atomic block', () => {
   const pythonBlocks = [...skill.matchAll(/```python\n([\s\S]*?)```/g)].map(match => match[1]);
   const lockingExamples = pythonBlocks.filter(block => block.includes('select_for_update'));
+  const invalidExample = [
+    "order = Order.objects.select_for_update().get(pk=order_id)",
+    'with transaction.atomic():',
+    '    audit_order(order)',
+  ].join('\n');
 
   assert.ok(lockingExamples.length > 0, 'Expected at least one select_for_update example');
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(invalidExample), [1]);
   for (const block of lockingExamples) {
-    assert.match(block, /transaction\.atomic/);
+    assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(block), []);
   }
 });
 
 test('distinguishes eager execution from real worker integration', () => {
-  assert.match(skill, /eager mode[^\n]*(?:emulat|not a worker integration)/i);
-  assert.match(skill, /celery_worker/);
-  assert.match(skill, /real broker/i);
+  const eagerMode = getMarkdownSection(skill, '### Django Integration Path with Eager Mode');
+  const realWorker = getMarkdownSection(skill, '### Worker Integration with a Real Broker');
+
+  assert.match(eagerMode, /worker emulation, not a worker integration test/i);
+  assert.match(
+    eagerMode,
+    /do not use it as[\s\S]*evidence for serialization, routing, acknowledgement, retry, or worker-loss behavior/i,
+  );
+  assert.match(realWorker, /celery_worker/);
+  assert.match(realWorker, /real broker/i);
 });
 
 test('warns that a single beat scheduler does not prevent task overlap', () => {
-  assert.match(skill, /periodic tasks? (?:can|may) overlap/i);
-  assert.match(skill, /locking strategy/i);
+  const beat = getMarkdownSection(skill, '## Beat Scheduling (Periodic Tasks)');
+
+  assert.match(beat, /only one scheduler[\s\S]*avoid duplicate publications/i);
+  assert.match(beat, /does not prevent execution overlap[\s\S]*periodic tasks? (?:can|may) overlap/i);
+  assert.match(beat, /active-run lease[\s\S]*owner[\s\S]*(?:expiry|recovery)/i);
+  assert.match(beat, /unique schedule row[\s\S]*alone does not serialize executions/i);
+  assert.match(beat, /idempotent/i);
+});
+
+test('claims and owns a payment attempt around external I/O', () => {
+  const antiPatterns = getMarkdownSection(skill, '## Anti-Patterns');
+
+  assertMarkersInOrder(antiPatterns, [
+    '.select_for_update(',
+    'claim_or_resume_charge',
+    'gateway.charge',
+    '.select_for_update(',
+    'charge_attempt_id',
+    'record_charge',
+  ]);
+  assert.match(antiPatterns, /adapter validates provider data/i);
 });
 
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
