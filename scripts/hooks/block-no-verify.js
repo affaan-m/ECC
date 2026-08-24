@@ -42,6 +42,34 @@ const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
 // case-insensitive."
 const GIT_CONFIG_KEY_PREFIX = 'core.hookspath=';
 
+// core.hooksPath is the direct spelling. `include.path` reaches the same place
+// indirectly: git reads the named file and applies everything in it, so a config
+// that sets core.hooksPath redirects the hooks just as well. Verified against
+// git 2.51 in a repo whose pre-commit hook echoes a marker:
+//
+//   git -c include.path=evil.conf commit -m x   -> commit succeeds, marker absent
+//   git --config-env=include.path=EVIL config --get core.hooksPath
+//                                              -> prints the redirected path
+//
+// includeIf.<condition>.path is the same mechanism behind a condition. It is
+// covered on that basis, NOT on a reproduction: on git 2.51 a conditional include
+// passed on the command line never matched in testing (gitdir:**/ , an absolute
+// gitdir, and gitdir/i all left core.hooksPath untouched), so it may well be inert
+// there. Nothing legitimate passes it to `git commit`, so covering it costs
+// nothing and closes the hole if that ever changes.
+const GIT_INCLUDE_KEY_PREFIX = 'include.path=';
+const GIT_INCLUDE_IF_KEY_PATTERN = /^includeif\..*\.path=/;
+
+/**
+ * True when a lowercased `key=value` config setting redirects where git looks
+ * for hooks, whether directly or through an included file.
+ */
+function isHooksRedirectSetting(loweredSetting) {
+  return loweredSetting.startsWith(GIT_CONFIG_KEY_PREFIX)
+    || loweredSetting.startsWith(GIT_INCLUDE_KEY_PREFIX)
+    || GIT_INCLUDE_IF_KEY_PATTERN.test(loweredSetting);
+}
+
 // Git global options that take their value as the NEXT token. If one of these
 // is not listed, the value token looks like a bare word to the subcommand
 // scanner, which then decides the `commit`/`push` after it cannot be the
@@ -464,7 +492,7 @@ function hasHooksPathOverride(input, detected) {
     // `<option> core.hooksPath=...` — the key/value is the next token.
     if (GIT_CONFIG_SETTING_OPTIONS.includes(value)) {
       const next = tokens[i + 1] && tokens[i + 1].value;
-      if (typeof next === 'string' && next.toLowerCase().startsWith(GIT_CONFIG_KEY_PREFIX)) {
+      if (typeof next === 'string' && isHooksRedirectSetting(next.toLowerCase())) {
         return true;
       }
       i++;
@@ -473,11 +501,11 @@ function hasHooksPathOverride(input, detected) {
 
     // `-ccore.hooksPath=...` (short option, no space) and
     // `--config-env=core.hooksPath=...` (long option, inline value).
-    if (lowered.startsWith(`-c${GIT_CONFIG_KEY_PREFIX}`)) {
+    if (lowered.startsWith('-c') && isHooksRedirectSetting(lowered.slice(2))) {
       return true;
     }
 
-    if (lowered.startsWith(`--config-env=${GIT_CONFIG_KEY_PREFIX}`)) {
+    if (lowered.startsWith('--config-env=') && isHooksRedirectSetting(lowered.slice('--config-env='.length))) {
       return true;
     }
   }
@@ -500,7 +528,7 @@ function checkCommand(input) {
     if (hasHooksPathOverride(input, detected)) {
       return {
         blocked: true,
-        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: Redirecting git hooks (core.hooksPath, directly or through include.path) is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
       };
     }
 

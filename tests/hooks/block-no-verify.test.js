@@ -310,6 +310,63 @@ if (test('still allows a quoted global option that sets an unrelated key', () =>
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// core.hooksPath is not the only key that moves the hooks. `include.path` makes
+// git read another config file and apply everything in it -- core.hooksPath
+// included -- so it is the same bypass one level of indirection away.
+// Verified against git 2.51, in a repo whose pre-commit hook echoes a marker:
+//   git -c include.path=evil.conf commit -m x   -> commit succeeds, marker absent
+//   git --config-env=include.path=EVIL config --get core.hooksPath
+//                                              -> prints the redirected path
+// includeIf.<condition>.path is covered as the same capability, not as a
+// reproduction: on git 2.51 a command-line conditional include never matched in
+// testing, so it may be inert there.
+
+if (test('blocks -c include.path, which can redirect core.hooksPath', () => {
+  const r = runHook({ tool_input: { command: 'git -c include.path=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/include\.path/i.test(r.stderr), `stderr should mention include.path: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks a quoted -c include.path override', () => {
+  const r = runHook({ tool_input: { command: 'git "-c" "include.path=/tmp/evil.conf" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env=include.path', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=include.path=EVIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env include.path (space-separated)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env include.path=EVIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks INCLUDE.PATH (config keys are case-insensitive)', () => {
+  const r = runHook({ tool_input: { command: 'git -c INCLUDE.PATH=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks includeIf.<condition>.path', () => {
+  const r = runHook({ tool_input: { command: 'git -c includeIf.gitdir:/x/.path=/tmp/evil.conf commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks -c include.path on git push', () => {
+  const r = runHook({ tool_input: { command: 'git -c include.path=/tmp/evil.conf push origin main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows an unrelated -c setting', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.name=x commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a key that merely ends in .path', () => {
+  const r = runHook({ tool_input: { command: 'git -c diff.external.path=/usr/bin/diff commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
