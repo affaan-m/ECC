@@ -64,6 +64,28 @@ const GIT_INCLUDE_IF_KEY_PATTERN = /^includeif\..*\.path=/;
  * True when a lowercased `key=value` config setting redirects where git looks
  * for hooks, whether directly or through an included file.
  */
+// tokenizeShellWords strips quotes; it does not run the shell. So `$(printf commit)`
+// arrives verbatim while the shell hands git a plain `commit`. Anything that can
+// still change under expansion is opaque to this guard and must not be read as a
+// literal. Deliberately narrow: only the subcommand slot and the KEY half of a
+// config setting are treated this way, so `git commit -m "$(cat msg)"` and
+// `git -c user.email=$EMAIL commit` stay allowed.
+const SHELL_EXPANSION_PATTERN = /\$\(|`|\$\{|\$[A-Za-z_]/;
+
+function hasShellExpansion(value) {
+  return SHELL_EXPANSION_PATTERN.test(value);
+}
+
+/**
+ * True when a `-c`/`--config-env` argument hides WHICH key it sets. The value
+ * half may expand freely — it cannot turn user.name into core.hooksPath — but a
+ * dynamic key half can be anything, including a hooks redirect.
+ */
+function hasOpaqueConfigKey(setting) {
+  const equals = setting.indexOf('=');
+  return hasShellExpansion(equals === -1 ? setting : setting.slice(0, equals));
+}
+
 function isHooksRedirectSetting(loweredSetting) {
   return loweredSetting.startsWith(GIT_CONFIG_KEY_PREFIX)
     || loweredSetting.startsWith(GIT_INCLUDE_KEY_PREFIX)
@@ -95,6 +117,9 @@ const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
 // Global options that can set core.hooksPath, in their `<option> <key>=<value>`
 // and `<option>=<key>=<value>` spellings.
 const GIT_CONFIG_SETTING_OPTIONS = ['-c', '--config-env'];
+
+// Stands in for a subcommand the shell will produce that we cannot read.
+const DYNAMIC_COMMAND = '<shell expansion>';
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '-m',
@@ -389,6 +414,7 @@ function detectGitCommand(input, start = 0) {
     let bestCmd = null;
     let bestIdx = Infinity;
     let bestEnd = Infinity;
+    let dynamicCommand = false;
     let expectFlagArg = false;
 
     for (const token of tokens) {
@@ -405,7 +431,14 @@ function detectGitCommand(input, start = 0) {
 
       // Whatever sits here occupies the subcommand slot; if it is not one we
       // guard, there is no guarded subcommand in this segment.
-      if (GIT_COMMANDS_WITH_NO_VERIFY.includes(token.value) && !isInComment(input, token.start)) {
+      if (hasShellExpansion(token.value) && !isInComment(input, token.start)) {
+        // Unknown subcommand: keep inspecting rather than block outright, so
+        // `git $CMD status` is fine and `git "$(printf commit)" --no-verify` is not.
+        bestCmd = DYNAMIC_COMMAND;
+        bestIdx = token.start;
+        bestEnd = token.end;
+        dynamicCommand = true;
+      } else if (GIT_COMMANDS_WITH_NO_VERIFY.includes(token.value) && !isInComment(input, token.start)) {
         bestCmd = token.value;
         bestIdx = token.start;
         // token.end, not bestIdx + length: for a quoted subcommand the two differ
@@ -419,6 +452,7 @@ function detectGitCommand(input, start = 0) {
     if (bestCmd) {
       return {
         command: bestCmd,
+        dynamicCommand,
         offset: bestEnd,
         gitStart: git.idx,
         gitEnd: git.idx + git.len,
@@ -492,8 +526,13 @@ function hasHooksPathOverride(input, detected) {
     // `<option> core.hooksPath=...` — the key/value is the next token.
     if (GIT_CONFIG_SETTING_OPTIONS.includes(value)) {
       const next = tokens[i + 1] && tokens[i + 1].value;
-      if (typeof next === 'string' && isHooksRedirectSetting(next.toLowerCase())) {
-        return true;
+      if (typeof next === 'string') {
+        if (isHooksRedirectSetting(next.toLowerCase())) {
+          return true;
+        }
+        if (hasOpaqueConfigKey(next)) {
+          return true;
+        }
       }
       i++;
       continue;
@@ -501,12 +540,17 @@ function hasHooksPathOverride(input, detected) {
 
     // `-ccore.hooksPath=...` (short option, no space) and
     // `--config-env=core.hooksPath=...` (long option, inline value).
-    if (lowered.startsWith('-c') && isHooksRedirectSetting(lowered.slice(2))) {
-      return true;
+    if (lowered.startsWith('-c')) {
+      if (isHooksRedirectSetting(lowered.slice(2)) || hasOpaqueConfigKey(value.slice(2))) {
+        return true;
+      }
     }
 
-    if (lowered.startsWith('--config-env=') && isHooksRedirectSetting(lowered.slice('--config-env='.length))) {
-      return true;
+    if (lowered.startsWith('--config-env=')) {
+      const inline = value.slice('--config-env='.length);
+      if (isHooksRedirectSetting(inline.toLowerCase()) || hasOpaqueConfigKey(inline)) {
+        return true;
+      }
     }
   }
 
@@ -532,7 +576,11 @@ function checkCommand(input) {
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    // With the subcommand hidden behind an expansion we cannot know it is not
+    // `commit`, so use the widest flag set (commit's, which includes -n).
+    const flagScanCommand = detected.dynamicCommand ? 'commit' : gitCommand;
+
+    if (hasNoVerifyFlag(input, flagScanCommand, offset)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,

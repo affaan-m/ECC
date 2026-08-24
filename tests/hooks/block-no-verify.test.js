@@ -367,6 +367,76 @@ if (test('still allows a key that merely ends in .path', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// tokenizeShellWords strips quotes but does not run the shell, so `$(printf commit)`
+// arrived verbatim while the shell handed git a plain `commit`. Same for the config
+// key: `-c "$(printf core.hooksPath=/dev/null)"` did not match any known key.
+// Both predate this PR -- verified ALLOWED against the merge base d8409a4b too.
+//
+// Failing closed here is deliberately narrow. A dynamic subcommand does not block on
+// its own: the guard keeps inspecting and blocks only if --no-verify or a hook
+// redirect is also present, so `git $CMD status` is fine. For `-c`, only the KEY half
+// is treated as opaque -- an expanded VALUE cannot turn user.name into core.hooksPath.
+
+if (test('blocks --no-verify behind a command-substituted subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git "$(printf commit)" --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a backticked subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git `echo commit` --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a variable subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind a braced variable subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git ${SUB} --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a command-substituted config key', () => {
+  const r = runHook({ tool_input: { command: 'git -c "$(printf core.hooksPath=/dev/null)" commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks a config key hidden in a variable', () => {
+  const r = runHook({ tool_input: { command: 'git -c $CFG commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still allows a command substitution in the commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "$(cat msg.txt)"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a backtick inside the commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "see `date`"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows an expanded VALUE on a literal config key', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.email=$EMAIL commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a command-substituted config VALUE', () => {
+  const r = runHook({ tool_input: { command: 'git -c user.name="$(whoami)" commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a dynamic subcommand with no bypass flag', () => {
+  const r = runHook({ tool_input: { command: 'git $CMD status' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows a dynamic branch name on push', () => {
+  const r = runHook({ tool_input: { command: 'git push origin $BRANCH' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
