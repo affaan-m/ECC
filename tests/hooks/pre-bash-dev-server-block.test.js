@@ -284,7 +284,15 @@ function runTests() {
     // not know must not swallow the script name behind it.
     'npm --userconfig /tmp/npmrc run dev',
     'npm --registry https://registry.example run dev',
-    'npm --loglevel silly run dev'
+    'npm --loglevel silly run dev',
+    // pnpm/yarn/bun take a script without `run`, so a value-taking option of
+    // theirs must not be read as the script name.
+    'pnpm --loglevel debug dev',
+    'yarn --network-timeout 60000 dev',
+    'bun --env-file .env dev',
+    // The implicit script wins over anything after it: this runs `dev` and
+    // passes it `run build`.
+    'pnpm dev run build'
   ]) {
     (test(`blocks a quoted or option-separated dev script: ${command}`, () => {
       const result = runScriptAsPosix(command);

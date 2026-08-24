@@ -190,8 +190,30 @@ const MANAGER_OPTIONS_WITH_VALUE = new Set([
   '--package',
   '-p',
   '--config',
-  '-c'
+  '-c',
+  // pnpm / yarn / bun accept a script without `run`, so for them a value-taking
+  // option IS load-bearing: `pnpm --loglevel debug dev` would otherwise read
+  // `debug` as the script name. Their option sets are finite and documented,
+  // unlike npm's config surface — npm needs no entry here because its script is
+  // only ever read after the `run` keyword (see getRunScriptName).
+  '--loglevel',
+  '--reporter',
+  '--store-dir',
+  '--virtual-store-dir',
+  '--modules-dir',
+  '--lockfile-dir',
+  '--registry',
+  '--network-timeout',
+  '--modules-folder',
+  '--cache-folder',
+  '--mutex',
+  '--env-file'
 ]);
+
+// npm has no implicit script form — `npm dev` is not a command — so a bare
+// token before `run` is an option's value, never the script. pnpm, yarn and
+// bun do accept `pnpm dev`, so for them the first bare token IS the script.
+const MANAGERS_REQUIRING_RUN = new Set(['npm']);
 
 /**
  * The script a package manager is being asked to run, or null.
@@ -221,13 +243,11 @@ const MANAGER_OPTIONS_WITH_VALUE = new Set([
  * open-ended config surface — has no implicit form at all.
  */
 function getRunScriptName(segment, managerWord) {
+  const requiresRunKeyword = MANAGERS_REQUIRING_RUN.has(managerWord);
   let index = 0;
   let seenManager = false;
   let seenRunKeyword = false;
   let skipNextValue = false;
-  // The implicit-form candidate. Held rather than returned, because a `run`
-  // further along means this token was an option value, not the script.
-  let implicitScript = null;
 
   while (index < segment.length) {
     const parsed = readToken(segment, index);
@@ -260,13 +280,13 @@ function getRunScriptName(segment, managerWord) {
       continue;
     }
 
-    // After a `run` keyword this token IS the script it names.
-    if (seenRunKeyword) return token;
-
-    if (implicitScript === null) implicitScript = token;
+    // After a `run` keyword this token IS the script it names; for a manager
+    // that accepts the implicit form, the first bare token is the script and
+    // everything after it — including a later `run` — is its argument.
+    if (seenRunKeyword || !requiresRunKeyword) return token;
   }
 
-  return implicitScript;
+  return null;
 }
 
 /**
