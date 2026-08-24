@@ -70,48 +70,110 @@ function hasActiveAtomicScope(blocks) {
   return blocks.slice(executionScopeStart).some(block => block.atomic);
 }
 
-function findUnprotectedSelectForUpdateLines(source) {
-  const blocks = [];
-  const atomicDecoratorIndents = new Set();
-  const unsafeLines = [];
-  const lines = source.split('\n');
+function withoutSetValue(values, target) {
+  return new Set([...values].filter(value => value !== target));
+}
 
-  for (const [index, line] of lines.entries()) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue;
-    }
-
-    const whitespace = line.match(/^[ \t]*/)[0];
-    const indent = whitespace.replaceAll('\t', '    ').length;
-    while (blocks.length > 0 && indent <= blocks[blocks.length - 1].indent) {
-      blocks.pop();
-    }
-
-    if (trimmed.startsWith('@')) {
-      if (/^@transaction\.atomic(?:\([^)]*\))?$/.test(trimmed)) {
-        atomicDecoratorIndents.add(indent);
-      }
-      continue;
-    }
-
-    if (trimmed.includes('.select_for_update(') && !hasActiveAtomicScope(blocks)) {
-      unsafeLines.push(index + 1);
-    }
-
-    if (!trimmed.endsWith(':')) {
-      atomicDecoratorIndents.delete(indent);
-      continue;
-    }
-
-    const isFunction = /^(?:async\s+)?def\s+/.test(trimmed);
-    const isAtomicWith = /^with\s+transaction\.atomic\([^)]*\):$/.test(trimmed);
-    const isAtomicFunction = isFunction && atomicDecoratorIndents.has(indent);
-    blocks.push({ indent, atomic: isAtomicWith || isAtomicFunction, callable: isFunction });
-    atomicDecoratorIndents.delete(indent);
+function getPythonLineDetails(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) {
+    return null;
   }
 
-  return unsafeLines;
+  const whitespace = line.match(/^[ \t]*/)[0];
+  return {
+    code: trimmed.replace(/\s+#.*$/, ''),
+    indent: whitespace.replaceAll('\t', '    ').length,
+  };
+}
+
+function trimBlocksForIndent(blocks, indent) {
+  let visibleBlocks = blocks;
+  while (visibleBlocks.length > 0 && indent <= visibleBlocks[visibleBlocks.length - 1].indent) {
+    visibleBlocks = visibleBlocks.slice(0, -1);
+  }
+  return visibleBlocks;
+}
+
+function inspectPendingAtomicLine(state, code, lineNumber) {
+  const closingAtomic = code.match(/^\)\s*:\s*/);
+  if (!closingAtomic) {
+    return state;
+  }
+
+  const inlineBody = code.slice(closingAtomic[0].length);
+  const deferredLambda = /^[A-Za-z_]\w*(?:\s*:[^=]+)?\s*=\s*lambda\b/.test(inlineBody);
+  const unsafeQuery = inlineBody.includes('.select_for_update(') && deferredLambda;
+  const blocks = inlineBody
+    ? state.blocks
+    : [...state.blocks, { indent: state.pendingAtomicWithIndent, atomic: true, callable: false }];
+  return {
+    ...state,
+    blocks,
+    pendingAtomicWithIndent: null,
+    unsafeLines: unsafeQuery ? [...state.unsafeLines, lineNumber] : state.unsafeLines,
+  };
+}
+
+function inspectPythonStatement(state, code, indent, lineNumber) {
+  if (code.startsWith('@')) {
+    const atomicDecorator = /^@transaction\.atomic(?:\([^)]*\))?$/.test(code);
+    return atomicDecorator
+      ? { ...state, atomicDecoratorIndents: new Set([...state.atomicDecoratorIndents, indent]) }
+      : state;
+  }
+  if (/^with\s+transaction\.atomic\(\s*$/.test(code)) {
+    return { ...state, pendingAtomicWithIndent: indent };
+  }
+
+  const atomicWith = code.match(/^with\s+transaction\.atomic\([^)]*\)\s*:\s*/);
+  const inlineAtomicBody = atomicWith ? code.slice(atomicWith[0].length) : '';
+  const isFunction = /^(?:async\s+)?def\s+/.test(code);
+  const isAtomicFunction = isFunction && state.atomicDecoratorIndents.has(indent);
+  const queryIndex = code.indexOf('.select_for_update(');
+  const functionColon = isFunction ? code.indexOf(':') : -1;
+  const inlineFunctionQuery = queryIndex > functionColon && functionColon !== -1;
+  const queryScope = inlineAtomicBody || code;
+  const deferredLambda = /^[A-Za-z_]\w*(?:\s*:[^=]+)?\s*=\s*lambda\b/.test(queryScope);
+
+  let queryProtected = hasActiveAtomicScope(state.blocks);
+  queryProtected = atomicWith && inlineAtomicBody ? true : queryProtected;
+  queryProtected = inlineFunctionQuery ? isAtomicFunction : queryProtected;
+  queryProtected = deferredLambda ? false : queryProtected;
+  const unsafeQuery = queryIndex !== -1 && !queryProtected;
+  const blocks = code.endsWith(':')
+    ? [...state.blocks, { indent, atomic: Boolean(atomicWith) || isAtomicFunction, callable: isFunction }]
+    : state.blocks;
+  return {
+    ...state,
+    blocks,
+    atomicDecoratorIndents: withoutSetValue(state.atomicDecoratorIndents, indent),
+    unsafeLines: unsafeQuery ? [...state.unsafeLines, lineNumber] : state.unsafeLines,
+  };
+}
+
+function inspectPythonLine(state, line, lineNumber) {
+  const details = getPythonLineDetails(line);
+  if (!details) {
+    return state;
+  }
+  const scopedState = { ...state, blocks: trimBlocksForIndent(state.blocks, details.indent) };
+  return scopedState.pendingAtomicWithIndent === null
+    ? inspectPythonStatement(scopedState, details.code, details.indent, lineNumber)
+    : inspectPendingAtomicLine(scopedState, details.code, lineNumber);
+}
+
+function findUnprotectedSelectForUpdateLines(source) {
+  const initialState = {
+    blocks: [],
+    atomicDecoratorIndents: new Set(),
+    pendingAtomicWithIndent: null,
+    unsafeLines: [],
+  };
+  const finalState = source
+    .split('\n')
+    .reduce((state, line, index) => inspectPythonLine(state, line, index + 1), initialState);
+  return finalState.unsafeLines;
 }
 
 console.log('\n=== Django Celery skill tests ===\n');
@@ -161,11 +223,28 @@ test('keeps every select_for_update example inside an atomic block', () => {
     'def load_order():',
     '    return Order.objects.select_for_update().get(pk=order_id)',
   ].join('\n');
+  const deferredLambdaExample = [
+    'with transaction.atomic():',
+    '    load_order = lambda: Order.objects.select_for_update().get(pk=order_id)',
+    'load_order()',
+  ].join('\n');
+  const sameLineAtomicExample = [
+    'with transaction.atomic(): order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
+  const multilineAtomicExample = [
+    'with transaction.atomic(',
+    "    using='default',",
+    '):',
+    '    order = Order.objects.select_for_update().get(pk=order_id)',
+  ].join('\n');
 
   assert.ok(lockingExamples.length > 0, 'Expected at least one select_for_update example');
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(invalidExample), [1]);
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(deferredCallableExample), [3]);
   assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(atomicCallableExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(deferredLambdaExample), [2]);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(sameLineAtomicExample), []);
+  assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(multilineAtomicExample), []);
   for (const block of lockingExamples) {
     assert.deepStrictEqual(findUnprotectedSelectForUpdateLines(block), []);
   }
@@ -199,12 +278,12 @@ test('claims and owns a payment attempt around external I/O', () => {
 
   assert.match(antiPatterns, /@shared_task\(bind=True,\s*acks_late=True\)/);
   assertMarkersInOrder(antiPatterns, [
-    'self.request.id',
-    '.select_for_update(',
+    'attempt_id = self.request.id',
+    '.select_for_update().get(',
     'claim_or_resume_charge',
     'gateway.charge',
     "idempotency_key=f'order:{order_id}'",
-    '.select_for_update(',
+    '.select_for_update().get(',
     'charge_attempt_id',
     'record_charge',
   ]);
