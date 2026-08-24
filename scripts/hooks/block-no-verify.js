@@ -326,6 +326,27 @@ function getCommitShortValueOption(value) {
   return null;
 }
 
+/**
+ * `-n` means --no-verify to `git commit` but "max count" to log/show/diff, so with
+ * the subcommand hidden behind an expansion it is ambiguous. The count spellings
+ * are safe to exempt, checked against git 2.51:
+ *
+ *   git log -n 5        ok          git commit -n 5   error: pathspec '5' did not match
+ *   git log -n5         ok          git commit -n5    error: unknown switch `5'
+ *
+ * `-n<digits>` git commit rejects outright, so it can never be a bypass. `-n <digits>`
+ * it reads as a pathspec, which fails unless a file with that exact numeric name
+ * exists — the one residual case, and far narrower than blocking every `git $SUB -n 5`.
+ * The unambiguous spellings are untouched: `git $SUB --no-verify` and `git $SUB -n -m x`
+ * are still blocked.
+ */
+function isAmbiguousCountFlag(value, nextToken) {
+  if (/^-n\d+$/.test(value)) {
+    return true;
+  }
+  return value === '-n' && typeof nextToken === 'string' && /^\d+$/.test(nextToken);
+}
+
 function isCommitNoVerifyShortFlag(value) {
   if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
     return false;
@@ -471,12 +492,13 @@ function detectGitCommand(input, start = 0) {
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
-function hasNoVerifyFlag(input, command, offset) {
+function hasNoVerifyFlag(input, command, offset, subcommandUnknown = false) {
   const segmentEnd = findCommandSegmentEnd(input, offset);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     const value = token.value;
 
     if (skipNext) {
@@ -503,6 +525,12 @@ function hasNoVerifyFlag(input, command, offset) {
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
+      // With the subcommand expanded by the shell we cannot know it is commit, and
+      // `git $SUB -n 5` is an ordinary `git log -n 5`. Only the count spellings are
+      // exempt; --no-verify and a bare -n still block.
+      if (subcommandUnknown && isAmbiguousCountFlag(value, tokens[i + 1] && tokens[i + 1].value)) {
+        continue;
+      }
       return true;
     }
   }
@@ -580,7 +608,7 @@ function checkCommand(input) {
     // `commit`, so use the widest flag set (commit's, which includes -n).
     const flagScanCommand = detected.dynamicCommand ? 'commit' : gitCommand;
 
-    if (hasNoVerifyFlag(input, flagScanCommand, offset)) {
+    if (hasNoVerifyFlag(input, flagScanCommand, offset, detected.dynamicCommand)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,

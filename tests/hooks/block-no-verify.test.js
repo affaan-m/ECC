@@ -437,6 +437,50 @@ if (test('still allows a dynamic branch name on push', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// `-n` is --no-verify to git commit but "max count" to log/show/diff. Widening the
+// flag scan to commit's set for an expanded subcommand therefore rejected an ordinary
+// `git $SUB -n 5`. Checked against git 2.51:
+//   git log -n 5   ok        git commit -n 5  error: pathspec '5' did not match
+//   git log -n5    ok        git commit -n5   error: unknown switch `5'
+// so `-n<digits>` can never be a commit bypass, and `-n <digits>` is a pathspec that
+// fails unless a file with that numeric name exists. Only those two spellings are
+// exempt, and only when the subcommand is unknown.
+
+if (test('allows an expanded subcommand with -n <count>', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n 5' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows an expanded subcommand with -n<count> attached', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n5' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('allows an expanded subcommand with -n <count> and further flags', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n 5 --oneline' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks a bare -n behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still blocks -n with no argument behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -n' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('still blocks --no-verify behind an expanded subcommand regardless of -n rules', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('the count exemption does not leak to a literal commit', () => {
+  const r = runHook({ tool_input: { command: 'git commit -n 5' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
