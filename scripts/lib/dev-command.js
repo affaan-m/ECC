@@ -194,26 +194,40 @@ const MANAGER_OPTIONS_WITH_VALUE = new Set([
 ]);
 
 /**
- * Every candidate script name in a package-manager invocation.
+ * The script a package manager is being asked to run, or null.
  *
- * Reads the tokens after the manager word, skipping options, the value of an
- * option known to take one, and the `run` / `run-script` keyword, and stopping
- * at a `--` separator (everything past it belongs to the script).
+ * Two shapes, because the managers do not agree:
  *
- * It yields ALL remaining bare tokens rather than only the first, because npm
- * takes any config key as `--key value`: with only the first token,
- * `npm --userconfig /tmp/npmrc run dev` read the script name as `/tmp/npmrc`
- * and let the dev server through. Enumerating npm's whole config surface is
- * not winnable, so an unknown option simply does not consume its value — the
- * value gets scanned too, which costs a false positive only when a config
- * value is literally `dev`, and a false positive here is a refusal the user
- * sees rather than a guard that silently did nothing.
+ *   - with a `run` keyword, the script is the token right after it. Anything
+ *     further along is an ARGUMENT to that script: `npm run build dev` runs
+ *     build, and `npm run run dev` runs a script called `run`.
+ *   - without one (`pnpm dev`, `yarn dev`, `bun dev`), the script is the first
+ *     bare token.
+ *
+ * Anchoring on the `run` keyword is also what makes npm's config surface
+ * harmless. npm takes ANY config key as `--key value`, so an unknown option's
+ * value lands in the token stream — reading the first bare token made
+ * `npm --userconfig /tmp/npmrc run dev` resolve to `/tmp/npmrc` and let the
+ * dev server through. Reading the token after `run` steps over it without
+ * needing to know that `--userconfig` takes a value.
+ *
+ * Known value-taking options are still consumed, so `pnpm --filter dev run
+ * build` is a filter named dev rather than the dev script.
+ *
+ * Residual gap, stated rather than hidden: the implicit form combined with an
+ * unknown value-taking option (`pnpm --unknown value dev`) has no `run` to
+ * anchor on, so `value` reads as the script name. pnpm/yarn/bun spell their
+ * options `--flag=value` in practice, and npm — the one manager with an
+ * open-ended config surface — has no implicit form at all.
  */
-function getRunScriptNames(segment, managerWord) {
-  const names = [];
+function getRunScriptName(segment, managerWord) {
   let index = 0;
   let seenManager = false;
+  let seenRunKeyword = false;
   let skipNextValue = false;
+  // The implicit-form candidate. Held rather than returned, because a `run`
+  // further along means this token was an option value, not the script.
+  let implicitScript = null;
 
   while (index < segment.length) {
     const parsed = readToken(segment, index);
@@ -241,12 +255,18 @@ function getRunScriptNames(segment, managerWord) {
       continue;
     }
 
-    if (RUN_KEYWORDS.has(token.toLowerCase())) continue;
+    if (!seenRunKeyword && RUN_KEYWORDS.has(token.toLowerCase())) {
+      seenRunKeyword = true;
+      continue;
+    }
 
-    names.push(token);
+    // After a `run` keyword this token IS the script it names.
+    if (seenRunKeyword) return token;
+
+    if (implicitScript === null) implicitScript = token;
   }
 
-  return names;
+  return implicitScript;
 }
 
 /**
@@ -287,7 +307,8 @@ function isDevServerSegment(segment) {
   if (TMUX_LAUNCHER.test(segment)) return false;
   if (!PACKAGE_MANAGERS.has(commandWord)) return false;
 
-  return getRunScriptNames(segment, commandWord).some((name) => DEV_SCRIPT_NAME.test(name));
+  const script = getRunScriptName(segment, commandWord);
+  return Boolean(script) && DEV_SCRIPT_NAME.test(script);
 }
 
 /** True when any segment of `command` starts a dev server. */

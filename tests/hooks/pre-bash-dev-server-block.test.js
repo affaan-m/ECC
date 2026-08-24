@@ -307,6 +307,10 @@ function runTests() {
     // filter literally named `dev` is not mistaken for the dev script.
     'npm run build --workspace dev',
     'pnpm --filter dev run build',
+    // After the `run` keyword the next token IS the script; everything past it
+    // is that script's argument. `npm run run dev` runs a script called `run`.
+    'npm run run dev',
+    'npm run build dev',
     'tmux new-session -d -s dev "npm run dev"'
   ]) {
     (test(`still allows: ${command}`, () => {
