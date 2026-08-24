@@ -59,6 +59,25 @@ use Claude's `user`, `project`, or `local` install scopes: its enabled state is
 stored once in the active `CODEX_HOME` (normally `~/.codex`) and applies to
 Codex sessions using that home.
 
+## Agent role files
+
+Codex loads subagents from agent role files that must define
+`developer_instructions`. The canonical agent definitions in `agents/*.md` use
+Claude's markdown-plus-frontmatter format, which Codex cannot parse, so
+`.codex/agents/` carries a generated TOML mirror alongside the hand-authored
+`explorer`, `reviewer`, and `docs-researcher` roles:
+
+```bash
+npm run codex:agent-roles:check   # report drift
+npm run codex:agent-roles:write   # regenerate after editing agents/*.md
+```
+
+`sandbox_mode` is derived from each agent's declared tools — agents granted
+`Write` or `Edit` become `workspace-write`, the rest stay `read-only`. Only files
+carrying the generator marker are rewritten, so hand-authored roles are never
+overwritten. `.codex/` already ships in the `platform-configs` install module,
+so the generated roles install with the rest of the Codex platform surface.
+
 ## Hooks and reconfiguration
 
 The Codex manifest uses the documented `hooks` field to bundle
