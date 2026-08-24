@@ -467,11 +467,10 @@ function runTests() {
     }
   }) ? passed++ : failed++);
 
-  // 10b. Dated Sonnet 5 IDs and near-misses are matched correctly.
-  (test('prices dated Sonnet 5 IDs at $12 and rejects claude-sonnet-50 near-miss', () => {
+  // 10b. Dated Sonnet 5 IDs are matched correctly.
+  (test('prices dated Sonnet 5 IDs at $12', () => {
     const tmpHome = makeTempDir();
     const sessionId = `sonnet5-dated-${process.pid}-${Date.now()}`;
-    const nearMissSessionId = `sonnet50-near-miss-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
     writeTranscript(transcriptPath, [
       {
@@ -486,7 +485,6 @@ function runTests() {
 
     try {
       removeHarnessCostCache(sessionId);
-      removeHarnessCostCache(nearMissSessionId);
       const result = runScript(
         { session_id: sessionId, transcript_path: transcriptPath },
         withTempHome(tmpHome)
@@ -496,32 +494,41 @@ function runTests() {
       const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
       const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
       assert.strictEqual(row.estimated_cost_usd, 12, 'Expected dated Sonnet 5 1M/1M to cost $12.00');
-
-      // Near-miss `claude-sonnet-50` must fall through to the standard Sonnet rate.
-      const nearMissPath = path.join(tmpHome, 'near-miss.jsonl');
-      writeTranscript(nearMissPath, [
-        {
-          type: 'assistant',
-          message: {
-            id: 'msg_sonnet50',
-            model: 'claude-sonnet-50',
-            usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-          },
-        },
-      ]);
-
-      const nearResult = runScript(
-        { session_id: nearMissSessionId, transcript_path: nearMissPath },
-        withTempHome(tmpHome)
-      );
-      assert.strictEqual(nearResult.code, 0, `Expected exit code 0, got ${nearResult.code}`);
-
-      const lines = fs.readFileSync(metricsFile, 'utf8').trim().split('\n');
-      const nearRow = JSON.parse(lines[lines.length - 1]);
-      assert.strictEqual(nearRow.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
     } finally {
       removeHarnessCostCache(sessionId);
-      removeHarnessCostCache(nearMissSessionId);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  // 10c. Near-miss Sonnet 5 IDs fall back to standard Sonnet rates.
+  (test('rejects claude-sonnet-50 as a Sonnet 5 near-miss', () => {
+    const tmpHome = makeTempDir();
+    const sessionId = `sonnet50-near-miss-${process.pid}-${Date.now()}`;
+    const transcriptPath = path.join(tmpHome, 'session.jsonl');
+    writeTranscript(transcriptPath, [
+      {
+        type: 'assistant',
+        message: {
+          id: 'msg_sonnet50',
+          model: 'claude-sonnet-50',
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        },
+      },
+    ]);
+
+    try {
+      removeHarnessCostCache(sessionId);
+      const result = runScript(
+        { session_id: sessionId, transcript_path: transcriptPath },
+        withTempHome(tmpHome)
+      );
+      assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+      const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+      const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected claude-sonnet-50 near-miss to fall back to $18.00 Sonnet rate');
+    } finally {
+      removeHarnessCostCache(sessionId);
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }
   }) ? passed++ : failed++);
