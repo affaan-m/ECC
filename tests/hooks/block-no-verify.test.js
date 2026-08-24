@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -478,6 +479,48 @@ if (test('still blocks --no-verify behind an expanded subcommand regardless of -
 
 if (test('the count exemption does not leak to a literal commit', () => {
   const r = runHook({ tool_input: { command: 'git commit -n 5' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// What settles the ambiguous `-n` is that git commit reads the NEXT token as a
+// pathspec, so the command only does anything if that path exists. Checked against
+// git 2.51 in a repo whose pre-commit hook exits 1:
+//   git commit -n 9 -m x   error: pathspec '9' did not match      -> no commit
+//   git commit -n 1 -m x   [main 326cf0b] x, hook never ran       -> real bypass
+// So the split form is exempt only while nothing by that name is on disk. The hook
+// runs with the repo root as cwd, so these two cases create and remove the path.
+const NUMERIC_PATH = '987654321';
+
+if (test('blocks split -n <digits> when that path exists (path-limited commit)', () => {
+  fs.writeFileSync(NUMERIC_PATH, '');
+  try {
+    const r = runHook({ tool_input: { command: `git $SUB -m "msg" -n ${NUMERIC_PATH}` } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  } finally {
+    fs.rmSync(NUMERIC_PATH, { force: true });
+  }
+})) passed++; else failed++;
+
+if (test('allows split -n <digits> when no such path exists (git commit would error)', () => {
+  assert.ok(!fs.existsSync(NUMERIC_PATH), 'fixture path must be absent');
+  const r = runHook({ tool_input: { command: `git $SUB -n ${NUMERIC_PATH}` } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('attached -n<digits> stays allowed even when that path exists', () => {
+  fs.writeFileSync(NUMERIC_PATH, '');
+  try {
+    // git commit rejects `-n<digits>` outright ("unknown switch"), so it can never
+    // be a bypass regardless of the filesystem.
+    const r = runHook({ tool_input: { command: `git $SUB -n${NUMERIC_PATH}` } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  } finally {
+    fs.rmSync(NUMERIC_PATH, { force: true });
+  }
+})) passed++; else failed++;
+
+if (test('a literal commit with a numeric pathspec blocks whether or not it exists', () => {
+  const r = runHook({ tool_input: { command: `git commit -n ${NUMERIC_PATH} -m "msg"` } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 

@@ -13,6 +13,8 @@
  *   2 = block (bypass flag detected)
  */
 
+const fs = require('fs');
+
 'use strict';
 
 const MAX_STDIN = 1024 * 1024;
@@ -328,23 +330,41 @@ function getCommitShortValueOption(value) {
 
 /**
  * `-n` means --no-verify to `git commit` but "max count" to log/show/diff, so with
- * the subcommand hidden behind an expansion it is ambiguous. The count spellings
- * are safe to exempt, checked against git 2.51:
+ * the subcommand hidden behind an expansion it is ambiguous. What settles it is that
+ * git commit reads the token after `-n` as a PATHSPEC, so the command only does
+ * anything if that path exists. Checked against git 2.51, in a repo whose pre-commit
+ * hook exits 1:
  *
- *   git log -n 5        ok          git commit -n 5   error: pathspec '5' did not match
- *   git log -n5         ok          git commit -n5    error: unknown switch `5'
+ *   git commit -n5           error: unknown switch `5'                   never valid
+ *   git commit -n 9 -m x     error: pathspec '9' did not match           no commit
+ *   git commit -n 1 -m x     [main 326cf0b] x   <- hook never ran        REAL bypass
+ *   git log -n 5             ok                                          ordinary
  *
- * `-n<digits>` git commit rejects outright, so it can never be a bypass. `-n <digits>`
- * it reads as a pathspec, which fails unless a file with that exact numeric name
- * exists — the one residual case, and far narrower than blocking every `git $SUB -n 5`.
- * The unambiguous spellings are untouched: `git $SUB --no-verify` and `git $SUB -n -m x`
- * are still blocked.
+ * So `-n<digits>` is exempt outright — git commit rejects that spelling. Split
+ * `-n <digits>` is exempt only when nothing by that name is on disk: if it is, the
+ * command can be a path-limited commit and must block. That is what separates
+ * `git $SUB -n 5` (a log) from `git $SUB -m msg -n 1` (a commit of the file `1`).
  */
+function namesAnExistingPath(value) {
+  try {
+    return fs.existsSync(value);
+  } catch {
+    // Unreadable cwd, permissions, anything: we cannot rule out a pathspec, so do
+    // not hand out the exemption.
+    return true;
+  }
+}
+
 function isAmbiguousCountFlag(value, nextToken) {
   if (/^-n\d+$/.test(value)) {
     return true;
   }
-  return value === '-n' && typeof nextToken === 'string' && /^\d+$/.test(nextToken);
+
+  if (value !== '-n' || typeof nextToken !== 'string' || !/^\d+$/.test(nextToken)) {
+    return false;
+  }
+
+  return !namesAnExistingPath(nextToken);
 }
 
 function isCommitNoVerifyShortFlag(value) {
