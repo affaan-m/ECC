@@ -42,6 +42,32 @@ const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
 // case-insensitive."
 const GIT_CONFIG_KEY_PREFIX = 'core.hookspath=';
 
+// Git global options that take their value as the NEXT token. If one of these
+// is not listed, the value token looks like a bare word to the subcommand
+// scanner, which then decides the `commit`/`push` after it cannot be the
+// subcommand — and the whole guard goes blind for that command, including an
+// explicit --no-verify.
+//
+// `--config-env=<name>=<envvar>` reads a config value out of the environment
+// and is therefore a second spelling of `-c` for hooksPath purposes:
+//   MYVAR=/dev/null git --config-env=core.hooksPath=MYVAR commit
+// git accepts it in both the `=` and space-separated forms. It does NOT accept
+// an abbreviation of the option itself (`--config-en=` is rejected), so exact
+// matching is enough here.
+const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+  '-c',
+  '-C',
+  '--config-env',
+  '--work-tree',
+  '--git-dir',
+  '--namespace',
+  '--super-prefix',
+]);
+
+// Global options that can set core.hooksPath, in their `<option> <key>=<value>`
+// and `<option>=<key>=<value>` spellings.
+const GIT_CONFIG_SETTING_OPTIONS = ['-c', '--config-env'];
+
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '-m',
   '--message',
@@ -353,9 +379,9 @@ function detectGitCommand(input, start = 0) {
         for (const t of tokens) {
           if (expectFlagArg) { expectFlagArg = false; continue; }
           if (t.startsWith('-')) {
-            // -c is a git global flag that takes the next token as its argument
-            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' ||
-                t === '--namespace' || t === '--super-prefix') {
+            // These git global flags take the next token as their argument, so
+            // that token must not be mistaken for the subcommand position.
+            if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(t)) {
               expectFlagArg = true;
             }
             continue;
@@ -446,7 +472,8 @@ function hasHooksPathOverride(input, detected) {
     // must compare against the lowercased token.
     const lowered = value.toLowerCase();
 
-    if (value === '-c') {
+    // `<option> core.hooksPath=...` — the key/value is the next token.
+    if (GIT_CONFIG_SETTING_OPTIONS.includes(value)) {
       const next = tokens[i + 1] && tokens[i + 1].value;
       if (typeof next === 'string' && next.toLowerCase().startsWith(GIT_CONFIG_KEY_PREFIX)) {
         return true;
@@ -455,7 +482,13 @@ function hasHooksPathOverride(input, detected) {
       continue;
     }
 
+    // `-ccore.hooksPath=...` (short option, no space) and
+    // `--config-env=core.hooksPath=...` (long option, inline value).
     if (lowered.startsWith(`-c${GIT_CONFIG_KEY_PREFIX}`)) {
+      return true;
+    }
+
+    if (lowered.startsWith(`--config-env=${GIT_CONFIG_KEY_PREFIX}`)) {
       return true;
     }
   }

@@ -219,6 +219,51 @@ if (test('still allows -tn (n is the -t template path, not a flag)', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- --config-env: the second spelling of -c ---
+//
+// `git --config-env=<name>=<envvar>` reads a config value out of the
+// environment, so it sets core.hooksPath exactly as `-c` does:
+//   MYVAR=/dev/null git --config-env=core.hooksPath=MYVAR commit -m x
+// Verified against git 2.51: both the `=` and space-separated forms are
+// accepted and skip the hooks. (An abbreviation of the option itself,
+// `--config-en=`, is rejected by git, so exact matching is sufficient.)
+
+if (test('blocks --config-env=core.hooksPath override', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=core.hooksPath=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/core\.hookspath/i.test(r.stderr), `stderr should mention core.hooksPath: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.hooksPath override (space-separated)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env core.hooksPath=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.HOOKSPATH override (case-variant key)', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=core.HOOKSPATH=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --config-env core.hooksPath override on git push', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env core.hooksPath=MYVAR push origin main' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+// An unrecognised value-taking global option used to blind the subcommand
+// scanner: its value token looked like a bare word, so the `commit` after it
+// was rejected as the subcommand and the guard stopped inspecting the command
+// entirely -- letting even an explicit --no-verify through.
+if (test('sees --no-verify past a --config-env that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env other.key=MYVAR commit --no-verify -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(/no-verify/i.test(r.stderr), `stderr should mention --no-verify: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows --config-env that sets an unrelated key', () => {
+  const r = runHook({ tool_input: { command: 'git --config-env=other.key=MYVAR commit -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 
