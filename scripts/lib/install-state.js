@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { VALID_SKILL_PROFILES } = require('./skill-flags');
+
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
 // bytes must be the installed bytes). install-state is validated by the
@@ -132,12 +134,15 @@ function createFallbackValidator() {
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
       }
-      if (
-        Object.prototype.hasOwnProperty.call(request, 'skillProfile')
-        && request.skillProfile !== null
-        && typeof request.skillProfile !== 'string'
-      ) {
-        pushError('/request/skillProfile', 'must be string or null');
+      if (Object.prototype.hasOwnProperty.call(request, 'skillProfile')) {
+        if (request.skillProfile !== null) {
+          const skillProfile = typeof request.skillProfile === 'string'
+            ? request.skillProfile.trim().toLowerCase()
+            : '';
+          if (!VALID_SKILL_PROFILES.has(skillProfile)) {
+            pushError('/request/skillProfile', 'must be minimal, standard, full, or null');
+          }
+        }
       }
       validateStringArray(request.modules, '/request/modules');
       validateStringArray(request.includeComponents, '/request/includeComponents');

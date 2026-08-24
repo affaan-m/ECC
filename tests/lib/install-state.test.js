@@ -151,6 +151,49 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('rejects an unknown persisted skill profile', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+
+    try {
+      fs.writeFileSync(statePath, JSON.stringify({
+        schemaVersion: 'ecc.install.v1',
+        installedAt: '2026-03-13T00:00:00Z',
+        target: {
+          id: 'cursor-project',
+          root: '/repo/.cursor',
+          installStatePath: '/repo/.cursor/ecc-install-state.json',
+        },
+        request: {
+          profile: 'core',
+          skillProfile: 'unknown',
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: [],
+          skippedModules: [],
+        },
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: 1,
+        },
+        operations: [],
+      }, null, 2));
+
+      assert.throws(
+        () => readInstallState(statePath),
+        /skillProfile/
+      );
+    } finally {
+      cleanupTestDir(testDir);
+    }
+  })) passed++; else failed++;
+
   if (test('writes and reads install-state from disk', () => {
     const testDir = createTestDir();
     const statePath = path.join(testDir, 'ecc-install-state.json');
