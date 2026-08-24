@@ -63,6 +63,40 @@ function removeHarnessCostCache(sessionId) {
   }
 }
 
+function assertSonnet5CacheCost(cacheUsage, expectedCost, description) {
+  const tmpHome = makeTempDir();
+  const sessionId = `sonnet5-${description}-${process.pid}-${Date.now()}`;
+  const transcriptPath = path.join(tmpHome, 'session.jsonl');
+  writeTranscript(transcriptPath, [{
+    type: 'assistant',
+    message: {
+      id: `msg_sonnet5_${description}`,
+      model: 'claude-sonnet-5',
+      usage: {
+        input_tokens: 1_000_000,
+        output_tokens: 1_000_000,
+        ...cacheUsage,
+      },
+    },
+  }]);
+
+  try {
+    removeHarnessCostCache(sessionId);
+    const result = runScript(
+      { session_id: sessionId, transcript_path: transcriptPath },
+      withTempHome(tmpHome)
+    );
+    assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
+
+    const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
+    const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
+    assert.strictEqual(row.estimated_cost_usd, expectedCost, description);
+  } finally {
+    removeHarnessCostCache(sessionId);
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+}
+
 function runTests() {
   console.log('\n=== Testing cost-tracker.js ===\n');
 
@@ -381,6 +415,23 @@ function runTests() {
       removeHarnessCostCache(sessionId);
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }
+  }) ? passed++ : failed++);
+
+  // 9c. Cache write/read rates are independently covered.
+  (test('prices Sonnet 5 cache writes at $2.50 per 1M tokens', () => {
+    assertSonnet5CacheCost(
+      { cache_creation_input_tokens: 1_000_000 },
+      14.5,
+      'cache-write'
+    );
+  }) ? passed++ : failed++);
+
+  (test('prices Sonnet 5 cache reads at $0.20 per 1M tokens', () => {
+    assertSonnet5CacheCost(
+      { cache_read_input_tokens: 1_000_000 },
+      12.2,
+      'cache-read'
+    );
   }) ? passed++ : failed++);
 
   // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
