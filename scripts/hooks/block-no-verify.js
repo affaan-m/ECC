@@ -13,7 +13,6 @@
  *   2 = block (bypass flag detected)
  */
 
-const fs = require('fs');
 
 'use strict';
 
@@ -330,41 +329,31 @@ function getCommitShortValueOption(value) {
 
 /**
  * `-n` means --no-verify to `git commit` but "max count" to log/show/diff, so with
- * the subcommand hidden behind an expansion it is ambiguous. What settles it is that
- * git commit reads the token after `-n` as a PATHSPEC, so the command only does
- * anything if that path exists. Checked against git 2.51, in a repo whose pre-commit
- * hook exits 1:
+ * the subcommand hidden behind a shell expansion it is ambiguous.
  *
- *   git commit -n5           error: unknown switch `5'                   never valid
- *   git commit -n 9 -m x     error: pathspec '9' did not match           no commit
- *   git commit -n 1 -m x     [main 326cf0b] x   <- hook never ran        REAL bypass
- *   git log -n 5             ok                                          ordinary
+ * Only the ATTACHED spelling is safe to exempt. Checked against git 2.51:
  *
- * So `-n<digits>` is exempt outright — git commit rejects that spelling. Split
- * `-n <digits>` is exempt only when nothing by that name is on disk: if it is, the
- * command can be a path-limited commit and must block. That is what separates
- * `git $SUB -n 5` (a log) from `git $SUB -m msg -n 1` (a commit of the file `1`).
+ *   git log    -n5           ok
+ *   git commit -n5           error: unknown switch `5'
+ *
+ * git commit refuses `-n<digits>` outright, so nothing can turn it into a bypass.
+ *
+ * The split form `-n <digits>` is NOT exempt, because git commit reads that token as
+ * a pathspec and there is no reliable way to tell from the string alone whether such
+ * a path exists. Two verified bypasses came out of trying, both committing with the
+ * pre-commit hook never running:
+ *
+ *   file `1` present         git commit -n 1 -m x   -> [main 326cf0b] x
+ *   `7` staged as a DELETION git commit -n 7 -m x   -> [main 7e7d466] x
+ *
+ * The second is why an existsSync test is not enough: git accepts a staged deletion
+ * as a pathspec while the file is absent from disk. Deciding it properly means asking
+ * git about the index from inside a pre-tool hook, and any cheaper test is incomplete
+ * in a direction that lets hooks be skipped. The cost of failing closed is that
+ * `git $SUB -n 5` blocks; `git $SUB -n5` and `git $SUB --max-count=5` do not.
  */
-function namesAnExistingPath(value) {
-  try {
-    return fs.existsSync(value);
-  } catch {
-    // Unreadable cwd, permissions, anything: we cannot rule out a pathspec, so do
-    // not hand out the exemption.
-    return true;
-  }
-}
-
-function isAmbiguousCountFlag(value, nextToken) {
-  if (/^-n\d+$/.test(value)) {
-    return true;
-  }
-
-  if (value !== '-n' || typeof nextToken !== 'string' || !/^\d+$/.test(nextToken)) {
-    return false;
-  }
-
-  return !namesAnExistingPath(nextToken);
+function isAmbiguousCountFlag(value) {
+  return /^-n\d+$/.test(value);
 }
 
 function isCommitNoVerifyShortFlag(value) {
@@ -548,7 +537,7 @@ function hasNoVerifyFlag(input, command, offset, subcommandUnknown = false) {
       // With the subcommand expanded by the shell we cannot know it is commit, and
       // `git $SUB -n 5` is an ordinary `git log -n 5`. Only the count spellings are
       // exempt; --no-verify and a bare -n still block.
-      if (subcommandUnknown && isAmbiguousCountFlag(value, tokens[i + 1] && tokens[i + 1].value)) {
+      if (subcommandUnknown && isAmbiguousCountFlag(value)) {
         continue;
       }
       return true;

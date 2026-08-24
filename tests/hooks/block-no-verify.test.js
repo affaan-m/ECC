@@ -3,7 +3,6 @@
  */
 
 const assert = require('assert');
-const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -438,27 +437,37 @@ if (test('still allows a dynamic branch name on push', () => {
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
-// `-n` is --no-verify to git commit but "max count" to log/show/diff. Widening the
-// flag scan to commit's set for an expanded subcommand therefore rejected an ordinary
-// `git $SUB -n 5`. Checked against git 2.51:
-//   git log -n 5   ok        git commit -n 5  error: pathspec '5' did not match
-//   git log -n5    ok        git commit -n5   error: unknown switch `5'
-// so `-n<digits>` can never be a commit bypass, and `-n <digits>` is a pathspec that
-// fails unless a file with that numeric name exists. Only those two spellings are
-// exempt, and only when the subcommand is unknown.
+// `-n` is --no-verify to git commit but "max count" to log/show/diff, so behind a
+// shell-expanded subcommand it is ambiguous. Only the ATTACHED spelling is exempt,
+// because git commit refuses it outright (git 2.51):
+//   git log -n5      ok          git commit -n5   error: unknown switch `5'
+//
+// The split form is NOT exempt. git commit reads that token as a pathspec, and two
+// verified bypasses came out of trying to decide it from the string, both committing
+// with the pre-commit hook never running:
+//   file `1` present          git commit -n 1 -m x  -> [main 326cf0b] x
+//   `7` staged as a DELETION  git commit -n 7 -m x  -> [main 7e7d466] x
+// The second is why an existsSync test is not enough: git takes a staged deletion as
+// a pathspec while the file is absent from disk. Failing closed costs
+// `git $SUB -n 5`; `git $SUB -n5` and `git $SUB --max-count=5` still work.
 
-if (test('allows an expanded subcommand with -n <count>', () => {
+if (test('blocks split -n <count> behind an expanded subcommand', () => {
   const r = runHook({ tool_input: { command: 'git $SUB -n 5' } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
-if (test('allows an expanded subcommand with -n<count> attached', () => {
+if (test('blocks the staged-deletion shape that defeated a filesystem check', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB -m "msg" -n 7' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows the attached -n<count>, which git commit rejects outright', () => {
   const r = runHook({ tool_input: { command: 'git $SUB -n5' } });
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
-if (test('allows an expanded subcommand with -n <count> and further flags', () => {
-  const r = runHook({ tool_input: { command: 'git $SUB -n 5 --oneline' } });
+if (test('allows --max-count behind an expanded subcommand', () => {
+  const r = runHook({ tool_input: { command: 'git $SUB --max-count=5' } });
   assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
 })) passed++; else failed++;
 
@@ -467,62 +476,16 @@ if (test('still blocks a bare -n behind an expanded subcommand', () => {
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
-if (test('still blocks -n with no argument behind an expanded subcommand', () => {
-  const r = runHook({ tool_input: { command: 'git $SUB -n' } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
-
-if (test('still blocks --no-verify behind an expanded subcommand regardless of -n rules', () => {
+if (test('still blocks --no-verify behind an expanded subcommand', () => {
   const r = runHook({ tool_input: { command: 'git $SUB --no-verify -m "msg"' } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
-if (test('the count exemption does not leak to a literal commit', () => {
-  const r = runHook({ tool_input: { command: 'git commit -n 5' } });
+if (test('the attached-form exemption does not leak to a literal commit', () => {
+  const r = runHook({ tool_input: { command: 'git commit -n5 -m "msg"' } });
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
-// What settles the ambiguous `-n` is that git commit reads the NEXT token as a
-// pathspec, so the command only does anything if that path exists. Checked against
-// git 2.51 in a repo whose pre-commit hook exits 1:
-//   git commit -n 9 -m x   error: pathspec '9' did not match      -> no commit
-//   git commit -n 1 -m x   [main 326cf0b] x, hook never ran       -> real bypass
-// So the split form is exempt only while nothing by that name is on disk. The hook
-// runs with the repo root as cwd, so these two cases create and remove the path.
-const NUMERIC_PATH = '987654321';
-
-if (test('blocks split -n <digits> when that path exists (path-limited commit)', () => {
-  fs.writeFileSync(NUMERIC_PATH, '');
-  try {
-    const r = runHook({ tool_input: { command: `git $SUB -m "msg" -n ${NUMERIC_PATH}` } });
-    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-  } finally {
-    fs.rmSync(NUMERIC_PATH, { force: true });
-  }
-})) passed++; else failed++;
-
-if (test('allows split -n <digits> when no such path exists (git commit would error)', () => {
-  assert.ok(!fs.existsSync(NUMERIC_PATH), 'fixture path must be absent');
-  const r = runHook({ tool_input: { command: `git $SUB -n ${NUMERIC_PATH}` } });
-  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-})) passed++; else failed++;
-
-if (test('attached -n<digits> stays allowed even when that path exists', () => {
-  fs.writeFileSync(NUMERIC_PATH, '');
-  try {
-    // git commit rejects `-n<digits>` outright ("unknown switch"), so it can never
-    // be a bypass regardless of the filesystem.
-    const r = runHook({ tool_input: { command: `git $SUB -n${NUMERIC_PATH}` } });
-    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
-  } finally {
-    fs.rmSync(NUMERIC_PATH, { force: true });
-  }
-})) passed++; else failed++;
-
-if (test('a literal commit with a numeric pathspec blocks whether or not it exists', () => {
-  const r = runHook({ tool_input: { command: `git commit -n ${NUMERIC_PATH} -m "msg"` } });
-  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
-})) passed++; else failed++;
 
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
