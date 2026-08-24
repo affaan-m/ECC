@@ -127,10 +127,17 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
+        ['profile', 'skillProfile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(request, 'skillProfile')
+        && request.skillProfile !== null
+        && typeof request.skillProfile !== 'string'
+      ) {
+        pushError('/request/skillProfile', 'must be string or null');
       }
       validateStringArray(request.modules, '/request/modules');
       validateStringArray(request.includeComponents, '/request/includeComponents');
@@ -247,6 +254,7 @@ function createInstallState(options) {
     },
     request: {
       profile: options.request.profile || null,
+      skillProfile: options.request.skillProfile || null,
       modules: Array.isArray(options.request.modules) ? [...options.request.modules] : [],
       includeComponents: Array.isArray(options.request.includeComponents)
         ? [...options.request.includeComponents]

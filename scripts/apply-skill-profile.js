@@ -29,6 +29,18 @@ const {
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '..');
 
+function requireOptionValue(args, index, flag) {
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error(`Missing value for ${flag}`);
+  }
+  return value;
+}
+
+function isDryRun(options = {}, env = process.env) {
+  return Boolean(options.dryRun) || env.ECC_DRY_RUN === '1';
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const parsed = {
@@ -42,10 +54,10 @@ function parseArgs(argv) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--profile') {
-      parsed.profile = args[index + 1] || null;
+      parsed.profile = requireOptionValue(args, index, '--profile');
       index += 1;
     } else if (arg === '--root') {
-      parsed.root = path.resolve(args[index + 1] || '');
+      parsed.root = path.resolve(requireOptionValue(args, index, '--root'));
       index += 1;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
@@ -110,7 +122,7 @@ function readPluginJson(pluginRoot) {
 }
 
 function buildSelection(options, env) {
-  const catalog = loadSkillCatalog({ repoRoot: DEFAULT_REPO_ROOT });
+  const catalog = loadSkillCatalog({ repoRoot: options.root || DEFAULT_REPO_ROOT });
   const profile = resolveRequestedProfile(options, env);
   const selected = selectSkills(catalog, {
     profile,
@@ -127,15 +139,17 @@ function buildSelection(options, env) {
 }
 
 function applySkillProfile(options = {}, env = process.env) {
-  const { catalog, selected, skills } = buildSelection(options, env);
-  const { pluginPath, plugin } = readPluginJson(options.root);
+  const pluginRoot = options.root || DEFAULT_REPO_ROOT;
+  const dryRun = isDryRun(options, env);
+  const { catalog, selected, skills } = buildSelection({ ...options, root: pluginRoot }, env);
+  const { pluginPath, plugin } = readPluginJson(pluginRoot);
   const nextPlugin = {
     ...plugin,
     skills: [...skills],
   };
   const changed = JSON.stringify(plugin.skills) !== JSON.stringify(nextPlugin.skills);
 
-  if (!options.dryRun && changed) {
+  if (!dryRun && changed) {
     writeFileAtomic(pluginPath, `${JSON.stringify(nextPlugin, null, 2)}\n`);
   }
 
@@ -143,7 +157,7 @@ function applySkillProfile(options = {}, env = process.env) {
     profile: selected.profile,
     pluginPath,
     changed,
-    dryRun: Boolean(options.dryRun),
+    dryRun,
     skillCount: catalog.skills.length,
     enabledCount: selected.enabled.length,
     disabledCount: selected.disabled.length,
@@ -166,7 +180,7 @@ function main() {
     }
 
     process.stdout.write(
-      `${options.dryRun ? 'Would apply' : 'Applied'} skill profile ${result.profile}: `
+      `${result.dryRun ? 'Would apply' : 'Applied'} skill profile ${result.profile}: `
       + `${result.enabledCount}/${result.skillCount} skills`
       + `${result.changed ? '' : ' (already current)'}\n`
     );

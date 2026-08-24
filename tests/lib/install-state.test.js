@@ -79,7 +79,76 @@ function runTests() {
     assert.strictEqual(state.schemaVersion, 'ecc.install.v1');
     assert.strictEqual(state.target.id, 'cursor-project');
     assert.strictEqual(state.request.profile, 'developer');
+    assert.strictEqual(state.request.skillProfile, null);
     assert.strictEqual(state.operations.length, 1);
+  })) passed++; else failed++;
+
+  if (test('persists an optional skill profile on the request', () => {
+    const state = createInstallState({
+      adapter: { id: 'cursor-project' },
+      targetRoot: '/repo/.cursor',
+      installStatePath: '/repo/.cursor/ecc-install-state.json',
+      request: {
+        profile: 'developer',
+        skillProfile: 'minimal',
+        modules: ['orchestration'],
+        legacyLanguages: [],
+        legacyMode: false,
+      },
+      resolution: {
+        selectedModules: ['orchestration'],
+        skippedModules: [],
+      },
+      operations: [],
+      source: {
+        repoVersion: CURRENT_PACKAGE_VERSION,
+        repoCommit: 'abc123',
+        manifestVersion: 1,
+      },
+    });
+
+    assert.strictEqual(state.request.skillProfile, 'minimal');
+  })) passed++; else failed++;
+
+  if (test('reads install-state payloads that omit skillProfile', () => {
+    const testDir = createTestDir();
+    const statePath = path.join(testDir, 'ecc-install-state.json');
+
+    try {
+      fs.writeFileSync(statePath, JSON.stringify({
+        schemaVersion: 'ecc.install.v1',
+        installedAt: '2026-03-13T00:00:00Z',
+        target: {
+          id: 'cursor-project',
+          root: '/repo/.cursor',
+          installStatePath: '/repo/.cursor/ecc-install-state.json',
+        },
+        request: {
+          profile: 'core',
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: [],
+          skippedModules: [],
+        },
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: 1,
+        },
+        operations: [],
+      }, null, 2));
+
+      const loaded = readInstallState(statePath);
+      assert.strictEqual(loaded.request.profile, 'core');
+      assert.strictEqual(loaded.request.skillProfile, undefined);
+    } finally {
+      cleanupTestDir(testDir);
+    }
   })) passed++; else failed++;
 
   if (test('writes and reads install-state from disk', () => {

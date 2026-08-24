@@ -86,6 +86,32 @@ function runTests() {
     assert.strictEqual(parsed.skillProfile, 'minimal');
   })) passed++; else failed++;
 
+  if (test('rejects a whitespace-only --skill-profile', () => {
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--skill-profile',
+        '   ',
+        '--profile',
+        'developer',
+      ]),
+      /Missing value for --skill-profile/
+    );
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: 'developer',
+        skillProfile: '   ',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+      }),
+      /Missing value for --skill-profile/
+    );
+  })) passed++; else failed++;
+
   if (test('rejects an unknown --skill-profile', () => {
     assert.throws(
       () => normalizeInstallRequest({

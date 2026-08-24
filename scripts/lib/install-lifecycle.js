@@ -1458,7 +1458,8 @@ function analyzeRecord(record, context) {
         profileId: state.request.profile || null,
         moduleIds: state.request.modules || [],
         includeComponentIds: state.request.includeComponents || [],
-        excludeComponentIds: state.request.excludeComponents || []
+        excludeComponentIds: state.request.excludeComponents || [],
+        skillProfile: state.request.skillProfile || null
       });
 
       if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
@@ -1559,6 +1560,7 @@ function createRepairPlanFromRecord(record, context, options = {}) {
     moduleIds: state.request.modules || [],
     includeComponentIds: state.request.includeComponents || [],
     excludeComponentIds: state.request.excludeComponents || [],
+    skillProfile: state.request.skillProfile || null,
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     exemptValidationCodes: options.exemptValidationCodes || [],

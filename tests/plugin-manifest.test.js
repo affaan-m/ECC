@@ -283,6 +283,8 @@ test('claude plugin.json exposes only supported durable hook and skill preferenc
   assert.strictEqual(skillProfile.default, 'standard');
   assert.ok(typeof skillProfile.title === 'string' && skillProfile.title.trim());
   assert.ok(typeof skillProfile.description === 'string' && skillProfile.description.trim());
+  assert.match(skillProfile.description, /reject|fail/i);
+  assert.doesNotMatch(skillProfile.description, /fall back/i);
 });
 
 console.log('\n=== .claude-plugin/marketplace.json ===\n');

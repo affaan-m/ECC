@@ -38,7 +38,7 @@
     "skill_profile": {
       "type": "string",
       "title": "ECC skill profile",
-      "description": "Choose minimal, standard, or full. Standard keeps the Claude skill listing inside the listing budget. After changing this, run: node scripts/apply-skill-profile.js. Invalid values fall back to standard.",
+      "description": "Choose minimal, standard, or full. Standard keeps the Claude skill listing inside the listing budget. After changing this, run: node scripts/apply-skill-profile.js. Invalid values are rejected.",
       "default": "standard"
     }
   },

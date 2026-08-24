@@ -65,7 +65,7 @@ function parseInstallArgs(argv) {
       index += 1;
     } else if (arg === '--skill-profile') {
       const skillProfile = args[index + 1] || '';
-      if (!skillProfile || skillProfile.startsWith('--')) {
+      if (!skillProfile.trim() || skillProfile.startsWith('--')) {
         throw new Error('Missing value for --skill-profile');
       }
       parsed.skillProfile = skillProfile;
@@ -98,12 +98,23 @@ function normalizeInstallRequest(options = {}) {
     ? options.config
     : null;
   const profileId = options.profileId || config?.profileId || null;
-  const rawSkillProfile = options.skillProfile || config?.skillProfile || null;
-  const skillProfile = rawSkillProfile
-    ? String(rawSkillProfile).trim().toLowerCase()
-    : null;
-  if (skillProfile && !VALID_SKILL_PROFILES.has(skillProfile)) {
-    throw new Error(`Unknown skill profile: ${rawSkillProfile}. Expected minimal, standard, or full.`);
+  const rawSkillProfile = Object.prototype.hasOwnProperty.call(options, 'skillProfile')
+    && options.skillProfile !== undefined
+    && options.skillProfile !== null
+    ? options.skillProfile
+    : (config && Object.prototype.hasOwnProperty.call(config, 'skillProfile')
+      ? config.skillProfile
+      : null);
+  let skillProfile = null;
+  if (rawSkillProfile !== null && rawSkillProfile !== undefined) {
+    const trimmed = String(rawSkillProfile).trim();
+    if (!trimmed) {
+      throw new Error('Missing value for --skill-profile');
+    }
+    skillProfile = trimmed.toLowerCase();
+    if (!VALID_SKILL_PROFILES.has(skillProfile)) {
+      throw new Error(`Unknown skill profile: ${rawSkillProfile}. Expected minimal, standard, or full.`);
+    }
   }
   const target = options.target || config?.target || 'claude';
   const moduleIds = validateInstallModuleIds(

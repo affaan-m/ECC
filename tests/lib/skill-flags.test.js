@@ -32,29 +32,6 @@ function test(name, fn) {
   }
 }
 
-function withEnv(vars, fn) {
-  const saved = {};
-  for (const key of Object.keys(vars)) {
-    saved[key] = process.env[key];
-    if (vars[key] === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = vars[key];
-    }
-  }
-  try {
-    fn();
-  } finally {
-    for (const key of Object.keys(saved)) {
-      if (saved[key] === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = saved[key];
-      }
-    }
-  }
-}
-
 function runTests() {
   console.log('\n=== Testing skill-flags.js ===\n');
 
@@ -73,12 +50,7 @@ function runTests() {
   console.log('\ngetSkillProfile:');
 
   if (test('defaults to standard', () => {
-    withEnv({
-      ECC_SKILL_PROFILE: undefined,
-      CLAUDE_PLUGIN_OPTION_SKILL_PROFILE: undefined,
-    }, () => {
-      assert.strictEqual(getSkillProfile({}), 'standard');
-    });
+    assert.strictEqual(getSkillProfile({}), 'standard');
   })) passed++; else failed++;
 
   if (test('reads ECC_SKILL_PROFILE', () => {
@@ -87,9 +59,20 @@ function runTests() {
     assert.strictEqual(getSkillProfile({ ECC_SKILL_PROFILE: '  standard  ' }), 'standard');
   })) passed++; else failed++;
 
-  if (test('falls back to standard for invalid values', () => {
-    assert.strictEqual(getSkillProfile({ ECC_SKILL_PROFILE: 'strict' }), 'standard');
+  if (test('defaults to standard for empty values', () => {
     assert.strictEqual(getSkillProfile({ ECC_SKILL_PROFILE: '' }), 'standard');
+    assert.strictEqual(getSkillProfile({ ECC_SKILL_PROFILE: '   ' }), 'standard');
+  })) passed++; else failed++;
+
+  if (test('rejects a non-empty invalid profile', () => {
+    assert.throws(
+      () => getSkillProfile({ ECC_SKILL_PROFILE: 'strict' }),
+      /Unknown skill profile/
+    );
+    assert.throws(
+      () => getSkillProfile({ CLAUDE_PLUGIN_OPTION_SKILL_PROFILE: 'legacy' }),
+      /Unknown skill profile/
+    );
   })) passed++; else failed++;
 
   if (test('uses Claude plugin option when ECC var is absent', () => {

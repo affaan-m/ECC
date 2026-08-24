@@ -384,6 +384,7 @@ test("is discoverable in the source tree and in a simulated packed artifact", ()
 
   const claudePlugin = readJson(".claude-plugin/plugin.json");
   const pluginSkills = claudePlugin.skills || [];
+  assert.ok(pluginSkills.length > 0, "claude plugin skills must list at least one skill");
   assert.ok(
     pluginSkills.includes("./skills/")
       || pluginSkills.every(entry => String(entry).startsWith("./skills/")),

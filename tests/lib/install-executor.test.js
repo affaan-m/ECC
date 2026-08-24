@@ -386,10 +386,31 @@ function runTests() {
       )));
       assert.deepStrictEqual(plan.warnings, ['fixture warning']);
       assert.strictEqual(plan.statePreview.request.profile, 'minimal');
+      assert.strictEqual(plan.statePreview.request.skillProfile, null);
       assert.deepStrictEqual(plan.statePreview.request.includeComponents, ['capability:fixture']);
       assert.deepStrictEqual(plan.statePreview.request.excludeComponents, ['capability:skip']);
       assert.strictEqual(plan.statePreview.source.repoVersion, '1.2.3');
       assert.strictEqual(plan.statePreview.source.manifestVersion, 7);
+    } finally {
+      cleanup(sourceRoot);
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('persists skillProfile on the install-state request', () => {
+    const sourceRoot = createTempDir('install-executor-source-');
+    const homeDir = createTempDir('install-executor-home-');
+    try {
+      writeManifestSourceFixture(sourceRoot);
+      const plan = createManifestInstallPlan({
+        sourceRoot,
+        homeDir,
+        target: 'claude',
+        profileId: 'minimal',
+        skillProfile: 'minimal',
+      });
+
+      assert.strictEqual(plan.statePreview.request.skillProfile, 'minimal');
     } finally {
       cleanup(sourceRoot);
       cleanup(homeDir);
@@ -442,6 +463,7 @@ function runTests() {
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'plugin.json')));
       const state = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json'), 'utf8'));
       assert.strictEqual(state.request.profile, 'minimal');
+      assert.strictEqual(state.request.skillProfile, null);
       assert.deepStrictEqual(state.resolution.selectedModules, ['fixture-core']);
       for (const operation of state.operations) {
         assert.strictEqual(

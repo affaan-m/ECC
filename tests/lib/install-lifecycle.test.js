@@ -16,6 +16,7 @@ const {
   uninstallInstalledStates,
 } = require('../../scripts/lib/install-lifecycle');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { createManifestInstallPlan } = require('../../scripts/lib/install-executor');
 const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
@@ -139,6 +140,56 @@ function writeOpencodeState(homeDir, overrides = {}) {
     installStatePath: options.installStatePath,
     state: options,
   };
+}
+
+function writeSkillProfileSourceFixture(root) {
+  const writeFile = (relativePath, content) => {
+    const filePath = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content);
+  };
+  const writeJson = (relativePath, value) => {
+    writeFile(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+  };
+
+  writeJson('package.json', { version: '1.2.3' });
+  writeJson(path.join('manifests', 'install-modules.json'), {
+    version: 7,
+    modules: [
+      {
+        id: 'fixture-core',
+        kind: 'fixture',
+        description: 'Fixture module',
+        paths: [
+          'skills/demo',
+          'skills/extra',
+        ],
+        targets: ['claude'],
+        dependencies: [],
+        defaultInstall: true,
+        cost: 'light',
+        stability: 'stable',
+      },
+    ],
+  });
+  writeJson(path.join('manifests', 'install-profiles.json'), {
+    version: 1,
+    profiles: {
+      minimal: {
+        description: 'Minimal fixture profile',
+        modules: ['fixture-core'],
+      },
+    },
+  });
+  writeJson(path.join('manifests', 'skill-profiles.json'), {
+    version: 1,
+    defaultProfile: 'standard',
+    profiles: ['minimal', 'standard', 'full'],
+    minimalSkills: ['demo'],
+    groups: {},
+  });
+  writeFile(path.join('skills', 'demo', 'SKILL.md'), '# Demo\n');
+  writeFile(path.join('skills', 'extra', 'SKILL.md'), '# Extra\n');
 }
 
 function withTemporarilyMovedPath(filePath, callback) {
@@ -955,6 +1006,56 @@ function runTests() {
       assert.strictEqual(result.results[0].status, 'repaired');
       assert.ok(fs.readFileSync(destinationPath).equals(fs.readFileSync(sourcePath)));
     } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair preserves a recorded skill profile and does not restore excluded skills', () => {
+    const sourceRoot = createTempDir('install-lifecycle-skill-source-');
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      writeSkillProfileSourceFixture(sourceRoot);
+      const plan = createManifestInstallPlan({
+        sourceRoot,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        profileId: 'minimal',
+        skillProfile: 'minimal',
+      });
+      applyInstallPlan(plan);
+
+      const demoPath = path.join(homeDir, '.claude', 'skills', 'demo', 'SKILL.md');
+      const extraPath = path.join(homeDir, '.claude', 'skills', 'extra', 'SKILL.md');
+      const state = readInstallState(plan.installStatePath);
+
+      assert.strictEqual(state.request.skillProfile, 'minimal');
+      assert.ok(fs.existsSync(demoPath));
+      assert.ok(!fs.existsSync(extraPath));
+      assert.ok(!state.operations.some(operation => (
+        String(operation.sourceRelativePath).replace(/\\/g, '/').startsWith('skills/extra')
+      )));
+
+      const result = repairInstalledStates({
+        repoRoot: sourceRoot,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+
+      assert.ok(['ok', 'repaired'].includes(result.results[0].status), result.results[0].error);
+      assert.ok(fs.existsSync(demoPath));
+      assert.ok(!fs.existsSync(extraPath), 'repair must not restore a skill excluded by the recorded profile');
+      const repaired = readInstallState(plan.installStatePath);
+      assert.strictEqual(repaired.request.skillProfile, 'minimal');
+      assert.ok(!repaired.operations.some(operation => (
+        String(operation.sourceRelativePath).replace(/\\/g, '/').startsWith('skills/extra')
+      )));
+    } finally {
+      cleanup(sourceRoot);
       cleanup(homeDir);
       cleanup(projectRoot);
     }

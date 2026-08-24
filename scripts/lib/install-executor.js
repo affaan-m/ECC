@@ -590,6 +590,7 @@ function createLegacyInstallPlan(options = {}) {
     installStatePath: plan.installStatePath,
     request: {
       profile: null,
+      skillProfile: null,
       modules: [],
       legacyLanguages: context.languages,
       legacyMode: true
@@ -800,6 +801,7 @@ function createManifestInstallPlan(options = {}) {
     installStatePath: plan.installStatePath,
     request: {
       profile: requestProfileId,
+      skillProfile: options.skillProfile || null,
       modules: requestModuleIds,
       includeComponents: requestIncludeComponentIds,
       excludeComponents: requestExcludeComponentIds,

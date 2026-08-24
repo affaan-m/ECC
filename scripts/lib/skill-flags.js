@@ -77,8 +77,16 @@ function getSkillProfile(env = process.env, managed = readManagedSkillConfig(env
     env.CLAUDE_PLUGIN_OPTION_SKILL_PROFILE,
     managed.profile
   );
-  const raw = normalizeId(selected ?? 'standard');
-  return VALID_SKILL_PROFILES.has(raw) ? raw : 'standard';
+  if (selected === undefined) {
+    return 'standard';
+  }
+  const raw = normalizeId(selected);
+  if (!VALID_SKILL_PROFILES.has(raw)) {
+    throw new Error(
+      `Unknown skill profile: ${sanitizeDiagnostic(selected)}. Expected minimal, standard, or full.`
+    );
+  }
+  return raw;
 }
 
 function hasExplicitSkillProfile(env = process.env, managed = readManagedSkillConfig(env)) {

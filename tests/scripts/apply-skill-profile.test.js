@@ -12,6 +12,10 @@ const { spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'apply-skill-profile.js');
 const REPO_ROOT = path.join(__dirname, '..', '..');
+const {
+  applySkillProfile,
+  parseArgs,
+} = require('../../scripts/apply-skill-profile');
 
 function test(name, fn) {
   try {
@@ -36,17 +40,47 @@ function runCli(args, options = {}) {
   });
 }
 
-function seedPluginRoot() {
+function writeJson(root, relativePath, value) {
+  const filePath = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function seedIsolatedCatalog(root, options = {}) {
+  const skills = options.skills || [
+    { id: 'alpha' },
+    { id: 'beta' },
+  ];
+  for (const skill of skills) {
+    const skillDir = path.join(root, 'skills', skill.id);
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `# ${skill.id}\n`);
+  }
+  writeJson(root, path.join('manifests', 'skill-profiles.json'), {
+    version: 1,
+    defaultProfile: 'standard',
+    profiles: ['minimal', 'standard', 'full'],
+    minimalSkills: options.minimalSkills || ['alpha'],
+    groups: options.groups || {},
+  });
+  writeJson(root, path.join('manifests', 'install-modules.json'), {
+    version: 1,
+    modules: [],
+  });
+}
+
+function seedPluginRoot(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apply-skill-profile-'));
-  const pluginDir = path.join(root, '.claude-plugin');
-  fs.mkdirSync(pluginDir, { recursive: true });
-  fs.writeFileSync(path.join(pluginDir, 'plugin.json'), `${JSON.stringify({
+  writeJson(root, path.join('.claude-plugin', 'plugin.json'), {
     name: 'ecc',
     version: '2.2.0',
     mcpServers: {},
     skills: ['./skills/'],
     commands: ['./commands/'],
-  }, null, 2)}\n`);
+  });
+  if (options.catalog !== false) {
+    seedIsolatedCatalog(root, options.catalog);
+  }
   return root;
 }
 
@@ -74,15 +108,52 @@ function runTests() {
     assert.deepStrictEqual(payload.skills, ['./skills/']);
   })) passed++; else failed++;
 
-  if (test('writes the selected skills array into plugin.json', () => {
+  if (test('writes only skills that exist in the --root catalog', () => {
     const root = seedPluginRoot();
     try {
       const result = runCli(['--root', root, '--profile', 'minimal', '--json']);
       assert.strictEqual(result.status, 0, result.stderr);
       const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
-      assert.ok(plugin.skills.includes('./skills/tdd-workflow/'));
+      assert.deepStrictEqual(plugin.skills, ['./skills/alpha/']);
+      assert.ok(fs.existsSync(path.join(root, 'skills', 'alpha', 'SKILL.md')));
+      assert.ok(!plugin.skills.includes('./skills/tdd-workflow/'));
       assert.ok(!plugin.skills.includes('./skills/'));
       assert.deepStrictEqual(plugin.commands, ['./commands/']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects missing --profile and --root values', () => {
+    assert.throws(
+      () => parseArgs(['node', SCRIPT, '--profile']),
+      /Missing value for --profile/
+    );
+    assert.throws(
+      () => parseArgs(['node', SCRIPT, '--profile', '--json']),
+      /Missing value for --profile/
+    );
+    assert.throws(
+      () => parseArgs(['node', SCRIPT, '--root']),
+      /Missing value for --root/
+    );
+    assert.throws(
+      () => parseArgs(['node', SCRIPT, '--root', '--dry-run']),
+      /Missing value for --root/
+    );
+  })) passed++; else failed++;
+
+  if (test('honors ECC_DRY_RUN without writing plugin.json', () => {
+    const root = seedPluginRoot();
+    try {
+      const result = applySkillProfile({
+        root,
+        profile: 'minimal',
+      }, { ECC_DRY_RUN: '1' });
+      const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+      assert.strictEqual(result.dryRun, true);
+      assert.strictEqual(result.changed, true);
+      assert.deepStrictEqual(plugin.skills, ['./skills/']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
