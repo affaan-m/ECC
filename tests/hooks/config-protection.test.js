@@ -374,8 +374,13 @@ function runTests() {
         for (const name of [
           'stylelint.config.js',
           'stylelint.config.mjs',
+          'stylelint.config.ts',
+          'stylelint.config.mts',
+          'stylelint.config.cts',
           '.stylelintrc.js',
           '.markdownlint.jsonc',
+          '.markdownlint.cjs',
+          '.markdownlint.mjs',
           '.markdownlint-cli2.jsonc'
         ]) {
           const absPath = path.join(tmpDir, name);
