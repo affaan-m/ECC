@@ -57,9 +57,35 @@ const PROTECTED_FILES = new Set([
   '.stylelintrc',
   '.stylelintrc.json',
   '.stylelintrc.yml',
+  '.stylelintrc.yaml',
+  '.stylelintrc.js',
+  '.stylelintrc.cjs',
+  '.stylelintrc.mjs',
+  // Stylelint's current spelling; only the legacy `.stylelintrc*` forms were
+  // listed, so a project using the documented `stylelint.config.js` had no
+  // protection at all.
+  'stylelint.config.js',
+  'stylelint.config.cjs',
+  'stylelint.config.mjs',
   '.markdownlint.json',
+  '.markdownlint.jsonc',
   '.markdownlint.yaml',
-  '.markdownlintrc'
+  '.markdownlint.yml',
+  '.markdownlintrc',
+  // markdownlint-cli2 reads its own config names, not `.markdownlint.*`.
+  '.markdownlint-cli2.jsonc',
+  '.markdownlint-cli2.yaml',
+  '.markdownlint-cli2.cjs',
+  '.markdownlint-cli2.mjs',
+  // Ignore files are the cheapest way to make a check pass without touching
+  // the code OR the config: adding one path to .eslintignore silences the
+  // failing file outright. Blocking the config while leaving its ignore list
+  // open left the hook's whole purpose one line away from being defeated.
+  // First-time creation stays allowed by the same existence check below.
+  '.eslintignore',
+  '.prettierignore',
+  '.stylelintignore',
+  '.markdownlintignore'
 ]);
 
 function parseInput(inputOrRaw) {

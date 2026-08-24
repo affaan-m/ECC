@@ -324,6 +324,115 @@ function runTests() {
   else failed++;
 
   if (
+    test('blocks edits to an existing linter ignore file', () => {
+      // Adding one path to .eslintignore silences a failing file without
+      // touching the code or the config — the exact move this hook exists to
+      // stop, and it was allowed. Measured before the fix: .eslintignore,
+      // .prettierignore, .stylelintignore and .markdownlintignore all
+      // returned exit 0.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-'));
+      try {
+        for (const name of [
+          '.eslintignore',
+          '.prettierignore',
+          '.stylelintignore',
+          '.markdownlintignore'
+        ]) {
+          const absPath = path.join(tmpDir, name);
+          fs.writeFileSync(absPath, 'dist/\n');
+
+          const result = runHook({
+            tool_name: 'Edit',
+            tool_input: { file_path: absPath, content: 'dist/\nsrc/failing-file.ts\n' }
+          });
+
+          assert.strictEqual(result.code, 2, `Expected exit 2 for ${name}, got ${result.code}`);
+          assert.ok(
+            result.stderr.includes(`BLOCKED: Modifying ${name} is not allowed.`),
+            `Expected block message for ${name}, got: ${result.stderr}`
+          );
+        }
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('blocks the current stylelint and markdownlint config spellings', () => {
+      // Only the legacy `.stylelintrc*` / `.markdownlint.json` names were
+      // listed, so a project on the documented `stylelint.config.js` or
+      // markdownlint-cli2 had no protection at all.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-'));
+      try {
+        for (const name of [
+          'stylelint.config.js',
+          'stylelint.config.mjs',
+          '.stylelintrc.js',
+          '.markdownlint.jsonc',
+          '.markdownlint-cli2.jsonc'
+        ]) {
+          const absPath = path.join(tmpDir, name);
+          fs.writeFileSync(absPath, '{}');
+
+          const result = runHook({
+            tool_name: 'Edit',
+            tool_input: { file_path: absPath, content: '{"rules": {}}' }
+          });
+
+          assert.strictEqual(result.code, 2, `Expected exit 2 for ${name}, got ${result.code}`);
+        }
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('a first-time ignore file and a lookalike name are still allowed', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-config-protect-'));
+      try {
+        // Scaffolding a brand-new ignore file is the same legitimate bootstrap
+        // path the hook already allows for configs.
+        const fresh = runHook({
+          tool_name: 'Write',
+          tool_input: { file_path: path.join(tmpDir, '.prettierignore'), content: 'dist/\n' }
+        });
+        assert.strictEqual(fresh.code, 0, `Expected exit 0 for a new ignore file, got ${fresh.code}`);
+
+        // A file that merely looks like one must not be swept up.
+        const lookalike = path.join(tmpDir, '.eslintignore.bak');
+        fs.writeFileSync(lookalike, 'dist/\n');
+        const result = runHook({
+          tool_name: 'Edit',
+          tool_input: { file_path: lookalike, content: 'dist/\nsrc/\n' }
+        });
+        assert.strictEqual(result.code, 0, `Expected exit 0 for ${path.basename(lookalike)}`);
+      } finally {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('legacy hooks do not echo raw input when they fail without stdout', () => {
       const pluginRoot = path.join(__dirname, '..', `tmp-runner-plugin-${Date.now()}`);
       const scriptDir = path.join(pluginRoot, 'scripts', 'hooks');
