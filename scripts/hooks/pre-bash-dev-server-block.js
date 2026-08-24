@@ -161,11 +161,82 @@ process.stdin.on('data', chunk => {
 });
 
 const TMUX_LAUNCHER = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
-// Trailing (?![\w-]) rather than \b: \b treats a hyphen as a word boundary, so
-// `dev\b` matches the `dev` prefix of distinct scripts like `dev-setup` /
-// `dev-docs` / `dev-build` and wrongly blocks them. The lookahead still matches
-// the dev server (`dev`, `dev;`, `dev:ssr`, ...) but not a `dev-<suffix>` script.
-const DEV_PATTERN = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn(?:\s+run)?\s+dev|bun(?:\s+run)?\s+dev)(?![\w-])/;
+// The script name is decided from TOKENS, not from a regex over the raw text.
+// A raw-text `npm\s+run\s+dev` cannot see through the shell's own quoting, so
+// `npm run "dev"`, `npm run 'dev'` and `npm run de"v"` all reached the shell as
+// `npm run dev` and started the very server this hook exists to keep in tmux.
+// An option in between hid it just as well: `npm --silent run dev` and
+// `yarn --cwd app dev` were not matched either.
+//
+// Trailing `(?::|$)` rather than a word boundary: `dev` and `dev:ssr` are the
+// dev server, while `dev-setup` / `dev-docs` / `dev-build` are distinct scripts
+// that must keep running.
+const DEV_SCRIPT_NAME = /^dev(?::|$)/;
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const RUN_KEYWORDS = new Set(['run', 'run-script']);
+// Options that consume the following token, so their value is never mistaken
+// for the script name (`yarn --cwd app dev` must read `dev`, not `app`).
+const MANAGER_OPTIONS_WITH_VALUE = new Set([
+  '--prefix',
+  '--cwd',
+  '-C',
+  '--dir',
+  '-d',
+  '--workspace',
+  '-w',
+  '--filter',
+  '-F',
+  '--package',
+  '-p',
+  '--config',
+  '-c'
+]);
+
+/**
+ * The script a package manager is being asked to run, or null.
+ *
+ * Reads the tokens after the manager word: skips options (and the value of an
+ * option known to take one), skips a `run` / `run-script` keyword, stops at a
+ * `--` separator, and returns the first remaining token.
+ */
+function getRunScriptName(segment, managerWord) {
+  let index = 0;
+  let seenManager = false;
+  let skipNextValue = false;
+
+  while (index < segment.length) {
+    const parsed = readToken(segment, index);
+    if (!parsed) return null;
+    index = parsed.end;
+
+    const token = parsed.token;
+    if (!token) continue;
+
+    if (skipNextValue) {
+      skipNextValue = false;
+      continue;
+    }
+
+    if (!seenManager) {
+      if (normalizeCommandWord(token) === managerWord) seenManager = true;
+      continue;
+    }
+
+    // Everything after `--` is an argument to the script, not the script name.
+    if (token === '--') return null;
+
+    if (isOptionToken(token)) {
+      if (MANAGER_OPTIONS_WITH_VALUE.has(token)) skipNextValue = true;
+      continue;
+    }
+
+    if (RUN_KEYWORDS.has(token.toLowerCase())) continue;
+
+    return token;
+  }
+
+  return null;
+}
 
 /**
  * Collect every command-line segment we should evaluate. Returns the top-level
@@ -202,7 +273,11 @@ function collectCheckSegments(cmd) {
 function isBlockedDevSegment(segment) {
   const commandWord = getLeadingCommandWord(segment);
   if (!commandWord || !DEV_COMMAND_WORDS.has(commandWord)) return false;
-  return DEV_PATTERN.test(segment) && !TMUX_LAUNCHER.test(segment);
+  if (TMUX_LAUNCHER.test(segment)) return false;
+  if (!PACKAGE_MANAGERS.has(commandWord)) return false;
+
+  const script = getRunScriptName(segment, commandWord);
+  return Boolean(script) && DEV_SCRIPT_NAME.test(script);
 }
 
 process.stdin.on('end', () => {
