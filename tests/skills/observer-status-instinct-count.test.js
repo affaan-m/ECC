@@ -23,48 +23,30 @@ const detectProject = path.join(skillRoot, 'scripts', 'detect-project.sh');
 const instinctCli = path.join(skillRoot, 'scripts', 'instinct-cli.py');
 const bashBinary = process.env.ECC_TEST_BASH || (process.platform === 'win32' ? null : 'bash');
 
-let passed = 0;
-
 function toShellPath(filePath) {
   const normalized = filePath.split(path.sep).join('/');
   return normalized.replace(/^([A-Za-z]):\//, (_, drive) => `/${drive.toLowerCase()}/`);
 }
 
-// ── The counter must accept every extension the loader accepts ──
-
-const cliSource = fs.readFileSync(instinctCli, 'utf8');
-const allowedMatch = cliSource.match(/ALLOWED_INSTINCT_EXTENSIONS\s*=\s*\(([^)]*)\)/);
-assert.ok(allowedMatch, 'ALLOWED_INSTINCT_EXTENSIONS not found in instinct-cli.py');
-const allowedExtensions = allowedMatch[1]
-  .split(',')
-  .map(part => part.trim().replace(/^["']|["']$/g, ''))
-  .filter(Boolean);
-assert.ok(allowedExtensions.length >= 3, `expected several extensions, got ${allowedExtensions}`);
-passed++;
-
-const observerSource = fs.readFileSync(observerScript, 'utf8');
-const statusCount = observerSource
-  .split('\n')
-  .filter(line => line.includes('instinct_count=') || line.includes('instinct_find_expr='))
-  .join('\n');
-assert.ok(statusCount, 'status branch no longer computes an instinct count');
-
-for (const ext of allowedExtensions) {
-  assert.ok(
-    statusCount.includes(`*${ext}"`) || statusCount.includes(`*${ext}'`),
-    `status count must match ${ext} — the loader accepts it (ALLOWED_INSTINCT_EXTENSIONS)`
-  );
-  passed++;
+function readAllowedExtensions() {
+  const cliSource = fs.readFileSync(instinctCli, 'utf8');
+  const match = cliSource.match(/ALLOWED_INSTINCT_EXTENSIONS\s*=\s*\(([^)]*)\)/);
+  assert.ok(match, 'ALLOWED_INSTINCT_EXTENSIONS not found in instinct-cli.py');
+  return match[1]
+    .split(',')
+    .map(part => part.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean);
 }
 
-// Depth and case must match the loader: Path.iterdir() is top-level only and
-// is_file() skips directories; suffix.lower() makes the match case-insensitive.
-assert.ok(statusCount.includes('-maxdepth 1'), 'status count must not recurse — the loader does not');
-assert.ok(statusCount.includes('-type f'), 'status count must skip directories');
-assert.ok(!/-name\s+["']\*/.test(statusCount), 'status count must use case-insensitive -iname');
-passed += 3;
-
-// ── The shipped script, run for real ──
+function readStatusCounter() {
+  const observerSource = fs.readFileSync(observerScript, 'utf8');
+  const counter = observerSource
+    .split('\n')
+    .filter(line => line.includes('instinct_count=') || line.includes('instinct_find_expr='))
+    .join('\n');
+  assert.ok(counter, 'status branch no longer computes an instinct count');
+  return counter;
+}
 
 function resolvePython() {
   for (const candidate of [process.env.ECC_TEST_PYTHON, 'python3', 'python']) {
@@ -117,29 +99,112 @@ function runStatus(files) {
   }
 }
 
-if (bashBinary && pythonCmd) {
-  const syntax = spawnSync(bashBinary, ['-n', toShellPath(observerScript)], { encoding: 'utf8' });
-  assert.strictEqual(syntax.status, 0, syntax.stderr);
-  passed++;
+function buildTests() {
+  const tests = [];
+
+  // ── The counter must accept every extension the loader accepts ──
+
+  tests.push(['the loader still declares several instinct extensions', () => {
+    const allowed = readAllowedExtensions();
+    assert.ok(allowed.length >= 3, `expected several extensions, got ${allowed}`);
+  }]);
+
+  for (const ext of readAllowedExtensions()) {
+    tests.push([`status counts ${ext} — the loader accepts it`, () => {
+      const counter = readStatusCounter();
+      assert.ok(
+        counter.includes(`*${ext}"`) || counter.includes(`*${ext}'`),
+        `status count must match ${ext} (ALLOWED_INSTINCT_EXTENSIONS)`
+      );
+    }]);
+  }
+
+  // Depth and case must match the loader: Path.iterdir() is top-level only and
+  // is_file() skips directories; suffix.lower() makes the match case-insensitive.
+  tests.push(['status does not recurse — the loader does not', () => {
+    assert.ok(readStatusCounter().includes('-maxdepth 1'));
+  }]);
+  tests.push(['status skips directories', () => {
+    assert.ok(readStatusCounter().includes('-type f'));
+  }]);
+  tests.push(['status matches case-insensitively', () => {
+    assert.ok(!/-name\s+["']\*/.test(readStatusCounter()),
+      'status count must use -iname, not -name');
+  }]);
+
+  // ── The shipped script, run for real ──
+
+  if (!(bashBinary && pythonCmd)) return tests;
+
+  tests.push(['start-observer.sh parses', () => {
+    const syntax = spawnSync(bashBinary, ['-n', toShellPath(observerScript)], { encoding: 'utf8' });
+    assert.strictEqual(syntax.status, 0, syntax.stderr);
+  }]);
 
   // The reported shape: every instinct on disk is a .md file.
-  assert.strictEqual(runStatus(['a.md', 'b.md', 'c.md']), 3, 'markdown instincts must be counted');
-  passed++;
+  tests.push(['markdown instincts are counted', () => {
+    assert.strictEqual(runStatus(['a.md', 'b.md', 'c.md']), 3);
+  }]);
 
   // Every accepted extension, mixed case, plus the two things the loader skips:
   // a non-instinct file and a nested directory.
-  assert.strictEqual(
-    runStatus(['a.md', 'b.yaml', 'c.yml', 'd.YAML', 'notes.txt', 'nested/deep.md']),
-    4,
-    'count must match the loader: every allowed extension, case-insensitive, top level only'
-  );
-  passed++;
+  tests.push(['the count matches the loader exactly', () => {
+    assert.strictEqual(
+      runStatus(['a.md', 'b.yaml', 'c.yml', 'd.YAML', 'notes.txt', 'nested/deep.md']),
+      4
+    );
+  }]);
 
-  assert.strictEqual(runStatus([]), 0, 'an empty instincts directory must still report 0');
-  passed++;
-} else {
-  console.log('  Integration coverage skipped (needs bash + python; set ECC_TEST_BASH/ECC_TEST_PYTHON)');
+  tests.push(['an empty instincts directory reports 0', () => {
+    assert.strictEqual(runStatus([]), 0);
+  }]);
+
+  return tests;
 }
 
-console.log(`  Passed: ${passed}`);
-console.log('  Failed: 0');
+function runTest(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    return true;
+  } catch (error) {
+    console.log(`  ✗ ${name}`);
+    console.error(`    ${error.message}`);
+    return false;
+  }
+}
+
+function main() {
+  console.log('\n=== Testing observer status instinct count (#2859) ===\n');
+
+  let passed = 0;
+  let failed = 0;
+  let tests;
+
+  // Collecting the cases reads instinct-cli.py and start-observer.sh, so a
+  // missing or renamed file has to be reported as a failure rather than crash
+  // the process — tests/run-all.js totals the "Passed:"/"Failed:" tokens below.
+  try {
+    tests = buildTests();
+  } catch (error) {
+    console.log('  ✗ could not build the test list');
+    console.error(`    ${error.message}`);
+    tests = [];
+    failed += 1;
+  }
+
+  for (const [name, fn] of tests) {
+    if (runTest(name, fn)) passed += 1;
+    else failed += 1;
+  }
+
+  if (!(bashBinary && pythonCmd)) {
+    console.log('  - integration coverage skipped (needs bash + python; set ECC_TEST_BASH/ECC_TEST_PYTHON)');
+  }
+
+  console.log(`\n  Passed: ${passed}`);
+  console.log(`  Failed: ${failed}`);
+  if (failed > 0) process.exit(1);
+}
+
+main();
