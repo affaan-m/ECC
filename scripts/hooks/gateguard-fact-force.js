@@ -333,6 +333,48 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
+// Short shell options that take a value. Reaching one inside a cluster means
+// the rest of the token is that value, so a `c` behind it is not `-c`.
+const SHELL_SHORT_OPTIONS_WITH_VALUE = new Set(['o', 'O']);
+
+/**
+ * Return the command string a shell would run for `-c`, or null.
+ *
+ * `-c` reads its payload from the FOLLOWING argument (`sh -c'cmd'` is an
+ * invalid option, not an attached value), and short options cluster — so
+ * `sh -ec '<cmd>'`, `sh -xc '<cmd>'`, and `sh -ce '<cmd>'` all run exactly
+ * what `sh -c '<cmd>'` runs. Matching only a bare `-c` token left every
+ * clustered spelling unclassified.
+ *
+ * `-o`/`-O` take a value, so `c` behind one of them is that value rather
+ * than a flag; the shell rejects those forms instead of running the payload
+ * (`sh -oc 'cmd'` → "invalid option name"), so stopping there loses nothing.
+ *
+ * @param {string[]} tokens command words, wrappers already stripped
+ * @returns {string|null}
+ */
+function shellDashCPayload(tokens) {
+  if (tokens.length === 0) return null;
+  if (!SHELL_WRAPPERS.has(commandBasename(tokens[0]))) return null;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    // `--` ends the options, and a bare operand is the script name — after
+    // either one there is no `-c` left to find.
+    if (token === '--' || token === '-' || !token.startsWith('-')) return null;
+    if (token.startsWith('--')) continue;
+
+    for (const flag of token.slice(1)) {
+      if (flag === 'c') {
+        const payload = tokens[i + 1];
+        return typeof payload === 'string' ? payload : null;
+      }
+      if (SHELL_SHORT_OPTIONS_WITH_VALUE.has(flag)) return null;
+    }
+  }
+  return null;
+}
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
@@ -352,14 +394,9 @@ function isDestructiveQuoteAware(raw, depth = 0) {
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
-    if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const base = commandBasename(tokens[0]);
-    if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c');
-      if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
-        return true;
-      }
-    }
+    if (isDestructiveFindExecTokens(tokens, depth)) return true;
+    const payload = shellDashCPayload(tokens);
+    if (payload && isDestructiveQuoteAware(payload, depth + 1)) return true;
   }
   return false;
 }
@@ -767,17 +804,33 @@ function collectExecutableBodies(raw) {
  * `-exec unlink {} \;`, `-exec git reset --hard {} \;`.
  *
  * @param {string} command
+ * @param {number} [depth] recursion guard shared with isDestructiveQuoteAware
  * @returns {boolean}
  */
-function isDestructiveFindExec(command) {
+function isDestructiveFindExec(command, depth = 0) {
   const raw = String(command || '');
   const trimmed = raw.trim();
   if (!trimmed) {
     return false;
   }
 
-  // Tokenize the whole command line
-  const tokens = stripCommandWrappers(tokenize(trimmed));
+  return isDestructiveFindExecTokens(tokenize(trimmed), depth);
+}
+
+/**
+ * Token-taking half of `isDestructiveFindExec`.
+ *
+ * The quote-aware pass already holds correctly split tokens. Joining them
+ * back into one string so this check could re-tokenize it flattened a quoted
+ * `-exec sh -c '<cmd>'` payload into separate words, which is precisely the
+ * command that needed classifying.
+ *
+ * @param {string[]} rawTokens
+ * @param {number} [depth] recursion guard shared with isDestructiveQuoteAware
+ * @returns {boolean}
+ */
+function isDestructiveFindExecTokens(rawTokens, depth = 0) {
+  const tokens = stripCommandWrappers(rawTokens);
   if (!tokens || tokens.length === 0) {
     return false;
   }
@@ -812,6 +865,15 @@ function isDestructiveFindExec(command) {
   const execCommand = stripCommandWrappers(execTokens);
   if (execCommand.length === 0) {
     return false;
+  }
+
+  // `-exec sh -c '<cmd>' \;` runs <cmd> just as a bare `sh -c '<cmd>'` does.
+  // Classifying only the `sh` executable stopped at the wrapper, so the
+  // deletion inside it was never seen — the quote-aware pass already looks
+  // through the same wrapper, and this is the sibling that did not.
+  const execPayload = shellDashCPayload(execCommand);
+  if (execPayload) {
+    return isDestructiveQuoteAware(execPayload, depth + 1);
   }
 
   const baseCmd = commandBasename(execCommand[0]);

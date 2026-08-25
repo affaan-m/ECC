@@ -315,7 +315,26 @@ function runTests() {
     'env -uSHELL rm -rf /important/data',
     'env -uS rm -rf /important/data',
     // `-p` is not a lookup mode, so the operand still runs.
-    'command -p rm -rf /important/data'
+    'command -p rm -rf /important/data',
+    // `-exec sh -c '<cmd>'` runs <cmd>. Classifying only the `sh` executable
+    // stopped at the wrapper, so every deletion behind one was allowed while
+    // the bare `-exec rm` spelling was denied.
+    'find . -exec sh -c "rm -rf {}" ;',
+    "find . -exec sh -c 'rm -rf {}' ;",
+    'find . -exec bash -c "rm -rf /important/data" ;',
+    'find . -exec zsh -c "rm -rf /important/data" ;',
+    'find /tmp -type f -exec sh -c "rm -rf {}" ;',
+    // `+` terminates -exec too, and the payload keeps its own wrappers.
+    'find . -exec sh -c "rm -rf {}" +',
+    'find . -exec sh -c "git reset --hard" ;',
+    'find . -exec sh -c "sudo rm -rf /important/data" ;',
+    // Short options cluster, so `-c` is reached through `-e`/`-x` as well —
+    // attached or not, and whether or not `c` comes first.
+    'sh -ec "rm -rf /important/data"',
+    'sh -xc "rm -rf /important/data"',
+    'sh -ce "rm -rf /important/data"',
+    'bash -ec "rm -rf /important/data"',
+    'find . -exec sh -ec "rm -rf {}" ;'
   ]) {
     clearState();
     if (
@@ -364,7 +383,19 @@ function runTests() {
     'env -vS "npm test"',
     // `-uS` is `-u` unsetting a variable named S, not a split string.
     'env -uS FOO',
-    'env -C /tmp npm run build'
+    'env -C /tmp npm run build',
+    // Looking inside `-c` must classify the payload, not assume the worst of
+    // every shell wrapper.
+    'find . -exec sh -c "echo hello" ;',
+    'sh -c "npm test"',
+    'sh -ec "npm run build"',
+    'bash --norc -c "npm test"',
+    // These two carry a destructive payload on purpose: with a benign one the
+    // assertion passes either way and pins nothing. `-o` takes a value, so `c`
+    // behind it is that value ("invalid option name"), and after `--` the next
+    // word is the script name — neither shell runs the string as a command.
+    'sh -oc "rm -rf /important/data"',
+    'sh -- -c "rm -rf /important/data"'
   ]) {
     clearState();
     if (
