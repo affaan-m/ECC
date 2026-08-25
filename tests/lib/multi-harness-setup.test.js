@@ -143,6 +143,24 @@ function writeManagedState(plan, overrides = {}) {
     );
   });
 
+  await test('rejects managed plans without an install-state path', () => {
+    const root = tempDir('ecc-guided-missing-state-path-');
+    try {
+      const source = path.join(root, 'source.md');
+      const destination = path.join(root, '.kimi-code', 'rules', 'security.md');
+      writeFile(source, 'ecc\n');
+      const plan = managedPlan(root, [stateOperation(destination, { sourcePath: source })]);
+      const invalidPlan = { ...plan, installStatePath: undefined };
+
+      assert.throws(
+        () => preflightManagedPlan(invalidPlan),
+        /managed install plan.*install-state path/i
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   await test('classifies missing, identical, managed, and JSON merge destinations', () => {
     const root = tempDir('ecc-guided-preflight-');
     try {

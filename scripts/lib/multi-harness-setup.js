@@ -295,6 +295,9 @@ function preflightManagedPlan(plan, dependencies = {}) {
   if (!plan || !Array.isArray(plan.operations)) {
     throw new Error('A managed install plan with operations is required.');
   }
+  if (typeof plan.installStatePath !== 'string' || plan.installStatePath.trim() === '') {
+    throw new Error('A managed install plan with an install-state path is required.');
+  }
   const ownership = readOwnedDestinations(plan, dependencies);
   const operations = plan.operations.map(operation => {
     assertSafeInstallOperation(plan, operation);
