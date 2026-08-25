@@ -418,6 +418,43 @@ const COMMAND_WRAPPERS = new Map([
   ],
 ]);
 
+// Bound `env -S` expansion so a self-referential split string cannot spin.
+const MAX_WRAPPER_EXPANSIONS = 8;
+
+/**
+ * `env -S "<command>"`, `env --split-string=<command>`, and the attached
+ * `-S<command>` form all RUN the string. Return it so the caller can expand it
+ * into tokens instead of consuming it as an opaque option value.
+ *
+ * @param {string} token
+ * @param {string | undefined} next
+ * @returns {{ value: string, consumed: number } | null}
+ */
+function envSplitString(token, next) {
+  if (token === '-S' || token === '--split-string') {
+    return typeof next === 'string' ? { value: next, consumed: 2 } : null;
+  }
+  if (token.startsWith('--split-string=')) {
+    return { value: token.slice('--split-string='.length), consumed: 1 };
+  }
+  if (token.startsWith('-S') && token.length > 2) {
+    return { value: token.slice(2), consumed: 1 };
+  }
+  return null;
+}
+
+/**
+ * `command -v` / `-V`, including combined forms like `-pv`, only report where a
+ * name resolves — the operand never runs. Every other `command` option still
+ * executes its operand, so `-p` alone is not a lookup.
+ *
+ * @param {string} token
+ * @returns {boolean}
+ */
+function isCommandLookupOnly(token) {
+  return /^-[pvV]*[vV][pvV]*$/.test(token);
+}
+
 /**
  * Return `tokens` with any leading wrapper commands, their options, and
  * `VAR=value` assignment prefixes removed, so the caller sees the command that
@@ -433,13 +470,18 @@ const COMMAND_WRAPPERS = new Map([
  */
 function stripCommandWrappers(tokens) {
   if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  let rest = tokens;
   let index = 0;
   let valueFlags = null;
-  while (index < tokens.length) {
-    const token = tokens[index];
-    const wrapperFlags = COMMAND_WRAPPERS.get(commandBasename(token));
+  let wrapper = null;
+  let expansions = 0;
+  while (index < rest.length) {
+    const token = rest[index];
+    const base = commandBasename(token);
+    const wrapperFlags = COMMAND_WRAPPERS.get(base);
     if (wrapperFlags) {
       valueFlags = wrapperFlags;
+      wrapper = base;
       index += 1;
       continue;
     }
@@ -450,13 +492,32 @@ function stripCommandWrappers(tokens) {
       continue;
     }
     if (valueFlags && token.startsWith('-')) {
+      // `env -S "rm -rf /"` RUNS that string. Consuming it as an opaque option
+      // value hid the whole command behind the option, so expand it and keep
+      // walking. Bounded so a self-referential string cannot spin.
+      if (wrapper === 'env' && expansions < MAX_WRAPPER_EXPANSIONS) {
+        const split = envSplitString(token, rest[index + 1]);
+        if (split) {
+          rest = tokenize(split.value).concat(rest.slice(index + split.consumed));
+          index = 0;
+          valueFlags = null;
+          wrapper = null;
+          expansions += 1;
+          continue;
+        }
+      }
+      // `command -v git reset --hard` only reports where `git` resolves —
+      // nothing runs, so there is no command to classify. Returning the operand
+      // here denied a lookup.
+      if (wrapper === 'command' && isCommandLookupOnly(token)) return [];
       if (valueFlags.has(token)) index += 1;
       index += 1;
       continue;
     }
     break;
   }
-  return index === 0 ? tokens : tokens.slice(index);
+  if (rest === tokens) return index === 0 ? tokens : tokens.slice(index);
+  return rest.slice(index);
 }
 
 /**

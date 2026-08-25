@@ -292,7 +292,16 @@ function runTests() {
     "sudo 'rm' -rf /important/data",
     'env "rm" -rf /important/data',
     'doas "rm" -rf /important/data',
-    'sudo bash -c "rm -rf /important/data"'
+    'sudo bash -c "rm -rf /important/data"',
+    // `env -S "<cmd>"` RUNS the string. Consuming it as an opaque option value
+    // let the whole command hide behind the option, in all three spellings.
+    'env -S "rm -rf /important/data"',
+    'env --split-string="rm -rf /important/data"',
+    'env -S"rm -rf /important/data"',
+    'env -S "sudo rm -rf /important/data"',
+    'env -S "git reset --hard"',
+    // `-p` is not a lookup mode, so the operand still runs.
+    'command -p rm -rf /important/data'
   ]) {
     clearState();
     if (
@@ -330,7 +339,14 @@ function runTests() {
     'nice -n 10 npm run build',
     'ionice -c 3 npm test',
     'stdbuf -o L npm test',
-    'find . -exec sudo chmod 644 {} ;'
+    'find . -exec sudo chmod 644 {} ;',
+    // `command -v`/`-V` only report where a name resolves; the operand never
+    // runs, so gating it denied a lookup that changes nothing.
+    'command -v git reset --hard',
+    'command -V git reset --hard',
+    'command -pv git reset --hard',
+    // A benign split string must stay benign.
+    'env -S "npm run build"'
   ]) {
     clearState();
     if (
