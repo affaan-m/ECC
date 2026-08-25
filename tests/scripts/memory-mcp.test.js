@@ -98,12 +98,12 @@ async function withClient(fn, options = {}) {
 
   // Keep the serialized line, not the object: `JSON.stringify` is what drops
   // an undefined `params`, so only the wire form shows whether the member was
-  // actually sent.
-  const wire = [];
+  // actually sent. Only the most recent one is ever read.
+  let lastWire = null;
 
   function send(message) {
     const line = JSON.stringify(message);
-    wire.push(line);
+    lastWire = line;
     child.stdin.write(`${line}\n`);
   }
 
@@ -150,7 +150,7 @@ async function withClient(fn, options = {}) {
       { name, arguments: toolArguments }
     ),
     callToolRaw: params => request('tools/call', params),
-    lastRequestWire: () => JSON.parse(wire[wire.length - 1]),
+    lastRequestWire: () => JSON.parse(lastWire),
   };
 
   try {
