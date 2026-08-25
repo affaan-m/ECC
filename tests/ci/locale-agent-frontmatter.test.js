@@ -76,23 +76,26 @@ function runTest(name, fn) {
 function main() {
   console.log('\n=== Testing locale agent frontmatter against canonical ===\n');
 
-  const canonical = new Map();
-  for (const file of fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'))) {
-    const fields = frontmatter(path.join(AGENTS_DIR, file));
-    if (fields) canonical.set(file, fields);
-  }
+  const canonical = new Map(
+    fs
+      .readdirSync(AGENTS_DIR)
+      .filter(file => file.endsWith('.md'))
+      .map(file => [file, frontmatter(path.join(AGENTS_DIR, file))])
+      .filter(([, fields]) => fields !== null)
+  );
 
   const rel = filePath => path.relative(REPO_ROOT, filePath).split(path.sep).join('/');
 
-  const localeFiles = [];
-  const orphans = [];
-  for (const dir of localeAgentDirs()) {
-    for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.md'))) {
-      const filePath = path.join(dir, file);
-      if (canonical.has(file)) localeFiles.push({ file, filePath });
-      else orphans.push(rel(filePath));
-    }
-  }
+  const localeEntries = localeAgentDirs().flatMap(dir =>
+    fs
+      .readdirSync(dir)
+      .filter(file => file.endsWith('.md'))
+      .map(file => ({ file, filePath: path.join(dir, file) }))
+  );
+  const localeFiles = localeEntries.filter(({ file }) => canonical.has(file));
+  const orphans = localeEntries
+    .filter(({ file }) => !canonical.has(file))
+    .map(({ filePath }) => rel(filePath));
 
   const tests = [
     ['there are locale agent docs to check', () => {
