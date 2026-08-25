@@ -135,10 +135,14 @@ const expressionTests = scripts.map(scriptPath => {
   ];
 });
 
+// Each script gets its own run. Checking one and static-checking the other
+// would let a differently broken expression in the unrun script pass, which
+// is the disagreement between the two inventories this PR is about.
 const integrationTests = bashBinary
-  ? [
-      [
-        'the shipped find expression sees linked skills',
+  ? scripts.map(scriptPath => {
+      const rel = path.relative(repoRoot, scriptPath).split(path.sep).join('/');
+      return [
+        `${rel}: the shipped find expression sees linked skills`,
         () => {
           const fixture = makeFixture();
           if (fixture === null) {
@@ -150,7 +154,7 @@ const integrationTests = bashBinary
             // bound from a positional argument instead of being substituted
             // into the command text, so a fixture path containing shell syntax
             // is data rather than something bash parses.
-            const expression = findLine(scripts[0]).trim().replace(/^done < <\(/, '').replace(/\)$/, '');
+            const expression = findLine(scriptPath).trim().replace(/^done < <\(/, '').replace(/\)$/, '');
             const result = spawnSync(
               bashBinary,
               ['-c', `dir="$1"; ${expression}`, 'skill-stocktake-test', toShellPath(fixture.skills)],
@@ -186,8 +190,8 @@ const integrationTests = bashBinary
             fs.rmSync(fixture.root, { recursive: true, force: true });
           }
         },
-      ],
-    ]
+      ];
+    })
   : [];
 
 function main() {
