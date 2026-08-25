@@ -82,21 +82,32 @@ function main() {
     if (fields) canonical.set(file, fields);
   }
 
+  const rel = filePath => path.relative(REPO_ROOT, filePath).split(path.sep).join('/');
+
   const localeFiles = [];
+  const orphans = [];
   for (const dir of localeAgentDirs()) {
     for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.md'))) {
-      if (canonical.has(file)) {
-        localeFiles.push({ file, filePath: path.join(dir, file) });
-      }
+      const filePath = path.join(dir, file);
+      if (canonical.has(file)) localeFiles.push({ file, filePath });
+      else orphans.push(rel(filePath));
     }
   }
-
-  const rel = filePath => path.relative(REPO_ROOT, filePath).split(path.sep).join('/');
 
   const tests = [
     ['there are locale agent docs to check', () => {
       assert.ok(canonical.size > 0, 'no canonical agents found');
       assert.ok(localeFiles.length > 0, 'no locale agent docs found');
+    }],
+
+    ['no locale agent doc outlives the agent it documents', () => {
+      // Without this, retiring an agent leaves its translations behind and every
+      // other case here silently skips them — they have nothing to compare to.
+      assert.deepStrictEqual(
+        orphans,
+        [],
+        `locale docs with no agent in agents/:\n  ${orphans.join('\n  ')}`
+      );
     }],
 
     ['every locale agent doc has parseable frontmatter', () => {
