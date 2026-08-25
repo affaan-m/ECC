@@ -156,6 +156,16 @@ const integrationTests = bashBinary
               ['-c', `dir="$1"; ${expression}`, 'skill-stocktake-test', toShellPath(fixture.skills)],
               { encoding: 'utf8' }
             );
+            if (result.error) {
+              // No bash on this system: `status` is null, so the exit-status
+              // assertion below would report a confusing empty stderr instead
+              // of saying the binary is missing.
+              if (result.error.code === 'ENOENT') {
+                console.log(`    (skipped: ${bashBinary} not found)`);
+                return;
+              }
+              throw result.error;
+            }
             assert.strictEqual(result.status, 0, result.stderr);
             const found = (result.stdout || '').split('\n').filter(Boolean);
             if (!fixture.fileLink) {
