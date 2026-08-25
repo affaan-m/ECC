@@ -1,7 +1,7 @@
 import pytest
 from llm.core.types import LLMInput, Message, Role, ToolDefinition
 from llm.prompt import PromptBuilder, adapt_messages_for_provider
-from llm.prompt.builder import PromptConfig
+from llm.prompt.builder import PromptConfig, get_provider_builder
 
 
 class TestPromptBuilder:
@@ -89,6 +89,7 @@ class TestAdaptMessagesForProvider:
 
         result = adapt_messages_for_provider(messages, " ollama ", tools)
 
+        assert get_provider_builder(" ollama ").config.tool_format == "text"
         assert len(result) == 2
         assert result[0].role == Role.SYSTEM
         assert "Available Tools" in result[0].content
