@@ -132,6 +132,8 @@ async function withClient(fn, options = {}) {
 
   const client = {
     listTools: () => request('tools/list'),
+    listToolsRaw: params => request('tools/list', params),
+    ping: params => request('ping', params),
     callTool: ({ name, arguments: toolArguments }) => request(
       'tools/call',
       { name, arguments: toolArguments }
@@ -212,6 +214,46 @@ async function main() {
         client.callToolRaw({ name: 'memory_doctor', arguments: {}, unexpected: true }),
         /-32602/
       );
+    });
+  });
+
+  await test('accepts the reserved _meta param on tools/list and ping (#2810)', async () => {
+    await withClient(async client => {
+      // Codex attaches `_meta` to every request. Rejecting it on tools/list
+      // failed tool discovery outright:
+      //   MCP startup failed: Mcp error: -32602: tools/list does not accept parameters.
+      const listed = await client.listToolsRaw({ _meta: { progressToken: 'progress-1' } });
+      assert.deepStrictEqual(
+        listed.tools.map(tool => tool.name).sort(),
+        ['memory_doctor', 'memory_read', 'memory_save', 'memory_search']
+      );
+
+      // `ping` takes no arguments of its own either, and carries the same rule.
+      assert.deepStrictEqual(await client.ping({ _meta: { progressToken: 'progress-2' } }), {});
+
+      // Baselines: omitted and empty params both still work.
+      assert.ok(Array.isArray((await client.listToolsRaw()).tools));
+      assert.ok(Array.isArray((await client.listToolsRaw({})).tools));
+
+      // Same shape rule as tools/call: present means it must be an object.
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.listToolsRaw({ _meta: badMeta }),
+          /-32602/,
+          `expected tools/list _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+        await assert.rejects(
+          client.ping({ _meta: badMeta }),
+          /-32602/,
+          `expected ping _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      // `_meta` is an exemption, not an opening: anything else is still refused,
+      // including a cursor this server never issues a nextCursor for.
+      await assert.rejects(client.listToolsRaw({ cursor: 'x' }), /-32602/);
+      await assert.rejects(client.listToolsRaw({ _meta: {}, other: 1 }), /-32602/);
+      await assert.rejects(client.ping({ other: 1 }), /-32602/);
     });
   });
 
