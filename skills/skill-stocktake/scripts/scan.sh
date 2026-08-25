@@ -118,7 +118,11 @@ scan_dir_to_json() {
       '{path:$path,name:$name,description:$description,use_7d:$use_7d,use_30d:$use_30d,mtime:$mtime}' \
       > "$tmpdir/$i.json"
     i=$((i+1))
-  done < <(find "$dir" -name "*.md" -type f 2>/dev/null | sort)
+  # -L so a skill installed as a symlink is inventoried like any other. Plain
+  # find does not descend into a symlinked directory, and -type f is false for a
+  # symlinked file, so package-manager installs, app-bundled skills, and skills
+  # shared between tools were silently dropped from the count.
+  done < <(find -L "$dir" -name "*.md" -type f 2>/dev/null | sort)
 
   if [[ $i -eq 0 ]]; then
     echo "[]"
