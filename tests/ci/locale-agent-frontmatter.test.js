@@ -195,7 +195,10 @@ function main() {
   console.log(`\n  Checked ${localeFiles.length} locale docs against ${canonical.size} agents`);
   console.log(`  Passed: ${passed}`);
   console.log(`  Failed: ${failed}`);
-  if (failed > 0) process.exit(1);
+  // exitCode, not exit(1): stdout is async when it is a pipe, which is how
+  // tests/run-all.js runs this, and process.exit() does not wait for pending
+  // writes — it could drop the two lines above, which the aggregator totals.
+  if (failed > 0) process.exitCode = 1;
 }
 
 main();
