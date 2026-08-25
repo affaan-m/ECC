@@ -333,9 +333,11 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
-// Short shell options that take a value. Reaching one inside a cluster means
-// the rest of the token is that value, so a `c` behind it is not `-c`.
+// Shell options that take a value. A `c` behind one of these inside the same
+// token is that value, not `-c` — but the option only swallows one value, so
+// the scan has to resume after it rather than give up.
 const SHELL_SHORT_OPTIONS_WITH_VALUE = new Set(['o', 'O']);
+const SHELL_LONG_OPTIONS_WITH_VALUE = new Set(['--rcfile', '--init-file']);
 
 /**
  * Return the command string a shell would run for `-c`, or null.
@@ -346,9 +348,12 @@ const SHELL_SHORT_OPTIONS_WITH_VALUE = new Set(['o', 'O']);
  * what `sh -c '<cmd>'` runs. Matching only a bare `-c` token left every
  * clustered spelling unclassified.
  *
- * `-o`/`-O` take a value, so `c` behind one of them is that value rather
- * than a flag; the shell rejects those forms instead of running the payload
- * (`sh -oc 'cmd'` → "invalid option name"), so stopping there loses nothing.
+ * `-o`/`-O` and `--rcfile`/`--init-file` take a value. That only rules out a
+ * `c` sitting inside the same token as its value (`sh -oc 'cmd'`, which the
+ * shell rejects with "invalid option name" rather than running it) — the
+ * option consumes exactly one value, so the scan skips it and keeps looking.
+ * `sh -o errexit -c '<cmd>'` and `bash --init-file /dev/null -c '<cmd>'` both
+ * run the payload.
  *
  * @param {string[]} tokens command words, wrappers already stripped
  * @returns {string|null}
@@ -362,15 +367,35 @@ function shellDashCPayload(tokens) {
     // `--` ends the options, and a bare operand is the script name — after
     // either one there is no `-c` left to find.
     if (token === '--' || token === '-' || !token.startsWith('-')) return null;
-    if (token.startsWith('--')) continue;
-
-    for (const flag of token.slice(1)) {
-      if (flag === 'c') {
-        const payload = tokens[i + 1];
-        return typeof payload === 'string' ? payload : null;
-      }
-      if (SHELL_SHORT_OPTIONS_WITH_VALUE.has(flag)) return null;
+    if (token.startsWith('--')) {
+      // `--rcfile FILE` holds its value in the next token; `--rcfile=FILE`
+      // holds it in this one and needs no skip.
+      if (SHELL_LONG_OPTIONS_WITH_VALUE.has(token)) i += 1;
+      continue;
     }
+
+    const body = token.slice(1);
+    let consumesNextToken = false;
+    let carriesCommand = false;
+    for (let j = 0; j < body.length; j++) {
+      const flag = body[j];
+      if (flag === 'c') {
+        carriesCommand = true;
+        break;
+      }
+      if (SHELL_SHORT_OPTIONS_WITH_VALUE.has(flag)) {
+        // Its value is the rest of this token, or the next token when the
+        // option ends the cluster. Either way there is no `-c` in here.
+        consumesNextToken = j === body.length - 1;
+        break;
+      }
+    }
+
+    if (carriesCommand) {
+      const payload = tokens[i + 1];
+      return typeof payload === 'string' ? payload : null;
+    }
+    if (consumesNextToken) i += 1;
   }
   return null;
 }
@@ -455,9 +480,6 @@ const COMMAND_WRAPPERS = new Map([
   ],
 ]);
 
-// Bound `env -S` expansion so a self-referential split string cannot spin.
-const MAX_WRAPPER_EXPANSIONS = 8;
-
 // `env`'s short options that take an argument. Needed to read a cluster the way
 // getopt does: in `-uS` the `S` is `-u`'s value, not a split-string flag.
 const ENV_SHORT_OPTIONS_WITH_VALUE = new Set(['u', 'C']);
@@ -527,6 +549,15 @@ function stripCommandWrappers(tokens) {
   let valueFlags = null;
   let wrapper = null;
   let expansions = 0;
+  // Every expansion replaces `-S<string>` with the words of that string, which
+  // is a strict substring of the token it came from, so the character count of
+  // what is left strictly decreases and the walk terminates on its own.
+  // Bounding the loop by that count keeps the guarantee without the bound
+  // being reachable. A fixed cap was reachable: past it the split string went
+  // back to being an opaque option value, so the command it runs was hidden
+  // again — `env -Senv -Senv ... -S "rm -rf /x"` is a valid spelling of that
+  // and executes, and it flipped from denied to allowed at exactly the cap.
+  const maxExpansions = tokens.reduce((total, token) => total + String(token).length, 0);
   while (index < rest.length) {
     const token = rest[index];
     const base = commandBasename(token);
@@ -547,14 +578,16 @@ function stripCommandWrappers(tokens) {
       // `env -S "rm -rf /"` RUNS that string. Consuming it as an opaque option
       // value hid the whole command behind the option, so expand it and keep
       // walking. Bounded so a self-referential string cannot spin.
-      if (wrapper === 'env' && expansions < MAX_WRAPPER_EXPANSIONS) {
+      if (wrapper === 'env') {
         const split = envSplitString(token, rest[index + 1]);
         if (split) {
           // Quote-aware, because the split string carries its own quoting:
           // `env -S '"rm" -rf /'` must yield `rm`, not `"rm"`, or the command
           // word never matches. Falls back to a plain split if parsing fails.
           const words = tokenizeAllowlistedShellWords(split.value) || tokenize(split.value);
-          rest = words.concat(rest.slice(index + split.consumed));
+          const expanded = words.concat(rest.slice(index + split.consumed));
+          if (expansions >= maxExpansions) return expanded;
+          rest = expanded;
           index = 0;
           valueFlags = null;
           wrapper = null;

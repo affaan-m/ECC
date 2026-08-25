@@ -334,7 +334,22 @@ function runTests() {
     'sh -xc "rm -rf /important/data"',
     'sh -ce "rm -rf /important/data"',
     'bash -ec "rm -rf /important/data"',
-    'find . -exec sh -ec "rm -rf {}" ;'
+    'find . -exec sh -ec "rm -rf {}" ;',
+    // A value-taking option consumes exactly one value and the scan continues
+    // past it. Stopping at one instead cost the plain `-c` that follows, which
+    // is a spelling the shell does run.
+    'sh -o errexit -c "rm -rf /important/data"',
+    'bash --init-file /dev/null -c "rm -rf /important/data"',
+    'bash --rcfile /dev/null -ic "rm -rf /important/data"',
+    'find . -exec sh -o errexit -c "rm -rf {}" ;',
+    // `-Senv` is env's attached split-string form, so these nest for real and
+    // run. Expansion used to stop after a fixed number of layers and hand the
+    // split string back as an opaque option value, which is exactly the thing
+    // expansion exists to prevent: the verdict flipped from denied to allowed
+    // at the cap, and one more wrapper bought a pass.
+    `env ${'-Senv '.repeat(8)}-S "rm -rf /important/data"`,
+    `env ${'-Senv '.repeat(9)}-S "rm -rf /important/data"`,
+    `env ${'-Senv '.repeat(40)}-S "rm -rf /important/data"`
   ]) {
     clearState();
     if (
@@ -395,7 +410,11 @@ function runTests() {
     // behind it is that value ("invalid option name"), and after `--` the next
     // word is the script name — neither shell runs the string as a command.
     'sh -oc "rm -rf /important/data"',
-    'sh -- -c "rm -rf /important/data"'
+    'sh -- -c "rm -rf /important/data"',
+    // Deep nesting is not destructive by itself; only what it ends up running
+    // is. A bound that gave up and denied would gate this.
+    `env ${'-Senv '.repeat(40)}-S "npm test"`,
+    'sh -o errexit -c "npm test"'
   ]) {
     clearState();
     if (
