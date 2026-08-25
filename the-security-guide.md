@@ -163,6 +163,10 @@ docker run -it --rm \
 
 No network. No access outside `/workspace`. Much better failure mode.
 
+Three limits are worth naming. A container shares the host kernel, so it is a weaker boundary than hardware virtualization. The agent can sit inside the container, as it does above, while the editor you open the repo with does not. In 2025, malicious code reached version 1.84.0 of the Amazon Q Developer VS Code extension, although AWS reports that a syntax error prevented it from executing. A container around the agent would not have isolated an editor extension running on the host. And `internal: true` is the right default, but the agent needs its model API, package registries, and git remotes, so you open a route out on day one.
+
+The path of least resistance is to open all of it. A narrower version is a VM that holds the editor and its extensions alongside the agent, reaches the internet, and has no route to the host, the LAN, or any private address. [Jailbox](https://karamatli.com/posts/network-isolated-kvm-sandbox-ai-agents/) is one concrete KVM-based reference architecture for that pattern.
+
 ### Restrict tools and paths
 
 This is the boring part people skip. It is also one of the highest leverage controls, literally maxxed out ROI on this because its so easy to do.
@@ -442,6 +446,8 @@ Scan your setup: [github.com/affaan-m/agentshield](https://github.com/affaan-m/a
 - Hunt.io, "CVE-2026-25253 OpenClaw AI Agent Exposure" (February 3, 2026): [hunt.io](https://hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure)
 - OpenAI, "Designing AI agents to resist prompt injection" (March 11, 2026): [openai.com](https://openai.com/index/designing-agents-to-resist-prompt-injection/)
 - OpenAI Codex docs, "Agent network access": [platform.openai.com](https://platform.openai.com/docs/codex/agent-network)
+- AWS, "Security Update for Amazon Q Developer Extension for Visual Studio Code (Version #1.84)": [aws.amazon.com](https://aws.amazon.com/security/security-bulletins/AWS-2025-015/)
+- Jailbox (hardened KVM sandbox VMs for agents and untrusted code: internet egress allowed, host/LAN/private addresses blocked): [karamatli.com](https://karamatli.com/posts/network-isolated-kvm-sandbox-ai-agents/)
 
 ---
 
