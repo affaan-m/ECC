@@ -163,8 +163,11 @@ const integrationTests = bashBinary
             if (result.error) {
               // No bash on this system: `status` is null, so the exit-status
               // assertion below would report a confusing empty stderr instead
-              // of saying the binary is missing.
-              if (result.error.code === 'ENOENT') {
+              // of saying the binary is missing. Only the default lookup is
+              // allowed to skip — a name given explicitly through
+              // ECC_TEST_BASH that does not resolve is a broken configuration,
+              // and silently skipping it would report coverage nobody ran.
+              if (result.error.code === 'ENOENT' && !process.env.ECC_TEST_BASH) {
                 console.log(`    (skipped: ${bashBinary} not found)`);
                 return;
               }
