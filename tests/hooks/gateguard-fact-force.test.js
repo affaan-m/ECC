@@ -300,6 +300,20 @@ function runTests() {
     'env -S"rm -rf /important/data"',
     'env -S "sudo rm -rf /important/data"',
     'env -S "git reset --hard"',
+    // getopt gives the first argument-taking option in a cluster the rest of
+    // the token, so `-S` is reached through `-v`/`-i` too, attached or not.
+    'env -vS"rm -rf /important/data"',
+    'env -vS "rm -rf /important/data"',
+    'env -iS "rm -rf /important/data"',
+    // The split string carries its own quoting; a whitespace-only split left
+    // the command word as `"rm"`, which matched nothing.
+    `env -S '"rm" -rf /important/data'`,
+    `env -S 'env -S "rm" -rf /important/data'`,
+    // `-uSHELL` is `-u` unsetting SHELL, so `rm` is still the command. Reading
+    // the cluster left to right is what keeps `HELL` from being taken as a
+    // split string and hiding the deletion.
+    'env -uSHELL rm -rf /important/data',
+    'env -uS rm -rf /important/data',
     // `-p` is not a lookup mode, so the operand still runs.
     'command -p rm -rf /important/data'
   ]) {
@@ -346,7 +360,11 @@ function runTests() {
     'command -V git reset --hard',
     'command -pv git reset --hard',
     // A benign split string must stay benign.
-    'env -S "npm run build"'
+    'env -S "npm run build"',
+    'env -vS "npm test"',
+    // `-uS` is `-u` unsetting a variable named S, not a split string.
+    'env -uS FOO',
+    'env -C /tmp npm run build'
   ]) {
     clearState();
     if (

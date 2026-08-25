@@ -421,6 +421,10 @@ const COMMAND_WRAPPERS = new Map([
 // Bound `env -S` expansion so a self-referential split string cannot spin.
 const MAX_WRAPPER_EXPANSIONS = 8;
 
+// `env`'s short options that take an argument. Needed to read a cluster the way
+// getopt does: in `-uS` the `S` is `-u`'s value, not a split-string flag.
+const ENV_SHORT_OPTIONS_WITH_VALUE = new Set(['u', 'C']);
+
 /**
  * `env -S "<command>"`, `env --split-string=<command>`, and the attached
  * `-S<command>` form all RUN the string. Return it so the caller can expand it
@@ -431,14 +435,25 @@ const MAX_WRAPPER_EXPANSIONS = 8;
  * @returns {{ value: string, consumed: number } | null}
  */
 function envSplitString(token, next) {
-  if (token === '-S' || token === '--split-string') {
+  if (token === '--split-string') {
     return typeof next === 'string' ? { value: next, consumed: 2 } : null;
   }
   if (token.startsWith('--split-string=')) {
     return { value: token.slice('--split-string='.length), consumed: 1 };
   }
-  if (token.startsWith('-S') && token.length > 2) {
-    return { value: token.slice(2), consumed: 1 };
+  if (!token.startsWith('-') || token.startsWith('--') || token.length < 2) return null;
+  // Walk the short-option cluster the way getopt does: the first option that
+  // takes an argument claims the rest of the token, or the next word when the
+  // rest is empty. So `-vS "rm -rf /"` and `-vS"rm -rf /"` both reach `-S`,
+  // while `-uS` is `-u` unsetting a variable named `S` and carries no command.
+  for (let i = 1; i < token.length; i += 1) {
+    const flag = token[i];
+    if (flag === 'S') {
+      const attached = token.slice(i + 1);
+      if (attached) return { value: attached, consumed: 1 };
+      return typeof next === 'string' ? { value: next, consumed: 2 } : null;
+    }
+    if (ENV_SHORT_OPTIONS_WITH_VALUE.has(flag)) return null;
   }
   return null;
 }
@@ -498,7 +513,11 @@ function stripCommandWrappers(tokens) {
       if (wrapper === 'env' && expansions < MAX_WRAPPER_EXPANSIONS) {
         const split = envSplitString(token, rest[index + 1]);
         if (split) {
-          rest = tokenize(split.value).concat(rest.slice(index + split.consumed));
+          // Quote-aware, because the split string carries its own quoting:
+          // `env -S '"rm" -rf /'` must yield `rm`, not `"rm"`, or the command
+          // word never matches. Falls back to a plain split if parsing fails.
+          const words = tokenizeAllowlistedShellWords(split.value) || tokenize(split.value);
+          rest = words.concat(rest.slice(index + split.consumed));
           index = 0;
           valueFlags = null;
           wrapper = null;
