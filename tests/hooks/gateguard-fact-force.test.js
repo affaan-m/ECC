@@ -117,20 +117,40 @@ function parseOutput(stdout) {
   }
 }
 
+const TIMEOUT_ENV_KEY = 'GATEGUARD_SESSION_TIMEOUT_MS';
+
 function loadDirectHook(env = {}) {
   delete require.cache[require.resolve(hookScript)];
-  // The module reads process.env at load time, so real variables must be set.
-  // Clear GATEGUARD_SESSION_TIMEOUT_MS explicitly first: Object.assign cannot
-  // REMOVE a key, so an ambient value exported by a developer or CI runner
-  // would survive an omitted property and invalidate the module-load pruning
-  // assumptions below. Explicit overrides are applied after the clear.
-  delete process.env.GATEGUARD_SESSION_TIMEOUT_MS;
+  // The module reads process.env at load time, so real variables must be set
+  // rather than passed in. Two hazards, both handled here:
+  //
+  // 1. Clear the timeout explicitly before applying overrides. Object.assign
+  //    cannot REMOVE a key, so an ambient value exported by a developer or CI
+  //    runner would survive an omitted property and invalidate the module-load
+  //    pruning assumptions.
+  // 2. Restore it afterwards. This mutates the PARENT process, so without a
+  //    restore a single direct load would leave the variable deleted -- or an
+  //    explicit override active -- for every later in-process caller.
+  //
+  // Restoring after require() is safe: the module captures SESSION_TIMEOUT_MS
+  // at load time, so the value it read is already baked in.
+  const hadTimeout = Object.prototype.hasOwnProperty.call(process.env, TIMEOUT_ENV_KEY);
+  const previousTimeout = process.env[TIMEOUT_ENV_KEY];
+  delete process.env[TIMEOUT_ENV_KEY];
   Object.assign(process.env, {
     GATEGUARD_STATE_DIR: stateDir,
     CLAUDE_SESSION_ID: TEST_SESSION_ID,
     ...env
   });
-  return require(hookScript);
+  try {
+    return require(hookScript);
+  } finally {
+    if (hadTimeout) {
+      process.env[TIMEOUT_ENV_KEY] = previousTimeout;
+    } else {
+      delete process.env[TIMEOUT_ENV_KEY];
+    }
+  }
 }
 
 function runTests() {
