@@ -134,6 +134,13 @@ function loadDirectHook(env = {}) {
   //
   // Restoring after require() is safe: the module captures SESSION_TIMEOUT_MS
   // at load time, so the value it read is already baked in.
+  //
+  // Do NOT widen this restore to the other keys. Only STATE_DIR and
+  // SESSION_TIMEOUT_MS are read at module scope; everything else --
+  // CLAUDE_SESSION_ID especially -- is read inside run(), so the returned
+  // hook needs those still present on later calls. Restoring CLAUDE_SESSION_ID
+  // here fails 'merges state written by another process during save', because
+  // the hook then resolves a different session than the one under test.
   const hadTimeout = Object.prototype.hasOwnProperty.call(process.env, TIMEOUT_ENV_KEY);
   const previousTimeout = process.env[TIMEOUT_ENV_KEY];
   delete process.env[TIMEOUT_ENV_KEY];
