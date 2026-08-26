@@ -2456,6 +2456,69 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- GATEGUARD_SESSION_TIMEOUT_MS -------------------------------------
+  // The gate fires once per session, but "once" is scoped by the inactivity
+  // window. On long-running sessions the 30-minute default expires between
+  // tool calls and the gate re-fires, so the window is configurable.
+
+  function timeoutFor(env) {
+    const src = fs.readFileSync(hookScript, 'utf8');
+    const match = src.match(/const SESSION_TIMEOUT_MS = (\(\(\) => \{[\s\S]*?\}\)\(\));/);
+    assert.ok(match, 'SESSION_TIMEOUT_MS should be a configurable IIFE');
+    return new Function('process', `return ${match[1]}`)({ env });
+  }
+
+  const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
+  if (test('session timeout defaults to 30 minutes when unset', () => {
+      assert.strictEqual(timeoutFor({}), THIRTY_MINUTES_MS);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('session timeout honours GATEGUARD_SESSION_TIMEOUT_MS', () => {
+      assert.strictEqual(timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: '28800000' }), 28800000);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('session timeout ignores a non-numeric value', () => {
+      assert.strictEqual(timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: 'abc' }), THIRTY_MINUTES_MS);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('session timeout ignores an empty value', () => {
+      assert.strictEqual(timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: '   ' }), THIRTY_MINUTES_MS);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('session timeout rejects a value below one minute', () => {
+      // A too-small window would expire between consecutive tool calls and turn
+      // the once-per-session gate into a per-call prompt.
+      assert.strictEqual(timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: '5' }), THIRTY_MINUTES_MS);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('session timeout rejects a value above one week', () => {
+      // An unbounded window would keep state alive indefinitely, so a typo
+      // cannot silently disable the gate for good.
+      assert.strictEqual(
+        timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: String(8 * 24 * 60 * 60 * 1000) }),
+        THIRTY_MINUTES_MS
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {

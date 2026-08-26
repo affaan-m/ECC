@@ -31,8 +31,30 @@ const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups }
 const STATE_DIR = process.env.GATEGUARD_STATE_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.gateguard');
 let activeStateFile = null;
 
-// State expires after 30 minutes of inactivity
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+// State expires after this much inactivity.
+//
+// The gate is meant to fire ONCE per session, but "once" is keyed off this
+// window: a session that goes longer than it between hook invocations has its
+// state file deleted and is treated as brand new. On a long-running session
+// that is routine -- a full test suite, a background job, or a stretch of
+// reading and analysis can each exceed 30 minutes with no Bash/Edit call -- so
+// the once-per-session gate re-fires repeatedly and the fact-forcing prompt
+// stops being a gate and becomes noise.
+//
+// Configurable via GATEGUARD_SESSION_TIMEOUT_MS. The default is unchanged at
+// 30 minutes; values outside [1 minute, 1 week] or unparseable are ignored so
+// a typo cannot silently disable the gate.
+const SESSION_TIMEOUT_MS = (() => {
+  const ONE_MINUTE_MS = 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * ONE_MINUTE_MS;
+  const DEFAULT_MS = 30 * ONE_MINUTE_MS;
+  const raw = process.env.GATEGUARD_SESSION_TIMEOUT_MS;
+  if (raw === undefined || String(raw).trim() === '') return DEFAULT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_MS;
+  if (parsed < ONE_MINUTE_MS || parsed > ONE_WEEK_MS) return DEFAULT_MS;
+  return Math.floor(parsed);
+})();
 const READ_HEARTBEAT_MS = 60 * 1000;
 
 // Maximum checked entries to prevent unbounded growth
