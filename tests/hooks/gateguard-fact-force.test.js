@@ -2600,6 +2600,44 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- loadDirectHook must leave the parent environment as it found it ---
+  // The helper mutates process.env so the hook module reads the intended
+  // values at require() time. Without a restore, one direct load would strip
+  // an ambient timeout -- or leave an override active -- for every later
+  // in-process caller, silently changing what those tests exercise.
+  clearState();
+  if (
+    test('loadDirectHook restores GATEGUARD_SESSION_TIMEOUT_MS', () => {
+      const outerEnv = process.env[TIMEOUT_ENV_KEY];
+      try {
+        // An ambient value survives a load that overrides it.
+        process.env[TIMEOUT_ENV_KEY] = '111111';
+        loadDirectHook({ [TIMEOUT_ENV_KEY]: '222222' });
+        assert.strictEqual(
+          process.env[TIMEOUT_ENV_KEY], '111111',
+          'ambient timeout should survive a direct load that overrode it'
+        );
+
+        // An unset variable stays unset -- not the string "undefined", which
+        // is what a naive `env[key] = previous` restore would leave behind.
+        delete process.env[TIMEOUT_ENV_KEY];
+        loadDirectHook({ [TIMEOUT_ENV_KEY]: '333333' });
+        assert.strictEqual(
+          Object.prototype.hasOwnProperty.call(process.env, TIMEOUT_ENV_KEY), false,
+          `unset timeout should stay unset, got ${JSON.stringify(process.env[TIMEOUT_ENV_KEY])}`
+        );
+      } finally {
+        if (outerEnv === undefined) {
+          delete process.env[TIMEOUT_ENV_KEY];
+        } else {
+          process.env[TIMEOUT_ENV_KEY] = outerEnv;
+        }
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {
