@@ -59,18 +59,28 @@ function writeState(state) {
   fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
 }
 
+function hookEnv(overrides = {}) {
+  const env = {
+    ...process.env,
+    ECC_HOOK_PROFILE: 'standard',
+    GATEGUARD_STATE_DIR: stateDir,
+    CLAUDE_SESSION_ID: TEST_SESSION_ID
+  };
+  // Every test below assumes the DEFAULT 30-minute window (writeExpiredState
+  // uses 31 minutes; the pruning tests use 61). A developer or CI runner with
+  // GATEGUARD_SESSION_TIMEOUT_MS exported would otherwise inherit it here and
+  // silently invalidate those assumptions. Tests that want a custom window
+  // pass it explicitly via `overrides`.
+  delete env.GATEGUARD_SESSION_TIMEOUT_MS;
+  return { ...env, ...overrides };
+}
+
 function runHook(input, env = {}) {
   const rawInput = typeof input === 'string' ? input : JSON.stringify(input);
   const result = spawnSync('node', [runner, 'pre:edit-write:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {
     input: rawInput,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      ECC_HOOK_PROFILE: 'standard',
-      GATEGUARD_STATE_DIR: stateDir,
-      CLAUDE_SESSION_ID: TEST_SESSION_ID,
-      ...env
-    },
+    env: hookEnv(env),
     timeout: 15000,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -87,13 +97,7 @@ function runBashHook(input, env = {}) {
   const result = spawnSync('node', [runner, 'pre:bash:gateguard-fact-force', 'scripts/hooks/gateguard-fact-force.js', 'standard,strict'], {
     input: rawInput,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      ECC_HOOK_PROFILE: 'standard',
-      GATEGUARD_STATE_DIR: stateDir,
-      CLAUDE_SESSION_ID: TEST_SESSION_ID,
-      ...env
-    },
+    env: hookEnv(env),
     timeout: 15000,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -2514,6 +2518,53 @@ function runTests() {
         timeoutFor({ GATEGUARD_SESSION_TIMEOUT_MS: String(8 * 24 * 60 * 60 * 1000) }),
         THIRTY_MINUTES_MS
       );
+    })
+  )
+    passed++;
+  else failed++;
+
+  // Hermetic end-to-end coverage: the IIFE tests above prove the constant is
+  // PARSED correctly, but would still pass if loadState() ignored it. These
+  // drive a real hook invocation so the consumer is exercised.
+
+  if (test('a custom timeout actually expires state in loadState()', () => {
+      // 90s old state, with a 60s window -> must be treated as a NEW session,
+      // so the gate fires again on a file it had already checked.
+      const target = '/proj/src/custom-timeout.js';
+      writeState({ checked: [target, '__bash_session__'], last_active: Date.now() - 90 * 1000 });
+      const result = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: target, old_string: 'a', new_string: 'b' } },
+        { GATEGUARD_SESSION_TIMEOUT_MS: '60000' }
+      );
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(
+        output.hookSpecificOutput.permissionDecision,
+        'deny',
+        'expired-by-custom-window state should gate the file again'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (test('the same age does NOT expire under the default window', () => {
+      // Same 90s-old state, default 30-minute window -> still the same session,
+      // so an already-checked file stays allowed. This is the control that
+      // proves the previous assertion came from the setting, not from age.
+      const target = '/proj/src/default-window.js';
+      writeState({ checked: [target, '__bash_session__'], last_active: Date.now() - 90 * 1000 });
+      const result = runHook(
+        { tool_name: 'Edit', tool_input: { file_path: target, old_string: 'a', new_string: 'b' } }
+      );
+      const output = parseOutput(result.stdout);
+      if (output && output.hookSpecificOutput) {
+        assert.notStrictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          'state within the default window must not be treated as expired'
+        );
+      }
     })
   )
     passed++;
