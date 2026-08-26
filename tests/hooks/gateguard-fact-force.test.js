@@ -119,6 +119,12 @@ function parseOutput(stdout) {
 
 function loadDirectHook(env = {}) {
   delete require.cache[require.resolve(hookScript)];
+  // The module reads process.env at load time, so real variables must be set.
+  // Clear GATEGUARD_SESSION_TIMEOUT_MS explicitly first: Object.assign cannot
+  // REMOVE a key, so an ambient value exported by a developer or CI runner
+  // would survive an omitted property and invalidate the module-load pruning
+  // assumptions below. Explicit overrides are applied after the clear.
+  delete process.env.GATEGUARD_SESSION_TIMEOUT_MS;
   Object.assign(process.env, {
     GATEGUARD_STATE_DIR: stateDir,
     CLAUDE_SESSION_ID: TEST_SESSION_ID,
@@ -2557,14 +2563,18 @@ function runTests() {
       const result = runHook(
         { tool_name: 'Edit', tool_input: { file_path: target, old_string: 'a', new_string: 'b' } }
       );
+      // Assert unconditionally. Guarding these behind `if (output)` would let
+      // the test pass when the hook errors or emits nothing -- which is the
+      // failure mode this control exists to rule out.
+      assert.strictEqual(result.code, 0, 'hook should exit 0');
       const output = parseOutput(result.stdout);
-      if (output && output.hookSpecificOutput) {
-        assert.notStrictEqual(
-          output.hookSpecificOutput.permissionDecision,
-          'deny',
-          'state within the default window must not be treated as expired'
-        );
-      }
+      assert.ok(output, 'hook should emit parseable JSON');
+      const decision = output.hookSpecificOutput && output.hookSpecificOutput.permissionDecision;
+      assert.notStrictEqual(
+        decision,
+        'deny',
+        'state within the default window must not be treated as expired'
+      );
     })
   )
     passed++;
