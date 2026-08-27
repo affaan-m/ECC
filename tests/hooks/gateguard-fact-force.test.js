@@ -1523,6 +1523,71 @@ function runTests() {
   else failed++;
 
   if (
+    test('handles multiple heredoc redirections in declaration order', () => {
+      expectAllow(
+        [
+          "cat <<ONE <<'TWO'",
+          'DELETE FROM sessions is documentation here.',
+          'ONE',
+          '$(rm -rf /tmp/example-only)',
+          'TWO'
+        ].join('\n'),
+        'multiple heredoc redirections'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed when a shell consumes the heredoc payload', () => {
+      for (const command of [
+        ['bash <<EOF', 'rm -rf /tmp/shell-input-target', 'EOF'].join('\n'),
+        ["sh <<'EOF'", 'git reset --hard', 'EOF'].join('\n'),
+        ['cat <<EOF | sh', 'rm -rf /tmp/piped-shell-target', 'EOF'].join('\n'),
+        ["cat > /tmp/review-script <<'EOF'", 'rm -rf /tmp/persisted-target', 'EOF', 'bash /tmp/review-script'].join('\n')
+      ]) {
+        expectDestructiveDeny(command, 'shell-executed heredoc payload');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not rescan a here-string as a heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<<EOF', 'rm -rf /tmp/here-string-followup'].join('\n'),
+        'command after here-string'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('uses shell-correct single-quote escaping while finding heredocs', () => {
+      expectDestructiveDeny(
+        ["echo 'a\\'X'<<EOF 'Y'b\\'", 'rm -rf /tmp/quoted-followup'].join('\n'),
+        'command after quoted non-heredoc text'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on an unclosed heredoc body', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', 'rm -rf /tmp/unclosed-heredoc'].join('\n'),
+        'unclosed heredoc body'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('still denies destructive commands after a heredoc terminator', () => {
       expectDestructiveDeny(
         [
