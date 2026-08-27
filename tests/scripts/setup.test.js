@@ -56,18 +56,21 @@ function createFixture(state = {}) {
     callsPath,
   };
 }
-function runSetup(fixture, args) {
+function runSetup(fixture, args, options = {}) {
+  const env = {
+    ...process.env,
+    HOME: fixture.homeDir,
+    USERPROFILE: fixture.homeDir,
+    CLAUDE_CONFIG_DIR: fixture.configDir,
+    PATH: options.path || `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
+    ECC_TEST_CLAUDE_STATE: fixture.statePath,
+    ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
+    ...options.env,
+  };
+  if (options.defaultClaudeConfig) delete env.CLAUDE_CONFIG_DIR;
   return spawnSync(process.execPath, [setupScript, ...args], {
     cwd: fixture.projectRoot,
-    env: {
-      ...process.env,
-      HOME: fixture.homeDir,
-      USERPROFILE: fixture.homeDir,
-      CLAUDE_CONFIG_DIR: fixture.configDir,
-      PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH || ''}`,
-      ECC_TEST_CLAUDE_STATE: fixture.statePath,
-      ECC_TEST_CLAUDE_CALLS: fixture.callsPath,
-    },
+    env,
     encoding: 'utf8',
     timeout: 15000,
   });
@@ -264,6 +267,96 @@ test('dry-run JSON emits JSON only and reads inventory without mutation', () => 
     assert.strictEqual(payload.scope, 'local');
     assertNoSetupSpinner(`${result.stdout}${result.stderr}`);
     assert.strictEqual(hasMutation(fixture), false);
+  });
+});
+
+test('dry-run leaves a pristine HOME unchanged when Claude inventory creates backups', () => {
+  withFixture({}, fixture => {
+    assert.deepStrictEqual(fs.readdirSync(fixture.homeDir), []);
+    assert.deepStrictEqual(fs.readdirSync(fixture.projectRoot), []);
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'local',
+      '--hooks', 'minimal',
+      '--dry-run',
+      '--json',
+    ], {
+      defaultClaudeConfig: true,
+      env: { ECC_TEST_CLAUDE_CREATE_READ_ARTIFACTS: '1' },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.deepStrictEqual(fs.readdirSync(fixture.homeDir), []);
+    assert.deepStrictEqual(fs.readdirSync(fixture.projectRoot), []);
+  });
+});
+
+test('dry-run isolates pre-existing Claude backups and symlinked project settings', () => {
+  if (process.platform === 'win32') return;
+
+  withFixture({}, fixture => {
+    const defaultConfigDir = path.join(fixture.homeDir, '.claude');
+    const backupDir = path.join(defaultConfigDir, 'backups');
+    const backupPath = path.join(backupDir, 'existing.backup');
+    const statePath = path.join(fixture.homeDir, '.claude.json');
+    const projectConfigDir = path.join(fixture.projectRoot, '.claude');
+    const settingsTarget = path.join(fixture.root, 'settings-target.json');
+    const settingsPath = path.join(projectConfigDir, 'settings.local.json');
+    const xdgDataHome = path.join(fixture.homeDir, 'xdg-data');
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.writeFileSync(backupPath, 'original-backup\n');
+    fs.writeFileSync(statePath, '{"original":true}\n');
+    fs.writeFileSync(settingsTarget, '{"enabledPlugins":{"ecc@ecc":true}}\n');
+    fs.symlinkSync(settingsTarget, settingsPath, 'file');
+
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'local',
+      '--hooks', 'minimal',
+      '--dry-run',
+      '--json',
+    ], {
+      defaultClaudeConfig: true,
+      env: {
+        ECC_TEST_CLAUDE_CREATE_READ_ARTIFACTS: '1',
+        ECC_TEST_CLAUDE_OVERWRITE_READ_ARTIFACTS: '1',
+        ECC_TEST_CLAUDE_WRITE_XDG_DATA: '1',
+        XDG_DATA_HOME: xdgDataHome,
+      },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(fs.readFileSync(backupPath, 'utf8'), 'original-backup\n');
+    assert.strictEqual(fs.readFileSync(statePath, 'utf8'), '{"original":true}\n');
+    assert.strictEqual(
+      fs.readFileSync(settingsTarget, 'utf8'),
+      '{"enabledPlugins":{"ecc@ecc":true}}\n'
+    );
+    assert.strictEqual(fs.lstatSync(settingsPath).isSymbolicLink(), true);
+    assert.strictEqual(
+      fs.existsSync(path.join(xdgDataHome, 'claude-provider-read.json')),
+      false
+    );
+  });
+});
+
+test('missing Git fails with an actionable prerequisite during dry-run', () => {
+  withFixture({}, fixture => {
+    const result = runSetup(fixture, [
+      '--mode', 'claude-plugin',
+      '--scope', 'user',
+      '--hooks', 'standard',
+      '--dry-run',
+      '--json',
+    ], { path: fixture.binDir });
+    assert.strictEqual(result.status, 1);
+    assert.strictEqual(result.stdout, '');
+    const payload = JSON.parse(result.stderr);
+    assert.strictEqual(payload.error.code, 'GIT_NOT_FOUND');
+    assert.strictEqual(payload.error.phase, 'preflight');
+    assert.match(payload.error.message, /Git is required for Claude marketplace setup/i);
+    assert.match(payload.error.message, /install Git/i);
+    assert.doesNotMatch(payload.error.message, /ERR_STREAM_PREMATURE_CLOSE/i);
+    assert.deepStrictEqual(readCalls(fixture), []);
   });
 });
 
