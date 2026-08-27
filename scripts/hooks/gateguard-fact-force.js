@@ -152,6 +152,168 @@ function stripQuotedStrings(input) {
 }
 
 /**
+ * Find simple heredoc redirections on one complete shell command line.
+ * Anything ambiguous is rejected so the caller can fail closed and run the
+ * destructive checks against the original input. Supported delimiters are
+ * shell identifiers, either unquoted or wholly single/double quoted.
+ *
+ * @param {string} line
+ * @returns {{ delimiter: string, quoted: boolean, stripTabs: boolean }[] | null}
+ */
+function findHeredocs(line) {
+  const heredocs = [];
+  let quote = null;
+  let escaped = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if ((ch === '$' && line[i + 1] === '(' && line[i + 2] === '(') || (ch === '(' && line[i + 1] === '(')) {
+      // Arithmetic syntax also uses `<<`. Treat the complete input
+      // conservatively instead of trying to parse nested arithmetic here.
+      return null;
+    }
+    if (ch === '$' && line[i + 1] === '[') return null;
+    if (ch === '#' && (i === 0 || /[\s;&|()]/.test(line[i - 1]))) {
+      break;
+    }
+    if (ch !== '<' || line[i + 1] !== '<' || line[i + 2] === '<') {
+      continue;
+    }
+
+    // `<<` is also an operator inside arithmetic and [[ ... ]] expressions.
+    // A partial shell parser cannot distinguish every nested form safely.
+    const prefix = line.slice(0, i);
+    if (prefix.includes('((') || prefix.includes('[[')) return null;
+
+    i += 2;
+    const stripTabs = line[i] === '-';
+    if (stripTabs) i += 1;
+    while (i < line.length && /[ \t]/.test(line[i])) i += 1;
+
+    let delimiter = '';
+    let quoted = false;
+    const delimiterQuote = line[i] === '"' || line[i] === "'" ? line[i] : null;
+    if (delimiterQuote) {
+      quoted = true;
+      const endQuote = line.indexOf(delimiterQuote, i + 1);
+      if (endQuote < 0) return null;
+      delimiter = line.slice(i + 1, endQuote);
+      i = endQuote;
+    } else {
+      const match = line.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+      if (!match) return null;
+      delimiter = match[0];
+      i += delimiter.length - 1;
+    }
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(delimiter)) return null;
+    const next = line[i + 1];
+    if (next && !/[\s;&|<>()]/.test(next)) return null;
+    heredocs.push({ delimiter, quoted, stripTabs });
+  }
+
+  return quote || escaped ? null : heredocs;
+}
+
+/**
+ * Extract executable substitutions from an unquoted heredoc. Quote characters
+ * in its payload are literal and do not suppress expansion, so each unescaped
+ * `$(` or backtick is parsed from its own position rather than by feeding the
+ * complete payload through normal shell quote handling.
+ *
+ * @param {string[]} body
+ * @returns {string[]}
+ */
+function extractHeredocCommandSubstitutions(body) {
+  const text = body.join('\n');
+  const substitutions = new Set();
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '`' || (ch === '$' && text[i + 1] === '(')) {
+      for (const substitution of extractCommandSubstitutions(text.slice(i))) {
+        substitutions.add(substitution);
+      }
+    }
+  }
+  return [...substitutions];
+}
+
+/**
+ * Remove heredoc payload text before classifying the surrounding shell
+ * command. Prose in a heredoc is data, so matching it as a command produces
+ * false positives. Unquoted heredocs can still execute `$()` and backtick
+ * substitutions; retain the complete payload whenever either syntax appears.
+ * Quoted heredoc delimiters disable expansion, so their payload is fully inert.
+ * Ambiguous shell syntax returns the original input unchanged (fail closed).
+ *
+ * @param {string} input
+ * @returns {string}
+ */
+function stripHeredocBodies(input) {
+  const raw = String(input || '');
+  const kept = [];
+  const pending = [];
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (pending.length > 0) {
+      const current = pending[0];
+      // Bash removes backslash-newline pairs in an unquoted heredoc before
+      // comparing delimiters. Preserve the original input when physical lines
+      // can be joined into a terminator or executable expansion.
+      if (!current.quoted && /\\$/.test(line)) return raw;
+      const delimiterLine = current.stripTabs ? line.replace(/^\t+/, '') : line;
+      if (delimiterLine === current.delimiter) {
+        if (!current.quoted) {
+          kept.push(...extractHeredocCommandSubstitutions(current.body));
+        }
+        pending.shift();
+      } else {
+        current.body.push(line);
+      }
+      continue;
+    }
+
+    kept.push(line);
+    const heredocs = findHeredocs(line);
+    if (heredocs === null) return raw;
+    pending.push(...heredocs.map(heredoc => ({ ...heredoc, body: [] })));
+  }
+
+  for (const current of pending) {
+    if (!current.quoted) {
+      kept.push(...extractHeredocCommandSubstitutions(current.body));
+    }
+  }
+
+  return kept.join('\n');
+}
+
+/**
  * Promote subshell delimiters to top-level segment separators so the
  * destructive check applies inside `$(...)` and backtick subshells.
  * Without this, `echo y | $(rm -rf /tmp)` and ``echo y | `rm -rf /tmp` ``
@@ -672,7 +834,8 @@ function isDestructiveBash(command) {
   // after quoting AND subshell delimiters are normalized so phrases
   // inside `$(...)` or backticks are also caught.
   const raw = String(command || '');
-  const flattened = explodeSubshells(stripQuotedStrings(raw));
+  const executable = stripHeredocBodies(raw);
+  const flattened = explodeSubshells(stripQuotedStrings(executable));
   if (DESTRUCTIVE_SQL_DD.test(flattened)) return true;
 
   // Operator-supplied additional destructive patterns. Same scope as the
@@ -687,7 +850,7 @@ function isDestructiveBash(command) {
   // isDestructiveFindExec would turn `find . -exec 'rm' {} \;` into `find . -exec  {} \;`
   // — the binary name disappears and the check returns false.  Using raw body text avoids
   // that false-negative while also catching `&&`, `;`, `|`, and `||` compound forms.
-  const bodies = collectExecutableBodies(raw);
+  const bodies = collectExecutableBodies(executable);
   for (const body of bodies) {
     for (const rawSeg of body
       .split(/[;|&]+/)
@@ -709,7 +872,7 @@ function isDestructiveBash(command) {
 
   // Quote-aware pass: closes the quoted-command-word, newline-separator,
   // quoted-find-exec, and sh/bash -c bypasses (GHSA-4v57-ph3x-gf55).
-  if (isDestructiveQuoteAware(raw)) return true;
+  if (isDestructiveQuoteAware(executable)) return true;
 
   return false;
 }

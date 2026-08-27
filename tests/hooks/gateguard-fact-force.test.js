@@ -1478,6 +1478,297 @@ function runTests() {
   else failed++;
 
   if (
+    test('allows destructive SQL prose inside a quoted heredoc', () => {
+      expectAllow(
+        [
+          "cat > migration-notes.md <<'EOF'",
+          'This migration will DROP TABLE old_sessions after verification.',
+          'EOF'
+        ].join('\n'),
+        'quoted heredoc SQL prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive prose and separators inside an unquoted heredoc', () => {
+      expectAllow(
+        [
+          'cat > migration-notes.md <<EOF',
+          'Document only: DELETE FROM sessions; rm -rf old-cache',
+          'EOF'
+        ].join('\n'),
+        'unquoted heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows destructive prose inside a tab-stripping heredoc', () => {
+      expectAllow(
+        [
+          'cat > migration-notes.md <<-EOF',
+          '\tTRUNCATE old_sessions; rm -rf old-cache',
+          '\tEOF'
+        ].join('\n'),
+        'tab-stripping heredoc prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies destructive commands after a heredoc terminator', () => {
+      expectDestructiveDeny(
+        [
+          "cat > migration-notes.md <<'EOF'",
+          'DROP TABLE is documentation here.',
+          'EOF',
+          'rm -rf /tmp/real-target'
+        ].join('\n'),
+        'command after heredoc terminator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        [
+          'cat > output.txt <<EOF',
+          '$(rm -rf /tmp/expanded-target)',
+          'EOF'
+        ].join('\n'),
+        'unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows literal command substitutions inside a quoted heredoc', () => {
+      expectAllow(
+        [
+          "cat > example.md <<'EOF'",
+          '$(rm -rf /tmp/example-only)',
+          'EOF'
+        ].join('\n'),
+        'quoted heredoc command-substitution prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake an arithmetic shift for a heredoc', () => {
+      expectDestructiveDeny(
+        ['echo $((1 << 2))', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake a named arithmetic shift operand for a heredoc', () => {
+      expectDestructiveDeny(
+        ['echo $((flags << WIDTH))', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after named arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on multiline arithmetic shift contexts', () => {
+      for (const arithmetic of [
+        ['((', 'flags << WIDTH', '))'],
+        ['$((', 'flags << WIDTH', '))'],
+        ['$[', 'flags << WIDTH', ']']
+      ]) {
+        expectDestructiveDeny(
+          [...arithmetic, 'rm -rf /tmp/real-target'].join('\n'),
+          'command after multiline arithmetic shift'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not mistake a conditional string operator for a heredoc', () => {
+      expectDestructiveDeny(
+        ['[[ alpha << omega ]]', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after conditional shift-like operator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('does not parse heredocs inside operator-adjacent comments', () => {
+      expectDestructiveDeny(
+        ['true;# <<EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after commented heredoc marker'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on heredoc markers inside multiline quotes', () => {
+      expectDestructiveDeny(
+        ['printf \'%s\' "literal', '<<EOF', 'still literal"', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after multiline quoted heredoc marker'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on ANSI-C quoted heredoc delimiters', () => {
+      expectDestructiveDeny(
+        ["cat <<$'EOF'", 'documentation', 'EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after ANSI-C heredoc'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on escaped heredoc delimiter words', () => {
+      expectDestructiveDeny(
+        ['cat <<E\\', 'OF', 'documentation', 'EOF', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after escaped heredoc delimiter'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies multiline command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$(', 'rm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'multiline unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies multiline backtick substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '`', 'rm -rf /tmp/expanded-target', '`', 'EOF'].join('\n'),
+        'multiline unquoted heredoc backtick substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies line-continued command substitutions inside an unquoted heredoc', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$\\', '(', 'rm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'line-continued unquoted heredoc command substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('fails closed on line-continued unquoted heredoc terminators', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', 'payload', 'EO\\', 'F', 'rm -rf /tmp/real-target'].join('\n'),
+        'command after line-continued heredoc terminator'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows escaped command-substitution prose in an unquoted heredoc', () => {
+      expectAllow(
+        ['cat <<EOF', '\\$(echo example)', 'DROP TABLE is documentation here.', 'EOF'].join('\n'),
+        'escaped unquoted heredoc command-substitution prose'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies substitutions inside literal quote characters in an unquoted heredoc', () => {
+      for (const payload of [
+        "'$(rm -rf /tmp/expanded-target)'",
+        '"$(rm -rf /tmp/expanded-target)"',
+        "'`rm -rf /tmp/expanded-target`'"
+      ]) {
+        expectDestructiveDeny(
+          ['cat <<EOF', payload, 'EOF'].join('\n'),
+          'quoted-looking unquoted heredoc substitution'
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows quoted destructive prose inside a harmless heredoc substitution', () => {
+      expectAllow(
+        ['cat <<EOF', "$(printf '%s' 'rm -rf /tmp/example-only')", 'EOF'].join('\n'),
+        'quoted prose inside heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('still denies destructive commands after arithmetic shifts', () => {
+      expectDestructiveDeny(
+        ['echo $((1 << 2))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after $((...)) arithmetic shift'
+      );
+      expectDestructiveDeny(
+        ['echo $((x << 2))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after $((...)) identifier shift'
+      );
+      expectDestructiveDeny(
+        ['(( 1 << 2 ))', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after ((...)) arithmetic shift'
+      );
+      expectDestructiveDeny(
+        ['echo $[x << 1]', 'rm -rf /tmp/shift-target'].join('\n'),
+        'command after legacy $[...] arithmetic shift'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('allows git push --force-if-includes as a safety-checked variant', () => {
       expectAllow('git push --force-with-lease --force-if-includes origin main', 'git push --force-if-includes');
     })
