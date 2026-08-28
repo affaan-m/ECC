@@ -83,6 +83,11 @@ function runTests() {
     assert.deepStrictEqual(kimi.scopes, [
       { id: 'project', targetId: 'kimi', root: './.kimi-code' },
     ]);
+
+    const opencode = getHarnessCapability('opencode');
+    assert.match(opencode.destinationResolution, /OPENCODE_CONFIG_DIR/);
+    assert.match(opencode.destinationResolution, /XDG_CONFIG_HOME/);
+    assert.match(opencode.destinationResolution, /~\/\.config\/opencode/);
   })) passed++; else failed++;
 
   if (test('keeps every advanced target attached to its registered root and scope', () => {
@@ -90,7 +95,7 @@ function runTests() {
       cursor: ['project', './.cursor'],
       antigravity: ['project', './.agents'],
       gemini: ['project', './.gemini'],
-      opencode: ['home', '~/.opencode'],
+      opencode: ['home', '~/.config/opencode'],
       codebuddy: ['project', './.codebuddy'],
       joycode: ['project', './.joycode'],
       qwen: ['home', '~/.qwen'],

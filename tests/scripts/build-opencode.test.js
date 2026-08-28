@@ -6,6 +6,7 @@ const assert = require("assert")
 const fs = require("fs")
 const path = require("path")
 const { spawnSync } = require("child_process")
+const { getNpmPackEntry } = require("../lib/npm-pack-output")
 
 function runTest(name, fn) {
   try {
@@ -54,7 +55,8 @@ function main() {
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
       const packOutput = JSON.parse(result.stdout)
-      const packagedPaths = new Set(packOutput[0]?.files?.map((file) => file.path) ?? [])
+      const packEntry = getNpmPackEntry(packOutput, packageJson.name)
+      const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       assert.ok(
         packagedPaths.has(".opencode/dist/index.js"),

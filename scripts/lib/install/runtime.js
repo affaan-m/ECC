@@ -5,6 +5,7 @@ const {
   createLegacyInstallPlan,
   createManifestInstallPlan,
 } = require('../install-executor');
+const { resolveInvocationEnvironment } = require('../invocation-environment');
 
 function createInstallPlanFromRequest(request, options = {}) {
   if (!request || typeof request !== 'object') {
@@ -20,6 +21,7 @@ function createInstallPlanFromRequest(request, options = {}) {
       excludeComponentIds: request.excludeComponentIds,
       projectRoot: options.projectRoot,
       homeDir: options.homeDir,
+      env: resolveInvocationEnvironment(options),
       sourceRoot: options.sourceRoot,
     });
   }
@@ -32,6 +34,7 @@ function createInstallPlanFromRequest(request, options = {}) {
       excludeComponentIds: request.excludeComponentIds,
       projectRoot: options.projectRoot,
       homeDir: options.homeDir,
+      env: resolveInvocationEnvironment(options),
       claudeRulesDir: options.claudeRulesDir,
       sourceRoot: options.sourceRoot,
     });

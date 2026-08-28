@@ -173,6 +173,13 @@ function runExternalCommand(command, args, options = {}) {
   return result;
 }
 
+function legacyMigrationWarning(record) {
+  if (record.legacyLayout === 'opencode') {
+    return 'Found only a legacy OpenCode ~/.opencode install-state. Run the OpenCode installer once to migrate it to the configured OpenCode directory before auto-updating.';
+  }
+  return 'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.';
+}
+
 function runAutoUpdate(options = {}, dependencies = {}) {
   const discover = dependencies.discoverInstalledStates || discoverInstalledStates;
   const execute = dependencies.runExternalCommand || runExternalCommand;
@@ -187,9 +194,7 @@ function runAutoUpdate(options = {}, dependencies = {}) {
   const records = discoveredRecords.filter(record => record.exists && !record.legacy);
   const legacyRecords = discoveredRecords.filter(record => record.exists && record.legacy);
   const warnings = records.length === 0 && legacyRecords.length > 0
-    ? [
-        'Found only a legacy Antigravity .agent install-state. Run the Antigravity installer once to migrate it to .agents before auto-updating.',
-      ]
+    ? [...new Set(legacyRecords.map(legacyMigrationWarning))]
     : [];
 
   const results = [];

@@ -264,6 +264,9 @@ function createInstallTargetAdapter(config) {
     },
     resolveRoot(input = {}) {
       const baseRoot = resolveBaseRoot(config.kind, input);
+      if (typeof config.resolveRoot === 'function') {
+        return config.resolveRoot(input, baseRoot);
+      }
       return path.join(baseRoot, ...config.rootSegments);
     },
     getInstallStatePath(input = {}) {

@@ -7,6 +7,7 @@ const { toCursorAgentRelativePath } = require('./cursor-agent-names');
 const { LEGACY_INSTALL_TARGETS, parseInstallArgs } = require('./install/request');
 const { SUPPORTED_INSTALL_TARGETS, listLegacyCompatibilityLanguages, resolveLegacyCompatibilitySelection, resolveInstallPlan } = require('./install-manifests');
 const { getInstallTargetAdapter } = require('./install-targets/registry');
+const { resolveInvocationEnvironment } = require('./invocation-environment');
 
 const LANGUAGE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const CLAUDE_ECC_NAMESPACE = 'ecc';
@@ -80,7 +81,12 @@ function validateLegacyTarget(target) {
   throw new Error(`Unknown install target: ${target}. Expected one of ${SUPPORTED_INSTALL_TARGETS.join(', ')}`);
 }
 
-const IGNORED_DIRECTORY_NAMES = new Set(['node_modules', '.git', '__pycache__']);
+const IGNORED_DIRECTORY_NAMES = new Set([
+  'node_modules',
+  '.git',
+  '__pycache__',
+  '.pytest_cache',
+]);
 const IGNORED_FILE_EXTENSIONS = new Set(['.pyc', '.pyo', '.pyd']);
 
 function listFilesRecursive(dirPath) {
@@ -640,6 +646,7 @@ function createLegacyCompatInstallPlan(options = {}) {
     sourceRoot,
     projectRoot,
     homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
     target,
     profileId: null,
     moduleIds: selection.moduleIds,
@@ -769,6 +776,7 @@ function createManifestInstallPlan(options = {}) {
     repoRoot: sourceRoot,
     projectRoot,
     homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
     profileId: options.profileId || null,
     moduleIds: options.moduleIds || [],
     includeComponentIds: options.includeComponentIds || [],
@@ -822,6 +830,7 @@ function createManifestInstallPlan(options = {}) {
       target: adapter.target,
       kind: adapter.kind
     },
+    homeDir: plan.homeDir,
     targetRoot: plan.targetRoot,
     installRoot: plan.targetRoot,
     installStatePath: plan.installStatePath,

@@ -252,6 +252,47 @@ function findDriftCandidate(state, cursorRoot) {
   return resolveManagedExistingPath(operation.destinationPath, cursorRoot).path;
 }
 
+function runTargetSmoke(options) {
+  parseJsonOutput(
+    options.runCli([
+      'install',
+      '--modules', 'workflow-quality',
+      '--target', options.target,
+      '--json',
+    ]),
+    `${options.target} packed install`
+  );
+  const statePath = path.join(options.targetRoot, 'ecc-install-state.json');
+  const installedSkillPath = path.join(
+    options.targetRoot,
+    'skills',
+    'skill-comply',
+    'SKILL.md'
+  );
+  assert.ok(fs.existsSync(statePath), `${options.target} install-state must exist`);
+  assert.ok(
+    fs.existsSync(installedSkillPath),
+    `${options.target} must install skill-comply from the packed archive`
+  );
+
+  const doctor = parseJsonOutput(
+    options.runCli(['doctor', '--target', options.target, '--json']),
+    `${options.target} packed doctor`
+  );
+  assert.strictEqual(doctor.summary.errorCount, 0);
+
+  const uninstall = parseJsonOutput(
+    options.runCli(['uninstall', '--target', options.target, '--json']),
+    `${options.target} packed uninstall`
+  );
+  assert.strictEqual(uninstall.summary.errorCount, 0);
+  assert.ok(!fs.existsSync(statePath), `${options.target} uninstall must remove install-state`);
+  assert.ok(
+    !fs.existsSync(installedSkillPath),
+    `${options.target} uninstall must remove the installed skill`
+  );
+}
+
 function runLifecycle(options) {
   assert.ok(fs.existsSync(options.packagePath), `release package does not exist: ${options.packagePath}`);
   assertDownloadedArtifact(options.packagePath, process.cwd());
@@ -450,6 +491,22 @@ function runLifecycle(options) {
     assert.strictEqual(statusAfterUninstall.installStateProjection.warningCount, 0);
     assert.strictEqual(statusAfterUninstall.readiness.status, 'ok');
 
+    const antigravityRoot = path.join(projectDir, '.agents');
+    runTargetSmoke({
+      runCli,
+      target: 'antigravity',
+      targetRoot: antigravityRoot,
+    });
+    assert.ok(!fs.existsSync(path.join(projectDir, '.agent')));
+
+    const opencodeRoot = path.join(homeDir, '.config', 'opencode');
+    runTargetSmoke({
+      runCli,
+      target: 'opencode',
+      targetRoot: opencodeRoot,
+    });
+    assert.ok(!fs.existsSync(path.join(homeDir, '.opencode')));
+
     return {
       packageSha256: options.expectedSha256,
       platform: process.platform,
@@ -469,6 +526,8 @@ function runLifecycle(options) {
         'uninstall',
         'status-uninstalled',
         'sentinel-preserved',
+        'antigravity-install-doctor-uninstall',
+        'opencode-install-doctor-uninstall',
       ],
     };
   } finally {

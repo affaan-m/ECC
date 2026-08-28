@@ -12,6 +12,7 @@ const openclawHome = require('./openclaw-home');
 const opencodeHome = require('./opencode-home');
 const qwenHome = require('./qwen-home');
 const zedProject = require('./zed-project');
+const { resolveInvocationEnvironment } = require('../invocation-environment');
 
 const ADAPTERS = Object.freeze([
   claudeHome,
@@ -52,6 +53,7 @@ function planInstallTargetScaffold(options = {}) {
     repoRoot: options.repoRoot,
     projectRoot: options.projectRoot || options.repoRoot,
     homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
   };
   const validationIssues = adapter.validate(planningInput);
   const blockingIssues = validationIssues.filter(issue => (

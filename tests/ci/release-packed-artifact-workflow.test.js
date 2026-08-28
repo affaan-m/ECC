@@ -69,6 +69,32 @@ for (const workflowPath of workflowPaths) {
     }
   });
 
+  test(`${workflowPath} selects reviewed release notes from the validated release version`, () => {
+    const verify = jobBlock(source, 'verify', 'lifecycle');
+
+    assert.match(verify, /RELEASE_VERSION="\$\{RELEASE_TAG#v\}"/);
+    assert.match(
+      verify,
+      /RELEASE_NOTES="docs\/releases\/\$\{RELEASE_VERSION\}\/release-notes\.md"/
+    );
+    assert.match(verify, /if \[ ! -f "\$RELEASE_NOTES" \]/);
+    assert.match(verify, /cp "\$RELEASE_NOTES" release_body\.md/);
+    assert.doesNotMatch(
+      verify,
+      /cp docs\/releases\/2\.2\.0\/release-notes\.md/,
+      'release workflows must not reuse 2.2.0 notes for later versions'
+    );
+  });
+
+  test(`${workflowPath} disables generated additions to reviewed release notes`, () => {
+    const publish = jobBlock(source, 'publish');
+    assert.match(
+      publish,
+      /body_path:\s*release_body\.md[\s\S]{0,160}generate_release_notes:\s*false/
+    );
+    assert.doesNotMatch(publish, /generate_release_notes:\s*(?:true|\$\{\{)/);
+  });
+
   test(`${workflowPath} uploads the one packed tgz as the release artifact`, () => {
     const verify = jobBlock(source, 'verify', 'lifecycle');
     const packIndex = verify.indexOf('name: Pack npm artifact');
@@ -159,6 +185,16 @@ test('packed lifecycle invokes installed public bins, including setup help', () 
   assert.match(lifecycleRunnerSource, /\['ecc-universal', 'setup', '--help'\]/);
   assert.match(lifecycleRunnerSource, /\['ecc', \.\.\.args\]/);
   assert.doesNotMatch(lifecycleRunnerSource, /node_modules.*scripts.*ecc\.js/);
+});
+
+test('packed lifecycle validates canonical Antigravity and OpenCode installs', () => {
+  assert.match(lifecycleRunnerSource, /target:\s*'antigravity'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(projectDir, '\.agents'\)/);
+  assert.match(lifecycleRunnerSource, /target:\s*'opencode'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(homeDir, '\.config', 'opencode'\)/);
+  assert.match(lifecycleRunnerSource, /\['doctor', '--target', options\.target, '--json'\]/);
+  assert.match(lifecycleRunnerSource, /skill-comply[\s\S]*SKILL\.md/);
+  assert.match(lifecycleRunnerSource, /!fs\.existsSync\(installedSkillPath\)/);
 });
 
 test('packed lifecycle installs and verifies the opt-in Ito distribution surface', () => {

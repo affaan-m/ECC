@@ -6,12 +6,14 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const {
   getInstallTargetAdapter,
   listInstallTargetAdapters,
   planInstallTargetScaffold,
 } = require('../../scripts/lib/install-targets/registry');
+const { resolveInvocationEnvironment } = require('../../scripts/lib/invocation-environment');
 
 function normalizedRelativePath(value) {
   return String(value || '').replace(/\\/g, '/');
@@ -629,14 +631,78 @@ function runTests() {
   if (test('resolves qwen adapter root and install-state path from home dir', () => {
     const adapter = getInstallTargetAdapter('qwen');
     const homeDir = '/Users/example';
-    const root = adapter.resolveRoot({ homeDir });
-    const statePath = adapter.getInstallStatePath({ homeDir });
+    const root = adapter.resolveRoot({ homeDir, env: {} });
+    const statePath = adapter.getInstallStatePath({ homeDir, env: {} });
 
     assert.strictEqual(adapter.id, 'qwen-home');
     assert.strictEqual(adapter.target, 'qwen');
     assert.strictEqual(adapter.kind, 'home');
     assert.strictEqual(root, path.join(homeDir, '.qwen'));
     assert.strictEqual(statePath, path.join(homeDir, '.qwen', 'ecc-install-state.json'));
+  })) passed++; else failed++;
+
+  if (test('opencode adapter honors config overrides in priority order', () => {
+    const adapter = getInstallTargetAdapter('opencode');
+    const homeDir = '/Users/example';
+    const xdgRoot = path.join(homeDir, 'xdg');
+    const explicitRoot = path.join(homeDir, 'custom-opencode');
+
+    assert.strictEqual(
+      adapter.resolveRoot({
+        homeDir,
+        env: {
+          XDG_CONFIG_HOME: xdgRoot,
+          OPENCODE_CONFIG_DIR: explicitRoot,
+        },
+      }),
+      path.resolve(explicitRoot)
+    );
+    assert.strictEqual(
+      adapter.resolveRoot({ homeDir, env: { XDG_CONFIG_HOME: xdgRoot } }),
+      path.join(path.resolve(xdgRoot), 'opencode')
+    );
+    assert.strictEqual(
+      adapter.getInstallStatePath({
+        homeDir,
+        env: { OPENCODE_CONFIG_DIR: explicitRoot },
+      }),
+      path.join(path.resolve(explicitRoot), 'ecc-install-state.json')
+    );
+  })) passed++; else failed++;
+
+  if (test('opencode adapter isolates an explicit home from ambient config overrides', () => {
+    const homeDir = '/Users/isolated';
+    const registryPath = path.join(__dirname, '..', '..', 'scripts', 'lib', 'install-targets', 'registry.js');
+    const child = spawnSync(process.execPath, ['-e', [
+      'const { getInstallTargetAdapter } = require(process.env.ECC_TEST_REGISTRY);',
+      'const root = getInstallTargetAdapter(\'opencode\').resolveRoot({ homeDir: process.env.ECC_TEST_HOME });',
+      'process.stdout.write(JSON.stringify(root));',
+    ].join('\n')], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ECC_TEST_REGISTRY: registryPath,
+        ECC_TEST_HOME: homeDir,
+        OPENCODE_CONFIG_DIR: '/runner/global/opencode',
+        XDG_CONFIG_HOME: '/runner/global/xdg',
+      },
+    });
+
+    assert.strictEqual(child.status, 0, child.stderr);
+    assert.strictEqual(
+      JSON.parse(child.stdout),
+      path.join(path.resolve(homeDir), '.config', 'opencode')
+    );
+  })) passed++; else failed++;
+
+  if (test('invocation environments are immutable snapshots', () => {
+    const source = { OPENCODE_CONFIG_DIR: '/custom/opencode' };
+    const selected = resolveInvocationEnvironment({ env: source });
+    const ambient = resolveInvocationEnvironment();
+    assert.notStrictEqual(selected, source);
+    assert.notStrictEqual(ambient, process.env);
+    selected.OPENCODE_CONFIG_DIR = '/mutated';
+    assert.strictEqual(source.OPENCODE_CONFIG_DIR, '/custom/opencode');
   })) passed++; else failed++;
 
   if (test('qwen adapter supports lookup by target and adapter id', () => {
@@ -1073,8 +1139,11 @@ function runTests() {
     assert.strictEqual(adapter.id, 'opencode-home');
     assert.strictEqual(adapter.target, 'opencode');
     assert.strictEqual(adapter.kind, 'home');
-    assert.strictEqual(root, path.join(homeDir, '.opencode'));
-    assert.strictEqual(statePath, path.join(homeDir, '.opencode', 'ecc-install-state.json'));
+    assert.strictEqual(root, path.join(path.resolve(homeDir), '.config', 'opencode'));
+    assert.strictEqual(
+      statePath,
+      path.join(path.resolve(homeDir), '.config', 'opencode', 'ecc-install-state.json')
+    );
   })) passed++; else failed++;
 
   if (test('opencode adapter validate reports an error when compiled plugin is missing', () => {

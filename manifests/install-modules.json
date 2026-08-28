@@ -326,6 +326,7 @@
         "skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
+        "skills/skill-comply",
         "skills/skill-scout",
         "skills/skill-stocktake",
         "skills/strategic-compact",
@@ -678,7 +679,7 @@
     {
       "id": "nasiko-control-plane",
       "kind": "skills",
-      "description": "Explicitly gated Nasiko control-plane installation, status, and agent-operations guidance with pinned artifact verification and opt-in telemetry boundaries.",
+      "description": "Experimental Nasiko CLI lifecycle bridge guidance for pinned installation, read-only status, qualified uninstall, and opt-in telemetry boundaries.",
       "paths": [
         "skills/nasiko-control-plane"
       ],

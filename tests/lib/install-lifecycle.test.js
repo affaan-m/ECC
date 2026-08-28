@@ -100,7 +100,7 @@ function writeCursorState(projectRoot, overrides = {}) {
 }
 
 function createOpencodeStateOptions(homeDir, overrides = {}) {
-  const targetRoot = overrides.targetRoot || path.join(homeDir, '.opencode');
+  const targetRoot = overrides.targetRoot || path.join(homeDir, '.config', 'opencode');
   const installStatePath = overrides.installStatePath || path.join(targetRoot, 'ecc-install-state.json');
 
   return {
@@ -351,6 +351,87 @@ function runTests() {
       assert.strictEqual(records[0].exists, true);
       assert.strictEqual(records[0].state, null);
       assert.ok(records[0].error.includes('Failed to read install-state'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode discovery, doctor, and uninstall honor the explicit config root', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-home-');
+    const projectRoot = createTempDir('install-lifecycle-opencode-project-');
+    const targetRoot = path.join(homeDir, 'custom-opencode');
+    const installStatePath = path.join(targetRoot, 'ecc-install-state.json');
+    const sourceRelativePath = path.join('rules', 'common', 'coding-style.md');
+    const sourcePath = path.join(REPO_ROOT, sourceRelativePath);
+    const destinationPath = path.join(targetRoot, 'rules', 'common', 'coding-style.md');
+    const env = { OPENCODE_CONFIG_DIR: targetRoot };
+
+    try {
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.copyFileSync(sourcePath, destinationPath);
+      writeState(installStatePath, {
+        adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+        targetRoot,
+        installStatePath,
+        request: {
+          profile: null,
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: { selectedModules: [], skippedModules: [] },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'rules-core',
+          sourcePath,
+          sourceRelativePath,
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+          contentSha256: crypto.createHash('sha256')
+            .update(fs.readFileSync(destinationPath))
+            .digest('hex'),
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: null,
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const records = discoverInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(records[0].exists, true);
+      assert.strictEqual(records[0].installStatePath, installStatePath);
+
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(doctor.results.length, 1);
+      assert.strictEqual(doctor.results[0].installStatePath, installStatePath);
+
+      const uninstall = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(uninstall.results[0].status, 'uninstalled');
+      assert.ok(!fs.existsSync(destinationPath));
+      assert.ok(!fs.existsSync(installStatePath));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

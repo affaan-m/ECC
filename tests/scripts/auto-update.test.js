@@ -502,6 +502,52 @@ function runTests() {
     }
   })) passed += 1; else failed += 1;
 
+  if (test('runAutoUpdate gives legacy-only OpenCode migration guidance', () => {
+    const homeDir = createTempDir('auto-update-home-');
+    const projectRoot = createTempDir('auto-update-project-');
+    const repoRoot = createTempDir('auto-update-repo-');
+
+    try {
+      ensureFakeRepo(repoRoot);
+      const legacy = {
+        ...makeRecord({
+          repoRoot,
+          homeDir,
+          projectRoot,
+          adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+          request: {
+            profile: null,
+            modules: ['workflow-quality'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: { selectedModules: ['workflow-quality'], skippedModules: [] },
+          operations: [],
+        }),
+        installStatePath: path.join(homeDir, '.opencode', 'ecc-install-state.json'),
+        legacy: true,
+        legacyLayout: 'opencode',
+      };
+
+      const result = runAutoUpdate(
+        { homeDir, projectRoot, repoRoot, dryRun: true },
+        { discoverInstalledStates: () => [legacy] }
+      );
+
+      assert.deepStrictEqual(result.results, []);
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'Run the OpenCode installer once to migrate it to the configured OpenCode directory'
+      )));
+      assert.ok(result.warnings.every(warning => !warning.includes('Antigravity')));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(repoRoot);
+    }
+  })) passed += 1; else failed += 1;
+
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
   process.exit(failed > 0 ? 1 : 0);
 }
