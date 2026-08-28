@@ -267,6 +267,48 @@ if (test('blocks --no-verify hidden behind eval', () => {
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
+// --- Command substitution always executes, even inside an otherwise-inert
+// double-quoted argument (single quotes are the only thing that suppresses
+// it) — flagged by Greptile review on the initial version of this fix.
+
+if (test('blocks --no-verify hidden behind $(...) inside a double-quoted echo', () => {
+  const r = runHook({ tool_input: { command: 'echo "$(git commit --no-verify -m test)"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind backticks inside a double-quoted echo', () => {
+  const r = runHook({ tool_input: { command: 'echo "`git commit --no-verify -m test`"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind a bare (unquoted) $(...)', () => {
+  const r = runHook({ tool_input: { command: 'echo $(git commit --no-verify -m test)' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify behind $(...) alongside an unrelated inert $(...) in the same string', () => {
+  const r = runHook({ tool_input: { command: 'echo "outer $(echo inner) and $(git commit --no-verify -m test)"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('allows $(...) inside SINGLE quotes, where the shell never expands it', () => {
+  const r = runHook({ tool_input: { command: "echo '$(git commit --no-verify -m test)'" } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// --- Value-taking flags between the exec command and the quote, and env -S
+// (flagged by CodeRabbit review on the initial version of this fix) ---
+
+if (test('blocks --no-verify hidden behind env -S', () => {
+  const r = runHook({ tool_input: { command: "env -S 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify hidden behind bash -O extglob -c (value-taking flag before -c)', () => {
+  const r = runHook({ tool_input: { command: "bash -O extglob -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

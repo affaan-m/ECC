@@ -291,7 +291,7 @@ function isInComment(input, idx) {
  * e.g. an `echo` message, a heredoc, a JSON test fixture — not a real
  * invocation, and must not be treated as one.
  */
-const QUOTE_EXEC_COMMANDS = new Set(['eval', 'bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.', 'exec']);
+const QUOTE_EXEC_COMMANDS = new Set(['eval', 'bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.', 'exec', 'env']);
 
 /**
  * Find every top-level (non-nested — shell quotes don't nest) quoted span in
@@ -319,7 +319,7 @@ function computeQuoteSpans(input) {
         continue;
       }
       if (char === quote) {
-        spans.push({ start: spanStart, end: i + 1 });
+        spans.push({ start: spanStart, end: i + 1, quote });
         quote = null;
         spanStart = null;
       }
@@ -341,15 +341,77 @@ function computeQuoteSpans(input) {
 }
 
 /**
+ * Find every `$(...)` (balanced, possibly nested) and backtick-delimited
+ * command substitution in input[start, end). The shell evaluates these
+ * regardless of enclosing double quotes — only single quotes suppress them
+ * entirely — so their content can never be treated as inert text.
+ */
+function findSubstitutionRanges(input, start, end) {
+  const ranges = [];
+  let i = start;
+
+  while (i < end) {
+    const char = input.charAt(i);
+
+    if (char === '\\') {
+      i += 2;
+      continue;
+    }
+
+    if (char === '$' && input.charAt(i + 1) === '(') {
+      const subStart = i;
+      let depth = 1;
+      let j = i + 2;
+      while (j < end && depth > 0) {
+        if (input.charAt(j) === '\\') {
+          j += 2;
+          continue;
+        }
+        if (input.charAt(j) === '(') depth++;
+        else if (input.charAt(j) === ')') depth--;
+        j++;
+      }
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    if (char === '`') {
+      const subStart = i;
+      let j = i + 1;
+      while (j < end && input.charAt(j) !== '`') {
+        if (input.charAt(j) === '\\') {
+          j += 2;
+          continue;
+        }
+        j++;
+      }
+      j = Math.min(j + 1, end);
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    i++;
+  }
+
+  return ranges;
+}
+
+/**
  * Whether a quoted span is the string argument to an exec-style command, e.g.
- * `bash -c '...'`, `sh -lc "..."`, `eval "..."`. Walks backward over
- * whitespace-delimited words, skipping flags (`-c`, `-lc`, ...), until it
- * finds the command name or hits a command delimiter (`;`, `&`, `|`, `(`,
- * newline) that starts a fresh, unrelated command.
+ * `bash -c '...'`, `sh -lc "..."`, `eval "..."`, `env -S '...'`,
+ * `bash -O extglob -c '...'`. Walks backward over whitespace-delimited
+ * words, checking each one against the exec-command list, until it either
+ * finds a match or hits a command delimiter (`;`, `&`, `|`, `(`, newline)
+ * that starts a fresh, unrelated command. Checking every word rather than
+ * stopping at the first non-flag one matters because a value-taking flag
+ * (`-O extglob`, `-S <string>`) can put other, unrelated words between the
+ * command name and the quote.
  */
 function isExecutedSpan(input, span) {
   let end = span.start;
-  for (let hop = 0; hop < 6; hop++) {
+  for (let hop = 0; hop < 8; hop++) {
     while (end > 0 && /\s/.test(input.charAt(end - 1))) end--;
     if (end === 0) return false;
     if (/[;&|(\n]/.test(input.charAt(end - 1))) return false;
@@ -359,10 +421,11 @@ function isExecutedSpan(input, span) {
     const word = input.slice(start, end);
     if (!word) return false;
 
-    if (!word.startsWith('-')) {
-      const base = word.split('/').pop().toLowerCase();
-      return QUOTE_EXEC_COMMANDS.has(base);
-    }
+    // Check every word walked over, flag or not — a value-taking flag (e.g.
+    // `bash -O extglob -c '...'`, `env -S '...'`) means the command name can
+    // sit multiple tokens back from the quote, not just past a single flag.
+    const base = word.split('/').pop().toLowerCase();
+    if (QUOTE_EXEC_COMMANDS.has(base)) return true;
 
     end = start;
   }
@@ -370,11 +433,36 @@ function isExecutedSpan(input, span) {
 }
 
 /**
- * Quoted spans whose content is inert string data rather than something the
+ * Quoted ranges whose content is inert string data rather than something the
  * shell will actually execute — i.e. NOT the argument to eval/bash -c/sh -c/etc.
+ *
+ * Single-quoted spans suppress all expansion, so a non-executed one is inert
+ * end to end. Double-quoted spans still run any `$(...)` or backtick command
+ * substitution they contain regardless of what command they're an argument
+ * to, so those sub-ranges are carved out and left un-ignored even when the
+ * enclosing quote itself is inert.
  */
 function computeIgnoredSpans(input) {
-  return computeQuoteSpans(input).filter(span => !isExecutedSpan(input, span));
+  const ignored = [];
+
+  for (const span of computeQuoteSpans(input)) {
+    if (isExecutedSpan(input, span)) continue;
+
+    if (span.quote === "'") {
+      ignored.push({ start: span.start, end: span.end });
+      continue;
+    }
+
+    const subs = findSubstitutionRanges(input, span.start + 1, span.end - 1);
+    let cursor = span.start;
+    for (const sub of subs) {
+      if (sub.start > cursor) ignored.push({ start: cursor, end: sub.start });
+      cursor = sub.end;
+    }
+    if (cursor < span.end) ignored.push({ start: cursor, end: span.end });
+  }
+
+  return ignored;
 }
 
 function isWithinIgnoredSpan(ignoredSpans, idx) {
