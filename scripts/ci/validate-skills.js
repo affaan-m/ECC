@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Validate curated skill directories (skills/ in repo).
+ * Validate curated skill directories (skills/ in repo) and their
+ * translated mirrors (docs/{locale}/skills/ in repo).
  *
  * Checks:
  *   1. Each sub-directory of skills/ contains a SKILL.md file.
  *   2. SKILL.md is non-empty.
- *   3. SKILL.md frontmatter (if present) declares a `name:` field.
+ *   3. SKILL.md frontmatter is present and declares both `name:` and
+ *      `description:` fields.
  *   4. SKILL.md frontmatter `description:` uses an inline scalar — not a
  *      literal block scalar (`|` / `|-` / `|+`), which preserves internal
  *      newlines and breaks flat-table renderers keyed off `description`.
@@ -17,14 +19,16 @@
  *
  * Structural findings (missing/empty SKILL.md) are always errors.
  *
- * Scope: curated only. Learned/imported/evolved roots are out of scope.
- * If skills/ does not exist, exit 0 (no curated skills to validate).
+ * Scope: curated skills/ plus translated docs/{locale}/skills/ mirrors.
+ * Learned/imported/evolved roots are out of scope. If neither root
+ * exists, exit 0 (nothing to validate).
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const SKILLS_DIR = path.join(__dirname, '../../skills');
+const DOCS_DIR = path.join(__dirname, '../../docs');
 
 const STRICT = process.argv.includes('--strict') || process.env.CI_STRICT_SKILLS === '1';
 
@@ -66,6 +70,7 @@ function extractFrontmatter(content) {
  */
 function inspectFrontmatter(lines) {
   const values = Object.create(null);
+  const syntaxErrors = [];
   let descriptionIndicator = null;
   let inBlockScalar = false;
   let blockScalarIndent = -1;
@@ -96,6 +101,27 @@ function inspectFrontmatter(lines) {
       .trim();
     values[key] = valueNoComment;
 
+    const isQuoted = /^"(?:[^"\\]|\\.)*"$/.test(valueNoComment) || /^'(?:[^']|'')*'$/.test(valueNoComment);
+
+    if (!isQuoted && valueNoComment !== '') {
+      // A plain (unquoted) YAML scalar can never contain ": " — that
+      // sequence starts a new mapping key. When the translation pass
+      // drops a value's quoting, or glues the next frontmatter key onto
+      // the end of a value, this is exactly what shows up (see #2630).
+      if (valueNoComment.includes(': ')) {
+        syntaxErrors.push(
+          `${key}: unquoted value contains ': ' — invalid YAML; ` + `quote the value or the next key was likely glued onto this line`
+        );
+      }
+
+      // '@' and '`' are reserved YAML indicators and cannot start a
+      // plain scalar (see #2630 — a reordering during translation moved
+      // '@' into the first column of an unquoted description).
+      if (/^[@`]/.test(valueNoComment)) {
+        syntaxErrors.push(`${key}: unquoted value starts with reserved character '${valueNoComment[0]}' — quote the value`);
+      }
+    }
+
     // Detect literal / folded block-scalar indicators. Accept chomp
     // modifiers (`-` / `+`) and optional indent-indicator digits in
     // either order, per YAML 1.2.
@@ -108,7 +134,7 @@ function inspectFrontmatter(lines) {
     }
   }
 
-  return { values, descriptionIndicator };
+  return { values, descriptionIndicator, syntaxErrors };
 }
 
 /**
@@ -120,6 +146,10 @@ function inspectFrontmatter(lines) {
  * `reportFrontmatterFinding`, which owns the WARN/ERROR decision based
  * on strict mode.
  *
+ * Curated skills/ tolerates a SKILL.md with no frontmatter block at all
+ * (frontmatter checks only apply when a block is present) — this mirrors
+ * pre-existing behavior and is covered by an explicit regression test.
+ *
  * @param {string} dir
  * @param {string} skillsDir
  * @param {(msg: string) => void} reportFrontmatterFinding
@@ -127,8 +157,35 @@ function inspectFrontmatter(lines) {
  */
 function validateSkillDir(dir, skillsDir, reportFrontmatterFinding) {
   const skillMd = path.join(skillsDir, dir, 'SKILL.md');
+  return validateSkillFile(skillMd, `${dir}/SKILL.md`, reportFrontmatterFinding, { requireFrontmatter: false });
+}
+
+/**
+ * Validate a single SKILL.md file at an arbitrary path.
+ *
+ * Shared by the curated skills/ scan and the translated
+ * docs/{locale}/skills/ scan — same checks apply to both, since a
+ * translated mirror's frontmatter must be just as parseable as the
+ * English original (see #2630).
+ *
+ * `requireFrontmatter: true` (used for docs/{locale}/skills/ mirrors)
+ * flags a completely missing frontmatter block as a finding — the
+ * translated mirror must carry the same `name`/`description` as its
+ * English original. Curated skills/ (requireFrontmatter: false) keeps
+ * the pre-existing tolerant behavior of skipping checks entirely when no
+ * block is present.
+ *
+ * @param {string} skillMd
+ * @param {string} label
+ * @param {(msg: string) => void} reportFrontmatterFinding
+ * @param {{requireFrontmatter?: boolean}} [opts]
+ * @returns {{fatal: boolean}}
+ */
+function validateSkillFile(skillMd, label, reportFrontmatterFinding, opts = {}) {
+  const { requireFrontmatter = false } = opts;
+
   if (!fs.existsSync(skillMd)) {
-    console.error(`ERROR: ${dir}/ - Missing SKILL.md`);
+    console.error(`ERROR: ${label} - Missing SKILL.md`);
     return { fatal: true };
   }
 
@@ -136,42 +193,93 @@ function validateSkillDir(dir, skillsDir, reportFrontmatterFinding) {
   try {
     content = fs.readFileSync(skillMd, 'utf-8');
   } catch (err) {
-    console.error(`ERROR: ${dir}/SKILL.md - ${err.message}`);
+    console.error(`ERROR: ${label} - ${err.message}`);
     return { fatal: true };
   }
   if (content.trim().length === 0) {
-    console.error(`ERROR: ${dir}/SKILL.md - Empty file`);
+    console.error(`ERROR: ${label} - Empty file`);
     return { fatal: true };
   }
 
   const fm = extractFrontmatter(content);
-  if (fm.present) {
-    const { values, descriptionIndicator } = inspectFrontmatter(fm.lines);
-
-    if (!Object.prototype.hasOwnProperty.call(values, 'name')) {
-      reportFrontmatterFinding(`${dir}/SKILL.md - frontmatter missing required field: name`);
-    } else if (values.name === '') {
-      reportFrontmatterFinding(`${dir}/SKILL.md - frontmatter 'name' is empty`);
+  if (!fm.present) {
+    if (requireFrontmatter) {
+      reportFrontmatterFinding(`${label} - no frontmatter block found (missing name/description)`);
     }
+    return { fatal: false };
+  }
 
-    if (descriptionIndicator && descriptionIndicator.startsWith('|')) {
-      reportFrontmatterFinding(
-        `${dir}/SKILL.md - frontmatter description uses literal block scalar ` + `'${descriptionIndicator}' which preserves internal newlines; ` + `use an inline string or folded '>' scalar instead`
-      );
-    }
+  const { values, descriptionIndicator, syntaxErrors } = inspectFrontmatter(fm.lines);
+
+  if (!Object.prototype.hasOwnProperty.call(values, 'name')) {
+    reportFrontmatterFinding(`${label} - frontmatter missing required field: name`);
+  } else if (values.name === '') {
+    reportFrontmatterFinding(`${label} - frontmatter 'name' is empty`);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(values, 'description')) {
+    reportFrontmatterFinding(`${label} - frontmatter missing required field: description`);
+  } else if (values.description === '') {
+    reportFrontmatterFinding(`${label} - frontmatter 'description' is empty`);
+  }
+
+  if (descriptionIndicator && descriptionIndicator.startsWith('|')) {
+    reportFrontmatterFinding(
+      `${label} - frontmatter description uses literal block scalar ` + `'${descriptionIndicator}' which preserves internal newlines; ` + `use an inline string or folded '>' scalar instead`
+    );
+  }
+
+  for (const syntaxError of syntaxErrors) {
+    reportFrontmatterFinding(`${label} - frontmatter ${syntaxError}`);
   }
 
   return { fatal: false };
 }
 
-function validateSkills() {
-  if (!fs.existsSync(SKILLS_DIR)) {
-    console.log('No curated skills directory (skills/), skipping');
-    process.exit(0);
+/**
+ * Find every SKILL.md under docs/{locale}/skills/*, mirroring the
+ * curated skills/ layout one locale directory deeper.
+ *
+ * @param {string} docsDir
+ * @returns {Array<{skillMd: string, label: string}>}
+ */
+function findDocsSkillFiles(docsDir) {
+  if (!fs.existsSync(docsDir)) return [];
+
+  const files = [];
+  const locales = fs
+    .readdirSync(docsDir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+    .map(e => e.name);
+
+  for (const locale of locales) {
+    const localeSkillsDir = path.join(docsDir, locale, 'skills');
+    if (!fs.existsSync(localeSkillsDir)) continue;
+
+    const skillDirs = fs
+      .readdirSync(localeSkillsDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => e.name);
+
+    for (const skillDir of skillDirs) {
+      files.push({
+        skillMd: path.join(localeSkillsDir, skillDir, 'SKILL.md'),
+        label: `docs/${locale}/skills/${skillDir}/SKILL.md`
+      });
+    }
   }
 
-  const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-  const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name);
+  return files;
+}
+
+function validateSkills() {
+  const curatedExists = fs.existsSync(SKILLS_DIR);
+  const docsSkillFiles = findDocsSkillFiles(DOCS_DIR);
+
+  if (!curatedExists && docsSkillFiles.length === 0) {
+    console.log('No skills directory (skills/ or docs/*/skills/), skipping');
+    process.exit(0);
+  }
 
   let hasErrors = false;
   let warnCount = 0;
@@ -187,8 +295,22 @@ function validateSkills() {
     }
   };
 
-  for (const dir of dirs) {
-    const { fatal } = validateSkillDir(dir, SKILLS_DIR, reportFrontmatterFinding);
+  if (curatedExists) {
+    const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+    const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name);
+
+    for (const dir of dirs) {
+      const { fatal } = validateSkillDir(dir, SKILLS_DIR, reportFrontmatterFinding);
+      if (fatal) {
+        hasErrors = true;
+        continue;
+      }
+      validCount++;
+    }
+  }
+
+  for (const { skillMd, label } of docsSkillFiles) {
+    const { fatal } = validateSkillFile(skillMd, label, reportFrontmatterFinding, { requireFrontmatter: true });
     if (fatal) {
       hasErrors = true;
       continue;
