@@ -285,13 +285,117 @@ function isInComment(input, idx) {
 }
 
 /**
- * Find the next 'git' token in the input starting from a position.
+ * Shell built-ins/interpreters that re-execute a quoted string as code
+ * (`bash -c '...'`, `eval "..."`, etc.). A `git ...` phrase found inside a
+ * quoted span whose preceding word is NOT one of these is just string data —
+ * e.g. an `echo` message, a heredoc, a JSON test fixture — not a real
+ * invocation, and must not be treated as one.
  */
-function findGit(input, start) {
+const QUOTE_EXEC_COMMANDS = new Set(['eval', 'bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.', 'exec']);
+
+/**
+ * Find every top-level (non-nested — shell quotes don't nest) quoted span in
+ * the input, tracking quote state from index 0 so a quote opened at the very
+ * start of the command (e.g. `echo '...'`) is honored for matches found deep
+ * inside it.
+ */
+function computeQuoteSpans(input) {
+  const spans = [];
+  let quote = null;
+  let spanStart = null;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        spans.push({ start: spanStart, end: i + 1 });
+        quote = null;
+        spanStart = null;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      spanStart = i;
+    }
+  }
+
+  return spans;
+}
+
+/**
+ * Whether a quoted span is the string argument to an exec-style command, e.g.
+ * `bash -c '...'`, `sh -lc "..."`, `eval "..."`. Walks backward over
+ * whitespace-delimited words, skipping flags (`-c`, `-lc`, ...), until it
+ * finds the command name or hits a command delimiter (`;`, `&`, `|`, `(`,
+ * newline) that starts a fresh, unrelated command.
+ */
+function isExecutedSpan(input, span) {
+  let end = span.start;
+  for (let hop = 0; hop < 6; hop++) {
+    while (end > 0 && /\s/.test(input.charAt(end - 1))) end--;
+    if (end === 0) return false;
+    if (/[;&|(\n]/.test(input.charAt(end - 1))) return false;
+
+    let start = end;
+    while (start > 0 && !/[\s;&|()<>\n]/.test(input.charAt(start - 1))) start--;
+    const word = input.slice(start, end);
+    if (!word) return false;
+
+    if (!word.startsWith('-')) {
+      const base = word.split('/').pop().toLowerCase();
+      return QUOTE_EXEC_COMMANDS.has(base);
+    }
+
+    end = start;
+  }
+  return false;
+}
+
+/**
+ * Quoted spans whose content is inert string data rather than something the
+ * shell will actually execute — i.e. NOT the argument to eval/bash -c/sh -c/etc.
+ */
+function computeIgnoredSpans(input) {
+  return computeQuoteSpans(input).filter(span => !isExecutedSpan(input, span));
+}
+
+function isWithinIgnoredSpan(ignoredSpans, idx) {
+  return ignoredSpans.some(span => idx > span.start && idx < span.end);
+}
+
+/**
+ * Find the next 'git' token in the input starting from a position, skipping
+ * any match that falls inside an ignored (inert, quoted-as-data) span.
+ */
+function findGit(input, start, ignoredSpans) {
   let pos = start;
   while (pos < input.length) {
     const idx = input.indexOf('git', pos);
     if (idx === -1) return null;
+
+    if (isWithinIgnoredSpan(ignoredSpans, idx)) {
+      const span = ignoredSpans.find(s => idx > s.start && idx < s.end);
+      pos = span.end;
+      continue;
+    }
 
     const isExe = input.slice(idx + 3, idx + 7).toLowerCase() === '.exe';
     const len = isExe ? 7 : 3;
@@ -313,9 +417,9 @@ function findGit(input, start) {
  * Returns { command, offset } where offset is the position right after the
  * subcommand keyword, so callers can scope flag checks to only that portion.
  */
-function detectGitCommand(input, start = 0) {
+function detectGitCommand(input, start = 0, ignoredSpans = computeIgnoredSpans(input)) {
   while (start < input.length) {
-    const git = findGit(input, start);
+    const git = findGit(input, start, ignoredSpans);
     if (!git) return null;
 
     if (isInComment(input, git.idx)) {
@@ -468,9 +572,10 @@ function hasHooksPathOverride(input, detected) {
  */
 function checkCommand(input) {
   let start = 0;
+  const ignoredSpans = computeIgnoredSpans(input);
 
   while (start < input.length) {
-    const detected = detectGitCommand(input, start);
+    const detected = detectGitCommand(input, start, ignoredSpans);
     if (!detected) return { blocked: false };
 
     const { command: gitCommand, offset } = detected;
