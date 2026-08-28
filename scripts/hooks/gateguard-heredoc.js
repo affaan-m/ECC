@@ -125,30 +125,6 @@ function findHeredocs(line) {
 }
 
 /**
- * Iterate over executable substitutions in an unquoted heredoc.
- *
- * @param {string} text
- * @returns {Generator<string>}
- */
-function* iterateHeredocCommandSubstitutions(text) {
-  let escaped = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (ch === '`' || (ch === '$' && text[i + 1] === '(')) {
-      yield* extractCommandSubstitutions(text.slice(i));
-    }
-  }
-}
-
-/**
  * Extract executable substitutions from an unquoted heredoc. Quote characters
  * in its payload are literal and do not suppress expansion.
  *
@@ -157,7 +133,58 @@ function* iterateHeredocCommandSubstitutions(text) {
  */
 function extractHeredocCommandSubstitutions(body) {
   const text = body.join('\n');
-  return [...new Set(iterateHeredocCommandSubstitutions(text))];
+  return [...new Set(extractCommandSubstitutions(text, { literalOuterQuotes: true }))];
+}
+
+/**
+ * Consume one heredoc body and return its immutable parser result.
+ *
+ * @param {string[]} lines
+ * @param {number} startIndex
+ * @param {{ delimiter: string, quoted: boolean, stripTabs: boolean }} heredoc
+ * @returns {{ nextIndex: number, substitutions: string[] } | null}
+ */
+function consumeHeredocBody(lines, startIndex, heredoc) {
+  for (let lineIndex = startIndex; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (!heredoc.quoted && /\\$/.test(line)) return null;
+    const delimiterLine = heredoc.stripTabs ? line.replace(/^\t+/, '') : line;
+    if (delimiterLine !== heredoc.delimiter) continue;
+    const body = lines.slice(startIndex, lineIndex);
+    const substitutions = heredoc.quoted ? [] : extractHeredocCommandSubstitutions(body);
+    return { nextIndex: lineIndex + 1, substitutions };
+  }
+  return null;
+}
+
+/**
+ * @param {string[]} lines
+ * @param {number} startIndex
+ * @param {{ delimiter: string, quoted: boolean, stripTabs: boolean }[]} heredocs
+ * @returns {{ nextIndex: number, chunks: object | null } | null}
+ */
+function consumeHeredocBodies(lines, startIndex, heredocs) {
+  let state = { nextIndex: startIndex, chunks: null };
+  for (const heredoc of heredocs) {
+    const consumed = consumeHeredocBody(lines, state.nextIndex, heredoc);
+    if (!consumed) return null;
+    state = {
+      nextIndex: consumed.nextIndex,
+      chunks: consumed.substitutions.length === 0 ? state.chunks : { substitutions: consumed.substitutions, previous: state.chunks }
+    };
+  }
+  return state;
+}
+
+/** @returns {Generator<string>} */
+function* iterateSubstitutionChunks(chunks) {
+  let ordered = null;
+  for (let chunk = chunks; chunk; chunk = chunk.previous) {
+    ordered = { substitutions: chunk.substitutions, next: ordered };
+  }
+  for (let chunk = ordered; chunk; chunk = chunk.next) {
+    yield* chunk.substitutions;
+  }
 }
 
 /**
@@ -174,62 +201,26 @@ function extractHeredocCommandSubstitutions(body) {
 function stripHeredocBodies(input) {
   const raw = String(input || '');
   const lines = raw.split(/\r?\n/);
-  let pending = [];
-  let pendingIndex = 0;
-  let bodyStartIndex = -1;
   let headerIndex = -1;
-  let trailingStartIndex = lines.length;
-  let substitutionText = '';
-  let substitutionCount = 0;
-  let completedHeredoc = false;
+  let pending = [];
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    if (pendingIndex < pending.length) {
-      const current = pending[pendingIndex];
-      if (!current.quoted && /\\$/.test(line)) return raw;
-      const delimiterLine = current.stripTabs ? line.replace(/^\t+/, '') : line;
-      if (delimiterLine === current.delimiter) {
-        if (!current.quoted) {
-          for (const substitution of extractHeredocCommandSubstitutions(lines.slice(bodyStartIndex, lineIndex))) {
-            substitutionText = substitutionCount === 0 ? substitution : `${substitutionText}\n${substitution}`;
-            substitutionCount += 1;
-          }
-        }
-        pendingIndex += 1;
-        bodyStartIndex = lineIndex + 1;
-        if (pendingIndex === pending.length) {
-          completedHeredoc = true;
-          trailingStartIndex = lineIndex + 1;
-        }
-      }
-      continue;
-    }
-    if (completedHeredoc && line.trim()) return raw;
-    if (completedHeredoc) continue;
     const heredocs = findHeredocs(line);
     if (heredocs === null) return raw;
     if (heredocs.length > 0 && !isProvenPassiveHeredocLine(line)) return raw;
     if (heredocs.length > 0) {
       pending = heredocs;
-      pendingIndex = 0;
-      bodyStartIndex = lineIndex + 1;
       headerIndex = lineIndex;
+      break;
     }
   }
-  if (pendingIndex < pending.length) return raw;
   if (headerIndex < 0) return lines.join('\n');
-
-  const prefix = lines.slice(0, headerIndex + 1).join('\n');
-  const trailingCount = lines.length - trailingStartIndex;
-  const trailing = lines.slice(trailingStartIndex).join('\n');
-  let result = prefix;
-  let resultCount = headerIndex + 1;
-  if (substitutionCount > 0) {
-    result = resultCount === 0 ? substitutionText : `${result}\n${substitutionText}`;
-    resultCount += substitutionCount;
-  }
-  if (trailingCount > 0) result = resultCount === 0 ? trailing : `${result}\n${trailing}`;
-  return result;
+  const consumed = consumeHeredocBodies(lines, headerIndex + 1, pending);
+  if (!consumed) return raw;
+  const trailing = lines.slice(consumed.nextIndex);
+  if (trailing.some(line => line.trim())) return raw;
+  const substitutions = iterateSubstitutionChunks(consumed.chunks);
+  return [...lines.slice(0, headerIndex + 1), ...substitutions, ...trailing].join('\n');
 }
 
 module.exports = { stripHeredocBodies };

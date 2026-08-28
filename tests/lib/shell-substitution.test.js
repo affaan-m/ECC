@@ -1,10 +1,6 @@
 'use strict';
 const assert = require('assert');
-const {
-  extractCommandSubstitutions,
-  extractSubshellGroups,
-  extractBraceGroups,
-} = require('../../scripts/lib/shell-substitution');
+const { extractCommandSubstitutions, extractSubshellGroups, extractBraceGroups } = require('../../scripts/lib/shell-substitution');
 
 console.log('=== Testing shell-substitution.js ===\n');
 
@@ -65,6 +61,12 @@ test('double-quoted body extracted, single-quoted body ignored', () => {
 });
 test('single quotes inside a $() body are preserved', () => {
   assert.deepStrictEqual(extractCommandSubstitutions("x=$(echo 'a b')"), ["echo 'a b'"]);
+});
+test('literal outer quotes do not suppress substitutions', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions("'$(whoami)'", { literalOuterQuotes: true }), ['whoami']);
+});
+test('literal outer quotes preserve shell quoting inside a substitution', () => {
+  assert.deepStrictEqual(extractCommandSubstitutions("'$(echo '$(ignored)')'", { literalOuterQuotes: true }), ["echo '$(ignored)'"]);
 });
 
 console.log('\nextractCommandSubstitutions - escaped substitutions:');
