@@ -96,11 +96,22 @@ async function withClient(fn, options = {}) {
     stderr += chunk.toString('utf8');
   });
 
+  // Keep the serialized line, not the object: `JSON.stringify` is what drops
+  // an undefined `params`, so only the wire form shows whether the member was
+  // actually sent. Only the most recent one is ever read.
+  let lastWire = null;
+
   function send(message) {
-    child.stdin.write(`${JSON.stringify(message)}\n`);
+    const line = JSON.stringify(message);
+    lastWire = line;
+    child.stdin.write(`${line}\n`);
   }
 
-  function request(method, params = {}) {
+  // No default for `params`. Defaulting it to `{}` turned an omitted argument
+  // into an empty object before serialization, so a caller that passed nothing
+  // still sent `"params":{}` — and the server's "params absent" branch could
+  // not be reached from here at all.
+  function request(method, params) {
     const id = nextId;
     nextId += 1;
     return new Promise((resolve, reject) => {
@@ -132,11 +143,14 @@ async function withClient(fn, options = {}) {
 
   const client = {
     listTools: () => request('tools/list'),
+    listToolsRaw: params => request('tools/list', params),
+    ping: params => request('ping', params),
     callTool: ({ name, arguments: toolArguments }) => request(
       'tools/call',
       { name, arguments: toolArguments }
     ),
     callToolRaw: params => request('tools/call', params),
+    lastRequestWire: () => JSON.parse(lastWire),
   };
 
   try {
@@ -212,6 +226,61 @@ async function main() {
         client.callToolRaw({ name: 'memory_doctor', arguments: {}, unexpected: true }),
         /-32602/
       );
+    });
+  });
+
+  await test('accepts the reserved _meta param on tools/list and ping (#2810)', async () => {
+    await withClient(async client => {
+      // Codex attaches `_meta` to every request. Rejecting it on tools/list
+      // failed tool discovery outright:
+      //   MCP startup failed: Mcp error: -32602: tools/list does not accept parameters.
+      const listed = await client.listToolsRaw({ _meta: { progressToken: 'progress-1' } });
+      assert.deepStrictEqual(
+        listed.tools.map(tool => tool.name).sort(),
+        ['memory_doctor', 'memory_read', 'memory_save', 'memory_search']
+      );
+
+      // `ping` takes no arguments of its own either, and carries the same rule.
+      assert.deepStrictEqual(await client.ping({ _meta: { progressToken: 'progress-2' } }), {});
+
+      // Baselines: `params` absent and `params: {}` are two different requests
+      // and the server handles them on two different branches. Assert the wire
+      // form, because a helper that defaults the argument would send an empty
+      // object for both and quietly cover one shape twice.
+      assert.ok(Array.isArray((await client.listToolsRaw()).tools));
+      assert.ok(
+        !Object.prototype.hasOwnProperty.call(client.lastRequestWire(), 'params'),
+        'tools/list with no argument must be sent without a params member'
+      );
+      assert.ok(Array.isArray((await client.listToolsRaw({})).tools));
+      assert.deepStrictEqual(client.lastRequestWire().params, {});
+
+      assert.deepStrictEqual(await client.ping(), {});
+      assert.ok(
+        !Object.prototype.hasOwnProperty.call(client.lastRequestWire(), 'params'),
+        'ping with no argument must be sent without a params member'
+      );
+      assert.deepStrictEqual(await client.ping({}), {});
+
+      // Same shape rule as tools/call: present means it must be an object.
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.listToolsRaw({ _meta: badMeta }),
+          /-32602/,
+          `expected tools/list _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+        await assert.rejects(
+          client.ping({ _meta: badMeta }),
+          /-32602/,
+          `expected ping _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      // `_meta` is an exemption, not an opening: anything else is still refused,
+      // including a cursor this server never issues a nextCursor for.
+      await assert.rejects(client.listToolsRaw({ cursor: 'x' }), /-32602/);
+      await assert.rejects(client.listToolsRaw({ _meta: {}, other: 1 }), /-32602/);
+      await assert.rejects(client.ping({ other: 1 }), /-32602/);
     });
   });
 

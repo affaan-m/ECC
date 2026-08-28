@@ -155,6 +155,23 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * MCP reserves `_meta` for request metadata (progressToken and friends) and a
+ * client may attach it to ANY request, so a method that takes no arguments of
+ * its own still has to tolerate it — Codex sends it on `tools/list`, and
+ * rejecting it there fails tool discovery outright.
+ *
+ * The shape check matches what `tools/call` already applies: present means it
+ * must be a metadata object, never null, an array, or a scalar.
+ */
+function acceptsOnlyReservedMeta(params) {
+  if (params === undefined || params === null) return true;
+  if (!isRecord(params)) return false;
+  const keys = Object.keys(params);
+  if (keys.length === 0) return true;
+  return keys.length === 1 && keys[0] === '_meta' && isRecord(params._meta);
+}
+
 function isValidRequestId(value) {
   return (
     (typeof value === 'string' && value.length > 0 && value.length <= 128)
@@ -417,14 +434,18 @@ function createMemoryMcpService(options = {}) {
         return jsonRpcError(message.id, -32002, 'Server is not initialized.');
       }
       if (message.method === 'ping') {
-        if (message.params && Object.keys(message.params).length > 0) {
-          return jsonRpcError(message.id, -32602, 'ping does not accept parameters.');
+        if (!acceptsOnlyReservedMeta(message.params)) {
+          return jsonRpcError(message.id, -32602, 'ping accepts no parameters other than _meta.');
         }
         return jsonRpcResult(message.id, {});
       }
       if (message.method === 'tools/list') {
-        if (message.params && Object.keys(message.params).length > 0) {
-          return jsonRpcError(message.id, -32602, 'tools/list does not accept parameters.');
+        if (!acceptsOnlyReservedMeta(message.params)) {
+          return jsonRpcError(
+            message.id,
+            -32602,
+            'tools/list accepts no parameters other than _meta.'
+          );
         }
         return jsonRpcResult(message.id, {
           tools: TOOL_DEFINITIONS.map(tool => ({ ...tool })),
