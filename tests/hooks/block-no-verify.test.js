@@ -309,6 +309,16 @@ if (test('blocks --no-verify hidden behind bash -O extglob -c (value-taking flag
   assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
 })) passed++; else failed++;
 
+if (test('blocks --no-verify behind many chained flags before -c (no fixed token limit)', () => {
+  const r = runHook({ tool_input: { command: "bash -O extglob -O nullglob -O globstar -O nocaseglob -c 'git commit --no-verify -m test'" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
+if (test('blocks --no-verify when a quoted ) inside $(...) would otherwise end the substitution early', () => {
+  const r = runHook({ tool_input: { command: "echo \"$(printf ')' ; git commit --no-verify -m test)\"" } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+})) passed++; else failed++;
+
 console.log('─'.repeat(50));
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 

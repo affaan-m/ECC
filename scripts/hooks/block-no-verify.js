@@ -361,14 +361,36 @@ function findSubstitutionRanges(input, start, end) {
     if (char === '$' && input.charAt(i + 1) === '(') {
       const subStart = i;
       let depth = 1;
+      let subQuote = null;
       let j = i + 2;
       while (j < end && depth > 0) {
-        if (input.charAt(j) === '\\') {
+        const inner = input.charAt(j);
+
+        // A paren inside a quote nested within the substitution is just
+        // string data to the shell (e.g. `$(printf ')' ; git ...)`) — it
+        // must not affect paren depth, or scanning stops at that literal
+        // `)` and misses everything (including a real bypass) after it.
+        if (subQuote) {
+          if (subQuote === '"' && inner === '\\') {
+            j += 2;
+            continue;
+          }
+          if (inner === subQuote) subQuote = null;
+          j++;
+          continue;
+        }
+
+        if (inner === '\\') {
           j += 2;
           continue;
         }
-        if (input.charAt(j) === '(') depth++;
-        else if (input.charAt(j) === ')') depth--;
+        if (inner === '"' || inner === "'") {
+          subQuote = inner;
+          j++;
+          continue;
+        }
+        if (inner === '(') depth++;
+        else if (inner === ')') depth--;
         j++;
       }
       ranges.push({ start: subStart, end: j });
@@ -411,7 +433,12 @@ function findSubstitutionRanges(input, start, end) {
  */
 function isExecutedSpan(input, span) {
   let end = span.start;
-  for (let hop = 0; hop < 8; hop++) {
+  // No fixed hop cap: `end` strictly decreases every iteration (bounded below
+  // by 0), so this always terminates in at most input.length steps. A fixed
+  // cap here previously let enough value-taking flags before the quote (e.g.
+  // several chained `bash -O <optname>` flags before `-c`) push the actual
+  // command name out of reach and wrongly return false.
+  while (true) {
     while (end > 0 && /\s/.test(input.charAt(end - 1))) end--;
     if (end === 0) return false;
     if (/[;&|(\n]/.test(input.charAt(end - 1))) return false;
@@ -429,7 +456,6 @@ function isExecutedSpan(input, span) {
 
     end = start;
   }
-  return false;
 }
 
 /**
