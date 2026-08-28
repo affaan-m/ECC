@@ -1761,6 +1761,39 @@ function runTests() {
   else failed++;
 
   if (
+    test('denies split command names after heredoc line continuation', () => {
+      expectDestructiveDeny(
+        ['cat <<EOF', '$(r\\', 'm -rf /tmp/expanded-target', ')', 'EOF'].join('\n'),
+        'split command name in unquoted heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies split options after tab-stripped heredoc line continuation', () => {
+      expectDestructiveDeny(
+        ['cat <<-EOF', '\t$(rm\\', '\t-rf /tmp/expanded-target)', 'EOF'].join('\n'),
+        'split option in tab-stripped unquoted heredoc substitution'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('preserves internal tabs after tab-stripped heredoc continuations', () => {
+      expectAllow(
+        ['cat <<-EOF', '\t$(r\\', '\tm -rf /tmp/expanded-target)', 'EOF'].join('\n'),
+        'internal tab after tab-stripped heredoc continuation'
+      );
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('fails closed on line-continued unquoted heredoc terminators', () => {
       expectDestructiveDeny(
         ['cat <<EOF', 'payload', 'EO\\', 'F', 'rm -rf /tmp/real-target'].join('\n'),

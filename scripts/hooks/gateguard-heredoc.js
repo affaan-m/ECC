@@ -124,6 +124,35 @@ function findHeredocs(line) {
   return heredocs.includes(null) ? null : heredocs;
 }
 
+/** @returns {boolean} */
+function hasLineContinuation(line) {
+  const trailing = line.match(/\\+$/);
+  return Boolean(trailing && trailing[0].length % 2 === 1);
+}
+
+/** @returns {string} */
+function normalizeUnquotedHeredocLines(lines, stripTabs = false) {
+  const logical = lines
+    .map((line, index) => {
+      if (index === lines.length - 1) return line;
+      return hasLineContinuation(line) ? line.slice(0, -1) : `${line}\n`;
+    })
+    .join('');
+  return stripTabs ? logical.replace(/^\t+/, '') : logical;
+}
+
+/** @returns {{ text: string, nextIndex: number }} */
+function readHeredocLine(lines, startIndex, quoted, stripTabs) {
+  if (quoted) {
+    const text = stripTabs ? lines[startIndex].replace(/^\t+/, '') : lines[startIndex];
+    return { text, nextIndex: startIndex + 1 };
+  }
+  let endIndex = startIndex;
+  while (endIndex < lines.length - 1 && hasLineContinuation(lines[endIndex])) endIndex += 1;
+  const text = normalizeUnquotedHeredocLines(lines.slice(startIndex, endIndex + 1), stripTabs);
+  return { text, nextIndex: endIndex + 1 };
+}
+
 /**
  * Extract executable substitutions from an unquoted heredoc. Quote characters
  * in its payload are literal and do not suppress expansion.
@@ -131,8 +160,8 @@ function findHeredocs(line) {
  * @param {string[]} body
  * @returns {string[]}
  */
-function extractHeredocCommandSubstitutions(body) {
-  const text = body.join('\n');
+function extractHeredocCommandSubstitutions(body, stripTabs) {
+  const text = normalizeUnquotedHeredocLines(body, stripTabs);
   return [...new Set(extractCommandSubstitutions(text, { literalOuterQuotes: true }))];
 }
 
@@ -145,14 +174,16 @@ function extractHeredocCommandSubstitutions(body) {
  * @returns {{ nextIndex: number, substitutions: string[] } | null}
  */
 function consumeHeredocBody(lines, startIndex, heredoc) {
-  for (let lineIndex = startIndex; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (!heredoc.quoted && /\\$/.test(line)) return null;
-    const delimiterLine = heredoc.stripTabs ? line.replace(/^\t+/, '') : line;
-    if (delimiterLine !== heredoc.delimiter) continue;
+  let lineIndex = startIndex;
+  while (lineIndex < lines.length) {
+    const logical = readHeredocLine(lines, lineIndex, heredoc.quoted, heredoc.stripTabs);
+    if (logical.text !== heredoc.delimiter) {
+      lineIndex = logical.nextIndex;
+      continue;
+    }
     const body = lines.slice(startIndex, lineIndex);
-    const substitutions = heredoc.quoted ? [] : extractHeredocCommandSubstitutions(body);
-    return { nextIndex: lineIndex + 1, substitutions };
+    const substitutions = heredoc.quoted ? [] : extractHeredocCommandSubstitutions(body, heredoc.stripTabs);
+    return { nextIndex: logical.nextIndex, substitutions };
   }
   return null;
 }
