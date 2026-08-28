@@ -41,6 +41,10 @@ const MAX_SESSION_KEYS = 50;
 const ROUTINE_BASH_SESSION_KEY = '__bash_session__';
 const EDIT_WRITE_HOOK_ID = 'pre:edit-write:gateguard-fact-force';
 const BASH_HOOK_ID = 'pre:bash:gateguard-fact-force';
+const EDIT_WRITE_NARROW_RECOVERY_HINT =
+  'Narrow recovery: add a matching path glob to `GATEGUARD_EXEMPT_GLOBS` to skip first-touch Edit/Write checks without disabling destructive Bash checks.';
+const ROUTINE_BASH_NARROW_RECOVERY_HINT =
+  'Narrow recovery: set `GATEGUARD_BASH_ROUTINE_DISABLED=1`; destructive Bash checks remain active.';
 const ECC_DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'disable']);
 const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes']);
 
@@ -1095,7 +1099,7 @@ function condensedGateMsg(action, filePath, ordinal) {
   return (
     `[Fact-Forcing Gate] (denial #${ordinal} this session) First ${action} of ${safe}: ` +
     "briefly state importers/callers, affected API, data schemas if any, and the user's verbatim instruction, then retry. " +
-    '(ECC_GATEGUARD=off disables this gate.)'
+    '(Use GATEGUARD_EXEMPT_GLOBS for path-scoped exemptions; ECC_GATEGUARD=off disables this gate.)'
   );
 }
 
@@ -1126,9 +1130,15 @@ function routineBashMsg() {
   ].join('\n');
 }
 
-function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID]) {
+function withRecoveryHint(message, hookIds = [EDIT_WRITE_HOOK_ID], narrowRecoveryHint = '') {
   const disableTargets = hookIds.map(hookId => `\`${hookId}\``).join(' or ');
-  return [message, '', `Recovery: if GateGuard is blocking setup or repair work, run this session with \`ECC_GATEGUARD=off\` or add ${disableTargets} to \`ECC_DISABLED_HOOKS\`.`].join('\n');
+  const recoveryLines = narrowRecoveryHint ? [narrowRecoveryHint, ''] : [];
+  return [
+    message,
+    '',
+    ...recoveryLines,
+    `Recovery: if GateGuard is blocking setup or repair work, run this session with \`ECC_GATEGUARD=off\` or add ${disableTargets} to \`ECC_DISABLED_HOOKS\`.`
+  ].join('\n');
 }
 
 function isSubagentInvocation(data) {
@@ -1146,12 +1156,15 @@ function isSubagentInvocation(data) {
 function denyResult(reason, options = {}) {
   const includeRecoveryHint = options.includeRecoveryHint !== false;
   const hookIds = Array.isArray(options.hookIds) && options.hookIds.length > 0 ? options.hookIds : [EDIT_WRITE_HOOK_ID];
+  const narrowRecoveryHint = typeof options.narrowRecoveryHint === 'string' ? options.narrowRecoveryHint : '';
   return {
     stdout: JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: includeRecoveryHint ? withRecoveryHint(reason, hookIds) : reason
+        permissionDecisionReason: includeRecoveryHint
+          ? withRecoveryHint(reason, hookIds, narrowRecoveryHint)
+          : reason
       }
     }),
     exitCode: 0
@@ -1208,7 +1221,9 @@ function run(rawInput) {
         const action = toolName === 'Edit' ? 'edit' : 'creation';
         return denyResult(condensedGateMsg(action, filePath, denials), { includeRecoveryHint: false });
       }
-      return denyResult(toolName === 'Edit' ? editGateMsg(filePath) : writeGateMsg(filePath));
+      return denyResult(toolName === 'Edit' ? editGateMsg(filePath) : writeGateMsg(filePath), {
+        narrowRecoveryHint: EDIT_WRITE_NARROW_RECOVERY_HINT
+      });
     }
 
     return rawInput; // allow
@@ -1230,7 +1245,9 @@ function run(rawInput) {
         if (denials > getFullDenialBudget()) {
           return denyResult(condensedGateMsg('edit', filePath, denials), { includeRecoveryHint: false });
         }
-        return denyResult(editGateMsg(filePath));
+        return denyResult(editGateMsg(filePath), {
+          narrowRecoveryHint: EDIT_WRITE_NARROW_RECOVERY_HINT
+        });
       }
     }
     return rawInput; // allow
@@ -1266,7 +1283,10 @@ function run(rawInput) {
       if (!markChecked(ROUTINE_BASH_SESSION_KEY)) {
         return allowWithStateWarning();
       }
-      return denyResult(routineBashMsg(), { hookIds: [BASH_HOOK_ID] });
+      return denyResult(routineBashMsg(), {
+        hookIds: [BASH_HOOK_ID],
+        narrowRecoveryHint: ROUTINE_BASH_NARROW_RECOVERY_HINT
+      });
     }
 
     return rawInput; // allow

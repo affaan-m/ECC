@@ -145,6 +145,8 @@ function runTests() {
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('import/require'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/src/app.js'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'Edit denial should show the path-scoped exemption control');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'Edit denial should not suggest the routine Bash control');
     })
   )
     passed++;
@@ -538,6 +540,8 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('ECC_GATEGUARD=off'), 'denial reason should show the direct recovery env toggle');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('ECC_DISABLED_HOOKS'), 'denial reason should mention the existing hook-id disable control');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'Edit/Write denial should show the path-scoped exemption control');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'Edit/Write denial should not suggest the routine Bash control');
     })
   )
     passed++;
@@ -558,6 +562,9 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(reason.includes('pre:bash:gateguard-fact-force'), 'routine Bash denial should show the Bash hook ID');
       assert.ok(!reason.includes('pre:edit-write:gateguard-fact-force'), 'routine Bash denial should not show the Edit/Write hook ID as the targeted disable');
+      assert.ok(reason.includes('GATEGUARD_BASH_ROUTINE_DISABLED=1'), 'routine Bash denial should show the narrow routine-gate control');
+      assert.ok(reason.includes('destructive Bash checks remain active'), 'routine Bash denial should preserve the destructive-check safety boundary');
+      assert.ok(!reason.includes('GATEGUARD_EXEMPT_GLOBS'), 'routine Bash denial should not suggest the Edit/Write path control');
     })
   )
     passed++;
@@ -577,6 +584,9 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive command detected'));
       assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('ECC_GATEGUARD=off'), 'destructive gate should not advertise disabling GateGuard');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('ECC_DISABLED_HOOKS'), 'destructive gate should not advertise disabling its hook');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'destructive gate should not advertise the routine-only bypass');
+      assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'destructive gate should not advertise the Edit/Write path exemption');
     })
   )
     passed++;
@@ -602,6 +612,7 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Fact-Forcing Gate'));
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/src/multi-a.js'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'MultiEdit denial should show the path-scoped exemption control');
     })
   )
     passed++;
@@ -2167,6 +2178,7 @@ function runTests() {
       assert.ok(!reason.includes('present these facts'), 'no repeated four-fact block');
       assert.ok(!reason.includes('\n'), 'condensed message is a single line');
       assert.ok(reason.includes('ECC_GATEGUARD=off'), 'condensed message keeps a recovery hint');
+      assert.ok(reason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed Edit denial keeps the path-scoped recovery hint');
     })
   )
     passed++;
@@ -2182,6 +2194,8 @@ function runTests() {
       const secondReason = second.hookSpecificOutput.permissionDecisionReason;
       assert.ok(firstReason.includes('denial #6'), `expected ordinal 6, got: ${firstReason}`);
       assert.ok(secondReason.includes('denial #7'), `expected ordinal 7, got: ${secondReason}`);
+      assert.ok(firstReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed Write denial keeps the path-scoped recovery hint');
+      assert.ok(!firstReason.includes('GATEGUARD_BASH_ROUTINE_DISABLED'), 'condensed Write denial should not suggest the routine Bash control');
       assert.notStrictEqual(firstReason, secondReason, 'successive denials must differ so they cannot compound verbatim');
     })
   )
@@ -2246,6 +2260,7 @@ function runTests() {
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny');
       assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('denial #5'));
       assert.ok(!output.hookSpecificOutput.permissionDecisionReason.includes('present these facts'));
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('GATEGUARD_EXEMPT_GLOBS'), 'condensed MultiEdit denial keeps the path-scoped recovery hint');
     })
   )
     passed++;
