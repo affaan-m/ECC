@@ -111,3 +111,4 @@ assets/images/security/badrudi-exploit.mp4
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.omo/
