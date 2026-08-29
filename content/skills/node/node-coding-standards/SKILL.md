@@ -296,7 +296,7 @@ export async function POST({ request }: RequestEvent) {
       return json({
         success: false,
         error: 'Validation failed',
-        details: error.errors
+        details: error.issues
       }, { status: 400 })
     }
   }

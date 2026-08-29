@@ -13,13 +13,13 @@ paths:
 
 ```typescript
 // NEVER: Hardcoded secrets
-const apiKey = "sk-proj-xxxxx"
+const apiKey = "sk-xxxx-hardcoded"
 
 // ALWAYS: Environment variables
-const apiKey = process.env.OPENAI_API_KEY
+const apiKey = process.env.API_KEY
 
 if (!apiKey) {
-  throw new Error('OPENAI_API_KEY not configured')
+  throw new Error('API_KEY not configured')
 }
 ```
 

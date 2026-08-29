@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.environ["OPENAI_API_KEY"]  # Raises KeyError if missing
+api_key = os.environ["API_KEY"]  # Raises KeyError if missing
 ```
 
 ## Security Scanning
