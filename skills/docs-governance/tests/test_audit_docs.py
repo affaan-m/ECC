@@ -105,6 +105,13 @@ def test_artifact_scope_checks_windows_drive_paths_as_local_paths(project: Path)
     assert "Broken Markdown link" in result.stdout
 
 
+def test_artifact_scope_checks_colon_shaped_local_paths_as_local_paths(project: Path) -> None:
+    (project / "guide.md").write_text("[local](docs:guide.md)\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: guide.md -> docs:guide.md" in result.stdout
+
+
 def test_artifact_scope_ignores_query_and_fragment_in_local_links(project: Path) -> None:
     (project / "guide.md").write_text("[details](target.md?version=2#usage)\n", encoding="utf-8")
     (project / "target.md").write_text("# Target\n", encoding="utf-8")
