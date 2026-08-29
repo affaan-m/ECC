@@ -301,12 +301,13 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Guides
 
 The original author's guides explain the philosophy behind these configs and
-ship in this repo:
+live in the upstream repository:
 
-- [The Shortform Guide](the-shortform-guide.md) — setup, foundations,
-  philosophy. Read this first.
-- [The Longform Guide](the-longform-guide.md) — token optimization, memory
-  persistence, evals, parallelization, subagent orchestration.
+- [The Shortform Guide](https://github.com/affaan-m/everything-claude-code/blob/main/the-shortform-guide.md)
+  — setup, foundations, philosophy. Read this first.
+- [The Longform Guide](https://github.com/affaan-m/everything-claude-code/blob/main/the-longform-guide.md)
+  — token optimization, memory persistence, evals, parallelization, subagent
+  orchestration.
 
 ### Context window management
 
