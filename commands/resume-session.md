@@ -30,8 +30,9 @@ This command is the counterpart to `/save-session`.
 If no argument provided:
 
 1. Check `~/.claude/session-data/`
-2. Pick the most recently modified `*-session.tmp` file
-3. If the folder does not exist or has no matching files, tell the user:
+2. Read the matching `*-session.tmp` candidates and apply the candidate ranking below
+3. Load the highest-ranked candidate
+4. If the folder does not exist or has no eligible matching files, tell the user:
    ```
    No session files found in ~/.claude/session-data/
    Run /save-session at the end of a session to create one.
@@ -42,10 +43,29 @@ If an argument is provided:
 
 - If it looks like a date (`YYYY-MM-DD`), search `~/.claude/session-data/` first, then the legacy
   `~/.claude/sessions/`, for files matching `YYYY-MM-DD-session.tmp` (legacy format) or
-  `YYYY-MM-DD-<shortid>-session.tmp` (current format)
-  and load the most recently modified variant for that date
-- If it looks like a file path, read that file directly
+  `YYYY-MM-DD-<shortid>-session.tmp` (current format), apply the candidate ranking below across
+  all matches, and load the highest-ranked candidate for that date
+- If it looks like a file path, read exactly that file directly. Do not apply candidate ranking or
+  substitute a different file, even if the requested file is empty or another file is newer
 - If not found, report clearly and stop
+
+#### Candidate ranking for implicit and date-based lookup
+
+Rank only automatically discovered candidates. Never use this ranking for an explicit file path.
+
+1. Reject files that are unreadable, empty, whitespace-only, or contain only headings, metadata,
+   separators, and placeholder values such as `[Session context goes here]`, `- [ ]`, a lone `-`,
+   or `[relevant files]`.
+2. Reject generated summaries with only one task and no populated files-modified, tools-used,
+   completed, in-progress, notes, or context-to-load content. This structural rule filters
+   one-message summarizer echoes without depending on any particular prompt text.
+3. Keep candidates with substantive populated content: completed work, in-progress work, concrete
+   next-session notes, concrete context paths, multiple tasks, modified files, or tools used.
+4. Among eligible substantive candidates, prefer the newest modification time.
+5. If modification times are equal, prefer more populated sections, then more non-placeholder
+   content, then larger byte size, then the lexicographically smaller resolved path. Count populated
+   sections and content only after removing headings, metadata, separators, and placeholder text.
+   These final tie-breaks make selection deterministic.
 
 ### Step 2: Read the entire session file
 
@@ -96,7 +116,9 @@ If no next step is defined — ask the user where to start, and optionally sugge
 ## Edge Cases
 
 **Multiple sessions for the same date** (`2024-01-15-session.tmp`, `2024-01-15-abc123de-session.tmp`):
-Load the most recently modified matching file for that date, regardless of whether it uses the legacy no-id format or the current short-id format.
+Apply the candidate ranking across every matching legacy and current-format file. A substantive
+session must win over a newer placeholder or one-message summarizer echo; modification time decides
+between eligible candidates.
 
 **Session file references files that no longer exist:**
 Note this during the briefing — "WARNING: `path/to/file.ts` referenced in session but not found on disk."
@@ -108,7 +130,10 @@ Note the gap — "WARNING: This session is from N days ago (threshold: 7 days). 
 Read it and follow the same briefing process — the format is the same regardless of source.
 
 **Session file is empty or malformed:**
-Report: "Session file found but appears empty or unreadable. You may need to create a new one with /save-session."
+For implicit or date-based discovery, reject it and continue ranking the remaining candidates. If no
+eligible candidate remains, report: "Session files were found but appear empty or unreadable. You may
+need to create a new one with /save-session." For an explicit path, report that the requested file is
+empty or unreadable without loading a substitute.
 
 ---
 

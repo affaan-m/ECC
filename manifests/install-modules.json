@@ -1164,6 +1164,22 @@
       "defaultInstall": false,
       "cost": "heavy",
       "stability": "stable"
+    },
+    {
+      "id": "docs-uk-ua",
+      "kind": "docs",
+      "description": "Ukrainian (uk-UA) translated reference docs for agents, commands, skills, and rules.",
+      "paths": [
+        "docs/uk-UA"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "heavy",
+      "stability": "stable"
     }
   ]
 }

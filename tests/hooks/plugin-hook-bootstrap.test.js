@@ -11,7 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
-const { normalizePluginRootForPlatform } = require(SCRIPT);
+const { normalizePluginRootForPlatform, withComparisonInput } = require(SCRIPT);
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-hook-bootstrap-'));
@@ -60,13 +60,26 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+  let skipped = 0;
 
-  if (test('passes stdin through when required bootstrap inputs are missing', () => {
+  if (test('emits empty stdout and stderr warning when required bootstrap inputs are missing', () => {
     const result = run([], { input: '{"ok":true}' });
 
     assert.strictEqual(result.status, 0);
-    assert.strictEqual(result.stdout, '{"ok":true}');
-    assert.strictEqual(result.stderr, '');
+    // Empty stdout (not the raw input) so the harness falls back to the
+    // tool_use's original result -- prevents session-transcript bloat.
+    assert.strictEqual(result.stdout, '');
+    assert.ok(result.stderr.includes('missing required args'));
+  })) passed++; else failed++;
+
+  if (test('wraps spawn results without mutating the original object', () => {
+    const original = Object.freeze({ status: 0, stdout: 'ok', stderr: '' });
+    const wrapped = withComparisonInput(original, 'raw-input');
+
+    assert.notStrictEqual(wrapped, original);
+    assert.deepStrictEqual(original, { status: 0, stdout: 'ok', stderr: '' });
+    assert.strictEqual(wrapped.comparisonInput, 'raw-input');
+    assert.strictEqual(wrapped.stdout, 'ok');
   })) passed++; else failed++;
 
   if (test('normalizes Windows Git Bash POSIX drive roots', () => {
@@ -143,7 +156,7 @@ process.stdout.write(JSON.stringify({
     }
   })) passed++; else failed++;
 
-  if (test('node mode passes original stdin when child exits cleanly without stdout', () => {
+  if (test('node mode emits empty stdout when child exits cleanly without stdout', () => {
     const root = createTempDir();
     try {
       writeFile(root, path.join('scripts', 'silent.js'), 'process.exit(0);\n');
@@ -154,7 +167,10 @@ process.stdout.write(JSON.stringify({
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      // Empty stdout (not the raw input) -- the dominant source of
+      // session-transcript bloat pre-fix.
+      assert.strictEqual(result.stdout, '');
+      assert.ok(result.stderr.includes('emitting empty stdout'));
     } finally {
       cleanup(root);
     }
@@ -225,7 +241,7 @@ process.exit(7);
     }
   })) passed++; else failed++;
 
-  if (test('shell mode fails open when no shell runtime is available', () => {
+  if (test('shell mode fails open with empty stdout when no shell runtime is available', () => {
     const root = createTempDir();
     try {
       writeFile(root, path.join('scripts', 'hook.sh'), 'printf unreachable\n');
@@ -237,14 +253,16 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      // Empty stdout (not the raw input) so the harness falls back to the
+      // tool_use's original result.
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('shell runtime unavailable'));
     } finally {
       cleanup(root);
     }
   })) passed++; else failed++;
 
-  if (test('rejects target paths that escape the plugin root', () => {
+  if (test('rejects target paths that escape the plugin root with empty stdout', () => {
     const root = createTempDir();
     try {
       const result = run(['node', path.join('..', 'outside.js')], {
@@ -253,14 +271,16 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      // Empty stdout (not the raw input) -- the resolver throws, fallthrough
+      // path emits empty + stderr explanation.
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('Path traversal rejected'));
     } finally {
       cleanup(root);
     }
   })) passed++; else failed++;
 
-  if (test('unknown mode fails open with stderr warning', () => {
+  if (test('unknown mode fails open with empty stdout and stderr warning', () => {
     const root = createTempDir();
     try {
       const result = run(['python', 'hook.py'], {
@@ -269,7 +289,9 @@ process.exit(7);
       });
 
       assert.strictEqual(result.status, 0);
-      assert.strictEqual(result.stdout, 'raw-input');
+      // Empty stdout (not the raw input) -- unknown mode fallthrough path
+      // emits empty + stderr explanation.
+      assert.strictEqual(result.stdout, '');
       assert.ok(result.stderr.includes('unknown bootstrap mode: python'));
     } finally {
       cleanup(root);
@@ -294,17 +316,17 @@ process.exit(7);
 
   // Windows-only: PowerShell preference and .sh fallback behaviour.
   if (process.platform === 'win32') {
-    if (test('shell mode selects PowerShell when BASH is unset on Windows', () => {
-      // Skip if no PowerShell is available.
-      const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
-      const ps = psProbe.error
-        ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 }).error
-          ? null : 'powershell.exe'
-        : 'pwsh.exe';
-      if (!ps) {
-        console.log('    SKIP: no PowerShell found');
-        return;
-      }
+    const psProbe = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
+    const ps = psProbe.error
+      ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', timeout: 5000 }).error
+        ? null : 'powershell.exe'
+      : 'pwsh.exe';
+
+    if (!ps) {
+      skipped += 5;
+      console.log('  SKIP 5 Windows shell-branch tests: PowerShell is unavailable');
+    } else {
+      if (test('shell mode selects PowerShell when BASH is unset on Windows', () => {
 
       const root = createTempDir();
       try {
@@ -327,15 +349,37 @@ process.exit(7);
       } finally {
         cleanup(root);
       }
-    })) passed++; else failed++;
+      })) passed++; else failed++;
 
-    if (test('shell mode falls back to bash for .sh scripts when PowerShell is the resolved shell', () => {
-      // Skip if no bash is available (headless CI without Git for Windows).
-      const bashProbe = spawnSync('bash.exe', ['-c', ':'], { stdio: 'ignore', timeout: 5000 });
-      if (bashProbe.error) {
-        console.log('    SKIP: bash.exe not found');
-        return;
+      if (test('PowerShell branch suppresses raw stdin echoed by the child', () => {
+      const root = createTempDir();
+      try {
+        writeFile(root, path.join('scripts', 'passthrough.ps1'), [
+          '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+          '$OutputEncoding = [System.Text.Encoding]::UTF8',
+          '$input_data = [Console]::In.ReadToEnd()',
+          '[Console]::Out.Write($input_data)',
+        ].join('\n'));
+
+        const result = run(['shell', path.join('scripts', 'passthrough.ps1')], {
+          root,
+          input: 'raw-input',
+          env: { BASH: '' },
+        });
+
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(result.stdout, '');
+        assert.ok(result.stderr.includes('returned raw input as stdout'));
+      } finally {
+        cleanup(root);
       }
+      })) passed++; else failed++;
+
+      const bashProbe = spawnSync('bash.exe', ['-c', ':'], { stdio: 'ignore', timeout: 5000 });
+      const bashAvailable = !bashProbe.error && bashProbe.status === 0;
+
+      if (bashAvailable) {
+        if (test('shell mode falls back to bash for .sh scripts when PowerShell is the resolved shell', () => {
 
       const root = createTempDir();
       try {
@@ -357,9 +401,32 @@ process.exit(7);
       } finally {
         cleanup(root);
       }
-    })) passed++; else failed++;
+        })) passed++; else failed++;
 
-    if (test('shell mode emits skip warning for .sh script when no bash found on Windows', () => {
+        if (test('PowerShell .sh fallback branch suppresses raw stdin echoed by bash', () => {
+      const root = createTempDir();
+      try {
+        writeFile(root, path.join('scripts', 'passthrough.sh'), 'cat\n');
+
+        const result = run(['shell', path.join('scripts', 'passthrough.sh')], {
+          root,
+          input: 'raw-input',
+          env: { BASH: '' },
+        });
+
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.strictEqual(result.stdout, '');
+        assert.ok(result.stderr.includes('returned raw input as stdout'));
+      } finally {
+        cleanup(root);
+      }
+        })) passed++; else failed++;
+      } else {
+        skipped += 2;
+        console.log('  SKIP 2 Windows .sh fallback tests: bash.exe is unavailable');
+      }
+
+      if (test('shell mode emits skip warning for .sh script when no bash found on Windows', () => {
       const root = createTempDir();
       try {
         writeFile(root, path.join('scripts', 'hook.sh'), 'printf unreachable\n');
@@ -375,7 +442,7 @@ process.exit(7);
         });
 
         assert.strictEqual(result.status, 0);
-        assert.strictEqual(result.stdout, 'raw-input');
+        assert.strictEqual(result.stdout, '');
         assert.ok(
           result.stderr.includes('no bash binary found') ||
           result.stderr.includes('shell runtime unavailable'),
@@ -384,10 +451,14 @@ process.exit(7);
       } finally {
         cleanup(root);
       }
-    })) passed++; else failed++;
+      })) passed++; else failed++;
+    }
   }
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
+  if (skipped > 0) {
+    console.log(`Skipped: ${skipped}`);
+  }
   process.exit(failed > 0 ? 1 : 0);
 }
 
