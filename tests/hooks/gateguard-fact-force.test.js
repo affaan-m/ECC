@@ -253,6 +253,91 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Test 4b: dd targets that do not start with a word character ---
+  /**
+   * #2642: DESTRUCTIVE_SQL_DD carried one trailing \b across every alternation
+   * arm. `dd\s+if=` ends in `=`, so that \b demanded the NEXT character be a
+   * word character: `dd if=x` was denied while the disk-wipe spelling
+   * `dd if=/dev/zero of=/dev/sda` and the relative `dd if=./img` were allowed.
+   * These run through the real hook, since the report is specifically that the
+   * published hook lets the slash-prefixed form through.
+   */
+  for (const command of [
+    'dd if=/dev/zero of=/dev/sda',
+    'dd if=./disk.img of=/dev/sdb',
+    'dd if="/dev/zero" of=/dev/sda',
+    // Wrapped invocations must still resolve to the dd command word.
+    'sudo dd if=/dev/zero of=/dev/sda',
+    // dd operands are order-free; a text pattern anchored on `dd if=` missed
+    // both the reversed and the intervening-option spellings.
+    'dd of=/dev/sda if=/dev/zero',
+    'dd bs=1M if=/dev/zero of=/dev/sda'
+  ]) {
+    clearState();
+    if (
+      test(`denies dd whose input path is not word-initial: ${command}`, () => {
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        const output = parseOutput(result.stdout);
+        assert.ok(output, 'hook should produce JSON output');
+        assert.ok(output.hookSpecificOutput, 'hook should return a permission decision');
+        assert.strictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          `${command} must be gated as destructive`
+        );
+        assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  // --- Test 4c: widening the dd arm must not gate ordinary commands ---
+  /**
+   * The fix drops the trailing \b only from the dd arm, so the arms that end in
+   * a word character keep theirs. Without that split, `truncated` would match
+   * `truncate`, and `add if=` would match `dd if=`.
+   */
+  for (const command of [
+    'echo add if=1',
+    'echo truncated output',
+    'git status',
+    // `dd if=` as another command's argument runs no dd at all. The old text
+    // match gated these; the command-word check is what keeps them out.
+    'echo dd if=/dev/zero',
+    'grep dd if=/dev/zero file',
+    'echo dd if=x'
+  ]) {
+    clearState();
+    if (
+      test(`does not gate as destructive: ${command}`, () => {
+        // Prime the session so the separate first-command routine gate cannot
+        // be mistaken for a destructive denial.
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        // Assert the hook actually answered before reading the decision: a
+        // crashed or silent hook makes parseOutput return null, and a bare
+        // `if (output)` would let this case pass without testing anything.
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        const decision = output.hookSpecificOutput;
+        if (decision) {
+          const reason = decision.permissionDecisionReason || '';
+          assert.ok(
+            decision.permissionDecision !== 'deny' || !reason.includes('Destructive'),
+            `${command} must not be gated as destructive`
+          );
+        } else {
+          // Pass-through echoes the input back unchanged.
+          assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+        }
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
   // --- Test 5: denies first routine Bash, allows second ---
   clearState();
   if (
