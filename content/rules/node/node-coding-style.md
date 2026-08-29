@@ -25,7 +25,8 @@ function updateUser(user, name) {
 MANY SMALL FILES > FEW LARGE FILES:
 
 - High cohesion, low coupling
-- 200-400 lines typical, 800 max
+- 200-400 lines typical, with 800 lines as a soft maintainability ceiling for source files
+- Test, generated, and vendored files may exceed the ceiling when their size is justified by their role
 - Extract utilities from large components
 - Organize by feature/domain, not by type
 
@@ -64,7 +65,7 @@ Before marking work complete:
 
 - [ ] Code is readable and well-named
 - [ ] Functions are small (<50 lines)
-- [ ] Files are focused (<800 lines)
+- [ ] Source files are focused (under the 800-line soft ceiling, or a reason is stated for a deliberate exception)
 - [ ] No deep nesting (>4 levels)
 - [ ] Proper error handling
 - [ ] No console.log statements

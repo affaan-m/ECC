@@ -36,7 +36,8 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 
 MANY SMALL FILES > FEW LARGE FILES:
 - High cohesion, low coupling
-- 200-400 lines typical, 800 max
+- 200-400 lines typical, with 800 lines as a soft maintainability ceiling for source files
+- Test, generated, and vendored files may exceed the ceiling when their size is justified by their role
 - Extract utilities from large modules
 - Organize by feature/domain, not by type
 
@@ -84,7 +85,7 @@ Split large functions into focused pieces with clear responsibilities.
 Before marking work complete:
 - [ ] Code is readable and well-named
 - [ ] Functions are small (<50 lines)
-- [ ] Files are focused (<800 lines)
+- [ ] Source files are focused (under the 800-line soft ceiling, or a reason is stated for a deliberate exception)
 - [ ] No deep nesting (>4 levels)
 - [ ] Proper error handling
 - [ ] No hardcoded values (use constants or config)
