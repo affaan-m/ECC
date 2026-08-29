@@ -2565,6 +2565,27 @@ async function runTests() {
   else failed++;
 
   if (
+    test('MCP health-check hooks use anchored ^mcp__ matcher (no unanchored mcp__.*)', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      const preMcp = hooks.hooks.PreToolUse.filter(e => e.id === 'pre:mcp-health-check');
+      assert.strictEqual(preMcp.length, 1, 'Should define exactly one pre:mcp-health-check entry');
+      preMcp.forEach(entry => {
+        assert.strictEqual(entry.matcher, '^mcp__', `pre:mcp-health-check matcher must be anchored '^mcp__' to avoid spawning on non-MCP tool names (got ${entry.matcher})`);
+      });
+
+      const postMcp = hooks.hooks.PostToolUseFailure.filter(e => e.id === 'post:mcp-health-check');
+      assert.strictEqual(postMcp.length, 1, 'Should define exactly one post:mcp-health-check entry');
+      postMcp.forEach(entry => {
+        assert.strictEqual(entry.matcher, '^mcp__', `post:mcp-health-check matcher must be anchored '^mcp__' to avoid spawning on non-MCP tool names (got ${entry.matcher})`);
+      });
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('SessionEnd marker hook is async and cleanup-safe', () => {
       const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
       const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));

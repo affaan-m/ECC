@@ -73,7 +73,7 @@
         "id": "pre:config-protection"
       },
       {
-        "matcher": "*",
+        "matcher": "^mcp__",
         "hooks": [
           {
             "type": "command",
@@ -162,7 +162,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "*",
+        "matcher": "^mcp__",
         "hooks": [
           {
             "type": "command",

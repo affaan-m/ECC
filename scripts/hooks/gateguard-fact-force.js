@@ -48,7 +48,16 @@ const ECC_ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'enable', 'yes'
 // phrases without shell-flag ordering concerns. Quoted strings are
 // stripped before this regex runs so a commit message mentioning
 // "drop table" no longer triggers a false positive.
-const DESTRUCTIVE_SQL_DD = /\b(drop\s+table|delete\s+from|truncate|dd\s+if=)\b/i;
+//
+// The `dd\s+if=` arm deliberately omits a trailing word-boundary anchor:
+// `dd if=` ends with `=`, a non-word character, so `\b` would refuse to
+// match before the next non-word character (most commonly `/` for
+// `/dev/*` targets, but also `.`, quotes, `;`, `|`, `&`, end-of-string,
+// etc.). Anchoring that arm with `\b` was the cause of issue #2642:
+// `dd if=/dev/zero of=/dev/sda` slipped past the gate. The SQL arms keep
+// their trailing `\b` so words like `delete fromtable` or `truncatefile`
+// do not produce false positives.
+const DESTRUCTIVE_SQL_DD = /\b(?:drop\s+table|delete\s+from|truncate)\b|\bdd\s+if=/i;
 
 // Operator-supplied additional destructive patterns. Lazily compiled from
 // `GATEGUARD_BASH_EXTRA_DESTRUCTIVE` (regex source) on first use, then
