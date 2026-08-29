@@ -1,6 +1,6 @@
 ---
 name: python-doc-updater
-description: Documentation and codemap specialist for Python projects. Use PROACTIVELY for updating codemaps and documentation. Runs /update-codemaps and /update-docs, generates docs/CODEMAPS/*, updates READMEs and guides.
+description: Documentation and codemap specialist for Python projects. Use PROACTIVELY for updating codemaps and documentation. Generates docs/CODEMAPS/*, updates READMEs and guides; backs the /update-codemaps and /update-docs commands.
 tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 model: opus
 ---
