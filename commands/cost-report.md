@@ -16,7 +16,23 @@ session**, so the report takes the **latest row per `session_id`** and sums
 across sessions (summing every row would multiply-count).
 
 Row schema:
-`{ timestamp, session_id, transcript_path, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost_usd }`
+`{ timestamp, session_id, transcript_path, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, estimated_cost_usd, subagent_transcripts, models }`
+
+Token totals and `estimated_cost_usd` cover the session's subagent turns as
+well as its main transcript; `subagent_transcripts` counts the subagent files
+that were folded in, and is `0` for a session that never fanned out.
+
+`models` breaks the session down by the model and speed tier that actually
+served each turn: `[{ model, speed, input_tokens, output_tokens,
+cache_write_tokens, cache_read_tokens, estimated_cost_usd }]`, most expensive
+first. It is the more precise basis for a per-model breakdown than `model`,
+which names only the main session's model while a fan-out session commonly
+bills across several. Its token counts always reconcile with the row totals.
+The `By model` grouping below still keys on `model`, which attributes each
+session to one model; read `models` when you need the split. Its costs sum
+to `estimated_cost_usd` except when the harness supplied that number directly,
+in which case `models` remains the transcript-derived estimate and the two need
+not agree.
 
 ## What this command does
 
