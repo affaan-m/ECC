@@ -40,6 +40,15 @@ a summary (stages, key decisions, verification results) in the issue
 or PR. The `ship` skill covers the full plan → issue → worktree →
 TDD → PR flow.
 
+## Design Decisions
+
+For architecture and design choices, present at least two options
+with trade-offs and cost rationale, give a recommendation, and let
+the user make the final call. Never state unverified external facts
+(prices, quotas, SLAs, version-specific behavior) as certain — mark
+them "needs verification" and back service specs and limits with
+official documentation links.
+
 ## Quality Gate
 
 Use the project's own lint/format/type-check/test commands and run

@@ -6,6 +6,10 @@ branches, and always when the change touches security-sensitive areas
 review, make sure automated checks pass, conflicts are resolved, and
 the branch is up to date with its target.
 
+Lead with risks — vulnerabilities, failure modes, and defects —
+before any positive commentary; this applies to design reviews as
+much as to code.
+
 ## Severity Levels
 
 | Level | Meaning | Action |
