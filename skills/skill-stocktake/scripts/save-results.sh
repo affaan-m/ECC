@@ -41,7 +41,11 @@ fi
 # Use mktemp for a collision-safe temp file (concurrent runs on the same RESULTS_JSON
 # would race on a predictable ".tmp" suffix; random suffix prevents silent overwrites).
 tmp=$(mktemp "${RESULTS_JSON}.XXXXXX")
-trap 'rm -f "$tmp"' EXIT
+# Write stdin JSON to a real temp file instead of process substitution —
+# native Windows jq.exe cannot open MSYS /proc/<pid>/fd paths from <(...).
+input_tmp=$(mktemp "${RESULTS_JSON}.in.XXXXXX")
+trap 'rm -f "$tmp" "$input_tmp"' EXIT
+printf '%s' "$input_json" > "$input_tmp"
 
 jq -s \
   --arg ea "$EVALUATED_AT" \
@@ -51,6 +55,6 @@ jq -s \
    .skills = ($existing.skills + ($new.skills // {})) |
    if ($new | has("mode")) then .mode = $new.mode else . end |
    if ($new | has("batch_progress")) then .batch_progress = $new.batch_progress else . end' \
-  "$RESULTS_JSON" <(echo "$input_json") > "$tmp"
+  "$RESULTS_JSON" "$input_tmp" > "$tmp"
 
 mv "$tmp" "$RESULTS_JSON"

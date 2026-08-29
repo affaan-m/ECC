@@ -28,6 +28,12 @@ if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" && "$CWD_SKILLS_DIR" != */.cl
   echo "Warning: CWD_SKILLS_DIR does not look like a .claude/skills path: $CWD_SKILLS_DIR" >&2
 fi
 
+# Skip the project scan when it resolves to the same directory as the global
+# dir (e.g., invoked from $HOME) — otherwise every file is scanned twice.
+if [[ -n "$CWD_SKILLS_DIR" && -d "$CWD_SKILLS_DIR" && "$(cd "$CWD_SKILLS_DIR" && pwd -P)" == "$(cd "$GLOBAL_DIR" && pwd -P)" ]]; then
+  CWD_SKILLS_DIR=""
+fi
+
 evaluated_at=$(jq -r '.evaluated_at' "$RESULTS_JSON")
 
 # Fail fast on a missing or malformed evaluated_at rather than producing
@@ -54,17 +60,46 @@ process_dir() {
   while IFS= read -r file; do
     local mtime dp is_new
     mtime=$(date -u -r "$file" +%Y-%m-%dT%H:%M:%SZ)
-    dp="${file/#$HOME/~}"
+    # Canonicalize the path. On Windows (MSYS/Git Bash) use cygpath -m to get
+    # the same C:/-style form that MSYS argument conversion produces when the
+    # path is passed to native jq.exe — a bare "~" replacement re-expands to
+    # $HOME and never matches the stored form. Elsewhere keep the ~ shorthand
+    # (escaped so it is not tilde-expanded back into $HOME).
+    if command -v cygpath >/dev/null 2>&1; then
+      dp=$(cygpath -m "$file")
+    else
+      dp="${file/#$HOME/\~}"
+    fi
 
-    # Check if this file is known to results.json (exact whole-line match to
-    # avoid substring false-positives, e.g. "python-patterns" matching "python-patterns-v2").
-    if echo "$known_paths" | grep -qxF "$dp"; then
+    # Known-ness is judged per SKILL, not per file: results.json records one
+    # entry per skill (its SKILL.md), while skills may carry auxiliary .md
+    # assets (references/, rules/, agents/). Map any file to its skill's
+    # SKILL.md anchor before the lookup, otherwise every auxiliary file is
+    # forever misreported as new.
+    local rel="${file#"$dir"/}"
+    local anchor_file
+    if [[ "$rel" == */* ]]; then
+      anchor_file="$dir/${rel%%/*}/SKILL.md"
+    else
+      anchor_file="$file"
+    fi
+    local anchor
+    if command -v cygpath >/dev/null 2>&1; then
+      anchor=$(cygpath -m "$anchor_file")
+    else
+      anchor="${anchor_file/#$HOME/\~}"
+    fi
+
+    # Exact whole-line match to avoid substring false-positives,
+    # e.g. "python-patterns" matching "python-patterns-v2".
+    if echo "$known_paths" | grep -qxF "$anchor"; then
       is_new="false"
-      # Known file: only emit if mtime changed (ISO 8601 string comparison is safe)
+      # Known skill: only emit if this file changed after the last evaluation
+      # (ISO 8601 string comparison is safe)
       [[ "$mtime" > "$evaluated_at" ]] || continue
     else
       is_new="true"
-      # New file: always emit regardless of mtime
+      # Unevaluated skill: always emit regardless of mtime
     fi
 
     jq -n \
