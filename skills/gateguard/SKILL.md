@@ -106,6 +106,12 @@ near-identical blocks cannot accumulate in the context window and
 amplify model repetition loops (#2142). Retrying the same file or
 command after presenting facts never re-triggers the gate.
 
+Set `GATEGUARD_FACT_FORCE_MAX_DENIALS` to cap the total number of new-path
+Edit/Write denials in a session. It is opt-in (unset preserves the existing
+behavior); after the configured number of denials new paths are allowed while
+destructive Bash remains gated independently. `GATEGUARD_FACT_FORCE_FULL_DENIALS`
+only controls message detail.
+
 ### Option B: Full package with config
 
 ```bash
