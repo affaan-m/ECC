@@ -30,7 +30,8 @@
   <a href="docs/vi-VN/README.md">Tiếng Việt</a> |
   <a href="docs/th/README.md">ไทย</a> |
   <a href="docs/de-DE/README.md">Deutsch</a> |
-  <a href="docs/es/README.md">Español</a>
+  <a href="docs/es/README.md">Español</a> |
+  <a href="docs/uk-UA/README.md">Українська</a>
 </p>
 
 <p align="center">
@@ -448,13 +449,19 @@ For the normal core profile with hooks disabled:
 
 ```bash
 ./install.sh --profile core --without baseline:hooks --target claude
+./install.sh --profile core --no-hooks --target claude
 ```
 
 Add the hook runtime later only if you want it:
 
 ```bash
-./install.sh --target claude --modules hooks-runtime
+./install.sh --target claude --modules hooks-runtime --enable-hooks
 ```
+
+Any install whose profile or modules would materialize the hook runtime requires
+an explicit decision. Without `--enable-hooks` or `--no-hooks`, the installer
+prints what the hooks can do and stops before writing anything. The guided
+installer (`ecc install --guided`) asks for this choice interactively.
 </details>
 
 <details>
@@ -545,7 +552,7 @@ For hand-picked manual installs, Claude discovers skills as direct children of `
 Do not copy the raw repo `hooks/hooks.json` into `~/.claude/settings.json` or `~/.claude/hooks/hooks.json`. That file is plugin/repo-oriented; use the installer so hook command paths are rewritten correctly:
 
 ```bash
-bash ./install.sh --target claude --modules hooks-runtime
+bash ./install.sh --target claude --modules hooks-runtime --enable-hooks
 ```
 
 That writes resolved hooks to `~/.claude/hooks/hooks.json` and leaves any existing `~/.claude/settings.json` untouched.
@@ -555,7 +562,7 @@ If you installed ECC via `/plugin install`, do not copy those hooks into `settin
 On Windows, Claude's config root is `%USERPROFILE%\\.claude`; install the hook runtime with:
 
 ```powershell
-pwsh -File .\install.ps1 --target claude --modules hooks-runtime
+pwsh -File .\install.ps1 --target claude --modules hooks-runtime --enable-hooks
 ```
 
 #### Configure MCPs

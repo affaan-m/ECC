@@ -665,6 +665,7 @@ function runTests() {
         installRoot: targetRoot,
         installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
         warnings: [],
+        hookConsent: 'enabled',
         statePreview: {
           target: 'claude',
           adapter: { id: 'claude-home', target: 'claude', kind: 'home' },

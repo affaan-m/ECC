@@ -169,6 +169,7 @@ function runTests() {
           excludeComponents: ['component:beta'],
           legacyLanguages: [],
           legacyMode: false,
+          hookConsent: 'declined',
         },
       },
     };
@@ -179,6 +180,42 @@ function runTests() {
       '--modules', 'platform-configs',
       '--with', 'component:alpha',
       '--without', 'component:beta',
+      '--no-hooks',
+    ]);
+  })) passed += 1; else failed += 1;
+
+  if (test('buildInstallApplyArgs infers enabled hooks for older install-state records', () => {
+    const record = {
+      adapter: { target: 'cursor', kind: 'project' },
+      state: {
+        target: { target: 'cursor' },
+        request: {
+          profile: 'core',
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['rules-core', 'hooks-runtime'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'copy-file',
+            moduleId: 'hooks-runtime',
+            sourceRelativePath: '.cursor/hooks.json',
+            destinationPath: '/tmp/project/.cursor/hooks.json',
+          },
+        ],
+      },
+    };
+
+    assert.deepStrictEqual(buildInstallApplyArgs(record), [
+      '--target', 'cursor',
+      '--profile', 'core',
+      '--enable-hooks',
     ]);
   })) passed += 1; else failed += 1;
 

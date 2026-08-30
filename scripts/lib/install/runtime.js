@@ -6,12 +6,17 @@ const {
   createManifestInstallPlan,
 } = require('../install-executor');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
+const { withHookConsent } = require('./hook-consent');
 
 function createInstallPlanFromRequest(request, options = {}) {
   if (!request || typeof request !== 'object') {
     throw new Error('A normalized install request is required');
   }
 
+  return withHookConsent(createRawInstallPlan(request, options), request.hookConsent || null);
+}
+
+function createRawInstallPlan(request, options = {}) {
   if (request.mode === 'manifest') {
     return createManifestInstallPlan({
       target: request.target,
@@ -23,6 +28,7 @@ function createInstallPlanFromRequest(request, options = {}) {
       homeDir: options.homeDir,
       env: resolveInvocationEnvironment(options),
       sourceRoot: options.sourceRoot,
+      exemptValidationCodes: options.exemptValidationCodes || [],
     });
   }
 
@@ -37,6 +43,7 @@ function createInstallPlanFromRequest(request, options = {}) {
       env: resolveInvocationEnvironment(options),
       claudeRulesDir: options.claudeRulesDir,
       sourceRoot: options.sourceRoot,
+      exemptValidationCodes: options.exemptValidationCodes || [],
     });
   }
 

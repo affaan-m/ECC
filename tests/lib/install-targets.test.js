@@ -975,6 +975,119 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('resolves adal adapter root and install-state path from project root', () => {
+    const adapter = getInstallTargetAdapter('adal');
+    const projectRoot = '/workspace/app';
+    const root = adapter.resolveRoot({ projectRoot });
+    const statePath = adapter.getInstallStatePath({ projectRoot });
+
+    assert.strictEqual(adapter.id, 'adal-project');
+    assert.strictEqual(adapter.target, 'adal');
+    assert.strictEqual(adapter.kind, 'project');
+    assert.strictEqual(root, path.join(projectRoot, '.adal'));
+    assert.strictEqual(statePath, path.join(projectRoot, '.adal', 'ecc-install-state.json'));
+  })) passed++; else failed++;
+
+  if (test('adal adapter supports lookup by target and adapter id', () => {
+    const byTarget = getInstallTargetAdapter('adal');
+    const byId = getInstallTargetAdapter('adal-project');
+
+    assert.strictEqual(byTarget.id, 'adal-project');
+    assert.strictEqual(byId.id, 'adal-project');
+    assert.ok(byTarget.supports('adal'));
+    assert.ok(byTarget.supports('adal-project'));
+  })) passed++; else failed++;
+
+  if (test('plans adal project rules, skills, and native root sync', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const projectRoot = '/workspace/app';
+
+    const plan = planInstallTargetScaffold({
+      target: 'adal',
+      repoRoot,
+      projectRoot,
+      modules: [
+        {
+          id: 'rules-core',
+          paths: ['rules'],
+        },
+        {
+          id: 'workflow-quality',
+          paths: ['skills/tdd-workflow'],
+        },
+        {
+          id: 'platform-configs',
+          paths: ['.adal', '.cursor', '.zed'],
+        },
+      ],
+    });
+
+    assert.strictEqual(plan.adapter.id, 'adal-project');
+    assert.strictEqual(plan.targetRoot, path.join(projectRoot, '.adal'));
+    assert.strictEqual(plan.installStatePath, path.join(projectRoot, '.adal', 'ecc-install-state.json'));
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'rules'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'rules')
+      )),
+      'Should preserve rules under .adal/rules'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'skills/tdd-workflow'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'skills', 'tdd-workflow')
+      )),
+      'Should install skills under .adal/skills'
+    );
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.adal'
+        && operation.destinationPath === path.join(projectRoot, '.adal')
+        && operation.strategy === 'sync-root-children'
+      )),
+      'Should sync native .adal root children in place'
+    );
+  })) passed++; else failed++;
+
+  if (test('adal adapter skips foreign platform source paths', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const projectRoot = '/workspace/app';
+
+    const plan = planInstallTargetScaffold({
+      target: 'adal',
+      repoRoot,
+      projectRoot,
+      modules: [
+        {
+          id: 'platform-configs',
+          paths: ['.cursor', '.zed', 'rules'],
+        },
+      ],
+    });
+
+    assert.ok(
+      plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === 'rules'
+        && operation.destinationPath === path.join(projectRoot, '.adal', 'rules')
+      )),
+      'Should still include non-foreign rules path (guards against empty-plan regression)'
+    );
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.cursor'
+        || normalizedRelativePath(operation.sourceRelativePath).startsWith('.cursor/')
+      )),
+      'Should skip foreign Cursor platform paths'
+    );
+    assert.ok(
+      !plan.operations.some(operation => (
+        normalizedRelativePath(operation.sourceRelativePath) === '.zed'
+        || normalizedRelativePath(operation.sourceRelativePath).startsWith('.zed/')
+      )),
+      'Should skip foreign Zed platform paths'
+    );
+  })) passed++; else failed++;
+
   if (test('exposes validate and planOperations on codebuddy adapter', () => {
     const codebuddyAdapter = getInstallTargetAdapter('codebuddy');
 

@@ -661,6 +661,14 @@
       "modules": [
         "docs-de-de"
       ]
+    },
+    {
+      "id": "locale:uk-ua",
+      "family": "locale",
+      "description": "Ukrainian (uk-UA) translated reference docs installed to ~/.claude/docs/uk-UA/.",
+      "modules": [
+        "docs-uk-ua"
+      ]
     }
   ]
 }

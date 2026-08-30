@@ -163,6 +163,12 @@ docker run -it --rm \
 
 No network. No access outside `/workspace`. Much better failure mode.
 
+Three limits are worth naming. A container shares the host kernel, so it is a weaker boundary than hardware virtualization. It also protects only what actually runs inside it: with VS Code remote development, workspace extensions may run in the remote environment while UI extensions remain local. In 2025, malicious code reached version 1.84.0 of the Amazon Q Developer VS Code extension, although AWS reports that a syntax error prevented it from executing. A container around the agent would not have isolated an editor extension running on the host.
+
+Keep `internal: true` when the work can stay offline. When model APIs, package registries, or git remotes require network access, add only a deliberately constrained egress path. Allowlist the required destinations or proxy them, block host, LAN, private, link-local, and metadata ranges, and verify the boundary from inside the sandbox. Attaching a general-purpose network restores broader reachability and should be an explicit exception.
+
+A stronger version is a VM that holds the editor and its extensions alongside the agent, reaches the internet through a verified policy, and has no route to the host, the LAN, or other private addresses. [Jailbox](https://karamatli.com/posts/network-isolated-kvm-sandbox-ai-agents/) is one concrete KVM-based reference architecture for that pattern; its default rules block private destinations and support narrowly scoped exceptions, so the effective configuration still needs verification.
+
 ### Restrict tools and paths
 
 This is the boring part people skip. It is also one of the highest leverage controls, literally maxxed out ROI on this because its so easy to do.
@@ -432,7 +438,6 @@ Scan your setup: [github.com/affaan-m/agentshield](https://github.com/affaan-m/a
 - GitHub Docs, "Responsible use of Copilot coding agent on GitHub.com": [docs.github.com](https://docs.github.com/en/copilot/responsible-use-of-github-copilot-features/responsible-use-of-copilot-coding-agent-on-githubcom)
 - GitHub Docs, "Customize the agent firewall": [docs.github.com](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-firewall)
 - Simon Willison prompt injection series / lethal trifecta framing: [simonwillison.net](https://simonwillison.net/series/prompt-injection/)
-- AWS Security Bulletin, AWS-2025-015: [aws.amazon.com](https://aws.amazon.com/security/security-bulletins/rss/aws-2025-015/)
 - AWS Security Bulletin, AWS-2025-016: [aws.amazon.com](https://aws.amazon.com/security/security-bulletins/aws-2025-016/)
 - Unit 42, "Fooling AI Agents: Web-Based Indirect Prompt Injection Observed in the Wild" (March 3, 2026): [unit42.paloaltonetworks.com](https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/)
 - Microsoft Security, "AI Recommendation Poisoning" (February 10, 2026): [microsoft.com](https://www.microsoft.com/en-us/security/blog/2026/02/10/ai-recommendation-poisoning/)
@@ -442,6 +447,8 @@ Scan your setup: [github.com/affaan-m/agentshield](https://github.com/affaan-m/a
 - Hunt.io, "CVE-2026-25253 OpenClaw AI Agent Exposure" (February 3, 2026): [hunt.io](https://hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure)
 - OpenAI, "Designing AI agents to resist prompt injection" (March 11, 2026): [openai.com](https://openai.com/index/designing-agents-to-resist-prompt-injection/)
 - OpenAI Codex docs, "Agent network access": [platform.openai.com](https://platform.openai.com/docs/codex/agent-network)
+- AWS, "Security Update for Amazon Q Developer Extension for Visual Studio Code (Version #1.84)": [aws.amazon.com](https://aws.amazon.com/security/security-bulletins/AWS-2025-015/)
+- Jailbox (hardened KVM sandbox VMs for agents and untrusted code: internet egress allowed, host/LAN/private addresses blocked): [karamatli.com](https://karamatli.com/posts/network-isolated-kvm-sandbox-ai-agents/)
 
 ---
 

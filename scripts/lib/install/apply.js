@@ -9,6 +9,7 @@ const {
   withCommitAttributionDisabled,
 } = require('../claude-commit-attribution');
 const { writeInstallState } = require('../install-state');
+const { assertHookConsentReady, planMaterializesHookRuntime } = require('./hook-consent');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
 const {
@@ -335,6 +336,9 @@ function buildResolvedClaudeHooks(plan) {
 
 function previewInstallPlan(plan) {
   const migration = prepareClaudeSkillMigration(plan);
+  const hookConsentWarnings = planMaterializesHookRuntime(plan) && plan.hookConsent !== 'enabled'
+    ? ['Applying this plan requires an explicit hook decision: --enable-hooks or --no-hooks.']
+    : [];
   return {
     ...plan,
     statePreview: migration.finalState,
@@ -344,12 +348,14 @@ function previewInstallPlan(plan) {
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
+      ...hookConsentWarnings,
     ],
     applied: false,
   };
 }
 
 function applyInstallPlan(plan, dependencies = {}) {
+  assertHookConsentReady(plan);
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
   const beforeInstallStateRead = dependencies.beforeInstallStateRead;
   const beforeOperationWrite = dependencies.beforeOperationWrite;

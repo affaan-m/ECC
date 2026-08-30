@@ -19,7 +19,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -47,7 +48,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -75,7 +77,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -121,7 +124,8 @@
         "scripts/setup-package-manager.js",
         ".hermes",
         ".openclaw",
-        ".kimi"
+        ".kimi",
+        ".adal"
       ],
       "targets": [
         "claude",
@@ -137,7 +141,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -294,7 +299,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -369,7 +375,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "skill-unified-memory"
@@ -627,7 +634,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -1115,6 +1123,22 @@
       "description": "German (de-DE) translated reference docs for agents, commands, skills, and rules.",
       "paths": [
         "docs/de-DE"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "heavy",
+      "stability": "stable"
+    },
+    {
+      "id": "docs-uk-ua",
+      "kind": "docs",
+      "description": "Ukrainian (uk-UA) translated reference docs for agents, commands, skills, and rules.",
+      "paths": [
+        "docs/uk-UA"
       ],
       "targets": [
         "claude",

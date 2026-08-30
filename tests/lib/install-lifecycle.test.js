@@ -16,6 +16,7 @@ const {
   uninstallInstalledStates,
 } = require('../../scripts/lib/install-lifecycle');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
 const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
@@ -1825,6 +1826,81 @@ function runTests() {
       assert.strictEqual(report.results.length, 1);
       assert.strictEqual(report.results[0].status, 'warning');
       assert.ok(report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor honors a recorded declined hook decision for manifest installs', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const plan = createInstallPlanFromRequest({
+        mode: 'manifest',
+        target: 'cursor',
+        profileId: 'core',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        legacyLanguages: [],
+        hookConsent: 'declined',
+      }, {
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+      });
+
+      writeInstallState(plan.installStatePath, plan.statePreview);
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor infers enabled hooks from older manifest install-state records', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const plan = createInstallPlanFromRequest({
+        mode: 'manifest',
+        target: 'cursor',
+        profileId: 'core',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        legacyLanguages: [],
+        hookConsent: 'enabled',
+      }, {
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+      });
+      const legacyState = JSON.parse(JSON.stringify(plan.statePreview));
+      delete legacyState.request.hookConsent;
+      writeInstallState(plan.installStatePath, legacyState);
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

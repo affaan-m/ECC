@@ -423,8 +423,16 @@ function createMemoryMcpService(options = {}) {
         return jsonRpcResult(message.id, {});
       }
       if (message.method === 'tools/list') {
-        if (message.params && Object.keys(message.params).length > 0) {
-          return jsonRpcError(message.id, -32602, 'tools/list does not accept parameters.');
+        const params = message.params || {};
+        if (
+          (Object.prototype.hasOwnProperty.call(params, '_meta') && !isRecord(params._meta))
+          || (
+            Object.prototype.hasOwnProperty.call(params, 'cursor')
+            && typeof params.cursor !== 'string'
+          )
+          || Object.keys(params).some(key => !['cursor', '_meta'].includes(key))
+        ) {
+          return jsonRpcError(message.id, -32602, 'Invalid tools/list parameters.');
         }
         return jsonRpcResult(message.id, {
           tools: TOOL_DEFINITIONS.map(tool => ({ ...tool })),

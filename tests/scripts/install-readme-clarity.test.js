@@ -160,6 +160,10 @@ function runTests() {
       'README should document the hook opt-out path for the core profile'
     );
     assert.ok(
+      readme.includes('./install.sh --profile core --no-hooks --target claude'),
+      'README should document the explicit no-hooks consent path for the core profile'
+    );
+    assert.ok(
       readme.includes('This profile intentionally excludes `hooks-runtime`.'),
       'README should state that the minimal profile excludes hooks'
     );

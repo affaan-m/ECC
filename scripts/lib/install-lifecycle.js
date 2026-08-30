@@ -4,10 +4,11 @@ const { execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 
-const { resolveInstallPlan, loadInstallManifests } = require('./install-manifests');
+const { loadInstallManifests } = require('./install-manifests');
 const { readInstallState, validateInstallState } = require('./install-state');
 const { assertWithinTrustedRoot } = require('./path-safety');
-const { createManifestInstallPlan } = require('./install-executor');
+const { createInstallPlanFromRequest } = require('./install/runtime');
+const { getRecordedHookConsent } = require('./install/hook-consent');
 const {
   prepareClaudeSkillMigration,
 } = require('./install/claude-skill-migration');
@@ -63,6 +64,32 @@ function compareStringArrays(left, right) {
   }
 
   return leftValues.every((value, index) => value === rightValues[index]);
+}
+
+function buildRecordedManifestRequest(record) {
+  const state = record.state || {};
+  const request = state.request || {};
+
+  return {
+    mode: 'manifest',
+    target: state.target && state.target.target ? state.target.target : record.adapter.target,
+    profileId: request.profile || null,
+    moduleIds: Array.isArray(request.modules) ? [...request.modules] : [],
+    includeComponentIds: Array.isArray(request.includeComponents) ? [...request.includeComponents] : [],
+    excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
+    legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
+    hookConsent: getRecordedHookConsent(state),
+  };
+}
+
+function resolveRecordedManifestPlan(record, context, options = {}) {
+  return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
+    sourceRoot: context.repoRoot,
+    projectRoot: context.projectRoot,
+    homeDir: context.homeDir,
+    env: context.env,
+    exemptValidationCodes: options.exemptValidationCodes || [],
+  });
 }
 
 function hasOpencodeBuildError(issues) {
@@ -1506,17 +1533,7 @@ function analyzeRecord(record, context) {
 
   if (!state.request.legacyMode) {
     try {
-      const desiredPlan = resolveInstallPlan({
-        repoRoot: context.repoRoot,
-        projectRoot: context.projectRoot,
-        homeDir: context.homeDir,
-        env: context.env,
-        target: record.adapter.target,
-        profileId: state.request.profile || null,
-        moduleIds: state.request.modules || [],
-        includeComponentIds: state.request.includeComponents || [],
-        excludeComponentIds: state.request.excludeComponents || []
-      });
+      const desiredPlan = resolveRecordedManifestPlan(record, context);
 
       if (!compareStringArrays(desiredPlan.selectedModuleIds, state.resolution.selectedModules) || !compareStringArrays(desiredPlan.skippedModuleIds, state.resolution.skippedModules)) {
         issues.push(
@@ -1614,18 +1631,7 @@ function createRepairPlanFromRecord(record, context, options = {}) {
     };
   }
 
-  const desiredPlan = createManifestInstallPlan({
-    sourceRoot: context.repoRoot,
-    target: record.adapter.target,
-    profileId: state.request.profile || null,
-    moduleIds: state.request.modules || [],
-    includeComponentIds: state.request.includeComponents || [],
-    excludeComponentIds: state.request.excludeComponents || [],
-    projectRoot: context.projectRoot,
-    homeDir: context.homeDir,
-    env: context.env,
-    exemptValidationCodes: options.exemptValidationCodes || [],
-  });
+  const desiredPlan = resolveRecordedManifestPlan(record, context, options);
 
   return {
     ...desiredPlan,

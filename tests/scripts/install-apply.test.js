@@ -135,7 +135,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['typescript'], { cwd: projectDir, homeDir });
+      const result = run(['typescript', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
@@ -173,7 +173,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['typescript'], { cwd: projectDir, homeDir });
+      const result = run(['typescript', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
@@ -207,7 +207,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'cursor', 'typescript'], { cwd: projectDir, homeDir });
+      const result = run(['--target', 'cursor', 'typescript', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(projectDir, '.cursor', 'rules', 'common-coding-style.mdc')));
@@ -267,7 +267,7 @@ function runTests() {
         },
       }, null, 2));
 
-      const result = run(['--target', 'cursor', 'typescript'], { cwd: projectDir, homeDir });
+      const result = run(['--target', 'cursor', 'typescript', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const mcpConfig = readJson(path.join(projectDir, '.cursor', 'mcp.json'));
@@ -525,7 +525,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
@@ -567,7 +567,7 @@ function runTests() {
       fs.writeFileSync(userRulePath, '# User custom rule\n');
       fs.writeFileSync(userSkillPath, '# User custom skill\n');
 
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.ok(result.stdout.includes('user-owned'), result.stdout);
       assert.ok(result.stdout.includes('Skipped operations:'), result.stdout);
@@ -715,7 +715,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--target', 'cursor', '--modules', 'platform-configs'], {
+      const result = run(['--target', 'cursor', '--modules', 'platform-configs', '--enable-hooks'], {
         cwd: projectDir,
         homeDir,
       });
@@ -752,7 +752,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
@@ -772,7 +772,7 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const claudeRoot = path.join(homeDir, '.claude');
@@ -830,7 +830,7 @@ function runTests() {
         }, null, 2)
       );
 
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const settings = readJson(path.join(claudeRoot, 'settings.json'));
@@ -932,10 +932,10 @@ function runTests() {
     const projectDir = createTempDir('install-apply-project-');
 
     try {
-      const firstInstall = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const firstInstall = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(firstInstall.code, 0, firstInstall.stderr);
 
-      const secondInstall = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const secondInstall = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
       assert.deepStrictEqual(
@@ -963,7 +963,7 @@ function runTests() {
       };
       fs.writeFileSync(settingsPath, JSON.stringify(legacySettings, null, 2));
 
-      const secondInstall = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const secondInstall = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(secondInstall.code, 0, secondInstall.stderr);
 
       const afterSecondInstall = readJson(settingsPath);
@@ -991,7 +991,7 @@ function runTests() {
       };
       fs.writeFileSync(settingsPath, JSON.stringify(customSettings, null, 2));
 
-      const install = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const install = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(install.code, 0, install.stderr);
 
       const afterInstall = readJson(settingsPath);
@@ -1018,7 +1018,7 @@ function runTests() {
       };
       fs.writeFileSync(settingsPath, JSON.stringify(customSettings, null, 2));
 
-      const install = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const install = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(install.code, 0, install.stderr);
 
       const afterInstall = readJson(settingsPath);
@@ -1039,7 +1039,7 @@ function runTests() {
       const settingsPath = path.join(claudeRoot, 'settings.json');
       fs.writeFileSync(settingsPath, '{ invalid json\n');
 
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ invalid json\n');
       assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should still be copied');
@@ -1060,7 +1060,7 @@ function runTests() {
       const settingsPath = path.join(claudeRoot, 'settings.json');
       fs.writeFileSync(settingsPath, '[]\n');
 
-      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      const result = run(['--profile', 'core', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
       assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '[]\n');
       assert.ok(fs.existsSync(path.join(claudeRoot, 'hooks', 'hooks.json')), 'hooks.json should still be copied');
@@ -1084,6 +1084,7 @@ function runTests() {
         applyInstallPlan({
           targetRoot,
           installStatePath,
+          hookConsent: 'enabled',
           statePreview: {
             schemaVersion: 'ecc.install.v1',
             installedAt: new Date().toISOString(),
@@ -1147,7 +1148,7 @@ function runTests() {
         exclude: ['capability:orchestration'],
       }, null, 2));
 
-      const result = run(['--config', configPath], { cwd: projectDir, homeDir });
+      const result = run(['--config', configPath, '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'security-review', 'SKILL.md')));
@@ -1179,7 +1180,7 @@ function runTests() {
         exclude: ['capability:orchestration'],
       }, null, 2));
 
-      const result = run([], { cwd: projectDir, homeDir });
+      const result = run(['--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       assert.ok(fs.existsSync(path.join(homeDir, '.claude', 'skills', 'security-review', 'SKILL.md')));
@@ -1210,7 +1211,7 @@ function runTests() {
         include: ['capability:security'],
       }, null, 2));
 
-      const result = run(['typescript'], { cwd: projectDir, homeDir });
+      const result = run(['typescript', '--enable-hooks'], { cwd: projectDir, homeDir });
       assert.strictEqual(result.code, 0, result.stderr);
 
       const state = readJson(path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
@@ -1220,6 +1221,58 @@ function runTests() {
       assert.deepStrictEqual(state.request.includeComponents, []);
       assert.ok(state.resolution.selectedModules.includes('framework-language'));
       assert.ok(!state.resolution.selectedModules.includes('security'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('holds hook materialization without an explicit hook decision', () => {
+    const projectDir = createTempDir('install-apply-consent-held-');
+    const homeDir = createTempDir('install-apply-consent-held-home-');
+    try {
+      const result = run(['--profile', 'core'], { cwd: projectDir, homeDir });
+      assert.notStrictEqual(result.code, 0);
+      assert.ok(result.stderr.includes('automatic hook runtime'));
+      assert.ok(result.stderr.includes('--enable-hooks'));
+      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'hooks', 'hooks.json')));
+      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'ecc', 'install-state.json')));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('--no-hooks installs the profile without the hook runtime', () => {
+    const projectDir = createTempDir('install-apply-no-hooks-');
+    const homeDir = createTempDir('install-apply-no-hooks-home-');
+    try {
+      const result = run(['--profile', 'core', '--no-hooks'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.ok(!fs.existsSync(path.join(homeDir, '.claude', 'hooks', 'hooks.json')));
+      const state = readJson(path.join(homeDir, '.claude', 'ecc', 'install-state.json'));
+      assert.strictEqual(state.request.hookConsent, 'declined');
+      assert.ok(!state.resolution.selectedModules.includes('hooks-runtime'));
+      assert.ok(state.resolution.selectedModules.includes('rules-core'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects --enable-hooks combined with --no-hooks', () => {
+    const result = run(['--profile', 'core', '--enable-hooks', '--no-hooks']);
+    assert.notStrictEqual(result.code, 0);
+    assert.ok(result.stderr.includes('mutually exclusive'));
+  })) passed++; else failed++;
+
+  if (test('dry-run surfaces the pending hook decision as a warning', () => {
+    const projectDir = createTempDir('install-apply-consent-dry-');
+    const homeDir = createTempDir('install-apply-consent-dry-home-');
+    try {
+      const result = run(['--profile', 'core', '--dry-run'], { cwd: projectDir, homeDir });
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.ok(result.stdout.includes('explicit hook decision'));
     } finally {
       cleanup(homeDir);
       cleanup(projectDir);
