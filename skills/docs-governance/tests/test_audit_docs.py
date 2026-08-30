@@ -119,6 +119,17 @@ def test_artifact_scope_ignores_query_and_fragment_in_local_links(project: Path)
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_resolves_markdown_destinations_with_parentheses_and_spaces(project: Path) -> None:
+    (project / "topic (draft).md").write_text("# Draft\n", encoding="utf-8")
+    (project / "guide with spaces.md").write_text("# Guide\n", encoding="utf-8")
+    (project / "index.md").write_text(
+        "[topic](topic (draft).md)\n[guide](<guide with spaces.md>)\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
 def test_adr_scope_requires_every_file_in_index(project: Path) -> None:
     adr_dir = project / "docs" / "adr"
     adr_dir.mkdir(parents=True)

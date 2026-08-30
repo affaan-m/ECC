@@ -31,11 +31,11 @@ ENTRY_RE = re.compile(
     r"^## \[(?P<date>\d{4}-\d{2}-\d{2})\]\s+(?P<type>[^|\n]+?)\s*\|\s*(?P<summary>[^\n]+)$",
     re.MULTILINE,
 )
-MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+MARKDOWN_LINK_START_RE = re.compile(r"\[[^\]\n]*\]\(")
 CODE_PATH_RE = re.compile(r"`([^`\n]+)`")
 TEST_ID_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b", re.IGNORECASE)
 EXTERNAL_URI_RE = re.compile(
-    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:data|geo|mailto|sms|tel|urn):)",
+    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:data|geo|irc|magnet|mailto|news|sms|tel|urn):)",
     re.IGNORECASE,
 )
 ADR_FILE_RE = re.compile(r"^\d{4}-[a-z0-9-]+\.md$")
@@ -122,10 +122,34 @@ def git_show(root: Path, relative: str) -> str | None:
     return command.stdout if command.returncode == 0 else None
 
 
+def markdown_link_targets(text: str) -> list[str]:
+    targets: list[str] = []
+    for match in MARKDOWN_LINK_START_RE.finditer(text):
+        start = match.end()
+        if start < len(text) and text[start] == "<":
+            end = text.find(">", start + 1)
+            if end != -1 and end + 1 < len(text) and text[end + 1] == ")":
+                targets.append(text[start : end + 1])
+            continue
+        depth = 0
+        for end in range(start, len(text)):
+            character = text[end]
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                if depth == 0:
+                    targets.append(text[start:end])
+                    break
+                depth -= 1
+    return targets
+
+
 def normalize_link_target(raw: str) -> str | None:
-    target = raw.strip().split(maxsplit=1)[0].strip("<>")
+    target = raw.strip().strip("<>")
     target = unquote(target.split("#", 1)[0].split("?", 1)[0])
-    if not target or target.startswith("//") or EXTERNAL_URI_RE.match(target):
+    if not target or target.startswith("//"):
+        return None
+    if EXTERNAL_URI_RE.match(target):
         return None
     return target
 
@@ -150,7 +174,7 @@ def check_markdown_links(root: Path, files: list[Path], report: Report) -> None:
         if "templates" in source.relative_to(root).parts:
             continue
         text = source.read_text(encoding="utf-8")
-        for raw in MARKDOWN_LINK_RE.findall(text):
+        for raw in markdown_link_targets(text):
             target = normalize_link_target(raw)
             if target is None:
                 continue
@@ -278,7 +302,7 @@ def check_adr(root: Path, roles: dict[str, str], report: Report) -> None:
         report.fail("ADR directory exists without a canonical README.md index")
         return
     index_text = index.read_text(encoding="utf-8")
-    for raw in MARKDOWN_LINK_RE.findall(index_text):
+    for raw in markdown_link_targets(index_text):
         target = normalize_link_target(raw)
         resolved = resolve_target(root, index, target) if target is not None else None
         if target is not None and target.endswith(".md") and (resolved is None or not resolved.exists()):

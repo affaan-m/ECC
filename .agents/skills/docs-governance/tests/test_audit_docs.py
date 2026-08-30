@@ -83,16 +83,49 @@ def test_artifact_scope_ignores_external_uri_schemes_case_insensitively(project:
     assert result.returncode == 0, result.stdout
 
 
-def test_artifact_scope_checks_unknown_colon_targets_as_local_paths(project: Path) -> None:
-    (project / "guide.md").write_text("[missing](docs:guide.md)\n", encoding="utf-8")
+def test_artifact_scope_ignores_opaque_external_uri_schemes(project: Path) -> None:
+    (project / "guide.md").write_text(
+        "[magnet](magnet:?xt=urn:btih:abcdef)\n"
+        "[chat](irc:channel)\n"
+        "[news](news:comp.lang.python)\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
+def test_artifact_scope_checks_windows_drive_paths_as_local_paths(project: Path) -> None:
+    (project / "guide.md").write_text(
+        "[slash](C:/docs/guide.md)\n"
+        "[backslash](C:\\docs\\guide.md)\n",
+        encoding="utf-8",
+    )
     result = run_audit(project, "artifacts")
     assert result.returncode == 1
     assert "Broken Markdown link" in result.stdout
 
 
+def test_artifact_scope_checks_colon_shaped_local_paths_as_local_paths(project: Path) -> None:
+    (project / "guide.md").write_text("[local](docs:guide.md)\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: guide.md -> docs:guide.md" in result.stdout
+
+
 def test_artifact_scope_ignores_query_and_fragment_in_local_links(project: Path) -> None:
     (project / "guide.md").write_text("[details](target.md?version=2#usage)\n", encoding="utf-8")
     (project / "target.md").write_text("# Target\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
+def test_artifact_scope_resolves_markdown_destinations_with_parentheses_and_spaces(project: Path) -> None:
+    (project / "topic (draft).md").write_text("# Draft\n", encoding="utf-8")
+    (project / "guide with spaces.md").write_text("# Guide\n", encoding="utf-8")
+    (project / "index.md").write_text(
+        "[topic](topic (draft).md)\n[guide](<guide with spaces.md>)\n",
+        encoding="utf-8",
+    )
     result = run_audit(project, "artifacts")
     assert result.returncode == 0, result.stdout
 
