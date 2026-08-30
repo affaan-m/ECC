@@ -2585,7 +2585,7 @@ async function runTests() {
         ['post:dispatcher:sync', 'post:dispatcher:async'],
         'PostToolUse should have one sync and one async dispatcher'
       );
-      assert.ok(postEntries.every(entry => entry.matcher === '*'));
+      assert.ok(postEntries.every(entry => entry.matcher === '.*'));
 
       const preCommand = Array.isArray(preBash[0].hooks[0].command) ? preBash[0].hooks[0].command.join(' ') : preBash[0].hooks[0].command;
 
@@ -2594,6 +2594,22 @@ async function runTests() {
       assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
       assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
       assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('all string hook matchers are valid regular expressions', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          if (typeof entry.matcher !== 'string') continue;
+          assert.doesNotThrow(() => new RegExp(entry.matcher), `${eventName}/${entry.id || 'hook'} should use a valid regex matcher`);
+        }
+      }
     })
   )
     passed++;

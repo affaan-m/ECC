@@ -32,6 +32,7 @@ const windowsPackageCommands = new Set([
 ]);
 const unsafeWindowsShellChars = /[\r\n"&|<>^%!()]/;
 const commandTimeoutMs = 90_000;
+const archiveExtractionTimeoutMs = 180_000;
 
 let passed = 0;
 let failed = 0;
@@ -96,7 +97,7 @@ function run(command, args, options = {}) {
     env: options.env || process.env,
     maxBuffer: 10 * 1024 * 1024,
     shell: invocation.shell || false,
-    timeout: commandTimeoutMs,
+    timeout: options.timeout ?? commandTimeoutMs,
     windowsHide: true,
   });
 
@@ -171,6 +172,7 @@ function prepareLocalPackedProject(packageManager) {
   fs.mkdirSync(modulesDirectory, { recursive: true });
   run('tar', ['-xzf', fixture.archivePath, '-C', modulesDirectory], {
     cwd: projectDirectory,
+    timeout: archiveExtractionTimeoutMs,
   });
   fs.renameSync(extractedDirectory, packageDirectory);
   fs.mkdirSync(binDirectory, { recursive: true });
