@@ -122,7 +122,7 @@ The skill still composes the per-step agent chain. The chain is then mapped to t
 | `build` | `build-error-resolver` (use `<lang>-build-resolver` only when a matching language-specific build command is the emitted command) |
 | `fix` | `tdd-guide, <lang>-reviewer` |
 | `test` | `tdd-guide, e2e-runner` |
-| `db` | `tdd-guide, database-reviewer, <lang>-reviewer` |
+| `db` | `tdd-guide, <lang>-reviewer` (the `database-reviewer` agent is not a runnable command in this catalogue; `db` intent is recorded in the command rationale) |
 | `migration` | `architect, tdd-guide, <lang>-reviewer` |
 | `change` | `tdd-guide, <lang>-reviewer` |
 | `refactor` | `architect, refactor-cleaner, <lang>-reviewer` |
@@ -140,7 +140,7 @@ The skill still composes the per-step agent chain. The chain is then mapped to t
 1. **Base chain**: start with the primary tag's default chain, with `<lang>` resolved.
 2. **Multi-tag append**: for each secondary tag, append its unique, non-overlapping agents in catalogue order, before the base chain's tail reviewer.
    - `impl` + `security` → `tdd-guide, <lang>-reviewer, security-reviewer`.
-   - `impl` + `db` → `tdd-guide, database-reviewer, <lang>-reviewer`.
+   - `impl` + `db` → `tdd-guide, <lang>-reviewer` (`db` adds no unique runnable agents to an `impl` base; the schema/migration intent is recorded in the command rationale).
 3. **Deduplicate** the resulting chain, preserving first occurrence.
 4. **`<lang>` resolution**: `<lang>-reviewer` → `code-reviewer` when `lang=unknown` or when no `<lang>-reviewer` agent exists. `<lang>-build-resolver` → `build-error-resolver` when `lang=unknown` or when no `<lang>-build-resolver` agent exists; use `pytorch-build-resolver` when `pytorch=true`.
 5. **Chain length ≤ 4** after deduplication. If exceeded, drop lower-priority agents first: `lookup` and `docs`, then non-reviewer planning/build agents that are not required by the primary tag, then the least-specific reviewer if a more specific reviewer is already present.
@@ -263,8 +263,8 @@ Excerpt of expected output:
 
 **Intent**: Introduce an `EncryptedString` SQLAlchemy type and AES-GCM encrypt `birth_datetime` / `location` before persistence; load the key from an environment variable.
 **Tags**: impl, security, db
-**Agent chain**: `tdd-guide, database-reviewer, python-reviewer, security-reviewer`
-**Command rationale**: Security-sensitive write path, so `/orch-add-feature` will run `tdd-guide`, then `database-reviewer` for the alembic migration, then `python-reviewer`, and finally `security-reviewer` because the security trigger is touched.
+**Agent chain**: `tdd-guide, python-reviewer, security-reviewer`
+**Command rationale**: Security-sensitive write path, so `/orch-add-feature` will run `tdd-guide`, then `python-reviewer`, and finally `security-reviewer` because the security trigger is touched. The `db` tag records the schema/migration concern; `database-reviewer` is not a runnable command in the catalogue, so it is not part of the emitted chain.
 
 ```bash
 /orch-add-feature "[Plan: docs/plan/example-feature.md#step-2] Implement EncryptedString SQLAlchemy type and migrate UserProfile.birth_datetime/location columns; key from ENV APP_DB_KEY; Acceptance: encrypt/decrypt roundtrip tests pass; alembic upgrade/downgrade clean on empty DB; no plaintext in DB after migrate; Out of scope: cross-tenant profile sharing logic"
