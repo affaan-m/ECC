@@ -40,7 +40,7 @@ Với Claude Code, phần lớn người dùng nên chọn đúng **một** tron
 
 - **Khuyến nghị:** cài plugin Claude Code, sau đó copy thủ công chỉ những thư mục `rules/` bạn thật sự cần.
 - **Dùng installer thủ công** nếu bạn muốn kiểm soát chi tiết hơn, muốn tránh plugin, hoặc bản Claude Code của bạn không resolve được marketplace tự host.
-- **Không chồng nhiều cách cài lên nhau.** Cấu hình dễ hỏng nhất là `/plugin install` trước, rồi chạy tiếp `install.sh --profile full` hoặc `npx ecc-install --profile full`.
+- **Không chồng nhiều cách cài lên nhau.** Cấu hình dễ hỏng nhất là `/plugin install` trước, rồi chạy tiếp `install.sh --profile full` hoặc `npx ecc-universal install --profile full`.
 
 Nếu bạn đã cài chồng nhiều lần và thấy skill/hook bị trùng, xem [Reset / Gỡ ECC](#reset--gỡ-ecc).
 
@@ -99,7 +99,7 @@ npm install
 npm install
 .\install.ps1 --profile full
 # hoặc
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Nếu chọn đường thủ công, dừng ở đó. Đừng chạy thêm `/plugin install`.
@@ -115,7 +115,7 @@ Nếu bạn chỉ muốn rules, agents, commands và core workflow skills, dùng
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # hoặc
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Profile này cố ý không cài `hooks-runtime`.

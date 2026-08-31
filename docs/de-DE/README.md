@@ -210,7 +210,7 @@ Die meisten Claude-Code-Nutzer sollten genau einen Installationspfad verwenden:
 
 - **Empfohlene Voreinstellung:** Installiere das Claude-Code-Plugin und kopiere dann nur die Rule-Ordner, die du tatsächlich willst.
 - **Verwende den manuellen Installer nur dann, wenn** du feinere Kontrolle wünschst, den Plugin-Pfad ganz vermeiden willst oder dein Claude-Code-Build Probleme hat, den selbst gehosteten Marketplace-Eintrag aufzulösen.
-- **Stapele Installationsmethoden nicht.** Das häufigste kaputte Setup ist: zuerst `/plugin install`, danach `install.sh --profile full` oder `npx ecc-install --profile full`.
+- **Stapele Installationsmethoden nicht.** Das häufigste kaputte Setup ist: zuerst `/plugin install`, danach `install.sh --profile full` oder `npx ecc-universal install --profile full`.
 
 Falls du bereits mehrere Installationen übereinandergelegt hast und Dinge doppelt aussehen, springe direkt zu [ECC zurücksetzen / deinstallieren](#ecc-zurücksetzen--deinstallieren).
 
@@ -225,7 +225,7 @@ Falls sich Hooks zu global anfühlen oder du nur ECCs Rules, Agents, Commands un
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # oder
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Dieses Profil schließt `hooks-runtime` absichtlich aus.
@@ -247,7 +247,7 @@ Füge Hooks später nur hinzu, wenn du Laufzeit-Durchsetzung willst:
 Falls du nicht sicher bist, welches ECC-Profil oder welche Komponente du installieren sollst, frage den mitgelieferten Advisor aus jedem beliebigen Projekt:
 
 ```bash
-npx ecc consult "security reviews" --target claude
+npx ecc-universal consult "security reviews" --target claude
 ```
 
 Er liefert passende Komponenten, verwandte Profile sowie Preview-/Install-Befehle zurück. Verwende den Preview-Befehl vor der Installation, falls du den exakten Dateiplan inspizieren willst.
@@ -255,8 +255,8 @@ Er liefert passende Komponenten, verwandte Profile sowie Preview-/Install-Befehl
 Halte die Installation für produktive ML-/MLOps-Workflows opt-in und komponentenbezogen:
 
 ```bash
-npx ecc consult "mlops training model deployment" --target claude
-npx ecc install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal consult "mlops training model deployment" --target claude
+npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
 ```
 
 ### Schritt 1: Plugin installieren (empfohlen)
@@ -285,7 +285,7 @@ Das ist beabsichtigt. Anthropic-Marketplace-/Plugin-Installationen werden über 
 
 > WARNING: **Wichtig:** Claude-Code-Plugins können `rules` nicht automatisch verteilen.
 >
-> Falls du ECC bereits über `/plugin install` installiert hast, **führe danach nicht `./install.sh --profile full`, `.\install.ps1 --profile full` oder `npx ecc-install --profile full` aus**. Das Plugin lädt ECC-Skills, -Commands und -Hooks bereits. Wird der vollständige Installer nach einer Plugin-Installation ausgeführt, kopiert er dieselben Oberflächen in deine Benutzerverzeichnisse und kann doppelte Skills sowie doppeltes Laufzeitverhalten erzeugen.
+> Falls du ECC bereits über `/plugin install` installiert hast, **führe danach nicht `./install.sh --profile full`, `.\install.ps1 --profile full` oder `npx ecc-universal install --profile full` aus**. Das Plugin lädt ECC-Skills, -Commands und -Hooks bereits. Wird der vollständige Installer nach einer Plugin-Installation ausgeführt, kopiert er dieselben Oberflächen in deine Benutzerverzeichnisse und kann doppelte Skills sowie doppeltes Laufzeitverhalten erzeugen.
 >
 > Kopiere für Plugin-Installationen manuell nur die `rules/`-Verzeichnisse, die du willst, nach `~/.claude/rules/ecc/`. Beginne mit `rules/common` plus einem Sprach- oder Framework-Paket, das du tatsächlich verwendest. Kopiere nicht jedes Rules-Verzeichnis, es sei denn, du willst diesen gesamten Kontext ausdrücklich in Claude haben.
 >
@@ -320,7 +320,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/ecc/"
 
 # Vollständig manueller ECC-Installationspfad (nutze diesen statt /plugin install)
 # .\install.ps1 --profile full
-# npx ecc-install --profile full
+# npx ecc-universal install --profile full
 ```
 
 Anweisungen zur manuellen Installation findest du in der README im `rules/`-Ordner. Kopiere Rules manuell stets als ganzes Sprachverzeichnis (zum Beispiel `rules/common` oder `rules/golang`), nicht die darin enthaltenen Dateien, damit relative Verweise weiterhin funktionieren und Dateinamen nicht kollidieren.
@@ -336,7 +336,7 @@ Verwende dies nur, wenn du den Plugin-Pfad absichtlich überspringst:
 ```powershell
 .\install.ps1 --profile full
 # oder
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Wenn du diesen Pfad wählst, höre dort auf. Führe nicht zusätzlich `/plugin install` aus.

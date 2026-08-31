@@ -26,11 +26,11 @@ For Claude Code manual installs, do not paste the raw repo `hooks.json` into `~/
 Use the installer instead so hook commands are rewritten against your actual Claude root:
 
 ```bash
-bash ./install.sh --target claude --modules hooks-runtime
+bash ./install.sh --target claude --modules hooks-runtime --enable-hooks
 ```
 
 ```powershell
-pwsh -File .\install.ps1 --target claude --modules hooks-runtime
+pwsh -File .\install.ps1 --target claude --modules hooks-runtime --enable-hooks
 ```
 
 That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Claude config root is `%USERPROFILE%\\.claude`.

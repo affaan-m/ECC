@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { discoverInstalledStates } = require('./lib/install-lifecycle');
+const { getRecordedHookConsent } = require('./lib/install/hook-consent');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 
 function showHelp(exitCode = 0) {
@@ -85,6 +86,7 @@ function buildInstallApplyArgs(record) {
   const target = state.target.target || record.adapter.target;
   const request = state.request || {};
   const args = [];
+  const hookConsent = getRecordedHookConsent(state);
 
   if (target) {
     args.push('--target', target);
@@ -104,6 +106,12 @@ function buildInstallApplyArgs(record) {
 
   for (const componentId of Array.isArray(request.excludeComponents) ? request.excludeComponents : []) {
     args.push('--without', componentId);
+  }
+
+  if (hookConsent === 'enabled') {
+    args.push('--enable-hooks');
+  } else if (hookConsent === 'declined') {
+    args.push('--no-hooks');
   }
 
   for (const language of Array.isArray(request.legacyLanguages) ? request.legacyLanguages : []) {

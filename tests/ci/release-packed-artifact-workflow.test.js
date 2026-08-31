@@ -187,6 +187,58 @@ test('packed lifecycle invokes installed public bins, including setup help', () 
   assert.doesNotMatch(lifecycleRunnerSource, /node_modules.*scripts.*ecc\.js/);
 });
 
+test('packed lifecycle applies and updates README-primary Claude setup with a fake provider', () => {
+  assert.match(lifecycleRunnerSource, /createFakeClaudeExecutable/);
+  assert.match(
+    lifecycleRunnerSource,
+    /const claudeSetupArgs = \[\s*'ecc-universal', 'setup',\s*'--mode', 'claude-plugin',\s*'--scope', 'user',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\s*\[\.\.\.claudeSetupArgs, '--hooks', 'standard', '--dry-run', '--json'\]/
+  );
+  assert.match(lifecycleRunnerSource, /Claude setup dry-run must not mutate setup state/);
+  assert.match(lifecycleRunnerSource, /runProcess\('git', \['--version'\]/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('standard'\)/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('strict'\)/);
+  assert.match(lifecycleRunnerSource, /CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.match(lifecycleRunnerSource, /plugin marketplace add/);
+  assert.match(lifecycleRunnerSource, /plugin update ecc@ecc/);
+});
+
+test('packed lifecycle mutates through the fully explicit guided Kimi install', () => {
+  assert.match(
+    lifecycleRunnerSource,
+    /const guidedKimiInstallArgs = \[\s*'ecc-universal', 'install', '--guided',\s*'--harness', 'kimi',\s*'--profile', 'core',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--dry-run', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--yes', '--json'\]\)/
+  );
+  assert.strictEqual(
+    (lifecycleRunnerSource.match(/runGuidedKimiInstall\(\)/g) || []).length,
+    2,
+    'guided Kimi apply must run once initially and once as an idempotency check'
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'doctor', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'uninstall', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(lifecycleRunnerSource, /guidedKimiSentinel/);
+  assert.match(lifecycleRunnerSource, /dry-run must not mutate the Kimi target/);
+  for (const credentialName of ['ANTHROPIC_API_KEY', 'KIMI_API_KEY', 'MOONSHOT_API_KEY']) {
+    assert.match(lifecycleRunnerSource, new RegExp(credentialName));
+  }
+});
+
 test('packed lifecycle validates canonical Antigravity and OpenCode installs', () => {
   assert.match(lifecycleRunnerSource, /target:\s*'antigravity'/);
   assert.match(lifecycleRunnerSource, /path\.join\(projectDir, '\.agents'\)/);

@@ -147,7 +147,7 @@ command -v ecc-memory-mcp
 
 > WARNING: **重要提示：** Claude Code 插件无法自动分发 `rules`。
 >
-> 如果你已经通过 `/plugin install` 安装了 ECC，**不要再运行 `./install.sh --profile full`、`.\install.ps1 --profile full` 或 `npx ecc-install --profile full`**。插件已经会自动加载 ECC 的技能、命令和 hooks；此时再执行完整安装，会把同一批内容再次复制到用户目录，导致技能重复以及运行时行为重复。
+> 如果你已经通过 `/plugin install` 安装了 ECC，**不要再运行 `./install.sh --profile full`、`.\install.ps1 --profile full` 或 `npx ecc-universal install --profile full`**。插件已经会自动加载 ECC 的技能、命令和 hooks；此时再执行完整安装，会把同一批内容再次复制到用户目录，导致技能重复以及运行时行为重复。
 >
 > 对于插件安装路径，请只手动复制你需要的 `rules/` 目录。只有在你完全不走插件安装、而是选择“纯手动安装 ECC”时，才应该使用完整安装器。
 
@@ -178,7 +178,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/"
 
 # 纯手动安装 ECC（不要和 /plugin install 叠加）
 # .\install.ps1 --profile full
-# npx ecc-install --profile full
+# npx ecc-universal install --profile full
 ```
 
 如需手动安装说明，请查看 `rules/` 文件夹中的 README 文档。手动复制规则文件时，请直接复制**整个语言目录**（例如 `rules/common` 或 `rules/golang`），而非目录内的单个文件，以保证相对路径引用正常、文件名不会冲突。

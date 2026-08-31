@@ -18,7 +18,10 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
 const CURRENT_MANIFEST_VERSION = JSON.parse(
   fs.readFileSync(path.join(REPO_ROOT, 'manifests', 'install-modules.json'), 'utf8')
 ).version;
-const CLI_TIMEOUT_MS = 30000;
+// Windows CI file I/O is several times slower, and these cases run two full
+// CLI passes (install, then uninstall) over hundreds of files. install-apply
+// tests already scale their timeout the same way.
+const CLI_TIMEOUT_MS = process.platform === 'win32' ? 90000 : 30000;
 const {
   createInstallState,
   writeInstallState,
@@ -90,7 +93,7 @@ function runTests() {
     const projectRoot = createTempDir('uninstall-project-');
 
     try {
-      const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript'], {
+      const installStdout = execFileSync('node', [INSTALL_SCRIPT, '--target', 'cursor', 'typescript', '--enable-hooks'], {
         cwd: projectRoot,
         env: {
           ...process.env,

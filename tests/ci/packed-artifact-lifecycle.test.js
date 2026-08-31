@@ -131,7 +131,7 @@ test('Windows public CLI invocation accepts the exact Itô capability selection'
       'ecc', 'install', '--profile', 'core',
       '--with', 'capability:ito-compute',
       '--with', 'capability:prediction-markets',
-      '--target', 'cursor', '--json',
+      '--target', 'cursor', '--enable-hooks', '--json',
     ],
     { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
     'win32'
@@ -140,7 +140,18 @@ test('Windows public CLI invocation accepts the exact Itô capability selection'
   assert.strictEqual(invocation.command, 'C:\\Windows\\System32\\cmd.exe');
   assert.strictEqual(
     invocation.args[3],
-    'npm exec --offline --yes=false -- ecc install --profile core --with capability:ito-compute --with capability:prediction-markets --target cursor --json'
+    'npm exec --offline --yes=false -- ecc install --profile core --with capability:ito-compute --with capability:prediction-markets --target cursor --enable-hooks --json'
+  );
+});
+
+test('workflow-quality target smoke explicitly opts into hooks', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, 'packed-artifact-lifecycle.js'),
+    'utf8'
+  );
+  assert.match(
+    source,
+    /'--modules', 'workflow-quality'[\s\S]*'--enable-hooks'/
   );
 });
 

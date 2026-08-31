@@ -59,6 +59,9 @@ Options:
   --locale <code>     Install translated docs to ~/.claude/docs/<locale>/ (or ./.claude/docs/<locale>/ for claude-project)
                       (claude or claude-project target only; can be combined with --profile or --with)
   --config <path>     Load install intent from ecc-install.json
+  --enable-hooks      Confirm installing the automatic hook runtime (required
+                      when the selected profile/modules materialize hooks)
+  --no-hooks          Install everything except the automatic hook runtime
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
