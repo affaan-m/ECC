@@ -2,6 +2,144 @@
   <img src="assets/hero.png" alt="ECC - the agent harness operating system" width="100%" />
 </p>
 
+# ECC
+
+Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, verifies changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
+
+```text
+plan -> test -> implement -> review -> verify -> remember -> improve
+```
+
+Instead of rebuilding that process in every prompt, you install it once and make it part of how your agent works.
+
+> Optimize the context window. Persist everything else.
+
+ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
+
+Access to 68 agents, 286 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
+
+| Included         |       Count | What it gives you                                                                    |
+| ---------------- | ----------: | ------------------------------------------------------------------------------------ |
+| Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
+| Skills           |  286 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
+| Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
+| Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
+| Rules            |   Selective | Always-loaded standards you choose by language or project                            |
+| AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
+
+> [!WARNING]
+> **Official sources only.** Install ECC only from verified channels: the GitHub repository [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC), the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield), the [GitHub App](https://github.com/apps/ecc-tools), the plugin slug `ecc@ecc`, and the project website [ecc.tools](https://ecc.tools). Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware.
+
+## Install with Claude Code
+
+Run the canonical guided setup from your terminal:
+
+```bash
+npx ecc-universal setup
+```
+
+If npm reports a version or cache error, confirm the registry version before retrying:
+
+```bash
+npm view ecc-universal version
+```
+
+This path requires Node.js 18 or newer, Git, and Claude Code 2.1 or newer on
+`PATH`. It safely installs, updates, or moves one `ecc@ecc` plugin scope and
+records the hook profile you choose.
+
+Alternatively, run Claude Code's native plugin commands inside Claude Code:
+
+```text
+/plugin marketplace add https://github.com/affaan-m/ECC
+/plugin install ecc@ecc
+```
+
+The native path installs ECC's skills, agents, commands, and plugin-managed hooks. If you choose it, stop there. Do not also run a full manual install into Claude Code.
+
+> Both paths install the same `ecc@ecc` plugin. Choose one and do not stack
+> another manual Claude install on top.
+
+**See it run:** the [shortform guide](the-shortform-guide.md) walks one real
+session end to end. The [longform guide](the-longform-guide.md) covers the whole
+system, and the [security guide](the-security-guide.md) covers AgentShield.
+
+<p align="center">
+  <strong>Shipping weekly.</strong>
+  <a href="https://github.com/affaan-m/ECC/subscription">Watch → Custom → Releases</a>
+  to get each release once, with no other notifications.
+  <a href="https://discord.gg/36yGMHGFbR">Discord</a> ·
+  <a href="https://ecc.tools">ecc.tools</a> ·
+  <a href="ROADMAP.md">Roadmap</a>
+</p>
+
+<p align="center">
+  <a href="https://www.star-history.com/affaan-m/ecc">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/star-history-dark.svg" />
+      <img src="assets/star-history-light.svg" alt="ECC star history: first 40,000 stars, January 18 to February 7, 2026" width="100%" />
+    </picture>
+  </a>
+</p>
+
+<details>
+<summary>Sponsors, partners, and project links</summary>
+
+<div align="center">
+
+<table aria-label="ECC primary links">
+<tr>
+<td width="33%" align="center">
+  <a href="https://ecc.tools/pricing">
+    <img src="assets/images/community/ecc-tools-mark.svg" height="42" alt="ECC Tools" /><br />
+    <strong>ECC Pro + GitHub App</strong>
+  </a><br />
+  <sub><a href="https://github.com/apps/ecc-tools">Install free</a> · <a href="https://ecc.tools/pricing">Private repos from $19/seat/mo</a></sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://github.com/sponsors/affaan-m">
+    <img src="assets/images/community/heart.svg" height="42" alt="" /><br />
+    <strong>Sponsor ECC</strong>
+  </a><br />
+  <sub>Fund the open-source project</sub>
+</td>
+<td width="33%" align="center">
+  <a href="https://discord.gg/36yGMHGFbR">
+    <img src="assets/images/community/discord.svg" height="42" alt="Discord" /><br />
+    <strong>Community</strong>
+  </a><br />
+  <sub>Discord · Q&amp;A · Show and Tell</sub>
+</td>
+</tr>
+</table>
+
+</div>
+
+<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work. That's why a single maintainer ships weekly across 7 harnesses.</sub>
+
+<div align="center">
+
+<sub><strong>Partners &amp; sponsors</strong></sub>
+
+<p align="center" aria-label="Partners and sponsors">
+  <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.moonshot.ai" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>
+</p>
+
+<sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
+
+<sub><a href="https://github.com/sponsors/affaan-m"><strong>Become a Sponsor</strong></a> · <a href="SPONSORS.md">Sponsor Tiers</a> · <a href="SPONSORING.md">Sponsorship Program</a></sub>
+
+</div>
+
+</details>
+
+<details>
+<summary>Badges, languages, and project stats</summary>
+
 <p align="center">
   <a href="https://www.star-history.com/affaan-m/ecc">
     <picture>
@@ -63,124 +201,7 @@
   <img src="https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white" alt="Markdown" />
 </p>
 
-> [!WARNING]
-> **Official sources only.** Install ECC only from verified channels: the GitHub repository [github.com/affaan-m/ECC](https://github.com/affaan-m/ECC), the npm packages [`ecc-universal`](https://www.npmjs.com/package/ecc-universal) and [`ecc-agentshield`](https://www.npmjs.com/package/ecc-agentshield), the [GitHub App](https://github.com/apps/ecc-tools), the plugin slug `ecc@ecc`, and the project website [ecc.tools](https://ecc.tools). Third-party re-uploads and unofficial mirrors are not maintained or reviewed by the project and may contain malware.
-
-## Install with Claude Code
-
-Run the canonical guided setup from your terminal:
-
-```bash
-npx ecc-universal setup
-```
-
-If npm reports a version or cache error, confirm the registry version before retrying:
-
-```bash
-npm view ecc-universal version
-```
-
-This path requires Node.js 18 or newer, Git, and Claude Code 2.1 or newer on
-`PATH`. It safely installs, updates, or moves one `ecc@ecc` plugin scope and
-records the hook profile you choose.
-
-Alternatively, run Claude Code's native plugin commands inside Claude Code:
-
-```text
-/plugin marketplace add https://github.com/affaan-m/ECC
-/plugin install ecc@ecc
-```
-
-The native path installs ECC's skills, agents, commands, and plugin-managed hooks. If you choose it, stop there. Do not also run a full manual install into Claude Code.
-
-> Both paths install the same `ecc@ecc` plugin. Choose one and do not stack
-> another manual Claude install on top.
-
-<div align="center">
-
-<table aria-label="ECC primary links">
-<tr>
-<td width="33%" align="center">
-  <a href="https://ecc.tools/pricing">
-    <img src="assets/images/community/ecc-tools-mark.svg" height="42" alt="ECC Tools" /><br />
-    <strong>ECC Pro + GitHub App</strong>
-  </a><br />
-  <sub><a href="https://github.com/apps/ecc-tools">Install free</a> · <a href="https://ecc.tools/pricing">Private repos from $19/seat/mo</a></sub>
-</td>
-<td width="33%" align="center">
-  <a href="https://github.com/sponsors/affaan-m">
-    <img src="assets/images/community/heart.svg" height="42" alt="" /><br />
-    <strong>Sponsor ECC</strong>
-  </a><br />
-  <sub>Fund the open-source project</sub>
-</td>
-<td width="33%" align="center">
-  <a href="https://discord.gg/36yGMHGFbR">
-    <img src="assets/images/community/discord.svg" height="42" alt="Discord" /><br />
-    <strong>Community</strong>
-  </a><br />
-  <sub>Discord · Q&amp;A · Show and Tell</sub>
-</td>
-</tr>
-</table>
-
-</div>
-
-<sub>**OSS stays free.** This repo is MIT-licensed forever. ECC Pro is the hosted GitHub App for private repos. <a href="https://github.com/sponsors/affaan-m">Sponsors</a> and <a href="https://ecc.tools/pricing">Pro subscribers</a> fund the work. That's why a single maintainer ships weekly across 7 harnesses.</sub>
-
-<div align="center">
-
-<sub><strong>Partners &amp; sponsors</strong></sub>
-
-<p align="center" aria-label="Partners and sponsors">
-  <a href="https://www.coderabbit.ai" title="CodeRabbit"><img src="assets/images/sponsors/coderabbit.png" height="54" alt="CodeRabbit" /></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://www.greptile.com/go/ecc" title="Greptile"><img src="assets/images/sponsors/greptile.png" height="54" alt="Greptile" /></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://www.atlascloud.ai/?utm_source=github&amp;utm_medium=link&amp;utm_campaign=ECC" title="Atlas Cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/atlascloud-dark.svg" /><img src="assets/images/sponsors/atlascloud.svg" width="154" alt="Atlas Cloud" /></picture></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://www.moonshot.ai" title="Moonshot AI - Kimi"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/images/sponsors/moonshot-dark.png" /><img src="assets/images/sponsors/moonshot.png" width="132" alt="Moonshot AI - Kimi" /></picture></a>&nbsp;&nbsp;&nbsp;
-  <a href="https://compute.itomarkets.com" title="Itô Markets"><picture><source media="(prefers-color-scheme: light)" srcset="assets/images/sponsors/ito-transparent-light.png" /><img src="assets/images/sponsors/ito-transparent.png" width="96" alt="Itô Markets" /></picture></a>
-</p>
-
-<sub><strong>Community sponsors:</strong> <a href="https://github.com/mikejmorgan-ai">Mike Morgan</a> · <a href="https://github.com/jasonwu513">@jasonwu513</a> · <a href="https://github.com/1anter">@1anter</a> · <a href="https://github.com/massimotodaro">@massimotodaro</a> · <a href="https://github.com/meadmccabe">@meadmccabe</a></sub>
-
-<sub><a href="https://github.com/sponsors/affaan-m"><strong>Become a Sponsor</strong></a> · <a href="SPONSORS.md">Sponsor Tiers</a> · <a href="SPONSORING.md">Sponsorship Program</a></sub>
-
-</div>
-
-<p align="center"><a href="#install-ecc">Jump to install ↓</a></p>
-
-# ECC
-
-Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, verifies changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
-
-```text
-plan -> test -> implement -> review -> verify -> remember -> improve
-```
-
-Instead of rebuilding that process in every prompt, you install it once and make it part of how your agent works.
-
-> Optimize the context window. Persist everything else.
-
-ECC is MIT-licensed open source. It works best with Claude Code today, has a supported Codex sync path, and provides capability-limited adapters for Cursor, OpenCode, Gemini, Zed, GitHub Copilot, Antigravity, Qwen, and other harnesses. See the [support status matrix](#platform-support) before assuming feature parity.
-
-Access to 68 agents, 286 skills, and 94 legacy command shims, plus hooks, rules, memory, continuous learning, and AgentShield security scanning. The agents are specialized for planning, review, build repair, security, architecture, and domain work.
-
-| Included         |       Count | What it gives you                                                                    |
-| ---------------- | ----------: | ------------------------------------------------------------------------------------ |
-| Agents           |   68 agents | Planning, review, build repair, security, architecture, and domain work              |
-| Skills           |  286 skills | TDD, research, security, docs, frontend, data, ML, operations, and more              |
-| Commands         | 94 commands | Convenient entry points while ECC moves to a skills-first surface                    |
-| Hooks and memory |     Runtime | Enforcement, session summaries, continuous learning, instincts, and context controls |
-| Rules            |   Selective | Always-loaded standards you choose by language or project                            |
-| AgentShield      |    Included | Scanning for prompts, hooks, MCP config, permissions, secrets, and agent files       |
-
-<p align="center">
-  <a href="https://www.star-history.com/affaan-m/ecc">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/star-history-dark.svg" />
-      <img src="assets/star-history-light.svg" alt="ECC star history: first 40,000 stars, January 18 to February 7, 2026" width="100%" />
-    </picture>
-  </a>
-</p>
+</details>
 
 ## Install ECC
 
@@ -2195,6 +2216,11 @@ The short version:
 - **Longform Guide (Advanced):** [The Longform Guide to ECC](https://x.com/affaan/status/2014040193557471352)
 - **Security Guide:** [Security Guide](./the-security-guide.md) | [Thread](https://x.com/affaan/status/2033263813387223421)
 - **Follow:** [@affaan](https://x.com/affaan)
+- **Getting help:** [SUPPORT.md](./SUPPORT.md)
+- **What ships next:** [ROADMAP.md](./ROADMAP.md)
+- **Who runs ECC:** [ADOPTERS.md](./ADOPTERS.md)
+- **Citing ECC:** [CITATION.cff](./CITATION.cff)
+- **Machine-readable catalog:** [llms.txt](./llms.txt) | [full catalog](./docs/discovery/llms-full.txt) | [JSON index](./docs/DISCOVERY-INDEX.json)
 
 ## License
 
