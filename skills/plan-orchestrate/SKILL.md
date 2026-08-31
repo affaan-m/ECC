@@ -1,6 +1,6 @@
 ---
 name: plan-orchestrate
-description: Read a plan document, decompose it into steps, classify each step, and emit ready-to-paste ECC slash commands from the current default command surface. Generative only — never invokes commands itself. Use when the user has a multi-step plan and wants the right command for each step without picking it by hand.
+description: Read a plan document, decompose it into steps, classify each step, compose a per-step agent chain, and emit the ready-to-paste ECC slash command that runs that chain. Generative only — never invokes commands itself. Use when the user has a multi-step plan and wants the right command for each step without picking it by hand.
 metadata:
   origin: ECC
 ---
@@ -23,12 +23,13 @@ Skip when:
 ## Inputs
 
 ```
-<plan-doc-path> [--scope=all|step:<n>|range:<a>-<b>] [--dry-run]
+<plan-doc-path> [--lang=python|typescript|go|rust|cpp|java|kotlin|flutter|auto] [--scope=all|step:<n>|range:<a>-<b>] [--dry-run]
 ```
 
 - `<plan-doc-path>` — required; relative or absolute path (`@docs/...` accepted).
+- `--lang` — reviewer/build-resolver language variant; defaults to `auto` (detected from project). Used to resolve `<lang>` in the agent chain.
 - `--scope` — limits emitted steps; defaults to `all`.
-- `--dry-run` — print decomposition + command rationale only; do not emit final commands.
+- `--dry-run` — print decomposition + command rationale + agent chain only; do not emit final commands.
 
 ## Authoritative output shape (do not deviate)
 
@@ -88,7 +89,7 @@ Classify each step by its primary tag and emit the matching command. The command
 | `loop` | loop, autonomous, watchdog | `/loop-start` | `/loop-start sequential --mode safe` | Start an autonomous loop. |
 
 Tag resolution rules:
-1. **Primary tag selection**: a step may match multiple tags. Pick the primary tag using the **precedence order below** (highest first). The command for the primary tag is what gets emitted.
+1. **Primary tag selection**: a step may match multiple tags. Pick the primary tag using the **precedence order below** (highest first). The command for the primary tag is what gets emitted; the agent chain is composed from the primary and any secondary tags.
 2. **Precedence order**:
    1. `build` — when the step is about build/compile/lint/CI failure or build-system work. Beats `fix`: "fix the build error" → `/build-fix`.
    2. `fix` — when existing behavior is broken/wrong and the domain is not `build`/`test`/`db`/`migration`. Example: "fix the poller crash" → `/orch-fix-defect`. Beats `impl` and `test`: "fix the broken test" → `/orch-fix-defect` (not `/test-coverage`).
@@ -103,16 +104,50 @@ Tag resolution rules:
    11. `design`, `plan`, `lookup` — planning/research.
    12. `docs` — documentation.
    13. `loop` — autonomous loop.
-3. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step still emits `/orch-add-feature`, but the rationale notes that the security trigger will pull in `security-reviewer` automatically).
-4. **Zero-tag steps**: default to `/code-review` and write the rationale `no tag matched; default review command`.
+3. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step still emits `/orch-add-feature`; the rationale notes that the composed chain ends with `security-reviewer`).
+4. **Zero-tag steps**: chain is `code-reviewer`; command is `/code-review`; rationale `no tag matched; default review-only chain`.
 5. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "add tests with tdd-guide" is a `test` step → `/test-coverage`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (or `/python-review` if the language is clearly Python). Do not emit raw agent names as commands.
+
+### Agent chain catalogue
+
+The skill still composes the per-step agent chain. The chain is then mapped to the resolvable command from the `Command catalogue` above. The composed chain is recorded in the `Agent chain` field of the output; the runnable command remains a single resolvable slash command.
+
+| Tag | Default agent chain |
+|---|---|
+| `build` | `<lang>-build-resolver` (falls back to `build-error-resolver` when `lang=unknown`; `pytorch-build-resolver` when `pytorch=true`) |
+| `fix` | `tdd-guide, <lang>-reviewer` |
+| `test` | `tdd-guide, e2e-runner` |
+| `db` | `tdd-guide, database-reviewer, <lang>-reviewer` |
+| `migration` | `architect, tdd-guide, <lang>-reviewer` |
+| `change` | `tdd-guide, <lang>-reviewer` |
+| `refactor` | `architect, refactor-cleaner, <lang>-reviewer` |
+| `review` | `<lang>-reviewer, code-reviewer` |
+| `security` | `security-reviewer, <lang>-reviewer` |
+| `impl` | `tdd-guide, <lang>-reviewer` |
+| `design` | `planner, architect` |
+| `plan` | `planner` |
+| `lookup` | `planner, docs-lookup` |
+| `docs` | `doc-updater` |
+| `loop` | `loop-operator` |
+
+#### Chain composition rules
+
+1. **Base chain**: start with the primary tag's default chain.
+2. **Multi-tag append**: for each secondary tag, append its unique, non-overlapping agents in catalogue order.
+   - `impl` + `security` → `tdd-guide, <lang>-reviewer, security-reviewer`.
+   - `impl` + `db` → `tdd-guide, database-reviewer, <lang>-reviewer`.
+3. **Deduplicate** the resulting chain, preserving first occurrence.
+4. **`<lang>` resolution**: `<lang>-reviewer` → `code-reviewer` when `lang=unknown`. `<lang>-build-resolver` → `build-error-resolver` when `lang=unknown`; use `pytorch-build-resolver` when `pytorch=true`.
+5. **Chain length ≤ 4** after deduplication. If exceeded, drop `lookup` and `docs` first.
+6. **Reviewer-class tail**: steps tagged `impl`, `refactor`, or `migration` must end with a reviewer-class agent (`<lang>-reviewer`, `code-reviewer`, `security-reviewer`, or `database-reviewer`). The most domain-specific reviewer wins the tail position.
+7. **Zero-tag steps**: chain is `code-reviewer`; command is `/code-review`.
 
 ## How It Works
 
 ### Phase 0 — Read the plan
 
 1. Read `<plan-doc-path>`. If missing or empty, report and stop.
-2. Optionally detect the dominant project language from markers (`pyproject.toml` / `uv.lock` / `requirements.txt` → python; `package.json` → typescript; `go.mod` → go; `Cargo.toml` → rust; `CMakeLists.txt` or top-level `*.cpp` → cpp; `pom.xml` / `build.gradle` → java; `build.gradle.kts` or top-level Kotlin → kotlin; `pubspec.yaml` → flutter). This is informational and can be included in the task description so the chosen command has context.
+2. Optionally detect the dominant project language from markers (`pyproject.toml` / `uv.lock` / `requirements.txt` → python; `package.json` → typescript; `go.mod` → go; `Cargo.toml` → rust; `CMakeLists.txt` or top-level `*.cpp` → cpp; `pom.xml` / `build.gradle` → java; `build.gradle.kts` or top-level Kotlin → kotlin; `pubspec.yaml` → flutter). This is used to resolve `<lang>-reviewer` and `<lang>-build-resolver` in the agent chain. It can also be included in the task description so the chosen command has context.
 3. Normalize any agent names declared in the plan to tags or commands using the catalogue above. Never emit a bare agent name as the command.
 
 ### Phase 1 — Decompose steps
@@ -126,9 +161,14 @@ Identify "step units" in priority order:
 
 Per step extract `id` (1-based), `title` (≤ 80 chars), `intent` (1–3 sentences), `tags`.
 
-### Phase 2 — Tag and pick command
+### Phase 2 — Tag, compose chain, and pick command
 
-Use the catalogue above. The output of this phase is a single command per step, not an agent chain. The command itself runs the right agent pipeline.
+Use the catalogues above. For each step:
+1. Resolve the primary tag using the precedence order.
+2. Compose the per-step agent chain from the `Agent chain catalogue` and the chain composition rules.
+3. Map the composed chain to the resolvable command in the `Command catalogue` that runs the equivalent pipeline.
+
+The output of this phase is still a single resolvable command per step. The composed agent chain is recorded in the `Agent chain` field and the `Command rationale`; it is not itself emitted as a command.
 
 ### Phase 3 — Compress task description
 
@@ -150,15 +190,16 @@ Emit Markdown:
 # Plan-Orchestrate Result
 
 **Plan**: `<path>`
+**Lang**: `<detected-or-given>` (`unknown` if not detected)
 **Steps**: <N>
 **Scope**: <all | step:n | range:a-b>
 
 ## Steps overview
 
-| # | Title | Tags | Command |
-|---|---|---|---|
-| 1 | ... | impl, security | `/orch-add-feature` |
-| ... | | | |
+| # | Title | Tags | Command | Agent chain |
+|---|---|---|---|---|
+| 1 | ... | impl, security | `/orch-add-feature` | `tdd-guide, python-reviewer, security-reviewer` |
+| ... | | | | |
 
 ---
 
@@ -166,7 +207,8 @@ Emit Markdown:
 
 **Intent**: <1–3 sentences>
 **Tags**: <a, b>
-**Command rationale**: <why this command and what it will run>
+**Agent chain**: <composed chain, with `<lang>` resolved when known>
+**Command rationale**: <why this command and how it maps to the composed chain; what it will run>
 
 ```bash
 /orch-add-feature "[Plan: docs/foo.md#step-1] <compressed task description>; Acceptance: <1–3 items>; Out of scope: <…>"
@@ -178,6 +220,7 @@ Append a final "Batch execution" block aggregating every step's command in order
 ### Phase 5 — Self-check (run before emitting)
 
 - [ ] Every command is from the catalogue above; no `/orchestrate`, `/ecc:orchestrate`, or legacy-shim command appears in the rendered output.
+- [ ] The `Agent chain` field is present and matches the chain composed from the `Agent chain catalogue` and composition rules. No chain contains `/orchestrate` or `/ecc:orchestrate`.
 - [ ] No invented `--mode`, `--gate`, or `--agents=...` fields.
 - [ ] For commands that take a quoted task description, the task description is single-line, double-quoted, with embedded `"` escaped.
 - [ ] Each quoted task description begins with `[Plan: <path>#step-<id>]` and includes Acceptance (1–3 items). The `Out of scope:` clause is present only when inherited from the plan.
@@ -209,6 +252,7 @@ Excerpt of expected output:
 
 **Intent**: Introduce an `EncryptedString` SQLAlchemy type and AES-GCM encrypt `birth_datetime` / `location` before persistence; load the key from an environment variable.
 **Tags**: impl, security, db
+**Agent chain**: `tdd-guide, database-reviewer, python-reviewer, security-reviewer`
 **Command rationale**: Security-sensitive write path, so `/orch-add-feature` will run `tdd-guide`, then `database-reviewer` for the alembic migration, then `python-reviewer`, and finally `security-reviewer` because the security trigger is touched.
 
 ```bash
