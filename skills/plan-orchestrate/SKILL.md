@@ -32,43 +32,80 @@ Skip when:
 
 ## Authoritative output shape (do not deviate)
 
+The output is one ready-to-paste command per step. The exact form depends on the command, because not every ECC command accepts a quoted task description.
+
+### Commands that accept a quoted task description
+
+For orchestrator commands and `/plan`, emit:
+
 ```
 /<command> "<task description>"
 ```
 
+- `/orch-add-feature`, `/orch-fix-defect`, `/orch-change-feature`, `/orch-refine-code`, `/plan` accept a free-form request as their argument.
+- The task description is 200–600 characters, one line, self-contained, and starts with `[Plan: <path>#step-<id>]`.
+- Embedded double quotes in the task description are escaped as `\"`.
+
+### Commands that run self-contained or take specific flags
+
+For these commands, do **not** pass the full task description as a quoted argument. Emit the bare command or the documented flag form, and move the step context into the command rationale.
+
+| Command | Output form | Notes |
+|---|---|---|
+| `/build-fix` | `/build-fix` | Detects and fixes the current project’s build errors. |
+| `/code-review` | `/code-review` for local uncommitted changes; `/code-review <pr-number>` if the step references a PR | Without a PR, reviews the current diff. |
+| `/loop-start` | `/loop-start sequential --mode safe` | Default pattern; use `rfc-dag` only when the step explicitly describes a DAG-style loop. |
+| `/security-scan` | `/security-scan` or `/security-scan <path>` | Default path is the project root. Only pass a path if the step names a specific directory. |
+| `/test-coverage` | `/test-coverage` | Analyzes and improves project-wide coverage. |
+| `/update-docs` | `/update-docs` | Syncs documentation from source-of-truth files. |
+
+### Universal rules
+
 - The command must be one of the commands in the catalogue below. No `legacy-command-shims/` commands and no `/orchestrate` or `/ecc:orchestrate` — those are retired.
 - One concrete command per step — never a placeholder or multiple forms.
-- No `--mode`, `--gate`, `--agents=...`, or similar invented flags.
-- Embedded double quotes in the task description are escaped as `\"`.
-- The task description is 200–600 characters, one line, self-contained, and starts with `[Plan: <path>#step-<id>]`.
+- No invented `--mode`, `--gate`, `--agents=...`, or similar flags unless the command form above explicitly uses a supported flag.
 
 ## Command catalogue
 
 Classify each step by its primary tag and emit the matching command. The command itself decides which agents and skills to run.
 
-| Tag | Trigger words | Command | Why |
-|---|---|---|---|
-| `design` | architecture, design, choose, evaluate, RFC | `/plan` | Needs human-approved implementation plan before code. |
-| `plan` | plan, breakdown, milestone | `/plan` | Produces a step-by-step plan for approval. |
-| `impl` | implement, build, add, create, port | `/orch-add-feature` | Net-new capability. |
-| `fix` | fix, bug, broken, defect, repair, regression | `/orch-fix-defect` | Existing behavior is wrong. |
-| `change` | change, alter, tweak, modify, behavior | `/orch-change-feature` | Existing working behavior should behave differently. |
-| `refactor` | refactor, cleanup, dedupe, split, restructure | `/orch-refine-code` | Behavior-preserving restructure. |
-| `migration` | migrate, upgrade, rewrite, port | `/orch-change-feature` | Replacing one implementation with another; if behavior must stay identical, classify as `refactor`. |
-| `db` | schema, migration, index, SQL, Postgres, alembic, sqlmodel | `/orch-add-feature` | New schema/migration is a net-new capability in the current codebase. |
-| `security` | encrypt, auth, secret, OWASP, PII, audit | `/security-scan` | Security review/audit when no `impl`/`fix` tag is primary. |
-| `build` | build, compile, lint failure, CI | `/build-fix` | Fix build/type/lint errors. |
-| `docs` | docs, readme, codemap, changelog | `/update-docs` | Update or add documentation. |
-| `lookup` | lookup, reference, API usage | `/plan` | Research/lookup becomes a plan with findings. |
-| `review` | review, audit, verify | `/code-review` | Review local uncommitted changes or a PR; pass the PR number in the task description for PR mode. |
-| `test` | test, coverage, e2e, integration | `/test-coverage` | Add or analyze tests. |
-| `loop` | loop, autonomous, watchdog | `/loop-start` | Start an autonomous loop. |
+| Tag | Trigger words | Command | Output form | Why |
+|---|---|---|---|---|
+| `build` | build, compile, lint failure, CI | `/build-fix` | `/build-fix` | Fix build/type/lint errors. |
+| `fix` | fix, bug, broken, defect, repair, regression | `/orch-fix-defect` | `/<command> "<task description>"` | Existing behavior is wrong. |
+| `test` | test, coverage, e2e, integration | `/test-coverage` | `/test-coverage` | Add or analyze tests. |
+| `db` | schema, migration, index, SQL, Postgres, alembic, sqlmodel | `/orch-add-feature` | `/<command> "<task description>"` | New schema/migration is a net-new capability in the current codebase. |
+| `migration` | migrate, upgrade, rewrite, port | `/orch-change-feature` | `/<command> "<task description>"` | Replacing one implementation with another; if behavior must stay identical, classify as `refactor`. |
+| `change` | change, alter, tweak, modify, behavior | `/orch-change-feature` | `/<command> "<task description>"` | Existing working behavior should behave differently. |
+| `refactor` | refactor, cleanup, dedupe, split, restructure | `/orch-refine-code` | `/<command> "<task description>"` | Behavior-preserving restructure. |
+| `review` | review, audit, verify | `/code-review` | `/code-review` or `/code-review <pr-number>` | Review local uncommitted changes or a PR. |
+| `security` | encrypt, auth, secret, OWASP, PII, audit | `/security-scan` | `/security-scan` or `/security-scan <path>` | Security review/audit when no `impl`/`fix` tag is primary. |
+| `impl` | implement, build, add, create, port | `/orch-add-feature` | `/<command> "<task description>"` | Net-new capability. |
+| `design` | architecture, design, choose, evaluate, RFC | `/plan` | `/<command> "<task description>"` | Needs human-approved implementation plan before code. |
+| `plan` | plan, breakdown, milestone | `/plan` | `/<command> "<task description>"` | Produces a step-by-step plan for approval. |
+| `lookup` | lookup, reference, API usage | `/plan` | `/<command> "<task description>"` | Research/lookup becomes a plan with findings. |
+| `docs` | docs, readme, codemap, changelog | `/update-docs` | `/update-docs` | Update or add documentation. |
+| `loop` | loop, autonomous, watchdog | `/loop-start` | `/loop-start sequential --mode safe` | Start an autonomous loop. |
 
 Tag resolution rules:
-1. **Primary tag selection**: when a step matches multiple tags, the **first one in table order** (top of the table = highest priority) is the primary. The command for the primary tag is what gets emitted.
-2. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step still emits `/orch-add-feature`, but the rationale notes that the security trigger will pull in `security-reviewer` automatically).
-3. **Zero-tag steps**: default to `/code-review` and write the rationale `no tag matched; default review command`.
-4. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "write tests with tdd-guide" is an `impl` step → `/orch-add-feature`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (or `/python-review` if the language is clearly Python). Do not emit raw agent names as commands.
+1. **Primary tag selection**: a step may match multiple tags. Pick the primary tag using the **precedence order below** (highest first). The command for the primary tag is what gets emitted.
+2. **Precedence order**:
+   1. `build` — when the step is about build/compile/lint/CI failure or build-system work. Beats `fix`: "fix the build error" → `/build-fix`.
+   2. `fix` — when existing behavior is broken/wrong and the domain is not `build`/`test`/`db`/`migration`. Example: "fix the poller crash" → `/orch-fix-defect`. Beats `impl` and `test`: "fix the broken test" → `/orch-fix-defect` (not `/test-coverage`).
+   3. `test` — when the step is about adding or analyzing tests/coverage/e2e, and not fixing a broken test. Beats `impl`: "add tests for the parser" → `/test-coverage`.
+   4. `db` — when the step is about schema/migration/index and not fixing existing behavior. Beats `impl`: "add a users index" → `/orch-add-feature`.
+   5. `migration` — when the step is about porting/upgrading/rewriting and not fixing existing behavior. Beats `impl`: "port the service to Go" → `/orch-change-feature`.
+   6. `change` — when working behavior should change and the domain is not covered above.
+   7. `refactor` — when behavior-preserving restructure and the domain is not covered above.
+   8. `review` — when the step is about reviewing/auditing code or a PR. Beats `security` for general code audits: "audit the code" → `/code-review`.
+   9. `security` — when the step is about hardening a security control (encrypt, auth, secrets, PII). Use this over `review` when the audited object is a security control: "audit the encryption module" → `/security-scan`.
+   10. `impl` — net-new capability; default when the step matches only broad verbs like "implement", "add", "create". Example: "implement OAuth2 login" → `/orch-add-feature`.
+   11. `design`, `plan`, `lookup` — planning/research.
+   12. `docs` — documentation.
+   13. `loop` — autonomous loop.
+3. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step still emits `/orch-add-feature`, but the rationale notes that the security trigger will pull in `security-reviewer` automatically).
+4. **Zero-tag steps**: default to `/code-review` and write the rationale `no tag matched; default review command`.
+5. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "add tests with tdd-guide" is a `test` step → `/test-coverage`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (or `/python-review` if the language is clearly Python). Do not emit raw agent names as commands.
 
 ## How It Works
 
@@ -95,13 +132,15 @@ Use the catalogue above. The output of this phase is a single command per step, 
 
 ### Phase 3 — Compress task description
 
-Each emitted `<task description>` must:
+For commands that take a quoted task description, each emitted `<task description>` must:
 
 - Be self-contained (the command does not need the plan document open).
 - Start with `[Plan: <path>#step-<id>]`.
 - Include 1–3 verifiable acceptance criteria.
 - Include a Scope guard (`Out of scope: ...`) **only if the plan declares one for this step**. Inherit verbatim. If the plan has no out-of-scope statement, omit the clause entirely — do not invent one.
 - Be 200–600 characters; one line; embedded `"` escaped as `\"`; no literal newlines.
+
+For commands that run self-contained, the command rationale still captures the step context, but the emitted command uses the bare or flag form from the catalogue.
 
 ### Phase 4 — Output
 
@@ -140,8 +179,9 @@ Append a final "Batch execution" block aggregating every step's command in order
 
 - [ ] Every command is from the catalogue above; no `/orchestrate`, `/ecc:orchestrate`, or legacy-shim command appears in the rendered output.
 - [ ] No invented `--mode`, `--gate`, or `--agents=...` fields.
-- [ ] Each task description is single-line, double-quoted, with embedded `"` escaped.
-- [ ] Each task description begins with `[Plan: <path>#step-<id>]` and includes Acceptance (1–3 items). The `Out of scope:` clause is present only when inherited from the plan.
+- [ ] For commands that take a quoted task description, the task description is single-line, double-quoted, with embedded `"` escaped.
+- [ ] Each quoted task description begins with `[Plan: <path>#step-<id>]` and includes Acceptance (1–3 items). The `Out of scope:` clause is present only when inherited from the plan.
+- [ ] Commands that run self-contained use the bare or flag form from the catalogue; the step context is in the command rationale, not a forced quoted argument.
 - [ ] Overview table lists every step in the plan, regardless of `--scope`.
 - [ ] Per-step detail block count matches the resolved `--scope` (full plan when `--scope=all`; one block for `step:n`; range size for `range:a-b`). In overview-only mode, no per-step blocks and no Batch block are emitted.
 
@@ -154,7 +194,7 @@ Append a final "Batch execution" block aggregating every step's command in order
 
 ## Examples
 
-### Example 1 — Plugin mode, Python plan
+### Example 1 — Feature step with security and DB concerns
 
 Input:
 
@@ -183,6 +223,27 @@ If a step reads "Fix the poller crash on empty NWS response", it is tagged `fix`
 ```bash
 /orch-fix-defect "[Plan: docs/plan/example-feature.md#step-5] Fix poller crash on empty NWS response; Acceptance: reproduce crash with a failing regression test; fix makes the test pass; review the diff for error-handling gaps"
 ```
+
+### Example 3 — Build, test, review, and loop steps
+
+Steps whose commands do not accept a quoted task description emit the documented bare or flag form. The step context moves to the command rationale.
+
+- "Fix the build error" → `build` →
+  ```bash
+  /build-fix
+  ```
+- "Add tests for the parser" → `test` →
+  ```bash
+  /test-coverage
+  ```
+- "Audit the code before merge" → `review` →
+  ```bash
+  /code-review
+  ```
+- "Run an autonomous review loop" → `loop` →
+  ```bash
+  /loop-start sequential --mode safe
+  ```
 
 ## Notes
 
