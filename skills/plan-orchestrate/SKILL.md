@@ -107,15 +107,18 @@ Tag resolution rules:
 3. **Special-case overrides** (override the numeric precedence for the stated pairs):
    - `impl` + `security`: primary is `impl`. The command is `/orch-add-feature`; the chain includes `security-reviewer` as a secondary agent. This prevents net-new feature work from being reduced to a scan.
    - `impl` + `test`: if a step matches both `impl` and `test` and explicitly creates a concrete deliverable (for example, "Implement the parser and add integration tests"), primary is `impl`. The appropriate `/orch-*` command is emitted for the primary lifecycle intent, and the chain appends `tdd-guide` and `e2e-runner` from the `test` tag so the feature is implemented and then tested. If the step only adds tests to an existing deliverable (for example, "Add tests for the parser"), primary is `test`.
-   - `review` + `security`: if the audited object is a security control (encryption, auth, secrets, PII, OWASP), primary is `security`; otherwise primary is `review`.
-   - `build` used as a feature verb: if a step matches the `build` tag but contains a feature-intent marker (`new`, `feature`, `page`, `component`, `ui`, `api`, `service`, `endpoint`) or an `impl` trigger word (`implement`, `add`, `create`), and does **not** contain an explicit build-failure word (`failure`, `error`, `fails`, `failing`, `broken`), then primary is `impl` and the command is `/orch-add-feature`. This covers feature-creation phrasing such as "Build a new authentication API", "Add a CI pipeline", and "Create a new lint rule". The terms `compile`, `lint`, and `CI` still route to `build` when a failure or negative context is present (`compile error`, `CI is broken`, `lint failure`), but they do not block the feature-verb override on their own.
-4. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step emits `/orch-add-feature`; the rationale notes that the composed chain ends with `security-reviewer`). An `impl,test` step emits the appropriate `/orch-*` command; the rationale notes that the chain includes `tdd-guide`, `e2e-runner`, and a reviewer tail.
-5. **Zero-tag steps**: chain is `code-reviewer`; command is `/code-review`; rationale `no tag matched; default review-only chain`.
-6. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "add tests with tdd-guide" is a `test` step → `/test-coverage`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (do not emit language-specific review commands such as `/python-review`; the catalogue below is the authoritative command surface). Do not emit raw agent names as commands.
+   - `review` + `security`: if the audited object is a security control (encryption, auth, secrets, PII, OWASP) and the step does **not** also express an explicit `impl` or `fix` intent, primary is `security`; otherwise primary is `review`.
+   - `build` used as a feature verb: if a step matches the `build` tag but does **not** contain an explicit `fix`/`defect`/`repair` marker (`fix`, `bug`, `broken`, `defect`, `repair`, `regression`) and does **not** contain an explicit build-failure word (`failure`, `error`, `fails`, `failing`, `broken`), and does contain a feature-intent marker (`new`, `feature`, `page`, `component`, `ui`, `api`, `service`, `endpoint`) or an `impl` trigger word (`implement`, `add`, `create`), then primary is `impl` and the command is `/orch-add-feature`. This covers feature-creation phrasing such as "Build a new authentication API" and "Create a new lint rule". The terms `compile`, `lint`, and `CI` still route to `build` when a failure or negative context is present (`compile error`, `CI is broken`, `lint failure`), but they do not block the feature-verb override on their own.
+4. **Override tie-breaks**: when more than one special-case override applies, resolve them in this order:
+   - Lifecycle (`impl` or `fix`) + `security` takes precedence over `review` + `security`. A step that both builds/fixes a security control and audits it is treated as implementation or defect repair, not a standalone security review.
+   - An explicit `fix`/`defect`/`repair` marker takes precedence over the `build used as feature verb` override.
+5. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step emits `/orch-add-feature`; the rationale notes that the composed chain ends with `security-reviewer`). An `impl,test` step emits the appropriate `/orch-*` command; the rationale notes that the chain includes `tdd-guide`, `e2e-runner`, and a reviewer tail.
+6. **Zero-tag steps**: chain is `code-reviewer`; command is `/code-review`; rationale `no tag matched; default review-only chain`.
+7. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "add tests with tdd-guide" is a `test` step → `/test-coverage`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (do not emit language-specific review commands such as `/python-review`; the catalogue below is the authoritative command surface). Do not emit raw agent names as commands.
 
 ### Agent chain catalogue
 
-The skill still composes the per-step agent chain. The chain is then mapped to the resolvable command from the `Command catalogue` above. The composed chain is recorded in the `Agent chain` field of the output; the runnable command remains a single resolvable slash command.
+The skill still composes the per-step agent chain. The chain is then mapped to the resolvable command from the `Command catalogue` above. The composed chain is recorded in the `Agent chain` field of the output; the runnable command remains a single resolvable slash command. For `design`, `plan`, and `lookup` steps, the chain is **advisory** because the emitted `/plan` command runs inline and does not invoke those agents.
 
 | Tag | Default agent chain |
 |---|---|
@@ -134,6 +137,8 @@ The skill still composes the per-step agent chain. The chain is then mapped to t
 | `lookup` | `planner, docs-lookup` |
 | `docs` | `doc-updater` |
 | `loop` | `loop-operator` |
+
+**Advisory planning chains:** `design`, `plan`, and `lookup` steps emit `/plan`, which runs inline and does not invoke `planner`, `architect`, or `docs-lookup` subagents. Their `Agent chain` entries are recommendations the generated plan should account for, not a command that executes them.
 
 #### Chain composition rules
 
