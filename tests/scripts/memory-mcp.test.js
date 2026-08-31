@@ -138,6 +138,7 @@ async function withClient(fn, options = {}) {
       { name, arguments: toolArguments }
     ),
     callToolRaw: params => request('tools/call', params),
+    pingRaw: params => request('ping', params),
   };
 
   try {
@@ -222,6 +223,35 @@ async function main() {
 
       await assert.rejects(
         client.listToolsRaw({ unexpected: true }),
+        /-32602/
+      );
+    });
+  });
+
+  await test('accepts the reserved _meta param on ping and rejects malformed values', async () => {
+    await withClient(async client => {
+      // Modern MCP clients stamp `_meta` (protocolVersion, clientInfo,
+      // clientCapabilities) onto every request once a "modern" protocol
+      // version is negotiated, including bare `ping` calls — this must
+      // not be treated as an unexpected parameter.
+      const withMeta = await client.pingRaw({
+        _meta: { progressToken: 'progress-123' },
+      });
+      assert.deepStrictEqual(withMeta, {});
+
+      const withoutParams = await client.pingRaw({});
+      assert.deepStrictEqual(withoutParams, {});
+
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.pingRaw({ _meta: badMeta }),
+          /-32602/,
+          `expected _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      await assert.rejects(
+        client.pingRaw({ unexpected: true }),
         /-32602/
       );
     });
