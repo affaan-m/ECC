@@ -37,6 +37,20 @@ function countOccurrences(haystack, needle) {
   return n;
 }
 
+function runHook(home, transcript, env = {}) {
+  return spawnSync('node', [script], {
+    encoding: 'utf8',
+    input: transcript ? JSON.stringify({ transcript_path: transcript }) : '',
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_SESSION_ID: '', ...env },
+    timeout: 10000,
+  });
+}
+
+function sessionFileFor(home, uuid) {
+  const shortId = sanitizeSessionId(uuid.slice(-8).toLowerCase());
+  return path.join(home, '.claude', 'session-data', `${getDateString()}-${shortId}-session.tmp`);
+}
+
 function runTests() {
   console.log('\n=== Testing session-end.js ===\n');
 
@@ -73,7 +87,10 @@ function runTests() {
       const transcript = path.join(home, `${uuid}.jsonl`);
       fs.writeFileSync(
         transcript,
-        JSON.stringify({ type: 'user', message: { role: 'user', content: userText } }) + '\n'
+        [
+          JSON.stringify({ type: 'user', message: { role: 'user', content: userText } }),
+          JSON.stringify({ type: 'tool_use', tool_name: 'Edit', tool_input: { file_path: '/src/release.js' } }),
+        ].join('\n') + '\n'
       );
 
       const res = spawnSync('node', [script], {
@@ -90,6 +107,131 @@ function runTests() {
       // Exactly one marker pair — a $& bug re-injects the matched block, duplicating markers.
       assert.strictEqual(countOccurrences(out, START), 1, `START marker should appear once:\n${out}`);
       assert.strictEqual(countOccurrences(out, END), 1, `END marker should appear once:\n${out}`);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('writes a session for a multi-message transcript', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '11111111-2222-4333-8444-555555555555';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(
+        transcript,
+        [
+          JSON.stringify({ type: 'user', content: 'Investigate the failing hook' }),
+          JSON.stringify({ type: 'user', content: 'Add regression coverage' }),
+        ].join('\n') + '\n'
+      );
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+
+      const sessionFile = sessionFileFor(home, uuid);
+      const out = fs.readFileSync(sessionFile, 'utf8');
+      assert.ok(out.includes(START), 'Should include the generated summary start marker');
+      assert.ok(out.includes(END), 'Should include the generated summary end marker');
+      assert.ok(out.includes('**Last Updated:**'), 'Should include session metadata');
+      assert.ok(out.includes('Add regression coverage'), 'Should include the latest user task');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('writes a session for one user message with tool activity', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(
+        transcript,
+        [
+          JSON.stringify({ type: 'user', content: 'Fix the configuration' }),
+          JSON.stringify({ type: 'tool_use', tool_name: 'Edit', tool_input: { file_path: '/src/config.js' } }),
+        ].join('\n') + '\n'
+      );
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      assert.ok(fs.existsSync(sessionFileFor(home, uuid)), 'Tool activity should make the session eligible');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('writes a session for a normal one-message prompt without tool activity', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '12345678-1234-4234-8234-123456789abc';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Print the current version' }) + '\n');
+
+      const res = runHook(home, transcript);
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      assert.ok(fs.existsSync(sessionFileFor(home, uuid)), 'A normal short user session should remain resumable');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('skips a one-message summarizer-style transcript without prompt matching', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = 'fedcba98-7654-4321-8765-fedcba987654';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      fs.writeFileSync(
+        transcript,
+        [
+          JSON.stringify({ type: 'user', message: { role: 'user', content: 'Summarize the supplied conversation as concise markdown.' } }),
+          JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: '## Summary\nThe hook behavior was reviewed.' } }),
+        ].join('\n') + '\n'
+      );
+
+      const res = runHook(home, transcript, { ECC_LLM_SUMMARY_SUBPROCESS: '1' });
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      assert.ok(!fs.existsSync(sessionFileFor(home, uuid)), 'Summarizer subprocess should not create a session file');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('does not rewrite an existing session for a rejected transcript', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const uuid = '99999999-8888-4777-8666-555555555555';
+      const transcript = path.join(home, `${uuid}.jsonl`);
+      const sessionFile = sessionFileFor(home, uuid);
+      const original = '# Session: preserved\n**Last Updated:** 09:00\n\n---\n\nUser-authored context\n';
+      const originalTime = new Date('2026-01-02T03:04:05.000Z');
+
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(sessionFile, original);
+      fs.utimesSync(sessionFile, originalTime, originalTime);
+      fs.writeFileSync(transcript, JSON.stringify({ type: 'user', content: 'Internal summary request' }) + '\n');
+
+      const res = runHook(home, transcript, { ECC_LLM_SUMMARY_SUBPROCESS: '1' });
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+      assert.strictEqual(fs.readFileSync(sessionFile, 'utf8'), original, 'Internal summarizer should not change existing content');
+      assert.strictEqual(fs.statSync(sessionFile).mtimeMs, originalTime.getTime(), 'Internal summarizer should not advance mtime');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }) ? passed++ : failed++);
+
+  (test('keeps fallback behavior when transcript metadata is malformed', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-end-'));
+    try {
+      const res = spawnSync('node', [script], {
+        encoding: 'utf8',
+        input: '{not-json',
+        env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_SESSION_ID: 'fallback-session-12345678', CLAUDE_TRANSCRIPT_PATH: '' },
+        timeout: 10000,
+      });
+      assert.strictEqual(res.status || 0, 0, `hook exited ${res.status}: ${res.stderr}`);
+
+      const sessionsDir = path.join(home, '.claude', 'session-data');
+      assert.strictEqual(fs.readdirSync(sessionsDir).filter(name => name.endsWith('-session.tmp')).length, 1, 'Fallback should still create the placeholder session');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }

@@ -192,6 +192,14 @@ test('returns null for missing transcript (no conversation to summarize)', () =>
   if (orig !== undefined) process.env.ECC_SKIP_LLM_SUMMARY = orig;
 });
 
+test('marks the spawned summarizer so its Stop hook cannot create resume state', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'scripts', 'lib', 'llm-summary.js'),
+    'utf8'
+  );
+  assert.match(source, /ECC_LLM_SUMMARY_SUBPROCESS:\s*'1'/);
+});
+
 // --- Results ---
 console.log('\n=== Test Results ===');
 console.log(`Passed: ${passed}`);

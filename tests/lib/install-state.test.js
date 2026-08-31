@@ -52,6 +52,7 @@ function runTests() {
         modules: ['orchestration'],
         legacyLanguages: ['typescript'],
         legacyMode: true,
+        hookConsent: 'declined',
       },
       resolution: {
         selectedModules: ['rules-core', 'orchestration'],
@@ -80,6 +81,7 @@ function runTests() {
     assert.strictEqual(state.target.id, 'cursor-project');
     assert.strictEqual(state.request.profile, 'developer');
     assert.strictEqual(state.request.skillProfile, null);
+    assert.strictEqual(state.request.hookConsent, 'declined');
     assert.strictEqual(state.operations.length, 1);
   })) passed++; else failed++;
 

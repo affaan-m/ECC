@@ -1,6 +1,6 @@
 {
   "name": "ecc-universal",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Harness-native agent operating system for Codex, OpenCode, Cursor, Gemini, Claude Code, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,7 @@
     "url": "https://github.com/affaan-m/ECC/issues"
   },
   "files": [
+    ".adal/",
     ".agents/",
     ".claude-plugin/",
     ".codex/",
@@ -75,6 +76,7 @@
     "docs/pt-BR/",
     "docs/ru/",
     "docs/tr/",
+    "docs/uk-UA/",
     "docs/vi-VN/",
     "docs/zh-CN/",
     "docs/zh-TW/",
@@ -318,6 +320,7 @@
     "skills/security-scan/",
     "skills/seo/",
     "skills/skill-scout/",
+    "skills/skill-comply/",
     "skills/skill-stocktake/",
     "skills/social-graph-ranker/",
     "skills/springboot-patterns/",

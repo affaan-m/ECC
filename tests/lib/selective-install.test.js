@@ -650,6 +650,7 @@ function runTests() {
         scriptPath,
         '--profile', 'core',
         '--with', 'capability:security',
+        '--enable-hooks',
       ], {
         cwd: projectDir,
         env: { ...process.env, HOME: homeDir },
@@ -669,6 +670,7 @@ function runTests() {
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.strictEqual(state.request.profile, 'core');
+      assert.strictEqual(state.request.hookConsent, 'enabled');
       assert.deepStrictEqual(state.request.includeComponents, ['capability:security']);
       assert.deepStrictEqual(state.request.excludeComponents, []);
       assert.ok(state.resolution.selectedModules.includes('security'));
@@ -689,6 +691,7 @@ function runTests() {
         scriptPath,
         '--profile', 'developer',
         '--without', 'capability:orchestration',
+        '--enable-hooks',
       ], {
         cwd: projectDir,
         env: { ...process.env, HOME: homeDir },
@@ -709,6 +712,7 @@ function runTests() {
       const statePath = path.join(claudeRoot, 'ecc', 'install-state.json');
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.strictEqual(state.request.profile, 'developer');
+      assert.strictEqual(state.request.hookConsent, 'enabled');
       assert.deepStrictEqual(state.request.excludeComponents, ['capability:orchestration']);
       assert.ok(!state.resolution.selectedModules.includes('orchestration'));
     } finally {

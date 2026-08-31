@@ -1,6 +1,6 @@
 {
   "name": "ecc",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Harness-native ECC plugin for engineering teams - 68 agents, 286 skills, 94 legacy command shims, reusable hooks, rules, MCP conventions, and operator workflows for Claude Code plus adjacent agent harnesses",
   "author": {
     "name": "Affaan Mustafa",
@@ -116,6 +116,7 @@
     "./skills/security-bounty-hunter/",
     "./skills/security-review/",
     "./skills/security-scan/",
+    "./skills/skill-comply/",
     "./skills/skill-scout/",
     "./skills/skill-stocktake/",
     "./skills/springboot-security/",

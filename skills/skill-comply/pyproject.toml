@@ -8,6 +8,7 @@ dependencies = ["pyyaml>=6.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["unit: isolated tests without external services"]
 
 [dependency-groups]
 dev = [

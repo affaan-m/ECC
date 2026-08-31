@@ -82,7 +82,7 @@ function runTests() {
         entries.map(entry => entry.id),
         ['post:dispatcher:sync', 'post:dispatcher:async']
       );
-      assert.ok(entries.every(entry => entry.matcher === '*'));
+      assert.ok(entries.every(entry => entry.matcher === '.*'));
       assert.strictEqual(entries[0].hooks[0].async, undefined);
       assert.strictEqual(entries[1].hooks[0].async, true);
       assert.ok(entries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));

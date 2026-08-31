@@ -19,7 +19,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -47,7 +48,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -75,7 +77,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -121,7 +124,8 @@
         "scripts/setup-package-manager.js",
         ".hermes",
         ".openclaw",
-        ".kimi"
+        ".kimi",
+        ".adal"
       ],
       "targets": [
         "claude",
@@ -137,7 +141,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -294,7 +299,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -326,6 +332,7 @@
         "skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
+        "skills/skill-comply",
         "skills/skill-scout",
         "skills/skill-stocktake",
         "skills/strategic-compact",
@@ -368,7 +375,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "skill-unified-memory"
@@ -626,7 +634,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -638,7 +647,7 @@
     {
       "id": "nasiko-control-plane",
       "kind": "skills",
-      "description": "Explicitly gated Nasiko control-plane installation, status, and agent-operations guidance with pinned artifact verification and opt-in telemetry boundaries.",
+      "description": "Experimental Nasiko CLI lifecycle bridge guidance for pinned installation, read-only status, qualified uninstall, and opt-in telemetry boundaries.",
       "paths": [
         "skills/nasiko-control-plane"
       ],
@@ -1114,6 +1123,22 @@
       "description": "German (de-DE) translated reference docs for agents, commands, skills, and rules.",
       "paths": [
         "docs/de-DE"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "heavy",
+      "stability": "stable"
+    },
+    {
+      "id": "docs-uk-ua",
+      "kind": "docs",
+      "description": "Ukrainian (uk-UA) translated reference docs for agents, commands, skills, and rules.",
+      "paths": [
+        "docs/uk-UA"
       ],
       "targets": [
         "claude",

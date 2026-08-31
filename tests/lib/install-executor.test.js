@@ -55,6 +55,7 @@ function writeLegacySourceFixture(root) {
   writeFile(root, path.join('rules', 'common', 'node_modules', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('rules', 'common', '.git', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('rules', 'common', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('rules', 'common', '.pytest_cache', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('rules', 'common', 'stray.pyc'), 'ignored\n');
   writeFile(root, path.join('rules', 'common', 'stray.pyo'), 'ignored\n');
   writeFile(root, path.join('rules', 'common', 'stray.pyd'), 'ignored\n');
@@ -116,6 +117,7 @@ function writeManifestSourceFixture(root) {
   writeFile(root, path.join('src', 'node_modules', 'ignored.js'), 'console.log("ignored");\n');
   writeFile(root, path.join('src', '.git', 'ignored.js'), 'console.log("ignored");\n');
   writeFile(root, path.join('src', '__pycache__', 'ignored.cpython-314.pyc'), 'ignored\n');
+  writeFile(root, path.join('src', '.pytest_cache', 'ignored.md'), '# Ignored\n');
   writeFile(root, path.join('src', 'stray.pyc'), 'ignored\n');
   writeFile(root, path.join('src', 'stray.pyo'), 'ignored\n');
   writeFile(root, path.join('src', 'stray.pyd'), 'ignored\n');
@@ -201,6 +203,7 @@ function runTests() {
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('node_modules')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('.git')));
       assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('__pycache__')));
+      assert.ok(!plan.operations.some(operation => operation.sourceRelativePath.includes('.pytest_cache')));
       assert.ok(!plan.operations.some(operation => /\.(?:pyc|pyo|pyd)$/.test(operation.sourceRelativePath)));
       assert.deepStrictEqual(plan.statePreview.request.legacyLanguages, ['typescript', 'missing-lang', '../bad']);
       assert.strictEqual(plan.statePreview.request.legacyMode, true);
@@ -371,6 +374,7 @@ function runTests() {
       assert.ok(!normalizedSources.some(source => source.includes('node_modules')));
       assert.ok(!normalizedSources.some(source => source.includes('.git')));
       assert.ok(!normalizedSources.some(source => source.includes('__pycache__')));
+      assert.ok(!normalizedSources.some(source => source.includes('.pytest_cache')));
       assert.ok(!normalizedSources.some(source => /\.(?:pyc|pyo|pyd)$/.test(source)));
       assert.ok(plan.operations.some(operation => (
         operation.sourceRelativePath === path.join('.claude-plugin', 'plugin.json')
@@ -435,6 +439,45 @@ function runTests() {
       assert.strictEqual(plan.statePreview.request.legacyMode, true);
       assert.deepStrictEqual(plan.statePreview.request.legacyLanguages, ['rust']);
       assert.deepStrictEqual(plan.statePreview.request.modules, []);
+    } finally {
+      cleanup(projectRoot);
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('legacy compatibility plans retain and apply the requested skill profile', () => {
+    const projectRoot = createTempDir('install-executor-project-');
+    const homeDir = createTempDir('install-executor-home-');
+    try {
+      const baseline = createLegacyCompatInstallPlan({
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+        target: 'claude',
+        legacyLanguages: ['typescript'],
+      });
+      const filtered = createLegacyCompatInstallPlan({
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+        target: 'claude',
+        legacyLanguages: ['typescript'],
+        skillProfile: 'minimal',
+      });
+
+      const skillOps = operations => operations.filter(operation => (
+        String(operation.sourceRelativePath || '').replace(/\\/g, '/').startsWith('skills/')
+      ));
+      const baselineSkills = skillOps(baseline.operations);
+      const filteredSkills = skillOps(filtered.operations);
+
+      assert.strictEqual(baseline.statePreview.request.skillProfile, null);
+      assert.strictEqual(filtered.statePreview.request.skillProfile, 'minimal');
+      assert.ok(filteredSkills.length > 0, 'minimal profile should still install daily-core skills');
+      assert.ok(
+        filteredSkills.length < baselineSkills.length,
+        'minimal profile should install fewer skill sources than an unfiltered legacy-compat plan'
+      );
     } finally {
       cleanup(projectRoot);
       cleanup(homeDir);
@@ -683,6 +726,7 @@ function runTests() {
         installRoot: targetRoot,
         installStatePath: path.join(targetRoot, 'ecc', 'install-state.json'),
         warnings: [],
+        hookConsent: 'enabled',
         statePreview: {
           target: 'claude',
           adapter: { id: 'claude-home', target: 'claude', kind: 'home' },

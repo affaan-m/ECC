@@ -28,7 +28,7 @@ Before marking code complete:
 
 - [ ] Code is readable and well-named
 - [ ] Functions are focused (<50 lines)
-- [ ] Files are cohesive (<800 lines)
+- [ ] Source files are cohesive (under the 800-line soft maintainability ceiling, or include a reason for a deliberate exception)
 - [ ] No deep nesting (>4 levels)
 - [ ] Errors are handled explicitly
 - [ ] No hardcoded secrets or credentials
@@ -54,7 +54,7 @@ Before marking code complete:
 |-------|---------|--------|
 | CRITICAL | Security vulnerability or data loss risk | **BLOCK** - Must fix before merge |
 | HIGH | Bug or significant quality issue | **WARN** - Should fix before merge |
-| MEDIUM | Maintainability concern | **INFO** - Consider fixing |
+| MEDIUM | Maintainability concern, including an unexplained source file over the soft 800-line ceiling | **INFO** - Consider fixing |
 | LOW | Style or minor suggestion | **NOTE** - Optional |
 
 ## Agent Usage
