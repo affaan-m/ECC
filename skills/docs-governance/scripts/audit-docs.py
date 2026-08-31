@@ -128,7 +128,7 @@ def markdown_link_targets(text: str) -> list[str]:
         start = match.end()
         if start < len(text) and text[start] == "<":
             end = text.find(">", start + 1)
-            if end != -1 and end + 1 < len(text) and text[end + 1] == ")":
+            if end != -1:
                 targets.append(text[start : end + 1])
             continue
         depth = 0
@@ -145,7 +145,16 @@ def markdown_link_targets(text: str) -> list[str]:
 
 
 def normalize_link_target(raw: str) -> str | None:
-    target = raw.strip().strip("<>")
+    target = raw.strip()
+    if target.startswith("<"):
+        closing = target.find(">")
+        if closing == -1:
+            return None
+        target = target[1:closing]
+    else:
+        title = re.search(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^()]*\))\s*$', target)
+        if title:
+            target = target[: title.start()]
     target = unquote(target.split("#", 1)[0].split("?", 1)[0])
     if not target or target.startswith("//"):
         return None

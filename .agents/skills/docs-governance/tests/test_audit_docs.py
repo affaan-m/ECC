@@ -130,6 +130,23 @@ def test_artifact_scope_resolves_markdown_destinations_with_parentheses_and_spac
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_ignores_optional_markdown_link_titles(project: Path) -> None:
+    (project / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (project / "index.md").write_text(
+        '[plain](guide.md "Guide")\n[wrapped](<guide.md> "Guide")\n',
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
+def test_artifact_scope_checks_angle_wrapped_destination_with_title(project: Path) -> None:
+    (project / "index.md").write_text('[missing](<guide.md> "Guide")\n', encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: index.md -> guide.md" in result.stdout
+
+
 def test_adr_scope_requires_every_file_in_index(project: Path) -> None:
     adr_dir = project / "docs" / "adr"
     adr_dir.mkdir(parents=True)
