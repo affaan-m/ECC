@@ -33,7 +33,7 @@ Skip when:
 
 ## Authoritative output shape (do not deviate)
 
-The output is one ready-to-paste command per step. The exact form depends on the command, because not every ECC command accepts a quoted task description.
+The output is one ready-to-paste command per step. The exact form is command-specific, because not every ECC command accepts a quoted task description. The `/<command> "<task description>"` placeholder is only valid for the commands listed in this section; all other commands use the bare or documented flag form from the 'Commands that run self-contained or take specific flags' table.
 
 ### Commands that accept a quoted task description
 
@@ -72,7 +72,7 @@ Classify each step by its primary tag and emit the matching command. The command
 
 | Tag | Trigger words | Command | Output form | Why |
 |---|---|---|---|---|
-| `build` | build, compile, lint failure, CI | `/build-fix` | `/build-fix` | Fix build/type/lint errors. |
+| `build` | build, compile, lint, CI, or build-failure context | `/build-fix` | `/build-fix` | Fix build/type/lint/CI errors. Use the `build used as a feature verb` special-case override for feature-creation phrasing such as 'Build a new authentication API' or 'Build the user profile page'. |
 | `fix` | fix, bug, broken, defect, repair, regression | `/orch-fix-defect` | `/<command> "<task description>"` | Existing behavior is wrong. |
 | `test` | test, coverage, e2e, integration | `/test-coverage` | `/test-coverage` | Add or analyze tests. |
 | `db` | schema, migration, index, SQL, Postgres, alembic, sqlmodel | `/orch-add-feature` | `/<command> "<task description>"` | New schema/migration is a net-new capability in the current codebase. |
@@ -106,9 +106,10 @@ Tag resolution rules:
    13. `loop`
 3. **Special-case overrides** (override the numeric precedence for the stated pairs):
    - `impl` + `security`: primary is `impl`. The command is `/orch-add-feature`; the chain includes `security-reviewer` as a secondary agent. This prevents net-new feature work from being reduced to a scan.
+   - `impl` + `test`: if a step matches both `impl` and `test` and explicitly creates a concrete deliverable (for example, "Implement the parser and add integration tests"), primary is `impl`. The appropriate `/orch-*` command is emitted for the primary lifecycle intent, and the chain appends `tdd-guide` and `e2e-runner` from the `test` tag so the feature is implemented and then tested. If the step only adds tests to an existing deliverable (for example, "Add tests for the parser"), primary is `test`.
    - `review` + `security`: if the audited object is a security control (encryption, auth, secrets, PII, OWASP), primary is `security`; otherwise primary is `review`.
-   - `build` used as a feature verb: if a step matches the `build` tag but contains a feature-intent marker (`new`, `feature`, `page`, `component`, `ui`, `api`, `service`, `endpoint`) or an `impl` trigger word (`implement`, `add`, `create`), and does **not** contain a build-failure word (`failure`, `error`, `fails`, `failing`, `broken`, `compile`, `lint`, `CI`), then primary is `impl` and the command is `/orch-add-feature`. The step uses "build" to mean "implement a capability," not to repair a build/lint/CI error.
-4. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step emits `/orch-add-feature`; the rationale notes that the composed chain ends with `security-reviewer`).
+   - `build` used as a feature verb: if a step matches the `build` tag but contains a feature-intent marker (`new`, `feature`, `page`, `component`, `ui`, `api`, `service`, `endpoint`) or an `impl` trigger word (`implement`, `add`, `create`), and does **not** contain an explicit build-failure word (`failure`, `error`, `fails`, `failing`, `broken`), then primary is `impl` and the command is `/orch-add-feature`. This covers feature-creation phrasing such as "Build a new authentication API", "Add a CI pipeline", and "Create a new lint rule". The terms `compile`, `lint`, and `CI` still route to `build` when a failure or negative context is present (`compile error`, `CI is broken`, `lint failure`), but they do not block the feature-verb override on their own.
+4. **Multi-tag notes**: write a one-line command rationale when a secondary tag meaningfully changes risk (for example, an `impl,security` step emits `/orch-add-feature`; the rationale notes that the composed chain ends with `security-reviewer`). An `impl,test` step emits the appropriate `/orch-*` command; the rationale notes that the chain includes `tdd-guide`, `e2e-runner`, and a reviewer tail.
 5. **Zero-tag steps**: chain is `code-reviewer`; command is `/code-review`; rationale `no tag matched; default review-only chain`.
 6. **Step with an explicit agent name**: if the plan text names an agent (for example, `tdd-guide`), map the step to the command that exercises that agent. For example, a step that says "add tests with tdd-guide" is a `test` step → `/test-coverage`; a step that says "run python-reviewer over auth" is a `review` step → `/code-review` (do not emit language-specific review commands such as `/python-review`; the catalogue below is the authoritative command surface). Do not emit raw agent names as commands.
 
