@@ -79,7 +79,7 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 
 ## Yenilikler
 
-### v2.2.0 — Rehberli Çoklu Harness Kurulumu (Ağu 2026)
+### v2.2.1 — Rehberli Çoklu Harness Kurulumu (Ağu 2026)
 
 Claude Code, Codex ve Kimi Code için incelenebilir çoklu harness kurulumu ve eşitlenmiş npm komut girişi eklendi.
 

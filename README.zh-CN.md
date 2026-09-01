@@ -80,7 +80,7 @@
 
 ## 最新动态
 
-### v2.2.0 — 引导式多 Harness 安装（2026年8月）
+### v2.2.1 — 引导式多 Harness 安装（2026年8月）
 
 新增可审查的 Claude Code、Codex 与 Kimi Code 多 Harness 安装流程，并提供同步的 npm 命令入口。
 

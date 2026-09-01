@@ -79,7 +79,7 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
-### v2.2.0 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
+### v2.2.1 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
 
 Adiciona uma instalação revisável para Claude Code, Codex e Kimi Code, com uma entrada de comando npm sincronizada.
 

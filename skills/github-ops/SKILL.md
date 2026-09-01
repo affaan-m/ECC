@@ -117,6 +117,13 @@ When preparing a release:
 3. Generate changelog from PR titles
 4. Create release: `gh release create`
 
+For the ECC repository's maintainer release path, especially `ECC-031` and any
+follow-up where tag identity, npm provenance, and announcement evidence must
+all line up, read [references/ecc-release-checklist.md](references/ecc-release-checklist.md)
+before mutating tags, npm dist-tags, or GitHub Releases. That checklist
+captures the exact-green-main, signed-tag, registry-readback, and announcement
+requirements that the generic examples below do not.
+
 ```bash
 # List merged PRs since last release
 gh pr list --state merged --base main --search "merged:>2026-03-01"
