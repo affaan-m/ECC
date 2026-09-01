@@ -98,3 +98,10 @@ ecc2/target/
 .opencode/package-lock.json
 .opencode/node_modules/
 assets/images/security/badrudi-exploit.mp4
+
+# Local tooling artifacts
+graphify-out/
+.history/
+
+# Eval task specs are real source, not Claude Code team task files
+!.agents/evals/**/tasks/

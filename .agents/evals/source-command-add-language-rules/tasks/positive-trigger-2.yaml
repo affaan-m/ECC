@@ -1,0 +1,19 @@
+id: positive-trigger-002
+name: Positive Trigger 2
+description: Auto-generated positive-trigger task.
+tags:
+  - positive-trigger
+inputs:
+  prompt: "I need assistance with source command add language rules-related work"
+expected:
+  should_trigger: true
+graders:
+  - type: text
+    name: contains-keywords
+    config:
+      contains:
+        - "add"
+        - "command"
+        - "language"
+        - "source"
+

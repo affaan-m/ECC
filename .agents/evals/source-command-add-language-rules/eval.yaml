@@ -1,0 +1,26 @@
+name: source-command-add-language-rules-eval
+description: Auto-generated eval for source-command-add-language-rules.
+skill: source-command-add-language-rules
+version: "1.0"
+config:
+  trials_per_task: 1
+  timeout_seconds: 300
+  parallel: false
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+metrics:
+  - name: task_completion
+    weight: 0.7
+    threshold: 0.8
+    description: Did the skill complete trigger and anti-trigger checks?
+  - name: efficiency
+    weight: 0.3
+    threshold: 0.7
+    description: Did the skill stay within behavior limits?
+graders:
+  - type: behavior
+    name: token-budget
+    config:
+      max_tokens: 1200
+tasks:
+  - "tasks/*.yaml"

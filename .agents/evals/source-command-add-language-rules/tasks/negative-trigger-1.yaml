@@ -1,0 +1,19 @@
+id: negative-trigger-001
+name: Negative Trigger 1
+description: Auto-generated negative-trigger task.
+tags:
+  - negative-trigger
+inputs:
+  prompt: "Tell me a short joke about coffee."
+expected:
+  should_trigger: false
+graders:
+  - type: text
+    name: omits-skill-keywords
+    config:
+      not_contains:
+        - "add"
+        - "command"
+        - "language"
+        - "source"
+
