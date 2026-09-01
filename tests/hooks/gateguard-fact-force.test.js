@@ -2788,7 +2788,10 @@ function runTests() {
         tool_name: 'Edit',
         tool_input: { file_path: '/proj/tests/test_x.js', old_string: 'a', new_string: 'b' }
       };
-      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**' });
+      const result = runHook(input, {
+        CLAUDE_PROJECT_DIR: '/proj',
+        GATEGUARD_EXEMPT_GLOBS: '**/tests/**'
+      });
       assert.strictEqual(result.code, 0, 'exit code should be 0');
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce valid JSON output');
@@ -2809,7 +2812,10 @@ function runTests() {
         tool_name: 'Edit',
         tool_input: { file_path: '/proj/src/core/x.js', old_string: 'a', new_string: 'b' }
       };
-      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '**/tests/**' });
+      const result = runHook(input, {
+        CLAUDE_PROJECT_DIR: '/proj',
+        GATEGUARD_EXEMPT_GLOBS: '**/tests/**'
+      });
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce JSON output');
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'non-matching path still gated');
@@ -2819,12 +2825,77 @@ function runTests() {
   else failed++;
 
   if (
+    test('scopes and anchors exempt globs to the active project', () => {
+      const cases = [
+        ['repo-relative match', '/work/current-repo', 'services/**', '/work/current-repo/services/api.js', true],
+        ['normalized relative glob', '/work/current-repo', './services/**', 'services/api.js', true],
+        ['relative traversal', '/work/current-repo', 'services/**', '../other/services/api.js', false],
+        ['same suffix outside project', '/work/current-repo', 'services/**', '/work/other-repo/services/api.js', false],
+        ['POSIX case-distinct sibling', '/work/current-repo', 'services/**', '/work/Current-Repo/services/api.js', false],
+        ['nested suffix', '/work/current-repo', 'services/**', '/work/current-repo/vendor/services/api.js', false],
+        ['leading globstar at root', '/work/current-repo', '**/tests/**', '/work/current-repo/tests/unit.js', true],
+        ['leading globstar nested', '/work/current-repo', '**/tests/**', '/work/current-repo/pkg/tests/unit.js', true],
+        ['root wildcard', '/work/current-repo', '*.md', '/work/current-repo/README.md', true],
+        ['nested wildcard', '/work/current-repo', '*.md', '/work/current-repo/docs/guide.md', false],
+        ['trailing substring', '/work/current-repo', '*.md', '/work/current-repo/guide.md.backup', false],
+        ['question wildcard length', '/work/current-repo', '?foo', '/work/current-repo/foo', false],
+        ['question wildcard match', '/work/current-repo', 'tests/foo?.js', '/work/current-repo/tests/foo1.js', true],
+        ['question wildcard segment', '/work/current-repo', 'tests/foo?.js', '/work/current-repo/tests/foo/.js', false],
+        ['absolute match', '/work/current-repo', '/shared/generated/**', '/shared/generated/result.js', true],
+        ['absolute suffix', '/work/current-repo', '/shared/generated/**', '/tmp/shared/generated/result.js', false],
+        ['Windows path and case', 'C:\\Work\\Current-Repo', 'SERVICES/**', 'C:\\Work\\Current-Repo\\Services\\API.js', true],
+        ['Windows absolute glob', 'C:\\Work\\Current-Repo', 'C:\\Shared\\Generated\\**', 'C:\\Shared\\Generated\\out.js', true],
+        ['Windows drive-relative escape', 'C:\\Work\\Current-Repo', '**', 'C:..\\Other\\secret.js', false]
+      ];
+
+      for (const [label, projectRoot, globs, filePath, shouldExempt] of cases) {
+        clearState();
+        const result = runHook(
+          { tool_name: 'Write', tool_input: { file_path: filePath, content: 'x' } },
+          { CLAUDE_PROJECT_DIR: projectRoot, GATEGUARD_EXEMPT_GLOBS: globs }
+        );
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${label}: should produce valid JSON output`);
+        const denied = output.hookSpecificOutput?.permissionDecision === 'deny';
+        assert.strictEqual(denied, !shouldExempt, label);
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does not exempt a MultiEdit when any path escapes the active project', () => {
+      const result = runHook(
+        {
+          tool_name: 'MultiEdit',
+          tool_input: {
+            edits: [
+              { file_path: '/work/current-repo/services/api.js', old_string: 'a', new_string: 'b' },
+              { file_path: '/work/other-repo/services/secret.js', old_string: 'a', new_string: 'b' }
+            ]
+          }
+        },
+        { CLAUDE_PROJECT_DIR: '/work/current-repo', GATEGUARD_EXEMPT_GLOBS: 'services/**' }
+      );
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce valid JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'outside-project edit must stay gated');
+      assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('/work/other-repo/services/secret.js'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     test('supports multiple comma-separated exempt globs (Write + non-match)', () => {
       const globs = '**/tests/**,**/scratchpad/**';
+      const env = { CLAUDE_PROJECT_DIR: '/', GATEGUARD_EXEMPT_GLOBS: globs };
       clearState();
       const exempt = runHook(
         { tool_name: 'Write', tool_input: { file_path: '/tmp/x/scratchpad/s.js', content: 'x' } },
-        { GATEGUARD_EXEMPT_GLOBS: globs }
+        env
       );
       const exemptOut = parseOutput(exempt.stdout);
       assert.ok(exemptOut, 'should produce JSON output');
@@ -2834,7 +2905,7 @@ function runTests() {
       clearState();
       const gated = runHook(
         { tool_name: 'Write', tool_input: { file_path: '/proj/src/s.js', content: 'x' } },
-        { GATEGUARD_EXEMPT_GLOBS: globs }
+        env
       );
       const gatedOut = parseOutput(gated.stdout);
       assert.ok(gatedOut, 'should produce JSON output');

@@ -100,14 +100,20 @@ function getExtraDestructiveRegex() {
 }
 
 // Operator-supplied path exemptions. Comma-separated globs (`GATEGUARD_EXEMPT_GLOBS`)
-// matched against the normalized (forward-slash, lowercased) file path. First-touch
+// are matched against the normalized, project-relative file path. Absolute globs remain
+// supported and are matched against the normalized absolute path. First-touch
 // fact-forcing is skipped for a matching Edit/Write/MultiEdit target — intended for
 // low-import-value trees (tests, generated artifacts, scratch dirs) where "who imports
 // this / what schema" carries no signal. Memoized on the env value; fail-open (a
 // malformed pattern is dropped, never throws). `*` matches within a path segment,
-// `**` across segments, `?` a single char.
+// `**` across segments, `?` one character within a segment.
 let exemptCacheKey = null;
 let exemptCacheRegexes = null;
+
+function isAbsoluteNormalizedPath(value) {
+  return value.startsWith('/') || /^[a-z]:\//i.test(value);
+}
+
 function getExemptMatchers() {
   const raw = process.env.GATEGUARD_EXEMPT_GLOBS || '';
   if (raw === exemptCacheKey) {
@@ -118,14 +124,19 @@ function getExemptMatchers() {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
+    .map(glob => path.posix.normalize(normalizeForMatch(glob)))
     .map(glob => {
-      const source = glob
+      const leadingAnyDepth = glob.startsWith('**/');
+      const source = (leadingAnyDepth ? glob.slice(3) : glob)
         .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
         .split('**')                           // ** boundaries (cross-segment)
-        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
+        .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]'))
         .join('.*');                           // ** -> across segments
       try {
-        return new RegExp(source);
+        return {
+          absolute: isAbsoluteNormalizedPath(glob),
+          regex: new RegExp(`^${leadingAnyDepth ? '(?:.*/)?' : ''}${source}$`)
+        };
       } catch (_) {
         return null;
       }
@@ -135,8 +146,42 @@ function getExemptMatchers() {
 }
 
 function isExemptPath(filePath) {
-  const norm = normalizeForMatch(filePath);
-  return getExemptMatchers().some(re => re.test(norm));
+  const slashPath = normalizePathSeparators(filePath);
+  const windowsPath = /^[a-z]:\//i.test(slashPath) || slashPath.startsWith('//');
+  const normalizedPath = path.posix.normalize(slashPath);
+  const absolutePath = isAbsoluteNormalizedPath(normalizedPath)
+    ? normalizeForMatch(normalizedPath)
+    : null;
+
+  let relativePath = null;
+  if (absolutePath) {
+    const slashRoot = normalizePathSeparators(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+    const windowsRoot = /^[a-z]:\//i.test(slashRoot) || slashRoot.startsWith('//');
+    const normalizedRoot = path.posix.normalize(slashRoot);
+    const caseInsensitiveContainment = windowsPath && windowsRoot;
+    const containmentRoot = caseInsensitiveContainment ? normalizedRoot.toLowerCase() : normalizedRoot;
+    const containmentPath = caseInsensitiveContainment ? normalizedPath.toLowerCase() : normalizedPath;
+    const candidate = path.posix.relative(containmentRoot, containmentPath);
+    if (candidate !== '..' && !candidate.startsWith('../') && !isAbsoluteNormalizedPath(candidate)) {
+      relativePath = normalizeForMatch(candidate);
+    }
+  } else if (
+    !/^[a-z]:/i.test(normalizedPath) &&
+    normalizedPath !== '..' &&
+    !normalizedPath.startsWith('../')
+  ) {
+    relativePath = normalizeForMatch(normalizedPath.replace(/^\.\//, ''));
+  }
+
+  return getExemptMatchers().some(matcher => {
+    if (matcher.absolute) {
+      return absolutePath !== null && matcher.regex.test(absolutePath);
+    }
+    if (relativePath === null) {
+      return false;
+    }
+    return matcher.regex.test(relativePath);
+  });
 }
 
 function isRoutineBashGateDisabled() {
@@ -977,10 +1022,13 @@ function sanitizePath(filePath) {
   return sanitized.trim().slice(0, 500);
 }
 
-function normalizeForMatch(value) {
+function normalizePathSeparators(value) {
   return String(value || '')
-    .replace(/\\/g, '/')
-    .toLowerCase();
+    .replace(/\\/g, '/');
+}
+
+function normalizeForMatch(value) {
+  return normalizePathSeparators(value).toLowerCase();
 }
 
 function isClaudeSettingsPath(filePath) {

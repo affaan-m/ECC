@@ -135,22 +135,24 @@ For hook-level control, keep using `ECC_DISABLED_HOOKS` with the GateGuard hook 
 
 #### Glob semantics for `GATEGUARD_EXEMPT_GLOBS`
 
-Patterns are matched, unanchored, against the target path with backslashes
-normalized to `/` and the whole string lowercased — the path exactly as the
-hook receives it, which for Claude Code tool payloads is absolute. `*` matches
-within a path segment, `**` across segments, `?` a single character. Matching
-is fail-open: a malformed pattern is dropped rather than raising.
+Patterns are matched against the complete normalized path, with backslashes
+converted to `/` and both the path and glob lowercased. Relative globs are
+matched against the path relative to `CLAUDE_PROJECT_DIR` (or the hook process
+working directory when that variable is unset), so they cannot exempt the same
+suffix in another project. Absolute globs remain supported and match the full
+absolute path. `*` matches within a path segment, `**` across segments, and `?`
+one character within a segment. Matching is fail-open: a malformed pattern is
+dropped rather than raising.
 
-Note that a leading `**/` compiles to `.*/`, so it requires at least one
-preceding separator: `**/tests/**` exempts `/repo/tests/foo.js` but would not
-match a bare relative `tests/foo.js`. Add the separator-free form too if you
-pass relative paths:
+A leading `**/` matches at any depth, including directly under the project
+root. For example, this configuration exempts test, documentation, and build
+output trees only in the active project:
 
 ```json
 {
   "env": {
     "GATEGUARD_BASH_ROUTINE_DISABLED": "1",
-    "GATEGUARD_EXEMPT_GLOBS": "**/tests/**,tests/**,**/*.test.*,**/docs/**,**/dist/**"
+    "GATEGUARD_EXEMPT_GLOBS": "**/tests/**,**/*.test.*,**/docs/**,**/dist/**"
   }
 }
 ```
