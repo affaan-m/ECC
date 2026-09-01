@@ -11,6 +11,7 @@ const TOML = require('@iarna/toml');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const installScript = path.join(repoRoot, 'scripts', 'codex', 'install-global-git-hooks.sh');
+const prePushHook = path.join(repoRoot, 'scripts', 'codex-git-hooks', 'pre-push');
 const pluginCacheCheckScript = path.join(repoRoot, 'scripts', 'codex', 'check-plugin-cache.js');
 const mergeCodexConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-codex-config.js');
 const mergeMcpConfigScript = path.join(repoRoot, 'scripts', 'codex', 'merge-mcp-config.js');
@@ -42,16 +43,37 @@ function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
-function runBash(scriptPath, args = [], env = {}, cwd = repoRoot) {
-  return spawnSync('bash', [scriptPath, ...args], {
+function resolveBashExecutable(env = process.env) {
+  return env.BASH_PATH
+    || (process.platform === 'win32' && fs.existsSync('C:\\Program Files\\Git\\bin\\bash.exe')
+      ? 'C:\\Program Files\\Git\\bin\\bash.exe'
+      : fs.existsSync('/bin/bash')
+        ? '/bin/bash'
+        : 'bash');
+}
+
+function runBash(
+  scriptPath,
+  { args = [], env = {}, cwd = repoRoot, input = undefined, preservePath = true } = {},
+) {
+  const effectiveEnv = {
+    ...(preservePath ? process.env : {}),
+    ...env,
+  };
+  const bash = resolveBashExecutable(effectiveEnv);
+  return spawnSync(bash, [scriptPath, ...args], {
     cwd,
-    env: {
-      ...process.env,
-      ...env,
-    },
+    env: effectiveEnv,
     encoding: 'utf8',
+    input,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+}
+
+function toBashPath(filePath) {
+  return process.platform === 'win32'
+    ? `/${filePath[0].toLowerCase()}${filePath.slice(2).replaceAll('\\', '/')}`
+    : filePath;
 }
 
 function runNode(scriptPath, args = [], env = {}, cwd = repoRoot) {
@@ -115,6 +137,174 @@ const cacheManifestWithLocalRefs = {
 
 let passed = 0;
 let failed = 0;
+
+if (
+  test('shell test runner honors an explicit BASH_PATH override', () => {
+    assert.strictEqual(
+      resolveBashExecutable({ BASH_PATH: '/custom/git/bin/bash' }),
+      '/custom/git/bin/bash',
+    );
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('shell test runner honors a per-invocation BASH_PATH override', () => {
+    const tempDir = createTempDir('ecc-missing-bash-');
+    try {
+      const missingBash = path.join(tempDir, 'bash');
+      const result = runBash(prePushHook, { env: { BASH_PATH: missingBash } });
+      assert.strictEqual(result.error?.code, 'ENOENT');
+    } finally {
+      cleanup(tempDir);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+function runHermeticPrePush({
+  failScript = null,
+  includeCorepack = true,
+  includePnpm = false,
+  audit = false,
+} = {}) {
+  const tempDir = createTempDir('codex-pre-push-');
+  const binDir = path.join(tempDir, 'bin');
+  const projectDir = path.join(tempDir, 'project');
+  const callsPath = path.join(tempDir, 'calls.txt');
+  const bashEnv = path.join(tempDir, 'bash-env');
+  fs.mkdirSync(binDir);
+  fs.mkdirSync(projectDir);
+  const functionStub = (name, corepack) => `${name}() {
+${corepack ? 'node -e \'const p=require("./package.json"); process.exit(p.packageManager === "pnpm@11.9.0" ? 0 : 1)\' || return 97' : ':'}
+printf '%s\\n' "${corepack ? '' : 'pnpm '}$*" >> "${toBashPath(callsPath)}"
+${corepack ? 'shift' : ':'}
+shift
+test "$1" != "${failScript || '__never__'}"
+}`;
+  fs.writeFileSync(
+    bashEnv,
+    `git() { return 0; }
+node() { "${toBashPath(process.execPath)}" "$@"; }
+${includeCorepack ? functionStub('corepack', true) : ''}
+${includePnpm ? functionStub('pnpm', false) : ''}
+`,
+  );
+  fs.writeFileSync(path.join(projectDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+  const initialized = spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  assert.strictEqual(initialized.status, 0, initialized.stderr?.toString());
+  writeJson(path.join(projectDir, 'package.json'), {
+    packageManager: 'pnpm@11.9.0',
+    scripts: { lint: 'x', typecheck: 'x', test: 'x', build: 'x' },
+  });
+  const result = runBash(prePushHook, {
+    env: {
+      PATH: toBashPath(binDir),
+      BASH_ENV: toBashPath(bashEnv),
+      ECC_PREPUSH_AUDIT: audit ? '1' : '0',
+      ECC_SKIP_GIT_HOOKS: '0',
+      ECC_SKIP_PREPUSH: '0',
+      MSYS_NO_PATHCONV: '1',
+    },
+    cwd: projectDir,
+    input: Buffer.from('refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n'),
+    preservePath: false,
+  });
+  const calls = fs.existsSync(callsPath)
+    ? fs.readFileSync(callsPath, 'utf8').trim().split(/\r?\n/)
+    : [];
+  cleanup(tempDir);
+  return { result, calls };
+}
+
+if (
+  test('pre-push uses Corepack pinned pnpm and runs every required verification script', () => {
+    const { result, calls } = runHermeticPrePush();
+    assert.strictEqual(result.status, 0, JSON.stringify(result, null, 2));
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+    ], JSON.stringify(result, null, 2));
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push falls back to direct pnpm when Corepack is absent', () => {
+    const { result, calls } = runHermeticPrePush({
+      includeCorepack: false,
+      includePnpm: true,
+    });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+    ]);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push fails closed when pnpm and Corepack cannot resolve', () => {
+    const { result } = runHermeticPrePush({ includeCorepack: false });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /pnpm.*(?:resolve|found)/i);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push stops immediately when a required verification script fails', () => {
+    const { result, calls } = runHermeticPrePush({ failScript: 'typecheck' });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, ['pnpm run lint', 'pnpm run typecheck']);
+    assert.match(result.stderr, /typecheck failed/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push runs the production audit through Corepack pnpm', () => {
+    const { result, calls } = runHermeticPrePush({ audit: true });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('pre-push fails closed when the production audit fails', () => {
+    const { result, calls } = runHermeticPrePush({ audit: true, failScript: '--prod' });
+    assert.notStrictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.deepStrictEqual(calls, [
+      'pnpm run lint',
+      'pnpm run typecheck',
+      'pnpm run test',
+      'pnpm run build',
+      'pnpm audit --prod',
+    ]);
+    assert.match(result.stderr, /pnpm audit failed/);
+  })
+)
+  passed++;
+else failed++;
 
 if (
   test('check-plugin-cache fails when the installed cache is missing manifest-referenced files', () => {
@@ -266,9 +456,11 @@ if (os.platform() === 'win32') {
     const weirdHooksDir = path.join(homeDir, 'git-hooks "quoted"');
 
     try {
-      const result = runBash(installScript, [], {
-        HOME: homeDir,
-        ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+      const result = runBash(installScript, {
+        env: {
+          HOME: homeDir,
+          ECC_GLOBAL_HOOKS_DIR: weirdHooksDir,
+        },
       });
 
       assert.strictEqual(result.status, 0, result.stderr || result.stdout);
@@ -663,7 +855,10 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, ['--update-mcp'], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        args: ['--update-mcp'],
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const syncedAgents = fs.readFileSync(agentsPath, 'utf8');
@@ -724,7 +919,9 @@ if (
       fs.mkdirSync(codexDir, { recursive: true });
       fs.writeFileSync(configPath, config);
 
-      const syncResult = runBash(syncScript, [], makeHermeticCodexEnv(homeDir, codexDir));
+      const syncResult = runBash(syncScript, {
+        env: makeHermeticCodexEnv(homeDir, codexDir),
+      });
       assert.strictEqual(syncResult.status, 0, `${syncResult.stdout}\n${syncResult.stderr}`);
 
       const parsedConfig = TOML.parse(fs.readFileSync(configPath, 'utf8'));

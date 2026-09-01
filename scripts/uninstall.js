@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 
 const os = require('os');
+const path = require('path');
 const { uninstallInstalledStates } = require('./lib/install-lifecycle');
 const { SUPPORTED_INSTALL_TARGETS } = require('./lib/install-manifests');
 const { exitFeedbackLines } = require('./lib/feedback-links');
-const { uninstallLegacyCodexSync } = require('./lib/codex-legacy-sync');
+const {
+  legacyCodexSyncStateExists,
+  uninstallLegacyCodexSync,
+} = require('./lib/codex-legacy-sync');
 
 function showHelp(exitCode = 0) {
   console.log(`
 Usage: node scripts/uninstall.js [--target <${SUPPORTED_INSTALL_TARGETS.join('|')}>] [--legacy-codex-sync] [--dry-run] [--json]
 
 Remove ECC-managed files recorded in install-state for the current context.
-Use --legacy-codex-sync explicitly for the older sync-ecc-to-codex.sh installation.
+When no install-state is found, the uninstaller also detects and removes
+legacy sync-ecc-to-codex.sh artifacts, but only when a legacy ownership
+manifest is present. Use --legacy-codex-sync to force the legacy path
+explicitly, including marker-only AGENTS.md cleanup.
 `);
   process.exit(exitCode);
 }
@@ -87,6 +94,30 @@ function printHuman(result) {
   }
 }
 
+function legacyCodexSyncStateDetected(codexHome) {
+  return legacyCodexSyncStateExists(codexHome);
+}
+
+function printLegacy(result, dryRun) {
+  console.log('Legacy Codex sync cleanup summary:\n');
+  console.log(`Status: ${result.status.toUpperCase()}`);
+  const paths = dryRun ? result.plannedRemovals : result.removedPaths;
+  console.log(`${dryRun ? 'Planned changes' : 'Removed paths'}: ${paths.length}`);
+  if (result.retainedPaths.length > 0) {
+    console.log(`Retained paths: ${result.retainedPaths.length}`);
+    for (const retainedPath of result.retainedPaths) console.log(`  - ${retainedPath}`);
+  }
+  for (const warning of result.warnings) console.log(`Warning: ${warning}`);
+}
+
+function codexHomePath() {
+  return process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex');
+}
+
+function includesCodexTarget(targets) {
+  return targets.length === 0 || targets.includes('codex');
+}
+
 async function main() {
   try {
     const options = parseArgs(process.argv);
@@ -97,41 +128,56 @@ async function main() {
     if (options.legacyCodexSync && options.targets.length > 0) {
       throw new Error('--legacy-codex-sync cannot be combined with --target');
     }
-    const result = options.legacyCodexSync
-      ? uninstallLegacyCodexSync({
-          codexHome: process.env.CODEX_HOME,
-          dryRun: options.dryRun,
-        })
-      : uninstallInstalledStates({
-          homeDir: process.env.HOME || os.homedir(),
-          projectRoot: process.cwd(),
-          targets: options.targets,
-          dryRun: options.dryRun,
-        });
-    if (!options.dryRun && !options.legacyCodexSync) {
-      const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
-      result.installStateProjection = await reconcileCanonicalInstallStates({
+
+    let result;
+    let mode = 'install-state';
+
+    if (options.legacyCodexSync) {
+      result = uninstallLegacyCodexSync({
+        codexHome: codexHomePath(),
+        dryRun: options.dryRun,
+      });
+      mode = 'legacy-codex-sync';
+    } else {
+      result = uninstallInstalledStates({
         homeDir: process.env.HOME || os.homedir(),
+        env: process.env,
         projectRoot: process.cwd(),
         targets: options.targets,
+        dryRun: options.dryRun,
       });
+
+      if (
+        result.results.length === 0
+        && includesCodexTarget(options.targets)
+        && legacyCodexSyncStateDetected(codexHomePath())
+      ) {
+        result = uninstallLegacyCodexSync({
+          codexHome: codexHomePath(),
+          dryRun: options.dryRun,
+        });
+        mode = 'legacy-codex-sync';
+      }
+
+      if (mode === 'install-state' && !options.dryRun) {
+        const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
+        result.installStateProjection = await reconcileCanonicalInstallStates({
+          homeDir: process.env.HOME || os.homedir(),
+          env: process.env,
+          projectRoot: process.cwd(),
+          targets: options.targets,
+        });
+      }
     }
-    const hasErrors = options.legacyCodexSync
+
+    const hasErrors = mode === 'legacy-codex-sync'
       ? result.status === 'partial'
       : result.summary.errorCount > 0 || result.summary.partialCount > 0;
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
-    } else if (options.legacyCodexSync) {
-      console.log('Legacy Codex sync cleanup summary:\n');
-      console.log(`Status: ${result.status.toUpperCase()}`);
-      const paths = options.dryRun ? result.plannedRemovals : result.removedPaths;
-      console.log(`${options.dryRun ? 'Planned changes' : 'Removed paths'}: ${paths.length}`);
-      if (result.retainedPaths.length > 0) {
-        console.log(`Retained paths: ${result.retainedPaths.length}`);
-        for (const retainedPath of result.retainedPaths) console.log(`  - ${retainedPath}`);
-      }
-      for (const warning of result.warnings) console.log(`Warning: ${warning}`);
+    } else if (mode === 'legacy-codex-sync') {
+      printLegacy(result, options.dryRun);
     } else {
       printHuman(result);
     }

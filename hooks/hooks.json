@@ -36,7 +36,7 @@
         "id": "pre:edit-write:suggest-compact"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -73,7 +73,7 @@
         "id": "pre:config-protection"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -98,7 +98,7 @@
     ],
     "PreCompact": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -111,7 +111,7 @@
     ],
     "SessionStart": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -122,7 +122,7 @@
         "id": "session:start"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -135,7 +135,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -147,7 +147,7 @@
         "id": "post:dispatcher:sync"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -162,7 +162,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -186,7 +186,7 @@
     ],
     "Stop": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -197,7 +197,7 @@
         "id": "stop:plan-canvas-pending"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -209,7 +209,7 @@
         "id": "stop:format-typecheck"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -220,7 +220,7 @@
         "id": "stop:check-console-log"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -233,7 +233,7 @@
         "id": "stop:session-end"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -246,7 +246,7 @@
         "id": "stop:evaluate-session"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -259,7 +259,7 @@
         "id": "stop:cost-tracker"
       },
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -274,7 +274,7 @@
     ],
     "SessionEnd": [
       {
-        "matcher": "*",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",

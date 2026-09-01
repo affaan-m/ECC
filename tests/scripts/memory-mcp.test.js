@@ -132,6 +132,7 @@ async function withClient(fn, options = {}) {
 
   const client = {
     listTools: () => request('tools/list'),
+    listToolsRaw: params => request('tools/list', params),
     callTool: ({ name, arguments: toolArguments }) => request(
       'tools/call',
       { name, arguments: toolArguments }
@@ -178,6 +179,51 @@ async function main() {
       assert.ok(!JSON.stringify(save.inputSchema).includes('sourceHarness'));
       assert.ok(!JSON.stringify(search.inputSchema).includes('targetHarness'));
       assert.strictEqual(save.inputSchema.properties.body.minLength, 1);
+    });
+  });
+
+  await test('accepts reserved tools/list params and rejects malformed values', async () => {
+    await withClient(async client => {
+      const withMeta = await client.listToolsRaw({
+        _meta: { progressToken: 'progress-123' },
+      });
+      assert.strictEqual(withMeta.tools.length, 4);
+
+      const withCursor = await client.listToolsRaw({ cursor: 'next-page' });
+      assert.strictEqual(withCursor.tools.length, 4);
+
+      const withCursorAndMeta = await client.listToolsRaw({
+        cursor: 'next-page',
+        _meta: { progressToken: 'progress-456' },
+      });
+      assert.strictEqual(withCursorAndMeta.tools.length, 4);
+
+      const withoutMeta = await client.listTools();
+      assert.deepStrictEqual(
+        withoutMeta.tools.map(tool => tool.name).sort(),
+        ['memory_doctor', 'memory_read', 'memory_save', 'memory_search']
+      );
+
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.listToolsRaw({ _meta: badMeta }),
+          /-32602/,
+          `expected _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      for (const badCursor of [null, {}, [], 42, true]) {
+        await assert.rejects(
+          client.listToolsRaw({ cursor: badCursor }),
+          /-32602/,
+          `expected cursor=${JSON.stringify(badCursor)} to be rejected`
+        );
+      }
+
+      await assert.rejects(
+        client.listToolsRaw({ unexpected: true }),
+        /-32602/
+      );
     });
   });
 

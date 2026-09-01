@@ -2119,6 +2119,41 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('keeps isMeta human prompts while filtering structured transcript noise', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+      const lines = [
+        JSON.stringify({ type: 'user', isMeta: true, content: 'Prompt delivered by a channel plugin' }),
+        JSON.stringify({ type: 'user', isMeta: true, content: '<system-reminder>internal harness context</system-reminder>' }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', content: 'tool output' }] },
+        }),
+      ];
+      fs.writeFileSync(transcriptPath, lines.join('\n'));
+
+      const result = await runScript(
+        path.join(scriptsDir, 'session-end.js'),
+        JSON.stringify({ transcript_path: transcriptPath }),
+        { HOME: testDir, USERPROFILE: testDir }
+      );
+      assert.strictEqual(result.code, 0);
+
+      const sessionsDir = getCanonicalSessionsDir(testDir);
+      const sessionFiles = fs.readdirSync(sessionsDir).filter(file => file.endsWith('.tmp'));
+      assert.strictEqual(sessionFiles.length, 1, 'Should create one session file');
+      const content = fs.readFileSync(path.join(sessionsDir, sessionFiles[0]), 'utf8');
+      assert.ok(content.includes('Prompt delivered by a channel plugin'));
+      assert.ok(!content.includes('internal harness context'));
+      assert.ok(!content.includes('tool output'));
+      assert.ok(content.includes('Total user messages: 1'));
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('extracts tool names and file paths from transcript', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
@@ -2550,7 +2585,7 @@ async function runTests() {
         ['post:dispatcher:sync', 'post:dispatcher:async'],
         'PostToolUse should have one sync and one async dispatcher'
       );
-      assert.ok(postEntries.every(entry => entry.matcher === '*'));
+      assert.ok(postEntries.every(entry => entry.matcher === '.*'));
 
       const preCommand = Array.isArray(preBash[0].hooks[0].command) ? preBash[0].hooks[0].command.join(' ') : preBash[0].hooks[0].command;
 
@@ -2559,6 +2594,22 @@ async function runTests() {
       assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
       assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
       assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('all string hook matchers are valid regular expressions', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          if (typeof entry.matcher !== 'string') continue;
+          assert.doesNotThrow(() => new RegExp(entry.matcher), `${eventName}/${entry.id || 'hook'} should use a valid regex matcher`);
+        }
+      }
     })
   )
     passed++;
@@ -4888,7 +4939,11 @@ async function runTests() {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
       // Only user messages — no tool_use entries at all
-      const lines = ['{"type":"user","content":"How does authentication work?"}', '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}'];
+      const lines = [
+        '{"type":"user","content":"How does authentication work?"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}',
+        '{"type":"user","content":"Explain the token refresh path too"}'
+      ];
       fs.writeFileSync(transcriptPath, lines.join('\n'));
       const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
 
@@ -5262,8 +5317,11 @@ async function runTests() {
     await asyncTest('handles stdin exceeding MAX_STDIN (1MB) gracefully', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
-      // Create a minimal valid transcript so env var fallback works
-      fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'user', content: 'Overflow test' }) + '\n');
+      // Create a substantive valid transcript so env var fallback works
+      fs.writeFileSync(
+        transcriptPath,
+        [JSON.stringify({ type: 'user', content: 'Overflow test' }), JSON.stringify({ type: 'user', content: 'Verify fallback behavior' })].join('\n') + '\n'
+      );
 
       // Create stdin > 1MB: truncated JSON will be invalid → falls back to env var
       const oversizedPayload = '{"transcript_path":"' + 'x'.repeat(1048600) + '"}';
@@ -5880,6 +5938,8 @@ async function runTests() {
       const lines = [
         // Normal user message (string content) — should be included
         '{"type":"user","content":"Real user message"}',
+        // A second valid message keeps this fixture eligible for persistence
+        '{"type":"user","content":"Follow-up user message"}',
         // User message with numeric content — exercises the else: '' branch
         '{"type":"user","content":42}',
         // User message with boolean content — also hits the else branch

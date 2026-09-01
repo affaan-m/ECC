@@ -205,7 +205,7 @@
     {
       "id": "capability:nasiko-control-plane",
       "family": "capability",
-      "description": "Explicitly gated Nasiko control-plane installation, status, and agent-operations guidance with pinned artifact verification and opt-in telemetry boundaries.",
+      "description": "Experimental Nasiko CLI lifecycle bridge guidance for pinned installation, read-only status, qualified uninstall, and opt-in telemetry boundaries.",
       "modules": [
         "nasiko-control-plane"
       ]
@@ -660,6 +660,14 @@
       "description": "German (de-DE) translated reference docs installed to ~/.claude/docs/de-DE/.",
       "modules": [
         "docs-de-de"
+      ]
+    },
+    {
+      "id": "locale:uk-ua",
+      "family": "locale",
+      "description": "Ukrainian (uk-UA) translated reference docs installed to ~/.claude/docs/uk-UA/.",
+      "modules": [
+        "docs-uk-ua"
       ]
     }
   ]

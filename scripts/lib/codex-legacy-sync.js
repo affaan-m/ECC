@@ -475,6 +475,42 @@ function listLegacyCandidates(codexHome) {
   return candidates;
 }
 
+function hasMarkerBlock(codexHome) {
+  const agentsPath = path.join(codexHome, 'AGENTS.md');
+  try {
+    const snapshot = readRegularFileNoFollow(agentsPath, 'utf8');
+    if (snapshot) {
+      const stripped = stripMarkerBlock(snapshot.content);
+      return stripped !== snapshot.content;
+    }
+  } catch (error) {
+    // Only ENOENT means "no AGENTS.md" → no marker. Any other error
+    // (EACCES, EMFILE, EISDIR, symlink-ELOOP, ...) is an indeterminate
+    // inspection result and must propagate so callers do not read it as
+    // "clean home". Throwing here is intentional per the repo coding
+    // guideline: "Always handle errors explicitly at every level and never
+    // silently swallow errors."
+    if (error && error.code === 'ENOENT') return false;
+    throw error;
+  }
+  return false;
+}
+
+function resolveCodexHome(codexHome) {
+  return path.resolve(codexHome || process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex'));
+}
+
+function legacyCodexSyncStateExists(codexHome) {
+  const resolvedCodexHome = resolveCodexHome(codexHome);
+  return readStateIfPresent(getStatePath(resolvedCodexHome)) !== null;
+}
+
+function detectLegacyCodexSync(codexHome) {
+  const resolvedCodexHome = resolveCodexHome(codexHome);
+  if (readStateIfPresent(getStatePath(resolvedCodexHome))) return true;
+  return hasMarkerBlock(resolvedCodexHome);
+}
+
 function uninstallLegacyCodexSync(options = {}) {
   const codexHome = path.resolve(options.codexHome || process.env.CODEX_HOME || path.join(process.env.HOME || os.homedir(), '.codex'));
   const statePath = getStatePath(codexHome);
@@ -494,17 +530,24 @@ function uninstallLegacyCodexSync(options = {}) {
         const stripped = stripMarkerBlock(content);
         if (stripped !== content) {
           plannedRemovals.push(`${agentsPath}#ecc-marker-block`);
-          if (!dryRun) replaceOpenedRegularFile(openedAgents, stripped, openedAgents.stat.mode & 0o777);
+          if (!dryRun) {
+            replaceOpenedRegularFile(openedAgents, stripped, openedAgents.stat.mode & 0o777);
+            removedPaths.push(agentsPath);
+          }
         }
       }
     } catch (_error) {
-      retainedPaths.push(agentsPath);
+      if (_error.code !== 'ENOENT') retainedPaths.push(agentsPath);
     } finally {
       if (openedAgents) fs.closeSync(openedAgents.descriptor);
     }
     retainedPaths.push(...listLegacyCandidates(codexHome));
+    const hasWork = plannedRemovals.length > 0 || removedPaths.length > 0;
+    const status = dryRun
+      ? (hasWork || retainedPaths.length > 0 ? 'planned' : 'not-found')
+      : (retainedPaths.length > 0 ? 'partial' : (hasWork ? 'uninstalled' : 'not-found'));
     return {
-      status: dryRun ? 'planned' : retainedPaths.length > 0 ? 'partial' : plannedRemovals.length > 0 ? 'uninstalled' : 'not-found',
+      status,
       statePath: null,
       plannedRemovals,
       removedPaths,
@@ -594,8 +637,10 @@ module.exports = {
   END_MARKER,
   SCHEMA,
   beginLegacySyncState,
+  detectLegacyCodexSync,
   finalizeLegacySyncState,
   getStatePath,
+  legacyCodexSyncStateExists,
   recordLegacySyncPath,
   rollbackLegacyCodexSync,
   stripMarkerBlock,

@@ -1,4 +1,4 @@
-**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (Brasil) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (Brasil) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 # Everything Claude Code
 
@@ -24,8 +24,7 @@
 
 **Idioma / Language / 语言 / Dil / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (Brasil)](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
-
+[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (Brasil)](README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 </div>
 
 ---
@@ -80,7 +79,7 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
-### v2.2.0 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
+### v2.2.1 — Instalação Guiada para Múltiplos Harnesses (Ago 2026)
 
 Adiciona uma instalação revisável para Claude Code, Codex e Kimi Code, com uma entrada de comando npm sincronizada.
 
@@ -161,8 +160,8 @@ npm install        # ou: pnpm install | yarn install | bun install
 # .\install.ps1 --target cursor typescript
 # .\install.ps1 --target antigravity typescript
 
-# O ponto de entrada de compatibilidade npm também funciona multiplataforma
-npx ecc-install typescript
+# O ponto de entrada do pacote npm publicado também funciona multiplataforma
+npx ecc-universal install typescript
 ```
 
 ### Passo 3: Começar a Usar

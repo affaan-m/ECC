@@ -77,32 +77,60 @@ function readTarString(block, offset, length) {
   return block.subarray(offset, offset + length).toString('utf8').replace(/\0.*$/, '');
 }
 
+function readTarOctal(block, offset, length) {
+  const field = block.subarray(offset, offset + length).toString('ascii');
+  const match = /^ *([0-7]+)[ \0]*$/.exec(field);
+  if (!match) throw new Error('Unsafe Nasiko archive: invalid tar size field.');
+  const size = Number.parseInt(match[1], 8);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new Error('Unsafe Nasiko archive: invalid tar size field.');
+  }
+  return size;
+}
+
 function extractQualifiedTarGzip(archiveBytes, expectedName) {
   let tar;
   try { tar = zlib.gunzipSync(archiveBytes, { maxOutputLength: MAX_BINARY_BYTES + 2048 }); }
   catch (_error) { throw new Error('Nasiko archive is invalid or exceeds the decompressed size limit.'); }
   let offset = 0;
   let binary = null;
-  while (offset + 512 <= tar.length) {
+  let terminated = false;
+  while (offset < tar.length) {
+    if (offset + 512 > tar.length) throw new Error('Unsafe Nasiko archive: truncated tar header.');
     const header = tar.subarray(offset, offset + 512);
-    if (header.every(byte => byte === 0)) break;
+    if (header.every(byte => byte === 0)) {
+      const terminatorEnd = offset + 1024;
+      if (
+        terminatorEnd > tar.length
+        || !tar.subarray(offset + 512, terminatorEnd).every(byte => byte === 0)
+        || !tar.subarray(terminatorEnd).every(byte => byte === 0)
+      ) {
+        throw new Error('Unsafe Nasiko archive: incomplete terminator or nonzero trailing data.');
+      }
+      terminated = true;
+      break;
+    }
     const name = readTarString(header, 0, 100);
     const prefix = readTarString(header, 345, 155);
     const type = String.fromCharCode(header[156] || 48);
-    const rawSize = readTarString(header, 124, 12).trim();
-    const size = Number.parseInt(rawSize || '0', 8);
+    const size = readTarOctal(header, 124, 12);
     const start = offset + 512;
     const end = start + size;
-    if (!Number.isSafeInteger(size) || size < 0 || end > tar.length) throw new Error('Nasiko archive is truncated.');
+    const paddedEnd = start + Math.ceil(size / 512) * 512;
+    if (!Number.isSafeInteger(end) || paddedEnd > tar.length) throw new Error('Nasiko archive is truncated.');
     const payload = tar.subarray(start, end);
+    if (!tar.subarray(end, paddedEnd).every(byte => byte === 0)) {
+      throw new Error('Unsafe Nasiko archive: nonzero tar padding.');
+    }
     const isBinary = !prefix && name === expectedName && (type === '0' || type === '\0');
     const isAppleDouble = !prefix && name === `._${expectedName}` && type === '0' && size <= 1024 * 1024;
     const isPaxMetadata = !prefix && name === `PaxHeader/${expectedName}` && type === 'x' && size <= 64 * 1024
       && !/(?:^|\n)(?:path|linkpath)=/i.test(payload.toString('utf8'));
     if (isBinary && !binary && size > 0 && size <= MAX_BINARY_BYTES) binary = Buffer.from(payload);
     else if (!isAppleDouble && !isPaxMetadata) throw new Error('Unsafe Nasiko archive: expected exactly one bounded regular binary file.');
-    offset = start + Math.ceil(size / 512) * 512;
+    offset = paddedEnd;
   }
+  if (!terminated) throw new Error('Unsafe Nasiko archive: missing complete tar terminator.');
   if (!binary) throw new Error('Unsafe Nasiko archive: expected exactly one bounded regular binary file.');
   return binary;
 }
@@ -229,24 +257,123 @@ function writeMetadataExclusive(metadataPath, metadata) {
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 }
 
-function acquireLifecycleLock(installDirectory, fileSystem = fs) {
-  const lockPath = path.join(installDirectory, '.ecc-nasiko-lifecycle.lock');
+function sameFileIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== 'ESRCH';
+  }
+}
+
+function inspectLifecycleLock(lockPath, fileSystem) {
+  const descriptor = fileSystem.openSync(lockPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    const descriptorStats = fileSystem.fstatSync(descriptor, { bigint: true });
+    if (!descriptorStats.isFile() || descriptorStats.size <= 0n || descriptorStats.size > 4096n) return null;
+    const bytes = fileSystem.readFileSync(descriptor);
+    const pathStats = fileSystem.lstatSync(lockPath);
+    if (pathStats.isSymbolicLink() || !pathStats.isFile()) return null;
+    let metadata;
+    try { metadata = JSON.parse(bytes.toString('utf8')); } catch (_error) { return null; }
+    if (
+      !Number.isSafeInteger(metadata.pid)
+      || metadata.pid <= 0
+      || typeof metadata.startedAt !== 'string'
+      || !Number.isFinite(Date.parse(metadata.startedAt))
+    ) return null;
+    return { metadata, stats: descriptorStats };
+  } finally { fileSystem.closeSync(descriptor); }
+}
+
+function removeLockIfOwned(lockPath, expectedStats, fileSystem) {
+  let descriptor;
+  try {
+    descriptor = fileSystem.openSync(lockPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const current = fileSystem.fstatSync(descriptor, { bigint: true });
+    const pathStats = fileSystem.lstatSync(lockPath);
+    if (!pathStats.isSymbolicLink() && pathStats.isFile() && current.isFile() && sameFileIdentity(current, expectedStats)) {
+      fileSystem.closeSync(descriptor);
+      descriptor = undefined;
+      fileSystem.rmSync(lockPath, { force: true });
+      return true;
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ELOOP') throw error;
+  } finally {
+    if (descriptor !== undefined) fileSystem.closeSync(descriptor);
+  }
+  return false;
+}
+
+function createLifecycleLock(lockPath, fileSystem) {
   let descriptor;
   try {
     descriptor = fileSystem.openSync(lockPath, 'wx', 0o600);
-    fileSystem.writeFileSync(descriptor, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`);
+    fileSystem.writeFileSync(descriptor, `${JSON.stringify({
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      token: crypto.randomBytes(16).toString('hex'),
+    })}\n`);
     fileSystem.fsyncSync(descriptor);
   }
   catch (error) {
-    if (error.code === 'EEXIST') throw new Error(`Another Nasiko lifecycle operation is already in progress; inspect ${lockPath} before recovering a stale lock.`);
     if (descriptor !== undefined) {
-      try { fileSystem.closeSync(descriptor); } finally { fileSystem.rmSync(lockPath, { force: true }); }
+      const ownedStats = fileSystem.fstatSync(descriptor, { bigint: true });
+      try { fileSystem.closeSync(descriptor); } finally { removeLockIfOwned(lockPath, ownedStats, fileSystem); }
     }
     throw error;
   }
+  const ownedStats = fileSystem.fstatSync(descriptor, { bigint: true });
+  let released = false;
   return () => {
-    try { fileSystem.closeSync(descriptor); } finally { fileSystem.rmSync(lockPath, { force: true }); }
+    if (released) return;
+    released = true;
+    try { fileSystem.closeSync(descriptor); } finally { removeLockIfOwned(lockPath, ownedStats, fileSystem); }
   };
+}
+
+function acquireLifecycleLock(installDirectory, fileSystem = fs, options = {}) {
+  const lockPath = path.join(installDirectory, '.ecc-nasiko-lifecycle.lock');
+  try {
+    return createLifecycleLock(lockPath, fileSystem);
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+
+  let existing;
+  try { existing = inspectLifecycleLock(lockPath, fileSystem); }
+  catch (error) {
+    if (error.code === 'ENOENT') {
+      try { return createLifecycleLock(lockPath, fileSystem); }
+      catch (retryError) {
+        if (retryError.code === 'EEXIST') {
+          throw new Error(`Another Nasiko lifecycle operation won lock acquisition: ${lockPath}.`);
+        }
+        throw retryError;
+      }
+    }
+    throw error;
+  }
+  const isProcessAlive = options.isProcessAlive || processIsAlive;
+  if (!existing || isProcessAlive(existing.metadata.pid)) {
+    throw new Error(`Another Nasiko lifecycle operation is already in progress; inspect ${lockPath} before recovering a stale lock.`);
+  }
+  if (!removeLockIfOwned(lockPath, existing.stats, fileSystem)) {
+    throw new Error(`Nasiko lifecycle lock changed during stale-owner recovery: ${lockPath}.`);
+  }
+  try {
+    return createLifecycleLock(lockPath, fileSystem);
+  } catch (error) {
+    if (error.code === 'EEXIST') {
+      throw new Error(`Another Nasiko lifecycle operation won stale-lock recovery: ${lockPath}.`);
+    }
+    throw error;
+  }
 }
 
 async function installNasiko(options = {}, dependencies = {}) {
@@ -316,6 +443,7 @@ function uninstallNasiko(options = {}, dependencies = {}) {
   let binaryStaged = false;
   let metadataStaged = false;
   const rename = dependencies.rename || fs.renameSync;
+  const remove = dependencies.remove || (target => fs.rmSync(target));
   try {
     const status = (dependencies.inspectInstalled || inspectInstalledNasiko)(destination);
     if (!status.installed) return { ...plan, dryRun: false, removed: false };
@@ -325,11 +453,16 @@ function uninstallNasiko(options = {}, dependencies = {}) {
     rename(metadataPath, metadataTombstone);
     metadataStaged = true;
     const cleanupPending = [];
-    try { fs.rmSync(metadataTombstone); } catch (_error) { cleanupPending.push(metadataTombstone); }
+    try { remove(metadataTombstone); } catch (_error) { cleanupPending.push(metadataTombstone); }
     metadataStaged = false;
-    try { fs.rmSync(binaryTombstone); } catch (_error) { cleanupPending.push(binaryTombstone); }
+    try { remove(binaryTombstone); } catch (_error) { cleanupPending.push(binaryTombstone); }
     binaryStaged = false;
-    return { ...plan, dryRun: false, removed: true, cleanupPending };
+    if (cleanupPending.length > 0) {
+      const cleanupError = new Error(`Nasiko uninstall is incomplete; retained staged file(s): ${cleanupPending.join(', ')}. Remove these files before reinstalling.`);
+      cleanupError.cleanupPending = cleanupPending;
+      throw cleanupError;
+    }
+    return { ...plan, dryRun: false, removed: true, cleanupPending: [] };
   } catch (error) {
     if (metadataStaged && !fs.existsSync(metadataPath)) rename(metadataTombstone, metadataPath);
     if (binaryStaged && !fs.existsSync(destination)) rename(binaryTombstone, destination);

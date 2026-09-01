@@ -69,6 +69,32 @@ for (const workflowPath of workflowPaths) {
     }
   });
 
+  test(`${workflowPath} selects reviewed release notes from the validated release version`, () => {
+    const verify = jobBlock(source, 'verify', 'lifecycle');
+
+    assert.match(verify, /RELEASE_VERSION="\$\{RELEASE_TAG#v\}"/);
+    assert.match(
+      verify,
+      /RELEASE_NOTES="docs\/releases\/\$\{RELEASE_VERSION\}\/release-notes\.md"/
+    );
+    assert.match(verify, /if \[ ! -f "\$RELEASE_NOTES" \]/);
+    assert.match(verify, /cp "\$RELEASE_NOTES" release_body\.md/);
+    assert.doesNotMatch(
+      verify,
+      /cp docs\/releases\/2\.2\.0\/release-notes\.md/,
+      'release workflows must not reuse 2.2.0 notes for later versions'
+    );
+  });
+
+  test(`${workflowPath} disables generated additions to reviewed release notes`, () => {
+    const publish = jobBlock(source, 'publish');
+    assert.match(
+      publish,
+      /body_path:\s*release_body\.md[\s\S]{0,160}generate_release_notes:\s*false/
+    );
+    assert.doesNotMatch(publish, /generate_release_notes:\s*(?:true|\$\{\{)/);
+  });
+
   test(`${workflowPath} uploads the one packed tgz as the release artifact`, () => {
     const verify = jobBlock(source, 'verify', 'lifecycle');
     const packIndex = verify.indexOf('name: Pack npm artifact');
@@ -159,6 +185,97 @@ test('packed lifecycle invokes installed public bins, including setup help', () 
   assert.match(lifecycleRunnerSource, /\['ecc-universal', 'setup', '--help'\]/);
   assert.match(lifecycleRunnerSource, /\['ecc', \.\.\.args\]/);
   assert.doesNotMatch(lifecycleRunnerSource, /node_modules.*scripts.*ecc\.js/);
+});
+
+test('packed lifecycle applies and updates README-primary Claude setup with a fake provider', () => {
+  assert.match(lifecycleRunnerSource, /createFakeClaudeExecutable/);
+  assert.match(
+    lifecycleRunnerSource,
+    /const claudeSetupArgs = \[\s*'ecc-universal', 'setup',\s*'--mode', 'claude-plugin',\s*'--scope', 'user',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\s*\[\.\.\.claudeSetupArgs, '--hooks', 'standard', '--dry-run', '--json'\]/
+  );
+  assert.match(lifecycleRunnerSource, /Claude setup dry-run must not mutate setup state/);
+  assert.match(lifecycleRunnerSource, /runProcess\('git', \['--version'\]/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('standard'\)/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('strict'\)/);
+  assert.match(lifecycleRunnerSource, /CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.match(lifecycleRunnerSource, /plugin marketplace add/);
+  assert.match(lifecycleRunnerSource, /plugin update ecc@ecc/);
+});
+
+test('packed lifecycle mutates through the fully explicit guided Kimi install', () => {
+  assert.match(
+    lifecycleRunnerSource,
+    /const guidedKimiInstallArgs = \[\s*'ecc-universal', 'install', '--guided',\s*'--harness', 'kimi',\s*'--profile', 'core',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--dry-run', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--yes', '--json'\]\)/
+  );
+  assert.strictEqual(
+    (lifecycleRunnerSource.match(/runGuidedKimiInstall\(\)/g) || []).length,
+    2,
+    'guided Kimi apply must run once initially and once as an idempotency check'
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'doctor', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'uninstall', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(lifecycleRunnerSource, /guidedKimiSentinel/);
+  assert.match(lifecycleRunnerSource, /dry-run must not mutate the Kimi target/);
+  for (const credentialName of ['ANTHROPIC_API_KEY', 'KIMI_API_KEY', 'MOONSHOT_API_KEY']) {
+    assert.match(lifecycleRunnerSource, new RegExp(credentialName));
+  }
+});
+
+test('packed lifecycle validates canonical Antigravity and OpenCode installs', () => {
+  assert.match(lifecycleRunnerSource, /target:\s*'antigravity'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(projectDir, '\.agents'\)/);
+  assert.match(lifecycleRunnerSource, /target:\s*'opencode'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(homeDir, '\.config', 'opencode'\)/);
+  assert.match(lifecycleRunnerSource, /\['doctor', '--target', options\.target, '--json'\]/);
+  assert.match(lifecycleRunnerSource, /skill-comply[\s\S]*SKILL\.md/);
+  assert.match(lifecycleRunnerSource, /!fs\.existsSync\(installedSkillPath\)/);
+});
+
+test('packed lifecycle installs and verifies the opt-in Ito distribution surface', () => {
+  assert.match(
+    lifecycleRunnerSource,
+    /'--profile', 'core'[\s\S]*'--with', 'capability:ito-compute'[\s\S]*'--with', 'capability:prediction-markets'/
+  );
+  for (const moduleId of ['ito-compute', 'prediction-market-skills']) {
+    assert.match(lifecycleRunnerSource, new RegExp(`moduleId === '${moduleId}'`));
+  }
+  for (const installedPath of [
+    'skills/ito-baskets/SKILL.md',
+    'skills/ito-baskets/agents/openai.yaml',
+    'skills/ito-baskets/scripts/ito-baskets.js',
+    'skills/ito-compute/SKILL.md',
+    'skills/ito-compute/agents/openai.yaml',
+    'skills/ito-inference/SKILL.md',
+    'skills/ito-training/SKILL.md',
+  ]) {
+    assert.match(lifecycleRunnerSource, new RegExp(installedPath.replaceAll('.', '\\.')));
+  }
+  assert.match(lifecycleRunnerSource, /\['ito', 'status'\]/);
+  assert.match(lifecycleRunnerSource, /canonical ito-compute-cli is unpublished/i);
+  assert.match(lifecycleRunnerSource, /npx\|npm exec\|npm link\|install -g/i);
+  assert.match(lifecycleRunnerSource, /installedStat\.isFile\(\)/);
+  assert.match(lifecycleRunnerSource, /installedStat\.size > 0/);
+  assert.match(lifecycleRunnerSource, /hostileItoSentinel/);
+  assert.match(lifecycleRunnerSource, /must-not-reach-hostile-path/);
+  assert.match(lifecycleRunnerSource, /packed Itô bridge executed a PATH collision/);
 });
 
 console.log(`\nPassed: ${passed}`);

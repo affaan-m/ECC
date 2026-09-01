@@ -467,6 +467,7 @@ async function main() {
 
     const installStateProjection = reconcileCurrentInstallState(store, {
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       projectRoot: process.cwd(),
     });
     const storedStatus = store.getStatus({

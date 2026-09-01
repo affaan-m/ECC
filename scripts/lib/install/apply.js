@@ -9,6 +9,7 @@ const {
   withCommitAttributionDisabled,
 } = require('../claude-commit-attribution');
 const { writeInstallState } = require('../install-state');
+const { assertHookConsentReady, planMaterializesHookRuntime } = require('./hook-consent');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
 const {
@@ -17,6 +18,7 @@ const {
   removeLegacyClaudeSkillFiles,
 } = require('./claude-skill-migration');
 const { cleanupLegacyAntigravityInstall } = require('./antigravity-legacy-migration');
+const { cleanupLegacyOpencodeInstall } = require('./opencode-legacy-migration');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
 const { adaptAntigravityAgent } = require('./antigravity-agent');
 
@@ -119,10 +121,23 @@ function readInstalledFileNoFollow(plan, operation) {
 }
 
 function stateWithContentDigests(state, plan) {
+  const currentDestinations = new Set((plan.operations || [])
+    .filter(operation => operation.destinationPath)
+    .map(operation => {
+      const resolved = path.resolve(operation.destinationPath);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    }));
   return {
     ...state,
     operations: (state.operations || []).map(operation => {
       if (!operation.destinationPath) {
+        return { ...operation };
+      }
+      const resolved = path.resolve(operation.destinationPath);
+      const destinationKey = process.platform === 'win32'
+        ? resolved.toLowerCase()
+        : resolved;
+      if (!currentDestinations.has(destinationKey)) {
         return { ...operation };
       }
       const installedContent = readInstalledFileNoFollow(plan, operation);
@@ -321,6 +336,9 @@ function buildResolvedClaudeHooks(plan) {
 
 function previewInstallPlan(plan) {
   const migration = prepareClaudeSkillMigration(plan);
+  const hookConsentWarnings = planMaterializesHookRuntime(plan) && plan.hookConsent !== 'enabled'
+    ? ['Applying this plan requires an explicit hook decision: --enable-hooks or --no-hooks.']
+    : [];
   return {
     ...plan,
     statePreview: migration.finalState,
@@ -330,15 +348,21 @@ function previewInstallPlan(plan) {
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
+      ...hookConsentWarnings,
     ],
     applied: false,
   };
 }
 
 function applyInstallPlan(plan, dependencies = {}) {
+  assertHookConsentReady(plan);
   const persistInstallState = dependencies.writeInstallState || writeInstallState;
+  const beforeInstallStateRead = dependencies.beforeInstallStateRead;
   const beforeOperationWrite = dependencies.beforeOperationWrite;
   const beforeInstallStateWrite = dependencies.beforeInstallStateWrite;
+  if (typeof beforeInstallStateRead === 'function') {
+    beforeInstallStateRead({ plan });
+  }
   const migration = prepareClaudeSkillMigration(plan);
   const appliedPlan = {
     ...plan,
@@ -489,6 +513,21 @@ function applyInstallPlan(plan, dependencies = {}) {
     ];
   }
 
+  let opencodeMigrationWarnings = [];
+  try {
+    const opencodeMigration = cleanupLegacyOpencodeInstall(appliedPlan);
+    if (opencodeMigration.detected && !opencodeMigration.complete) {
+      opencodeMigrationWarnings = [
+        'Legacy OpenCode migration is incomplete. ECC preserved modified or unverifiable managed content under ~/.opencode; review it and rerun the OpenCode install.',
+        ...(Array.isArray(opencodeMigration.warnings) ? opencodeMigration.warnings : []),
+      ];
+    }
+  } catch (error) {
+    opencodeMigrationWarnings = [
+      `Legacy OpenCode cleanup did not finish: ${error.message}. Content under ~/.opencode was preserved; rerun the OpenCode install or review it manually.`,
+    ];
+  }
+
   return {
     ...plan,
     statePreview: finalState,
@@ -499,6 +538,7 @@ function applyInstallPlan(plan, dependencies = {}) {
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
       ...migration.warnings,
       ...antigravityMigrationWarnings,
+      ...opencodeMigrationWarnings,
     ],
     applied: true,
   };

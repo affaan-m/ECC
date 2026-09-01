@@ -33,22 +33,22 @@ test('guide requires an installer with native Antigravity 2.0 support', () => {
   );
 });
 
-test('guide states the temporary npm release boundary', () => {
+test('guide uses the published 2.2 package without stale pre-release copy', () => {
   assert.ok(
-    guide.includes('npm latest is currently `ecc-universal@2.1.0`'),
-    'Guide should identify the package version users receive from npm today'
+    guide.includes('npm view ecc-universal version'),
+    'Guide should let operators verify registry propagation before installation'
   );
   assert.ok(
-    guide.includes('ECC 2.2.0 has not been published to npm yet'),
-    'Guide should not imply that native Antigravity support is already published'
+    guide.includes('npx ecc-universal@2.2.0 install --profile minimal --target antigravity'),
+    'Guide should provide the pinned published-package installation path'
   );
   assert.ok(
-    guide.includes('current source checkout of `main` for native `.agents` support'),
-    'Guide should direct users to the main source checkout until ECC 2.2.0 is published'
+    !guide.includes('ECC 2.2.0 has not been published to npm yet'),
+    'The immutable 2.2 guide must not claim that 2.2 is unpublished'
   );
   assert.ok(
-    guide.includes('remove this release-status paragraph only after `ecc-universal@2.2.0` is published and registry readback succeeds'),
-    'Guide should retain a removal condition for the temporary release warning'
+    !guide.includes('npm latest is currently `ecc-universal@2.1.0`'),
+    'The immutable 2.2 guide must not advertise the old latest version'
   );
 });
 
