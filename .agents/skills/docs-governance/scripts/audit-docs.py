@@ -152,7 +152,7 @@ def normalize_link_target(raw: str) -> str | None:
             return None
         target = target[1:closing]
     else:
-        title = re.search(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^()]*\))\s*$', target)
+        title = re.search(r'\s+(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\([^()]*\))\s*$', target)
         if title:
             target = target[: title.start()]
     target = unquote(target.split("#", 1)[0].split("?", 1)[0])
