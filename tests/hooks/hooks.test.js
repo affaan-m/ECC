@@ -4310,9 +4310,13 @@ async function runTests() {
   else failed++;
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        formatSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4321,7 +4325,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const formatSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-format.js'), 'utf8');
-      assert.ok(formatSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write to avoid trailing newline');
+      assert.ok(formatSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write to avoid trailing newline');
       // Verify no console.log(data) for pass-through (console.error for warnings is OK)
       const lines = formatSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
@@ -4334,9 +4338,13 @@ async function runTests() {
   console.log('\nRound 29: post-edit-typecheck.js (exit and pass-through):');
 
   if (
-    await asyncTest('source calls process.exit(0) after writing output', async () => {
+    await asyncTest('source exits only after stdout finishes writing', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.exit(0)'), 'Should call process.exit(0) for clean termination');
+      assert.match(
+        tcSource,
+        /process\.stdout\.write\(data,\s*\(\)\s*=>\s*process\.exit\(0\)\)/,
+        'Should exit from the stdout write callback'
+      );
     })
   )
     passed++;
@@ -4345,7 +4353,7 @@ async function runTests() {
   if (
     await asyncTest('uses process.stdout.write instead of console.log for pass-through', async () => {
       const tcSource = fs.readFileSync(path.join(scriptsDir, 'post-edit-typecheck.js'), 'utf8');
-      assert.ok(tcSource.includes('process.stdout.write(data)'), 'Should use process.stdout.write');
+      assert.ok(tcSource.includes('process.stdout.write(data,'), 'Should use process.stdout.write');
       const lines = tcSource.split('\n');
       const passThrough = lines.filter(l => /console\.log\(data\)/.test(l));
       assert.strictEqual(passThrough.length, 0, 'Should not use console.log(data) for pass-through');
@@ -5446,18 +5454,17 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 59: check-console-log.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 59: check-console-log.js (large stdin pass-through):');
 
   if (
-    await asyncTest('suppresses pass-through for oversized stdin (fail-open, #2090)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit. Echoing the
-      // truncated string would emit a JSON document cut mid-stream, which the
-      // harness reports as a Stop hook JSON validation failure.
+    await asyncTest('preserves complete oversized stdin (#2924)', async () => {
+      // Direct/legacy entrypoints preserve the protocol payload. Production
+      // wrappers continue to enforce their own bounded-input policy.
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'check-console-log.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      assert.strictEqual(result.stdout, '', 'Truncated stdin must not be echoed (empty stdout = no opinion)');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
     })
   )
     passed++;
@@ -5548,20 +5555,16 @@ async function runTests() {
     passed++;
   else failed++;
 
-  console.log('\nRound 60: post-edit-console-warn.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 60: post-edit-console-warn.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit
+    await asyncTest('preserves complete oversized stdin', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-console-warn.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Data should be truncated — stdout significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
@@ -6074,40 +6077,32 @@ Some random content without the expected ### Context to Load section
     passed++;
   else failed++;
 
-  // ── Round 87: post-edit-format.js and post-edit-typecheck.js stdin overflow (1MB) ──
-  console.log('\nRound 87: post-edit-format.js (stdin exceeding 1MB — truncation):');
+  // ── Round 87: post-edit-format.js and post-edit-typecheck.js large stdin pass-through ──
+  console.log('\nRound 87: post-edit-format.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-format)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 14-22)
+    await asyncTest('preserves complete oversized stdin (post-edit-format)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-format.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
   else failed++;
 
-  console.log('\nRound 87: post-edit-typecheck.js (stdin exceeding 1MB — truncation):');
+  console.log('\nRound 87: post-edit-typecheck.js (large stdin pass-through):');
 
   if (
-    await asyncTest('truncates stdin at 1MB limit and still passes through data (post-edit-typecheck)', async () => {
-      // Send 1.2MB of data — exceeds the 1MB MAX_STDIN limit (lines 16-24)
+    await asyncTest('preserves complete oversized stdin (post-edit-typecheck)', async () => {
       const payload = 'x'.repeat(1024 * 1024 + 200000);
       const result = await runScript(path.join(scriptsDir, 'post-edit-typecheck.js'), payload);
 
       assert.strictEqual(result.code, 0, 'Should exit 0 even with oversized stdin');
-      // Output should be truncated — significantly less than input
-      assert.ok(result.stdout.length < payload.length, `stdout (${result.stdout.length}) should be shorter than input (${payload.length})`);
-      // Output should be approximately 1MB (last accepted chunk may push slightly over)
-      assert.ok(result.stdout.length <= 1024 * 1024 + 65536, `stdout (${result.stdout.length}) should be near 1MB, not unbounded`);
-      assert.ok(result.stdout.length > 0, 'Should still pass through truncated data');
+      assert.strictEqual(result.stdout, payload, 'stdout should exactly match the complete stdin payload');
+      assert.ok(result.stdout.length > 0, 'Should pass through complete data');
     })
   )
     passed++;
