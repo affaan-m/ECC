@@ -65,7 +65,8 @@ ALWAYS validate at system boundaries:
 Language-independent:
 
 - Descriptive names: the name says what the thing holds or does, without a comment.
-- Booleans read as a claim: prefix with `is`, `has`, `should` or `can`.
+- Boolean names read clearly as claims under the applicable language or package
+  convention.
 - Where the language draws the distinction, constants and types are visually
   distinct from ordinary values in the form its language or package rule defines.
 
