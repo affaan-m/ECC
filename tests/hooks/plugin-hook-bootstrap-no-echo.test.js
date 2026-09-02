@@ -45,6 +45,31 @@ const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-pr2380-fixtures-'
 const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
   ? 120_000
   : 30_000;
+const ASYNC_SUPERVISOR_SOURCE = `
+  const { spawn } = require('child_process');
+  const argv = JSON.parse(process.argv[1]);
+  const child = spawn(argv[0], argv.slice(1), {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  let settled = false;
+  child.stdout.pipe(process.stdout);
+  child.stderr.pipe(process.stderr);
+  process.stdin.pipe(child.stdin);
+  child.once('error', error => {
+    if (settled) return;
+    settled = true;
+    process.stderr.write(error.message + '\\n');
+    process.exitCode = 1;
+  });
+  child.once('close', (code, signal) => {
+    if (settled) return;
+    settled = true;
+    if (signal) process.stderr.write('child exited with signal ' + signal + '\\n');
+    process.exitCode = Number.isInteger(code) ? code : 1;
+  });
+`;
 
 function cleanupFixtureDir() {
   fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
@@ -64,8 +89,8 @@ function test(name, fn) {
   }
 }
 
-function runBootstrap(args, input, env) {
-  return spawnSync('node', [bootstrap, ...args], {
+function runSupervised(argv, input, env) {
+  return spawnSync(process.execPath, ['-e', ASYNC_SUPERVISOR_SOURCE, JSON.stringify(argv)], {
     input,
     encoding: 'utf8',
     cwd: repoRoot,
@@ -76,17 +101,13 @@ function runBootstrap(args, input, env) {
   });
 }
 
+function runBootstrap(args, input, env) {
+  return runSupervised([process.execPath, bootstrap, ...args], input, env);
+}
+
 function runHookEntry(args, input, env) {
   const loader = `const s=${JSON.stringify(bootstrap)};process.argv.splice(1,0,s);require(s)`;
-  return spawnSync(process.execPath, ['-e', loader, ...args], {
-    input,
-    encoding: 'utf8',
-    cwd: repoRoot,
-    env: { ...process.env, ...(env || {}) },
-    timeout: SUBPROCESS_TIMEOUT_MS,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
+  return runSupervised([process.execPath, '-e', loader, ...args], input, env);
 }
 
 function realisticPostToolUseEditPayload() {
