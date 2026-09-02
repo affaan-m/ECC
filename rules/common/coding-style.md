@@ -59,18 +59,15 @@ ALWAYS validate at system boundaries:
 ## Naming Conventions
 
 > **Language note**: This rule may be overridden by language-specific rules for
-> languages where this pattern is not idiomatic. Casing in particular belongs to
-> the language file — e.g. PEP 8 for Python, `snake_case` for Rust, `camelCase`
-> for Java and Kotlin. React hook naming lives in
-> [react/coding-style.md](../react/coding-style.md).
+> languages where a pattern is not idiomatic. Casing and framework-specific
+> prefixes belong to the applicable language or package rule.
 
 Language-independent:
 
 - Descriptive names: the name says what the thing holds or does, without a comment.
 - Booleans read as a claim: prefix with `is`, `has`, `should` or `can`.
 - Where the language draws the distinction, constants and types are visually
-  distinct from ordinary values (`UPPER_SNAKE_CASE` and `PascalCase` in many
-  languages) — whether it draws it at all is for the language file to say.
+  distinct from ordinary values in the form its language or package rule defines.
 
 ## Code Smells to Avoid
 
