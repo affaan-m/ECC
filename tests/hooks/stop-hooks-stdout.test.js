@@ -186,6 +186,17 @@ const representativeStopEntry = hooksConfig.hooks.Stop.find(
 );
 
 if (
+  test('all registered Stop wrappers keep the large-output flush contract', () => {
+    for (const entry of hooksConfig.hooks.Stop) {
+      assert.match(entry.hooks[0].command, /maxBuffer:16\*1024\*1024/);
+      assert.match(entry.hooks[0].command, /process\.stdout\.write\(out,done\)/);
+    }
+  })
+)
+  passed++;
+else failed++;
+
+if (
   test('registered Stop wrapper flushes a 100KB dry-run payload', () => {
     const result = runRegisteredStopHook(representativeStopEntry, realisticPayload, {
       ECC_DISABLED_HOOKS: '',
@@ -209,25 +220,26 @@ const multibytePayload = stopPayload(400 * 1024, '한');
 assert.ok(multibytePayload.length < MAX_STDIN, 'fixture must stay below the runner character cap');
 assert.ok(Buffer.byteLength(multibytePayload) > MAX_STDIN, 'fixture must exceed the default byte buffer');
 
-for (const entry of hooksConfig.hooks.Stop) {
-  if (
-    test(`${entry.id} registered wrapper preserves a multibyte sub-cap payload`, () => {
-      const result = runRegisteredStopHook(entry, multibytePayload);
-      assert.strictEqual(
-        result.status,
-        0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-      );
-      assert.ok(
-        result.stdout === multibytePayload,
-        `${entry.id}: registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
-      );
-      JSON.parse(result.stdout);
-    })
-  )
-    passed++;
-  else failed++;
-}
+// Every registered command uses the same generated wrapper, verified above.
+// Exercise the multi-megabyte byte-buffer edge once so the test does not
+// amplify hosted-runner load by serializing the identical payload seven times.
+if (
+  test('registered Stop wrapper preserves a multibyte sub-cap payload', () => {
+    const result = runRegisteredStopHook(representativeStopEntry, multibytePayload);
+    assert.strictEqual(
+      result.status,
+      0,
+      `expected exit 0, got ${result.status}: ${result.stderr}`
+    );
+    assert.ok(
+      result.stdout === multibytePayload,
+      `registered wrapper must echo ${Buffer.byteLength(multibytePayload)} bytes uncut (got ${Buffer.byteLength(result.stdout)})`
+    );
+    JSON.parse(result.stdout);
+  })
+)
+  passed++;
+else failed++;
 
 for (const [hookId, script] of STOP_HOOKS) {
   if (
@@ -262,25 +274,19 @@ if (
   passed++;
 else failed++;
 
-for (const entry of hooksConfig.hooks.Stop) {
-  if (
-    test(`${entry.id} registered wrapper suppresses a >1MB Stop payload`, () => {
-      const result = runRegisteredStopHook(entry, oversizedPayload);
-      assert.strictEqual(
-        result.status,
-        0,
-        `${entry.id}: expected exit 0, got ${result.status}: ${result.stderr}`
-      );
-      assert.strictEqual(
-        result.stdout.length,
-        0,
-        `${entry.id}: wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`
-      );
-    })
-  )
-    passed++;
-  else failed++;
-}
+if (
+  test('registered Stop wrapper suppresses a >1MB Stop payload', () => {
+    const result = runRegisteredStopHook(representativeStopEntry, oversizedPayload);
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
+    assert.strictEqual(
+      result.stdout.length,
+      0,
+      `wrapper must preserve oversized-input suppression (got ${result.stdout.length} characters)`
+    );
+  })
+)
+  passed++;
+else failed++;
 
 for (const [hookId, script] of [...STOP_HOOKS, ['stop:desktop-notify', 'scripts/hooks/desktop-notify.js']]) {
   if (
