@@ -663,7 +663,7 @@
     },
     {
       "command": "plugin-profiles",
-      "description": "Generate and manage slim ECC profile plugins - list profiles, plan token impact, generate a plugin, and activate it per project.",
+      "description": "Generate and manage slim ECC profile plugin carriers - list profiles, plan the listing ledger and capability decision, generate a receipted plugin, and activate it per project.",
       "type": "planning",
       "primaryAgents": [],
       "allAgents": [],

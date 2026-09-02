@@ -1,25 +1,40 @@
 #!/usr/bin/env node
 /**
- * Generate slim ECC profile plugins for Claude Code from the
+ * Generate slim ECC profile plugins (carriers) for Claude Code from the
  * selective-install manifests.
  *
  * Usage:
  *   node scripts/plugin-profiles.js list
  *   node scripts/plugin-profiles.js plan --profile developer [--json]
- *   node scripts/plugin-profiles.js generate --profile developer [options]
+ *   node scripts/plugin-profiles.js generate --profile developer --hooks off [options]
  *
- * Options (plan/generate):
+ * Selection (plan/generate):
  *   --profile <id>            Install profile from manifests/install-profiles.json
  *   --modules <a,b>           Explicit module IDs (adds to the profile)
  *   --with <component,...>    Include component IDs (e.g. skill:react-patterns, agent:planner)
  *   --without <component,...> Exclude component IDs
  *   --name <plugin-name>      Generated plugin name (default: ecc-<profile>)
+ *
+ * Capabilities:
+ *   --hooks <off|minimal|standard|strict>
+ *                             Carry the hook runtime at that profile. Required
+ *                             whenever the selection includes hooks-runtime;
+ *                             a context profile never implies automation.
+ *   --no-hooks                Alias for --hooks off
+ *
+ * Context budget:
+ *   --budget <tokens>         Declared listing budget (default: 8000)
+ *   --allow-over-budget       Generate even when the ledger exceeds the budget
+ *
+ * Output (generate):
  *   --out <dir>               Output marketplace root (default: ~/.claude/ecc-profiles)
  *   --marketplace-name <name> Marketplace name to write (default: ecc-profiles)
- *   --force                   Replace a directory that is not a generated plugin
- *   --no-catalog              Skip the generated ecc-catalog escape-hatch skill
- *   --no-hooks                Skip hooks/ and scripts/hooks/ runtime copies
- *   --json                    (plan) print the resolved plan as JSON
+ *   --dry-run                 Print the exact file list, deletions, ledger, and blockers; write nothing
+ *   --force                   Replace a directory that is not an unmodified generated plugin
+ *   --yes                     Confirm --force when stdin is not a terminal
+ *   --keep-prev               Keep the replaced tree beside the new one (.prev-<name>-<pid>)
+ *   --no-catalog              Skip the ecc-catalog skill and on-demand skill copies
+ *   --json                    Print the plan (plan) or preview (generate --dry-run) as JSON
  */
 
 'use strict';
@@ -29,23 +44,19 @@ const path = require('path');
 const { listInstallProfiles } = require('./lib/install-manifests');
 const {
   DEFAULT_MARKETPLACE_NAME,
-  estimatePlanCatalogTokens,
+  HOOK_PROFILES,
+  measureContextLedger,
   resolvePluginProfilePlan,
+  previewProfilePlugin,
   generateProfilePlugin,
   writeMarketplaceManifest,
 } = require('./lib/plugin-profiles');
 
 const DEFAULT_OUT_ROOT = path.join(os.homedir(), '.claude', 'ecc-profiles');
 
-const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json'];
-const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root'];
+const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json', 'dry-run', 'force', 'yes', 'keep-prev', 'allow-over-budget'];
+const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root', 'hooks', 'budget'];
 
-/**
- * Parse the CLI's `<command> [--flag value]` argv form.
- *
- * @param {Array<string>} argv Arguments after the script path.
- * @returns {{command: string, flags: object}} Command and parsed flags.
- */
 function parseArgs(argv) {
   const args = { command: argv[0] || 'help', flags: {} };
   for (let i = 1; i < argv.length; i += 1) {
@@ -70,22 +81,37 @@ function parseArgs(argv) {
   return args;
 }
 
-/**
- * Split a comma-separated flag value into trimmed, non-empty items.
- *
- * @param {string|undefined} value Raw flag value.
- * @returns {Array<string>} Parsed list.
- */
 function splitList(value) {
   return value ? value.split(',').map(entry => entry.trim()).filter(Boolean) : [];
 }
 
-/**
- * Translate parsed CLI flags into resolvePluginProfilePlan() options.
- *
- * @param {object} flags Parsed CLI flags.
- * @returns {object} Plan options.
- */
+function resolveHooksFlag(flags) {
+  if (flags['no-hooks'] && flags.hooks && flags.hooks !== 'off') {
+    throw new Error('--no-hooks and --hooks are mutually exclusive');
+  }
+  if (flags['no-hooks']) {
+    return 'off';
+  }
+  if (flags.hooks === undefined) {
+    return undefined;
+  }
+  if (!HOOK_PROFILES.includes(flags.hooks)) {
+    throw new Error(`--hooks expects one of ${HOOK_PROFILES.join(', ')}`);
+  }
+  return flags.hooks;
+}
+
+function resolveBudgetFlag(flags) {
+  if (flags.budget === undefined) {
+    return undefined;
+  }
+  const budget = Number(flags.budget);
+  if (!Number.isInteger(budget) || budget <= 0) {
+    throw new Error('--budget expects a positive integer token count');
+  }
+  return budget;
+}
+
 function buildPlanOptions(flags) {
   return {
     repoRoot: flags['repo-root'] || undefined,
@@ -94,84 +120,141 @@ function buildPlanOptions(flags) {
     includeComponentIds: splitList(flags.with),
     excludeComponentIds: splitList(flags.without),
     pluginName: flags.name || undefined,
-    includeHooks: !flags['no-hooks'],
+    hooks: resolveHooksFlag(flags),
+    contextBudgetTokens: resolveBudgetFlag(flags),
   };
 }
 
-/**
- * Print a human-readable summary of a resolved plan, warnings included.
- *
- * @param {object} plan Resolved plugin plan.
- * @returns {void}
- */
-function printPlanSummary(plan) {
-  console.log(`Plugin:   ${plan.pluginName} (ecc@${plan.version}${plan.profileId ? `, profile "${plan.profileId}"` : ''})`);
-  console.log(`Modules:  ${plan.selectedModuleIds.join(', ')}`);
-  console.log(`Surface:  ${plan.skills.length} skills, ${plan.agents.length} agents, ${plan.commands.length} commands, ${plan.runtimePaths.length} runtime paths`);
-  console.log(`Context:  ~${estimatePlanCatalogTokens(plan)} catalog tokens per session`);
+function formatLedger(ledger) {
+  const status = ledger.withinBudget ? 'within' : 'OVER';
+  return `${ledger.tokens} tokens (${ledger.method}@${ledger.methodVersion}, ${ledger.chars} chars, `
+    + `${ledger.entries.skills} skills/${ledger.entries.agents} agents/${ledger.entries.commands} commands) `
+    + `- ${status} budget ${ledger.budget}`;
+}
+
+function printPlanSummary(plan, ledger) {
+  console.log(`Plugin:       ${plan.pluginName} (ecc@${plan.version}${plan.profileId ? `, profile "${plan.profileId}"` : ''})`);
+  console.log(`Modules:      ${plan.selectedModuleIds.join(', ')}`);
+  console.log('');
+  console.log('Context selection');
+  console.log(`  Surface:    ${plan.skills.length} skills, ${plan.agents.length} agents, ${plan.commands.length} commands`);
+  console.log(`  Ledger:     ${formatLedger(ledger)}`);
+  console.log('');
+  console.log('Capability selection');
+  if (plan.hooks.decision === 'enabled') {
+    console.log(`  Hooks:      enabled at profile "${plan.hooks.profile}" (${plan.hooks.groups.length} capability groups)`);
+  } else if (plan.hooks.decision === 'pending') {
+    console.log(`  Hooks:      DECISION REQUIRED - selection includes ${plan.heldRuntimePaths.join(', ')}; pass --hooks <profile> or --hooks off`);
+  } else {
+    console.log('  Hooks:      off');
+  }
+  console.log(`  Runtime:    ${plan.runtimePaths.length} paths (${plan.closure.entries.length} command script entry points, ${plan.closure.files.length} files in closure)`);
+  if (plan.closure.dynamic.length > 0) {
+    console.log(`  Dynamic:    ${plan.closure.dynamic.length} non-literal module loads could not be resolved statically:`);
+    for (const item of plan.closure.dynamic) {
+      console.log(`              ${item.from}: ${item.expression}`);
+    }
+  }
   if (plan.skippedPaths.length > 0) {
-    console.log(`Skipped (installer-only surfaces): ${plan.skippedPaths.join(', ')}`);
+    console.log(`  Skipped:    ${plan.skippedPaths.join(', ')} (installer-only surfaces)`);
   }
   for (const warning of plan.warnings) {
-    console.warn(`Warning:  ${warning}`);
+    console.warn(`Warning:      ${warning}`);
   }
 }
 
-/**
- * `list` subcommand: show the install profiles available for generation.
- *
- * @returns {void}
- */
 function runList() {
   console.log('Available install profiles:\n');
   for (const profile of listInstallProfiles()) {
     console.log(`  ${profile.id.padEnd(12)} ${profile.description} (${profile.moduleCount} modules)`);
   }
-  console.log('\nGenerate one with: node scripts/plugin-profiles.js generate --profile <id>');
+  console.log('\nGenerate one with: node scripts/plugin-profiles.js generate --profile <id> --hooks <off|minimal|standard|strict>');
 }
 
-/**
- * `plan` subcommand: resolve a selection and report it without writing.
- *
- * @param {object} flags Parsed CLI flags.
- * @returns {void}
- */
 function runPlan(flags) {
   const plan = resolvePluginProfilePlan(buildPlanOptions(flags));
+  const ledger = measureContextLedger(plan, { includeCatalogSkill: !flags['no-catalog'] });
   if (flags.json) {
-    console.log(JSON.stringify({ ...plan, estimatedCatalogTokens: estimatePlanCatalogTokens(plan) }, null, 2));
+    console.log(JSON.stringify({ ...plan, ledger, estimatedCatalogTokens: ledger.tokens }, null, 2));
     return;
   }
-  printPlanSummary(plan);
+  printPlanSummary(plan, ledger);
 }
 
-/**
- * `generate` subcommand: materialize the plugin and refresh the marketplace.
- *
- * @param {object} flags Parsed CLI flags.
- * @returns {void}
- */
+function printPreview(preview) {
+  console.log('');
+  console.log(`Target:       ${preview.pluginRoot}`);
+  if (preview.willReplace) {
+    console.log(`Replaces:     existing directory (${preview.existingIsGenerated ? 'unmodified generated plugin' : 'NOT a generated plugin or modified since generation'})`);
+    if (preview.existingReceipt && preview.existingReceipt.createdAt) {
+      console.log(`              previous receipt created ${preview.existingReceipt.createdAt}`);
+    }
+  }
+  console.log(`Copies:       ${preview.operations.length} paths`);
+  for (const operation of preview.operations) {
+    console.log(`  ${operation.source} -> ${operation.destination}`);
+  }
+  console.log(`Generates:    ${preview.generatedFiles.join(', ')}`);
+  console.log(`Ledger:       ${formatLedger(preview.ledger)}`);
+  if (preview.blockers.length > 0) {
+    console.log('');
+    console.log('Generation would be refused:');
+    for (const blocker of preview.blockers) {
+      console.log(`  - ${blocker.split('\n').join('\n    ')}`);
+    }
+  }
+}
+
 function runGenerate(flags) {
   const outRoot = flags.out || DEFAULT_OUT_ROOT;
   const marketplaceName = flags['marketplace-name'] || DEFAULT_MARKETPLACE_NAME;
   const plan = resolvePluginProfilePlan(buildPlanOptions(flags));
+  const includeCatalogSkill = !flags['no-catalog'];
 
   if (!flags.name && !flags.profile) {
     console.warn(`Warning:  no --profile or --name given; using default name "${plan.pluginName}". `
       + 'Another custom generation without --name will overwrite this plugin.');
   }
 
-  printPlanSummary(plan);
-
-  const result = generateProfilePlugin({
+  const generationOptions = {
     plan,
     outRoot,
-    includeCatalogSkill: !flags['no-catalog'],
+    includeCatalogSkill,
     force: Boolean(flags.force),
-  });
+    allowOverBudget: Boolean(flags['allow-over-budget']),
+    keepPrevious: Boolean(flags['keep-prev']),
+  };
+
+  if (flags['dry-run']) {
+    const preview = previewProfilePlugin(generationOptions);
+    if (flags.json) {
+      console.log(JSON.stringify({ plan, preview }, null, 2));
+      return;
+    }
+    printPlanSummary(plan, preview.ledger);
+    printPreview(preview);
+    console.log('\nDry run: nothing was written.');
+    return;
+  }
+
+  if (flags.force && !flags.yes && !process.stdin.isTTY) {
+    throw new Error('--force deletes the target directory; pass --yes to confirm when not running interactively');
+  }
+
+  const preview = previewProfilePlugin(generationOptions);
+  printPlanSummary(plan, preview.ledger);
+  if (flags.force && preview.willReplace && !preview.existingIsGenerated) {
+    console.warn(`\nWarning:  --force will delete ${preview.pluginRoot}, which is not an unmodified generated plugin.`);
+  }
+
+  const result = generateProfilePlugin(generationOptions);
   writeMarketplaceManifest({ outRoot, marketplaceName });
 
   console.log(`\nGenerated: ${result.pluginRoot}`);
+  console.log(`Receipt:   ${path.join(result.pluginRoot, 'ecc-profile.json')} (context digest ${result.receipt.context.digest.slice(0, 12)}, tree digest ${result.receipt.treeDigest.slice(0, 12)})`);
+  if (result.previousRoot) {
+    console.log(`Previous:  ${result.previousRoot}`);
+  }
   console.log('\nNext steps:');
   console.log(`  claude plugin marketplace add "${outRoot}"`);
   console.log(`  claude plugin install ${plan.pluginName}@${marketplaceName}`);
@@ -186,11 +269,6 @@ function runGenerate(flags) {
   console.log('\nRe-run this command after updating ECC to refresh the generated plugin.');
 }
 
-/**
- * CLI entry point: dispatch to the requested subcommand.
- *
- * @returns {void}
- */
 function main() {
   const { command, flags } = parseArgs(process.argv.slice(2));
 
