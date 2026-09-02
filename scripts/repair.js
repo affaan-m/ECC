@@ -81,6 +81,7 @@ async function main() {
     const result = repairInstalledStates({
       repoRoot: require('path').join(__dirname, '..'),
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       projectRoot: process.cwd(),
       targets: options.targets,
       dryRun: options.dryRun,
@@ -89,6 +90,7 @@ async function main() {
       const { reconcileCanonicalInstallStates } = require('./lib/install-state-store-sync');
       result.installStateProjection = await reconcileCanonicalInstallStates({
         homeDir: process.env.HOME || os.homedir(),
+        env: process.env,
         projectRoot: process.cwd(),
         targets: options.targets,
       });

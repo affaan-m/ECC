@@ -169,6 +169,7 @@ function runTests() {
           excludeComponents: ['component:beta'],
           legacyLanguages: [],
           legacyMode: false,
+          hookConsent: 'declined',
         },
       },
     };
@@ -179,6 +180,42 @@ function runTests() {
       '--modules', 'platform-configs',
       '--with', 'component:alpha',
       '--without', 'component:beta',
+      '--no-hooks',
+    ]);
+  })) passed += 1; else failed += 1;
+
+  if (test('buildInstallApplyArgs infers enabled hooks for older install-state records', () => {
+    const record = {
+      adapter: { target: 'cursor', kind: 'project' },
+      state: {
+        target: { target: 'cursor' },
+        request: {
+          profile: 'core',
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['rules-core', 'hooks-runtime'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'copy-file',
+            moduleId: 'hooks-runtime',
+            sourceRelativePath: '.cursor/hooks.json',
+            destinationPath: '/tmp/project/.cursor/hooks.json',
+          },
+        ],
+      },
+    };
+
+    assert.deepStrictEqual(buildInstallApplyArgs(record), [
+      '--target', 'cursor',
+      '--profile', 'core',
+      '--enable-hooks',
     ]);
   })) passed += 1; else failed += 1;
 
@@ -495,6 +532,52 @@ function runTests() {
       assert.ok(result.warnings.some(warning => warning.includes(
         'Run the Antigravity installer once to migrate it to .agents'
       )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(repoRoot);
+    }
+  })) passed += 1; else failed += 1;
+
+  if (test('runAutoUpdate gives legacy-only OpenCode migration guidance', () => {
+    const homeDir = createTempDir('auto-update-home-');
+    const projectRoot = createTempDir('auto-update-project-');
+    const repoRoot = createTempDir('auto-update-repo-');
+
+    try {
+      ensureFakeRepo(repoRoot);
+      const legacy = {
+        ...makeRecord({
+          repoRoot,
+          homeDir,
+          projectRoot,
+          adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+          request: {
+            profile: null,
+            modules: ['workflow-quality'],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: { selectedModules: ['workflow-quality'], skippedModules: [] },
+          operations: [],
+        }),
+        installStatePath: path.join(homeDir, '.opencode', 'ecc-install-state.json'),
+        legacy: true,
+        legacyLayout: 'opencode',
+      };
+
+      const result = runAutoUpdate(
+        { homeDir, projectRoot, repoRoot, dryRun: true },
+        { discoverInstalledStates: () => [legacy] }
+      );
+
+      assert.deepStrictEqual(result.results, []);
+      assert.ok(result.warnings.some(warning => warning.includes(
+        'Run the OpenCode installer once to migrate it to the configured OpenCode directory'
+      )));
+      assert.ok(result.warnings.every(warning => !warning.includes('Antigravity')));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

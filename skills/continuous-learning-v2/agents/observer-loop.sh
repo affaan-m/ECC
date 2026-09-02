@@ -153,10 +153,17 @@ analyze_observations() {
   analysis_count=$(wc -l < "$analysis_file" 2>/dev/null || echo 0)
   echo "[$(date)] Using last $analysis_count of $obs_count observations for analysis" >> "$LOG_FILE"
 
-  # Use relative path from PROJECT_DIR for cross-platform compatibility (#842).
-  # On Windows (Git Bash/MSYS2), absolute paths from mktemp may use MSYS-style
-  # prefixes (e.g. /c/Users/...) that the Claude subprocess cannot resolve.
-  analysis_relpath=".observer-tmp/$(basename "$analysis_file")"
+  # Claude Code resolves relative paths against the user's home directory on
+  # macOS/Linux, even though the observer changes to PROJECT_DIR first. Use
+  # the absolute path there so the analyzer reads the file that was sampled.
+  # Keep the relative path on Windows (Git Bash/MSYS2), where absolute paths
+  # from mktemp can contain /c/ prefixes that the Claude subprocess cannot
+  # resolve (#842, #2673).
+  if [ "${CLV2_IS_WINDOWS:-false}" = "true" ]; then
+    analysis_relpath=".observer-tmp/$(basename "$analysis_file")"
+  else
+    analysis_relpath="$analysis_file"
+  fi
 
   prompt_file="$(mktemp "${observer_tmp_dir}/ecc-observer-prompt.XXXXXX")"
   cat > "$prompt_file" <<PROMPT

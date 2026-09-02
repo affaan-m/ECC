@@ -127,7 +127,7 @@ function createFallbackValidator() {
       validateNoAdditionalProperties(
         request,
         '/request',
-        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode']
+        ['profile', 'modules', 'includeComponents', 'excludeComponents', 'legacyLanguages', 'legacyMode', 'hookConsent']
       );
       if (!(Object.prototype.hasOwnProperty.call(request, 'profile') && (request.profile === null || typeof request.profile === 'string'))) {
         pushError('/request/profile', 'must be string or null');
@@ -138,6 +138,14 @@ function createFallbackValidator() {
       validateStringArray(request.legacyLanguages, '/request/legacyLanguages');
       if (typeof request.legacyMode !== 'boolean') {
         pushError('/request/legacyMode', 'must be boolean');
+      }
+      if (
+        request.hookConsent !== undefined
+        && request.hookConsent !== null
+        && request.hookConsent !== 'enabled'
+        && request.hookConsent !== 'declined'
+      ) {
+        pushError('/request/hookConsent', 'must be enabled, declined, or null');
       }
     }
 
@@ -258,6 +266,9 @@ function createInstallState(options) {
         ? [...options.request.legacyLanguages]
         : [],
       legacyMode: Boolean(options.request.legacyMode),
+      hookConsent: Object.prototype.hasOwnProperty.call(options.request, 'hookConsent')
+        ? options.request.hookConsent
+        : null,
     },
     resolution: {
       selectedModules: Array.isArray(options.resolution.selectedModules)

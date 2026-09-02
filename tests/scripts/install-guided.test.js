@@ -8,6 +8,7 @@ const {
   collectInteractiveOptions,
   main,
   parseArgs,
+  printPlan,
   validateExecutionMode,
 } = require('../../scripts/install-guided');
 const {
@@ -359,6 +360,28 @@ function runGuidedPtyFixture(answers) {
     assert.strictEqual(code, 1);
     assert.ok(!errorOutput.read().includes('\u001b'));
     assert.doesNotMatch(errorOutput.read(), /\[31m/);
+  });
+
+  await test('printPlan discloses hook capabilities for non-off Claude hook profiles', async () => {
+    let written = '';
+    const output = { write: chunk => { written += chunk; } };
+    printPlan({
+      harnesses: [{ id: 'claude', channel: 'native-plugin' }],
+      request: { harnesses: ['claude'], claudeHooks: 'standard' },
+    }, output);
+    assert.ok(written.includes("hook profile 'standard'"));
+    assert.ok(written.includes('modify project source files'));
+    assert.ok(written.includes("--claude-hooks off"));
+  });
+
+  await test('printPlan omits the hook disclosure when Claude hooks are off', async () => {
+    let written = '';
+    const output = { write: chunk => { written += chunk; } };
+    printPlan({
+      harnesses: [{ id: 'claude', channel: 'native-plugin' }],
+      request: { harnesses: ['claude'], claudeHooks: 'off' },
+    }, output);
+    assert.ok(!written.includes('enables automation'));
   });
 
   console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);

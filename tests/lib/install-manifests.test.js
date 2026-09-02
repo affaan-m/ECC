@@ -14,9 +14,11 @@ const {
   listLegacyCompatibilityLanguages,
   listInstallModules,
   listInstallProfiles,
+  listSupportedLocales,
   resolveInstallPlan,
   resolveLegacyCompatibilitySelection,
   validateInstallModuleIds,
+  LOCALE_ALIAS_TO_COMPONENT_ID,
 } = require('../../scripts/lib/install-manifests');
 
 function test(name, fn) {
@@ -104,6 +106,28 @@ function runTests() {
       'Should include agent:mle-reviewer');
     assert.ok(components.some(component => component.id === 'skill:mle-workflow'),
       'Should include skill:mle-workflow');
+  })) passed++; else failed++;
+
+  if (test('every locale alias resolves to a real component with a real module', () => {
+    const manifests = loadInstallManifests();
+
+    for (const locale of listSupportedLocales()) {
+      const componentId = LOCALE_ALIAS_TO_COMPONENT_ID[locale];
+      assert.ok(componentId, `Locale ${locale} should have an alias mapping`);
+
+      const component = getInstallComponent(componentId);
+      assert.strictEqual(component.family, 'locale', `${componentId} should be in the locale family`);
+      assert.ok(component.moduleIds.length > 0, `${componentId} should reference at least one module`);
+
+      for (const moduleId of component.moduleIds) {
+        const module = manifests.modulesById.get(moduleId);
+        assert.ok(module, `${componentId} module ${moduleId} should exist in install-modules.json`);
+        assert.ok(
+          module.paths.every(modulePath => fs.existsSync(path.join(manifests.repoRoot, modulePath))),
+          `${moduleId} paths should exist on disk`
+        );
+      }
+    }
   })) passed++; else failed++;
 
   if (test('gets install component details and validates component IDs', () => {

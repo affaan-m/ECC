@@ -98,7 +98,7 @@ function runTests() {
     const projectRoot = createTempDir('repair-project-');
 
     try {
-      const installResult = runNode(INSTALL_SCRIPT, ['--target', 'cursor', 'typescript'], {
+      const installResult = runNode(INSTALL_SCRIPT, ['--target', 'cursor', 'typescript', '--enable-hooks'], {
         cwd: projectRoot,
         homeDir,
       });
@@ -131,6 +131,52 @@ function runTests() {
       assert.ok(pathListIncludes(parsed.results[0].repairedPaths, managedPath));
       assert.strictEqual(fs.readFileSync(managedPath, 'utf8'), expectedContent);
       assert.ok(fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('repair preserves a declined hook decision and does not reinstall hooks', () => {
+    const homeDir = createTempDir('repair-home-');
+    const projectRoot = createTempDir('repair-project-');
+
+    try {
+      const installResult = runNode(INSTALL_SCRIPT, ['--target', 'cursor', '--profile', 'core', '--no-hooks'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(installResult.code, 0, installResult.stderr);
+
+      const normalizedProjectRoot = fs.realpathSync(projectRoot);
+      const managedPath = path.join(normalizedProjectRoot, '.cursor', 'rules', 'common-coding-style.mdc');
+      const statePath = path.join(normalizedProjectRoot, '.cursor', 'ecc-install-state.json');
+      const hooksConfigPath = path.join(normalizedProjectRoot, '.cursor', 'hooks.json');
+      const expectedContent = fs.readFileSync(managedPath, 'utf8');
+      fs.rmSync(managedPath, { force: true });
+
+      const doctorBefore = runNode(DOCTOR_SCRIPT, ['--target', 'cursor', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(doctorBefore.code, 1);
+      assert.ok(JSON.parse(doctorBefore.stdout).results[0].issues.some(issue => issue.code === 'missing-managed-files'));
+
+      const repairResult = runNode(REPAIR_SCRIPT, ['--target', 'cursor', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(repairResult.code, 0, repairResult.stderr);
+
+      const parsed = JSON.parse(repairResult.stdout);
+      assert.strictEqual(parsed.results[0].status, 'repaired');
+      assert.ok(pathListIncludes(parsed.results[0].repairedPaths, managedPath));
+      assert.strictEqual(fs.readFileSync(managedPath, 'utf8'), expectedContent);
+      assert.ok(!fs.existsSync(hooksConfigPath));
+
+      const repairedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      assert.strictEqual(repairedState.request.hookConsent, 'declined');
+      assert.ok(!repairedState.resolution.selectedModules.includes('hooks-runtime'));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

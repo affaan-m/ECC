@@ -8,6 +8,7 @@ const path = require('path');
 
 const README = path.join(__dirname, '..', '..', 'README.md');
 const RULES_README = path.join(__dirname, '..', '..', 'rules', 'README.md');
+const CODEX_AGENTS = path.join(__dirname, '..', '..', '.codex', 'AGENTS.md');
 
 function test(name, fn) {
   try {
@@ -29,6 +30,7 @@ function runTests() {
 
   const readme = fs.readFileSync(README, 'utf8');
   const rulesReadme = fs.readFileSync(RULES_README, 'utf8');
+  const codexAgents = fs.readFileSync(CODEX_AGENTS, 'utf8');
 
   if (test('README marks one default path and warns against stacked installs', () => {
     assert.ok(
@@ -50,9 +52,25 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('README leads with the idempotent guided plugin setup path', () => {
+    const topClaudeSectionIndex = readme.indexOf('## Install with Claude Code');
+    const topGuidedCommandIndex = readme.indexOf('npx ecc-universal setup', topClaudeSectionIndex);
+    const nativePluginCommandIndex = readme.indexOf('/plugin marketplace add', topClaudeSectionIndex);
+    const installSectionIndex = readme.indexOf('## Install ECC');
+    const guidedCommandIndex = readme.indexOf('npx ecc-universal setup', installSectionIndex);
+    const claudeDetailsIndex = readme.indexOf('### Claude Code details', installSectionIndex);
+
     assert.ok(
-      readme.includes('npx ecc-universal setup'),
+      topGuidedCommandIndex > topClaudeSectionIndex
+      && topGuidedCommandIndex < nativePluginCommandIndex,
+      'README should lead its public install surface with the canonical package command'
+    );
+    assert.ok(
+      guidedCommandIndex > installSectionIndex,
       'README should lead new users to the package-name setup command'
+    );
+    assert.ok(
+      guidedCommandIndex < claudeDetailsIndex,
+      'README should show the recommended universal command before provider-specific details'
     );
     assert.ok(
       readme.includes('installs, updates, or safely moves `ecc@ecc`'),
@@ -103,6 +121,17 @@ function runTests() {
       readme.includes('node scripts/ecc.js doctor'),
       'README should document doctor before reinstalling'
     );
+    for (const command of [
+      'npx ecc-universal list-installed',
+      'npx ecc-universal doctor',
+      'npx ecc-universal repair',
+      'npx ecc-universal uninstall --dry-run',
+    ]) {
+      assert.ok(
+        readme.includes(command),
+        `README should document the package-runner lifecycle command: ${command}`
+      );
+    }
     assert.ok(
       readme.includes('ECC only removes files recorded in its install-state.'),
       'README should explain uninstall safety boundaries'
@@ -119,12 +148,20 @@ function runTests() {
       'README should document the shell minimal profile command'
     );
     assert.ok(
-      readme.includes('npx ecc-install --profile minimal --target claude'),
-      'README should document the npx minimal profile command'
+      readme.includes('npx ecc-universal install --profile minimal --target claude'),
+      'README should document the published universal-package minimal profile command'
+    );
+    assert.ok(
+      !/^\s*npx ecc-install\b/m.test(readme),
+      'README code examples must not invoke the unpublished ecc-install package'
     );
     assert.ok(
       readme.includes('--profile core --without baseline:hooks --target claude'),
       'README should document the hook opt-out path for the core profile'
+    );
+    assert.ok(
+      readme.includes('./install.sh --profile core --no-hooks --target claude'),
+      'README should document the explicit no-hooks consent path for the core profile'
     );
     assert.ok(
       readme.includes('This profile intentionally excludes `hooks-runtime`.'),
@@ -169,6 +206,57 @@ function runTests() {
     for (const target of ['cursor', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw']) {
       assert.ok(readme.includes(`\`${target}\``), `README should name the ${target} target`);
     }
+  })) passed++; else failed++;
+
+  if (test('README describes the post-release universal install contract', () => {
+    assert.ok(
+      readme.includes('Node.js 18 or newer'),
+      'README should state the runtime required by ecc-universal'
+    );
+    assert.ok(
+      !readme.includes('During registry propagation'),
+      'README should not retain the temporary 2.1 registry fallback after 2.2 is live'
+    );
+    assert.ok(
+      !/codex[^\n]*(?:marketplace|plugin)[^\n]*(?:experimental|unreliable)/i.test(readme),
+      'README should not contradict the supported native Codex install guidance'
+    );
+    assert.ok(
+      readme.includes('| Skills | Native installed set | Native plugin set |'),
+      'README capability map should describe the native Codex skill set'
+    );
+    assert.ok(
+      readme.includes('| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust |'),
+      'README capability map should describe the native Codex hook subset'
+    );
+    assert.ok(
+      readme.includes("Codex's narrower native hook set is supplemented"),
+      'README architecture notes should preserve the native Codex hook subset boundary'
+    );
+    assert.ok(
+      !readme.includes("Codex's lack of hooks"),
+      'README should not deny the shipped native Codex hook subset'
+    );
+    assert.ok(
+      readme.includes("# Recommended current install: add ECC's native plugin from the repo marketplace"),
+      'README Codex detail should lead with the native plugin install'
+    );
+    assert.ok(
+      readme.includes('Legacy copied-configuration compatibility is still available'),
+      'README Codex detail should label the sync path as compatibility-only'
+    );
+    assert.ok(
+      !readme.includes('# Automatic setup: sync ECC assets'),
+      'README should not present the legacy Codex sync as the primary setup'
+    );
+    assert.ok(
+      codexAgents.includes('Reviewed native subset with explicit trust in `/hooks`'),
+      'Packaged Codex guidance should describe the shipped trusted hook subset'
+    );
+    assert.ok(
+      !/not yet supported|codex lacks hooks|security without hooks/i.test(codexAgents),
+      'Packaged Codex guidance should not deny native hook support'
+    );
   })) passed++; else failed++;
 
   if (test('README documents Cursor agent namespace and loading caveat', () => {

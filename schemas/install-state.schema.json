@@ -107,6 +107,13 @@
         },
         "legacyMode": {
           "type": "boolean"
+        },
+        "hookConsent": {
+          "enum": [
+            "enabled",
+            "declined",
+            null
+          ]
         }
       }
     },

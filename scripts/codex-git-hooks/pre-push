@@ -60,11 +60,23 @@ has_node_script() {
   node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)' "$script_name" >/dev/null 2>&1
 }
 
+run_pnpm() {
+  if command -v corepack >/dev/null 2>&1; then
+    # Corepack may download the pinned pnpm version on a cache miss. Set
+    # COREPACK_ENABLE_NETWORK=0 to make an offline cache miss fail immediately.
+    corepack pnpm "$@"
+  elif command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+  else
+    fail "pnpm could not be resolved from PATH or Corepack"
+  fi
+}
+
 run_node_script() {
   local pm="$1"
   local script_name="$2"
   case "$pm" in
-    pnpm) pnpm run "$script_name" ;;
+    pnpm) run_pnpm run "$script_name" ;;
     bun) bun run "$script_name" ;;
     yarn) yarn "$script_name" ;;
     npm) npm run "$script_name" ;;
@@ -90,7 +102,7 @@ if [[ -f "package.json" ]]; then
     ran_any_check=1
     log "Running dependency audit (ECC_PREPUSH_AUDIT=1)"
     case "$pm" in
-      pnpm) pnpm audit --prod || fail "pnpm audit failed" ;;
+      pnpm) run_pnpm audit --prod || fail "pnpm audit failed" ;;
       bun) bun audit || fail "bun audit failed" ;;
       yarn) yarn npm audit --recursive || fail "yarn audit failed" ;;
       npm) npm audit --omit=dev || fail "npm audit failed" ;;

@@ -6,6 +6,7 @@ const assert = require("assert")
 const fs = require("fs")
 const path = require("path")
 const { spawnSync } = require("child_process")
+const { getNpmPackEntry } = require("../lib/npm-pack-output")
 
 function runTest(name, fn) {
   try {
@@ -149,7 +150,8 @@ function main() {
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
       const packOutput = JSON.parse(result.stdout)
-      const packagedPaths = new Set(packOutput[0]?.files?.map((file) => file.path) ?? [])
+      const packEntry = getNpmPackEntry(packOutput, packageJson.name)
+      const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
         "scripts/catalog.js",
@@ -201,6 +203,7 @@ function main() {
         "schemas/install-state.schema.json",
         "schemas/memory.schema.json",
         "skills/backend-patterns/SKILL.md",
+        "skills/skill-comply/SKILL.md",
         "skills/unified-memory/SKILL.md",
       ]) {
         assert.ok(
@@ -214,7 +217,6 @@ function main() {
         "examples/CLAUDE.md",
         "plugins/README.md",
         "scripts/ci/catalog.js",
-        "skills/skill-comply/SKILL.md",
       ]) {
         assert.ok(
           !packagedPaths.has(excludedPath),
@@ -230,6 +232,10 @@ function main() {
         assert.ok(
           !/\.py[cod]$/.test(packagedPath),
           `npm pack should not include Python bytecode file ${packagedPath}`
+        )
+        assert.ok(
+          !packagedPath.includes(".pytest_cache/"),
+          `npm pack should not include pytest cache path ${packagedPath}`
         )
       }
     }],

@@ -23,7 +23,7 @@
 
 **Dil / Language / 语言 / 語言 / Язык / Ngôn ngữ**
 
-[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [**Türkçe**](README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+[**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [**Türkçe**](README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 </div>
 
@@ -79,7 +79,7 @@ Bu repository yalnızca ham kodu içerir. Rehberler her şeyi açıklıyor.
 
 ## Yenilikler
 
-### v2.2.0 — Rehberli Çoklu Harness Kurulumu (Ağu 2026)
+### v2.2.1 — Rehberli Çoklu Harness Kurulumu (Ağu 2026)
 
 Claude Code, Codex ve Kimi Code için incelenebilir çoklu harness kurulumu ve eşitlenmiş npm komut girişi eklendi.
 
@@ -162,8 +162,8 @@ npm install        # veya: pnpm install | yarn install | bun install
 # .\install.ps1 --target cursor typescript
 # .\install.ps1 --target antigravity typescript
 
-# npm-installed uyumluluk entry point'i de çapraz platform çalışır
-npx ecc-install typescript
+# Yayımlanmış npm paketinin entry point'i de çapraz platform çalışır
+npx ecc-universal install typescript
 ```
 
 Manuel kurulum talimatları için `rules/` klasöründeki README'ye bakın.
