@@ -83,7 +83,11 @@ const ASYNC_SUPERVISOR_SOURCE = `
   child.stdout.pipe(process.stdout);
   child.stderr.pipe(process.stderr);
   child.stdin.on('error', error => {
-    if (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED') {
+    if (
+      error.code === 'EPIPE' ||
+      error.code === 'EOF' ||
+      error.code === 'ERR_STREAM_DESTROYED'
+    ) {
       process.stdin.unpipe(child.stdin);
       process.stdin.resume();
       return;
