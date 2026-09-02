@@ -132,8 +132,21 @@ def markdown_link_targets(text: str) -> list[str]:
                 targets.append(text[start : end + 1])
             continue
         depth = 0
+        quote: str | None = None
+        escaped = False
         for end in range(start, len(text)):
             character = text[end]
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == quote:
+                    quote = None
+                continue
+            if character in {"'", '"'}:
+                quote = character
+                continue
             if character == "(":
                 depth += 1
             elif character == ")":

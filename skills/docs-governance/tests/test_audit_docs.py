@@ -150,6 +150,16 @@ def test_artifact_scope_ignores_title_with_escaped_quotes(project: Path) -> None
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_ignores_title_with_closing_parenthesis(project: Path) -> None:
+    (project / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (project / "index.md").write_text(
+        '[guide](guide.md "Guide)")\n',
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
 def test_artifact_scope_checks_angle_wrapped_destination_with_title(project: Path) -> None:
     (project / "index.md").write_text('[missing](<guide.md> "Guide")\n', encoding="utf-8")
     result = run_audit(project, "artifacts")
