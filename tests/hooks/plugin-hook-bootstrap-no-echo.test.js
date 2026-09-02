@@ -42,6 +42,9 @@ const repoRoot = path.join(__dirname, '..', '..');
 const bootstrap = path.join(repoRoot, 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
 const { isRawPassthrough } = require(bootstrap);
 const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-pr2380-fixtures-'));
+const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
+  ? 120_000
+  : 30_000;
 
 function cleanupFixtureDir() {
   fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
@@ -67,7 +70,7 @@ function runBootstrap(args, input, env) {
     encoding: 'utf8',
     cwd: repoRoot,
     env: { ...process.env, ...(env || {}) },
-    timeout: 30000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -80,7 +83,7 @@ function runHookEntry(args, input, env) {
     encoding: 'utf8',
     cwd: repoRoot,
     env: { ...process.env, ...(env || {}) },
-    timeout: 30000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });

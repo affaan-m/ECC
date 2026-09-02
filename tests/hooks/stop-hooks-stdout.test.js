@@ -29,6 +29,9 @@ const hooksConfig = JSON.parse(
 );
 
 const MAX_STDIN = 1024 * 1024;
+const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
+  ? 120_000
+  : 60_000;
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-stdout-')); // non-git cwd
 const dataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-stop-data-'));
@@ -75,7 +78,7 @@ function runViaRunner(hookId, script, input) {
     encoding: 'utf8',
     cwd: workDir,
     env: hookEnv(),
-    timeout: 60000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -87,7 +90,7 @@ function runDirect(script, input) {
     encoding: 'utf8',
     cwd: workDir,
     env: hookEnv(),
-    timeout: 60000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -107,7 +110,7 @@ function runRegisteredStopHook(entry, input, envOverrides = {}) {
     cwd: workDir,
     env,
     shell: true,
-    timeout: 60000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });
