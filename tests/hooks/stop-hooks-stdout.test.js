@@ -184,12 +184,16 @@ for (const entry of hooksConfig.hooks.Stop) {
 const representativeStopEntry = hooksConfig.hooks.Stop.find(
   entry => entry.id === 'stop:cost-tracker'
 );
+const CALLBACK_FLUSH_WRAPPER = 'const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};';
 
 if (
   test('all registered Stop wrappers keep the large-output flush contract', () => {
     for (const entry of hooksConfig.hooks.Stop) {
       assert.match(entry.hooks[0].command, /maxBuffer:16\*1024\*1024/);
-      assert.match(entry.hooks[0].command, /process\.stdout\.write\(out,done\)/);
+      assert.ok(
+        entry.hooks[0].command.includes(CALLBACK_FLUSH_WRAPPER),
+        `${entry.id}: wrapper must wait for stdout and stderr callbacks before exiting`
+      );
     }
   })
 )
