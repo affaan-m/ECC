@@ -84,4 +84,4 @@ Configure CSP headers server-side. Avoid `unsafe-inline` in `script-src`. When u
 
 ## Agent Support
 
-- Use **security-reviewer** skill for comprehensive security audits
+- Use **ecc:security-reviewer** skill for comprehensive security audits

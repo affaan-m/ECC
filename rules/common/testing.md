@@ -19,14 +19,14 @@ MANDATORY workflow:
 
 ## Troubleshooting Test Failures
 
-1. Use **tdd-guide** agent
+1. Use **ecc:tdd-guide** agent
 2. Check test isolation
 3. Verify mocks are correct
 4. Fix implementation, not tests (unless tests are wrong)
 
 ## Agent Support
 
-- **tdd-guide** - Use PROACTIVELY for new features, enforces write-tests-first
+- **ecc:tdd-guide** - Use PROACTIVELY for new features, enforces write-tests-first
 
 ## Test Structure (AAA Pattern)
 
