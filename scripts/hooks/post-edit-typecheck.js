@@ -13,18 +13,28 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const MAX_STDIN = 1024 * 1024; // 1MB limit
+const MAX_DIRECT_STDIN_BYTES = 16 * 1024 * 1024;
 let data = "";
+let stdinBytes = 0;
+let oversized = false;
 process.stdin.setEncoding("utf8");
 
 process.stdin.on("data", (chunk) => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += chunk.substring(0, remaining);
+  if (oversized) return;
+  stdinBytes += Buffer.byteLength(chunk, "utf8");
+  if (stdinBytes > MAX_DIRECT_STDIN_BYTES) {
+    data = "";
+    oversized = true;
+    return;
   }
+  data += chunk;
 });
 
 process.stdin.on("end", () => {
+  if (oversized) {
+    process.exit(0);
+    return;
+  }
   try {
     const input = JSON.parse(data);
     const filePath = input.tool_input?.file_path;
@@ -32,8 +42,8 @@ process.stdin.on("end", () => {
     if (filePath && /\.(ts|tsx)$/.test(filePath)) {
       const resolvedPath = path.resolve(filePath);
       if (!fs.existsSync(resolvedPath)) {
-        process.stdout.write(data);
-        process.exit(0);
+        process.stdout.write(data, () => process.exit(0));
+        return;
       }
       // Find nearest tsconfig.json by walking up (max 20 levels to prevent infinite loop)
       let dir = path.dirname(resolvedPath);
@@ -91,6 +101,5 @@ process.stdin.on("end", () => {
     // Invalid input — pass through
   }
 
-  process.stdout.write(data);
-  process.exit(0);
+  process.stdout.write(data, () => process.exit(0));
 });

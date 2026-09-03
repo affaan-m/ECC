@@ -142,7 +142,6 @@ const STOP_HOOKS = [
 // Direct-invocation legacy paths that echo stdin.
 const ECHOING_STOP_HOOKS = [
   'scripts/hooks/stop-format-typecheck.js',
-  'scripts/hooks/check-console-log.js',
   'scripts/hooks/cost-tracker.js',
   'scripts/hooks/desktop-notify.js'
 ];
@@ -315,6 +314,17 @@ for (const script of ECHOING_STOP_HOOKS) {
     passed++;
   else failed++;
 }
+
+if (
+  test('check-console-log invoked directly echoes a >1MB payload uncut', () => {
+    const result = runDirect('scripts/hooks/check-console-log.js', oversizedPayload);
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(result.stdout, oversizedPayload, 'direct pass-through must preserve the complete payload');
+    JSON.parse(result.stdout);
+  })
+)
+  passed++;
+else failed++;
 
 if (
   test('check-console-log invoked directly echoes a sub-cap >64KB payload uncut', () => {
