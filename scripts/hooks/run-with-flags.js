@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
@@ -103,10 +104,7 @@ function resolveLegacySpawnStdout(raw, result) {
 }
 
 function getPluginRoot() {
-  if (process.env.CLAUDE_PLUGIN_ROOT && process.env.CLAUDE_PLUGIN_ROOT.trim()) {
-    return process.env.CLAUDE_PLUGIN_ROOT;
-  }
-  return path.resolve(__dirname, '..', '..');
+  return resolvePluginRoot({ fallback: path.resolve(__dirname, '..', '..') });
 }
 
 //Safely extract target context from hook stdin JSON for dry-run preview.
@@ -253,7 +251,12 @@ async function main() {
       ECC_HOOK_INPUT_MAX_BYTES: String(MAX_STDIN)
     },
     cwd: process.cwd(),
-    timeout: 30000
+    timeout: 30000,
+    // The inline Stop wrapper this launcher replaced captured child output
+    // with a 16 MiB ceiling. spawnSync defaults to 1 MiB, which would turn a
+    // hook that legitimately writes more into an ENOBUFS failure and drop its
+    // output. Keep the ceiling with the behaviour it belongs to.
+    maxBuffer: 16 * 1024 * 1024
   });
 
   const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));

@@ -2591,9 +2591,9 @@ async function runTests() {
 
       assert.ok(preCommand.includes('pre-bash-dispatcher.js'), 'PreToolUse Bash hook should use the pre dispatcher');
       assert.ok(postEntries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));
-      assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
+      assert.ok(/posttooluse-dispatcher\.js"\s+sync(\s|$)/.test(postEntries[0].hooks[0].command));
       assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
-      assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+      assert.ok(/posttooluse-dispatcher\.js"\s+async(\s|$)/.test(postEntries[1].hooks[0].command));
     })
   )
     passed++;
@@ -2706,7 +2706,13 @@ async function runTests() {
       assert.strictEqual(typeof sessionStartHook.command, 'string', 'SessionStart should use string command form for Claude Code compatibility');
       assert.ok(commandText.includes('session-start-bootstrap.js'), 'SessionStart should delegate to the extracted bootstrap script');
       assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'SessionStart should use CLAUDE_PLUGIN_ROOT');
-      assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'SessionStart should not depend on raw shell placeholder expansion');
+      // The command locates its launcher through the harness-substituted
+      // placeholder, the same mechanism Anthropic's own plugins use. The
+      // launcher then resolves its own root, so an unset or blank variable
+      // still leaves a working hook -- proven end to end, through a real
+      // shell, in tests/hooks/hook-command-launch.test.js.
+      assert.ok(commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'SessionStart should locate its launcher through CLAUDE_PLUGIN_ROOT');
+      assert.ok(!/\bnode\s+(-e|--eval)\b/.test(commandText), 'SessionStart should not inline a node program');
       assert.ok(!commandText.includes('find '), 'Should not scan arbitrary plugin paths with find');
       assert.ok(!commandText.includes('head -n 1'), 'Should not pick the first matching plugin path');
 
@@ -2733,13 +2739,12 @@ async function runTests() {
       for (const hook of [...stopHooks, ...sessionEndHooks]) {
         const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
         assert.ok(
-          (Array.isArray(hook.command) && hook.command[0] === 'node' && hook.command[1] === '-e') || (typeof hook.command === 'string' && hook.command.startsWith('node -e "')),
-          'Lifecycle hook should use inline node resolver'
+          typeof hook.command === 'string' && hook.command.startsWith('node "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/'),
+          'Lifecycle hook should invoke a launcher script directly'
         );
+        assert.ok(!/\bnode\s+(-e|--eval)\b/.test(commandText), 'Lifecycle hook should not inline a node program');
         assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
-        assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
-        assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
         assert.ok(!commandText.includes('head -n 1'), 'Lifecycle hook should not pick the first matching plugin path');
       }
@@ -2758,11 +2763,20 @@ async function runTests() {
             const commandText = Array.isArray(hook.command) ? hook.command.join(' ') : hook.command;
             const commandStart = Array.isArray(hook.command) ? `${hook.command[0]} ${hook.command[1] || ''}`.trim() : hook.command;
             if (hook.type === 'command' && commandText.includes('scripts/hooks/')) {
-              const usesInlineResolver = commandStart.startsWith('node -e') && commandText.includes('run-with-flags.js');
-              const usesPluginBootstrap = commandStart.startsWith('node -e') && commandText.includes('plugin-hook-bootstrap.js');
-              const usesDirectPostDispatcher = commandStart.startsWith('node -e') && commandText.includes('posttooluse-dispatcher.js') && commandText.includes('resolve-ecc-root');
-              assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), `Script paths should not depend on raw shell placeholder expansion: ${commandText.substring(0, 80)}...`);
-              assert.ok(usesInlineResolver || usesPluginBootstrap || usesDirectPostDispatcher, `Script paths should use the inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
+              // Every hook command is a direct invocation of one of the
+              // committed launcher scripts. Each launcher resolves the plugin
+              // root itself (scripts/lib/plugin-root.js), which is what the
+              // inline resolver used to do in 21 hand-minified copies.
+              const LAUNCHERS = [
+                'plugin-hook-bootstrap.js',
+                'run-with-flags.js',
+                'posttooluse-dispatcher.js',
+                'session-start-bootstrap.js'
+              ];
+              const launcherMatch = commandStart.match(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/hooks\/([A-Za-z0-9._-]+\.js)"/);
+              assert.ok(!/\bnode\s+(-e|--eval)\b/.test(commandText), `Script paths should not inline a node program: ${commandText.substring(0, 80)}...`);
+              assert.ok(launcherMatch, `Script paths should invoke a launcher through CLAUDE_PLUGIN_ROOT: ${commandText.substring(0, 80)}...`);
+              assert.ok(LAUNCHERS.includes(launcherMatch[1]), `Unknown launcher ${launcherMatch[1]}: ${commandText.substring(0, 80)}...`);
             }
           }
         }

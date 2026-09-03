@@ -9,6 +9,7 @@
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -51,7 +52,7 @@ const ASYNC_HOOKS = [
 ];
 
 function getPluginRoot(env = process.env) {
-  return env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || path.resolve(__dirname, '..', '..');
+  return resolvePluginRoot({ env, fallback: path.resolve(__dirname, '..', '..') });
 }
 
 function matchesTool(matcher, toolName) {

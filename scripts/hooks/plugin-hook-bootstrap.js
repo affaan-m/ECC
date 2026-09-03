@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -281,7 +282,7 @@ function main() {
   const [, , mode, relPath, ...args] = process.argv;
   const raw = readStdinRaw();
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT || defaultPluginRoot()
+    resolvePluginRoot({ fallback: defaultPluginRoot() })
   );
 
   if (!mode || !relPath || !rootDir) {

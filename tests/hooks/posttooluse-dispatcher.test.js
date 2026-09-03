@@ -52,8 +52,17 @@ function previewedIds(stderr) {
   return [...String(stderr).matchAll(/Hook "([^"]+)"/g)].map(match => match[1]);
 }
 
+// The harness substitutes ${CLAUDE_PLUGIN_ROOT} into a hook command before
+// handing it to a shell. POSIX sh would expand it from the environment, but
+// cmd.exe never expands ${...}, so a test that relies on shell expansion only
+// passes on one of the two supported platforms. Substitute it here, exactly
+// the way the harness does, so the command under test is the real one.
+function substitutePluginRoot(command, pluginRoot) {
+  return String(command).split('${CLAUDE_PLUGIN_ROOT}').join(pluginRoot);
+}
+
 function runConfiguredCommand(entry, raw, env = {}) {
-  return spawnSync(entry.hooks[0].command, {
+  return spawnSync(substitutePluginRoot(entry.hooks[0].command, repoRoot), {
     shell: true,
     cwd: repoRoot,
     input: raw,
@@ -86,10 +95,12 @@ function runTests() {
       assert.strictEqual(entries[0].hooks[0].async, undefined);
       assert.strictEqual(entries[1].hooks[0].async, true);
       assert.ok(entries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));
-      assert.ok(entries[0].hooks[0].command.endsWith('" sync'));
+      assert.ok(/posttooluse-dispatcher\.js"\s+sync(\s|$)/.test(entries[0].hooks[0].command));
       assert.ok(entries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
-      assert.ok(entries[1].hooks[0].command.endsWith('" async'));
-      assert.ok(entries.every(entry => entry.hooks[0].command.includes('resolve-ecc-root')));
+      assert.ok(/posttooluse-dispatcher\.js"\s+async(\s|$)/.test(entries[1].hooks[0].command));
+      // The resolver moved out of the command and into the dispatcher itself,
+      // which reads it from scripts/lib/plugin-root.js.
+      assert.ok(entries.every(entry => entry.hooks[0].command.includes('${CLAUDE_PLUGIN_ROOT}')));
       assert.ok(
         entries.every(entry => !entry.hooks[0].command.includes('plugin-hook-bootstrap.js')),
         'PostToolUse dispatchers should not spawn a second Node bootstrap process'
@@ -469,9 +480,18 @@ function runTests() {
       assert.strictEqual(result.stdout, '', 'require() alone must not run main() or echo stdin');
 
       const entries = JSON.parse(fs.readFileSync(hooksPath, 'utf8')).hooks.PostToolUse;
+      // The old command require()d the dispatcher from a `node -e` program, so
+      // require.main was undefined and cli() had to be called by hand. Invoking
+      // the file directly makes `require.main === module` true and the
+      // committed guard at the foot of the dispatcher runs cli() itself.
       assert.ok(
-        entries.every(entry => entry.hooks[0].command.includes('require(s).cli()')),
-        'hooks.json must invoke the explicit cli() entrypoint'
+        entries.every(entry => /posttooluse-dispatcher\.js"/.test(entry.hooks[0].command)),
+        'hooks.json must invoke the dispatcher file directly so its cli() guard fires'
+      );
+      const dispatcherSrc = fs.readFileSync(dispatcherPath, 'utf8');
+      assert.ok(
+        dispatcherSrc.includes('if (require.main === module) cli();'),
+        'dispatcher must keep the entrypoint guard hooks.json now relies on'
       );
     })
   )
