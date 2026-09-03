@@ -1,0 +1,67 @@
+# Channel discipline policy. Placeholder names; adapt to your channels.
+
+internal_channels:
+  - "#ops"
+  - "#desk-internal"
+
+quiet_channels:
+  - "#announcements"
+  - "#random"
+
+platforms:
+  chat:
+    group_policy: allowlist
+    dm_policy: allowlist
+    require_mention: true
+    observe_unmentioned_group_messages: true
+    allow_bots: mentions
+    mention_patterns:
+      - "@desk"
+      - "\\bdesk\\b"
+      - "\\bops bot\\b"
+    never_silent_ack:
+      internal: true
+      counterparty_visible: false
+    groups:
+      "#acme-shared":
+        class: counterparty_visible
+        system_prompt_template: strict-prompt.template.md
+        counterparty: acme-supplier
+      "#globex-shared":
+        class: counterparty_visible
+        system_prompt_template: strict-prompt.template.md
+        counterparty: globex-buyer
+      "#ops":
+        class: internal
+
+autonomy:
+  default: auto
+  draft_only:
+    tiers:
+      investors_tier1: ["investor-a", "investor-b"]
+      clients_tier1: ["client-a"]
+    content_classes:
+      - prices_or_rates
+      - contractual
+      - legal_or_dd
+      - public_posts
+      - unverified_claims
+      - technical_specs
+  auto_examples:
+    - scheduling and logistics
+    - acknowledgements and holding replies
+    - asking a supplier for information we do not have
+    - chasing something we are owed
+    - internal team coordination
+  frozen:
+    - name: closing-round-network
+      reason: inbound may be answered, nothing outbound
+    - name: simulation-channels
+      channels: ["#sim-alpha", "#sim-beta"]
+      reason: test agents; never let their numbers enter a real record
+  never:
+    - signing contracts or e-signature envelopes
+    - moving money, wires, card entry
+    - entering passwords, one-time codes, or verification codes
+    - publishing packages
+    - revealing one counterparty's pricing or terms to another

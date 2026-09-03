@@ -195,9 +195,17 @@
       ]
     },
     {
+      "id": "capability:operator-desk-patterns",
+      "family": "capability",
+      "description": "Operator desk patterns for agents that draft, gate, and paper external counterparty interactions.",
+      "modules": [
+        "operator-desk-patterns"
+      ]
+    },
+    {
       "id": "capability:ito-compute",
       "family": "capability",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated It\u00f4 GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "modules": [
         "ito-compute"
       ]
