@@ -782,7 +782,7 @@ function runTests() {
       assert.ok(installedBashDispatcherEntry, 'hooks/hooks.json should include the consolidated Bash dispatcher hook');
       assert.strictEqual(typeof installedBashDispatcherEntry.hooks[0].command, 'string', 'hooks/hooks.json should install string-form commands for Claude Code schema compatibility');
       assert.ok(
-        !/node\s+(-e|--eval)/.test(installedBashDispatcherEntry.hooks[0].command),
+        !/\bnode\s+(-e|--eval)\b/.test(installedBashDispatcherEntry.hooks[0].command),
         'hooks/hooks.json should not install an inline node bootstrap'
       );
       assert.ok(

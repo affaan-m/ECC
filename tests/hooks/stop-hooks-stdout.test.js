@@ -221,7 +221,7 @@ if (
     for (const entry of hooksConfig.hooks.Stop) {
       const command = entry.hooks[0].command;
       assert.ok(
-        !/node\s+(-e|--eval)/.test(command),
+        !/\bnode\s+(-e|--eval)\b/.test(command),
         `${entry.id}: Stop command should not inline a node program`
       );
       assert.ok(
