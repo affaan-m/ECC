@@ -19,8 +19,9 @@
 
 const fs = require('fs');
 const http = require('http');
+const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const {
   canonicalizeArtifactPath,
@@ -30,6 +31,8 @@ const {
 } = require('./lib/plan-canvas/sessions');
 const {
   DEFAULT_HOST,
+  PLAN_CANVAS_PROTOCOL_VERSION,
+  PLAN_CANVAS_RUNTIME_ID,
   createPlanCanvasServer,
   resolveIdleTimeoutMs,
   resolvePort
@@ -69,7 +72,8 @@ function usage() {
     '  typing: --state <thinking|typing|idle>  Defaults to typing',
     '  server: --port <n> --host <h>',
     '',
-    'Environment: ECC_PLAN_CANVAS_PORT, ECC_PLAN_CANVAS_STATE_DIR, ECC_PLAN_CANVAS_IDLE_MS'
+    'Environment: ECC_PLAN_CANVAS_PORT, ECC_PLAN_CANVAS_STATE_DIR, ECC_PLAN_CANVAS_IDLE_MS,',
+    '             ECC_PLAN_CANVAS_CHROME_PATH'
   ].join('\n');
 }
 
@@ -168,30 +172,193 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Start (or reuse) the detached canvas server and return its port. A version
-// mismatch after an ECC update restarts the server so browser and CLI never
-// disagree about the protocol.
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
+function readProcessIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try {
+    if (process.platform === 'linux') {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const commandEnd = stat.lastIndexOf(')');
+      if (commandEnd === -1) return null;
+      const fieldsAfterCommand = stat.slice(commandEnd + 1).trim().split(/\s+/);
+      const startTicks = fieldsAfterCommand[19];
+      return startTicks ? `linux:${startTicks}` : null;
+    }
+    if (process.platform === 'win32') {
+      const command = `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`;
+      const startTicks = execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', command],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000, windowsHide: true }
+      ).trim();
+      return startTicks ? `win32:${startTicks}` : null;
+    }
+    const startedAt = execFileSync(
+      'ps',
+      ['-p', String(pid), '-o', 'lstart='],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 1000 }
+    ).trim();
+    return startedAt ? `${process.platform}:${startedAt}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function readServerStartTicket(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const stat = fs.fstatSync(fd);
+    try {
+      const value = JSON.parse(fs.readFileSync(fd, 'utf8'));
+      return { ...value, mtimeMs: stat.mtimeMs, malformed: false };
+    } catch {
+      return { mtimeMs: stat.mtimeMs, malformed: true };
+    }
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* best-effort ticket inspection */ }
+    }
+  }
+}
+
+function listServerStartTickets(lockDir, port, ownToken, malformedStaleAfterMs = 60 * 1000) {
+  const prefix = `ecc-plan-canvas-${validatePort(port)}-`;
+  const entries = [];
+  const identities = new Map();
+  for (const name of fs.readdirSync(lockDir)) {
+    if (!name.startsWith(prefix) || (!name.endsWith('.choosing') && !name.endsWith('.ticket'))) continue;
+    const file = path.join(lockDir, name);
+    let value = null;
+    try {
+      value = readServerStartTicket(file);
+    } catch {
+      // The owner may already have removed its unique ticket.
+      continue;
+    }
+    if (value.malformed) {
+      if (Date.now() - value.mtimeMs > malformedStaleAfterMs) {
+        try { fs.rmSync(file, { force: true }); } catch { /* already removed */ }
+      }
+      continue;
+    }
+    let stale = false;
+    if (value.token !== ownToken) {
+      if (!processIsAlive(value.pid)) {
+        stale = true;
+      } else if (typeof value.processIdentity === 'string') {
+        if (!identities.has(value.pid)) identities.set(value.pid, readProcessIdentity(value.pid));
+        const currentIdentity = identities.get(value.pid);
+        stale = currentIdentity !== null && currentIdentity !== value.processIdentity;
+      }
+    }
+    if (stale) {
+      // Process start identity distinguishes an exited owner from an unrelated
+      // process that later reused its PID. A live owner remains authoritative
+      // even if its event loop is paused for an arbitrary amount of time.
+      try { fs.rmSync(file, { force: true }); } catch { /* already removed */ }
+      continue;
+    }
+    entries.push({ ...value, file, choosing: name.endsWith('.choosing') });
+  }
+  return entries;
+}
+
+async function withServerStartLock(port, task, {
+  timeoutMs = 15 * 1000,
+  lockDir = path.join(os.homedir(), '.claude', 'plan-canvas', 'locks')
+} = {}) {
+  const lockPort = validatePort(port);
+  const processIdentity = readProcessIdentity(process.pid);
+  if (!processIdentity) throw new Error('could not determine Plan Canvas startup lock process identity');
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const prefix = `ecc-plan-canvas-${lockPort}-${token}`;
+  const choosingFile = path.join(lockDir, `${prefix}.choosing`);
+  const ticketFile = path.join(lockDir, `${prefix}.ticket`);
+  const startedAt = Date.now();
+  fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    choosingFile,
+    JSON.stringify({ pid: process.pid, processIdentity, token }),
+    { flag: 'wx', mode: 0o600 }
+  );
+
+  try {
+    const existing = listServerStartTickets(lockDir, lockPort, token)
+      .filter(entry => !entry.choosing && Number.isInteger(entry.number));
+    const number = existing.reduce((maximum, entry) => Math.max(maximum, entry.number), 0) + 1;
+    fs.writeFileSync(
+      ticketFile,
+      JSON.stringify({ pid: process.pid, processIdentity, token, number }),
+      { flag: 'wx', mode: 0o600 }
+    );
+    fs.rmSync(choosingFile, { force: true });
+
+    while (true) {
+      const entries = listServerStartTickets(lockDir, lockPort, token);
+      const anotherOwnerIsChoosing = entries.some(entry => entry.choosing && entry.token !== token);
+      const tickets = entries
+        .filter(entry => !entry.choosing && Number.isInteger(entry.number))
+        .sort((left, right) => left.number - right.number || left.token.localeCompare(right.token));
+      if (!anotherOwnerIsChoosing && tickets[0] && tickets[0].token === token) break;
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error(`timed out waiting for Plan Canvas startup lock on port ${port}`);
+      }
+      await sleep(50);
+    }
+    return await task();
+  } finally {
+    fs.rmSync(choosingFile, { force: true });
+    fs.rmSync(ticketFile, { force: true });
+  }
+}
+
+function serverIsCompatible(health) {
+  return Boolean(
+    health &&
+    health.version === VERSION &&
+    health.protocolVersion === PLAN_CANVAS_PROTOCOL_VERSION &&
+    health.runtimeId === PLAN_CANVAS_RUNTIME_ID
+  );
+}
+
+// Start (or reuse) the detached canvas server and return its port. Worktrees
+// can share a package version while carrying different Canvas code, so the
+// health handshake binds reuse to the exact server runtime as well.
 async function ensureServer({ stateDir, port }) {
   const health = await healthCheck(port);
-  if (health && health.version === VERSION) return port;
-  if (health) {
-    await request(port, 'POST', '/shutdown').catch(() => {});
-    for (let i = 0; i < 20 && (await healthCheck(port)); i++) await sleep(100);
-  }
-  fs.mkdirSync(stateDir, { recursive: true });
-  const logFd = fs.openSync(path.join(stateDir, 'server.log'), 'a');
-  const child = spawn(process.execPath, [__filename, 'server', '--port', String(port)], {
-    detached: true,
-    stdio: ['ignore', logFd, logFd],
-    env: { ...process.env, ECC_PLAN_CANVAS_STATE_DIR: stateDir }
+  if (serverIsCompatible(health)) return port;
+  return withServerStartLock(port, async () => {
+    const lockedHealth = await healthCheck(port);
+    if (serverIsCompatible(lockedHealth)) return port;
+    if (lockedHealth) {
+      await request(port, 'POST', '/shutdown').catch(() => {});
+      for (let i = 0; i < 20 && (await healthCheck(port)); i++) await sleep(100);
+    }
+    fs.mkdirSync(stateDir, { recursive: true });
+    const logFd = fs.openSync(path.join(stateDir, 'server.log'), 'a');
+    const child = spawn(process.execPath, [__filename, 'server', '--port', String(port)], {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: { ...process.env, ECC_PLAN_CANVAS_STATE_DIR: stateDir }
+    });
+    child.unref();
+    fs.closeSync(logFd);
+    for (let i = 0; i < 50; i++) {
+      await sleep(100);
+      if (serverIsCompatible(await healthCheck(port))) return port;
+    }
+    throw new Error(`plan-canvas server did not become compatible on port ${port}; check ${path.join(stateDir, 'server.log')}`);
   });
-  child.unref();
-  fs.closeSync(logFd);
-  for (let i = 0; i < 50; i++) {
-    await sleep(100);
-    if (await healthCheck(port)) return port;
-  }
-  throw new Error(`plan-canvas server did not become healthy on port ${port}; check ${path.join(stateDir, 'server.log')}`);
 }
 
 function openBrowser(url) {
@@ -218,7 +385,13 @@ async function cmdStatus({ stateDir, port }) {
     return { server: 'not running', hint: 'open an artifact to start one', stateDir };
   }
   const sessions = await request(port, 'GET', '/api/sessions');
-  return { server: `http://${DEFAULT_HOST}:${port}`, version: health.version, sessions: sessions.body.sessions };
+  return {
+    server: `http://${DEFAULT_HOST}:${port}`,
+    version: health.version,
+    protocolVersion: health.protocolVersion,
+    runtimeId: health.runtimeId,
+    sessions: sessions.body.sessions
+  };
 }
 
 async function cmdOpen(file, args, { stateDir, port }) {
@@ -364,12 +537,15 @@ async function cmdServer(args, { stateDir, port }) {
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(
     serverInfoPath(stateDir),
-    JSON.stringify({ pid: process.pid, port: bound.port, version: VERSION, startedAt: new Date().toISOString() }, null, 2)
+    JSON.stringify({
+      pid: process.pid,
+      port: bound.port,
+      version: VERSION,
+      protocolVersion: PLAN_CANVAS_PROTOCOL_VERSION,
+      runtimeId: PLAN_CANVAS_RUNTIME_ID,
+      startedAt: new Date().toISOString()
+    }, null, 2)
   );
-  // Sessions restored from disk resume their file watchers.
-  for (const session of store.list()) {
-    if (session.status !== 'ended') canvas.watchSession(store.get(session.key));
-  }
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
   process.stderr.write(`[plan-canvas] serving on http://${bound.host}:${bound.port}\n`);
@@ -413,4 +589,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, ensureServer, healthCheck };
+module.exports = { main, ensureServer, healthCheck, withServerStartLock };

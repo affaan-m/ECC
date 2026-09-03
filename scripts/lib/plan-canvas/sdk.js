@@ -205,6 +205,19 @@ function artifactSdkJs() {
   });
 
   // --- chrome bridge ---------------------------------------------------------
+  function exportSnapshot() {
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll('script,iframe,object,embed,form,base,meta[http-equiv],[data-ecc-plan-canvas]').forEach(el => el.remove());
+    clone.querySelectorAll('*').forEach(el => {
+      for (const attr of [...el.attributes]) {
+        if (attr.name.toLowerCase().startsWith('on') || attr.name.toLowerCase() === 'srcdoc') {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+    return '<!doctype html>\\n' + clone.outerHTML;
+  }
+
   window.addEventListener('message', e => {
     const msg = e.data || {};
     if (msg.type === 'pc:set-mode') {
@@ -212,6 +225,8 @@ function artifactSdkJs() {
       if (!annotate) { hl.style.display = 'none'; selhint.style.display = 'none'; closeCard(); }
     } else if (msg.type === 'pc:restore-scroll') {
       window.scrollTo(msg.x || 0, msg.y || 0);
+    } else if (msg.type === 'pc:export-snapshot' && typeof msg.requestId === 'string') {
+      post({ type: 'pc:export-snapshot-result', requestId: msg.requestId, html: exportSnapshot() });
     }
   });
   document.addEventListener('keydown', e => {

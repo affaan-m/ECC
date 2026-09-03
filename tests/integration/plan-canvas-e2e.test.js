@@ -17,6 +17,7 @@
  */
 
 const assert = require('assert');
+const dgram = require('dgram');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -25,6 +26,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const CLI = path.join(__dirname, '..', '..', 'scripts', 'plan-canvas.js');
 const HOOK = path.join(__dirname, '..', '..', 'scripts', 'hooks', 'plan-canvas-sessions.js');
+const { withServerStartLock } = require('../../scripts/plan-canvas');
 
 const results = [];
 async function test(name, fn) {
@@ -52,6 +54,31 @@ function cli(env, args, { timeoutMs = 15000 } = {}) {
     // leave null; callers assert
   }
   return { ...result, parsed };
+}
+
+function cliAsync(env, args, { timeoutMs = 15000 } = {}) {
+  return new Promise(resolve => {
+    const child = spawn('node', [CLI, ...args], { env: { ...process.env, ...env } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+    });
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      let parsed = null;
+      try {
+        parsed = JSON.parse(stdout.trim());
+      } catch {
+        // leave null; callers assert
+      }
+      resolve({ status, signal, stdout, stderr, parsed });
+    });
+  });
 }
 
 function request(port, method, requestPath, body = null) {
@@ -117,6 +144,159 @@ async function main() {
   let key = null;
 
   try {
+    await test('port-scoped startup lock serializes server replacement callers', async () => {
+      const lockDir = path.join(tmp, 'startup-locks');
+      let active = 0;
+      let maximumActive = 0;
+      const runLocked = label => withServerStartLock(port + 2, async () => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise(resolve => setTimeout(resolve, 40));
+        active -= 1;
+        return label;
+      }, { lockDir, timeoutMs: 2000 });
+      assert.deepStrictEqual(await Promise.all([runLocked('first'), runLocked('second')]), ['first', 'second']);
+      assert.strictEqual(maximumActive, 1);
+    });
+
+    await test('port-scoped startup lock preserves an old ticket from the same live process', async () => {
+      const lockPort = port + 6;
+      const lockDir = path.join(tmp, 'startup-locks');
+      let releaseFirst;
+      let markFirstEntered;
+      let secondEntered = false;
+      const firstEntered = new Promise(resolve => { markFirstEntered = resolve; });
+      const first = withServerStartLock(lockPort, async () => {
+        markFirstEntered();
+        await new Promise(resolve => { releaseFirst = resolve; });
+      }, { lockDir, timeoutMs: 1000 });
+      await firstEntered;
+      const ticketName = fs.readdirSync(lockDir).find(name => name.endsWith('.ticket'));
+      assert.ok(ticketName);
+      const old = new Date(Date.now() - 60 * 1000);
+      fs.utimesSync(path.join(lockDir, ticketName), old, old);
+      try {
+        await assert.rejects(
+          withServerStartLock(lockPort, async () => { secondEntered = true; }, {
+            lockDir,
+            timeoutMs: 200
+          }),
+          /timed out waiting for Plan Canvas startup lock/
+        );
+        assert.strictEqual(secondEntered, false);
+      } finally {
+        releaseFirst();
+        await first;
+      }
+    });
+
+    await test('port-scoped startup lock recovers dead tickets and failed owners', async () => {
+      const lockPort = port + 3;
+      const lockDir = path.join(tmp, 'startup-locks');
+      fs.mkdirSync(lockDir, { recursive: true });
+      const deadTicket = path.join(lockDir, `ecc-plan-canvas-${lockPort}-dead-owner.ticket`);
+      fs.writeFileSync(deadTicket, JSON.stringify({ pid: 2147483647, token: 'dead-owner', number: 1 }));
+      await assert.rejects(
+        withServerStartLock(lockPort, async () => { throw new Error('owner failed'); }, { lockDir, timeoutMs: 2000 }),
+        /owner failed/
+      );
+      assert.strictEqual(
+        await withServerStartLock(lockPort, async () => 'recovered', { lockDir, timeoutMs: 2000 }),
+        'recovered'
+      );
+      assert.ok(!fs.existsSync(deadTicket));
+      assert.ok(!fs.readdirSync(lockDir).some(name => name.startsWith(`ecc-plan-canvas-${lockPort}-`)));
+    });
+
+    await test('port-scoped startup lock recovers a stale ticket after PID reuse', async () => {
+      const lockPort = port + 5;
+      const lockDir = path.join(tmp, 'startup-locks');
+      fs.mkdirSync(lockDir, { recursive: true });
+      const reusedPidTicket = path.join(lockDir, `ecc-plan-canvas-${lockPort}-reused-pid.ticket`);
+      fs.writeFileSync(
+        reusedPidTicket,
+        JSON.stringify({
+          pid: process.pid,
+          processIdentity: 'an-exited-process-instance',
+          token: 'reused-pid',
+          number: 1
+        })
+      );
+      assert.strictEqual(
+        await withServerStartLock(lockPort, async () => 'recovered', {
+          lockDir,
+          timeoutMs: 1000
+        }),
+        'recovered'
+      );
+      assert.ok(!fs.existsSync(reusedPidTicket));
+    });
+
+    await test('unrelated UDP traffic on the Canvas port does not block startup', async () => {
+      const servicePort = port + 4;
+      const unrelatedSocket = dgram.createSocket('udp4');
+      await new Promise((resolve, reject) => {
+        unrelatedSocket.once('error', reject);
+        unrelatedSocket.bind(servicePort, '127.0.0.1', resolve);
+      });
+      try {
+        assert.strictEqual(
+          await withServerStartLock(servicePort, async () => 'started', { timeoutMs: 2000 }),
+          'started'
+        );
+      } finally {
+        unrelatedSocket.close();
+      }
+    });
+
+    await test('concurrent opens serialize replacement of a same-version legacy server', async () => {
+      const legacyPort = port + 1;
+      const legacyStateDir = path.join(tmp, 'legacy-state');
+      const legacyEnv = {
+        ECC_PLAN_CANVAS_STATE_DIR: legacyStateDir,
+        ECC_PLAN_CANVAS_PORT: String(legacyPort)
+      };
+      const version = require('../../package.json').version;
+      let shutdownRequested = false;
+      const legacyServer = http.createServer((req, res) => {
+        if (req.method === 'GET' && req.url === '/health') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, app: 'ecc-plan-canvas', version }));
+        }
+        if (req.method === 'POST' && req.url === '/shutdown') {
+          shutdownRequested = true;
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ status: 'stopping' }));
+          return setImmediate(() => legacyServer.close());
+        }
+        res.writeHead(503, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'legacy server handled a current CLI request' }));
+      });
+      await new Promise((resolve, reject) => {
+        legacyServer.once('error', reject);
+        legacyServer.listen(legacyPort, '127.0.0.1', resolve);
+      });
+
+      try {
+        const results = await Promise.all([
+          cliAsync(legacyEnv, ['open', plan, '--no-open']),
+          cliAsync(legacyEnv, ['open', plan, '--no-open'])
+        ]);
+        for (const result of results) {
+          assert.strictEqual(result.status, 0, result.stderr);
+          assert.strictEqual(result.parsed.status, 'open');
+        }
+        assert.strictEqual(shutdownRequested, true, 'current CLI should retire the stale server');
+        const health = JSON.parse((await request(legacyPort, 'GET', '/health')).body);
+        assert.strictEqual(health.protocolVersion, 4);
+      } finally {
+        if (legacyServer.listening) {
+          await new Promise(resolve => legacyServer.close(resolve));
+        }
+        cli(legacyEnv, ['stop']);
+      }
+    });
+
     await test('agent opens the plan: detached server starts, session created', async () => {
       const result = cli(env, ['open', plan, '--no-open']);
       assert.strictEqual(result.status, 0, result.stderr);
