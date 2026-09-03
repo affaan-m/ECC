@@ -201,7 +201,12 @@ if (
     // them there -- asserting on the command text would only re-check that the
     // wrapper was pasted in, which is the duplication this replaced.
     const runner = fs.readFileSync(path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js'), 'utf8');
-    assert.match(runner, /maxBuffer: 16 \* 1024 \* 1024/, 'runner must keep the 16 MiB capture ceiling');
+    assert.match(
+      runner,
+      /const MAX_CHILD_OUTPUT = 16 \* 1024 \* 1024;/,
+      'runner must keep the 16 MiB capture ceiling'
+    );
+    assert.match(runner, /maxBuffer: MAX_CHILD_OUTPUT/, 'runner must apply the ceiling when spawning');
     assert.match(
       runner,
       /process\.stdout\.write\(text, exitWhenFlushed\)/,

@@ -16,6 +16,10 @@ const { resolvePluginRoot } = require('../lib/plugin-root');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
+// Ceiling on output captured from a spawned hook. The inline Stop wrapper this
+// runner replaced used the same value; spawnSync's 1 MiB default would turn a
+// hook that legitimately writes more into an ENOBUFS failure and drop it.
+const MAX_CHILD_OUTPUT = 16 * 1024 * 1024;
 
 function readStdinRaw() {
   return new Promise(resolve => {
@@ -252,11 +256,7 @@ async function main() {
     },
     cwd: process.cwd(),
     timeout: 30000,
-    // The inline Stop wrapper this launcher replaced captured child output
-    // with a 16 MiB ceiling. spawnSync defaults to 1 MiB, which would turn a
-    // hook that legitimately writes more into an ENOBUFS failure and drop its
-    // output. Keep the ceiling with the behaviour it belongs to.
-    maxBuffer: 16 * 1024 * 1024
+    maxBuffer: MAX_CHILD_OUTPUT
   });
 
   const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));

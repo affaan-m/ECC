@@ -33,6 +33,9 @@ const { spawnSync } = require('child_process');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const HOOKS_JSON_PATH = path.join(REPO_ROOT, 'hooks', 'hooks.json');
 const PLUGIN_ROOT_TOKEN = '${CLAUDE_PLUGIN_ROOT}';
+// Matches the ceiling run-with-flags.js applies, so a launcher that captures
+// more than the test harness does cannot hide behind a smaller buffer here.
+const MAX_CHILD_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 let passed = 0;
 let failed = 0;
@@ -223,7 +226,7 @@ function runHookCommand(form, commandTemplate, options = {}) {
     input: options.input === undefined ? '{"session_id":"launcher-test"}' : options.input,
     encoding: 'utf8',
     timeout: 60000,
-    maxBuffer: 16 * 1024 * 1024
+    maxBuffer: MAX_CHILD_OUTPUT_BYTES
   });
 
   assert.ok(!result.error, `shell failed to run command: ${result.error && result.error.message}`);
