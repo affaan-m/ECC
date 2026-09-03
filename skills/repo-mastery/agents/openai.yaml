@@ -1,0 +1,16 @@
+# Codex (Agent Skills standard) UI metadata for repo-mastery.
+# See the Agent Skills standard (agentskills.io) for the schema.
+
+display_name: Repo-Mastery
+brand_color: "#0d9488"
+
+# The prompt shown when the user picks the skill in the Codex app.
+default_prompt: >-
+  Turn an open-source repository into a developer-focused mastery course
+  (usage → architecture → key implementations). Which repo do you want to
+  master? Give a local path or github:owner/repo.
+
+# Allow the skill to trigger from its description when a task matches,
+# not only when the user names it explicitly.
+policy:
+  allow_implicit_invocation: true
