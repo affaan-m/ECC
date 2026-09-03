@@ -78,6 +78,135 @@ if (test('blocks quoted core.hooksPath override argument', () => {
   assert.ok(r.stderr.includes('core.hooksPath'), `stderr should mention core.hooksPath: ${r.stderr}`);
 })) passed++; else failed++;
 
+// --- Abbreviated long flags ---
+// Git resolves any unambiguous prefix of a long option, so these bypass the
+// hooks exactly as the full spelling does. Verified against real git with a
+// failing pre-commit hook: `git commit --no-verif` and `--no-veri` both commit.
+
+for (const flag of ['--no-verif', '--no-veri', '--no-ver', '--no-ve', '--no-v']) {
+  if (test(`blocks abbreviated ${flag} on git commit`, () => {
+    const r = runHook({ tool_input: { command: `git commit ${flag} -m "msg"` } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+if (test('blocks abbreviated --no-verif on git push', () => {
+  const r = runHook({ tool_input: { command: 'git push --no-verif' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+// The guard must match prefixes OF --no-verify, not everything starting with
+// --no-. `--no-verbose` is a real, harmless git option and is not a prefix of
+// --no-verify, so it must stay allowed.
+if (test('still allows --no-verbose (not a prefix of --no-verify)', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-verbose -m "msg"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows --no-edit', () => {
+  const r = runHook({ tool_input: { command: 'git commit --no-edit --amend' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still allows the literal text in a commit message', () => {
+  const r = runHook({ tool_input: { command: 'git commit -m "no-verif was the bug"' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// --- Value-taking options must not have their VALUE read as a flag ---
+// `--push-option`/`-o`/`--trailer` consume the next token as data. Git sends it
+// verbatim and still runs the hooks, so refusing these is a false positive.
+// These were already refused for the full spelling before abbreviations were
+// matched; handling the option arity fixes both.
+
+for (const command of [
+  'git push --push-option --no-verify',
+  'git push --push-option --no-verif',
+  'git push -o --no-verify',
+  'git push --receive-pack --no-verify',
+  'git commit --trailer --no-verify -m "msg"',
+  'git commit --trailer --no-verif -m "msg"',
+]) {
+  if (test(`does not block a value-taking option's value: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+// `--force-with-lease` takes an OPTIONAL, inline-only value, so the bare form
+// consumes nothing and the next token is a real flag. Confirmed against git:
+// every option in PUSH_OPTIONS_WITH_VALUE answers "requires a value" when given
+// none, while a bare `git push --force-with-lease` parses and fails later on the
+// push destination. Treating it as value-taking would skip the very flag this
+// hook exists to catch.
+for (const command of [
+  'git push --force-with-lease --no-verify',
+  'git push --force-with-lease --no-verif',
+  'git push --force-with-lease=main:abc123 --no-verify',
+]) {
+  if (test(`still blocks no-verify after --force-with-lease: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+if (test('still allows a bare --force-with-lease push', () => {
+  const r = runHook({ tool_input: { command: 'git push --force-with-lease' } });
+  assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+})) passed++; else failed++;
+
+// The inline `=value` form consumes nothing, so a real flag after it must still
+// be caught — otherwise the arity handling above becomes its own bypass.
+if (test('still blocks --no-verify after an inline --push-option=value', () => {
+  const r = runHook({ tool_input: { command: 'git push --push-option=ci.skip --no-verify' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+if (test('still blocks --no-verif after an inline --trailer=value', () => {
+  const r = runHook({ tool_input: { command: 'git commit --trailer=Key:val --no-verif -m "msg"' } });
+  assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+  assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+})) passed++; else failed++;
+
+// Git resolves an unambiguous prefix of a long option, so the abbreviated
+// spelling of a value-taking option consumes the following token exactly like
+// the full one. Proven against git 2.51: `git commit --mes --no-verify` runs
+// the pre-commit hook and stores "--no-verify" as the commit message.
+//
+//   git push --push-opti  -> error: option `push-option' requires a value
+//   git commit --trail    -> error: option `trailer' requires a value
+for (const command of [
+  'git push --push-opti --no-verify',
+  'git push --push-o --no-verif',
+  'git commit --trail --no-verify -m "msg"',
+  'git commit --mes --no-verify',
+]) {
+  if (test(`does not block an abbreviated value-taking option: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
+// The abbreviation must not weaken any of the three ways a real flag reaches
+// git: an inline value consumes nothing, and a prefix that is ambiguous among
+// the value-taking options resolves to none of them.
+for (const command of [
+  'git push --push-opti=ci.skip --no-verify',
+  'git commit --trail=Key:val --no-verify -m "msg"',
+  'git push --re --no-verify',
+  'git commit --f --no-verify -m "msg"',
+]) {
+  if (test(`abbreviation handling still blocks: ${command}`, () => {
+    const r = runHook({ tool_input: { command } });
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}`);
+    assert.ok(r.stderr.includes('BLOCKED'), `stderr should contain BLOCKED: ${r.stderr}`);
+  })) passed++; else failed++;
+}
+
 // --- Chained command false positive prevention (Comment 2) ---
 
 if (test('does not false-positive on -n belonging to git log in a chain', () => {

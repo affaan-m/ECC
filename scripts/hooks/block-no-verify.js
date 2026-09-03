@@ -57,6 +57,9 @@ const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '--fixup',
   '--squash',
   '--pathspec-from-file',
+  // `git commit --trailer "Key: value"` — the value is data, so a token that
+  // looks like a flag must not be classified as one.
+  '--trailer',
 ]);
 
 const COMMIT_OPTIONS_WITH_INLINE_VALUE = [
@@ -203,12 +206,52 @@ function findCommandSegmentEnd(input, start) {
   return input.length;
 }
 
+/**
+ * True when `value` is the option itself or an abbreviation git resolves to it.
+ *
+ * Git accepts any unambiguous prefix of a long option, so `--push-opti` is
+ * `--push-option` and consumes the following token exactly like the full
+ * spelling. An exact-name lookup missed that and refused
+ * `git push --push-opti --no-verify`, a command git runs with its hooks intact
+ * (the flag becomes the option's value).
+ *
+ * Only value-taking options are prefix-matched, and only when the prefix is
+ * unique among them. A prefix git itself rejects as ambiguous may still resolve
+ * here (`--rec` is also `--recurse-submodules`), but git refuses to run such a
+ * command at all, so it cannot skip a hook either way. The inline `=value` form
+ * is one token and consumes nothing, so it is never a match.
+ */
+function optionConsumesNextValue(value, optionsWithValue) {
+  if (optionsWithValue.has(value)) {
+    return true;
+  }
+
+  if (!value.startsWith('--') || value.length <= 2 || value.includes('=')) {
+    return false;
+  }
+
+  let resolved = null;
+  for (const option of optionsWithValue) {
+    if (!option.startsWith('--') || !option.startsWith(value)) {
+      continue;
+    }
+
+    if (resolved !== null) {
+      return false;
+    }
+
+    resolved = option;
+  }
+
+  return resolved !== null;
+}
+
 function commitOptionConsumesNextValue(value) {
   if (isCommitNoVerifyShortFlag(value)) {
     return false;
   }
 
-  if (COMMIT_OPTIONS_WITH_VALUE.has(value)) {
+  if (optionConsumesNextValue(value, COMMIT_OPTIONS_WITH_VALUE)) {
     return true;
   }
 
@@ -245,6 +288,50 @@ function getCommitShortValueOption(value) {
   }
 
   return null;
+}
+
+/**
+ * `git push` options that consume the FOLLOWING token as their value. Without
+ * these, `git push --push-option --no-verify` reads the value as a flag and is
+ * refused even though git sends it verbatim to the server and still runs the
+ * hooks. Long `--flag=value` forms need no entry: they are a single token.
+ */
+const PUSH_OPTIONS_WITH_VALUE = new Set([
+  '-o',
+  '--push-option',
+  '--receive-pack',
+  '--exec',
+  '--repo',
+]);
+// NOT in the set: `--force-with-lease`. Its value is OPTIONAL and inline-only,
+// so the bare form consumes nothing and the next token is a real flag. Listing
+// it would make `git push --force-with-lease --no-verify` skip the very flag
+// this hook exists to catch. Confirmed against git: every option above answers
+// "requires a value" when given none, while a bare `git push
+// --force-with-lease` parses and fails later on the push destination.
+
+/**
+ * Git resolves any UNAMBIGUOUS prefix of a long option, so `--no-verif` and
+ * `--no-veri` bypass the hooks exactly as `--no-verify` does. Matching the full
+ * spelling alone let two characters off the end walk straight past this gate.
+ *
+ * Verified against real git with a failing pre-commit hook:
+ *   git commit                -> hook ran, commit refused
+ *   git commit --no-verif     -> committed, hook skipped
+ *   git commit --no-veri      -> committed, hook skipped
+ *
+ * Matching every prefix cannot catch `--no-verbose`, because that is not a
+ * prefix of `--no-verify`. The shortest forms (`--no-v`, `--no-ve`) are
+ * ambiguous and git rejects them itself, so treating them as a bypass attempt
+ * costs nothing — no working command uses them.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isNoVerifyLongFlag(value) {
+  // `--no-` alone is not an attempt at anything; require at least one more char.
+  if (value.length <= '--no-'.length) return false;
+  return '--no-verify'.startsWith(value);
 }
 
 function isCommitNoVerifyShortFlag(value) {
@@ -422,7 +509,12 @@ function hasNoVerifyFlag(input, command, offset) {
       }
     }
 
-    if (value === '--no-verify') return true;
+    if (command === 'push' && optionConsumesNextValue(value, PUSH_OPTIONS_WITH_VALUE)) {
+      skipNext = true;
+      continue;
+    }
+
+    if (isNoVerifyLongFlag(value)) return true;
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
