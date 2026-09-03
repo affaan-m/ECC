@@ -1,8 +1,8 @@
 ---
 name: security-reviewer
 description: セキュリティ脆弱性検出および修復のスペシャリスト。ユーザー入力、認証、APIエンドポイント、機密データを扱うコードを書いた後に積極的に使用してください。シークレット、SSRF、インジェクション、安全でない暗号、OWASP Top 10の脆弱性を検出します。
-tools: ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-model: opus
+tools: ["Read", "Grep", "Glob", "Bash"]
+model: sonnet
 ---
 
 # セキュリティレビューアー

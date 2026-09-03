@@ -1,7 +1,7 @@
 ---
 name: comment-analyzer
 description: 分析代码注释的准确性、完整性、可维护性和注释腐烂风险。
-model: sonnet
+model: haiku
 tools: [Read, Grep, Glob]
 ---
 
