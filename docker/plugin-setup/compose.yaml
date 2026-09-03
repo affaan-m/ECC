@@ -1,0 +1,91 @@
+name: ecc-plugin-setup-test
+
+x-node-image: &node-image node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+
+x-real-cli: &real-cli
+  working_dir: /workspace
+  network_mode: none
+  read_only: true
+  pids_limit: 256
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,exec,size=${ECC_TMPFS_SIZE:-2g},uid=1000,gid=1000,mode=0700
+    - /workspace:rw,nosuid,nodev,noexec,size=${ECC_WORKSPACE_SIZE:-1g},uid=1000,gid=1000,mode=0700
+  environment:
+    CLAUDE_CONFIG_DIR: /tmp/ecc-claude-config
+    DISABLE_AUTOUPDATER: "1"
+    HOME: /tmp/ecc-home
+    NPM_CONFIG_CACHE: /tmp/npm-cache
+  volumes:
+    - type: bind
+      source: ../..
+      target: /ecc
+      read_only: true
+    - type: bind
+      source: "${TEST_PROJECT:-../../tests/fixtures/docker-plugin-project}"
+      target: /source-project
+      read_only: true
+  stdin_open: true
+  tty: true
+  entrypoint:
+    - /bin/bash
+    - /ecc/docker/plugin-setup/run-real-cli.sh
+  command:
+    - dry-run
+
+services:
+  fixture-tests:
+    image: *node-image
+    working_dir: /ecc
+    user: "1000:1000"
+    network_mode: none
+    read_only: true
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,exec,size=256m
+    volumes:
+      - type: bind
+        source: ../..
+        target: /ecc
+        read_only: true
+    entrypoint:
+      - /bin/bash
+      - /ecc/docker/plugin-setup/run-fixture-tests.sh
+
+  real-cli:
+    <<: *real-cli
+    image: ecc-plugin-setup:debian
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: *node-image
+        OS_IMAGE: *node-image
+        DISTRO: debian
+        CLAUDE_CODE_VERSION: 2.1.220
+
+  real-cli-networked:
+    <<: *real-cli
+    profiles:
+      - networked
+    network_mode: default
+    image: ecc-plugin-setup:debian
+
+  real-cli-ubuntu:
+    <<: *real-cli
+    image: ecc-plugin-setup:ubuntu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: *node-image
+        OS_IMAGE: ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+        DISTRO: ubuntu
+        CLAUDE_CODE_VERSION: 2.1.220

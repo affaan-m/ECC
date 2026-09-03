@@ -7,7 +7,6 @@ from urllib.parse import urlsplit
 
 import pytest
 
-
 SELECTOR_PATH = Path(__file__).parents[1] / "src" / "llm" / "cli" / "selector.py"
 SPEC = importlib.util.spec_from_file_location("ecc_selector", SELECTOR_PATH)
 assert SPEC is not None and SPEC.loader is not None

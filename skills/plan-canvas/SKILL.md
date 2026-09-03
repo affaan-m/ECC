@@ -2,8 +2,8 @@
 name: plan-canvas
 description: Open plans and HTML artifacts in a local browser canvas where the human annotates elements, chats, and approves or requests changes without leaving the page. Use when presenting a plan for review, or when feedback like "move this, change that" is easier pointed at than typed.
 metadata:
+  version: "1.0.0"
   origin: ECC
-version: "1.0.0"
 ---
 
 # Plan Canvas
@@ -47,11 +47,30 @@ Codex — or just run the `ecc-plan-canvas` commands directly.
 # 1. Open the artifact in the user's browser (returns immediately)
 ecc-plan-canvas open .claude/plans/feature.plan.md
 
-# 2. Block until the human responds. Leave running; re-run if interrupted —
-#    queued feedback is never lost. Run in the background if your harness
-#    time-limits foreground commands.
+# 2. Block until the human responds. Leave running; re-run if interrupted:
+#    queued feedback is never lost.
 ecc-plan-canvas await .claude/plans/feature.plan.md
 ```
+
+### Stay listening, or the human talks to an empty chair
+
+Feedback only reaches you while an `await` is actually parked on the session.
+If your turn ends with nothing listening, the message sits in the queue and,
+from the human's side of the glass, sending appears to do nothing at all.
+
+So **run `await` as a background task** when your harness supports one (in
+Claude Code, a Bash call with `run_in_background: true`). It exits the moment
+feedback arrives and the harness hands you the JSON, which keeps the loop alive
+across turns instead of dying with the foreground call. A foreground `await`
+works too, but only until the harness time-limits it.
+
+Two backstops exist, and neither is an excuse to skip the above:
+
+- `ecc-plan-canvas pending` lists feedback queued with no listener. Check it
+  whenever you are unsure whether you missed something.
+- The `stop:plan-canvas-pending` hook blocks your turn from ending while canvas
+  feedback is undelivered, and hands you the messages. If you are reading
+  feedback from that hook, you stopped listening too early.
 
 `await` prints JSON when the human acts:
 
@@ -74,11 +93,30 @@ ecc-plan-canvas await .claude/plans/feature.plan.md
   end the session, and start implementing. `request-changes` means revise the
   artifact (the canvas live-reloads it) and keep the loop going.
 
-**3. Respond in the canvas**, then keep listening — one command does both:
+**3. Always respond in the canvas**, then keep listening. One command does both:
 
 ```bash
-ecc-plan-canvas await <file> --reply "Split Phase 2 as requested — take a look."
+ecc-plan-canvas await <file> --reply "Split Phase 2 as requested. Take a look."
 ```
+
+Every human message gets a reply in the canvas, even a one-liner like
+"On it, rewriting the risk table now." Silence in the chat panel is
+indistinguishable from a broken canvas, which is exactly the failure this loop
+exists to prevent. Answer there, not only in the terminal.
+
+While you work, keep the chat honest with the activity indicator:
+
+```bash
+# animated "agent is thinking..." bubble; refresh it during long work
+ecc-plan-canvas typing <file> --state thinking
+# switch to "agent is typing..." just before a reply lands
+ecc-plan-canvas typing <file> --state typing
+```
+
+`await` sets `thinking` for you the moment it hands you a batch, and `--reply`
+clears it. Both states self-expire, so a crashed agent decays to an honest
+"queued" instead of leaving the human watching dots forever. Refresh `thinking`
+if a revision takes more than a minute.
 
 **4. End** when review concludes: `ecc-plan-canvas end <file>`.
 
@@ -144,8 +182,13 @@ ecc-plan-canvas await <file> --reply "Reworked the risk table."
 
 ## Anti-Patterns
 
-- Polling with `--timeout-ms` in a loop — it exists for tests. Leave the
-  plain `await` running instead.
+- Polling with `--timeout-ms` in a loop. It exists for tests. Leave the plain
+  `await` running instead.
+- Ending your turn with no `await` listening while the review is still open.
+  That is the one failure the human experiences as "I sent a message and
+  nothing happened".
+- Reading the feedback but answering only in the terminal. The human is looking
+  at the canvas.
 - Reopening after a user-initiated end "just to show" something.
 - Pasting the whole plan into chat *and* opening a canvas — pick the canvas
   and keep the terminal summary to one line.

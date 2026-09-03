@@ -1,4 +1,4 @@
-**Idioma:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español**
+**Idioma:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md)
 
 # ECC
 
@@ -28,7 +28,7 @@
 **Language / 语言 / 語言 / Dil / Язык / Ngôn ngữ / Idioma**
 
 [**English**](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md)
- | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español**
+ | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | **Español** | [Українська](../uk-UA/README.md)
 
 </div>
 
@@ -127,7 +127,7 @@ Este repositorio contiene solo el código. Las guías explican todo.
 - **Expansión de flujos de trabajo de operador y salida** — `brand-voice`, `social-graph-ranker`, `connections-optimizer`, `customer-billing-ops`, `ecc-tools-cost-audit`, `google-workspace-ops`, `project-flow-ops` y `workspace-surface-audit` completan el carril de operador.
 - **Herramientas de medios y lanzamiento** — `manim-video`, `remotion-video-creation` y superficies de publicación social actualizadas integran la creación de contenido técnico y de lanzamiento en el mismo sistema.
 - **Crecimiento de frameworks y productos** — `nestjs-patterns`, superficies de instalación más ricas para Codex/OpenCode y empaquetado cross-harness expandido mantienen el repo utilizable más allá de Claude Code.
-- **Pack de skills de mercados de predicción Itô** — `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner`, `ito-data-atlas-agent`, `prediction-market-oracle-research` y `prediction-market-risk-review` añaden flujos de trabajo públicos de mercado/cartera no asesorados, manteniendo el acceso a la API de Itô separado de la facturación de ECC Tools.
+- **Pack de skills de mercados de predicción Itô** — la skill consolidada `ito-baskets` (índice de cestas de solo lectura, comparación, briefs de mercado y hojas de planificación no ejecutables; reemplaza a las antiguas `ito-market-intelligence`, `ito-basket-compare`, `ito-trade-planner` y `ito-data-atlas-agent`), junto con `prediction-market-oracle-research` y `prediction-market-risk-review`, añaden flujos de trabajo públicos de mercado/cesta no asesorados, manteniendo el acceso a la API de Itô separado de la facturación de ECC Tools.
 - **Pack de skills de optimización** — `parallel-execution-optimizer`, `benchmark-optimization-loop`, `data-throughput-accelerator`, `latency-critical-systems` y `recursive-decision-ledger` convierten los prompts de velocidad/recursión repetidos en flujos de trabajo acotados de benchmark, rendimiento y decisiones.
 - **ECC 2.0 alpha incluido en el árbol** — el prototipo del plano de control en Rust en `ecc2/` ya compila localmente y expone los comandos `dashboard`, `start`, `sessions`, `status`, `stop`, `resume` y `daemon`. Está disponible como alpha, aún no como versión general.
 - **Instantáneas de estado del operador** — `ecc status --markdown --write status.md` convierte el almacén de estado local en un informe portátil de transferencia que cubre disponibilidad, sesiones activas, estado de ejecución de skills, estado de la instalación, eventos de gobernanza pendientes y elementos de trabajo vinculados de Linear/GitHub/transferencias. Usa `ecc work-items upsert ...` para entradas manuales, `ecc work-items sync-github --repo owner/repo` para el estado de la cola de PRs/issues, y `ecc status --exit-code` para hacer fallar la automatización cuando la disponibilidad requiere atención.
@@ -212,7 +212,7 @@ La mayoría de los usuarios de Claude Code deben usar exactamente un método de 
 
 - **Opción recomendada por defecto:** instala el plugin de Claude Code, luego copia solo las carpetas de reglas que realmente necesites.
 - **Usa el instalador manual solo si** quieres un control más granular, deseas evitar completamente la ruta del plugin o tu build de Claude Code tiene problemas para resolver la entrada del marketplace autoalojado.
-- **No combines métodos de instalación.** La configuración rota más común es: `/plugin install` primero, luego `install.sh --profile full` o `npx ecc-install --profile full` después.
+- **No combines métodos de instalación.** La configuración rota más común es: `/plugin install` primero, luego `install.sh --profile full` o `npx ecc-universal install --profile full` después.
 
 Si ya combinaste múltiples instalaciones y hay duplicados, salta directamente a [Restablecer / Desinstalar ECC](#restablecer--desinstalar-ecc).
 
@@ -227,7 +227,7 @@ Si los hooks te parecen demasiado globales o solo quieres las reglas, agentes, c
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # o
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Este perfil excluye intencionalmente `hooks-runtime`.
@@ -249,7 +249,7 @@ Añade hooks después solo si quieres aplicación en tiempo de ejecución:
 Si no estás seguro de qué perfil o componente de ECC instalar, consulta al asesor empaquetado desde cualquier proyecto:
 
 ```bash
-npx ecc consult "security reviews" --target claude
+npx ecc-universal consult "security reviews" --target claude
 ```
 
 Devuelve los componentes coincidentes, los perfiles relacionados y los comandos de vista previa/instalación. Usa el comando de vista previa antes de instalar si quieres inspeccionar el plan de archivos exacto.
@@ -257,8 +257,8 @@ Devuelve los componentes coincidentes, los perfiles relacionados y los comandos 
 Para flujos de trabajo de ML/MLOps en producción, mantén la instalación opt-in y con alcance de componentes:
 
 ```bash
-npx ecc consult "mlops training model deployment" --target claude
-npx ecc install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal consult "mlops training model deployment" --target claude
+npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
 ```
 
 ### Paso 1: Instalar el Plugin (Recomendado)
@@ -287,7 +287,7 @@ Esto es intencional. Las instalaciones del marketplace/plugin de Anthropic se id
 
 > ADVERTENCIA: **Importante:** Los plugins de Claude Code no pueden distribuir `rules` automáticamente.
 >
-> Si ya instalaste ECC mediante `/plugin install`, **no ejecutes `./install.sh --profile full`, `.\install.ps1 --profile full`, ni `npx ecc-install --profile full` después**. El plugin ya carga las skills, comandos y hooks de ECC. Ejecutar el instalador completo tras una instalación del plugin copia esas mismas superficies en tus directorios de usuario y puede crear skills duplicadas más comportamiento duplicado en tiempo de ejecución.
+> Si ya instalaste ECC mediante `/plugin install`, **no ejecutes `./install.sh --profile full`, `.\install.ps1 --profile full`, ni `npx ecc-universal install --profile full` después**. El plugin ya carga las skills, comandos y hooks de ECC. Ejecutar el instalador completo tras una instalación del plugin copia esas mismas superficies en tus directorios de usuario y puede crear skills duplicadas más comportamiento duplicado en tiempo de ejecución.
 >
 > Para instalaciones de plugin, copia manualmente solo los directorios `rules/` que quieras bajo `~/.claude/rules/ecc/`. Empieza con `rules/common` más un pack de lenguaje o framework que uses realmente. No copies todos los directorios de reglas a menos que quieras explícitamente todo ese contexto en Claude.
 >
@@ -322,7 +322,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/ecc/"
 
 # Ruta de instalación completamente manual (usa esto en lugar de /plugin install)
 # .\install.ps1 --profile full
-# npx ecc-install --profile full
+# npx ecc-universal install --profile full
 ```
 
 Para instrucciones de instalación manual consulta el README en la carpeta `rules/`. Al copiar reglas manualmente, copia el directorio completo del lenguaje (por ejemplo `rules/common` o `rules/golang`), no los archivos dentro de él, para que las referencias relativas sigan funcionando y los nombres de archivo no colisionen.
@@ -338,7 +338,7 @@ Usa esto solo si estás omitiendo intencionalmente la ruta del plugin:
 ```powershell
 .\install.ps1 --profile full
 # o
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Si eliges esta ruta, detente aquí. No ejecutes también `/plugin install`.
@@ -1009,7 +1009,7 @@ Sí. ECC es multiplataforma:
 - **OpenCode**: Soporte completo del plugin en `.opencode/`. Consulta [Soporte para OpenCode](#soporte-para-opencode).
 - **Codex**: Soporte de primera clase para la app macOS y CLI, con guardias de deriva del adaptador y fallback de SessionStart. Consulta PR [#257](https://github.com/affaan-m/ECC/pull/257).
 - **GitHub Copilot (VS Code)**: Capa de instrucciones y prompts mediante `.github/copilot-instructions.md`, `.vscode/settings.json` y `.github/prompts/`. Consulta [Soporte para GitHub Copilot](#soporte-para-github-copilot).
-- **Antigravity**: Configuración estrechamente integrada para flujos de trabajo, skills y reglas aplanadas en `.agent/`. Consulta la [Guía de Antigravity](../ANTIGRAVITY-GUIDE.md).
+- **Antigravity**: Configuración estrechamente integrada para flujos de trabajo, skills y reglas aplanadas en `.agents/`. Consulta la [Guía de Antigravity](../ANTIGRAVITY-GUIDE.md).
 - **JoyCode / CodeBuddy**: Adaptadores de instalación selectiva locales al proyecto para comandos, agentes, skills y reglas aplanadas. Consulta la [Guía del Adaptador JoyCode](../JOYCODE-GUIDE.md).
 - **Qwen CLI**: Adaptador de instalación selectiva en el directorio home para comandos, agentes, skills, reglas y configuración de Qwen. Consulta la [Guía del Adaptador Qwen CLI](../QWEN-GUIDE.md).
 - **Zed**: Adaptador de instalación selectiva local al proyecto para `.zed/settings.json`, reglas aplanadas, comandos, agentes y skills.

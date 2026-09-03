@@ -1,9 +1,9 @@
 ---
 name: continuous-learning-v2
-description: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. v2.1 adds project-scoped instincts to prevent cross-project contamination.
+description: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. v2.1 adds project-scoped instincts to prevent cross-project contamination. Use when capturing lessons from a session, managing instincts, or promoting them into skills, commands, or agents.
 metadata:
+  version: 2.1.0
   origin: ECC
-version: 2.1.0
 ---
 
 # Continuous Learning v2.1 - Instinct
@@ -237,6 +237,22 @@ Edit `config.json` to control the background observer:
 | `observer.min_observations_to_analyze` | `20` | Minimum observations before analysis runs |
 
 Other behavior (observation capture, instinct thresholds, project scoping, promotion criteria) is configured via code defaults in `instinct-cli.py` and `observe.sh`.
+
+### Observer platform support
+
+The background observer requires WSL2, Linux, or macOS. On native Windows
+(Git Bash / MSYS2) it starts and reports success, but the process is killed
+when the spawning hook exits and its Job Object closes, so no analysis ever
+runs — setting `observer.enabled: true` there is effectively a no-op
+(see issue #2489).
+
+`observe.sh` detects this on the following hook invocation and writes an
+explanatory warning to `observer-start.log` once the observer has failed to
+survive several times in a row.
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `ECC_OBSERVER_NOSURVIVE_WARN_AFTER` | `3` | Consecutive non-survivals before the warning is logged |
 
 ## File Structure
 

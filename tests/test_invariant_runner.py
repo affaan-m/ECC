@@ -1,14 +1,15 @@
 import os
 import sys
-import pytest
 from pathlib import Path
+
+import pytest
 
 _SKILL_COMPLY_ROOT = Path(__file__).resolve().parent.parent / "skills" / "skill-comply"
 if str(_SKILL_COMPLY_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_COMPLY_ROOT))
 
-from scripts.runner import _setup_sandbox          # noqa: E402
-from scripts.scenario_generator import Scenario    # noqa: E402
+from scripts.runner import _setup_sandbox  # noqa: E402
+from scripts.scenario_generator import Scenario  # noqa: E402
 
 _GLOBAL_MARKER = "/tmp/runner_test_pwned_marker"
 

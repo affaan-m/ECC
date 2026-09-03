@@ -82,7 +82,7 @@ function runTests() {
         entries.map(entry => entry.id),
         ['post:dispatcher:sync', 'post:dispatcher:async']
       );
-      assert.ok(entries.every(entry => entry.matcher === '*'));
+      assert.ok(entries.every(entry => entry.matcher === '.*'));
       assert.strictEqual(entries[0].hooks[0].async, undefined);
       assert.strictEqual(entries[1].hooks[0].async, true);
       assert.ok(entries[0].hooks[0].command.includes('posttooluse-dispatcher.js'));
@@ -231,6 +231,26 @@ function runTests() {
       assert.ok(!ids.includes('post:edit:accumulator'));
       assert.ok(ids.includes('post:edit:design-quality-check'));
       assert.ok(ids.includes('post:ecc-context-monitor'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('Claude plugin hooks_enabled=false suppresses both dispatcher phases', () => {
+      for (const mode of ['sync', 'async']) {
+        const result = runDispatcher(mode, 'Edit', {
+          ECC_DRY_RUN: '1',
+          ECC_HOOKS_ENABLED: undefined,
+          CLAUDE_PLUGIN_OPTION_HOOKS_ENABLED: 'false'
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        assert.deepStrictEqual(
+          previewedIds(result.stderr),
+          [],
+          `${mode} dispatcher must not select child hooks when plugin hooks are off`
+        );
+      }
     })
   )
     passed++;

@@ -1,6 +1,6 @@
 {
   "name": "ecc-universal",
-  "version": "2.1.0",
+  "version": "2.2.1",
   "description": "Harness-native agent operating system for Codex, OpenCode, Cursor, Gemini, Claude Code, and terminal workflows - skills, hooks, rules, MCP conventions, and operator control-plane patterns",
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,7 @@
     "url": "https://github.com/affaan-m/ECC/issues"
   },
   "files": [
+    ".adal/",
     ".agents/",
     ".claude-plugin/",
     ".codex/",
@@ -50,6 +51,7 @@
     ".hermes/",
     ".kimi/",
     ".opencode/",
+    ".pi/",
     ".openclaw/",
     ".qwen/",
     ".zed/",
@@ -74,6 +76,7 @@
     "docs/pt-BR/",
     "docs/ru/",
     "docs/tr/",
+    "docs/uk-UA/",
     "docs/vi-VN/",
     "docs/zh-CN/",
     "docs/zh-TW/",
@@ -114,8 +117,10 @@
     "scripts/skills-health.js",
     "scripts/hooks/",
     "scripts/install-apply.js",
+    "scripts/install-guided.js",
     "scripts/install-plan.js",
     "scripts/ito.js",
+    "scripts/nasiko.js",
     "scripts/lib/",
     "scripts/list-installed.js",
     "scripts/loop-status.js",
@@ -124,12 +129,18 @@
     "scripts/orchestrate-codex-worker.sh",
     "scripts/orchestrate-worktrees.js",
     "scripts/repair.js",
+    "scripts/setup.js",
+    "scripts/welcome.js",
     "scripts/session-inspect.js",
     "scripts/sessions-cli.js",
     "scripts/setup-package-manager.js",
     "scripts/skill-create-output.js",
     "scripts/status.js",
     "scripts/sync-ecc-to-codex.sh",
+    "scripts/codex/legacy-sync-state.js",
+    "scripts/codex/install-global-git-hooks.sh",
+    "scripts/codex/check-codex-global-state.sh",
+    "scripts/codex-git-hooks/",
     "scripts/work-items.js",
     "scripts/uninstall.js",
     "skills/agent-architecture-audit/",
@@ -169,6 +180,7 @@
     "skills/cost-aware-llm-pipeline/",
     "skills/cost-tracking/",
     "skills/council/",
+    "skills/council-multi-model/",
     "skills/cpp-coding-standards/",
     "skills/cpp-testing/",
     "skills/crosspost/",
@@ -183,6 +195,7 @@
     "skills/deep-research/",
     "skills/defi-amm-security/",
     "skills/deployment-patterns/",
+    "skills/dev-team/",
     "skills/django-patterns/",
     "skills/django-security/",
     "skills/django-tdd/",
@@ -219,11 +232,11 @@
     "skills/homelab-network-setup/",
     "skills/hookify-rules/",
     "skills/inventory-demand-planning/",
-    "skills/ito-basket-compare/",
+    "skills/ito-baskets/",
     "skills/ito-compute/",
-    "skills/ito-data-atlas-agent/",
-    "skills/ito-market-intelligence/",
-    "skills/ito-trade-planner/",
+    "skills/ito-inference/",
+    "skills/ito-training/",
+    "skills/nasiko-control-plane/",
     "skills/investor-materials/",
     "skills/investor-outreach/",
     "skills/iterative-retrieval/",
@@ -306,6 +319,7 @@
     "skills/security-scan/",
     "skills/seo/",
     "skills/skill-scout/",
+    "skills/skill-comply/",
     "skills/skill-stocktake/",
     "skills/social-graph-ranker/",
     "skills/springboot-patterns/",
@@ -320,6 +334,7 @@
     "skills/tdd-workflow/",
     "skills/team-agent-orchestration/",
     "skills/team-builder/",
+    "skills/terminal-opener/",
     "skills/terminal-ops/",
     "skills/token-budget-advisor/",
     "skills/ui-demo/",
@@ -380,6 +395,7 @@
     "skills/intent-driven-development/",
     "skills/ios-icon-gen/",
     "skills/kubernetes-patterns/",
+    "skills/living-docs-governance/",
     "skills/loop-design-check/",
     "skills/mailtrap-email-integration/",
     "skills/marketing-campaign/",
@@ -409,6 +425,7 @@
     "skills/santa-method/",
     "skills/social-publisher/",
     "skills/taste/",
+    "skills/tasteforge-video/",
     "skills/tinystruct-patterns/",
     "skills/uncloud/",
     "skills/vite-patterns/",
@@ -424,7 +441,8 @@
     "ecc-control-pane": "scripts/control-pane.js",
     "ecc-install": "scripts/install-apply.js",
     "ecc-memory-mcp": "scripts/memory-mcp.mjs",
-    "ecc-plan-canvas": "scripts/plan-canvas.js"
+    "ecc-plan-canvas": "scripts/plan-canvas.js",
+    "ecc-universal": "scripts/ecc.js"
   },
   "scripts": {
     "welcome": "echo '\\n  ecc-universal installed!\\n  Run: ecc typescript\\n  Compat: ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n  Run or self-host any open-source model.\\n  Compute: Itô is the preferred compute sponsor — https://compute.itomarkets.com\\n  Any GPU provider works. This sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving.\\n  Separately, the opt-in ecc ito find bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity.\\n  Managed inference through Itô is not live yet.\\n'",
@@ -446,6 +464,7 @@
     "discussion:audit": "node scripts/discussion-audit.js",
     "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
     "security:advisory-sources": "node scripts/ci/supply-chain-advisory-sources.js",
+    "test:plugin-setup-platform": "node docker/plugin-setup/run-platform-tests.js",
     "claw": "node scripts/claw.js",
     "orchestrate:status": "node scripts/orchestration-status.js",
     "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",
@@ -460,30 +479,44 @@
   "dependencies": {
     "@iarna/toml": "2.2.5",
     "ajv": "8.20.0",
-    "sql.js": "1.14.1"
+    "js-yaml": "4.3.1",
+    "sql.js": "1.14.2"
+  },
+  "pi": {
+    "extensions": [
+      "./.pi/extensions/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./commands"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@opencode-ai/plugin": "1.17.3",
-    "@types/node": "25.9.2",
+    "@opencode-ai/plugin": "1.18.25",
+    "@types/node": "26.4.0",
     "c8": "11.0.0",
-    "eslint": "10.6.0",
-    "globals": "17.4.0",
-    "markdownlint-cli": "0.48.0",
+    "eslint": "10.9.1",
+    "globals": "17.11.0",
+    "markdownlint-cli": "0.49.1",
     "typescript": "6.0.3"
   },
   "engines": {
     "node": ">=18"
   },
   "overrides": {
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.7",
     "markdown-it": "14.3.0",
-    "js-yaml": "4.3.0"
+    "js-yaml": "4.3.1",
+    "@humanfs/node": "0.16.8"
   },
   "resolutions": {
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.7",
     "markdown-it": "14.3.0",
-    "js-yaml": "4.3.0"
+    "js-yaml": "4.3.1",
+    "@humanfs/node": "0.16.8"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
 }

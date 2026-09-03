@@ -8,7 +8,7 @@
 
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
-const { VALID_PROFILES, normalizeId, parseProfiles } = require('../lib/hook-flags');
+const { isHookEnabled } = require('../lib/hook-flags');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -19,6 +19,7 @@ const { run: runSessionActivityTracker } = require('./session-activity-tracker')
 const { run: runObserve } = require('./observe-runner');
 const { run: runMetricsBridge } = require('./ecc-metrics-bridge');
 const { run: runContextMonitor } = require('./ecc-context-monitor');
+const { run: runSkillRunTracker } = require('./skill-run-tracker');
 
 const MAX_STDIN = 1024 * 1024;
 
@@ -45,7 +46,8 @@ const ASYNC_HOOKS = [
     }
   },
   { id: 'post:quality-gate', matcher: 'Edit|Write|MultiEdit', profiles: 'standard,strict', script: 'scripts/hooks/quality-gate.js', run: runQualityGate },
-  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve }
+  { id: 'post:observe:continuous-learning', matcher: '*', profiles: 'standard,strict', script: 'scripts/hooks/observe-runner.js', run: runObserve },
+  { id: 'post:skill:track', matcher: 'Skill', profiles: 'standard,strict', script: 'scripts/hooks/skill-run-tracker.js', run: runSkillRunTracker }
 ];
 
 function getPluginRoot(env = process.env) {
@@ -64,17 +66,10 @@ function matchesTool(matcher, toolName) {
 }
 
 function isEnabled(hook, env) {
-  const disabled = new Set(
-    String(env.ECC_DISABLED_HOOKS || '')
-      .split(',')
-      .map(normalizeId)
-      .filter(Boolean)
-  );
-  const requestedProfile = String(env.ECC_HOOK_PROFILE || 'standard')
-    .trim()
-    .toLowerCase();
-  const profile = VALID_PROFILES.has(requestedProfile) ? requestedProfile : 'standard';
-  return !disabled.has(normalizeId(hook.id)) && parseProfiles(hook.profiles).includes(profile);
+  return isHookEnabled(hook.id, {
+    env,
+    profiles: hook.profiles,
+  });
 }
 
 function extractToolName(raw) {

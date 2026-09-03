@@ -37,7 +37,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Task
 ```
                     ┌─────────────┐
                     │   规划器    │
-                    │  (Opus 4.6) │
+                    │  (Sonnet)   │
                     └──────┬──────┘
                            │ 产品规格
                            │ (功能、冲刺、设计方向)
@@ -49,14 +49,14 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Task
               │                        │
               │  ┌──────────┐          │
               │  │ 生成器   │--构建-->│──┐
-              │  │(Opus 4.6)│          │  │
+              │  │ (Sonnet) │          │  │
               │  └────▲─────┘          │  │
               │       │                │  │ 实时应用
               │    反馈               │  │
               │       │                │  │
               │  ┌────┴─────┐          │  │
               │  │ 评估器   │<-测试---│──┘
-              │  │(Opus 4.6)│          │
+              │  │ (Sonnet) │          │
               │  │+Playwright│         │
               │  └──────────┘          │
               │                        │
@@ -77,7 +77,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Task
 * 故意**雄心勃勃**——保守规划会导致结果平庸
 * 生成评估器后续使用的评估标准
 
-**模型：** Opus 4.6（需要深度推理进行规格扩展）
+**模型：** 默认 Sonnet；可通过 `GAN_PLANNER_MODEL=opus` 提升以获得更深入的规格扩展
 
 ### 2. 生成器智能体
 
@@ -91,7 +91,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Task
 * 管理 git 进行迭代间的版本控制
 * 读取评估器反馈并在下一轮迭代中采纳
 
-**模型：** Opus 4.6（需要强大的编码能力）
+**模型：** 默认 Sonnet；可通过 `GAN_GENERATOR_MODEL=opus` 提升以获得最强编码能力
 
 ### 3. 评估器智能体
 
@@ -109,7 +109,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Task
 * 返回结构化反馈，包含分数和具体问题
 * 设计为**极度严格**——从不赞美平庸的工作
 
-**模型：** Opus 4.6（需要强大的判断力 + 工具使用能力）
+**模型：** 默认 Sonnet；可通过 `GAN_EVALUATOR_MODEL=opus` 提升以获得更强的判断力 + 工具使用能力
 
 ## 评估标准
 
@@ -181,16 +181,16 @@ GAN_EVAL_CRITERIA="functionality,performance,security" \
 
 ```bash
 # Step 1: Plan
-claude -p --model opus "You are a Product Planner. Read PLANNER_PROMPT.md. Expand this brief into a full product spec: 'Build a Kanban board app'. Write spec to spec.md"
+claude -p --model sonnet "You are a Product Planner. Read PLANNER_PROMPT.md. Expand this brief into a full product spec: 'Build a Kanban board app'. Write spec to spec.md"
 
 # Step 2: Generate (iteration 1)
-claude -p --model opus "You are a Generator. Read spec.md. Implement Sprint 1. Start the dev server on port 3000."
+claude -p --model sonnet "You are a Generator. Read spec.md. Implement Sprint 1. Start the dev server on port 3000."
 
 # Step 3: Evaluate (iteration 1)
-claude -p --model opus --allowedTools "Read,Bash,mcp__playwright__*" "You are an Evaluator. Read EVALUATOR_PROMPT.md. Test the live app at http://localhost:3000. Score against the rubric. Write feedback to feedback-001.md"
+claude -p --model sonnet --allowedTools "Read,Bash,mcp__playwright__*" "You are an Evaluator. Read EVALUATOR_PROMPT.md. Test the live app at http://localhost:3000. Score against the rubric. Write feedback to feedback-001.md"
 
 # Step 4: Generate (iteration 2 — reads feedback)
-claude -p --model opus "You are a Generator. Read spec.md and feedback-001.md. Address all issues. Improve the scores."
+claude -p --model sonnet "You are a Generator. Read spec.md and feedback-001.md. Address all issues. Improve the scores."
 
 # Repeat steps 3-4 until pass threshold met
 ```
@@ -230,9 +230,9 @@ claude -p --model opus "You are a Generator. Read spec.md and feedback-001.md. A
 |----------|---------|-------------|
 | `GAN_MAX_ITERATIONS` | `15` | 最大生成器-评估器循环次数 |
 | `GAN_PASS_THRESHOLD` | `7.0` | 通过所需的加权分数（1-10） |
-| `GAN_PLANNER_MODEL` | `opus` | 规划智能体的模型 |
-| `GAN_GENERATOR_MODEL` | `opus` | 生成器智能体的模型 |
-| `GAN_EVALUATOR_MODEL` | `opus` | 评估器智能体的模型 |
+| `GAN_PLANNER_MODEL` | `sonnet` | 规划智能体的模型 |
+| `GAN_GENERATOR_MODEL` | `sonnet` | 生成器智能体的模型 |
+| `GAN_EVALUATOR_MODEL` | `sonnet` | 评估器智能体的模型 |
 | `GAN_EVAL_CRITERIA` | `design,originality,craft,functionality` | 逗号分隔的标准 |
 | `GAN_DEV_SERVER_PORT` | `3000` | 实时应用的端口 |
 | `GAN_DEV_SERVER_CMD` | `npm run dev` | 启动开发服务器的命令 |

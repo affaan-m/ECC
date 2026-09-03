@@ -7,12 +7,12 @@
 - Programación en pareja y generación de código
 - Agentes workers en sistemas multi-agente
 
-**Sonnet 4.6** (Mejor modelo para codificación):
+**Sonnet 5** (Mejor modelo para codificación):
 - Trabajo de desarrollo principal
 - Orquestación de flujos de trabajo multi-agente
 - Tareas de codificación complejas
 
-**Opus 4.5** (Razonamiento más profundo):
+**Opus 5** (Razonamiento más profundo):
 - Decisiones arquitectónicas complejas
 - Requisitos de razonamiento máximo
 - Tareas de investigación y análisis

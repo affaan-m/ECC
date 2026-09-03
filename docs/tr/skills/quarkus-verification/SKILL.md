@@ -186,7 +186,7 @@ mvn quarkus:list-extensions
 ### OWASP ZAP (API Güvenlik Testi)
 
 ```bash
-docker run -t owasp/zap2docker-stable zap-api-scan.py \
+docker run -t ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
   -t http://localhost:8080/q/openapi \
   -f openapi
 ```
@@ -436,16 +436,16 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: Cache Maven packages
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -460,8 +460,9 @@ jobs:
         run: mvn org.owasp:dependency-check-maven:check
 
       - name: Upload Coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v7
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: target/site/jacoco/jacoco.xml
 ```
 

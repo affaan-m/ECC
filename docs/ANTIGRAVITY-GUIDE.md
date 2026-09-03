@@ -1,156 +1,162 @@
 # Antigravity Setup and Usage Guide
 
-Google's [Antigravity](https://antigravity.dev) is an AI coding IDE that uses a `.agent/` directory convention for configuration. ECC provides first-class support for Antigravity through its selective install system.
+Google Antigravity 2.0 discovers workspace customizations from the project-local
+`.agents/` directory. ECC's Antigravity target installs native rules, workflows,
+skills, and custom agents into that directory.
 
-## Quick Start
+Native Antigravity 2.0 installation requires ECC 2.2.0 or newer. ECC 2.1.0 uses
+the legacy `.agent/` adapter and does not provide the native layout described
+below.
+
+## Quick start
+
+Verify that 2.2.0 is readable from the registry, then run the pinned package
+from the project you want to configure:
 
 ```bash
-# Install ECC with Antigravity target
-./install.sh --target antigravity typescript
-
-# Or with multiple language modules
-./install.sh --target antigravity typescript python go
+npm view ecc-universal version
+npx ecc-universal@2.2.0 install --profile minimal --target antigravity
 ```
 
-This installs ECC components into your project's `.agent/` directory, ready for Antigravity to pick up.
+### Source checkout alternative
 
-## How the Install Mapping Works
+```bash
+# Run every command below from the project you want to configure.
+# Keep the ECC source checkout separate and use its absolute path.
+ECC_ROOT="/absolute/path/to/ECC"
 
-ECC remaps its component structure to match Antigravity's expected layout:
+# Install the minimal profile
+"$ECC_ROOT/install.sh" --profile minimal --target antigravity
 
-| ECC Source | Antigravity Destination | What It Contains |
-|------------|------------------------|------------------|
-| `rules/` | `.agent/rules/` | Language rules and coding standards (flattened) |
-| `commands/` | `.agent/workflows/` | Slash commands become Antigravity workflows |
-| `agents/` | `.agent/skills/` | Agent definitions become Antigravity skills |
-
-> **Note on `.agents/` vs `.agent/` vs `agents/`**: The installer only handles three source paths explicitly: `rules` → `.agent/rules/`, `commands` → `.agent/workflows/`, and `agents` (no dot prefix) → `.agent/skills/`. The dot-prefixed `.agents/` directory in the ECC repo is a **static layout** for Codex/Antigravity skill definitions and `openai.yaml` configs — it is not directly mapped by the installer. Any `.agents/` path falls through to the default scaffold operation. If you want `.agents/skills/` content available in the Antigravity runtime, you must manually copy it to `.agent/skills/`.
-
-### Key Differences from Claude Code
-
-- **Rules are flattened**: Claude Code nests rules under subdirectories (`rules/common/`, `rules/typescript/`). Antigravity expects a flat `rules/` directory — the installer handles this automatically.
-- **Commands become workflows**: ECC's `/command` files land in `.agent/workflows/`, which is Antigravity's equivalent of slash commands.
-- **Agents become skills**: ECC agent definitions map to `.agent/skills/`, where Antigravity looks for skill configurations.
-
-## Directory Structure After Install
-
+# Compatibility syntax: common rules plus only these language packs
+"$ECC_ROOT/install.sh" --target antigravity typescript python go
 ```
+
+PowerShell uses the same project-root working-directory contract:
+
+```powershell
+$EccRoot = "C:\absolute\path\to\ECC"
+
+& "$EccRoot\install.ps1" --profile minimal --target antigravity
+& "$EccRoot\install.ps1" --target antigravity typescript python go
+```
+
+Start a new Antigravity conversation after installing so the agent receives the
+updated skill inventory.
+
+## Native install mapping
+
+| ECC source | Antigravity destination | Purpose |
+|---|---|---|
+| `rules/` | `.agents/rules/` | Workspace rules, flattened with collision-safe names |
+| `commands/` | `.agents/workflows/` | User-invoked slash workflows |
+| `skills/<name>/` | `.agents/skills/<name>/` | Agent Skills with a required `SKILL.md` |
+| `agents/<name>.md` | `.agents/agents/<name>.md` | Custom main agents and subagents |
+
+ECC does not copy the repository's `.agents/` directory wholesale. That source
+tree is Codex packaging and contains Codex-specific marketplace metadata. An
+Antigravity plugin instead requires `.agents/plugins/<plugin-name>/plugin.json`.
+
+Installed custom agent definitions are adapted to Antigravity's frontmatter:
+Claude model tiers become `flash` or `pro`, and Claude tool names become their
+Antigravity equivalents. Unsupported tool identifiers are never emitted because
+Antigravity warns that invalid tool names can hang custom-agent execution.
+
+## Expected project tree
+
+```text
 your-project/
-├── .agent/
-│   ├── rules/
-│   │   ├── coding-standards.md
-│   │   ├── testing.md
-│   │   ├── security.md
-│   │   └── typescript.md          # language-specific rules
-│   ├── workflows/
-│   │   ├── plan.md
-│   │   ├── code-review.md
-│   │   ├── tdd.md
-│   │   └── ...
-│   ├── skills/
-│   │   ├── planner.md
-│   │   ├── code-reviewer.md
-│   │   ├── tdd-guide.md
-│   │   └── ...
-│   └── ecc-install-state.json     # tracks what ECC installed
+└── .agents/
+    ├── rules/
+    │   ├── common-coding-style.md
+    │   └── typescript-testing.md
+    ├── workflows/
+    │   └── plan.md
+    ├── skills/
+    │   └── coding-standards/
+    │       └── SKILL.md
+    ├── agents/
+    │   └── code-reviewer.md
+    └── ecc-install-state.json
 ```
 
-## The `openai.yaml` Agent Config
+## Verify the installation
 
-Each skill directory under `.agents/skills/` contains an `agents/openai.yaml` file at the path `.agents/skills/<skill-name>/agents/openai.yaml` that configures the skill for Antigravity:
-
-```yaml
-interface:
-  display_name: "API Design"
-  short_description: "REST API design patterns and best practices"
-  brand_color: "#F97316"
-  default_prompt: "Design REST API: resources, status codes, pagination"
-policy:
-  allow_implicit_invocation: true
-```
-
-| Field | Purpose |
-|-------|---------|
-| `display_name` | Human-readable name shown in Antigravity's UI |
-| `short_description` | Brief description of what the skill does |
-| `brand_color` | Hex color for the skill's visual badge |
-| `default_prompt` | Suggested prompt when the skill is invoked manually |
-| `allow_implicit_invocation` | When `true`, Antigravity can activate the skill automatically based on context |
-
-## Managing Your Installation
-
-### Check What's Installed
+macOS and Linux:
 
 ```bash
-node scripts/list-installed.js --target antigravity
+node "$ECC_ROOT/scripts/list-installed.js" --target antigravity
+node "$ECC_ROOT/scripts/doctor.js" --target antigravity
+rg --files .agents/skills -g 'SKILL.md'
+rg --files .agents/agents -g '*.md'
 ```
 
-### Repair a Broken Install
+PowerShell:
+
+```powershell
+node "$EccRoot\scripts\list-installed.js" --target antigravity
+node "$EccRoot\scripts\doctor.js" --target antigravity
+Get-ChildItem .agents\skills -Recurse -Filter SKILL.md
+Get-ChildItem .agents\agents -Recurse -Filter *.md
+```
+
+In Antigravity, open **Settings > Customizations**, confirm that workspace
+skills appear, start a new conversation, and request one by its exact name.
+
+## Existing `.agent/` installations
+
+Antigravity still reads legacy `.agent/rules` and `.agent/skills`, but ECC now
+uses the canonical `.agents/` layout. Do not rename `.agent` manually because
+ECC install-state contains absolute managed paths.
+
+Rerun the same ECC install command after updating. ECC writes and verifies the
+new `.agents/ecc-install-state.json` first, then removes only unchanged files
+owned by the valid legacy state. Modified and unmanaged files remain in
+`.agent/` and remain discoverable by doctor and uninstall until handled.
+
+Preview lifecycle operations before applying them when desired:
+
+macOS and Linux:
 
 ```bash
-# First, diagnose what's wrong
-node scripts/doctor.js --target antigravity
-
-# Then, restore missing or drifted files
-node scripts/repair.js --target antigravity
+node "$ECC_ROOT/scripts/doctor.js" --target antigravity
+node "$ECC_ROOT/scripts/repair.js" --target antigravity --dry-run
+node "$ECC_ROOT/scripts/uninstall.js" --target antigravity --dry-run
 ```
 
-### Uninstall
+PowerShell:
 
-```bash
-node scripts/uninstall.js --target antigravity
+```powershell
+node "$EccRoot\scripts\doctor.js" --target antigravity
+node "$EccRoot\scripts\repair.js" --target antigravity --dry-run
+node "$EccRoot\scripts\uninstall.js" --target antigravity --dry-run
 ```
-
-### Install State
-
-The installer writes `.agent/ecc-install-state.json` to track which files ECC owns. This enables safe uninstall and repair — ECC will never touch files it didn't create.
-
-## Adding Custom Skills for Antigravity
-
-If you're contributing a new skill and want it available on Antigravity:
-
-1. Create the skill under `skills/your-skill-name/SKILL.md` as usual
-2. Add an agent definition at `agents/your-skill-name.md` — this is the path the installer maps to `.agent/skills/` at runtime, making your skill available in the Antigravity harness
-3. Add the Antigravity agent config at `.agents/skills/your-skill-name/agents/openai.yaml` — this is a static repo layout consumed by Codex for implicit invocation metadata
-4. Mirror the `SKILL.md` content to `.agents/skills/your-skill-name/SKILL.md` — this static copy is used by Codex and serves as a reference for Antigravity
-5. Mention in your PR that you added Antigravity support
-
-> **Key distinction**: The installer deploys `agents/` (no dot) → `.agent/skills/` — this is what makes skills available at runtime. The `.agents/` (dot-prefixed) directory is a separate static layout for Codex `openai.yaml` configs and is not auto-deployed by the installer.
-
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full contribution guide.
-
-## Comparison with Other Targets
-
-| Feature | Claude Code | Cursor | Codex | Antigravity |
-|---------|-------------|--------|-------|-------------|
-| Install target | `claude-home` | `cursor-project` | `codex-home` | `antigravity` |
-| Config root | `~/.claude/` | `.cursor/` | `~/.codex/` | `.agent/` |
-| Scope | User-level | Project-level | User-level | Project-level |
-| Rules format | Nested dirs | Flat | Flat | Flat |
-| Commands | `commands/` | N/A | N/A | `workflows/` |
-| Agents/Skills | `agents/` | N/A | N/A | `skills/` |
-| Install state | `ecc-install-state.json` | `ecc-install-state.json` | `ecc-install-state.json` | `ecc-install-state.json` |
 
 ## Troubleshooting
 
-### Skills not loading in Antigravity
+### Skills do not appear
 
-- Verify the `.agent/` directory exists in your project root (not home directory)
-- Check that `ecc-install-state.json` was created — if missing, re-run the installer
-- Ensure files have `.md` extension and valid frontmatter
+- A valid skill must be `.agents/skills/<name>/SKILL.md`.
+- `.agent/.agents/skills` is an obsolete nested layout from older ECC builds.
+- Start a new conversation after changing skill files.
 
-### Rules not applying
+### Rules do not apply
 
-- Rules must be in `.agent/rules/`, not nested in subdirectories
-- Run `node scripts/doctor.js --target antigravity` to verify the install
+- Confirm the files are directly under `.agents/rules/`.
+- Run doctor and inspect any missing or drifted managed-file warning.
 
-### Workflows not available
+### Workflows do not appear
 
-- Antigravity looks for workflows in `.agent/workflows/`, not `commands/`
-- If you manually copied ECC commands, rename the directory
+- Confirm the files are under `.agents/workflows/`.
+- Invoke a workflow with `/<workflow-name>` after restarting Antigravity.
 
-## Related Resources
+## Official Antigravity references
 
-- [Selective Install Architecture](./SELECTIVE-INSTALL-ARCHITECTURE.md) — how the install system works under the hood
-- [Selective Install Design](./SELECTIVE-INSTALL-DESIGN.md) — design decisions and target adapter contracts
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — how to contribute skills, agents, and commands
+- [Skills](https://antigravity.google/docs/skills)
+- [Rules and workflows](https://antigravity.google/docs/rules-workflows)
+- [Custom agents and subagents](https://antigravity.google/docs/subagents)
+- [Plugins](https://antigravity.google/docs/plugins)
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for ECC contribution guidance and
+[SELECTIVE-INSTALL-ARCHITECTURE.md](SELECTIVE-INSTALL-ARCHITECTURE.md) for the
+installer lifecycle contract.

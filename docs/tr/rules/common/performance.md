@@ -7,12 +7,12 @@
 - Pair programming ve kod üretimi
 - Multi-agent sistemlerinde worker agent'lar
 
-**Sonnet 4.6** (En iyi kodlama modeli):
+**Sonnet 5** (En iyi kodlama modeli):
 - Ana geliştirme çalışması
 - Multi-agent iş akışlarını orkestrasyon
 - Karmaşık kodlama görevleri
 
-**Opus 4.6** (En derin akıl yürütme):
+**Opus 5** (En derin akıl yürütme):
 - Karmaşık mimari kararlar
 - Maksimum akıl yürütme gereksinimleri
 - Araştırma ve analiz görevleri

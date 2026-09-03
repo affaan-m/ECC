@@ -1,0 +1,283 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+const workflowPaths = [
+  '.github/workflows/release.yml',
+  '.github/workflows/reusable-release.yml',
+];
+const lifecycleRunnerSource = load('tests/ci/packed-artifact-lifecycle.js');
+
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    passed += 1;
+  } catch (error) {
+    console.log(`  ✗ ${name}`);
+    console.log(`    Error: ${error.message}`);
+    failed += 1;
+  }
+}
+
+function load(relativePath) {
+  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
+}
+
+function jobBlock(source, jobName, nextJobName) {
+  const startMarker = `\n  ${jobName}:\n`;
+  const start = source.indexOf(startMarker);
+  assert.ok(start >= 0, `missing ${jobName} job`);
+
+  if (!nextJobName) {
+    return source.slice(start);
+  }
+
+  const end = source.indexOf(`\n  ${nextJobName}:\n`, start + startMarker.length);
+  assert.ok(end > start, `missing ${nextJobName} job after ${jobName}`);
+  return source.slice(start, end);
+}
+
+console.log('\n=== Testing packed-artifact release workflows ===\n');
+
+for (const workflowPath of workflowPaths) {
+  const source = load(workflowPath);
+
+  test(`${workflowPath} packs once and exports the package name and SHA-256`, () => {
+    assert.strictEqual(
+      (source.match(/npm pack --json/g) || []).length,
+      1,
+      'release workflow must pack exactly once'
+    );
+    assert.match(source, /package_sha256:\s*\$\{\{ steps\.pack\.outputs\.package_sha256 \}\}/);
+    assert.match(source, /createHash\(['"]sha256['"]\)/);
+    assert.match(source, /package_sha256=['"]? \+ digest/);
+  });
+
+  test(`${workflowPath} invokes only test files present in the release source`, () => {
+    const referencedTests = [...source.matchAll(/\bnode (tests\/[A-Za-z0-9_./-]+\.js)\b/g)]
+      .map(match => match[1]);
+    assert.ok(referencedTests.length > 0, 'release workflow should run repository tests');
+    for (const testPath of referencedTests) {
+      assert.ok(fs.existsSync(path.join(repoRoot, testPath)), `missing workflow test: ${testPath}`);
+    }
+  });
+
+  test(`${workflowPath} selects reviewed release notes from the validated release version`, () => {
+    const verify = jobBlock(source, 'verify', 'lifecycle');
+
+    assert.match(verify, /RELEASE_VERSION="\$\{RELEASE_TAG#v\}"/);
+    assert.match(
+      verify,
+      /RELEASE_NOTES="docs\/releases\/\$\{RELEASE_VERSION\}\/release-notes\.md"/
+    );
+    assert.match(verify, /if \[ ! -f "\$RELEASE_NOTES" \]/);
+    assert.match(verify, /cp "\$RELEASE_NOTES" release_body\.md/);
+    assert.doesNotMatch(
+      verify,
+      /cp docs\/releases\/2\.2\.0\/release-notes\.md/,
+      'release workflows must not reuse 2.2.0 notes for later versions'
+    );
+  });
+
+  test(`${workflowPath} disables generated additions to reviewed release notes`, () => {
+    const publish = jobBlock(source, 'publish');
+    assert.match(
+      publish,
+      /body_path:\s*release_body\.md[\s\S]{0,160}generate_release_notes:\s*false/
+    );
+    assert.doesNotMatch(publish, /generate_release_notes:\s*(?:true|\$\{\{)/);
+  });
+
+  test(`${workflowPath} uploads the one packed tgz as the release artifact`, () => {
+    const verify = jobBlock(source, 'verify', 'lifecycle');
+    const packIndex = verify.indexOf('name: Pack npm artifact');
+    const uploadIndex = verify.indexOf('name: Upload release artifacts');
+
+    assert.ok(packIndex >= 0, 'missing pack step');
+    assert.ok(uploadIndex > packIndex, 'artifact upload must happen after pack and hash');
+    assert.match(verify, /name:\s*ecc-release-artifacts/);
+    assert.match(verify, /\$\{\{ steps\.pack\.outputs\.package_file \}\}/);
+    assert.match(verify, /tests\/ci\/packed-artifact-lifecycle\.js/);
+  });
+
+  test(`${workflowPath} fails retries when npm already has different bytes`, () => {
+    const verify = jobBlock(source, 'verify', 'lifecycle');
+    assert.match(verify, /name:\s*Verify existing npm artifact matches candidate/);
+    assert.match(verify, /if:\s*steps\.npm_publish_state\.outputs\.already_published == 'true'/);
+    assert.match(verify, /npm view "\$\{PACKAGE_NAME\}@\$\{PACKAGE_VERSION\}" dist\.integrity/);
+    assert.match(verify, /createHash\(['"]sha512['"]\)/);
+    assert.match(verify, /Existing npm artifact does not match tested candidate/);
+  });
+
+  test(`${workflowPath} verifies the same tgz on Node 20 across three operating systems`, () => {
+    const lifecycle = jobBlock(source, 'lifecycle', 'publish');
+
+    assert.match(lifecycle, /needs:\s*verify/);
+    assert.match(lifecycle, /os:\s*\[ubuntu-latest, macos-latest, windows-latest\]/);
+    assert.match(lifecycle, /runs-on:\s*\$\{\{ matrix\.os \}\}/);
+    assert.match(lifecycle, /node-version:\s*['"]20\.x['"]/);
+    assert.match(lifecycle, /uses:\s*actions\/download-artifact@/);
+    assert.match(lifecycle, /name:\s*ecc-release-artifacts/);
+    assert.match(lifecycle, /ECC_RELEASE_PACKAGE:\s*release-artifacts\/\$\{\{ needs\.verify\.outputs\.package_file \}\}/);
+    assert.match(lifecycle, /ECC_RELEASE_SHA256:\s*\$\{\{ needs\.verify\.outputs\.package_sha256 \}\}/);
+    assert.match(lifecycle, /node release-artifacts\/tests\/ci\/packed-artifact-lifecycle\.js/);
+    assert.doesNotMatch(lifecycle, /actions\/checkout@/);
+    assert.doesNotMatch(lifecycle, /\bsecrets\s*:/, 'lifecycle job must not receive secrets');
+    assert.doesNotMatch(lifecycle, /\$\{\{\s*secrets\./, 'lifecycle job must not reference secrets');
+  });
+
+  test(`${workflowPath} blocks publishing on packed-artifact lifecycle success`, () => {
+    const publish = jobBlock(source, 'publish');
+
+    assert.match(publish, /needs:\s*\[verify, lifecycle\]/);
+    assert.match(publish, /ECC_RELEASE_PACKAGE:\s*\$\{\{ needs\.verify\.outputs\.package_file \}\}/);
+    assert.match(publish, /npm publish "\.\/\$\{ECC_RELEASE_PACKAGE\}"/);
+    assert.match(publish, /name:\s*Verify artifact before publish/);
+    assert.match(publish, /ECC_RELEASE_SHA256:\s*\$\{\{ needs\.verify\.outputs\.package_sha256 \}\}/);
+    assert.match(publish, /createHash\(['"]sha256['"]\)/);
+    assert.match(publish, /ecc-universal-\[0-9A-Za-z\.\+-\]/);
+    assert.ok(
+      publish.indexOf('name: Verify artifact before publish')
+        < publish.indexOf('name: Create GitHub Release'),
+      'publish must verify the independently downloaded archive before creating the release'
+    );
+  });
+}
+
+test('reusable release requires its input to resolve through the tag namespace', () => {
+  const source = load('.github/workflows/reusable-release.yml');
+  const verify = jobBlock(source, 'verify', 'lifecycle');
+  assert.match(verify, /ref:\s*refs\/tags\/\$\{\{ inputs\.tag \}\}/);
+});
+
+test('pull-request CI packs once and exports the exact installer artifact identity', () => {
+  const source = load('.github/workflows/ci.yml');
+  const pack = jobBlock(source, 'pack-installer', 'packed-install-lifecycle');
+  assert.strictEqual((pack.match(/npm pack --json/g) || []).length, 1);
+  assert.match(pack, /package_file:\s*\$\{\{ steps\.pack\.outputs\.package_file \}\}/);
+  assert.match(pack, /package_sha256:\s*\$\{\{ steps\.pack\.outputs\.package_sha256 \}\}/);
+  assert.match(pack, /createHash\(['"]sha256['"]\)/);
+  assert.match(pack, /name:\s*ecc-ci-installer-artifact/);
+});
+
+test('pull-request CI runs the same packed installer on Linux, macOS, and Windows', () => {
+  const source = load('.github/workflows/ci.yml');
+  const lifecycle = jobBlock(source, 'packed-install-lifecycle', 'validate');
+  assert.match(lifecycle, /needs:\s*pack-installer/);
+  assert.match(lifecycle, /os:\s*\[ubuntu-latest, macos-latest, windows-latest\]/);
+  assert.match(lifecycle, /node-version:\s*['"]20\.x['"]/);
+  assert.match(lifecycle, /name:\s*ecc-ci-installer-artifact/);
+  assert.match(lifecycle, /ECC_RELEASE_PACKAGE:\s*release-artifacts\/\$\{\{ needs\.pack-installer\.outputs\.package_file \}\}/);
+  assert.match(lifecycle, /ECC_RELEASE_SHA256:\s*\$\{\{ needs\.pack-installer\.outputs\.package_sha256 \}\}/);
+  assert.match(lifecycle, /node tests\/ci\/packed-artifact-lifecycle\.js/);
+  assert.doesNotMatch(lifecycle, /\$\{\{\s*secrets\./);
+});
+
+test('packed lifecycle invokes installed public bins, including setup help', () => {
+  assert.match(lifecycleRunnerSource, /getNpmExecInvocation/);
+  assert.match(lifecycleRunnerSource, /\['ecc-universal', 'setup', '--help'\]/);
+  assert.match(lifecycleRunnerSource, /\['ecc', \.\.\.args\]/);
+  assert.doesNotMatch(lifecycleRunnerSource, /node_modules.*scripts.*ecc\.js/);
+});
+
+test('packed lifecycle applies and updates README-primary Claude setup with a fake provider', () => {
+  assert.match(lifecycleRunnerSource, /createFakeClaudeExecutable/);
+  assert.match(
+    lifecycleRunnerSource,
+    /const claudeSetupArgs = \[\s*'ecc-universal', 'setup',\s*'--mode', 'claude-plugin',\s*'--scope', 'user',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\s*\[\.\.\.claudeSetupArgs, '--hooks', 'standard', '--dry-run', '--json'\]/
+  );
+  assert.match(lifecycleRunnerSource, /Claude setup dry-run must not mutate setup state/);
+  assert.match(lifecycleRunnerSource, /runProcess\('git', \['--version'\]/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('standard'\)/);
+  assert.match(lifecycleRunnerSource, /runPackedClaudeSetup\('strict'\)/);
+  assert.match(lifecycleRunnerSource, /CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.match(lifecycleRunnerSource, /plugin marketplace add/);
+  assert.match(lifecycleRunnerSource, /plugin update ecc@ecc/);
+});
+
+test('packed lifecycle mutates through the fully explicit guided Kimi install', () => {
+  assert.match(
+    lifecycleRunnerSource,
+    /const guidedKimiInstallArgs = \[\s*'ecc-universal', 'install', '--guided',\s*'--harness', 'kimi',\s*'--profile', 'core',\s*\]/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--dry-run', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\[\.\.\.guidedKimiInstallArgs, '--yes', '--json'\]\)/
+  );
+  assert.strictEqual(
+    (lifecycleRunnerSource.match(/runGuidedKimiInstall\(\)/g) || []).length,
+    2,
+    'guided Kimi apply must run once initially and once as an idempotency check'
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'doctor', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(
+    lifecycleRunnerSource,
+    /runPublicCli\(\['ecc', 'uninstall', '--target', 'kimi', '--json'\]\)/
+  );
+  assert.match(lifecycleRunnerSource, /guidedKimiSentinel/);
+  assert.match(lifecycleRunnerSource, /dry-run must not mutate the Kimi target/);
+  for (const credentialName of ['ANTHROPIC_API_KEY', 'KIMI_API_KEY', 'MOONSHOT_API_KEY']) {
+    assert.match(lifecycleRunnerSource, new RegExp(credentialName));
+  }
+});
+
+test('packed lifecycle validates canonical Antigravity and OpenCode installs', () => {
+  assert.match(lifecycleRunnerSource, /target:\s*'antigravity'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(projectDir, '\.agents'\)/);
+  assert.match(lifecycleRunnerSource, /target:\s*'opencode'/);
+  assert.match(lifecycleRunnerSource, /path\.join\(homeDir, '\.config', 'opencode'\)/);
+  assert.match(lifecycleRunnerSource, /\['doctor', '--target', options\.target, '--json'\]/);
+  assert.match(lifecycleRunnerSource, /skill-comply[\s\S]*SKILL\.md/);
+  assert.match(lifecycleRunnerSource, /!fs\.existsSync\(installedSkillPath\)/);
+});
+
+test('packed lifecycle installs and verifies the opt-in Ito distribution surface', () => {
+  assert.match(
+    lifecycleRunnerSource,
+    /'--profile', 'core'[\s\S]*'--with', 'capability:ito-compute'[\s\S]*'--with', 'capability:prediction-markets'/
+  );
+  for (const moduleId of ['ito-compute', 'prediction-market-skills']) {
+    assert.match(lifecycleRunnerSource, new RegExp(`moduleId === '${moduleId}'`));
+  }
+  for (const installedPath of [
+    'skills/ito-baskets/SKILL.md',
+    'skills/ito-baskets/agents/openai.yaml',
+    'skills/ito-baskets/scripts/ito-baskets.js',
+    'skills/ito-compute/SKILL.md',
+    'skills/ito-compute/agents/openai.yaml',
+    'skills/ito-inference/SKILL.md',
+    'skills/ito-training/SKILL.md',
+  ]) {
+    assert.match(lifecycleRunnerSource, new RegExp(installedPath.replaceAll('.', '\\.')));
+  }
+  assert.match(lifecycleRunnerSource, /\['ito', 'status'\]/);
+  assert.match(lifecycleRunnerSource, /canonical ito-compute-cli is unpublished/i);
+  assert.match(lifecycleRunnerSource, /npx\|npm exec\|npm link\|install -g/i);
+  assert.match(lifecycleRunnerSource, /installedStat\.isFile\(\)/);
+  assert.match(lifecycleRunnerSource, /installedStat\.size > 0/);
+  assert.match(lifecycleRunnerSource, /hostileItoSentinel/);
+  assert.match(lifecycleRunnerSource, /must-not-reach-hostile-path/);
+  assert.match(lifecycleRunnerSource, /packed Itô bridge executed a PATH collision/);
+});
+
+console.log(`\nPassed: ${passed}`);
+console.log(`Failed: ${failed}`);
+process.exit(failed > 0 ? 1 : 0);

@@ -220,7 +220,11 @@ async function main() {
 
   if (hookModule && typeof hookModule.run === 'function') {
     try {
-      const output = hookModule.run(raw, {
+      // Awaited so a hook may export `async run()`. Without this an async hook
+      // hands back a pending Promise, which resolveHookResult reads as "no
+      // opinion" and silently degrades to pass-through. Synchronous hooks are
+      // unaffected: awaiting a plain value just costs a microtask.
+      const output = await hookModule.run(raw, {
         hookId,
         pluginRoot,
         scriptPath,

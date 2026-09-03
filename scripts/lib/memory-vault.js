@@ -122,7 +122,21 @@ function assertMemoryDirectorySafe(directory, root) {
 }
 
 function sameFileIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
+  // The inode is the primary identity signal and must always match.
+  if (left.ino !== right.ino) {
+    return false;
+  }
+  // libuv 1.49.0 through 1.50.x resolve path-based stat() and lstat() on Windows
+  // through GetFileInformationByName, which leaves the volume serial unset, while
+  // fstat() on an open handle reports it. Comparing the two then never matches and
+  // every vault read and write is rejected. libuv 82cdfb75f fixed this in 1.51.0,
+  // so only Node 22.12-22.16 and 24.0-24.1 are affected, but the guard should not
+  // depend on the runtime's patch level. Compare dev only when both sides report
+  // one; POSIX always does, so the original strict behaviour is preserved there.
+  if (!left.dev || !right.dev) {
+    return true;
+  }
+  return left.dev === right.dev;
 }
 
 function readRegularTextFile(filePath, options = {}) {
@@ -137,11 +151,11 @@ function readRegularTextFile(filePath, options = {}) {
     | (fs.constants.O_NONBLOCK || 0);
   const descriptor = fs.openSync(filePath, flags);
   try {
-    const opened = fs.fstatSync(descriptor);
+    const opened = fs.fstatSync(descriptor, { bigint: true });
     if (!opened.isFile()) {
       throw new Error(`${label} must be a regular, non-symlink file.`);
     }
-    const after = fs.lstatSync(filePath);
+    const after = fs.lstatSync(filePath, { bigint: true });
     if (
       after.isSymbolicLink()
       || !after.isFile()
@@ -152,7 +166,7 @@ function readRegularTextFile(filePath, options = {}) {
     if (options.trustedRoot) {
       assertWithinTrustedRoot(filePath, options.trustedRoot, `read ${label}`);
     }
-    if (opened.size > maxBytes) {
+    if (opened.size > BigInt(maxBytes)) {
       throw new Error(`${label} is too large (${opened.size} bytes).`);
     }
 
@@ -189,8 +203,8 @@ function writeCreateOnlyTextFile(filePath, content, trustedRoot) {
   let cleanupError;
   try {
     descriptor = fs.openSync(temporaryPath, flags, 0o600);
-    const opened = fs.fstatSync(descriptor);
-    const after = fs.lstatSync(temporaryPath);
+    const opened = fs.fstatSync(descriptor, { bigint: true });
+    const after = fs.lstatSync(temporaryPath, { bigint: true });
     assertWithinTrustedRoot(temporaryPath, trustedRoot, 'write memory');
     if (
       !opened.isFile()
@@ -770,6 +784,7 @@ module.exports = {
   readMemoryById,
   readMemoryFiles,
   resolveVaultRoots,
+  sameFileIdentity,
   saveMemory,
   scoreMemory,
   searchMemories,

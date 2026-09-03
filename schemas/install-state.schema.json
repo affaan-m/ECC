@@ -107,6 +107,13 @@
         },
         "legacyMode": {
           "type": "boolean"
+        },
+        "hookConsent": {
+          "enum": [
+            "enabled",
+            "declined",
+            null
+          ]
         }
       }
     },
@@ -202,6 +209,10 @@
           },
           "scaffoldOnly": {
             "type": "boolean"
+          },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
           }
         }
       }

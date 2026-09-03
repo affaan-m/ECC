@@ -2,8 +2,8 @@
 name: api-connector-builder
 description: Build a new API connector or provider by matching the target repo's existing integration pattern exactly. Use when adding one more integration without inventing a second architecture.
 metadata:
+  version: "1.0.0"
   origin: ECC direct-port adaptation
-version: "1.0.0"
 ---
 
 # API Connector Builder

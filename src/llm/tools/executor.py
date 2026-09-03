@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from llm.core.interface import ToolExecutionError
-from llm.core.types import LLMInput, LLMOutput, Message, Role, ToolCall, ToolDefinition, ToolResult
-
+from llm.core.types import (
+    LLMInput,
+    LLMOutput,
+    Message,
+    Role,
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
+)
 
 ToolFunc = Callable[..., Any]
 
@@ -86,7 +92,7 @@ class ReActAgent:
                 tools=tools,
             )
 
-            output = self.provider.generate(input_copy)
+            output: LLMOutput = self.provider.generate(input_copy)
 
             if not output.has_tool_calls:
                 return output
@@ -99,7 +105,7 @@ class ReActAgent:
                 )
             )
 
-            results = self.executor.execute_all(output.tool_calls)
+            results = self.executor.execute_all(output.tool_calls or [])
 
             for result in results:
                 messages.append(

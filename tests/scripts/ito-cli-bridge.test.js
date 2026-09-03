@@ -118,7 +118,7 @@ async function main() {
 
   const tests = [
     ["forwards only the reviewed RFQ CLI surface to an explicit local executable", () => {
-      for (const command of ["login", "auth", "find", "status"]) {
+      for (const command of ["login", "logout", "auth", "find", "status"]) {
         const probe = makeItoProbe();
         try {
           const result = runCli(["ito", command], {
@@ -130,6 +130,27 @@ async function main() {
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
         }
+      }
+    }],
+    ["forwards logout with device-token settings but never an API key", () => {
+      const probe = makeItoProbe();
+      try {
+        const result = runCli(["ito", "logout", "--json"], {
+          ECC_ITO_CLI_EXECUTABLE: probe.executable,
+          ITO_API_KEY: "must-not-cross-into-device-revocation",
+          ITO_ALLOW_FILE_TOKEN: "1",
+          ITO_TOKEN_FILE: "/tmp/ito-device-token",
+          ITO_API_URL: "https://compute.example.test",
+        });
+        assert.strictEqual(result.status, 0, result.stderr);
+        const invocation = readInvocation(probe);
+        assert.deepStrictEqual(invocation.argv, ["--json", "logout"]);
+        assert.strictEqual(invocation.env.ITO_API_KEY, undefined);
+        assert.strictEqual(invocation.env.ITO_ALLOW_FILE_TOKEN, "1");
+        assert.strictEqual(invocation.env.ITO_TOKEN_FILE, "/tmp/ito-device-token");
+        assert.strictEqual(invocation.env.ITO_API_URL, "https://compute.example.test");
+      } finally {
+        fs.rmSync(probe.directory, { recursive: true, force: true });
       }
     }],
     ["forwards the canonical login browser opt-out without performing browser automation", () => {
@@ -459,7 +480,7 @@ async function main() {
             ECC_ITO_CLI_EXECUTABLE: probe.executable,
           });
           assert.notStrictEqual(result.status, 0, command);
-          assert.match(result.stderr, /only login, auth, find, status, and evals/i);
+          assert.match(result.stderr, /only login, logout, auth, find, status, and evals/i);
           assert.ok(!fs.existsSync(probe.log), `${command} must not spawn the Itô CLI`);
         } finally {
           fs.rmSync(probe.directory, { recursive: true, force: true });
@@ -632,6 +653,7 @@ async function main() {
         });
         assert.strictEqual(result.status, 0, result.stderr);
         assert.match(result.stdout, /ecc ito login \[--no-browser\]/);
+        assert.match(result.stdout, /ecc ito logout/);
         assert.match(result.stdout, /ecc ito auth/);
         assert.match(result.stdout, /ecc ito find/);
         assert.match(result.stdout, /ecc ito status/);

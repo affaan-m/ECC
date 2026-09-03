@@ -70,17 +70,35 @@ function readHarnessCost(sessionId, maxAgeSeconds) {
 
 // Approximate per-1M-token billing rates (USD).
 // Cache creation: 1.25x input rate. Cache read: 0.1x input rate.
+// Source: https://platform.claude.com/docs/en/about-claude/pricing
+// Current-generation list prices: Fable/Mythos 5 $10/$50, Opus 5 and
+// Opus 4.5-4.8 $5/$25, Sonnet 5 $2/$10, Sonnet 4.6 $3/$15, and Haiku 4.5
+// $1/$5. Opus 4.0/4.1 and Opus 3 stay on the legacy $15/$75 tier.
 const RATE_TABLE = {
-  haiku:  { in: 0.80,  out: 4.0,  cacheWrite: 1.00,  cacheRead: 0.08 },
-  sonnet: { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
-  opus:   { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 }
+  haiku:      { in: 1.00,  out: 5.0,  cacheWrite: 1.25,  cacheRead: 0.10 },
+  sonnet:     { in: 3.00,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
+  sonnet5:    { in: 2.00,  out: 10.0, cacheWrite: 2.50,  cacheRead: 0.20 },
+  opus:       { in: 5.00,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
+  opusLegacy: { in: 15.00, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 },
+  fable:      { in: 10.00, out: 50.0, cacheWrite: 12.50, cacheRead: 1.00 }
 };
+
+// Opus 4.0's dated snapshot omits the minor segment, so an `opus-4-0`
+// substring check alone misses `claude-opus-4-20250514`.
+const LEGACY_OPUS_RE = /3-opus|opus-4-0(?!\d)|opus-4-1(?!\d)|opus-4[-@]\d{8}/;
 
 function getRates(model) {
   const m = String(model || '').toLowerCase();
+  if (m.includes('fable') || m.includes('mythos')) return RATE_TABLE.fable;
   if (m.includes('haiku')) return RATE_TABLE.haiku;
+  if (isSonnet5(m)) return RATE_TABLE.sonnet5;
+  if (LEGACY_OPUS_RE.test(m)) return RATE_TABLE.opusLegacy;
   if (m.includes('opus'))  return RATE_TABLE.opus;
   return RATE_TABLE.sonnet;
+}
+
+function isSonnet5(model) {
+  return /(?:^|[^a-z0-9])sonnet-5(?:[^a-z0-9]|$)/.test(model);
 }
 
 function toNumber(v) {

@@ -1,313 +1,185 @@
 ---
 name: configure-ecc
-description: Everything Claude Code のインタラクティブなインストーラー — スキルとルールの選択とインストールをユーザーレベルまたはプロジェクトレベルのディレクトリへガイドし、パスを検証し、必要に応じてインストールされたファイルを最適化します。
+description: Claude Code、Codex、Kimi 内で ECC のインストール、更新、再設定を案内し、各ハーネスが実際に備えるプラグイン、スコープ、フック機能を守ります。
+metadata:
+  origin: ECC
 ---
 
-# Configure Everything Claude Code (ECC)
+# Everything Claude Code の設定
 
-Everything Claude Code プロジェクトのインタラクティブなステップバイステップのインストールウィザードです。`AskUserQuestion` を使用してスキルとルールの選択的インストールをユーザーにガイドし、正確性を検証し、最適化を提供します。
+現在のハーネス内で対話式ウィザードを実行します。最初にインベントリを調べ、対応する選択肢だけを
+収集し、プレビュー後に 1 回だけ確認し、非対話で適用・検証します。ウェルカム表示は成功後だけです。
+ECC を一時ディレクトリへ clone したり、プラグインを手作業でコピーしたりしないでください。
 
-## 起動タイミング
+ユーザー自身が操作するターミナルの正規エントリは `ecc setup` と `npx ecc-universal setup` です。
+ハーネス内では、代わりに以下の明示的な非対話コマンドを使います。
 
-- ユーザーが "configure ecc"、"install ecc"、"setup everything claude code" などと言った場合
-- ユーザーがこのプロジェクトからスキルまたはルールを選択的にインストールしたい場合
-- ユーザーが既存の ECC インストールを検証または修正したい場合
-- ユーザーがインストールされたスキルまたはルールをプロジェクト用に最適化したい場合
+## 現在のハーネスで分岐
 
-## 前提条件
+- Claude Code では、以下の完全なスコープ/フックウィザードを使います。
+- Codex では Codex ネイティブのプラグインライフサイクルを使います。Claude のスコープを提示したり、
+  Claude の ECC フック 4 段階を Codex に対応付けたりしません。
+- Kimi ではプロジェクトサーフェスを `./.kimi-code` に導入します。Kimi は ECC の Claude ライフサイクル
+  フックプロファイルに対応しません。
+- ハーネスを特定できない場合は、検出根拠を示し、変更コマンドの前に対象を質問します。
 
-このスキルは起動前に Claude Code からアクセス可能である必要があります。ブートストラップには2つの方法があります：
-1. **プラグイン経由**: `/plugin install ecc@ecc` — プラグインがこのスキルを自動的にロードします
-2. **手動**: このスキルのみを `~/.claude/skills/configure-ecc/SKILL.md` にコピーし、"configure ecc" と言って起動します
+このスキルは導入後の再設定経路です。プロバイダー組み込みの初回導入 UI を横取り、または代替できません。
 
----
+## Claude Code: 完全な対話式ウィザード
 
-## ステップ 0: ECC リポジトリのクローン
+### 1. 変更せずにインベントリを確認
 
-インストールの前に、最新の ECC ソースを `/tmp` にクローンします：
+両方のコマンドを実行し、ECC の導入スコープ、有効状態、marketplace ソースを要約します。
 
 ```bash
-rm -rf /tmp/everything-claude-code
-git clone https://github.com/affaan-m/everything-claude-code.git /tmp/everything-claude-code
+claude plugin list --json
+claude plugin marketplace list --json
 ```
 
-以降のすべてのコピー操作のソースとして `ECC_ROOT=/tmp/everything-claude-code` を設定します。
+`ecc@ecc` が 1 つのみ既存する場合は再設定として扱います。Claude が所有する
+"Open home page" コントロールをインストールの根拠にしません。setup が複数の ECC スコープ、
+旧式/手動導入、不正な設定、marketplace 衝突を報告したら停止し、返された復旧方法を示します。
+削除対象を推測しません。
 
-クローンが失敗した場合（ネットワークの問題など）、`AskUserQuestion` を使用してユーザーに既存の ECC クローンへのローカルパスを提供するよう依頼します。
+### 2. 2 つの選択だけを収集
 
----
+スコープについて 1 回だけ質問し、必ず 1 つの値を選びます。
 
-## ステップ 1: インストールレベルの選択
+- `user | project | local`
+- `user` はこのユーザーの全プロジェクトで使えます。
+- `project` はリポジトリ設定で共有されます。
+- `local` は現在のプロジェクトのみに非公開です。
 
-`AskUserQuestion` を使用してユーザーにインストール先を尋ねます：
+選択済みまたはインストール中の表示は、実際に選んだ 1 スコープだけにします。唯一の既存スコープと異なる
+値を選んだら、スコープ移行であると説明し、以下のコマンドに `--move-scope` を含めます。
 
-```
-Question: "ECC コンポーネントをどこにインストールしますか？"
-Options:
-  - "User-level (~/.claude/)" — "すべての Claude Code プロジェクトに適用されます"
-  - "Project-level (.claude/)" — "現在のプロジェクトのみに適用されます"
-  - "Both" — "共通/共有アイテムはユーザーレベル、プロジェクト固有アイテムはプロジェクトレベル"
-```
+フックモードについて 1 回だけ質問し、必ず 1 つの値を選びます。
 
-選択を `INSTALL_LEVEL` として保存します。ターゲットディレクトリを設定します：
-- User-level: `TARGET=~/.claude`
-- Project-level: `TARGET=.claude`（現在のプロジェクトルートからの相対パス）
-- Both: `TARGET_USER=~/.claude`、`TARGET_PROJECT=.claude`
+- `off | minimal | standard | strict`
+- `off` はスキルとコマンドを残し、ECC フック自動化を無効にします。
+- `minimal` は最軽量のライフサイクルと安全自動化のみを有効にします。
+- `standard` は品質と安全のバランスを取ります。
+- `strict` は最も強いチェックとリマインダーを有効にします。
 
-ターゲットディレクトリが存在しない場合は作成します：
-```bash
-mkdir -p $TARGET/skills $TARGET/rules
-```
+フック設定は個人の Claude プラグイン設定であり、導入スコープには追従しません。
 
----
+### 3. プレビューし、1 回だけ確認
 
-## ステップ 2: スキルの選択とインストール
-
-### 2a: スキルカテゴリの選択
-
-31個のスキルが4つのカテゴリに分類されています。`multiSelect: true` で `AskUserQuestion` を使用します：
-
-```
-Question: "どのスキルカテゴリをインストールしますか？"
-Options:
-  - "Framework & Language" — "Django, Spring Boot, Go, Python, Java, Frontend, Backend パターン"
-  - "Database" — "PostgreSQL, ClickHouse, JPA/Hibernate パターン"
-  - "Workflow & Quality" — "TDD, 検証, 学習, セキュリティレビュー, コンパクション"
-  - "All skills" — "利用可能なすべてのスキルをインストール"
-```
-
-### 2b: 個別スキルの確認
-
-選択された各カテゴリについて、以下の完全なスキルリストを表示し、ユーザーに確認または特定のものの選択解除を依頼します。リストが4項目を超える場合、リストをテキストとして表示し、`AskUserQuestion` で「リストされたすべてをインストール」オプションと、ユーザーが特定の名前を貼り付けるための「その他」オプションを使用します。
-
-**カテゴリ: Framework & Language（20スキル）**
-
-| スキル | 説明 |
-|-------|-------------|
-| `backend-patterns` | バックエンドアーキテクチャ、API設計、Node.js/Express/Next.js のサーバーサイドベストプラクティス |
-| `coding-standards` | TypeScript、JavaScript、React、Node.js の汎用コーディング標準 |
-| `django-patterns` | Django アーキテクチャ、DRF による REST API、ORM、キャッシング、シグナル、ミドルウェア |
-| `django-security` | Django セキュリティ: 認証、CSRF、SQL インジェクション、XSS 防止 |
-| `django-tdd` | pytest-django、factory_boy、モック、カバレッジによる Django テスト |
-| `django-verification` | Django 検証ループ: マイグレーション、リンティング、テスト、セキュリティスキャン |
-| `frontend-patterns` | React、Next.js、状態管理、パフォーマンス、UI パターン |
-| `golang-patterns` | 慣用的な Go パターン、堅牢な Go アプリケーションのための規約 |
-| `golang-testing` | Go テスト: テーブル駆動テスト、サブテスト、ベンチマーク、ファジング |
-| `java-coding-standards` | Spring Boot 用 Java コーディング標準: 命名、不変性、Optional、ストリーム |
-| `python-patterns` | Pythonic なイディオム、PEP 8、型ヒント、ベストプラクティス |
-| `python-testing` | pytest、TDD、フィクスチャ、モック、パラメータ化による Python テスト |
-| `quarkus-patterns` | Quarkus アーキテクチャ、Camel メッセージング、CDI サービス、Panache データアクセス |
-| `quarkus-security` | Quarkus セキュリティ: JWT/OIDC、RBAC、入力バリデーション、シークレット管理 |
-| `quarkus-tdd` | JUnit 5、Mockito、REST Assured、Camel テストによる Quarkus TDD |
-| `quarkus-verification` | Quarkus 検証: ビルド、静的解析、テスト、ネイティブコンパイル |
-| `springboot-patterns` | Spring Boot アーキテクチャ、REST API、レイヤードサービス、キャッシング、非同期 |
-| `springboot-security` | Spring Security: 認証/認可、検証、CSRF、シークレット、レート制限 |
-| `springboot-tdd` | JUnit 5、Mockito、MockMvc、Testcontainers による Spring Boot TDD |
-| `springboot-verification` | Spring Boot 検証: ビルド、静的解析、テスト、セキュリティスキャン |
-
-**カテゴリ: Database（3スキル）**
-
-| スキル | 説明 |
-|-------|-------------|
-| `clickhouse-io` | ClickHouse パターン、クエリ最適化、分析、データエンジニアリング |
-| `jpa-patterns` | JPA/Hibernate エンティティ設計、リレーションシップ、クエリ最適化、トランザクション |
-| `postgres-patterns` | PostgreSQL クエリ最適化、スキーマ設計、インデックス作成、セキュリティ |
-
-**カテゴリ: Workflow & Quality（8スキル）**
-
-| スキル | 説明 |
-|-------|-------------|
-| `continuous-learning` | セッションから再利用可能なパターンを学習済みスキルとして自動抽出 |
-| `continuous-learning-v2` | 信頼度スコアリングを持つ本能ベースの学習、スキル/コマンド/エージェントに進化 |
-| `eval-harness` | 評価駆動開発（EDD）のための正式な評価フレームワーク |
-| `iterative-retrieval` | サブエージェントコンテキスト問題のための段階的コンテキスト改善 |
-| `security-review` | セキュリティチェックリスト: 認証、入力、シークレット、API、決済機能 |
-| `strategic-compact` | 論理的な間隔で手動コンテキスト圧縮を提案 |
-| `tdd-workflow` | 80%以上のカバレッジで TDD を強制: ユニット、統合、E2E |
-| `verification-loop` | 検証と品質ループのパターン |
-
-**スタンドアロン**
-
-| スキル | 説明 |
-|-------|-------------|
-| `docs/examples/project-guidelines-template.md` | プロジェクト固有のスキルを作成するためのテンプレート |
-
-### 2c: インストールの実行
-
-選択された各スキルについて、正しいソースルートからスキルディレクトリ全体をコピーします：
+プラグイン内蔵 setup スクリプトを優先します。2 つの選択値を代入し、スコープ移行の場合だけ
+`--move-scope` を含めます。
 
 ```bash
-# コアスキルは .agents/skills/ 配下にあります
-cp -R "$ECC_ROOT/.agents/skills/<skill-name>" "$TARGET/skills/"
-
-# ニッチスキルは skills/ 配下にあります
-cp -R "$ECC_ROOT/skills/<skill-name>" "$TARGET/skills/"
+node "$CLAUDE_PLUGIN_ROOT/scripts/setup.js" --mode claude-plugin \
+  --scope <scope> --hooks <hooks> [--move-scope] --dry-run --json
 ```
 
-glob で取得したソースディレクトリを処理するときは、trailing slash 付きのソースをそのまま `cp` に渡さないでください。宛先名にディレクトリ名を明示します：
+`$CLAUDE_PLUGIN_ROOT` がない場合は公開 npm パッケージを使います。
 
 ```bash
-cp -R "${src%/}" "$TARGET/skills/$(basename "${src%/}")"
+npx --yes --package ecc-universal ecc setup --mode claude-plugin \
+  --scope <scope> --hooks <hooks> [--move-scope] --dry-run --json
 ```
 
-注: `continuous-learning` と `continuous-learning-v2` には追加ファイル（config.json、フック、スクリプト）があります — SKILL.md だけでなく、ディレクトリ全体がコピーされることを確認してください。
+確認サマリーは 1 回だけ表示します。予定アクション、1 スコープ、1 フックモード、marketplace アクション、
+および移行元から移行先を含め、yes/no を 1 回だけ質問します。ハーネスの Shell は通常非 TTY のため、
+そこで bare な対話式 `ecc setup` を実行しません。
 
----
+### 4. 明示した選択を適用
 
-## ステップ 3: ルールの選択とインストール
-
-`multiSelect: true` で `AskUserQuestion` を使用します：
-
-```
-Question: "どのルールセットをインストールしますか？"
-Options:
-  - "Common rules (Recommended)" — "言語に依存しない原則: コーディングスタイル、git ワークフロー、テスト、セキュリティなど（8ファイル）"
-  - "TypeScript/JavaScript" — "TS/JS パターン、フック、Playwright によるテスト（5ファイル）"
-  - "Python" — "Python パターン、pytest、black/ruff フォーマット（5ファイル）"
-  - "Go" — "Go パターン、テーブル駆動テスト、gofmt/staticcheck（5ファイル）"
-```
-
-インストールを実行：
-```bash
-# 共通ルール
-cp -r $ECC_ROOT/rules/common $TARGET/rules/common
-
-# 言語固有のルール（言語別ディレクトリを保持）
-cp -r $ECC_ROOT/rules/typescript $TARGET/rules/typescript   # 選択された場合
-cp -r $ECC_ROOT/rules/python $TARGET/rules/python            # 選択された場合
-cp -r $ECC_ROOT/rules/golang $TARGET/rules/golang            # 選択された場合
-```
-
-**重要**: ユーザーが言語固有のルールを選択したが、共通ルールを選択しなかった場合、警告します：
-> "言語固有のルールは共通ルールを拡張します。共通ルールなしでインストールすると、不完全なカバレッジになる可能性があります。共通ルールもインストールしますか？"
-
----
-
-## ステップ 4: インストール後の検証
-
-インストール後、以下の自動チェックを実行します：
-
-### 4a: ファイルの存在確認
-
-インストールされたすべてのファイルをリストし、ターゲットロケーションに存在することを確認します：
-```bash
-ls -la $TARGET/skills/
-ls -la $TARGET/rules/
-```
-
-### 4b: パス参照のチェック
-
-インストールされたすべての `.md` ファイルでパス参照をスキャンします：
-```bash
-grep -rn "~/.claude/" $TARGET/skills/ $TARGET/rules/
-grep -rn "../common/" $TARGET/rules/
-grep -rn "skills/" $TARGET/skills/
-```
-
-**プロジェクトレベルのインストールの場合**、`~/.claude/` パスへの参照をフラグします：
-- スキルが `~/.claude/settings.json` を参照している場合 — これは通常問題ありません（設定は常にユーザーレベルです）
-- スキルが `~/.claude/skills/` または `~/.claude/rules/` を参照している場合 — プロジェクトレベルのみにインストールされている場合、これは壊れている可能性があります
-- スキルが別のスキルを名前で参照している場合 — 参照されているスキルもインストールされているか確認します
-
-### 4c: スキル間の相互参照のチェック
-
-一部のスキルは他のスキルを参照します。これらの依存関係を検証します：
-- `django-tdd` は `django-patterns` を参照する可能性があります
-- `springboot-tdd` は `springboot-patterns` を参照する可能性があります
-- `continuous-learning-v2` は `~/.claude/homunculus/` ディレクトリを参照します
-- `python-testing` は `python-patterns` を参照する可能性があります
-- `golang-testing` は `golang-patterns` を参照する可能性があります
-- 言語固有のルールは `common/` の対応物を参照します
-
-### 4d: 問題の報告
-
-見つかった各問題について、報告します：
-1. **ファイル**: 問題のある参照を含むファイル
-2. **行**: 行番号
-3. **問題**: 何が間違っているか（例: "~/.claude/skills/python-patterns を参照していますが、python-patterns がインストールされていません"）
-4. **推奨される修正**: 何をすべきか（例: "python-patterns スキルをインストール" または "パスを .claude/skills/ に更新"）
-
----
-
-## ステップ 5: インストールされたファイルの最適化（オプション）
-
-`AskUserQuestion` を使用します：
-
-```
-Question: "インストールされたファイルをプロジェクト用に最適化しますか？"
-Options:
-  - "Optimize skills" — "無関係なセクションを削除、パスを調整、技術スタックに合わせて調整"
-  - "Optimize rules" — "カバレッジ目標を調整、プロジェクト固有のパターンを追加、ツール設定をカスタマイズ"
-  - "Optimize both" — "インストールされたすべてのファイルの完全な最適化"
-  - "Skip" — "すべてをそのまま維持"
-```
-
-### スキルを最適化する場合：
-1. インストールされた各 SKILL.md を読み取ります
-2. ユーザーにプロジェクトの技術スタックを尋ねます（まだ不明な場合）
-3. 各スキルについて、無関係なセクションの削除を提案します
-4. インストール先（ソースリポジトリではなく）で SKILL.md ファイルをその場で編集します
-5. ステップ4で見つかったパスの問題を修正します
-
-### ルールを最適化する場合：
-1. インストールされた各ルール .md ファイルを読み取ります
-2. ユーザーに設定について尋ねます：
-   - テストカバレッジ目標（デフォルト80%）
-   - 優先フォーマットツール
-   - Git ワークフロー規約
-   - セキュリティ要件
-3. インストール先でルールファイルをその場で編集します
-
-**重要**: インストール先（`$TARGET/`）のファイルのみを変更し、ソース ECC リポジトリ（`$ECC_ROOT/`）のファイルは決して変更しないでください。
-
----
-
-## ステップ 6: インストールサマリー
-
-`/tmp` からクローンされたリポジトリをクリーンアップします：
+確認後、同じ経路を `--dry-run` なしで再実行します。全選択を明示し、JSON で成功を判定します。
 
 ```bash
-rm -rf /tmp/everything-claude-code
+node "$CLAUDE_PLUGIN_ROOT/scripts/setup.js" --mode claude-plugin \
+  --scope <scope> --hooks <hooks> [--move-scope] --yes --json
 ```
 
-次にサマリーレポートを出力します：
+フォールバック:
 
-```
-## ECC インストール完了
-
-### インストール先
-- レベル: [user-level / project-level / both]
-- パス: [ターゲットパス]
-
-### インストールされたスキル（[数]）
-- skill-1, skill-2, skill-3, ...
-
-### インストールされたルール（[数]）
-- common（8ファイル）
-- typescript（5ファイル）
-- ...
-
-### 検証結果
-- [数]個の問題が見つかり、[数]個が修正されました
-- [残っている問題をリスト]
-
-### 適用された最適化
-- [加えられた変更をリスト、または "なし"]
+```bash
+npx --yes --package ecc-universal ecc setup --mode claude-plugin \
+  --scope <scope> --hooks <hooks> [--move-scope] --yes --json
 ```
 
----
+### 5. 検証後にウェルカムを表示
 
-## トラブルシューティング
+終了コードが 0 であり、setup 結果の `scope` と `hooks` が選択値と一致することを必須とします。
+その後、独立して実行します。
 
-### "スキルが Claude Code に認識されません"
-- スキルディレクトリに `SKILL.md` ファイルが含まれていることを確認します（単なる緩い .md ファイルではありません）
-- ユーザーレベルの場合: `~/.claude/skills/<skill-name>/SKILL.md` が存在するか確認します
-- プロジェクトレベルの場合: `.claude/skills/<skill-name>/SKILL.md` が存在するか確認します
+```bash
+claude plugin list --json
+```
 
-### "ルールが機能しません"
-- ルールはフラットファイルで、サブディレクトリにはありません: `$TARGET/rules/coding-style.md`（正しい） vs `$TARGET/rules/common/coding-style.md`（フラットインストールでは不正）
-- ルールをインストール後、Claude Code を再起動します
+選択スコープに有効な `ecc@ecc` が正確に 1 件ある場合のみ続行します。`$CLAUDE_PLUGIN_ROOT` があるときは、
+成功した setup の `action`（`installed`、`updated`、`migrated`、`resumed`、
+`already-migrated`）を内蔵レンダラーへ渡します。
 
-### "プロジェクトレベルのインストール後のパス参照エラー"
-- 一部のスキルは `~/.claude/` パスを前提としています。ステップ4の検証を実行してこれらを見つけて修正します。
-- `continuous-learning-v2` の場合、`~/.claude/homunculus/` ディレクトリは常にユーザーレベルです — これは想定されており、エラーではありません。
+呼び出し前に、プロバイダーが報告したバージョンが
+`scripts/lib/terminal-welcome.js` の `ECC_VERSION_PATTERN` に一致することを
+確認します。予期しない値は shell に補間せず拒否してください。
+
+```bash
+node -e 'const { renderTerminalWelcome } = require(process.env.CLAUDE_PLUGIN_ROOT + "/scripts/lib/terminal-welcome"); process.stdout.write(renderTerminalWelcome({ action: process.argv[1], version: process.argv[2], color: process.stdout.isTTY }));' "<action>" "<installed-version>"
+```
+
+ウェルカムは 1 回だけ表示します。失敗、dry-run、キャンセル、スコープ/フック不一致、検証不能の場合は
+表示せず、エラーと復旧手順を報告します。検証後は `/reload-plugins` または Claude Code の再起動を案内します。
+
+## Codex: ネイティブプラグインライフサイクル
+
+`codex plugin marketplace list --json` と `codex plugin list --available --json` で確認します。
+Codex ネイティブのプラグインコマンドには Claude 式 `user | project | local` 選択はありません。
+Claude のスコープ/フック 4 段階は質問しません。Codex ネイティブプラグインはプロバイダー固有フックに対応しますが、
+Codex はその明示的な信頼を求めます。Codex にその信頼判断を表示させ、Claude の 4 プロファイルが Codex に対応すると表現しません。
+
+ECC marketplace がない場合は追加し、既存ならスナップショットを更新します。
+
+```bash
+codex plugin marketplace add affaan-m/ECC
+codex plugin marketplace upgrade ecc --json
+```
+
+1 回だけ確認し、インストールまたは導入済みキャッシュの再現可能な更新を行い、検証します。
+
+```bash
+codex plugin add ecc@ecc --json
+codex plugin list --json
+```
+
+JSON が ECC を導入済みと報告し、`installedPath` を提供した場合のみ続行し、検証済みバンドルからウェルカムを表示します。
+
+`installedPath` は Codex JSON が返した絶対パスそのものだけを使い、制御文字を
+拒否します。バージョンは `ECC_VERSION_PATTERN` で検証します。`node` を次の
+argument array で直接呼び出してください。これは shell コマンドではなく、ツール API 呼び出しです。
+
+```text
+["<installedPath>/scripts/welcome.js", "--action", "configured", "--version", "<installed-version>"]
+```
+
+現在のハーネスが実行ファイルと argument array を分けて渡せない場合は、ウェルカム表示を
+スキップします。Codex JSON の値から shell コマンドを組み立ててはいけません。
+
+Claude の `off | minimal | standard | strict` が Codex に適用されたとは表現しません。
+
+## Kimi: プロジェクトサーフェス
+
+確認前に機能サマリーを示します。導入先は `./.kimi-code`、ECC ライフサイクルフックは
+`hooks=unsupported` です。Claude のスコープ/フックモードを質問しません。まずプレビューします。
+
+```bash
+npx --yes --package ecc-universal ecc install --profile core --target kimi --dry-run
+```
+
+このプロジェクト導入先について 1 回だけ確認し、`--dry-run` を除いた同一コマンドを適用します。
+検証コマンド:
+
+```bash
+npx --yes --package ecc-universal ecc doctor --target kimi
+```
+
+doctor が成功し、導入された指示とスキルが `./.kimi-code` 内に留まることを確認した後だけ実行します。
+
+```bash
+npx --yes --package ecc-universal ecc welcome --action configured
+```
+
+Kimi が ECC ライフサイクルフックを導入または設定したとは表現しません。

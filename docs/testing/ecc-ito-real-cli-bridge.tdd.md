@@ -8,7 +8,8 @@ handoff. No external plan file was executed.
 ## User journeys
 
 1. As an ECC operator, I can explicitly invoke streaming device `login`, then
-   use validation-only `auth`, `find`, and `status` without a duplicate client.
+   use validation-only `auth`, `find`, and `status`, or revoke the device with
+   `logout`, without a duplicate client.
 2. As a security reviewer, I can prove unsupported operations, missing local
    installs, and ECC dry-run requests fail before any child process or network
    operation.
@@ -56,7 +57,7 @@ module. No dependency installation was performed.
 
 | Guarantee | Test | Type | Result |
 |---|---|---|---|
-| `login`, `auth`, `find`, and `status` forward only their reviewed surfaces | `tests/scripts/ito-cli-bridge.test.js` | end-to-end process contract | PASS |
+| `login`, `logout`, `auth`, `find`, and `status` forward only their reviewed surfaces | `tests/scripts/ito-cli-bridge.test.js` | end-to-end process contract | PASS |
 | Login output streams before completion and its exit status propagates | `tests/scripts/ito-cli-bridge.test.js` | async process contract | PASS |
 | `auth --no-browser` fails before spawn | `tests/scripts/ito-cli-bridge.test.js` | negative process contract | PASS |
 | Full RFQ arguments cross unchanged | `tests/scripts/ito-cli-bridge.test.js` | integration | PASS |

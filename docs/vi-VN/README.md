@@ -1,4 +1,4 @@
-**Ngôn ngữ:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | **Tiếng Việt** | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+**Ngôn ngữ:** [English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | **Tiếng Việt** | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 # Everything Claude Code
 
@@ -18,7 +18,7 @@
 
 **Ngôn ngữ / Language / 语言 / 語言 / Dil / Язык**
 
-[English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | **Tiếng Việt** | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md)
+[English](../../README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | **Tiếng Việt** | [ไทย](../th/README.md) | [Deutsch](../de-DE/README.md) | [Українська](../uk-UA/README.md)
 
 </div>
 
@@ -40,7 +40,7 @@ Với Claude Code, phần lớn người dùng nên chọn đúng **một** tron
 
 - **Khuyến nghị:** cài plugin Claude Code, sau đó copy thủ công chỉ những thư mục `rules/` bạn thật sự cần.
 - **Dùng installer thủ công** nếu bạn muốn kiểm soát chi tiết hơn, muốn tránh plugin, hoặc bản Claude Code của bạn không resolve được marketplace tự host.
-- **Không chồng nhiều cách cài lên nhau.** Cấu hình dễ hỏng nhất là `/plugin install` trước, rồi chạy tiếp `install.sh --profile full` hoặc `npx ecc-install --profile full`.
+- **Không chồng nhiều cách cài lên nhau.** Cấu hình dễ hỏng nhất là `/plugin install` trước, rồi chạy tiếp `install.sh --profile full` hoặc `npx ecc-universal install --profile full`.
 
 Nếu bạn đã cài chồng nhiều lần và thấy skill/hook bị trùng, xem [Reset / Gỡ ECC](#reset--gỡ-ecc).
 
@@ -99,7 +99,7 @@ npm install
 npm install
 .\install.ps1 --profile full
 # hoặc
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Nếu chọn đường thủ công, dừng ở đó. Đừng chạy thêm `/plugin install`.
@@ -115,7 +115,7 @@ Nếu bạn chỉ muốn rules, agents, commands và core workflow skills, dùng
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # hoặc
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Profile này cố ý không cài `hooks-runtime`.

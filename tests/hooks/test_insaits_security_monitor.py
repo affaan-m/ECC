@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "hooks" / "insaits-security-monitor.py"
 

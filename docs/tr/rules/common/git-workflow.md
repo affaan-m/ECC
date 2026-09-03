@@ -9,7 +9,7 @@
 
 Types: feat, fix, refactor, docs, test, chore, perf, ci
 
-Not: Ortak yazar atfını devre dışı bırakmak için `~/.claude/settings.json` içinde `"includeCoAuthoredBy": false` ayarlayın; Claude Code varsayılan olarak `Co-Authored-By` ekler ve ECC bu ayarı içermez.
+Not: ECC tarafından yönetilen kurulumlar `~/.claude/settings.json` içinde `"includeCoAuthoredBy": false` ayarlar, bu nedenle commitler varsayılan olarak `Co-Authored-By` içermez. Claude atfını korumak için `"includeCoAuthoredBy": true` veya `attribution` ayarlayın; ECC açık bir tercihin üzerine asla yazmaz.
 
 ## Pull Request İş Akışı
 

@@ -29,6 +29,14 @@ const DEFAULT_PORT = 4517;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_BODY_BYTES = 1024 * 1024;
+// How long the "agent is thinking" indicator survives without the agent
+// checking back in, before presence decays to the honest queued/waiting.
+const DEFAULT_THINKING_STALE_MS = 90 * 1000;
+// An explicit typing signal expires faster: it means "a reply is seconds away".
+const DEFAULT_TYPING_EXPIRY_MS = 30 * 1000;
+// Presence is push-based, so expiring states need a tick to re-broadcast on.
+const DEFAULT_PRESENCE_SWEEP_MS = 5 * 1000;
+const TYPING_STATES = new Set(['thinking', 'typing', 'idle']);
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -109,6 +117,9 @@ function createPlanCanvasServer({
   version = '0.0.0',
   idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
   heartbeatMs = 15000,
+  thinkingStaleMs = DEFAULT_THINKING_STALE_MS,
+  typingExpiryMs = DEFAULT_TYPING_EXPIRY_MS,
+  presenceSweepMs = DEFAULT_PRESENCE_SWEEP_MS,
   onIdleShutdown = null,
   log = () => {}
 } = {}) {
@@ -119,18 +130,40 @@ function createPlanCanvasServer({
   wake.setMaxListeners(0);
   const sseClients = new Map(); // key -> Set<res>
   const awaitCounts = new Map(); // key -> active long-poll count
-  const workingKeys = new Set(); // keys whose agent took feedback and is off working
+  const workingKeys = new Map(); // key -> ms timestamp the agent took feedback
+  const typingKeys = new Map(); // key -> ms timestamp the agent signalled composing
   const watchers = new Map(); // key -> fs.FSWatcher
+  const lastPresence = new Map(); // key -> last broadcast state, for sweep diffing
   let idleTimer = null;
+  let presenceSweep = null;
   let closed = false;
 
   // --- presence + SSE ---------------------------------------------------
 
-  function presenceFor(key) {
+  /**
+   * Presence never claims more than the server actually knows:
+   *
+   *   ended     session is closed
+   *   typing    agent signalled it is composing a reply (self-expiring)
+   *   thinking  agent took the feedback and is working on it (self-expiring)
+   *   listening an `await` long poll is parked on this session right now
+   *   queued    feedback is sitting undelivered with nobody listening
+   *   waiting   nothing queued, nobody listening
+   *
+   * `thinking` and `typing` expire on their own so a crashed or distracted
+   * agent decays to an honest `queued`/`waiting` instead of spinning forever.
+   * The old `working` pill had no expiry and no re-broadcast, so it stuck at
+   * "agent working" while nothing at all was listening.
+   */
+  function presenceFor(key, now = Date.now()) {
     const session = store.get(key);
     if (!session || session.status === 'ended') return 'ended';
+    const typingAt = typingKeys.get(key);
+    if (typingAt !== undefined && now - typingAt < typingExpiryMs) return 'typing';
+    const workingAt = workingKeys.get(key);
+    if (workingAt !== undefined && now - workingAt < thinkingStaleMs) return 'thinking';
     if ((awaitCounts.get(key) || 0) > 0) return 'listening';
-    return workingKeys.has(key) ? 'working' : 'waiting';
+    return session.pendingFeedback && session.pendingFeedback.length > 0 ? 'queued' : 'waiting';
   }
 
   function broadcast(key, event, payload) {
@@ -141,7 +174,36 @@ function createPlanCanvasServer({
   }
 
   function broadcastPresence(key) {
-    broadcast(key, 'presence', { state: presenceFor(key) });
+    const state = presenceFor(key);
+    lastPresence.set(key, state);
+    broadcast(key, 'presence', { state });
+  }
+
+  // Re-broadcast only where an expiry actually changed the answer, so an
+  // untouched canvas sees the thinking bubble clear itself.
+  function sweepPresence() {
+    for (const key of sseClients.keys()) {
+      const state = presenceFor(key);
+      if (lastPresence.get(key) !== state) broadcastPresence(key);
+    }
+  }
+
+  function startPresenceSweep() {
+    if (presenceSweep || !presenceSweepMs) return;
+    presenceSweep = setInterval(sweepPresence, presenceSweepMs);
+    if (presenceSweep.unref) presenceSweep.unref();
+  }
+
+  // The agent is off working on this feedback batch; start the thinking clock.
+  function markThinking(key) {
+    workingKeys.set(key, Date.now());
+    typingKeys.delete(key);
+  }
+
+  // A reply landed (or the agent picked the session back up): stop pretending.
+  function clearAgentActivity(key) {
+    workingKeys.delete(key);
+    typingKeys.delete(key);
   }
 
   function connectionCount() {
@@ -205,6 +267,7 @@ function createPlanCanvasServer({
   function endSession(key, endedBy) {
     const session = store.end(key, endedBy);
     if (!session) return null;
+    clearAgentActivity(key);
     wake.emit(`wake:${key}`);
     broadcast(key, 'ended', { endedBy: session.endedBy });
     broadcastPresence(key);
@@ -260,7 +323,7 @@ function createPlanCanvasServer({
 
       const first = store.takeFeedback(key);
       if (first.status !== 'waiting') {
-        if (first.status === 'feedback') workingKeys.add(key);
+        if (first.status === 'feedback') markThinking(key);
         broadcastPresence(key);
         return sendJson(res, 200, first);
       }
@@ -268,7 +331,7 @@ function createPlanCanvasServer({
       // Long poll: hold the request open until feedback or session end.
       noteConnectionOpened();
       awaitCounts.set(key, (awaitCounts.get(key) || 0) + 1);
-      workingKeys.delete(key);
+      clearAgentActivity(key);
       broadcastPresence(key);
 
       let settled = false;
@@ -279,7 +342,7 @@ function createPlanCanvasServer({
         settled = true;
         cleanup();
         if (payload) {
-          if (payload.status === 'feedback') workingKeys.add(key);
+          if (payload.status === 'feedback') markThinking(key);
           res.end(JSON.stringify(payload));
         }
         broadcastPresence(key);
@@ -328,7 +391,7 @@ function createPlanCanvasServer({
       return sendJson(res, 200, { status: 'ended', endedBy: 'agent' });
     }
 
-    const sessionMatch = pathname.match(/^\/api\/session\/([a-f0-9]{12})\/(feedback|end|reply)$/);
+    const sessionMatch = pathname.match(/^\/api\/session\/([a-f0-9]{12})\/(feedback|end|reply|typing)$/);
     if (sessionMatch && req.method === 'POST') {
       const [, key, action] = sessionMatch;
       const session = store.get(key);
@@ -341,7 +404,17 @@ function createPlanCanvasServer({
         wake.emit(`wake:${key}`);
         broadcast(key, 'chat-sync', { chat: store.get(key).chat });
         if (body.endSession) broadcast(key, 'ended', { endedBy: 'user' });
-        return sendJson(res, 200, { status: 'queued', accepted: result.accepted.length, pending: result.pending });
+        // A parked `await` takes the batch synchronously on the wake above, so
+        // presence is already `thinking` by now; with nobody listening it
+        // reports `queued`. Either way the browser must be told, which the
+        // original handler never did, leaving a stale pill on screen.
+        broadcastPresence(key);
+        return sendJson(res, 200, {
+          status: 'queued',
+          accepted: result.accepted.length,
+          pending: result.pending,
+          presence: presenceFor(key)
+        });
       }
 
       if (action === 'end') {
@@ -355,8 +428,25 @@ function createPlanCanvasServer({
           return sendJson(res, 400, { error: 'text is required' });
         }
         const entry = store.addAgentReply(key, body.text);
+        clearAgentActivity(key);
         broadcast(key, 'chat-sync', { chat: store.get(key).chat });
+        broadcastPresence(key);
         return sendJson(res, 200, { status: 'sent', at: entry.at });
+      }
+
+      // Agents drive the chat indicator explicitly: `thinking` while they work,
+      // `typing` right before a reply lands, `idle` to take the bubble down.
+      if (action === 'typing') {
+        const body = await readJsonBody(req);
+        const state = typeof body.state === 'string' ? body.state : 'typing';
+        if (!TYPING_STATES.has(state)) {
+          return sendJson(res, 400, { error: `state must be one of: ${[...TYPING_STATES].join(', ')}` });
+        }
+        if (state === 'idle') clearAgentActivity(key);
+        else if (state === 'typing') typingKeys.set(key, Date.now());
+        else markThinking(key);
+        broadcastPresence(key);
+        return sendJson(res, 200, { status: 'ok', presence: presenceFor(key) });
       }
     }
 
@@ -376,6 +466,8 @@ function createPlanCanvasServer({
     res.write(`event: presence\ndata: ${JSON.stringify({ state: presenceFor(key) })}\n\n`);
     if (!sseClients.has(key)) sseClients.set(key, new Set());
     sseClients.get(key).add(res);
+    lastPresence.set(key, presenceFor(key));
+    startPresenceSweep();
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
     if (ping.unref) ping.unref();
     req.on('close', () => {
@@ -383,7 +475,10 @@ function createPlanCanvasServer({
       const clients = sseClients.get(key);
       if (clients) {
         clients.delete(res);
-        if (clients.size === 0) sseClients.delete(key);
+        if (clients.size === 0) {
+          sseClients.delete(key);
+          lastPresence.delete(key);
+        }
       }
       noteConnectionClosed();
     });
@@ -499,6 +594,9 @@ function createPlanCanvasServer({
   function close() {
     closed = true;
     clearTimeout(idleTimer);
+    clearInterval(presenceSweep);
+    presenceSweep = null;
+    lastPresence.clear();
     for (const key of watchers.keys()) unwatchSession(key);
     for (const clients of sseClients.values()) {
       for (const client of clients) client.end();
@@ -522,12 +620,14 @@ function createPlanCanvasServer({
     });
   }
 
-  return { server, listen, close, presenceFor, watchSession };
+  return { server, listen, close, presenceFor, sweepPresence, watchSession };
 }
 
 module.exports = {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  DEFAULT_THINKING_STALE_MS,
+  DEFAULT_TYPING_EXPIRY_MS,
   createPlanCanvasServer,
   resolveIdleTimeoutMs,
   resolvePort

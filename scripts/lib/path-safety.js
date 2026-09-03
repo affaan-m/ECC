@@ -70,6 +70,7 @@ function isWithinRoot(target, root) {
   if (!root) {
     return false;
   }
+
   try {
     return resolveContainment(target, root).contained;
   } catch {

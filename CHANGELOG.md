@@ -2,9 +2,34 @@
 
 ## Unreleased
 
+## 2.2.0 - 2026-08-25
+
+### Added
+
+- Guided, manifest-driven setup across supported harnesses, with exact install-state ownership, health checks, repair, and uninstall workflows.
+- Native Antigravity 2.0 installation under `.agents/`, including rules, workflows, skills, and adapted agents, plus a cross-platform installation guide.
+- New workflow and operator capabilities including the Itô skill family, an experimental Nasiko CLI lifecycle bridge, multi-model council review, dev-team collaboration, agent evaluation, living-docs governance, secure terminal opening, and TasteForge multimodal workflows.
+- A thin Pi adapter and expanded cross-harness support, release artifact lifecycle testing, Docker-based CLI testing, and stronger Python validation.
+
 ### Changed
 
 - Default MCP connector set reduced to a single connector (`chrome-devtools`) per the new connector policy (`docs/MCP-CONNECTOR-POLICY.md`). The six previous defaults (`github`, `context7`, `exa`, `memory`, `playwright`, `sequential-thinking`) were retired after the June 2026 audit: their jobs are covered by skills wrapping CLIs/REST APIs (`github-ops`, `documentation-lookup`, `exa-search`, e2e skills) or by harness-native features (memory, extended thinking, web search). All six remain opt-in via `mcp-configs/mcp-servers.json`.
+- OpenCode home installs now use its canonical `~/.config/opencode` location, safely discover and migrate unchanged ECC-managed files from legacy `~/.opencode` installs, and preserve modified legacy files for review. Bundled agents inherit the model selected by the user instead of pinning an Anthropic provider.
+- `skill-comply` is now part of the install manifest and npm distribution, with generated Python caches excluded from both install and package surfaces.
+- Release automation now verifies the tag is exactly on `origin/main`, fails closed on npm registry errors, tests the exact packed artifact across Linux, macOS, and Windows, publishes stable versions to a staging dist-tag, verifies registry bytes before promoting `latest`, creates the GitHub Release after promotion, and uses reviewed release notes.
+
+### Fixed
+
+- `ecc memory` writes and `--body-file` reads failed on Windows under Node 22.12-22.16 and 24.0-24.1. libuv resolved path-based `stat()`/`lstat()` through `GetFileInformationByName` without setting the volume serial, while `fstat()` reported it, so the memory vault's TOCTOU guard rejected every operation. Fixed upstream in libuv 1.51.0; the guard no longer depends on the runtime's patch level. The guard's stat calls now request `BigInt` values, so Windows file IDs past `Number.MAX_SAFE_INTEGER` can no longer collapse two distinct files into one identity.
+- Selective reinstall now merges the prior ownership ledger, so later module additions do not orphan files from earlier installs and uninstall removes the complete managed surface.
+- Legacy Codex sync uninstall now uses ownership evidence, preserves user files, and requires an explicit opt-in for weaker marker-only cleanup.
+- The experimental Nasiko CLI lifecycle bridge now recovers locks only after confirming the recorded owner is dead, preserves replacement locks, strictly rejects malformed tar sizes, padding, terminators, and trailing data, and fails uninstall when staged files remain.
+- Hook, plan-canvas, session, memory, observer, skill-evolution, Discord delivery, and Windows compatibility regressions fixed across the runtime.
+
+### Release audit
+
+- Audited the complete delta from `v2.1.0`: 108 commits across 530 files, with 40,299 insertions and 4,679 deletions on the pre-release baseline.
+- The release gate installs and exercises the exact npm archive, including cumulative ownership, doctor, drift detection, repair, uninstall, and user-file preservation.
 
 ## 2.0.0 - 2026-06-09
 

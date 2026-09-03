@@ -73,6 +73,15 @@ if [[ -z "$OLD_VERSION" ]]; then
   echo "Error: Could not extract current version from $PLUGIN_JSON"
   exit 1
 fi
+
+if [[ "$OLD_VERSION" == "$VERSION" ]]; then
+  echo "Error: Version $VERSION is already declared in release metadata."
+  echo "After the merged commit passes CI, publish it through the tag workflow:"
+  echo "  git tag \"v$VERSION\""
+  echo "  git push origin \"v$VERSION\""
+  exit 1
+fi
+
 echo "Bumping version: $OLD_VERSION -> $VERSION"
 
 update_version() {
@@ -165,21 +174,24 @@ update_marketplace_plugin_version() {
 
 update_latest_release_heading() {
   local file="$1"
+  local old_version="$2"
   node -e '
     const fs = require("fs");
     const file = process.argv[1];
     const version = process.argv[2];
+    const oldVersion = process.argv[3];
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const current = fs.readFileSync(file, "utf8");
     const updated = current.replace(
-      /^### v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?( .*)$/m,
+      new RegExp(`^### v${escape(oldVersion)}( .*)$`, "m"),
       `### v${version}$1`
     );
     if (updated === current) {
-      console.error(`Error: could not update latest release heading in ${file}`);
+      console.error(`Error: could not update release heading for v${oldVersion} in ${file}`);
       process.exit(1);
     }
     fs.writeFileSync(file, updated);
-  ' "$file" "$VERSION"
+  ' "$file" "$VERSION" "$old_version"
 }
 
 update_selective_install_repo_version() {
@@ -300,13 +312,13 @@ update_package_lock_version "$OPENCODE_PACKAGE_LOCK_JSON"
 update_opencode_hook_banner_version
 update_readme_version_row "$README_FILE" "Version" "Plugin" "Plugin" "Reference config"
 update_readme_version_row "$ZH_CN_README_FILE" "版本" "插件" "插件" "参考配置"
-update_latest_release_heading "$README_FILE"
-update_latest_release_heading "$ROOT_ZH_CN_README_FILE"
-update_latest_release_heading "$TR_README_FILE"
-update_latest_release_heading "$PT_BR_README_FILE"
+update_latest_release_heading "$README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$ROOT_ZH_CN_README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$TR_README_FILE" "$OLD_VERSION"
+update_latest_release_heading "$PT_BR_README_FILE" "$OLD_VERSION"
 # docs/zh-CN/README.md got its version row bumped but never its release
 # heading, so plugin-manifest.test.js failed on it every time.
-update_latest_release_heading "$ZH_CN_README_FILE"
+update_latest_release_heading "$ZH_CN_README_FILE" "$OLD_VERSION"
 update_selective_install_repo_version "$SELECTIVE_INSTALL_ARCHITECTURE_DOC"
 
 # Verify the bumped release surface is still internally consistent before

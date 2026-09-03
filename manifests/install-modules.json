@@ -19,7 +19,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -47,7 +48,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -75,7 +77,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -113,6 +116,7 @@
         ".cursor",
         ".gemini",
         ".opencode",
+        ".pi",
         ".qwen",
         ".zed",
         "mcp-configs",
@@ -120,7 +124,8 @@
         "scripts/setup-package-manager.js",
         ".hermes",
         ".openclaw",
-        ".kimi"
+        ".kimi",
+        ".adal"
       ],
       "targets": [
         "claude",
@@ -136,7 +141,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [],
       "defaultInstall": true,
@@ -293,7 +299,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "platform-configs"
@@ -315,6 +322,8 @@
         "skills/continuous-learning",
         "skills/continuous-learning-v2",
         "skills/council",
+        "skills/council-multi-model",
+        "skills/dev-team",
         "skills/e2e-testing",
         "skills/error-handling",
         "skills/eval-harness",
@@ -323,6 +332,7 @@
         "skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
+        "skills/skill-comply",
         "skills/skill-scout",
         "skills/skill-stocktake",
         "skills/strategic-compact",
@@ -344,6 +354,7 @@
         "skills/growth-log",
         "skills/inherit-legacy-style",
         "skills/intent-driven-development",
+        "skills/living-docs-governance",
         "skills/loop-design-check",
         "skills/product-lens",
         "skills/repo-scan",
@@ -364,7 +375,8 @@
         "zed",
         "hermes",
         "openclaw",
-        "kimi"
+        "kimi",
+        "adal"
       ],
       "dependencies": [
         "skill-unified-memory"
@@ -572,12 +584,9 @@
     {
       "id": "prediction-market-skills",
       "kind": "skills",
-      "description": "Public, non-advisory prediction-market and Ito basket research workflows with gated Ito API access.",
+      "description": "Public, non-advisory prediction-market workflows and the consolidated read-only Ito baskets data skill with gated Ito API access.",
       "paths": [
-        "skills/ito-basket-compare",
-        "skills/ito-data-atlas-agent",
-        "skills/ito-market-intelligence",
-        "skills/ito-trade-planner",
+        "skills/ito-baskets",
         "skills/prediction-market-oracle-research",
         "skills/prediction-market-risk-review"
       ],
@@ -605,9 +614,42 @@
     {
       "id": "ito-compute",
       "kind": "skills",
-      "description": "Authenticated Itô GPU inventory, RFQ, status, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
+      "description": "Authenticated Itô GPU inventory, RFQ, status, device revocation, and explicitly gated node-qualification workflows through the separately installed canonical CLI.",
       "paths": [
-        "skills/ito-compute"
+        "skills/ito-compute",
+        "skills/ito-inference",
+        "skills/ito-training"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ],
+      "defaultInstall": false,
+      "cost": "light",
+      "stability": "beta"
+    },
+    {
+      "id": "nasiko-control-plane",
+      "kind": "skills",
+      "description": "Experimental Nasiko CLI lifecycle bridge guidance for pinned installation, read-only status, qualified uninstall, and opt-in telemetry boundaries.",
+      "paths": [
+        "skills/nasiko-control-plane"
       ],
       "targets": [
         "claude",
@@ -630,7 +672,7 @@
       ],
       "defaultInstall": false,
       "cost": "light",
-      "stability": "beta"
+      "stability": "experimental"
     },
     {
       "id": "social-distribution",
@@ -672,7 +714,8 @@
         "skills/ui-demo",
         "skills/video-editing",
         "skills/videodb",
-        "skills/taste"
+        "skills/taste",
+        "skills/tasteforge-video"
       ],
       "targets": [
         "claude",
@@ -819,6 +862,7 @@
         "skills/cisco-ios-patterns",
         "skills/deployment-patterns",
         "skills/docker-patterns",
+        "skills/terminal-opener",
         "skills/homelab-network-readiness",
         "skills/homelab-network-setup",
         "skills/netmiko-ssh-automation",
@@ -1079,6 +1123,22 @@
       "description": "German (de-DE) translated reference docs for agents, commands, skills, and rules.",
       "paths": [
         "docs/de-DE"
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": [],
+      "defaultInstall": false,
+      "cost": "heavy",
+      "stability": "stable"
+    },
+    {
+      "id": "docs-uk-ua",
+      "kind": "docs",
+      "description": "Ukrainian (uk-UA) translated reference docs for agents, commands, skills, and rules.",
+      "paths": [
+        "docs/uk-UA"
       ],
       "targets": [
         "claude",

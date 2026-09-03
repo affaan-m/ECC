@@ -1,4 +1,4 @@
-**Sprache:** [English](../../README.md) | [Deutsch](README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md)
+**Sprache:** [English](../../README.md) | [Deutsch](README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Українська](../uk-UA/README.md)
 
 # ECC
 
@@ -28,7 +28,7 @@
 **Language / 语言 / 語言 / Dil / Язык / Ngôn ngữ**
 
 [English](../../README.md) | [**Deutsch**](README.md) | [Português (Brasil)](../pt-BR/README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md)
- | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md)
+ | [Türkçe](../tr/README.md) | [Русский](../ru/README.md) | [Tiếng Việt](../vi-VN/README.md) | [ไทย](../th/README.md) | [Українська](../uk-UA/README.md)
 
 </div>
 
@@ -210,7 +210,7 @@ Die meisten Claude-Code-Nutzer sollten genau einen Installationspfad verwenden:
 
 - **Empfohlene Voreinstellung:** Installiere das Claude-Code-Plugin und kopiere dann nur die Rule-Ordner, die du tatsächlich willst.
 - **Verwende den manuellen Installer nur dann, wenn** du feinere Kontrolle wünschst, den Plugin-Pfad ganz vermeiden willst oder dein Claude-Code-Build Probleme hat, den selbst gehosteten Marketplace-Eintrag aufzulösen.
-- **Stapele Installationsmethoden nicht.** Das häufigste kaputte Setup ist: zuerst `/plugin install`, danach `install.sh --profile full` oder `npx ecc-install --profile full`.
+- **Stapele Installationsmethoden nicht.** Das häufigste kaputte Setup ist: zuerst `/plugin install`, danach `install.sh --profile full` oder `npx ecc-universal install --profile full`.
 
 Falls du bereits mehrere Installationen übereinandergelegt hast und Dinge doppelt aussehen, springe direkt zu [ECC zurücksetzen / deinstallieren](#ecc-zurücksetzen--deinstallieren).
 
@@ -225,7 +225,7 @@ Falls sich Hooks zu global anfühlen oder du nur ECCs Rules, Agents, Commands un
 ```powershell
 .\install.ps1 --profile minimal --target claude
 # oder
-npx ecc-install --profile minimal --target claude
+npx ecc-universal install --profile minimal --target claude
 ```
 
 Dieses Profil schließt `hooks-runtime` absichtlich aus.
@@ -247,7 +247,7 @@ Füge Hooks später nur hinzu, wenn du Laufzeit-Durchsetzung willst:
 Falls du nicht sicher bist, welches ECC-Profil oder welche Komponente du installieren sollst, frage den mitgelieferten Advisor aus jedem beliebigen Projekt:
 
 ```bash
-npx ecc consult "security reviews" --target claude
+npx ecc-universal consult "security reviews" --target claude
 ```
 
 Er liefert passende Komponenten, verwandte Profile sowie Preview-/Install-Befehle zurück. Verwende den Preview-Befehl vor der Installation, falls du den exakten Dateiplan inspizieren willst.
@@ -255,8 +255,8 @@ Er liefert passende Komponenten, verwandte Profile sowie Preview-/Install-Befehl
 Halte die Installation für produktive ML-/MLOps-Workflows opt-in und komponentenbezogen:
 
 ```bash
-npx ecc consult "mlops training model deployment" --target claude
-npx ecc install --profile minimal --target claude --with capability:machine-learning
+npx ecc-universal consult "mlops training model deployment" --target claude
+npx ecc-universal install --profile minimal --target claude --with capability:machine-learning
 ```
 
 ### Schritt 1: Plugin installieren (empfohlen)
@@ -285,7 +285,7 @@ Das ist beabsichtigt. Anthropic-Marketplace-/Plugin-Installationen werden über 
 
 > WARNING: **Wichtig:** Claude-Code-Plugins können `rules` nicht automatisch verteilen.
 >
-> Falls du ECC bereits über `/plugin install` installiert hast, **führe danach nicht `./install.sh --profile full`, `.\install.ps1 --profile full` oder `npx ecc-install --profile full` aus**. Das Plugin lädt ECC-Skills, -Commands und -Hooks bereits. Wird der vollständige Installer nach einer Plugin-Installation ausgeführt, kopiert er dieselben Oberflächen in deine Benutzerverzeichnisse und kann doppelte Skills sowie doppeltes Laufzeitverhalten erzeugen.
+> Falls du ECC bereits über `/plugin install` installiert hast, **führe danach nicht `./install.sh --profile full`, `.\install.ps1 --profile full` oder `npx ecc-universal install --profile full` aus**. Das Plugin lädt ECC-Skills, -Commands und -Hooks bereits. Wird der vollständige Installer nach einer Plugin-Installation ausgeführt, kopiert er dieselben Oberflächen in deine Benutzerverzeichnisse und kann doppelte Skills sowie doppeltes Laufzeitverhalten erzeugen.
 >
 > Kopiere für Plugin-Installationen manuell nur die `rules/`-Verzeichnisse, die du willst, nach `~/.claude/rules/ecc/`. Beginne mit `rules/common` plus einem Sprach- oder Framework-Paket, das du tatsächlich verwendest. Kopiere nicht jedes Rules-Verzeichnis, es sei denn, du willst diesen gesamten Kontext ausdrücklich in Claude haben.
 >
@@ -320,7 +320,7 @@ Copy-Item -Recurse rules/typescript "$HOME/.claude/rules/ecc/"
 
 # Vollständig manueller ECC-Installationspfad (nutze diesen statt /plugin install)
 # .\install.ps1 --profile full
-# npx ecc-install --profile full
+# npx ecc-universal install --profile full
 ```
 
 Anweisungen zur manuellen Installation findest du in der README im `rules/`-Ordner. Kopiere Rules manuell stets als ganzes Sprachverzeichnis (zum Beispiel `rules/common` oder `rules/golang`), nicht die darin enthaltenen Dateien, damit relative Verweise weiterhin funktionieren und Dateinamen nicht kollidieren.
@@ -336,7 +336,7 @@ Verwende dies nur, wenn du den Plugin-Pfad absichtlich überspringst:
 ```powershell
 .\install.ps1 --profile full
 # oder
-npx ecc-install --profile full
+npx ecc-universal install --profile full
 ```
 
 Wenn du diesen Pfad wählst, höre dort auf. Führe nicht zusätzlich `/plugin install` aus.
@@ -1151,7 +1151,7 @@ Ja. ECC ist Cross-Platform:
 - **OpenCode**: Vollständige Plugin-Unterstützung in `.opencode/`. Siehe [OpenCode-Unterstützung](#opencode-unterstützung).
 - **Codex**: Erstklassige Unterstützung sowohl für die macOS-App als auch die CLI, mit Adapter-Drift-Guards und SessionStart-Fallback. Siehe PR [#257](https://github.com/affaan-m/ECC/pull/257).
 - **GitHub Copilot (VS Code)**: Instruction- und Prompt-Schicht über `.github/copilot-instructions.md`, `.vscode/settings.json` und `.github/prompts/`. Siehe [GitHub-Copilot-Unterstützung](#github-copilot-unterstützung).
-- **Antigravity**: Eng integriertes Setup für Workflows, Skills und abgeflachte Rules in `.agent/`. Siehe [Antigravity-Leitfaden](../../docs/ANTIGRAVITY-GUIDE.md).
+- **Antigravity**: Eng integriertes Setup für Workflows, Skills und abgeflachte Rules in `.agents/`. Siehe [Antigravity-Leitfaden](../../docs/ANTIGRAVITY-GUIDE.md).
 - **JoyCode / CodeBuddy**: Projektlokale Adapter für selektive Installation von Commands, Agents, Skills und abgeflachten Rules. Siehe [JoyCode-Adapter-Leitfaden](../../docs/JOYCODE-GUIDE.md).
 - **Qwen CLI**: Adapter für selektive Installation im Home-Verzeichnis für Commands, Agents, Skills, Rules und Qwen-Konfiguration. Siehe [Qwen-CLI-Adapter-Leitfaden](../../docs/QWEN-GUIDE.md).
 - **Zed**: Projektlokaler Adapter für selektive Installation von `.zed/settings.json`, abgeflachten Rules, Commands, Agents und Skills.

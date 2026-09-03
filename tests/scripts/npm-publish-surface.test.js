@@ -6,6 +6,7 @@ const assert = require("assert")
 const fs = require("fs")
 const path = require("path")
 const { spawnSync } = require("child_process")
+const { getNpmPackEntry } = require("../lib/npm-pack-output")
 
 function runTest(name, fn) {
   try {
@@ -55,12 +56,14 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/sessions-cli.js",
     "scripts/work-items.js",
     "scripts/install-apply.js",
+    "scripts/install-guided.js",
     "scripts/install-plan.js",
     "scripts/ito.js",
     "scripts/list-installed.js",
     "scripts/loop-status.js",
     "scripts/memory.js",
     "scripts/memory-mcp.mjs",
+    "scripts/nasiko.js",
     "scripts/observability-readiness.js",
     "scripts/plan-canvas.js",
     "scripts/operator-readiness-dashboard.js",
@@ -72,9 +75,15 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/repair.js",
     "scripts/harness-adapter-compliance.js",
     "scripts/session-inspect.js",
+    "scripts/setup.js",
     "scripts/uninstall.js",
+    "scripts/welcome.js",
     "scripts/gemini-adapt-agents.js",
     "scripts/sync-ecc-to-codex.sh",
+    "scripts/codex/legacy-sync-state.js",
+    "scripts/codex/install-global-git-hooks.sh",
+    "scripts/codex/check-codex-global-state.sh",
+    "scripts/codex-git-hooks",
     "scripts/codex/check-plugin-cache.js",
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
@@ -141,7 +150,8 @@ function main() {
       assert.strictEqual(result.status, 0, result.error?.message || result.stderr)
 
       const packOutput = JSON.parse(result.stdout)
-      const packagedPaths = new Set(packOutput[0]?.files?.map((file) => file.path) ?? [])
+      const packEntry = getNpmPackEntry(packOutput, packageJson.name)
+      const packagedPaths = new Set(packEntry?.files?.map((file) => file.path) ?? [])
 
       for (const requiredPath of [
         "scripts/catalog.js",
@@ -153,6 +163,8 @@ function main() {
         "scripts/ito.js",
         "scripts/memory.js",
         "scripts/memory-mcp.mjs",
+        "scripts/nasiko.js",
+        "scripts/lib/nasiko-release.js",
         "scripts/lib/memory-vault-format.js",
         "scripts/lib/memory-vault.js",
         "scripts/discussion-audit.js",
@@ -163,6 +175,12 @@ function main() {
         "scripts/work-items.js",
         "scripts/platform-audit.js",
         "scripts/sync-ecc-to-codex.sh",
+        "scripts/codex/legacy-sync-state.js",
+        "scripts/codex/install-global-git-hooks.sh",
+        "scripts/codex/check-codex-global-state.sh",
+        "scripts/codex-git-hooks/pre-commit",
+        "scripts/codex-git-hooks/pre-push",
+        "scripts/setup.js",
         "scripts/codex/check-plugin-cache.js",
         ".gemini/GEMINI.md",
         ".qwen/QWEN.md",
@@ -185,6 +203,7 @@ function main() {
         "schemas/install-state.schema.json",
         "schemas/memory.schema.json",
         "skills/backend-patterns/SKILL.md",
+        "skills/skill-comply/SKILL.md",
         "skills/unified-memory/SKILL.md",
       ]) {
         assert.ok(
@@ -198,7 +217,6 @@ function main() {
         "examples/CLAUDE.md",
         "plugins/README.md",
         "scripts/ci/catalog.js",
-        "skills/skill-comply/SKILL.md",
       ]) {
         assert.ok(
           !packagedPaths.has(excludedPath),
@@ -214,6 +232,10 @@ function main() {
         assert.ok(
           !/\.py[cod]$/.test(packagedPath),
           `npm pack should not include Python bytecode file ${packagedPath}`
+        )
+        assert.ok(
+          !packagedPath.includes(".pytest_cache/"),
+          `npm pack should not include pytest cache path ${packagedPath}`
         )
       }
     }],

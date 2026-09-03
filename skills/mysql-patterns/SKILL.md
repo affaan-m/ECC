@@ -1,6 +1,6 @@
 ---
 name: mysql-patterns
-description: MySQL and MariaDB schema, query, indexing, transaction, replication, and connection-pool patterns for production backends.
+description: MySQL and MariaDB schema, query, indexing, transaction, replication, and connection-pool patterns for production backends. Use when designing MySQL or MariaDB schemas and indexes, or when a query, transaction, or replica lags.
 metadata:
   origin: ECC
 ---

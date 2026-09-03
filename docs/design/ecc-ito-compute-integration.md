@@ -24,10 +24,11 @@ ECC delegates to the canonical Itô package in
 `Ito-Markets/ito-cloud-runtime/cli/ito-compute-cli`. ECC does not maintain a
 second API client or response schema.
 
-The wrapper exposes only the canonical CLI's `login`, `auth`, `find`, `status`, and `evals`
+The wrapper exposes only the canonical CLI's `login`, `logout`, `auth`, `find`, `status`, and `evals`
 operations:
 
     ecc ito login [--no-browser]
+    ecc ito logout
     ecc ito auth
     ecc ito find <all required RFQ constraints>
     ecc ito status
@@ -76,6 +77,9 @@ directory and 0600 token-file permissions. ECC does not inspect or log secrets.
 
 - `login` starts canonical device authorization, with `--no-browser` available
   when the operator does not want the CLI to open the verification page.
+- `logout` revokes the current device credential and removes the local copy only
+  after confirmed remote revocation; a failed revocation keeps the local copy
+  for retry.
 - `auth` validates existing credentials only.
 - `find` reads live inventory and submits a live authenticated RFQ. An operator
   or agent must gather every hard topology/economic constraint and obtain
@@ -106,6 +110,34 @@ adapter; the ECC bridge does not expose its paper fixture mode.
 Managed inference remains unavailable. ECC does not claim that Itô created a
 model endpoint, deployed a workload, reserved capacity, or moved funds.
 
+### Inference-serving contract
+
+`skills/ito-inference` is the only canonical serving skill; `ito-serve` is
+trigger language, not a second installed skill. The current ECC bridge has no
+`serve` verb and rejects it before resolving or spawning the canonical client.
+The canonical runtime documents `inference` only as an unsupported compatibility
+probe, and MCP remains limited to auth, find, and status. Serving requests
+therefore stop before login.
+
+A future `serve` operation is not releasable until it verifies a completed
+booking and fresh serving eligibility, accepts an immutable reviewed manifest,
+requires a short-lived single-use confirmation bound to account, action,
+manifest digest, and maximum cost, and atomically reserves a caller-provided
+idempotency key. CLI arguments carry only an opaque non-authorizing confirmation
+reference; bearer confirmation is resolved and consumed server-side.
+
+Manifest handling must canonicalize the path, reject symlinks, open a regular
+file without following links, validate ownership/permissions and bounded size,
+and hash bytes from the opened descriptor. The digest must match the value bound
+into confirmation before mutation, preventing path-swap and digest-mismatch
+attacks. Authentication alone is never workload authority.
+
+The same canonical client must expose structured, tenant-scoped status, logs,
+metrics, cancel, and cleanup with bounded timeouts and revocation-aware errors.
+After an ambiguous transport failure, callers reconcile by idempotency key
+before retrying. ECC must never replace that control plane with root SSH, local
+serving scripts, browser automation, or an unreviewed purchase endpoint.
+
 ## Skill and install shape
 
 `skills/ito-compute/SKILL.md` is an opt-in workflow installed through:
@@ -132,7 +164,7 @@ after review.
 
 The local contract suite proves:
 
-- only the four supported operations spawn;
+- only the six supported operations spawn;
 - RFQ arguments are forwarded without economic reinterpretation;
 - only approved Itô runtime or isolated node-qualification variables cross the
   process boundary;

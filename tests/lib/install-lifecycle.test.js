@@ -3,6 +3,7 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -14,6 +15,8 @@ const {
   repairInstalledStates,
   uninstallInstalledStates,
 } = require('../../scripts/lib/install-lifecycle');
+const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
 const { getInstallTargetAdapter } = require('../../scripts/lib/install-targets/registry');
 const {
   createInstallState,
@@ -98,7 +101,7 @@ function writeCursorState(projectRoot, overrides = {}) {
 }
 
 function createOpencodeStateOptions(homeDir, overrides = {}) {
-  const targetRoot = overrides.targetRoot || path.join(homeDir, '.opencode');
+  const targetRoot = overrides.targetRoot || path.join(homeDir, '.config', 'opencode');
   const installStatePath = overrides.installStatePath || path.join(targetRoot, 'ecc-install-state.json');
 
   return {
@@ -166,7 +169,7 @@ function withTemporarilyMovedPath(filePath, callback) {
 }
 
 function managedOperation(kind, destinationPath, overrides = {}) {
-  return {
+  const operation = {
     kind,
     moduleId: 'test-module',
     sourceRelativePath: 'rules/common/coding-style.md',
@@ -176,6 +179,41 @@ function managedOperation(kind, destinationPath, overrides = {}) {
     scaffoldOnly: false,
     ...overrides,
   };
+  if (
+    kind === 'copy-file'
+    && !Object.prototype.hasOwnProperty.call(overrides, 'contentSha256')
+  ) {
+    let descriptor;
+    try {
+      descriptor = fs.openSync(
+        destinationPath,
+        fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)
+      );
+      const openedStat = fs.fstatSync(descriptor, { bigint: true });
+      const finalPathStat = fs.lstatSync(destinationPath, { bigint: true });
+      const identityMatches = openedStat.ino === finalPathStat.ino
+        && (!openedStat.dev || !finalPathStat.dev || openedStat.dev === finalPathStat.dev);
+      if (
+        openedStat.isFile()
+        && finalPathStat.isFile()
+        && !finalPathStat.isSymbolicLink()
+        && identityMatches
+      ) {
+        operation.contentSha256 = crypto.createHash('sha256')
+          .update(fs.readFileSync(descriptor))
+          .digest('hex');
+      }
+    } catch (error) {
+      if (!['ENOENT', 'ELOOP'].includes(error.code)) {
+        throw error;
+      }
+    } finally {
+      if (descriptor !== undefined) {
+        fs.closeSync(descriptor);
+      }
+    }
+  }
+  return operation;
 }
 
 function runTests() {
@@ -183,6 +221,25 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+
+  if (test('managed-operation digest never follows a final symlink', () => {
+    const tempDir = createTempDir('install-lifecycle-symlink-digest-');
+    const victimPath = path.join(tempDir, 'victim.md');
+    const symlinkPath = path.join(tempDir, 'managed.md');
+    try {
+      fs.writeFileSync(victimPath, 'user content\n');
+      try {
+        fs.symlinkSync(victimPath, symlinkPath, 'file');
+      } catch {
+        console.log('    (file symlink unsupported on this platform; skipping)');
+        return;
+      }
+      const operation = managedOperation('copy-file', symlinkPath);
+      assert.strictEqual(operation.contentSha256, undefined);
+    } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
 
   if (test('normalizes default targets and dedupes adapter aliases', () => {
     const defaultTargets = normalizeTargets();
@@ -295,6 +352,87 @@ function runTests() {
       assert.strictEqual(records[0].exists, true);
       assert.strictEqual(records[0].state, null);
       assert.ok(records[0].error.includes('Failed to read install-state'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode discovery, doctor, and uninstall honor the explicit config root', () => {
+    const homeDir = createTempDir('install-lifecycle-opencode-home-');
+    const projectRoot = createTempDir('install-lifecycle-opencode-project-');
+    const targetRoot = path.join(homeDir, 'custom-opencode');
+    const installStatePath = path.join(targetRoot, 'ecc-install-state.json');
+    const sourceRelativePath = path.join('rules', 'common', 'coding-style.md');
+    const sourcePath = path.join(REPO_ROOT, sourceRelativePath);
+    const destinationPath = path.join(targetRoot, 'rules', 'common', 'coding-style.md');
+    const env = { OPENCODE_CONFIG_DIR: targetRoot };
+
+    try {
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.copyFileSync(sourcePath, destinationPath);
+      writeState(installStatePath, {
+        adapter: { id: 'opencode-home', target: 'opencode', kind: 'home' },
+        targetRoot,
+        installStatePath,
+        request: {
+          profile: null,
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: { selectedModules: [], skippedModules: [] },
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'rules-core',
+          sourcePath,
+          sourceRelativePath,
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+          contentSha256: crypto.createHash('sha256')
+            .update(fs.readFileSync(destinationPath))
+            .digest('hex'),
+        }],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: null,
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const records = discoverInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(records[0].exists, true);
+      assert.strictEqual(records[0].installStatePath, installStatePath);
+
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(doctor.results.length, 1);
+      assert.strictEqual(doctor.results[0].installStatePath, installStatePath);
+
+      const uninstall = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['opencode'],
+        env,
+      });
+      assert.strictEqual(uninstall.results[0].status, 'uninstalled');
+      assert.ok(!fs.existsSync(destinationPath));
+      assert.ok(!fs.existsSync(installStatePath));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -629,6 +767,59 @@ function runTests() {
       assert.strictEqual(result.results[0].status, 'planned');
       assert.deepStrictEqual(result.results[0].plannedRepairs, [destinationPath]);
       assert.ok(!fs.existsSync(destinationPath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('no-op repair preserves recorded source metadata until upgraded bytes are installed', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const destinationPath = path.join(targetRoot, 'rules', 'coding-style.md');
+      const sourcePath = path.join(REPO_ROOT, 'rules', 'common', 'coding-style.md');
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.copyFileSync(sourcePath, destinationPath);
+      const contentSha256 = crypto.createHash('sha256')
+        .update(fs.readFileSync(destinationPath))
+        .digest('hex');
+      const fixture = writeCursorState(projectRoot, {
+        source: {
+          repoVersion: '1.0.0',
+          repoCommit: 'old-commit',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+        operations: [
+          managedOperation('copy-file', destinationPath, {
+            sourceRelativePath: 'rules/common/coding-style.md',
+            strategy: 'copy-file',
+            contentSha256,
+          }),
+        ],
+      });
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+      const stateAfterRepair = readInstallState(fixture.installStatePath);
+      const doctor = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(repair.results[0].status, 'ok');
+      assert.strictEqual(repair.results[0].stateRefreshed, true);
+      assert.strictEqual(stateAfterRepair.source.repoVersion, '1.0.0');
+      assert.strictEqual(stateAfterRepair.source.manifestVersion, CURRENT_MANIFEST_VERSION);
+      assert.ok(doctor.results[0].issues.some(issue => issue.code === 'repo-version-mismatch'));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -1460,6 +1651,140 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('doctor reproduces install-time link rewrites for managed copy files', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.agents');
+      const statePath = path.join(targetRoot, 'ecc-install-state.json');
+      const operations = ['code-review.md', 'testing.md'].map(fileName => ({
+        kind: 'copy-file',
+        moduleId: 'rules-core',
+        sourcePath: path.join(REPO_ROOT, 'rules', 'common', fileName),
+        sourceRelativePath: path.join('rules', 'common', fileName),
+        destinationPath: path.join(targetRoot, 'rules', `common-${fileName}`),
+        strategy: 'flatten-copy',
+        ownership: 'managed',
+        scaffoldOnly: false,
+      }));
+      const state = createInstallState({
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        targetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: [],
+          legacyLanguages: ['typescript'],
+          legacyMode: true,
+        },
+        resolution: {
+          selectedModules: ['rules-core'],
+          skippedModules: [],
+        },
+        operations,
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+      applyInstallPlan({
+        mode: 'legacy',
+        target: 'antigravity',
+        adapter: { id: 'antigravity-project', target: 'antigravity', kind: 'project' },
+        targetRoot,
+        installRoot: targetRoot,
+        installStatePath: statePath,
+        operations,
+        warnings: [],
+        statePreview: state,
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      fs.writeFileSync(operations[0].destinationPath, 'customer edit\n');
+      const driftedReport = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.ok(driftedReport.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.strictEqual(repair.results[0].status, 'repaired');
+      assert.ok(
+        fs.readFileSync(operations[0].destinationPath, 'utf8').includes('(common-testing.md)')
+      );
+      const repairedState = readInstallState(statePath);
+      assert.match(repairedState.operations[0].contentSha256, /^[a-f0-9]{64}$/);
+      const repairedReport = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['antigravity'],
+      });
+      assert.ok(!repairedReport.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor trusts a recorded installed digest before comparing a newer source tree', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const destinationPath = path.join(targetRoot, 'rules', 'coding-style.md');
+      const installedContent = 'installed from an older verified release\n';
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(destinationPath, installedContent);
+      const contentSha256 = crypto.createHash('sha256').update(installedContent).digest('hex');
+      const installStatePath = path.join(targetRoot, 'ecc-install-state.json');
+
+      writeState(installStatePath, createCursorStateOptions(projectRoot, {
+        operations: [managedOperation('copy-file', destinationPath, {
+          sourceRelativePath: path.join('rules', 'common', 'coding-style.md'),
+          contentSha256,
+        })],
+      }));
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+
+      fs.writeFileSync(destinationPath, 'customer edit\n');
+      const drifted = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+      assert.ok(drifted.results[0].issues.some(issue => issue.code === 'drifted-managed-files'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('doctor reports manifest resolution drift for non-legacy installs', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
@@ -1501,6 +1826,81 @@ function runTests() {
       assert.strictEqual(report.results.length, 1);
       assert.strictEqual(report.results[0].status, 'warning');
       assert.ok(report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor honors a recorded declined hook decision for manifest installs', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const plan = createInstallPlanFromRequest({
+        mode: 'manifest',
+        target: 'cursor',
+        profileId: 'core',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        legacyLanguages: [],
+        hookConsent: 'declined',
+      }, {
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+      });
+
+      writeInstallState(plan.installStatePath, plan.statePreview);
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('doctor infers enabled hooks from older manifest install-state records', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const plan = createInstallPlanFromRequest({
+        mode: 'manifest',
+        target: 'cursor',
+        profileId: 'core',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        legacyLanguages: [],
+        hookConsent: 'enabled',
+      }, {
+        sourceRoot: REPO_ROOT,
+        projectRoot,
+        homeDir,
+      });
+      const legacyState = JSON.parse(JSON.stringify(plan.statePreview));
+      delete legacyState.request.hookConsent;
+      writeInstallState(plan.installStatePath, legacyState);
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => issue.code === 'resolution-drift'));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -1900,14 +2300,18 @@ function runTests() {
       canonicalDestinationPath = fs.realpathSync(destinationPath);
       writeCursorState(projectRoot, {
         operations: [
-          managedOperation('copy-file', destinationPath, { strategy: 'copy-file' }),
+          managedOperation('copy-file', destinationPath, {
+            strategy: 'copy-file',
+            contentSha256: '0'.repeat(64),
+          }),
         ],
       });
 
       fs.openSync = function openSyncWithLateParentSwap(filePath, flags, mode) {
-        const isDestinationWrite = path.resolve(filePath) === canonicalDestinationPath
+        const writeFlags = fs.constants.O_WRONLY | fs.constants.O_RDWR;
+        const isDestinationWrite = path.resolve(String(filePath)) === canonicalDestinationPath
           && typeof flags === 'number'
-          && (flags & fs.constants.O_WRONLY) === fs.constants.O_WRONLY;
+          && (flags & writeFlags) !== 0;
         if (!insertedSymlink && isDestinationWrite) {
           fs.renameSync(destinationParent, backupParent);
           fs.symlinkSync(
@@ -2289,11 +2693,45 @@ function runTests() {
         targets: ['cursor'],
       });
 
-      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.strictEqual(result.results[0].status, 'uninstalled', result.results[0].error);
       assert.ok(result.results[0].removedPaths.includes(destinationPath));
       assert.ok(!fs.existsSync(destinationPath));
       assert.ok(!fs.existsSync(path.dirname(destinationPath)));
       assert.ok(fs.existsSync(targetRoot));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall preserves drifted canonical copied files and install-state', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const destinationPath = path.join(targetRoot, 'rules', 'managed.md');
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(destinationPath, 'managed\n');
+      const operation = managedOperation('copy-file', destinationPath, {
+        strategy: 'copy-file',
+      });
+      const { installStatePath } = writeCursorState(projectRoot, {
+        request: { legacyMode: false, legacyLanguages: [] },
+        operations: [operation],
+      });
+      fs.appendFileSync(destinationPath, 'user edit\n');
+
+      const result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(result.results[0].status, 'partial');
+      assert.ok(result.results[0].retainedPaths.includes(destinationPath));
+      assert.strictEqual(fs.readFileSync(destinationPath, 'utf8'), 'managed\nuser edit\n');
+      assert.ok(fs.existsSync(installStatePath));
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -2541,7 +2979,7 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('uninstall removes an in-root final symlink without deleting its victim', () => {
+  if (test('uninstall preserves a managed path replaced by a symlink and its victim', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
 
@@ -2569,8 +3007,9 @@ function runTests() {
         targets: ['cursor'],
       });
 
-      assert.strictEqual(result.results[0].status, 'uninstalled');
-      assert.ok(!fs.existsSync(destinationPath));
+      assert.strictEqual(result.results[0].status, 'partial');
+      assert.ok(fs.lstatSync(destinationPath).isSymbolicLink());
+      assert.ok(result.results[0].retainedPaths.includes(destinationPath));
       assert.strictEqual(fs.readFileSync(victimPath, 'utf8'), 'victim sentinel\n');
     } finally {
       cleanup(homeDir);
@@ -2635,6 +3074,66 @@ function runTests() {
         fs.readFileSync(outsideDestinationPath, 'utf8'),
         'outside sentinel\n'
       );
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+      cleanup(outsideRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('uninstall quarantine prevents an ancestor swap from deleting outside-root content', () => {
+    const homeDir = createTempDir('install-lifecycle-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+    const outsideRoot = createTempDir('install-lifecycle-outside-');
+    const targetRoot = path.join(projectRoot, '.cursor');
+    const destinationParent = path.join(targetRoot, 'swap-parent');
+    const backupParent = path.join(targetRoot, 'swap-parent-backup');
+    const destinationPath = path.join(destinationParent, 'managed.md');
+    const outsideDestinationPath = path.join(outsideRoot, 'managed.md');
+    const originalRenameSync = fs.renameSync;
+    let swapped = false;
+    let result;
+
+    try {
+      fs.mkdirSync(destinationParent, { recursive: true });
+      fs.writeFileSync(destinationPath, 'managed\n');
+      fs.writeFileSync(outsideDestinationPath, 'outside sentinel\n');
+      writeCursorState(projectRoot, {
+        operations: [managedOperation('copy-file', destinationPath)],
+      });
+
+      fs.renameSync = function renameSyncWithAncestorSwap(sourcePath, targetPath) {
+        if (
+          !swapped
+          && path.basename(sourcePath) === path.basename(destinationPath)
+          && path.basename(path.dirname(targetPath)).startsWith('.ecc-remove-')
+        ) {
+          originalRenameSync.call(fs, destinationParent, backupParent);
+          fs.symlinkSync(
+            outsideRoot,
+            destinationParent,
+            process.platform === 'win32' ? 'junction' : 'dir'
+          );
+          swapped = true;
+        }
+        return originalRenameSync.call(fs, sourcePath, targetPath);
+      };
+
+      result = uninstallInstalledStates({
+        homeDir,
+        projectRoot,
+        targets: ['cursor'],
+      });
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
+
+    try {
+      assert.strictEqual(swapped, true);
+      assert.strictEqual(result.results[0].status, 'error');
+      assert.match(result.results[0].error, /changed during|changed before removal/);
+      assert.strictEqual(fs.readFileSync(outsideDestinationPath, 'utf8'), 'outside sentinel\n');
+      assert.strictEqual(fs.readFileSync(path.join(backupParent, 'managed.md'), 'utf8'), 'managed\n');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);

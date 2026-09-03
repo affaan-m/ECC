@@ -601,6 +601,64 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('ranks stack-relevant instincts above higher-confidence unrelated ones (#2371)', async () => {
+      const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-instinct-relevance-'));
+      const homunculusDir = path.join(isoHome, 'homunculus');
+      const instinctsDir = path.join(homunculusDir, 'instincts', 'personal');
+      fs.mkdirSync(instinctsDir, { recursive: true });
+      // A stack-matching 0.75 instinct and an unrelated higher-confidence 0.9.
+      fs.writeFileSync(
+        path.join(instinctsDir, 'terraform-first.md'),
+        '---\nid: terraform-first\nconfidence: 0.75\ndomain: terraform\n---\n## Action\nRun terraform plan before every apply.\n'
+      );
+      fs.writeFileSync(
+        path.join(instinctsDir, 'unrelated-high.md'),
+        '---\nid: unrelated-high\nconfidence: 0.9\ndomain: python\n---\n## Action\nPin Python dependencies in requirements.txt.\n'
+      );
+      // A project root that detects as terraform via a *.tf marker.
+      const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-tf-project-'));
+      fs.writeFileSync(path.join(projectRoot, 'main.tf'), 'resource "null_resource" "x" {}\n');
+
+      const baseEnv = {
+        HOME: isoHome,
+        USERPROFILE: isoHome,
+        CLV2_HOMUNCULUS_DIR: homunculusDir,
+        CLAUDE_PROJECT_DIR: projectRoot,
+        ECC_INSTINCT_RELEVANCE_RANKING: 'on',
+        ECC_INSTINCT_CONFIDENCE_THRESHOLD: '0.7',
+        ECC_MAX_INJECTED_INSTINCTS: '6',
+      };
+
+      try {
+        const on = await runScript(path.join(scriptsDir, 'session-start.js'), '', baseEnv);
+        assert.strictEqual(on.code, 0);
+        const ctxOn = getSessionStartAdditionalContext(on.stdout);
+        const tfOn = ctxOn.indexOf('Run terraform plan before every apply.');
+        const pyOn = ctxOn.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOn !== -1 && pyOn !== -1, `both instincts should inject, ctx: ${ctxOn}`);
+        assert.ok(tfOn < pyOn, `stack-matching 0.75 should rank above unrelated 0.9 when relevance is on, ctx: ${ctxOn}`);
+
+        // Opting out restores pure confidence ordering (0.9 before 0.75).
+        const off = await runScript(path.join(scriptsDir, 'session-start.js'), '', {
+          ...baseEnv,
+          ECC_INSTINCT_RELEVANCE_RANKING: 'off',
+        });
+        assert.strictEqual(off.code, 0);
+        const ctxOff = getSessionStartAdditionalContext(off.stdout);
+        const tfOff = ctxOff.indexOf('Run terraform plan before every apply.');
+        const pyOff = ctxOff.indexOf('Pin Python dependencies in requirements.txt.');
+        assert.ok(tfOff !== -1 && pyOff !== -1, `both instincts should still inject, ctx: ${ctxOff}`);
+        assert.ok(pyOff < tfOff, `with ranking off, higher-confidence 0.9 should rank first, ctx: ${ctxOff}`);
+      } finally {
+        fs.rmSync(isoHome, { recursive: true, force: true });
+        fs.rmSync(projectRoot, { recursive: true, force: true });
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('disables session-start additional context when requested', async () => {
       const isoHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-disabled-start-'));
       const sessionsDir = getLegacySessionsDir(isoHome);
@@ -2061,6 +2119,41 @@ async function runTests() {
   else failed++;
 
   if (
+    await asyncTest('keeps isMeta human prompts while filtering structured transcript noise', async () => {
+      const testDir = createTestDir();
+      const transcriptPath = path.join(testDir, 'transcript.jsonl');
+      const lines = [
+        JSON.stringify({ type: 'user', isMeta: true, content: 'Prompt delivered by a channel plugin' }),
+        JSON.stringify({ type: 'user', isMeta: true, content: '<system-reminder>internal harness context</system-reminder>' }),
+        JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', content: 'tool output' }] },
+        }),
+      ];
+      fs.writeFileSync(transcriptPath, lines.join('\n'));
+
+      const result = await runScript(
+        path.join(scriptsDir, 'session-end.js'),
+        JSON.stringify({ transcript_path: transcriptPath }),
+        { HOME: testDir, USERPROFILE: testDir }
+      );
+      assert.strictEqual(result.code, 0);
+
+      const sessionsDir = getCanonicalSessionsDir(testDir);
+      const sessionFiles = fs.readdirSync(sessionsDir).filter(file => file.endsWith('.tmp'));
+      assert.strictEqual(sessionFiles.length, 1, 'Should create one session file');
+      const content = fs.readFileSync(path.join(sessionsDir, sessionFiles[0]), 'utf8');
+      assert.ok(content.includes('Prompt delivered by a channel plugin'));
+      assert.ok(!content.includes('internal harness context'));
+      assert.ok(!content.includes('tool output'));
+      assert.ok(content.includes('Total user messages: 1'));
+      cleanupTestDir(testDir);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
     await asyncTest('extracts tool names and file paths from transcript', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
@@ -2492,7 +2585,7 @@ async function runTests() {
         ['post:dispatcher:sync', 'post:dispatcher:async'],
         'PostToolUse should have one sync and one async dispatcher'
       );
-      assert.ok(postEntries.every(entry => entry.matcher === '*'));
+      assert.ok(postEntries.every(entry => entry.matcher === '.*'));
 
       const preCommand = Array.isArray(preBash[0].hooks[0].command) ? preBash[0].hooks[0].command.join(' ') : preBash[0].hooks[0].command;
 
@@ -2501,6 +2594,22 @@ async function runTests() {
       assert.ok(postEntries[0].hooks[0].command.endsWith('" sync'));
       assert.ok(postEntries[1].hooks[0].command.includes('posttooluse-dispatcher.js'));
       assert.ok(postEntries[1].hooks[0].command.endsWith('" async'));
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('all string hook matchers are valid regular expressions', () => {
+      const hooksPath = path.join(__dirname, '..', '..', 'hooks', 'hooks.json');
+      const hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+
+      for (const [eventName, hookArray] of Object.entries(hooks.hooks)) {
+        for (const entry of hookArray) {
+          if (typeof entry.matcher !== 'string') continue;
+          assert.doesNotThrow(() => new RegExp(entry.matcher), `${eventName}/${entry.id || 'hook'} should use a valid regex matcher`);
+        }
+      }
     })
   )
     passed++;
@@ -4830,7 +4939,11 @@ async function runTests() {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
       // Only user messages — no tool_use entries at all
-      const lines = ['{"type":"user","content":"How does authentication work?"}', '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}'];
+      const lines = [
+        '{"type":"user","content":"How does authentication work?"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"It uses JWT"}]}}',
+        '{"type":"user","content":"Explain the token refresh path too"}'
+      ];
       fs.writeFileSync(transcriptPath, lines.join('\n'));
       const stdinJson = JSON.stringify({ transcript_path: transcriptPath });
 
@@ -5204,8 +5317,11 @@ async function runTests() {
     await asyncTest('handles stdin exceeding MAX_STDIN (1MB) gracefully', async () => {
       const testDir = createTestDir();
       const transcriptPath = path.join(testDir, 'transcript.jsonl');
-      // Create a minimal valid transcript so env var fallback works
-      fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'user', content: 'Overflow test' }) + '\n');
+      // Create a substantive valid transcript so env var fallback works
+      fs.writeFileSync(
+        transcriptPath,
+        [JSON.stringify({ type: 'user', content: 'Overflow test' }), JSON.stringify({ type: 'user', content: 'Verify fallback behavior' })].join('\n') + '\n'
+      );
 
       // Create stdin > 1MB: truncated JSON will be invalid → falls back to env var
       const oversizedPayload = '{"transcript_path":"' + 'x'.repeat(1048600) + '"}';
@@ -5822,6 +5938,8 @@ async function runTests() {
       const lines = [
         // Normal user message (string content) — should be included
         '{"type":"user","content":"Real user message"}',
+        // A second valid message keeps this fixture eligible for persistence
+        '{"type":"user","content":"Follow-up user message"}',
         // User message with numeric content — exercises the else: '' branch
         '{"type":"user","content":42}',
         // User message with boolean content — also hits the else branch

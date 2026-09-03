@@ -18,6 +18,7 @@ const {
   parseInstallArgs,
 } = require('./lib/install/request');
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
+const { stripAnsi } = require('./lib/utils');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -35,17 +36,18 @@ Targets:
   claude       (default) - Install ECC into ~/.claude/ with managed rules under rules/ecc and flat skills under skills/
   claude-project - Install ECC into ./.claude/ (per-project) with managed rules under rules/ecc and flat skills under skills/
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
-  antigravity  - Install rules, workflows, skills, and agents to ./.agent/
+  antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
   gemini       - Install project-local Gemini config into ./.gemini/
-  opencode     - Install shared commands/hooks/config into ~/.opencode/
+  opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
   joycode      - Install commands, agents, skills, and flattened rules into ./.joycode/
   qwen         - Install commands, agents, skills, rules, and Qwen config into ~/.qwen/
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
-  kimi         - Install shared rules/skills/commands into ./.kimi/
+  kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
+  adal         - Install shared rules/skills/commands into ./.adal/
 
 Options:
   --profile <name>    Resolve and install a manifest profile
@@ -57,6 +59,9 @@ Options:
   --locale <code>     Install translated docs to ~/.claude/docs/<locale>/ (or ./.claude/docs/<locale>/ for claude-project)
                       (claude or claude-project target only; can be combined with --profile or --with)
   --config <path>     Load install intent from ecc-install.json
+  --enable-hooks      Confirm installing the automatic hook runtime (required
+                      when the selected profile/modules materialize hooks)
+  --no-hooks          Install everything except the automatic hook runtime
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
@@ -133,7 +138,7 @@ function printHumanPlan(plan, dryRun) {
   console.log('\nCompute: ' + getComputeSponsorCopy());
 }
 
-function main() {
+async function main() {
   try {
     const options = parseInstallArgs(process.argv);
 
@@ -163,6 +168,7 @@ function main() {
     const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
+      env: process.env,
       claudeRulesDir: process.env.CLAUDE_RULES_DIR || null,
     });
 
@@ -176,7 +182,18 @@ function main() {
       return;
     }
 
-    const result = applyInstallPlan(rawPlan);
+    let result = applyInstallPlan(rawPlan);
+    const { projectCanonicalInstallState } = require('./lib/install-state-store-sync');
+    const installStateProjection = await projectCanonicalInstallState(result.statePreview, {
+      homeDir: process.env.HOME || os.homedir(),
+    });
+    result = {
+      ...result,
+      installStateProjection,
+      warnings: installStateProjection.warning
+        ? [...result.warnings, `Install health projection warning: ${installStateProjection.warning.message}`]
+        : result.warnings,
+    };
     if (options.json) {
       console.log(JSON.stringify({ dryRun: false, result }, null, 2));
     } else {
@@ -188,4 +205,26 @@ function main() {
   }
 }
 
-main();
+function sanitizeTerminalText(value) {
+  return stripAnsi(String(value || '')).replace(/[^\x20-\x7E]/g, '?');
+}
+
+function runGuidedMain(guidedArgs) {
+  Promise.resolve()
+    .then(() => require('./install-guided').main(guidedArgs))
+    .then(exitCode => {
+      process.exitCode = exitCode;
+    })
+    .catch(error => {
+      process.stderr.write(`Error: ${sanitizeTerminalText(error?.message)}\n`);
+      process.exitCode = 1;
+    });
+}
+
+const cliArgs = process.argv.slice(2);
+if (cliArgs.includes('--guided')) {
+  const guidedArgs = cliArgs.filter(argument => argument !== '--guided');
+  runGuidedMain(guidedArgs);
+} else {
+  main();
+}
