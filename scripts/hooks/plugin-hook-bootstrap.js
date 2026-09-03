@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { ensureAgentDataHomeEnv } = require('../lib/agent-data-home');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 
 const SHELL_PROBE_TIMEOUT_MS = 2000;
 
@@ -260,11 +261,28 @@ function spawnShell(rootDir, relPath, raw, args) {
   return withComparisonInput(result, Buffer.from(raw, 'utf8'));
 }
 
+/**
+ * The plugin root, derived from this file's own location.
+ *
+ * Used when neither CLAUDE_PLUGIN_ROOT nor ECC_PLUGIN_ROOT is set. This file
+ * lives at <root>/scripts/hooks/, so the root is two levels up — the same
+ * derivation `run-with-flags.js` already uses in `getPluginRoot()`.
+ *
+ * Before this, root resolution came exclusively from the environment, which is
+ * why every hook command in hooks.json carried an inline bootstrap that located
+ * the root itself and assigned `process.env.CLAUDE_PLUGIN_ROOT` before
+ * `require`-ing this module. Resolving from `__dirname` lets hooks invoke this
+ * script directly by path and drop that inline preamble entirely.
+ */
+function defaultPluginRoot() {
+  return path.resolve(__dirname, '..', '..');
+}
+
 function main() {
   const [, , mode, relPath, ...args] = process.argv;
   const raw = readStdinRaw();
   const rootDir = normalizePluginRootForPlatform(
-    process.env.CLAUDE_PLUGIN_ROOT || process.env.ECC_PLUGIN_ROOT
+    resolvePluginRoot({ fallback: defaultPluginRoot() })
   );
 
   if (!mode || !relPath || !rootDir) {

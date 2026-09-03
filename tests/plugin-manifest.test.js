@@ -396,17 +396,52 @@ test('codex lifecycle hook bundle contains only Codex 0.146-supported schema', (
 
   const claudeConfig = loadJsonObject(path.join(repoRoot, 'hooks', 'hooks.json'), 'hooks/hooks.json');
   const sourceSessionStart = claudeConfig.hooks.SessionStart.find(group => group.id === 'session:start');
-  const expectedSessionStart = {
-    ...sourceSessionStart,
-    hooks: sourceSessionStart.hooks.map(handler => ({
-      ...handler,
-      command: handler.command.replace(
-        'node -e "',
-        'node -e "if(!process.env.PLUGIN_ROOT)throw new Error(\'Missing Codex PLUGIN_ROOT\');process.env.CLAUDE_PLUGIN_ROOT=process.env.PLUGIN_ROOT;'
-      )
-    }))
+  const codexSessionStart = config.hooks.SessionStart[0];
+
+  // The two configs reach the same place by different routes, so neither can be
+  // derived from the other by string substitution any more. hooks.json names its
+  // launcher through ${CLAUDE_PLUGIN_ROOT}, which Claude Code substitutes before
+  // running the command; Codex supplies PLUGIN_ROOT as an environment variable
+  // only and does not interpolate, so its command still resolves the root at
+  // runtime. What must not drift is where they end up: the same launcher, the
+  // same target script and arguments, and the same grouping metadata.
+  const BOOTSTRAP_LAUNCHER = 'scripts/hooks/plugin-hook-bootstrap.js';
+  const TARGET_MARKER = 'node scripts/hooks/';
+
+  const hookTargetArgv = command => {
+    const at = String(command).lastIndexOf(TARGET_MARKER);
+    return at === -1 ? null : String(command).slice(at);
   };
-  assert.deepStrictEqual(config.hooks.SessionStart[0], expectedSessionStart, 'Codex SessionStart hook must track its canonical implementation with a Codex-root bootstrap');
+
+  assert.strictEqual(codexSessionStart.matcher, sourceSessionStart.matcher, 'Codex SessionStart must keep the canonical matcher');
+  assert.strictEqual(codexSessionStart.id, sourceSessionStart.id, 'Codex SessionStart must keep the canonical id');
+  assert.strictEqual(codexSessionStart.description, sourceSessionStart.description, 'Codex SessionStart must keep the canonical description');
+  assert.strictEqual(codexSessionStart.hooks.length, sourceSessionStart.hooks.length, 'Codex SessionStart must declare the same number of handlers');
+
+  for (let index = 0; index < sourceSessionStart.hooks.length; index += 1) {
+    const canonical = sourceSessionStart.hooks[index];
+    const codexHandler = codexSessionStart.hooks[index];
+
+    assert.strictEqual(codexHandler.type, canonical.type, 'Codex SessionStart handler must keep the canonical type');
+    assert.ok(
+      String(canonical.command).includes(BOOTSTRAP_LAUNCHER),
+      'hooks.json SessionStart must go through the shared bootstrap launcher'
+    );
+    assert.ok(
+      String(codexHandler.command).includes(BOOTSTRAP_LAUNCHER),
+      'Codex SessionStart must go through the same shared bootstrap launcher'
+    );
+
+    const canonicalTarget = hookTargetArgv(canonical.command);
+    const codexTarget = hookTargetArgv(codexHandler.command);
+    assert.ok(canonicalTarget, 'could not read the hooks.json SessionStart target');
+    assert.ok(codexTarget, 'could not read the codex-hooks.json SessionStart target');
+    assert.strictEqual(
+      codexTarget,
+      canonicalTarget,
+      'Codex SessionStart hook must run the same target as its canonical implementation'
+    );
+  }
 });
 
 test('hook documentation distinguishes the Claude off setting from runtime profiles', () => {

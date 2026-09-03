@@ -96,6 +96,15 @@ function runDirect(script, input) {
   });
 }
 
+// The harness substitutes ${CLAUDE_PLUGIN_ROOT} into a hook command before
+// handing it to a shell. POSIX sh would expand it from the environment, but
+// cmd.exe never expands ${...}, so a test that relies on shell expansion only
+// passes on one of the two supported platforms. Substitute it here, exactly
+// the way the harness does, so the command under test is the real one.
+function substitutePluginRoot(command, pluginRoot) {
+  return String(command).split('${CLAUDE_PLUGIN_ROOT}').join(pluginRoot);
+}
+
 function runRegisteredStopHook(entry, input, envOverrides = {}) {
   const env = {
     ...hookEnv(),
@@ -104,7 +113,7 @@ function runRegisteredStopHook(entry, input, envOverrides = {}) {
     ...envOverrides
   };
 
-  return spawnSync(entry.hooks[0].command, {
+  return spawnSync(substitutePluginRoot(entry.hooks[0].command, repoRoot), {
     input,
     encoding: 'utf8',
     cwd: workDir,
@@ -184,15 +193,40 @@ for (const entry of hooksConfig.hooks.Stop) {
 const representativeStopEntry = hooksConfig.hooks.Stop.find(
   entry => entry.id === 'stop:cost-tracker'
 );
-const CALLBACK_FLUSH_WRAPPER = 'const finish=(out,err,code)=>{let pending=1;const done=()=>{pending-=1;if(pending===0)process.exit(code);};if(out){pending+=1;process.stdout.write(out,done);}if(err){pending+=1;process.stderr.write(err,done);}process.nextTick(done);};';
-
 if (
   test('all registered Stop wrappers keep the large-output flush contract', () => {
+    // The contract used to be inlined into every Stop command: a 16 MiB
+    // capture ceiling and an exit that waits for the stdout and stderr write
+    // callbacks. Both now live in the launcher the commands invoke, so assert
+    // them there -- asserting on the command text would only re-check that the
+    // wrapper was pasted in, which is the duplication this replaced.
+    const runner = fs.readFileSync(path.join(repoRoot, 'scripts', 'hooks', 'run-with-flags.js'), 'utf8');
+    assert.match(
+      runner,
+      /const MAX_CHILD_OUTPUT = 16 \* 1024 \* 1024;/,
+      'runner must keep the 16 MiB capture ceiling'
+    );
+    assert.match(runner, /maxBuffer: MAX_CHILD_OUTPUT/, 'runner must apply the ceiling when spawning');
+    assert.match(
+      runner,
+      /process\.stdout\.write\(text, exitWhenFlushed\)/,
+      'runner must wait for the stdout write callback before exiting'
+    );
+    assert.match(
+      runner,
+      /process\.stderr\.write\('', exitWhenFlushed\)/,
+      'runner must wait for the stderr write callback before exiting'
+    );
+
     for (const entry of hooksConfig.hooks.Stop) {
-      assert.match(entry.hooks[0].command, /maxBuffer:16\*1024\*1024/);
+      const command = entry.hooks[0].command;
       assert.ok(
-        entry.hooks[0].command.includes(CALLBACK_FLUSH_WRAPPER),
-        `${entry.id}: wrapper must wait for stdout and stderr callbacks before exiting`
+        !/\bnode\s+(-e|--eval)\b/.test(command),
+        `${entry.id}: Stop command should not inline a node program`
+      );
+      assert.ok(
+        command.includes('scripts/hooks/run-with-flags.js'),
+        `${entry.id}: Stop command should delegate to the runner that owns the flush contract`
       );
     }
   })

@@ -9,6 +9,7 @@
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
 const { isHookEnabled } = require('../lib/hook-flags');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 const { runPostBash } = require('./bash-hook-dispatcher');
 const { run: runQualityGate } = require('./quality-gate');
 const { run: runDesignQualityCheck } = require('./design-quality-check');
@@ -51,7 +52,7 @@ const ASYNC_HOOKS = [
 ];
 
 function getPluginRoot(env = process.env) {
-  return env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || path.resolve(__dirname, '..', '..');
+  return resolvePluginRoot({ env, fallback: path.resolve(__dirname, '..', '..') });
 }
 
 function matchesTool(matcher, toolName) {
@@ -260,7 +261,14 @@ async function main() {
   }
   if (result.stderr) process.stderr.write(result.stderr);
   const stdout = resolveMainStdout(raw, result, {
-    passthrough: process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1',
+    // `--passthrough` is the argv equivalent of ECC_POSTTOOLUSE_PASSTHROUGH=1.
+    // The env var alone forced hooks.json to wrap this script in an inline
+    // `node -e` preamble purely to assign it before requiring the module, since
+    // there is no portable way to set a per-command env var across cmd.exe and
+    // POSIX shells. A flag lets the hook invoke this file directly.
+    passthrough:
+      process.env.ECC_POSTTOOLUSE_PASSTHROUGH === '1' ||
+      process.argv.includes('--passthrough'),
     truncated
   });
   if (stdout) process.stdout.write(stdout);

@@ -12,9 +12,14 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { isHookEnabled, isDryRun } = require('../lib/hook-flags');
+const { resolvePluginRoot } = require('../lib/plugin-root');
 const { buildPreToolUseAdditionalContext } = require('./pretooluse-visible-output');
 
 const MAX_STDIN = 1024 * 1024;
+// Ceiling on output captured from a spawned hook. The inline Stop wrapper this
+// runner replaced used the same value; spawnSync's 1 MiB default would turn a
+// hook that legitimately writes more into an ENOBUFS failure and drop it.
+const MAX_CHILD_OUTPUT = 16 * 1024 * 1024;
 
 function readStdinRaw() {
   return new Promise(resolve => {
@@ -103,10 +108,7 @@ function resolveLegacySpawnStdout(raw, result) {
 }
 
 function getPluginRoot() {
-  if (process.env.CLAUDE_PLUGIN_ROOT && process.env.CLAUDE_PLUGIN_ROOT.trim()) {
-    return process.env.CLAUDE_PLUGIN_ROOT;
-  }
-  return path.resolve(__dirname, '..', '..');
+  return resolvePluginRoot({ fallback: path.resolve(__dirname, '..', '..') });
 }
 
 //Safely extract target context from hook stdin JSON for dry-run preview.
@@ -253,7 +255,8 @@ async function main() {
       ECC_HOOK_INPUT_MAX_BYTES: String(MAX_STDIN)
     },
     cwd: process.cwd(),
-    timeout: 30000
+    timeout: 30000,
+    maxBuffer: MAX_CHILD_OUTPUT
   });
 
   const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
