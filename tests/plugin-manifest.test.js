@@ -696,9 +696,17 @@ test('grok plugin.json uses short plugin slug and matching version', () => {
 
 test('grok plugin.json keeps Claude-incompatible fields out of the Grok manifest', () => {
   assert.ok(!('userConfig' in grokPlugin), 'Grok does not honor Claude userConfig; hook profile stays on ECC_HOOK_PROFILE');
-  assert.ok(!('mcpServers' in grokPlugin), 'Do not copy Claude mcpServers:{} into Grok; Grok auto-discovers root .mcp.json');
+  assert.strictEqual(
+    grokPlugin.mcpServers,
+    '',
+    'Empty mcpServers string opts the native Grok trusted plugin surface out of root .mcp.json / chrome-devtools'
+  );
   assert.ok(!('agents' in grokPlugin), 'Grok discovers agents/ by convention');
-  assert.ok(!('hooks' in grokPlugin), 'Grok discovers hooks/hooks.json by convention');
+  assert.strictEqual(
+    grokPlugin.hooks,
+    '',
+    'Empty hooks string opts the native Grok CLI surface out of hooks/hooks.json; ECC hook consent is applyInstall'
+  );
 });
 
 test('grok plugin.json description includes catalog counts', () => {
@@ -732,7 +740,22 @@ test('grok marketplace plugin source is a Git URL of the whole repo, not ./', ()
   assert.notStrictEqual(plugin.source, './');
   assert.strictEqual(plugin.source.source, 'url');
   assert.strictEqual(plugin.source.url, 'https://github.com/affaan-m/ECC.git');
-  assert.ok(!plugin.source.sha, 'In-repo catalog must not pin a self-SHA; pin SHAs only in an external index');
+  assert.ok(/^[0-9a-f]{40}$/.test(plugin.source.sha), 'Whole-repo Grok source must pin a 40-character lowercase commit SHA');
+  const trackedAdapter = require('child_process')
+    .execFileSync('git', ['ls-files', 'scripts/lib/grok-harness-adapter.js'], { cwd: repoRoot, encoding: 'utf8' })
+    .trim();
+  if (trackedAdapter) {
+    require('child_process').execFileSync(
+      'git',
+      ['show', `${plugin.source.sha}:scripts/lib/grok-harness-adapter.js`],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+  }
+  assert.notStrictEqual(
+    plugin.source.sha,
+    'd8409a4b0813771235555e32e3d8046a73988bfa',
+    'Do not pin the TasteForge main merge unless that commit contains the Grok adapter'
+  );
   assert.ok(!plugin.source.path, 'Do not point Grok at plugins/ecc; Codex already proved thin subdir copies drop runtime files');
 });
 
@@ -754,15 +777,23 @@ test('package.json files includes the Grok plugin directory', () => {
 
 test('.grok-plugin README documents install, trust, enable, MCP, and hook profile', () => {
   const readme = fs.readFileSync(grokPluginReadmePath, 'utf8');
+  assert.ok(readme.includes('previewInstall'), 'ECC trusted install is previewInstall');
+  assert.ok(readme.includes('applyInstall'), 'ECC trusted install is applyInstall');
+  assert.ok(readme.includes('grok-install.js'), 'Operator ECC consent path is scripts/grok-install.js');
   assert.ok(readme.includes('grok plugin marketplace add affaan-m/ECC'), 'Expected marketplace add for the canonical ECC repo');
-  assert.ok(readme.includes('grok plugin install ecc --trust'), 'Expected trusted marketplace install');
   assert.ok(readme.includes('grok plugin enable ecc'), 'Grok plugins stay off until enabled');
-  assert.ok(readme.includes('grok plugin install'), 'Expected a local-checkout install path');
+  assert.ok(
+    /not ECC capability consent|not ECC consent|discovery/i.test(readme),
+    'Grok CLI --trust must not be documented as ECC capability consent'
+  );
   assert.ok(readme.includes('ECC_HOOK_PROFILE'), 'Grok has no Claude userConfig; document ECC_HOOK_PROFILE');
-  assert.ok(readme.includes('.mcp.json'), 'Document that trusted Grok installs attach root .mcp.json');
-  assert.ok(readme.includes('chrome-devtools'), 'Name the default MCP server Grok will attach');
+  assert.ok(readme.includes('.mcp.json'), 'Document root .mcp.json as a consent-gated MCP source');
+  assert.ok(readme.includes('chrome-devtools'), 'Name chrome-devtools as a consent-gated MCP capability');
+  assert.ok(
+    /consent|explicit/i.test(readme) && /does not|without consent|not attach/i.test(readme),
+    'Document that trusted Grok installs do not attach chrome-devtools without consent'
+  );
   assert.ok(readme.includes('grok plugin validate'), 'Expected a machine-checkable validation command');
-  assert.ok(readme.includes('grok inspect'), 'Expected inspect as the post-install verification command');
 });
 
 test('.codex-plugin README uses current marketplace add flow', () => {

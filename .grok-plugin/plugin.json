@@ -19,5 +19,7 @@
     "security",
     "workflow"
   ],
-  "logo": "assets/ecc-icon.svg"
+  "logo": "assets/ecc-icon.svg",
+  "mcpServers": "",
+  "hooks": ""
 }

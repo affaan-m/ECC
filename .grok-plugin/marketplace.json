@@ -28,7 +28,8 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/affaan-m/ECC.git"
+        "url": "https://github.com/affaan-m/ECC.git",
+        "sha": "8143ec31c26baf3af3c7f8fb986220e4f5a0720e"
       }
     }
   ]

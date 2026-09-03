@@ -143,17 +143,6 @@ command -v ecc-memory-mcp
 
 > 安装名称说明：较早的帖子里可能还会出现较长的旧标识符。Anthropic 的 marketplace/plugin 安装是按规范化插件标识符寻址的，因此 ECC 现在统一为 `ecc@ecc`，让工具名和 slash command 命名空间保持简短。
 
-Grok Build 走原生插件，而不是 `./install.sh --target grok`。Claude 的 `"source": "./"` 会被 Grok 当成空路径丢掉，所以要用 `.grok-plugin/` 这份目录。插件默认关闭，hooks/MCP 还要 `--trust`：
-
-```bash
-grok plugin marketplace add affaan-m/ECC
-grok plugin install ecc --trust
-grok plugin enable ecc
-grok inspect
-```
-
-Grok 不读 Claude 的 `userConfig`，钩子档位用 `ECC_HOOK_PROFILE`。信任后会挂上仓库根 `.mcp.json` 里的 `chrome-devtools`。细节见 `.grok-plugin/README.md`。
-
 ### 第二步：仅在需要时安装规则
 
 > WARNING: **重要提示：** Claude Code 插件无法自动分发 `rules`。

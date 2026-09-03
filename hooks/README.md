@@ -92,9 +92,11 @@ Remove or comment out the hook entry in `hooks.json`. If installed as a plugin, 
 }
 ```
 
-Grok Build trusted plugin installs set `GROK_PLUGIN_ROOT` and the
-`CLAUDE_PLUGIN_ROOT` alias. Grok does not honor Claude `userConfig`; use the
-runtime variables below (`ECC_HOOK_PROFILE`, `ECC_HOOKS_ENABLED`) instead.
+Grok Build plugin-root layout and `GROK_PLUGIN_ROOT` live in
+`scripts/lib/grok-harness-adapter.js`. Shared hook runners stay on
+`PLUGIN_ROOT` / `CLAUDE_PLUGIN_ROOT` / `ECC_PLUGIN_ROOT`. Grok does not honor
+Claude `userConfig`; use the runtime variables below (`ECC_HOOK_PROFILE`,
+`ECC_HOOKS_ENABLED`) after explicit hook consent.
 
 ### Runtime Hook Controls (Recommended)
 

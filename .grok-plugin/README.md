@@ -11,37 +11,46 @@ thin subdirectory copy drops parent-relative runtime files.
 
 ## Install
 
-Published repo (marketplace catalog, then install + enable). Grok plugins stay
-off until enabled, and hooks/MCP stay inactive until trusted:
+ECC trusted install is `node scripts/grok-install.js` (`previewInstall` /
+`applyInstall` in `scripts/lib/grok-harness-adapter.js`, install target `grok`,
+state at `~/.grok/ecc/install-state.json`). That plan is receipt-backed and
+requires explicit consent for hooks and each MCP server.
+
+Grok CLI marketplace add / install / enable is **discovery only**.
+`grok plugin install --trust` skips Grok's confirmation prompt; it is **not
+ECC capability consent** and does not write an ECC receipt. `plugin.json`
+sets `mcpServers` and `hooks` to empty strings so that native CLI path does
+not attach root `.mcp.json` or `hooks/hooks.json`.
 
 ```bash
 grok plugin marketplace add affaan-m/ECC
-grok plugin install ecc --trust
+grok plugin install ecc
 grok plugin enable ecc
 grok plugin validate .
-grok inspect
 ```
 
 Local checkout, including unpublished changes:
 
 ```bash
-grok plugin install /absolute/path/to/ECC --trust
+grok plugin install /absolute/path/to/ECC
 grok plugin enable ecc
 grok plugin validate /absolute/path/to/ECC
-grok inspect
 ```
 
 Do not also run `./install.sh --target claude` (or a full manual Claude copy)
 into the same Grok session. Pick one install path per harness.
+`./install.sh --target grok` does not copy hooks or root MCP without the same
+adapter consent flags.
 
 ## Hooks
 
-`--trust` is required for `hooks/hooks.json`. Grok sets `GROK_PLUGIN_ROOT` and
-the `CLAUDE_PLUGIN_ROOT` alias, so ECC's existing hook bootstrap can resolve
-the plugin root.
+Grok sets `GROK_PLUGIN_ROOT`. Shared hook code does not read that alias.
+`applyInstall` maps it onto `PLUGIN_ROOT` at the installed-tree boundary when
+hooks are consented. Without hook consent, the installed copy has no
+`hooks/hooks.json`.
 
 Grok does not honor Claude `userConfig`. Hook enablement and profile stay on
-environment variables:
+environment variables after explicit hook consent:
 
 ```bash
 export ECC_HOOKS_ENABLED=true
@@ -50,10 +59,11 @@ export ECC_HOOK_PROFILE=standard   # minimal | standard | strict
 
 ## MCP
 
-Claude plugin installs opt out of root `.mcp.json` with `"mcpServers": {}`.
-Grok auto-discovers that file. A trusted ECC install therefore attaches the
-default `chrome-devtools` server from `.mcp.json`. Additional connectors stay
-opt-in via `mcp-configs/mcp-servers.json`.
+`.grok-plugin/plugin.json` sets `"mcpServers": ""` so a trusted Grok plugin
+install does not attach repo-root `.mcp.json` or `chrome-devtools`. That root
+file remains for Claude/Codex. Additional connectors stay opt-in via
+`mcp-configs/mcp-servers.json`. Adapter receipts still require explicit
+per-server consent before any MCP name is copied into an install plan.
 
 ## Known limits
 

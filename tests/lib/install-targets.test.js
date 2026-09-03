@@ -51,6 +51,33 @@ function runTests() {
     assert.ok(targets.includes('joycode'), 'Should include joycode target');
     assert.ok(targets.includes('qwen'), 'Should include qwen target');
     assert.ok(targets.includes('zed'), 'Should include zed target');
+    assert.ok(targets.includes('grok'), 'Should include grok target');
+  })) passed++; else failed++;
+
+  if (test('grok home adapter does not copy hooks or root MCP without adapter consent', () => {
+    const grok = getInstallTargetAdapter('grok');
+    const homeDir = '/Users/example';
+    const modules = [
+      { id: 'hooks-runtime', paths: ['hooks', 'hooks/hooks.json'] },
+      { id: 'mcp', paths: ['.mcp.json', 'mcp-configs'] },
+      { id: 'skills', paths: ['skills'] },
+    ];
+    const denied = grok.planOperations({ homeDir, repoRoot: path.join(__dirname, '..', '..'), modules });
+    const deniedPaths = denied.map((operation) => String(operation.sourceRelativePath).replace(/\\/g, '/'));
+    assert.ok(deniedPaths.includes('skills'));
+    assert.ok(!deniedPaths.some((item) => item === 'hooks' || item.startsWith('hooks/')));
+    assert.ok(!deniedPaths.some((item) => item === '.mcp.json' || item.startsWith('mcp-configs')));
+
+    const allowed = grok.planOperations({
+      homeDir,
+      repoRoot: path.join(__dirname, '..', '..'),
+      modules,
+      trust: true,
+      consent: { hooks: true },
+    });
+    const allowedPaths = allowed.map((operation) => String(operation.sourceRelativePath).replace(/\\/g, '/'));
+    assert.ok(allowedPaths.includes('hooks') || allowedPaths.includes('hooks/hooks.json'));
+    assert.ok(!allowedPaths.some((item) => item === '.mcp.json' || item.startsWith('mcp-configs')));
   })) passed++; else failed++;
 
   if (test('resolves cursor adapter root and install-state path from project root', () => {

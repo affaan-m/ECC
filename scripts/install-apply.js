@@ -46,6 +46,7 @@ Targets:
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
+  grok         - ECC Grok adapter install (previewInstall/applyInstall). Discovery-only Grok CLI is separate.
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
 
@@ -146,6 +147,36 @@ async function main() {
       showHelp(0);
     }
 
+    if (options.target === 'grok') {
+      const { parseMcpConsentList, runGrokInstall } = require('./lib/grok-harness-adapter');
+      const grokResult = runGrokInstall({
+        dryRun: options.dryRun === true,
+        trust: process.env.ECC_GROK_TRUST === '1',
+        consent: {
+          hooks: process.env.ECC_GROK_CONSENT_HOOKS === '1',
+          mcp: parseMcpConsentList(process.env.ECC_GROK_CONSENT_MCP || ''),
+        },
+        homeDir: process.env.HOME || os.homedir(),
+        repoRoot: process.cwd(),
+      });
+      if (options.json) {
+        console.log(JSON.stringify({ dryRun: options.dryRun === true, grok: grokResult }, null, 2));
+      } else {
+        console.log(options.dryRun ? 'Grok adapter dry-run plan\n' : 'Grok adapter install\n');
+        console.log(`Identity: ${grokResult.plan.identity}`);
+        console.log(`Trust: ${grokResult.plan.trust}`);
+        console.log(`Hooks enabled: ${grokResult.plan.hooksEnabled}`);
+        console.log(`MCP attached: ${grokResult.plan.mcpAttached.join(', ') || '(none)'}`);
+        console.log(`Chrome DevTools: ${grokResult.plan.attachChromeDevtools}`);
+        if (grokResult.receipt) {
+          console.log(`Install-state: ${grokResult.receipt.installStatePath}`);
+        }
+        console.log('\nConsent flags: ECC_GROK_TRUST=1 ECC_GROK_CONSENT_HOOKS=1 ECC_GROK_CONSENT_MCP=name,name');
+        console.log('Or: node scripts/grok-install.js --dry-run --trust --consent-hooks');
+      }
+      return;
+    }
+
     const {
       findDefaultInstallConfigPath,
       loadInstallConfig,
@@ -165,6 +196,7 @@ async function main() {
       ...options,
       config,
     });
+
     const rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
