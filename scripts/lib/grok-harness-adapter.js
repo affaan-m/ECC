@@ -1,6 +1,5 @@
 'use strict';
 
-const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -11,6 +10,13 @@ const {
   writeInstallState,
 } = require('./install-state');
 const grokHomeTarget = require('./install-targets/grok-home');
+const {
+  isGitWorkTreeRoot,
+  resolvePinnedGitSha,
+  copyInstallSource,
+  assertSourceIdentity,
+  writePinnedMarketplace,
+} = require('./grok-source-identity');
 
 const GROK_PLUGIN_ROOT_ENV = 'GROK_PLUGIN_ROOT';
 const GROK_HOME_DIRNAME = '.grok';
@@ -96,6 +102,14 @@ function nativeTrustedInstallAttachesChromeDevtools(pluginManifest = {}) {
 
 function readGrokPluginManifest(pluginJsonPath, readFile = (file) => fs.readFileSync(file, 'utf8')) {
   return JSON.parse(readFile(pluginJsonPath));
+}
+
+function resolveHomeDir(env = process.env) {
+  const explicit = trimEnv(env.ECC_GROK_HOME);
+  if (explicit) {
+    return explicit;
+  }
+  return os.homedir();
 }
 
 function grokHomeDir(homeDir, pathModule = path) {
@@ -342,6 +356,39 @@ function loadCurrentReceipt(homeDir, pathModule = path) {
   }
 }
 
+function installDestination(homeDir, plan, pathModule = path) {
+  const grokRoot = grokHomeDir(homeDir, pathModule);
+  const dest = pathModule.join(
+    grokRoot,
+    INSTALLED_PLUGINS_DIR,
+    `${plan.pluginId || CURRENT_PLUGIN_SLUG}-${String(plan.source.sha).slice(0, 12)}`
+  );
+  assertRootContainment(dest, grokRoot, pathModule);
+  return dest;
+}
+
+function readInstalledSharedEnv(installedRoot, pathModule = path) {
+  return readJsonIfPresent(pathModule.join(installedRoot, '.grok-plugin', 'shared-env.json'));
+}
+
+function listManagedInstallRoots(homeDir, pathModule = path) {
+  const roots = [];
+  const base = pathModule.join(grokHomeDir(homeDir, pathModule), INSTALLED_PLUGINS_DIR);
+  try {
+    const entries = fs.readdirSync(base, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const installedRoot = pathModule.join(base, entry.name);
+      if (readJsonIfPresent(pathModule.join(installedRoot, SOURCE_IDENTITY_FILE))) {
+        roots.push(installedRoot);
+      }
+    }
+  } catch {
+    return roots;
+  }
+  return roots;
+}
+
 function planToOperations(plan, dest, pathModule) {
   const operations = [
     {
@@ -568,52 +615,6 @@ function filterMcpConfig(mcpConfig, attachedNames) {
 const SHARED_INLINE_ENV = 'process.env.PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.ECC_PLUGIN_ROOT';
 const INSTALLED_INLINE_ENV = `${SHARED_INLINE_ENV}||process.env.GROK_PLUGIN_ROOT`;
 
-function assertSourceMatchesPin(sourceRoot, source, pathModule = path) {
-  const catalogPath = pathModule.join(sourceRoot, '.grok-plugin', 'marketplace.json');
-  if (!fs.existsSync(catalogPath)) {
-    return;
-  }
-  const catalog = readMarketplaceSource(catalogPath);
-  if (catalog.source.sha !== source.sha) {
-    throw new Error('sourceRoot marketplace sha does not match install plan pin');
-  }
-}
-
-function isGitWorkTreeRoot(dir, pathModule = path) {
-  try {
-    const top = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return pathModule.resolve(top) === pathModule.resolve(dir);
-  } catch {
-    return false;
-  }
-}
-
-function copyInstallSource(sourceRoot, dest, pathModule = path) {
-  if (!isGitWorkTreeRoot(sourceRoot, pathModule)) {
-    fs.cpSync(sourceRoot, dest, { recursive: true });
-    return { mode: 'tree' };
-  }
-
-  const tracked = execFileSync('git', ['-C', sourceRoot, 'ls-files', '-z'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).split('\0').filter(Boolean);
-
-  for (const relative of tracked) {
-    const from = pathModule.join(sourceRoot, relative);
-    if (!fs.existsSync(from) || !fs.statSync(from).isFile()) {
-      continue;
-    }
-    const to = pathModule.join(dest, relative);
-    fs.mkdirSync(pathModule.dirname(to), { recursive: true });
-    fs.copyFileSync(from, to);
-  }
-  return { mode: 'git-tracked' };
-}
-
 function applyInstalledHookBoundary(dest, pathModule) {
   const mapped = toSharedPluginEnv({ GROK_PLUGIN_ROOT: dest });
   writeJson(pathModule.join(dest, '.grok-plugin', 'shared-env.json'), {
@@ -636,30 +637,24 @@ function applyInstall(plan, options = {}) {
   if (!homeDir) {
     throw new Error('homeDir is required to apply a Grok install');
   }
-  const grokRoot = grokHomeDir(homeDir, pathModule);
-  const dest = pathModule.join(
-    grokRoot,
-    INSTALLED_PLUGINS_DIR,
-    `${plan.pluginId}-${plan.source.sha.slice(0, 12)}`
-  );
-  assertRootContainment(dest, grokRoot, pathModule);
+  const dest = installDestination(homeDir, plan, pathModule);
 
   if (!plan.sourceRoot) {
     throw new Error('sourceRoot is required to apply a Grok install');
   }
-  assertSourceMatchesPin(plan.sourceRoot, plan.source, pathModule);
+  assertSourceIdentity(plan.sourceRoot, plan.source, pathModule);
 
   fs.mkdirSync(dest, { recursive: true });
-  copyInstallSource(plan.sourceRoot, dest, pathModule);
+  copyInstallSource(plan.sourceRoot, dest, pathModule, plan.source.sha);
   writeJson(pathModule.join(dest, SOURCE_IDENTITY_FILE), plan.source);
+  writePinnedMarketplace(dest, plan.source, pathModule);
   writeJson(
     pathModule.join(dest, '.mcp.json'),
     filterMcpConfig(options.mcpConfig || plan.mcpConfig, plan.mcpAttached)
   );
 
-  const destHooks = pathModule.join(dest, 'hooks', 'hooks.json');
   if (!plan.hooksEnabled) {
-    fs.rmSync(destHooks, { force: true });
+    fs.rmSync(pathModule.join(dest, 'hooks'), { recursive: true, force: true });
   } else {
     applyInstalledHookBoundary(dest, pathModule);
   }
@@ -685,13 +680,19 @@ function uninstall(homeDir, options = {}) {
   if (!current) {
     return { operation: 'uninstall', removed: false };
   }
-  fs.rmSync(current.installedRoot, { recursive: true, force: true });
+  const managedRoots = listManagedInstallRoots(homeDir, pathModule);
+  for (const installedRoot of managedRoots) {
+    fs.rmSync(installedRoot, { recursive: true, force: true });
+  }
   const statePath = grokInstallStatePath(homeDir, pathModule);
+  const previousPath = grokPreviousStatePath(homeDir, pathModule);
   fs.rmSync(statePath, { force: true });
+  fs.rmSync(previousPath, { force: true });
   return {
     ...current,
     enabled: false,
     operation: 'uninstall',
+    removedRoots: managedRoots,
     uninstalledAt: options.now || new Date().toISOString(),
   };
 }
@@ -710,6 +711,10 @@ function rollback(homeDir, options = {}) {
   }
   const statePath = grokInstallStatePath(homeDir, pathModule);
   fs.copyFileSync(previousPath, statePath);
+  fs.rmSync(previousPath, { force: true });
+  if (current.installedRoot && current.installedRoot !== previousReceipt.installedRoot) {
+    fs.rmSync(current.installedRoot, { recursive: true, force: true });
+  }
   return {
     ...loadCurrentReceipt(homeDir, pathModule),
     operation: 'rollback',
@@ -760,9 +765,22 @@ function parseMcpConsentList(raw) {
   return mcp;
 }
 
+function resolveRepoRoot(candidate) {
+  const start = candidate || path.join(__dirname, '..', '..');
+  try {
+    const { execFileSync } = require('child_process');
+    return execFileSync('git', ['-C', start, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return start;
+  }
+}
+
 function runGrokInstall(options = {}) {
-  const repoRoot = options.repoRoot || path.join(__dirname, '..', '..');
-  const homeDir = options.homeDir || os.homedir();
+  const repoRoot = resolveRepoRoot(options.repoRoot || path.join(__dirname, '..', '..'));
+  const homeDir = options.homeDir || resolveHomeDir();
   const marketplace = readMarketplaceSource(path.join(repoRoot, '.grok-plugin', 'marketplace.json'));
   const pluginManifest = readGrokPluginManifest(path.join(repoRoot, '.grok-plugin', 'plugin.json'));
   let mcpConfig = { mcpServers: {} };
@@ -812,6 +830,7 @@ module.exports = {
   nativeTrustedMcpServerNames,
   nativeTrustedInstallAttachesChromeDevtools,
   readGrokPluginManifest,
+  resolveHomeDir,
   grokHomeDir,
   grokInstallStatePath,
   isContained,
@@ -823,6 +842,10 @@ module.exports = {
   resolveGrokPluginRoot,
   listCachedGrokVersions,
   selectPinnedCachedVersion,
+  installDestination,
+  readInstalledSharedEnv,
+  listManagedInstallRoots,
+  planToOperations,
   previewInstall,
   applyInstall,
   uninstall,
@@ -830,5 +853,9 @@ module.exports = {
   setPluginEnabled,
   loadCurrentReceipt,
   parseMcpConsentList,
+  resolveRepoRoot,
   runGrokInstall,
+  isGitWorkTreeRoot,
+  resolvePinnedGitSha,
+  assertSourceIdentity,
 };

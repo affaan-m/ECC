@@ -20,6 +20,16 @@ const {
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
 
+function argvTarget(argv) {
+  const args = argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '--target') {
+      return args[index + 1] || null;
+    }
+  }
+  return null;
+}
+
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
   const locales = listSupportedLocales();
@@ -141,24 +151,27 @@ function printHumanPlan(plan, dryRun) {
 
 async function main() {
   try {
-    const options = parseInstallArgs(process.argv);
-
-    if (options.help) {
-      showHelp(0);
-    }
-
-    if (options.target === 'grok') {
-      const { parseMcpConsentList, runGrokInstall } = require('./lib/grok-harness-adapter');
+    if (argvTarget(process.argv) === 'grok') {
+      const { parseArgs } = require('./grok-install');
+      const { parseMcpConsentList, resolveHomeDir, runGrokInstall } = require('./lib/grok-harness-adapter');
+      const parsed = parseArgs(process.argv);
+      if (parsed.help) {
+        showHelp(0);
+      }
       const grokResult = runGrokInstall({
-        dryRun: options.dryRun === true,
-        trust: process.env.ECC_GROK_TRUST === '1',
+        dryRun: parsed.dryRun === true,
+        trust: parsed.trust === true || process.env.ECC_GROK_TRUST === '1',
         consent: {
-          hooks: process.env.ECC_GROK_CONSENT_HOOKS === '1',
-          mcp: parseMcpConsentList(process.env.ECC_GROK_CONSENT_MCP || ''),
+          hooks: parsed.consent.hooks === true || process.env.ECC_GROK_CONSENT_HOOKS === '1',
+          mcp: {
+            ...parseMcpConsentList(process.env.ECC_GROK_CONSENT_MCP || ''),
+            ...parsed.consent.mcp,
+          },
         },
-        homeDir: process.env.HOME || os.homedir(),
+        homeDir: resolveHomeDir(),
         repoRoot: process.cwd(),
       });
+      const options = { dryRun: parsed.dryRun, json: parsed.json };
       if (options.json) {
         console.log(JSON.stringify({ dryRun: options.dryRun === true, grok: grokResult }, null, 2));
       } else {
@@ -175,6 +188,12 @@ async function main() {
         console.log('Or: node scripts/grok-install.js --dry-run --trust --consent-hooks');
       }
       return;
+    }
+
+    const options = parseInstallArgs(process.argv);
+
+    if (options.help) {
+      showHelp(0);
     }
 
     const {

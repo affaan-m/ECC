@@ -1,12 +1,24 @@
 #!/usr/bin/env node
 'use strict';
 
-const os = require('os');
 const path = require('path');
 const {
   parseMcpConsentList,
+  resolveHomeDir,
   runGrokInstall,
 } = require('./lib/grok-harness-adapter');
+
+const IGNORED_VALUE_FLAGS = new Set([
+  '--target',
+  '--profile',
+  '--modules',
+  '--with',
+  '--without',
+  '--config',
+  '--locale',
+  '--skill',
+  '--skills',
+]);
 
 function printHelp() {
   console.log(`Usage: node scripts/grok-install.js [--dry-run] [--json] [--trust] [--consent-hooks] [--consent-mcp <name,name>]
@@ -45,6 +57,8 @@ function parseArgs(argv) {
       parsed.consent.hooks = true;
     } else if (arg === '--consent-mcp') {
       parsed.consent.mcp = parseMcpConsentList(argv[index + 1] || '');
+      index += 1;
+    } else if (IGNORED_VALUE_FLAGS.has(arg)) {
       index += 1;
     } else if (arg === '--help' || arg === '-h') {
       parsed.help = true;
@@ -92,7 +106,7 @@ function main() {
     dryRun: parsed.dryRun,
     trust: parsed.trust,
     consent: parsed.consent,
-    homeDir: process.env.HOME || os.homedir(),
+    homeDir: resolveHomeDir(),
     repoRoot: path.join(__dirname, '..'),
   });
 

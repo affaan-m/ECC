@@ -78,6 +78,17 @@ function runTests() {
     const allowedPaths = allowed.map((operation) => String(operation.sourceRelativePath).replace(/\\/g, '/'));
     assert.ok(allowedPaths.includes('hooks') || allowedPaths.includes('hooks/hooks.json'));
     assert.ok(!allowedPaths.some((item) => item === '.mcp.json' || item.startsWith('mcp-configs')));
+
+    const mcpAllowed = grok.planOperations({
+      homeDir,
+      repoRoot: path.join(__dirname, '..', '..'),
+      modules,
+      trust: true,
+      consent: { mcp: { 'chrome-devtools': true } },
+    });
+    const mcpPaths = mcpAllowed.map((operation) => String(operation.sourceRelativePath).replace(/\\/g, '/'));
+    assert.ok(!mcpPaths.some((item) => item === '.mcp.json' || item.startsWith('mcp-configs')));
+    assert.ok(!mcpPaths.some((item) => item === 'hooks' || item.startsWith('hooks/')));
   })) passed++; else failed++;
 
   if (test('resolves cursor adapter root and install-state path from project root', () => {

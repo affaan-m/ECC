@@ -36,6 +36,7 @@ module.exports = createInstallTargetAdapter({
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter((sourceRelativePath) => !isForeignPlatformPath(sourceRelativePath, 'grok'))
+        // Root .mcp.json attach is owned by applyInstall's per-server filter.
         .filter((sourceRelativePath) => !isMcpPath(sourceRelativePath))
         .filter((sourceRelativePath) => allowHooks || !isHooksPath(sourceRelativePath))
         .map((sourceRelativePath) => adapter.createScaffoldOperation(

@@ -75,6 +75,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/repair.js",
     "scripts/harness-adapter-compliance.js",
     "scripts/lib/grok-harness-adapter.js",
+    "scripts/lib/grok-source-identity.js",
     "scripts/grok-install.js",
     "scripts/lib/install-targets/grok-home.js",
     ".grok-plugin",
