@@ -486,6 +486,50 @@ run('previewProfilePlugin also reports a symlinked source as a blocker, before a
   }
 });
 
+run('generation refuses a symlink reachable only through the on-demand catalog copy, not a selected source', () => {
+  const fixture = tempDir('ecc-symlink-ondemand-src-');
+  const outRoot = tempDir('ecc-symlink-ondemand-out-');
+  try {
+    for (const rel of ['skills/selected-skill', 'skills/ondemand-linked', 'commands', 'manifests', '.claude-plugin']) {
+      fs.mkdirSync(path.join(fixture, ...rel.split('/')), { recursive: true });
+    }
+    fs.writeFileSync(path.join(fixture, 'skills', 'selected-skill', 'SKILL.md'),
+      '---\nname: selected-skill\ndescription: The only explicitly selected skill\n---\n');
+    fs.writeFileSync(path.join(fixture, 'skills', 'ondemand-linked', 'SKILL.md'),
+      '---\nname: ondemand-linked\ndescription: A catalog-only skill whose directory contains a symlink\n---\n');
+    const outsideFile = path.join(fixture, 'outside-secret.txt');
+    fs.writeFileSync(outsideFile, 'not part of any carrier');
+    try {
+      fs.symlinkSync(outsideFile, path.join(fixture, 'skills', 'ondemand-linked', 'escape.txt'));
+    } catch {
+      console.log('  (skipped: platform denies symlink creation)');
+      return;
+    }
+    fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.1' }));
+    fs.cpSync(path.join(repoRoot, 'manifests'), path.join(fixture, 'manifests'), { recursive: true });
+    fs.writeFileSync(path.join(fixture, 'commands', 'noop.md'), '---\ndescription: noop\n---\n');
+    // Only "selected-skill" is selected; "ondemand-linked" is reachable
+    // exclusively through the full-catalog on-demand copy set, so this
+    // proves that path is swept for symlinks too, not just plan.skills.
+    const plan = resolvePluginProfilePlan({
+      repoRoot: fixture,
+      moduleIds: ['commands-core'],
+      includeComponentIds: ['skill:selected-skill'],
+      pluginName: 'ecc-symlink-ondemand',
+    });
+    assert.ok(!plan.skills.includes('ondemand-linked'), 'the symlinked skill must be on-demand-only, not directly selected');
+    assert.throws(() => generate({ plan, outRoot }), error => {
+      assert.match(error.message, /symlink/i);
+      assert.match(error.message, /ondemand-linked[\\/]escape\.txt/);
+      return true;
+    });
+    assert.deepStrictEqual(fs.readdirSync(outRoot), [], 'nothing written, no staging leftovers');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
 run('generation refuses a pending hook decision and reuses the consent disclosure', () => {
   const outRoot = tempDir('ecc-plugin-pending-');
   try {
