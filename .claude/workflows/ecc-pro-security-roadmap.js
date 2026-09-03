@@ -124,7 +124,7 @@ phase('Survey');
 const surveyThunks = [
   () =>
     agent(
-      `${GUARDRAILS}\n\nSURVEY AgentShield's CURRENT detection capability. Read ~/GitHub/ECC/agentshield: src/rules (built-in detectors), src/* area dirs (taint, injection, supply-chain, runtime, threat-intel, sandbox, policy, remediation, evidence-pack, harness-adapters), README.md, CHANGELOG.md, WORKING-CONTEXT.md. Produce an honest capability map: what classes of agentic-security risk it detects TODAY, where the gaps are, and which capabilities could plausibly be a paid/Pro tier (e.g. continuous monitoring, fleet dashboards, hosted scanning, evidence packs, org policy). area="agentshield-capability".`,
+      `${GUARDRAILS}\n\nSURVEY AgentShield's CURRENT detection capability. Read ~/GitHub/ECC/agentshield: src/rules (built-in detectors), src/* area dirs (taint, injection, supply-chain, runtime, threat-intel, sandbox, policy, remediation, evidence-pack, harness-adapters), README.md, CHANGELOG.md. Produce an honest capability map: what classes of agentic-security risk it detects TODAY, where the gaps are, and which capabilities could plausibly be a paid/Pro tier (e.g. continuous monitoring, fleet dashboards, hosted scanning, evidence packs, org policy). area="agentshield-capability".`,
       { label: 'survey:agentshield-capability', phase: 'Survey', agentType: 'general-purpose', schema: CAPABILITY_SCHEMA }
     ),
   () =>

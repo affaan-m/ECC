@@ -46,7 +46,7 @@ That means the shortest safe path is:
 Use the current workspace split consistently:
 
 - live code work happens in cloned repos under `~/GitHub`
-- repo-specific active execution context lives in repo-level `WORKING-CONTEXT.md`
+- repo-specific direction lives in `docs/ROADMAP.md`, shipped change history in `CHANGELOG.md`
 - broader non-code context can live in KB/archive layers
 - durable cross-machine truth should prefer GitHub, Linear, and the knowledge base
 
@@ -105,7 +105,7 @@ Source examples:
 Translate into:
 
 - `knowledge-ops`
-- repo `WORKING-CONTEXT.md`
+- repo `docs/ROADMAP.md` and `CHANGELOG.md`
 - GitHub / Linear / KB-backed durable context
 - future deep memory work under `#1049`
 

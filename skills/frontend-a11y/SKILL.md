@@ -443,4 +443,4 @@ Before submitting any interactive component for review:
 
 - `frontend-patterns` — general React component and state patterns
 - `design-system` — design token and component consistency
-- `motion-ui` — animation patterns with accessibility considerations
+- `motion-foundations` and `motion-patterns`: animation patterns with accessibility considerations
