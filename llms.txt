@@ -1,0 +1,34 @@
+# ECC
+
+> ECC is an MIT-licensed agent harness operating system for Claude Code, Codex,
+> Cursor, OpenCode, and other coding agents. It installs a repeatable engineering
+> loop - plan, test, implement, review, verify, remember, improve - as skills,
+> agents, commands, hooks, and rules instead of ad-hoc prompting.
+
+Install: `npx ecc-universal setup`
+
+## Overview
+
+- [Repository](https://github.com/affaan-m/ECC): source, 286 skills, 68 agents, 94 commands.
+- [Website](https://ecc.tools): install paths, pricing, and platform support.
+- [Full catalog](https://ecc.tools/llms-full.txt): every skill, agent, and command with a one-line summary.
+- [Machine index](https://github.com/affaan-m/ECC/blob/main/docs/DISCOVERY-INDEX.json): the same catalog as JSON.
+
+## Getting started
+
+- [Install guide](https://github.com/affaan-m/ECC#install-ecc): npm setup and native plugin paths.
+- [Command reference](https://github.com/affaan-m/ECC/blob/main/COMMANDS-QUICK-REF.md): every command in one table.
+- [Troubleshooting](https://github.com/affaan-m/ECC/blob/main/TROUBLESHOOTING.md): install and runtime problems.
+- [Contributing](https://github.com/affaan-m/ECC/blob/main/CONTRIBUTING.md): file formats and review process.
+
+## Surfaces
+
+- Skills (286): Task playbooks the agent loads on demand.
+- Agents (68): Specialist subagents for delegated work.
+- Commands (94): Slash-command entry points.
+
+## Optional
+
+- [Security policy](https://github.com/affaan-m/ECC/blob/main/SECURITY.md): reporting and AgentShield scanning.
+- [Roadmap](https://github.com/affaan-m/ECC/blob/main/ROADMAP.md): what ships next.
+- [Adopters](https://github.com/affaan-m/ECC/blob/main/ADOPTERS.md): teams running ECC.

@@ -231,6 +231,10 @@ jobs:
         run: npm run command-registry:check
         continue-on-error: false
 
+      - name: Validate discovery index
+        run: npm run discovery:check
+        continue-on-error: false
+
       - name: Check unicode safety
         run: node scripts/ci/check-unicode-safety.js
         continue-on-error: false
