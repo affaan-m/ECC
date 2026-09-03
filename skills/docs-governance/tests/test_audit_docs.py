@@ -160,6 +160,13 @@ def test_artifact_scope_ignores_title_with_closing_parenthesis(project: Path) ->
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_checks_unwrapped_destination_with_apostrophe(project: Path) -> None:
+    (project / "index.md").write_text("[guide](John's-guide.md)\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: index.md -> John's-guide.md" in result.stdout
+
+
 def test_artifact_scope_checks_angle_wrapped_destination_with_title(project: Path) -> None:
     (project / "index.md").write_text('[missing](<guide.md> "Guide")\n', encoding="utf-8")
     result = run_audit(project, "artifacts")

@@ -144,7 +144,7 @@ def markdown_link_targets(text: str) -> list[str]:
                 elif character == quote:
                     quote = None
                 continue
-            if character in {"'", '"'}:
+            if character in {"'", '"'} and end > start and text[end - 1].isspace():
                 quote = character
                 continue
             if character == "(":
