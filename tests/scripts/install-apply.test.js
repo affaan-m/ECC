@@ -130,6 +130,28 @@ function runTests() {
     assert.ok(result.stderr.includes('cannot be combined'));
   })) passed++; else failed++;
 
+  if (test('plans Grok through the canonical request and install-plan JSON contract', () => {
+    const homeDir = createTempDir('install-apply-grok-home-');
+    try {
+      const result = run(
+        ['--target', 'grok', '--profile', 'minimal', '--dry-run', '--json'],
+        { cwd: path.dirname(path.dirname(SCRIPT)), homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.dryRun, true);
+      assert.strictEqual(payload.grok, undefined);
+      assert.strictEqual(payload.plan.target, 'grok');
+      assert.strictEqual(payload.plan.adapter.id, 'grok-home');
+      assert.ok(payload.plan.operations.length > 0);
+      assert.ok(payload.plan.operations.every((operation) => (
+        ['copy-file', 'render-template', 'merge-json', 'remove'].includes(operation.kind)
+      )));
+    } finally {
+      cleanup(homeDir);
+    }
+  })) passed++; else failed++;
+
   if (test('installs Claude rules and writes install-state', () => {
     const homeDir = createTempDir('install-apply-home-');
     const projectDir = createTempDir('install-apply-project-');

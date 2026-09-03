@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const adapter = require('../../scripts/lib/grok-harness-adapter');
+const { uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 const {
   resolveEccRoot,
   pluginRootFromEnv,
@@ -231,6 +232,27 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('preview exposes canonical operations and their concrete destinations', () => {
+    const homeDir = createTempDir();
+    try {
+      const plan = adapter.previewInstall({
+        homeDir,
+        source: { source: 'url', url: 'https://github.com/affaan-m/ECC.git', sha: FIXTURE_SHA },
+        trust: true,
+        consent: { hooks: true, mcp: { 'other-mcp': true } },
+        mcpConfig: { mcpServers: { 'other-mcp': { command: 'echo' } } },
+      });
+      assert.ok(Array.isArray(plan.operations) && plan.operations.length > 0);
+      assert.ok(plan.operations.every((operation) => (
+        ['copy-file', 'render-template', 'merge-json', 'remove'].includes(operation.kind)
+      )));
+      assert.ok(plan.operations.every((operation) => path.isAbsolute(operation.destinationPath)));
+      assert.ok(plan.operations.some((operation) => operation.destinationPath.includes(path.join('.grok', 'plugins'))));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('applyInstall copies the pinned git archive, not HEAD or untracked files', () => {
     const homeDir = createTempDir();
     const sourceRoot = createTempDir();
@@ -281,6 +303,54 @@ function runTests() {
       assert.throws(
         () => adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig }),
         /not in source git/
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('applyInstall rejects a non-Git source tree with only self-asserted identity', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    try {
+      const fixture = sourceFixture(sourceRoot);
+      fs.mkdirSync(path.join(sourceRoot, '.grok-plugin'), { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, '.grok-plugin', 'marketplace.json'), JSON.stringify({
+        plugins: [{ name: 'ecc', version: fixture.version, source: fixture.source }],
+      }));
+      const plan = adapter.previewInstall({ ...fixture, homeDir, trust: true });
+      assert.throws(
+        () => adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig }),
+        /unverifiable|verified source|source identity/i
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('runGrokInstall rejects malformed .mcp.json instead of silently disabling capabilities', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    try {
+      fs.mkdirSync(path.join(sourceRoot, '.grok-plugin'), { recursive: true });
+      fs.writeFileSync(path.join(sourceRoot, '.grok-plugin', 'marketplace.json'), JSON.stringify({
+        plugins: [{
+          name: 'ecc',
+          version: '2.2.0',
+          source: { source: 'url', url: 'https://github.com/affaan-m/ECC.git', sha: FIXTURE_SHA },
+        }],
+      }));
+      fs.writeFileSync(path.join(sourceRoot, '.grok-plugin', 'plugin.json'), JSON.stringify({
+        name: 'ecc',
+        hooks: '',
+        mcpServers: '',
+      }));
+      fs.writeFileSync(path.join(sourceRoot, '.mcp.json'), '{not-json');
+      assert.throws(
+        () => adapter.runGrokInstall({ dryRun: true, homeDir, repoRoot: sourceRoot }),
+        /\.mcp\.json|JSON/i
       );
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
@@ -489,6 +559,112 @@ function runTests() {
       () => adapter.assertRootContainment('C:\\Windows\\System32', grokRoot, path.win32),
       /escapes Grok root/
     );
+  })) passed++; else failed++;
+
+  if (test('applyInstall rejects a symlinked plugin-directory ancestor without writing outside Grok home', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    const outsideRoot = createTempDir();
+    try {
+      const fixture = gitSourceFixture(sourceRoot);
+      const grokRoot = path.join(homeDir, '.grok');
+      fs.mkdirSync(grokRoot, { recursive: true });
+      try {
+        fs.symlinkSync(outsideRoot, path.join(grokRoot, 'plugins'), 'dir');
+      } catch {
+        console.log('    (directory symlink unsupported on this platform; skipping)');
+        return;
+      }
+      const plan = adapter.previewInstall({ ...fixture, homeDir, trust: true });
+      assert.throws(() => adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig }), /outside|symlink|root/i);
+      assert.deepStrictEqual(fs.readdirSync(outsideRoot), []);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+      fs.rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('applyInstall rejects a final destination symlink without modifying its target', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    const outsideRoot = createTempDir();
+    try {
+      const fixture = gitSourceFixture(sourceRoot);
+      const plan = adapter.previewInstall({ ...fixture, homeDir, trust: true });
+      const destination = adapter.installDestination(homeDir, plan);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(path.join(outsideRoot, 'sentinel.txt'), 'unchanged\n');
+      try {
+        fs.symlinkSync(outsideRoot, destination, 'dir');
+      } catch {
+        console.log('    (directory symlink unsupported on this platform; skipping)');
+        return;
+      }
+      assert.throws(() => adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig }), /outside|symlink|root/i);
+      assert.deepStrictEqual(fs.readdirSync(outsideRoot), ['sentinel.txt']);
+      assert.strictEqual(fs.readFileSync(path.join(outsideRoot, 'sentinel.txt'), 'utf8'), 'unchanged\n');
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+      fs.rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('canonical lifecycle uninstalls a Grok receipt with only supported operation kinds', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    const projectRoot = createTempDir();
+    try {
+      const fixture = gitSourceFixture(sourceRoot);
+      const plan = adapter.previewInstall({ ...fixture, homeDir, trust: true, consent: { hooks: true } });
+      const receipt = adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig });
+      const state = JSON.parse(fs.readFileSync(adapter.grokInstallStatePath(homeDir), 'utf8'));
+      assert.ok(state.operations.every((operation) => (
+        ['copy-file', 'render-template', 'merge-json', 'remove'].includes(operation.kind)
+      )));
+      const result = uninstallInstalledStates({
+        repoRoot,
+        homeDir,
+        projectRoot,
+        targets: ['grok'],
+      });
+      assert.strictEqual(result.results[0].status, 'uninstalled');
+      assert.ok(!fs.existsSync(receipt.installedRoot));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('consented capabilities are installed in Grok native discovery and denied capabilities are absent', () => {
+    const homeDir = createTempDir();
+    const sourceRoot = createTempDir();
+    try {
+      const fixture = gitSourceFixture(sourceRoot);
+      const plan = adapter.previewInstall({
+        ...fixture,
+        homeDir,
+        trust: true,
+        consent: { hooks: true, mcp: { 'other-mcp': true, 'chrome-devtools': false } },
+      });
+      const receipt = adapter.applyInstall(plan, { mcpConfig: fixture.mcpConfig });
+      assert.ok(receipt.installedRoot.startsWith(path.join(homeDir, '.grok', 'plugins') + path.sep));
+      assert.ok(fs.existsSync(path.join(receipt.installedRoot, 'hooks', 'hooks.json')));
+      const installedManifest = JSON.parse(fs.readFileSync(
+        path.join(receipt.installedRoot, '.grok-plugin', 'plugin.json'),
+        'utf8'
+      ));
+      assert.notStrictEqual(installedManifest.hooks, '');
+      assert.notStrictEqual(installedManifest.mcpServers, '');
+      const installedMcp = JSON.parse(fs.readFileSync(path.join(receipt.installedRoot, '.mcp.json'), 'utf8'));
+      assert.deepStrictEqual(Object.keys(installedMcp.mcpServers), ['other-mcp']);
+      assert.ok(!JSON.stringify(installedMcp).includes('chrome-devtools'));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('upgrade, uninstall, and rollback are receipt-backed on fixture trees', () => {
