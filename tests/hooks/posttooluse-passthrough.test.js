@@ -49,46 +49,28 @@ console.log('\nresolveMainStdout:');
 
 test('passthrough requested, clean result, intact input -> echoes the raw event', () => {
   const raw = '{"tool_name":"Read"}';
-  assert.strictEqual(
-    resolveMainStdout(raw, CLEAN_RESULT, { passthrough: true, truncated: false }),
-    raw
-  );
+  assert.strictEqual(resolveMainStdout(raw, CLEAN_RESULT, { passthrough: true, truncated: false }), raw);
 });
 
 test('passthrough not requested -> emits nothing', () => {
-  assert.strictEqual(
-    resolveMainStdout('{"tool_name":"Read"}', CLEAN_RESULT, { passthrough: false, truncated: false }),
-    ''
-  );
+  assert.strictEqual(resolveMainStdout('{"tool_name":"Read"}', CLEAN_RESULT, { passthrough: false, truncated: false }), '');
 });
 
 test('truncated input suppresses passthrough', () => {
   // Echoing a half-read event would hand the harness malformed JSON.
-  assert.strictEqual(
-    resolveMainStdout('{"tool_name":"Re', CLEAN_RESULT, { passthrough: true, truncated: true }),
-    ''
-  );
+  assert.strictEqual(resolveMainStdout('{"tool_name":"Re', CLEAN_RESULT, { passthrough: true, truncated: true }), '');
 });
 
 test('a failed hook result suppresses passthrough', () => {
-  assert.strictEqual(
-    resolveMainStdout('{"tool_name":"Read"}', { stdout: '', exitCode: 7 }, { passthrough: true, truncated: false }),
-    ''
-  );
+  assert.strictEqual(resolveMainStdout('{"tool_name":"Read"}', { stdout: '', exitCode: 7 }, { passthrough: true, truncated: false }), '');
 });
 
 test('a hook that produced stdout wins over passthrough', () => {
-  assert.strictEqual(
-    resolveMainStdout('{"tool_name":"Read"}', { stdout: 'from-hook', exitCode: 0 }, { passthrough: true, truncated: false }),
-    'from-hook'
-  );
+  assert.strictEqual(resolveMainStdout('{"tool_name":"Read"}', { stdout: 'from-hook', exitCode: 0 }, { passthrough: true, truncated: false }), 'from-hook');
 });
 
 test('a hook that produced stdout is emitted even when passthrough is off', () => {
-  assert.strictEqual(
-    resolveMainStdout('{"tool_name":"Read"}', { stdout: 'from-hook', exitCode: 0 }, { passthrough: false, truncated: false }),
-    'from-hook'
-  );
+  assert.strictEqual(resolveMainStdout('{"tool_name":"Read"}', { stdout: 'from-hook', exitCode: 0 }, { passthrough: false, truncated: false }), 'from-hook');
 });
 
 // ---------------------------------------------------------------------------

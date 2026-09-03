@@ -143,10 +143,7 @@ function makeAlternatePluginRoot() {
   fs.mkdirSync(root, { recursive: true });
   fs.cpSync(path.join(REPO_ROOT, 'scripts'), path.join(root, 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'continuous-learning-v2'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, 'scripts', 'hooks', 'launcher-probe.js'),
-    PROBE_SOURCE.replace('PROBE_STDERR:', 'ALT_STDERR:').replace('PROBE_STDOUT:', 'ALT_STDOUT:')
-  );
+  fs.writeFileSync(path.join(root, 'scripts', 'hooks', 'launcher-probe.js'), PROBE_SOURCE.replace('PROBE_STDERR:', 'ALT_STDERR:').replace('PROBE_STDOUT:', 'ALT_STDOUT:'));
   return root;
 }
 
@@ -178,20 +175,20 @@ function shellForms() {
       name: 'POSIX sh',
       // POSIX paths use forward slashes; on Windows a Git Bash sh still
       // accepts a drive-letter path in that form.
-      rootFor: (root) => root.split(path.sep).join('/'),
-      spawn: (command, options) => spawnSync('sh', ['-c', command], options),
+      rootFor: root => root.split(path.sep).join('/'),
+      spawn: (command, options) => spawnSync('sh', ['-c', command], options)
     });
   }
 
   if (process.platform === 'win32') {
     forms.push({
       name: 'Windows cmd.exe',
-      rootFor: (root) => root,
+      rootFor: root => root,
       // `shell: true` is how the harness runs a command string on Windows, and
       // how the rest of this suite exercises hooks.json commands. Handing
       // cmd.exe a pre-split argv instead re-quotes the command and breaks the
       // very quoting the test exists to verify.
-      spawn: (command, options) => spawnSync(command, { ...options, shell: true }),
+      spawn: (command, options) => spawnSync(command, { ...options, shell: true })
     });
   }
 
@@ -226,7 +223,7 @@ function runHookCommand(form, commandTemplate, options = {}) {
     input: options.input === undefined ? '{"session_id":"launcher-test"}' : options.input,
     encoding: 'utf8',
     timeout: 60000,
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: 16 * 1024 * 1024
   });
 
   assert.ok(!result.error, `shell failed to run command: ${result.error && result.error.message}`);
@@ -263,14 +260,8 @@ test('hooks.json ships at least one hook command', () => {
 });
 
 test('no hook command embeds an inline node program', () => {
-  const offenders = HOOK_COMMANDS.filter(
-    (entry) => /\bnode\s+(-e|--eval)\b/.test(entry.command)
-  ).map((entry) => `${entry.event}/${entry.matcher}`);
-  assert.deepStrictEqual(
-    offenders,
-    [],
-    `inline node -e bootstraps are what Defender classifies as VirTool:JS/Anomelesz.A; found in ${offenders.join(', ')}`
-  );
+  const offenders = HOOK_COMMANDS.filter(entry => /\bnode\s+(-e|--eval)\b/.test(entry.command)).map(entry => `${entry.event}/${entry.matcher}`);
+  assert.deepStrictEqual(offenders, [], `inline node -e bootstraps are what Defender classifies as VirTool:JS/Anomelesz.A; found in ${offenders.join(', ')}`);
 });
 
 test('no hook command uses the loader shapes that trip heuristic scanners', () => {
@@ -325,34 +316,25 @@ for (const form of SHELL_FORMS) {
   test(`${label} bootstrap launcher runs from a foreign cwd with both root vars unset`, () => {
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'));
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
-    assert.ok(
-      result.stdout.includes('PROBE_STDOUT:'),
-      `expected the probe's stdout to reach the caller, got: ${JSON.stringify(result.stdout)}`
-    );
+    assert.ok(result.stdout.includes('PROBE_STDOUT:'), `expected the probe's stdout to reach the caller, got: ${JSON.stringify(result.stdout)}`);
   });
 
   test(`${label} bootstrap launcher delivers the hook event on stdin`, () => {
     const input = '{"session_id":"stdin-check","tool":"Bash"}';
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'), { input });
-    assert.ok(
-      result.stdout.includes(input),
-      `expected stdin to be forwarded verbatim, got: ${JSON.stringify(result.stdout)}`
-    );
+    assert.ok(result.stdout.includes(input), `expected stdin to be forwarded verbatim, got: ${JSON.stringify(result.stdout)}`);
   });
 
   test(`${label} bootstrap launcher preserves the target's stderr`, () => {
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'), {
-      env: { PROBE_TAG: 'tagged' },
+      env: { PROBE_TAG: 'tagged' }
     });
-    assert.ok(
-      result.stderr.includes('PROBE_STDERR:tagged'),
-      `expected the probe's stderr to reach the caller, got: ${JSON.stringify(result.stderr)}`
-    );
+    assert.ok(result.stderr.includes('PROBE_STDERR:tagged'), `expected the probe's stderr to reach the caller, got: ${JSON.stringify(result.stderr)}`);
   });
 
   test(`${label} bootstrap launcher preserves a non-zero exit status`, () => {
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'), {
-      env: { PROBE_EXIT: '2' },
+      env: { PROBE_EXIT: '2' }
     });
     // Exit 2 is how a PreToolUse hook blocks a tool call; collapsing it to 0
     // would silently disable every blocking hook.
@@ -363,11 +345,7 @@ for (const form of SHELL_FORMS) {
     const input = '{"session_id":"passthrough-check"}';
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-echo.js'), { input });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
-    assert.strictEqual(
-      result.stdout,
-      '',
-      `a target echoing the raw event should not be re-emitted, got: ${JSON.stringify(result.stdout)}`
-    );
+    assert.strictEqual(result.stdout, '', `a target echoing the raw event should not be re-emitted, got: ${JSON.stringify(result.stdout)}`);
   });
 
   test(`${label} bootstrap launcher ignores a whitespace-only CLAUDE_PLUGIN_ROOT`, () => {
@@ -375,13 +353,10 @@ for (const form of SHELL_FORMS) {
     // the launcher's ability to locate itself.
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'), {
       keepRootVars: true,
-      env: { CLAUDE_PLUGIN_ROOT: '   ', ECC_PLUGIN_ROOT: undefined },
+      env: { CLAUDE_PLUGIN_ROOT: '   ', ECC_PLUGIN_ROOT: undefined }
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
-    assert.ok(
-      result.stdout.includes('PROBE_STDOUT:'),
-      `expected the launcher to fall back to its own directory, got stdout ${JSON.stringify(result.stdout)} stderr ${JSON.stringify(result.stderr)}`
-    );
+    assert.ok(result.stdout.includes('PROBE_STDOUT:'), `expected the launcher to fall back to its own directory, got stdout ${JSON.stringify(result.stdout)} stderr ${JSON.stringify(result.stderr)}`);
   });
 
   test(`${label} bootstrap launcher honours ECC_PLUGIN_ROOT when CLAUDE_PLUGIN_ROOT is absent`, () => {
@@ -390,13 +365,10 @@ for (const form of SHELL_FORMS) {
     // resolving it against __dirname give different answers.
     const result = runHookCommand(form, bootstrapCommand('scripts/hooks/launcher-probe.js'), {
       keepRootVars: true,
-      env: { CLAUDE_PLUGIN_ROOT: undefined, ECC_PLUGIN_ROOT: ALTERNATE_ROOT },
+      env: { CLAUDE_PLUGIN_ROOT: undefined, ECC_PLUGIN_ROOT: ALTERNATE_ROOT }
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
-    assert.ok(
-      result.stdout.includes('ALT_STDOUT:'),
-      `expected the target to resolve under ECC_PLUGIN_ROOT, got stdout ${JSON.stringify(result.stdout)} stderr ${JSON.stringify(result.stderr)}`
-    );
+    assert.ok(result.stdout.includes('ALT_STDOUT:'), `expected the target to resolve under ECC_PLUGIN_ROOT, got stdout ${JSON.stringify(result.stdout)} stderr ${JSON.stringify(result.stderr)}`);
   });
 
   test(`${label} run-with-flags launcher runs from a foreign cwd with both root vars unset`, () => {
@@ -416,7 +388,7 @@ for (const form of SHELL_FORMS) {
     const command = `node "${PLUGIN_ROOT_TOKEN}/scripts/hooks/run-with-flags.js" test:launcher-probe scripts/hooks/launcher-probe.js minimal,standard,strict`;
     const result = runHookCommand(form, command, {
       keepRootVars: true,
-      env: { CLAUDE_PLUGIN_ROOT: undefined, ECC_PLUGIN_ROOT: ALTERNATE_ROOT },
+      env: { CLAUDE_PLUGIN_ROOT: undefined, ECC_PLUGIN_ROOT: ALTERNATE_ROOT }
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
     assert.ok(
@@ -429,7 +401,7 @@ for (const form of SHELL_FORMS) {
     const command = `node "${PLUGIN_ROOT_TOKEN}/scripts/hooks/run-with-flags.js" test:launcher-probe scripts/hooks/launcher-probe.js minimal,standard,strict`;
     const result = runHookCommand(form, command, {
       keepRootVars: true,
-      env: { CLAUDE_PLUGIN_ROOT: ' ', ECC_PLUGIN_ROOT: undefined },
+      env: { CLAUDE_PLUGIN_ROOT: ' ', ECC_PLUGIN_ROOT: undefined }
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
     assert.ok(
@@ -443,13 +415,10 @@ for (const form of SHELL_FORMS) {
     // launcher collapsing it to 0 would disable every blocking hook silently.
     const command = `node "${PLUGIN_ROOT_TOKEN}/scripts/hooks/run-with-flags.js" test:launcher-probe scripts/hooks/launcher-probe.js minimal,standard,strict`;
     const result = runHookCommand(form, command, {
-      env: { PROBE_EXIT: '2', PROBE_TAG: 'runner' },
+      env: { PROBE_EXIT: '2', PROBE_TAG: 'runner' }
     });
     assert.strictEqual(result.status, 2, `expected the child's exit status to survive, got ${result.status}; stderr: ${result.stderr}`);
-    assert.ok(
-      result.stderr.includes('PROBE_STDERR:runner'),
-      `expected the child's stderr to survive, got ${JSON.stringify(result.stderr)}`
-    );
+    assert.ok(result.stderr.includes('PROBE_STDERR:runner'), `expected the child's stderr to survive, got ${JSON.stringify(result.stderr)}`);
   });
 
   test(`${label} run-with-flags launcher captures a multi-megabyte hook stdout intact`, () => {
@@ -460,17 +429,13 @@ for (const form of SHELL_FORMS) {
     const command = `node "${PLUGIN_ROOT_TOKEN}/scripts/hooks/run-with-flags.js" test:launcher-bulk scripts/hooks/launcher-bulk.js minimal,standard,strict`;
     const result = runHookCommand(form, command, { env: { BULK_BYTES: String(bulkBytes) } });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr.slice(0, 300)}`);
-    assert.strictEqual(
-      result.stdout.length,
-      bulkBytes,
-      `expected ${bulkBytes} bytes of hook stdout to survive the launcher, got ${result.stdout.length}; stderr: ${result.stderr.slice(0, 300)}`
-    );
+    assert.strictEqual(result.stdout.length, bulkBytes, `expected ${bulkBytes} bytes of hook stdout to survive the launcher, got ${result.stdout.length}; stderr: ${result.stderr.slice(0, 300)}`);
   });
 
   test(`${label} posttooluse dispatcher launcher runs from a foreign cwd with both root vars unset`, () => {
     const command = `node "${PLUGIN_ROOT_TOKEN}/scripts/hooks/posttooluse-dispatcher.js" sync --passthrough`;
     const result = runHookCommand(form, command, {
-      input: '{"session_id":"dispatcher-check","tool":"Read","tool_input":{},"tool_response":{}}',
+      input: '{"session_id":"dispatcher-check","tool":"Read","tool_input":{},"tool_response":{}}'
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
   });
@@ -480,7 +445,7 @@ for (const form of SHELL_FORMS) {
     const result = runHookCommand(form, command, {
       keepRootVars: true,
       env: { CLAUDE_PLUGIN_ROOT: '  ', ECC_PLUGIN_ROOT: undefined },
-      input: '{"session_id":"dispatcher-check","tool":"Read","tool_input":{},"tool_response":{}}',
+      input: '{"session_id":"dispatcher-check","tool":"Read","tool_input":{},"tool_response":{}}'
     });
     assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
   });

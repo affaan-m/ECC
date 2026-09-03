@@ -58,11 +58,7 @@ function resolvePluginRoot(options = {}) {
   const env = options.env || process.env;
   const fallback = options.fallback;
 
-  return (
-    usableRoot(env[CLAUDE_ROOT_VAR]) ||
-    usableRoot(env[ECC_ROOT_VAR]) ||
-    fallback
-  );
+  return usableRoot(env[CLAUDE_ROOT_VAR]) || usableRoot(env[ECC_ROOT_VAR]) || fallback;
 }
 
 module.exports = { resolvePluginRoot, usableRoot, CLAUDE_ROOT_VAR, ECC_ROOT_VAR };

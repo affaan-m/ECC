@@ -36,7 +36,7 @@ const FALLBACK = '/packaged/plugin/root';
 test('CLAUDE_PLUGIN_ROOT wins when it is a non-empty path', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '/from/claude' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, '/from/claude');
 });
@@ -44,7 +44,7 @@ test('CLAUDE_PLUGIN_ROOT wins when it is a non-empty path', () => {
 test('ECC_PLUGIN_ROOT is honoured when CLAUDE_PLUGIN_ROOT is absent', () => {
   const root = resolvePluginRoot({
     env: { ECC_PLUGIN_ROOT: '/from/ecc' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, '/from/ecc');
 });
@@ -52,7 +52,7 @@ test('ECC_PLUGIN_ROOT is honoured when CLAUDE_PLUGIN_ROOT is absent', () => {
 test('CLAUDE_PLUGIN_ROOT takes precedence over ECC_PLUGIN_ROOT', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '/from/claude', ECC_PLUGIN_ROOT: '/from/ecc' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, '/from/claude');
 });
@@ -60,7 +60,7 @@ test('CLAUDE_PLUGIN_ROOT takes precedence over ECC_PLUGIN_ROOT', () => {
 test('an empty CLAUDE_PLUGIN_ROOT falls through to the fallback', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, FALLBACK);
 });
@@ -70,7 +70,7 @@ test('a whitespace-only CLAUDE_PLUGIN_ROOT falls through to the fallback', () =>
   // treats '   ' as a real root and every hook then resolves against '/'.
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '   ' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, FALLBACK);
 });
@@ -78,7 +78,7 @@ test('a whitespace-only CLAUDE_PLUGIN_ROOT falls through to the fallback', () =>
 test('a whitespace-only CLAUDE_PLUGIN_ROOT still lets ECC_PLUGIN_ROOT win', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '  ', ECC_PLUGIN_ROOT: '/from/ecc' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, '/from/ecc');
 });
@@ -86,7 +86,7 @@ test('a whitespace-only CLAUDE_PLUGIN_ROOT still lets ECC_PLUGIN_ROOT win', () =
 test('a whitespace-only ECC_PLUGIN_ROOT falls through to the fallback', () => {
   const root = resolvePluginRoot({
     env: { ECC_PLUGIN_ROOT: '\t\n ' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, FALLBACK);
 });
@@ -99,7 +99,7 @@ test('both variables unset resolves to the fallback', () => {
 test('a configured root is returned trimmed', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: '  /padded/root  ' },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, '/padded/root');
 });
@@ -107,7 +107,7 @@ test('a configured root is returned trimmed', () => {
 test('a non-string variable is ignored rather than coerced', () => {
   const root = resolvePluginRoot({
     env: { CLAUDE_PLUGIN_ROOT: 5, ECC_PLUGIN_ROOT: null },
-    fallback: FALLBACK,
+    fallback: FALLBACK
   });
   assert.strictEqual(root, FALLBACK);
 });
