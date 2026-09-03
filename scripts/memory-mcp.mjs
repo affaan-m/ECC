@@ -417,8 +417,14 @@ function createMemoryMcpService(options = {}) {
         return jsonRpcError(message.id, -32002, 'Server is not initialized.');
       }
       if (message.method === 'ping') {
-        if (message.params && Object.keys(message.params).length > 0) {
-          return jsonRpcError(message.id, -32602, 'ping does not accept parameters.');
+        const params = message.params || {};
+        if (
+          // `_meta` is reserved by MCP for request metadata (e.g. progressToken); accept it,
+          // but when present it must be a metadata object — reject null, arrays, and scalars.
+          (Object.prototype.hasOwnProperty.call(params, '_meta') && !isRecord(params._meta))
+          || Object.keys(params).some(key => key !== '_meta')
+        ) {
+          return jsonRpcError(message.id, -32602, 'Invalid ping parameters.');
         }
         return jsonRpcResult(message.id, {});
       }
