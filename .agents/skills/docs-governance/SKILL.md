@@ -83,7 +83,7 @@ request, invoke that specialized skill without routing through this one.
 - “Organize our long-lived project docs” routes to `living-docs-governance`.
 - “Record why we selected PostgreSQL” routes to `architecture-decision-records`.
 - “Check whether our documentation links and ADR index are intact” runs the
-  bundled audit with `--scope artifacts` and `--scope adr`.
+  bundled audit once with `--scope artifacts`, then again with `--scope adr`.
 - “Are we finished with the migration?” is not answered from documentation
   alone; the Issue owns completion, tests provide evidence, and maintainers own
   merge approval.

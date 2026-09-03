@@ -15,6 +15,7 @@ const MIRRORED_FILES = [
   'SKILL.md',
   'references/artifact-role-contract.md',
   'scripts/audit-docs.py',
+  'scripts/markdown_links.py',
 ];
 const ROUTED_SKILLS = [
   'ai-regression-testing',
@@ -79,4 +80,4 @@ test('opt-in install includes every routed skill owner', () => {
 console.log(`\nPassed: ${passed}`);
 console.log(`Failed: ${failed}\n`);
 
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

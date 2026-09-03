@@ -249,6 +249,22 @@ def test_artifact_scope_checks_angle_wrapped_destination_with_title(
     assert "Broken Markdown link: 'index.md' -> 'guide.md'" in result.stdout
 
 
+@pytest.mark.parametrize(
+    "usage",
+    ("[guide][docs]", "[docs][]", "[docs]"),
+)
+def test_artifact_scope_checks_reference_style_markdown_links(
+    project: Path, usage: str
+) -> None:
+    (project / "index.md").write_text(
+        f"{usage}\n\n[docs]: missing-guide.md\n", encoding="utf-8"
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link" in result.stdout
+    assert "missing-guide.md" in result.stdout
+
+
 def test_adr_scope_requires_every_file_in_index(project: Path) -> None:
     adr_dir = project / "docs" / "adr"
     adr_dir.mkdir(parents=True)
@@ -269,6 +285,19 @@ def test_adr_scope_accepts_indexed_decision(project: Path) -> None:
     )
     (adr_dir / "ADR-001-Storage.md").write_text(
         "# ADR-001\n\nStatus: accepted\n", encoding="utf-8"
+    )
+    result = run_audit(project, "adr")
+    assert result.returncode == 0, result.stdout
+
+
+def test_adr_scope_accepts_documented_bold_status_metadata(project: Path) -> None:
+    adr_dir = project / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "README.md").write_text(
+        "[decision](0001-storage.md)\n", encoding="utf-8"
+    )
+    (adr_dir / "0001-storage.md").write_text(
+        "# ADR-0001\n\n**Status**: accepted\n", encoding="utf-8"
     )
     result = run_audit(project, "adr")
     assert result.returncode == 0, result.stdout
@@ -390,6 +419,15 @@ def test_artifact_scope_rejects_unregistered_test_id_when_tests_ledger_exists(
     assert "TEST-IDs are missing from the test registry" in result.stdout
 
 
+def test_artifact_scope_ignores_lowercase_test_hyphenated_prose(
+    project: Path,
+) -> None:
+    (project / "TESTS.md").write_text("# TESTS\n\nTEST-ORDER-001\n", encoding="utf-8")
+    (project / "guide.md").write_text("Use a test-driven workflow.\n", encoding="utf-8")
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
 def test_artifact_scope_reports_a_non_utf8_test_registry(project: Path) -> None:
     (project / "TESTS.md").write_bytes(b"\xff\xfe")
     (project / "spec.md").write_text("Verified by TEST-ORDER-001.\n", encoding="utf-8")
@@ -418,6 +456,72 @@ def test_log_move_to_archive_preserves_append_only_history(project: Path) -> Non
     assert (
         "Active and archived history remain append-only when combined" in result.stdout
     )
+
+
+def test_spine_scope_detects_recreated_root_level_deletion_zone_file(
+    project: Path,
+) -> None:
+    (project / "PROJECT_STATUS.md").write_text(
+        "# Status\n\n## Deletion Zone\n\n- `legacy_parser.py`\n", encoding="utf-8"
+    )
+    (project / "legacy_parser.py").write_text("# recreated\n", encoding="utf-8")
+    result = run_audit(project, "spine")
+    assert result.returncode == 1
+    assert "Deletion-zone target has been recreated" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "ftp://example.com/legacy.py",
+        "mailto:legacy@example.com",
+        "urn:legacy:parser",
+        pytest.param(
+            r"..\legacy.py",
+            marks=pytest.mark.skipif(
+                sys.platform.startswith("win"),
+                reason="the Windows path would escape the temporary project",
+            ),
+        ),
+    ),
+)
+def test_spine_scope_ignores_unsafe_deletion_zone_values(
+    project: Path, value: str
+) -> None:
+    candidate = project / value
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text("# unrelated\n", encoding="utf-8")
+    (project / "PROJECT_STATUS.md").write_text(
+        f"# Status\n\n## Deletion Zone\n\n- `{value}`\n", encoding="utf-8"
+    )
+    result = run_audit(project, "spine")
+    assert result.returncode == 0, result.stdout
+
+
+def test_spine_scope_handles_missing_git_without_traceback(project: Path) -> None:
+    (project / "PROJECT_LOG.md").write_text(
+        "# LOG\n\n## [2026-01-01] init | one\n", encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(project), "--scope", "spine"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={"PATH": ""},
+    )
+    assert result.returncode == 0, result.stdout
+    assert "Git history is unavailable" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_spine_scope_warns_when_root_has_no_git_head(project: Path) -> None:
+    (project / "PROJECT_LOG.md").write_text(
+        "# LOG\n\n## [2026-01-01] init | one\n", encoding="utf-8"
+    )
+    result = run_audit(project, "spine")
+    assert result.returncode == 0, result.stdout
+    assert "Git history is unavailable" in result.stdout
+    assert "append-only when combined" not in result.stdout
 
 
 def test_log_duplicate_removal_is_detected(project: Path) -> None:

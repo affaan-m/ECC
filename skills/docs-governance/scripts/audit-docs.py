@@ -10,7 +10,12 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
-from urllib.parse import unquote
+
+from markdown_links import (
+    markdown_link_targets,
+    normalize_link_target,
+    without_fenced_code,
+)
 
 DEFAULT_ROLES = {
     "constitution": "CLAUDE.md",
@@ -30,16 +35,12 @@ ENTRY_RE = re.compile(
     r"^## \[(?P<date>\d{4}-\d{2}-\d{2})\]\s+(?P<type>[^|\n]+?)\s*\|\s*(?P<summary>[^\n]+)$",
     re.MULTILINE,
 )
-MARKDOWN_LINK_START_RE = re.compile(r"\[[^\]\n]*\]\(")
 CODE_PATH_RE = re.compile(r"`([^`\n]+)`")
-TEST_ID_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b", re.IGNORECASE)
-EXTERNAL_URI_RE = re.compile(
-    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:data|doi|geo|irc|magnet|mailto|news|sms|tel|urn):)",
-    re.IGNORECASE,
-)
+TEST_ID_RE = re.compile(r"\bTEST-[A-Z0-9][A-Z0-9-]*\b")
 ADR_TARGET_RE = re.compile(r"\b(?:ADR-)?\d{3,4}-[a-z0-9-]+\.md\b", re.IGNORECASE)
 IGNORED_DIRS = {".git", ".governance", ".venv", "node_modules", "vendor", "__pycache__"}
 IGNORED_REFERENCE_MARKERS = ("*", "{", "}", "<", ">", "…", "...")
+GIT_TIMEOUT_SECONDS = 5
 
 
 class Report:
@@ -212,122 +213,20 @@ def event_contents(text: str) -> list[str]:
     return result
 
 
-def without_fenced_code(text: str) -> str:
-    output: list[str] = []
-    fence_character: str | None = None
-    fence_length = 0
-    for line in text.splitlines(keepends=True):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if fence_character is None and marker:
-            fence_character = marker.group(1)[0]
-            fence_length = len(marker.group(1))
-            output.append("\n" if line.endswith("\n") else "")
-            continue
-        if fence_character is not None:
-            closing = re.match(
-                rf"^ {{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*(?:\r?\n)?$",
-                line,
-            )
-            if closing:
-                fence_character = None
-                fence_length = 0
-            output.append("\n" if line.endswith("\n") else "")
-            continue
-        output.append(line)
-    return "".join(output)
-
-
-def without_inline_code(text: str) -> str:
-    output: list[str] = []
-    cursor = 0
-    while cursor < len(text):
-        if text[cursor] != "`":
-            output.append(text[cursor])
-            cursor += 1
-            continue
-        end_of_marker = cursor
-        while end_of_marker < len(text) and text[end_of_marker] == "`":
-            end_of_marker += 1
-        marker = text[cursor:end_of_marker]
-        closing = text.find(marker, end_of_marker)
-        if closing == -1:
-            output.append(marker)
-            cursor = end_of_marker
-            continue
-        output.extend(
-            "\n" if character == "\n" else " "
-            for character in text[cursor : closing + len(marker)]
+def run_git(
+    root: Path, arguments: list[str]
+) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=GIT_TIMEOUT_SECONDS,
         )
-        cursor = closing + len(marker)
-    return "".join(output)
-
-
-def git_show(root: Path, relative: str) -> str | None:
-    command = subprocess.run(
-        ["git", "show", f"HEAD:{relative}"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    return command.stdout if command.returncode == 0 else None
-
-
-def markdown_link_targets(text: str) -> list[str]:
-    text = without_inline_code(without_fenced_code(text))
-    targets: list[str] = []
-    for match in MARKDOWN_LINK_START_RE.finditer(text):
-        start = match.end()
-        if start < len(text) and text[start] == "<":
-            end = text.find(">", start + 1)
-            if end != -1:
-                targets.append(text[start : end + 1])
-            continue
-        depth = 0
-        quote: str | None = None
-        escaped = False
-        for end in range(start, len(text)):
-            character = text[end]
-            if quote is not None:
-                if escaped:
-                    escaped = False
-                elif character == "\\":
-                    escaped = True
-                elif character == quote:
-                    quote = None
-                continue
-            if character in {"'", '"'}:
-                quote = character
-                continue
-            if character == "(":
-                depth += 1
-            elif character == ")":
-                if depth == 0:
-                    targets.append(text[start:end])
-                    break
-                depth -= 1
-    return targets
-
-
-def normalize_link_target(raw: str) -> str | None:
-    target = raw.strip()
-    if target.startswith("<"):
-        closing = target.find(">")
-        if closing == -1:
-            return None
-        target = target[1:closing]
-    else:
-        title = re.search(
-            r'\s+(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\([^()]*\))\s*$', target
-        )
-        if title:
-            target = target[: title.start()]
-    target = unquote(target.split("#", 1)[0].split("?", 1)[0])
-    if not target or target.startswith("//"):
+    except (OSError, subprocess.SubprocessError):
         return None
-    if EXTERNAL_URI_RE.match(target):
-        return None
-    return target
 
 
 def resolve_within_root(root: Path, base: Path, target: str) -> Path | None:
@@ -372,6 +271,23 @@ def plausible_code_path(value: str) -> bool:
     if re.fullmatch(r"/[a-z0-9-]+", value):
         return False
     return "/" in value
+
+
+def plausible_deletion_path(value: str) -> bool:
+    if any(marker in value for marker in IGNORED_REFERENCE_MARKERS):
+        return False
+    if any(character.isspace() for character in value):
+        return False
+    if value.startswith(("//", "$", ".governance/")):
+        return False
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value):
+        return False
+    path = Path(value.replace("\\", "/"))
+    return (
+        value not in {"", ".", ".."}
+        and not path.is_absolute()
+        and ".." not in path.parts
+    )
 
 
 def check_spine_paths(root: Path, roles: dict[str, str], report: Report) -> None:
@@ -425,7 +341,7 @@ def check_status_resurrection(
     resurrected: list[str] = []
     if match:
         for value in CODE_PATH_RE.findall(match.group("body")):
-            if plausible_code_path(value):
+            if plausible_deletion_path(value):
                 resolved = resolve_within_root(root, root, value)
                 if resolved is not None and resolved.exists():
                     resurrected.append(value)
@@ -452,24 +368,26 @@ def combined_history_events(
     return active_events, Counter(active_events + event_contents(archive_text))
 
 
-def previous_history_events(root: Path, roles: dict[str, str]) -> Counter[str]:
+def previous_history_events(root: Path, roles: dict[str, str]) -> Counter[str] | None:
+    head = run_git(root, ["rev-parse", "--verify", "HEAD"])
+    if head is None or head.returncode != 0:
+        return None
     previous_events: Counter[str] = Counter()
     for relative in (roles["history"], roles["history_archive"]):
-        previous = git_show(root, relative)
-        if previous is not None:
-            previous_events.update(event_contents(previous))
+        command = run_git(root, ["show", f"HEAD:{relative}"])
+        if command is None:
+            return None
+        if command.returncode == 0:
+            previous_events.update(event_contents(command.stdout))
     return previous_events
 
 
 def check_derived_history_index(root: Path, report: Report) -> None:
-    tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", ".governance/project-log.sqlite"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
+    tracked = run_git(
+        root,
+        ["ls-files", "--error-unmatch", ".governance/project-log.sqlite"],
     )
-    if tracked.returncode == 0:
+    if tracked is not None and tracked.returncode == 0:
         report.fail(
             ".governance/project-log.sqlite is a derived index and must not be committed"
         )
@@ -487,13 +405,19 @@ def check_log(
     if events is None:
         return
     active_events, current_events = events
-    missing = previous_history_events(root, roles) - current_events
-    if missing:
+    previous_events = previous_history_events(root, roles)
+    if previous_events is None:
         report.warn(
-            f"{sum(missing.values())} working-tree history events differ from HEAD; confirm intentional correction or redaction"
+            "Git history is unavailable; skipping the HEAD append-only comparison and tracked derived-index check"
         )
     else:
-        report.ok("Active and archived history remain append-only when combined")
+        missing = previous_events - current_events
+        if missing:
+            report.warn(
+                f"{sum(missing.values())} working-tree history events differ from HEAD; confirm intentional correction or redaction"
+            )
+        else:
+            report.ok("Active and archived history remain append-only when combined")
     if len(active_events) > threshold:
         report.warn(
             f"Active history has {len(active_events)} events, above {threshold}; review before archiving and rebuilding the SQLite index"
@@ -502,12 +426,13 @@ def check_log(
         report.ok(
             f"Active history has {len(active_events)} events, within the {threshold} threshold"
         )
-    check_derived_history_index(root, report)
+    if previous_events is not None:
+        check_derived_history_index(root, report)
 
 
 def parse_adr_status(text: str) -> str | None:
     patterns = (
-        r"(?im)^[-*]?\s*(?:status|\u72b6\u6001)\s*[:\uFF1A]\s*`?([a-z]+)`?\s*$",
+        r"(?im)^(?:[-*]\s+)?(?:\*\*(?:status|\u72b6\u6001)\*\*|(?:status|\u72b6\u6001))\s*[:\uFF1A]\s*`?([a-z]+)`?\s*$",
         r"(?im)^##\s+(?:status|\u72b6\u6001)\s*\n+\s*`?([a-z]+)`?\s*$",
     )
     for pattern in patterns:
