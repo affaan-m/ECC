@@ -45,7 +45,11 @@ const fs = require("fs")
 const os = require("os")
 const path = require("path")
 const { spawnSync, execFile } = require("child_process")
+const { resolveHookRuntime } = require(
+  path.join(__dirname, "..", "..", ".pi", "extensions", "hook-runtime.js")
+)
 
+/** Run a single adapter test and report the result. */
 async function runTest(name, fn) {
   try {
     await fn()
@@ -70,9 +74,9 @@ function stripComments(source) {
 }
 
 /**
- * Mirrors the adapter's own hook invocation (`runEccHook` in
- * .pi/extensions/index.ts): same binary (`process.execPath`), same argv
- * shape, same stdin-JSON payload, same env keys. No shell is used anywhere.
+ * Invokes ECC's hook runner like the adapter (`runEccHook` in
+ * .pi/extensions/index.ts): it uses the test host's Node executable with the
+ * same argv shape and JSON payload on stdin. No shell is used.
  */
 function runHookRunner(eccRoot, hookId, relScript, profiles, payload, extraEnv, cwd) {
   const runner = path.join(eccRoot, "scripts", "hooks", "run-with-flags.js")
@@ -283,6 +287,7 @@ function isDisabledByEnvMirror(value) {
   return typeof value === "string" && DISABLED_VALUES_MIRROR.has(value.trim().toLowerCase())
 }
 
+/** Run the Pi adapter regression suite. */
 async function main() {
   console.log("\n=== Testing .pi/extensions/index.ts (Pi thin adapter) ===\n")
 
@@ -320,8 +325,8 @@ async function main() {
         "expected the adapter to invoke hooks via child_process.execFile(...)"
       )
       assert.ok(
-        extensionSource.includes("process.execPath"),
-        "expected hooks to be spawned with process.execPath, not a hardcoded 'node' string"
+        extensionSource.includes("resolveHookRuntime"),
+        "expected the adapter to select a hook runtime before execFile(...)"
       )
 
       const shellExecPattern = /(?<!execFile)\bexec\s*\(/
@@ -341,6 +346,95 @@ async function main() {
         !extensionSource.includes("shell: true"),
         "found `shell: true` in .pi/extensions/index.ts; opting into a shell reintroduces " +
           "the path-with-spaces / injection risk execFile(...) with no shell was meant to avoid"
+      )
+    }],
+    ["selects a real Node runtime instead of compiled OMP's masquerading process.execPath", () => {
+      const runtimeSource = fs.readFileSync(
+        path.join(repoRoot, ".pi", "extensions", "hook-runtime.js"),
+        "utf8"
+      )
+      const runHookStart = extensionSource.indexOf("function runEccHook")
+      const runHookEnd = extensionSource.indexOf("function resolveHookCwd")
+      const runHookSource = extensionSource.slice(runHookStart, runHookEnd)
+      const beforeRunHookSource = extensionSource.slice(0, runHookStart)
+      assert.ok(
+        extensionSource.includes('from "./hook-runtime.js"'),
+        "expected the adapter to import the shared hook runtime selector"
+      )
+      assert.ok(
+        !beforeRunHookSource.includes("resolveHookRuntime()") &&
+          /try\s*\{\s*hookRuntime = resolveHookRuntime\(\)\s*\}\s*catch/.test(runHookSource) &&
+          /execFile\(\s*hookRuntime,/.test(runHookSource),
+        "expected runEccHook to resolve its runtime inside the guarded hook path rather than " +
+          "during module initialization"
+      )
+      assert.ok(
+        runtimeSource.includes("process.versions?.bun") &&
+          runtimeSource.includes("path.basename(execPath)") &&
+          runtimeSource.includes("path.isAbsolute(overridePath)") &&
+          runtimeSource.includes(
+            'throw new Error("ECC_HOOK_NODE must be an absolute path: " + overridePath)'
+          ),
+        "expected the selector to reject Bun/OMP runtimes, require absolute overrides, and " +
+          "fall back to PATH node"
+      )
+    }],
+
+    ["resolves hook runtimes across Node, compiled OMP, and explicit override cases", () => {
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/node", override: "" }),
+        "/usr/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({ execPath: "/usr/bin/nodejs", override: "" }),
+        "/usr/bin/nodejs"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          bunVersion: "1.4.0",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          releaseName: "bun",
+          override: "",
+        }),
+        "node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          releaseName: "node",
+          override: "",
+        }),
+        "node"
+      )
+      assert.throws(
+        () =>
+          resolveHookRuntime({
+            execPath: "/usr/bin/node",
+            override: "./node",
+          }),
+        /ECC_HOOK_NODE must be an absolute path: \.\/node/
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/usr/bin/node",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
+      )
+      assert.strictEqual(
+        resolveHookRuntime({
+          execPath: "/home/user/.omp/bin/omp",
+          bunVersion: "1.4.0",
+          override: " /opt/node/bin/node ",
+        }),
+        "/opt/node/bin/node"
       )
     }],
 
