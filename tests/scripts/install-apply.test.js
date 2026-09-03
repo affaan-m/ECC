@@ -782,16 +782,25 @@ function runTests() {
       assert.ok(installedBashDispatcherEntry, 'hooks/hooks.json should include the consolidated Bash dispatcher hook');
       assert.strictEqual(typeof installedBashDispatcherEntry.hooks[0].command, 'string', 'hooks/hooks.json should install string-form commands for Claude Code schema compatibility');
       assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.startsWith('node -e '),
-        'hooks/hooks.json should use the inline node bootstrap contract'
+        !/node\s+(-e|--eval)/.test(installedBashDispatcherEntry.hooks[0].command),
+        'hooks/hooks.json should not install an inline node bootstrap'
       );
       assert.ok(
         installedBashDispatcherEntry.hooks[0].command.includes('plugin-hook-bootstrap.js'),
         'hooks/hooks.json should route plugin-managed hooks through the shared bootstrap'
       );
+      // A standalone install has no plugin for Claude Code to resolve
+      // ${CLAUDE_PLUGIN_ROOT} against, so the installer resolves it here, at
+      // install time, and writes an absolute path into the install root. The
+      // token must not survive into the installed file, or the hook would try
+      // to load a launcher from a directory literally named after it.
       assert.ok(
-        installedBashDispatcherEntry.hooks[0].command.includes('CLAUDE_PLUGIN_ROOT'),
-        'hooks/hooks.json should still consult CLAUDE_PLUGIN_ROOT for runtime resolution'
+        !installedBashDispatcherEntry.hooks[0].command.includes('${CLAUDE_PLUGIN_ROOT}'),
+        'a standalone install must resolve the plugin-root placeholder rather than ship it'
+      );
+      assert.ok(
+        installedBashDispatcherEntry.hooks[0].command.includes(claudeRoot),
+        'the installed launcher path should point inside the install root'
       );
       assert.ok(
         installedBashDispatcherEntry.hooks[0].command.includes('pre-bash-dispatcher.js'),
