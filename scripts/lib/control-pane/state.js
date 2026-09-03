@@ -4,8 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const initSqlJs = require('sql.js');
-const toml = require('@iarna/toml');
+const { requireRuntime } = require('../require-runtime');
 
 const { buildControlPaneActions } = require('./actions');
 
@@ -86,6 +85,7 @@ function normalizeConfig(rawConfig = {}, options = {}) {
 
 function readTomlConfig(configPath) {
   const raw = fs.readFileSync(configPath, 'utf8');
+  const toml = requireRuntime('@iarna/toml');
   return toml.parse(raw);
 }
 
@@ -113,6 +113,7 @@ function resolveControlPaneConfig(options = {}) {
 
 async function openSqlDatabase(dbPath) {
   if (!dbPath || !fs.existsSync(dbPath)) return null;
+  const initSqlJs = requireRuntime('sql.js');
   const SQL = await initSqlJs();
   const buffer = fs.readFileSync(dbPath);
   return new SQL.Database(buffer);

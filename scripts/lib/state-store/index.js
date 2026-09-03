@@ -4,7 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
-const initSqlJs = require('sql.js');
+const { requireRuntime } = require('../require-runtime');
 
 const { applyMigrations, getAppliedMigrations } = require('./migrations');
 const { createQueryApi } = require('./queries');
@@ -333,6 +333,7 @@ async function openDatabase(SQL, dbPath) {
 
 async function createStateStore(options = {}) {
   const dbPath = resolveStateStorePath(options);
+  const initSqlJs = requireRuntime('sql.js');
   const SQL = await initSqlJs();
   const db = await openDatabase(SQL, dbPath);
   const appliedMigrations = applyMigrations(db);
