@@ -13,6 +13,7 @@
  *   2 = block (bypass flag detected)
  */
 
+
 'use strict';
 
 const MAX_STDIN = 1024 * 1024;
@@ -41,6 +42,85 @@ const VALID_BEFORE_GIT = ' \t\n\r;&|$`(<{!"\']/.~\\';
 // See https://git-scm.com/docs/git-config — "The variable names are
 // case-insensitive."
 const GIT_CONFIG_KEY_PREFIX = 'core.hookspath=';
+
+// core.hooksPath is the direct spelling. `include.path` reaches the same place
+// indirectly: git reads the named file and applies everything in it, so a config
+// that sets core.hooksPath redirects the hooks just as well. Verified against
+// git 2.51 in a repo whose pre-commit hook echoes a marker:
+//
+//   git -c include.path=evil.conf commit -m x   -> commit succeeds, marker absent
+//   git --config-env=include.path=EVIL config --get core.hooksPath
+//                                              -> prints the redirected path
+//
+// includeIf.<condition>.path is the same mechanism behind a condition. It is
+// covered on that basis, NOT on a reproduction: on git 2.51 a conditional include
+// passed on the command line never matched in testing (gitdir:**/ , an absolute
+// gitdir, and gitdir/i all left core.hooksPath untouched), so it may well be inert
+// there. Nothing legitimate passes it to `git commit`, so covering it costs
+// nothing and closes the hole if that ever changes.
+const GIT_INCLUDE_KEY_PREFIX = 'include.path=';
+const GIT_INCLUDE_IF_KEY_PATTERN = /^includeif\..*\.path=/;
+
+/**
+ * True when a lowercased `key=value` config setting redirects where git looks
+ * for hooks, whether directly or through an included file.
+ */
+// tokenizeShellWords strips quotes; it does not run the shell. So `$(printf commit)`
+// arrives verbatim while the shell hands git a plain `commit`. Anything that can
+// still change under expansion is opaque to this guard and must not be read as a
+// literal. Deliberately narrow: only the subcommand slot and the KEY half of a
+// config setting are treated this way, so `git commit -m "$(cat msg)"` and
+// `git -c user.email=$EMAIL commit` stay allowed.
+const SHELL_EXPANSION_PATTERN = /\$\(|`|\$\{|\$[A-Za-z_]/;
+
+function hasShellExpansion(value) {
+  return SHELL_EXPANSION_PATTERN.test(value);
+}
+
+/**
+ * True when a `-c`/`--config-env` argument hides WHICH key it sets. The value
+ * half may expand freely — it cannot turn user.name into core.hooksPath — but a
+ * dynamic key half can be anything, including a hooks redirect.
+ */
+function hasOpaqueConfigKey(setting) {
+  const equals = setting.indexOf('=');
+  return hasShellExpansion(equals === -1 ? setting : setting.slice(0, equals));
+}
+
+function isHooksRedirectSetting(loweredSetting) {
+  return loweredSetting.startsWith(GIT_CONFIG_KEY_PREFIX)
+    || loweredSetting.startsWith(GIT_INCLUDE_KEY_PREFIX)
+    || GIT_INCLUDE_IF_KEY_PATTERN.test(loweredSetting);
+}
+
+// Git global options that take their value as the NEXT token. If one of these
+// is not listed, the value token looks like a bare word to the subcommand
+// scanner, which then decides the `commit`/`push` after it cannot be the
+// subcommand — and the whole guard goes blind for that command, including an
+// explicit --no-verify.
+//
+// `--config-env=<name>=<envvar>` reads a config value out of the environment
+// and is therefore a second spelling of `-c` for hooksPath purposes:
+//   MYVAR=/dev/null git --config-env=core.hooksPath=MYVAR commit
+// git accepts it in both the `=` and space-separated forms. It does NOT accept
+// an abbreviation of the option itself (`--config-en=` is rejected), so exact
+// matching is enough here.
+const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+  '-c',
+  '-C',
+  '--config-env',
+  '--work-tree',
+  '--git-dir',
+  '--namespace',
+  '--super-prefix',
+]);
+
+// Global options that can set core.hooksPath, in their `<option> <key>=<value>`
+// and `<option>=<key>=<value>` spellings.
+const GIT_CONFIG_SETTING_OPTIONS = ['-c', '--config-env'];
+
+// Stands in for a subcommand the shell will produce that we cannot read.
+const DYNAMIC_COMMAND = '<shell expansion>';
 
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '-m',
@@ -247,6 +327,35 @@ function getCommitShortValueOption(value) {
   return null;
 }
 
+/**
+ * `-n` means --no-verify to `git commit` but "max count" to log/show/diff, so with
+ * the subcommand hidden behind a shell expansion it is ambiguous.
+ *
+ * Only the ATTACHED spelling is safe to exempt. Checked against git 2.51:
+ *
+ *   git log    -n5           ok
+ *   git commit -n5           error: unknown switch `5'
+ *
+ * git commit refuses `-n<digits>` outright, so nothing can turn it into a bypass.
+ *
+ * The split form `-n <digits>` is NOT exempt, because git commit reads that token as
+ * a pathspec and there is no reliable way to tell from the string alone whether such
+ * a path exists. Two verified bypasses came out of trying, both committing with the
+ * pre-commit hook never running:
+ *
+ *   file `1` present         git commit -n 1 -m x   -> [main 326cf0b] x
+ *   `7` staged as a DELETION git commit -n 7 -m x   -> [main 7e7d466] x
+ *
+ * The second is why an existsSync test is not enough: git accepts a staged deletion
+ * as a pathspec while the file is absent from disk. Deciding it properly means asking
+ * git about the index from inside a pre-tool hook, and any cheaper test is incomplete
+ * in a direction that lets hooks be skipped. The cost of failing closed is that
+ * `git $SUB -n 5` blocks; `git $SUB -n5` and `git $SUB --max-count=5` do not.
+ */
+function isAmbiguousCountFlag(value) {
+  return /^-n\d+$/.test(value);
+}
+
 function isCommitNoVerifyShortFlag(value) {
   if (!value.startsWith('-') || value.startsWith('--') || value === '-') {
     return false;
@@ -323,60 +432,58 @@ function detectGitCommand(input, start = 0) {
       continue;
     }
 
-    // Find the first matching subcommand token after "git".
-    // We pick the one closest to "git" so that argument values like
-    // "git push origin commit" don't misclassify "commit" as the subcommand.
+    // The subcommand is the first non-flag token after "git". Tokenizing rather
+    // than splitting raw text matters: a quoted global option keeps its quotes
+    // under a plain split, so `git "-c" "core.hooksPath=/dev/null" commit` and
+    // `git "--config-env=core.hooksPath=MYVAR" commit` read as a bare word in
+    // subcommand position and the whole command escaped inspection. Verified
+    // against git 2.51: the shell strips those quotes, so git sees the option.
+    const segmentEnd = findCommandSegmentEnd(input, git.idx + git.len);
+    const tokens = tokenizeShellWords(input, git.idx + git.len, segmentEnd);
+
     let bestCmd = null;
     let bestIdx = Infinity;
+    let bestEnd = Infinity;
+    let dynamicCommand = false;
+    let expectFlagArg = false;
 
-    for (const cmd of GIT_COMMANDS_WITH_NO_VERIFY) {
-      let searchPos = git.idx + git.len;
-      while (searchPos < input.length) {
-        const cmdIdx = input.indexOf(cmd, searchPos);
-        if (cmdIdx === -1) break;
+    for (const token of tokens) {
+      if (expectFlagArg) { expectFlagArg = false; continue; }
 
-        const before = cmdIdx > 0 ? input[cmdIdx - 1] : ' ';
-        const after = input[cmdIdx + cmd.length] || ' ';
-        if (!/\s/.test(before)) { searchPos = cmdIdx + 1; continue; }
-        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') { searchPos = cmdIdx + 1; continue; }
-        if (/[;|]/.test(input.slice(git.idx + git.len, cmdIdx))) break;
-        if (isInComment(input, cmdIdx)) { searchPos = cmdIdx + 1; continue; }
-
-        // Verify this token is the first non-flag word after "git" — i.e. the
-        // actual subcommand, not an argument value to a different subcommand.
-        const gap = input.slice(git.idx + git.len, cmdIdx);
-        const tokens = gap.trim().split(/\s+/).filter(Boolean);
-        // Every token before the candidate must be a flag or a flag argument.
-        // Git global flags like -c take a value argument (e.g. -c key=value).
-        let onlyFlagsAndArgs = true;
-        let expectFlagArg = false;
-        for (const t of tokens) {
-          if (expectFlagArg) { expectFlagArg = false; continue; }
-          if (t.startsWith('-')) {
-            // -c is a git global flag that takes the next token as its argument
-            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' ||
-                t === '--namespace' || t === '--super-prefix') {
-              expectFlagArg = true;
-            }
-            continue;
-          }
-          onlyFlagsAndArgs = false;
-          break;
+      if (token.value.startsWith('-')) {
+        // These git global flags take the next token as their argument, so that
+        // token must not be mistaken for the subcommand position.
+        if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(token.value)) {
+          expectFlagArg = true;
         }
-        if (!onlyFlagsAndArgs) { searchPos = cmdIdx + 1; continue; }
-
-        if (cmdIdx < bestIdx) {
-          bestIdx = cmdIdx;
-          bestCmd = cmd;
-        }
-        break;
+        continue;
       }
+
+      // Whatever sits here occupies the subcommand slot; if it is not one we
+      // guard, there is no guarded subcommand in this segment.
+      if (hasShellExpansion(token.value) && !isInComment(input, token.start)) {
+        // Unknown subcommand: keep inspecting rather than block outright, so
+        // `git $CMD status` is fine and `git "$(printf commit)" --no-verify` is not.
+        bestCmd = DYNAMIC_COMMAND;
+        bestIdx = token.start;
+        bestEnd = token.end;
+        dynamicCommand = true;
+      } else if (GIT_COMMANDS_WITH_NO_VERIFY.includes(token.value) && !isInComment(input, token.start)) {
+        bestCmd = token.value;
+        bestIdx = token.start;
+        // token.end, not bestIdx + length: for a quoted subcommand the two differ
+        // by the quote characters, and a short offset leaves the closing quote in
+        // the flag scan's first token.
+        bestEnd = token.end;
+      }
+      break;
     }
 
     if (bestCmd) {
       return {
         command: bestCmd,
-        offset: bestIdx + bestCmd.length,
+        dynamicCommand,
+        offset: bestEnd,
         gitStart: git.idx,
         gitEnd: git.idx + git.len,
         commandStart: bestIdx,
@@ -394,12 +501,13 @@ function detectGitCommand(input, start = 0) {
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
-function hasNoVerifyFlag(input, command, offset) {
+function hasNoVerifyFlag(input, command, offset, subcommandUnknown = false) {
   const segmentEnd = findCommandSegmentEnd(input, offset);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     const value = token.value;
 
     if (skipNext) {
@@ -426,6 +534,12 @@ function hasNoVerifyFlag(input, command, offset) {
 
     // For commit, -n is shorthand for --no-verify.
     if (command === 'commit' && isCommitNoVerifyShortFlag(value)) {
+      // With the subcommand expanded by the shell we cannot know it is commit, and
+      // `git $SUB -n 5` is an ordinary `git log -n 5`. Only the count spellings are
+      // exempt; --no-verify and a bare -n still block.
+      if (subcommandUnknown && isAmbiguousCountFlag(value)) {
+        continue;
+      }
       return true;
     }
   }
@@ -446,17 +560,34 @@ function hasHooksPathOverride(input, detected) {
     // must compare against the lowercased token.
     const lowered = value.toLowerCase();
 
-    if (value === '-c') {
+    // `<option> core.hooksPath=...` — the key/value is the next token.
+    if (GIT_CONFIG_SETTING_OPTIONS.includes(value)) {
       const next = tokens[i + 1] && tokens[i + 1].value;
-      if (typeof next === 'string' && next.toLowerCase().startsWith(GIT_CONFIG_KEY_PREFIX)) {
-        return true;
+      if (typeof next === 'string') {
+        if (isHooksRedirectSetting(next.toLowerCase())) {
+          return true;
+        }
+        if (hasOpaqueConfigKey(next)) {
+          return true;
+        }
       }
       i++;
       continue;
     }
 
-    if (lowered.startsWith(`-c${GIT_CONFIG_KEY_PREFIX}`)) {
-      return true;
+    // `-ccore.hooksPath=...` (short option, no space) and
+    // `--config-env=core.hooksPath=...` (long option, inline value).
+    if (lowered.startsWith('-c')) {
+      if (isHooksRedirectSetting(lowered.slice(2)) || hasOpaqueConfigKey(value.slice(2))) {
+        return true;
+      }
+    }
+
+    if (lowered.startsWith('--config-env=')) {
+      const inline = value.slice('--config-env='.length);
+      if (isHooksRedirectSetting(inline.toLowerCase()) || hasOpaqueConfigKey(inline)) {
+        return true;
+      }
     }
   }
 
@@ -478,11 +609,15 @@ function checkCommand(input) {
     if (hasHooksPathOverride(input, detected)) {
       return {
         blocked: true,
-        reason: `BLOCKED: Overriding core.hooksPath is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
+        reason: `BLOCKED: Redirecting git hooks (core.hooksPath, directly or through include.path) is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    // With the subcommand hidden behind an expansion we cannot know it is not
+    // `commit`, so use the widest flag set (commit's, which includes -n).
+    const flagScanCommand = detected.dynamicCommand ? 'commit' : gitCommand;
+
+    if (hasNoVerifyFlag(input, flagScanCommand, offset, detected.dynamicCommand)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
