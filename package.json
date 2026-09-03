@@ -96,6 +96,7 @@
     "scripts/claw.js",
     "scripts/control-pane.js",
     "scripts/codex/check-plugin-cache.js",
+    "scripts/codex/generate-agent-roles.js",
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     "scripts/discussion-audit.js",
@@ -469,12 +470,14 @@
     "orchestrate:status": "node scripts/orchestration-status.js",
     "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",
     "orchestrate:tmux": "node scripts/orchestrate-worktrees.js",
-    "test": "node scripts/ci/check-unicode-safety.js && node scripts/ci/validate-agents.js && node scripts/ci/validate-commands.js && node scripts/ci/validate-rules.js && node scripts/ci/validate-skills.js && node scripts/ci/validate-hooks.js && node scripts/ci/validate-install-manifests.js && node scripts/ci/validate-no-personal-paths.js && npm run catalog:check && npm run command-registry:check && node tests/run-all.js",
+    "test": "node scripts/ci/check-unicode-safety.js && node scripts/ci/validate-agents.js && node scripts/ci/validate-commands.js && node scripts/ci/validate-rules.js && node scripts/ci/validate-skills.js && node scripts/ci/validate-hooks.js && node scripts/ci/validate-install-manifests.js && node tests/ci/codex-agent-surface.test.js && node scripts/ci/validate-no-personal-paths.js && npm run catalog:check && npm run command-registry:check && node tests/run-all.js",
     "coverage": "c8 --all --include=\"scripts/**/*.js\" --include=\"scripts/**/*.mjs\" --check-coverage --lines 80 --functions 80 --branches 79 --statements 80 --reporter=text --reporter=lcov node tests/run-all.js",
     "build:opencode": "node scripts/build-opencode.js",
     "prepack": "npm run build:opencode",
     "dashboard": "python3 ./ecc_dashboard.py",
-    "dashboard:web": "node scripts/dashboard-web.js"
+    "dashboard:web": "node scripts/dashboard-web.js",
+    "codex:agent-roles:check": "node scripts/codex/generate-agent-roles.js --check",
+    "codex:agent-roles:write": "node scripts/codex/generate-agent-roles.js --write"
   },
   "dependencies": {
     "@iarna/toml": "2.2.5",
