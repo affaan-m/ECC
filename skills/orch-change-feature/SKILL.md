@@ -8,7 +8,7 @@ metadata:
 # orch-change-feature
 
 Actor · action · target: **orch · change · feature**. Thin wrapper over the
-shared engine in [`orch-pipeline`](../orch-pipeline/SKILL.md).
+shared engine in `orch-pipeline`.
 
 ## When to Use
 

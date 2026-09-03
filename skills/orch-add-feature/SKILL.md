@@ -8,7 +8,7 @@ metadata:
 # orch-add-feature
 
 Actor · action · target: **orch · add · feature**. Thin wrapper over the shared
-engine in [`orch-pipeline`](../orch-pipeline/SKILL.md).
+engine in `orch-pipeline`.
 
 ## When to Use
 
