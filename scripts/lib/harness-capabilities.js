@@ -248,12 +248,12 @@ const HARNESS_CAPABILITIES = deepFreeze([
     installMode: 'native-plugin',
     guidedReady: false,
     availability: 'advanced',
-    destination: '~/.grok through the ECC Grok install-state adapter',
+    destination: '~/.grok',
     scopes: [scope('native', 'grok', '~/.grok')],
     hooks: hooks(
       'native-trust',
       true,
-      'ECC Grok installs use previewInstall/applyInstall with per-capability consent. Native Grok CLI --trust opts MCP out via empty mcpServers in .grok-plugin/plugin.json.'
+      'ECC Grok installs use the canonical plan/apply receipt with per-capability consent. Native Grok CLI --trust opts MCP out via empty mcpServers in .grok-plugin/plugin.json.'
     ),
     aliases: ['grok-build'],
   },

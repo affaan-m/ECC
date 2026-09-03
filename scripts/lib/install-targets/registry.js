@@ -58,6 +58,9 @@ function planInstallTargetScaffold(options = {}) {
     projectRoot: options.projectRoot || options.repoRoot,
     homeDir: options.homeDir,
     env: resolveInvocationEnvironment(options),
+    trust: options.trust === true,
+    consent: options.consent || {},
+    sourceSha: options.sourceSha || null,
   };
   const validationIssues = adapter.validate(planningInput);
   const blockingIssues = validationIssues.filter(issue => (

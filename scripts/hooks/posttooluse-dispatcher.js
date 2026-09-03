@@ -51,7 +51,7 @@ const ASYNC_HOOKS = [
 ];
 
 function getPluginRoot(env = process.env) {
-  return env.GROK_PLUGIN_ROOT || env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || path.resolve(__dirname, '..', '..');
+  return env.CLAUDE_PLUGIN_ROOT || env.ECC_PLUGIN_ROOT || path.resolve(__dirname, '..', '..');
 }
 
 function matchesTool(matcher, toolName) {

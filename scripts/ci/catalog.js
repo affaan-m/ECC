@@ -23,8 +23,6 @@ const DOCS_ZH_CN_README_PATH = path.join(ROOT, 'docs', 'zh-CN', 'README.md');
 const DOCS_ZH_CN_AGENTS_PATH = path.join(ROOT, 'docs', 'zh-CN', 'AGENTS.md');
 const PLUGIN_JSON_PATH = path.join(ROOT, '.claude-plugin', 'plugin.json');
 const MARKETPLACE_JSON_PATH = path.join(ROOT, '.claude-plugin', 'marketplace.json');
-const GROK_PLUGIN_JSON_PATH = path.join(ROOT, '.grok-plugin', 'plugin.json');
-const GROK_MARKETPLACE_JSON_PATH = path.join(ROOT, '.grok-plugin', 'marketplace.json');
 const WRITE_MODE = process.argv.includes('--write');
 
 const OUTPUT_MODE = process.argv.includes('--md')
@@ -570,8 +568,6 @@ function createDocumentSpecs(paths = {}) {
     zhDocsAgentsPath = DOCS_ZH_CN_AGENTS_PATH,
     pluginJsonPath = PLUGIN_JSON_PATH,
     marketplaceJsonPath = MARKETPLACE_JSON_PATH,
-    grokPluginJsonPath = GROK_PLUGIN_JSON_PATH,
-    grokMarketplaceJsonPath = GROK_MARKETPLACE_JSON_PATH,
   } = paths;
 
   return [
@@ -630,36 +626,6 @@ function createDocumentSpecs(paths = {}) {
         (parsed, description) => { parsed.plugins[0].description = description; }
       ),
     },
-    {
-      filePath: grokPluginJsonPath,
-      parseExpectations: content => parseCatalogDescriptionExpectations(
-        content,
-        '.grok-plugin/plugin.json description',
-        parsed => parsed.description
-      ),
-      syncContent: (content, catalog) => syncCatalogDescription(
-        content,
-        catalog,
-        '.grok-plugin/plugin.json description',
-        parsed => parsed.description,
-        (parsed, description) => { parsed.description = description; }
-      ),
-    },
-    {
-      filePath: grokMarketplaceJsonPath,
-      parseExpectations: content => parseCatalogDescriptionExpectations(
-        content,
-        '.grok-plugin/marketplace.json plugin description',
-        parsed => parsed.plugins?.[0]?.description
-      ),
-      syncContent: (content, catalog) => syncCatalogDescription(
-        content,
-        catalog,
-        '.grok-plugin/marketplace.json plugin description',
-        parsed => parsed.plugins?.[0]?.description,
-        (parsed, description) => { parsed.plugins[0].description = description; }
-      ),
-    },
   ];
 }
 
@@ -672,8 +638,6 @@ function createDocumentSpecsForRoot(root) {
     zhDocsAgentsPath: path.join(root, 'docs', 'zh-CN', 'AGENTS.md'),
     pluginJsonPath: path.join(root, '.claude-plugin', 'plugin.json'),
     marketplaceJsonPath: path.join(root, '.claude-plugin', 'marketplace.json'),
-    grokPluginJsonPath: path.join(root, '.grok-plugin', 'plugin.json'),
-    grokMarketplaceJsonPath: path.join(root, '.grok-plugin', 'marketplace.json'),
   });
 }
 

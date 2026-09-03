@@ -114,7 +114,7 @@ const ADAPTER_RECORDS = Object.freeze([
       'No plugin rules/ surface',
     ],
     install_or_onramp: [
-      '`node scripts/grok-install.js --dry-run` / `node scripts/grok-install.js` (ECC 2 `grok` install-state under ~/.grok/ecc/)',
+      '`node scripts/grok-install.js --dry-run` / `node scripts/grok-install.js` (canonical `grok` install-state under ~/.grok/ecc/)',
       '`grok plugin marketplace add affaan-m/ECC && grok plugin install ecc && grok plugin enable ecc` (discovery only; not ECC consent)',
     ],
     verification_commands: [
@@ -124,7 +124,7 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
     risk_notes: [
       'Grok rejects Claude marketplace source "./"; pin a url+sha catalog in .grok-plugin/marketplace.json to a commit that contains the Grok adapter',
-      'ECC consent is grok-install.js / applyInstall; native Grok CLI discovery opts hooks and MCP out via empty plugin.json fields; the full skill catalog is large',
+      'ECC consent is the canonical install-apply receipt path; native Grok CLI discovery opts hooks and MCP out via empty plugin.json fields; the full skill catalog is large',
     ],
     last_verified_at: '2026-09-03',
     owner: 'ECC maintainers',

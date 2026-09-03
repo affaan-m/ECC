@@ -52,6 +52,23 @@ function runTests() {
     assert.deepStrictEqual(parsed.languages, []);
   })) passed++; else failed++;
 
+  if (test('parses and validates the Grok rollback source pin', () => {
+    const sha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const parsed = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--target', 'grok',
+      '--profile', 'core',
+      '--source-sha', sha,
+    ]);
+    assert.strictEqual(parsed.sourceSha, sha);
+    assert.strictEqual(normalizeInstallRequest(parsed).sourceSha, sha);
+    assert.throws(
+      () => normalizeInstallRequest({ ...parsed, target: 'claude' }),
+      /requires --target grok/
+    );
+  })) passed++; else failed++;
+
   if (test('parses --locale argument', () => {
     const parsed = parseInstallArgs([
       'node',

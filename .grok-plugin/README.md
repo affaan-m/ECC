@@ -11,10 +11,19 @@ thin subdirectory copy drops parent-relative runtime files.
 
 ## Install
 
-ECC trusted install is `node scripts/grok-install.js` (`previewInstall` /
-`applyInstall` in `scripts/lib/grok-harness-adapter.js`, install target `grok`,
-state at `~/.grok/ecc/install-state.json`). That plan is receipt-backed and
-requires explicit consent for hooks and each MCP server.
+ECC installs through the canonical installer and receipt lifecycle:
+
+```bash
+node scripts/grok-install.js --dry-run --trust --consent-hooks --consent-mcp chrome-devtools
+node scripts/grok-install.js --trust --consent-hooks --consent-mcp chrome-devtools
+node scripts/repair.js --target grok
+node scripts/uninstall.js --target grok
+```
+
+`scripts/grok-install.js` is a thin alias for `install-apply.js --target grok
+--profile full`; state stays at `~/.grok/ecc/install-state.json`. Upgrade and
+rollback use the same canonical apply path; pass `--source-sha <40-hex>` to
+reapply a previous pinned commit.
 
 Grok CLI marketplace add / install / enable is **discovery only**.
 `grok plugin install --trust` skips Grok's confirmation prompt; it is **not
@@ -39,14 +48,14 @@ grok plugin validate /absolute/path/to/ECC
 
 Do not also run `./install.sh --target claude` (or a full manual Claude copy)
 into the same Grok session. Pick one install path per harness.
-`./install.sh --target grok` does not copy hooks or root MCP without the same
-adapter consent flags.
+`./install.sh --target grok --profile full` does not copy hooks or root MCP
+without `--trust` and the matching consent flags.
 
 ## Hooks
 
 Grok sets `GROK_PLUGIN_ROOT`. Shared hook code does not read that alias.
-`applyInstall` maps it onto `PLUGIN_ROOT` at the installed-tree boundary when
-hooks are consented. Without hook consent, the installed copy has no
+The Grok target adapter maps it onto the shared root contract in the installed
+hook configuration when hooks are consented. Without hook consent, the installed copy has no
 `hooks/hooks.json`.
 
 Grok does not honor Claude `userConfig`. Hook enablement and profile stay on
@@ -62,8 +71,8 @@ export ECC_HOOK_PROFILE=standard   # minimal | standard | strict
 `.grok-plugin/plugin.json` sets `"mcpServers": ""` so a trusted Grok plugin
 install does not attach repo-root `.mcp.json` or `chrome-devtools`. That root
 file remains for Claude/Codex. Additional connectors stay opt-in via
-`mcp-configs/mcp-servers.json`. Adapter receipts still require explicit
-per-server consent before any MCP name is copied into an install plan.
+`mcp-configs/mcp-servers.json`. Canonical receipts record explicit per-server
+consent before any MCP name is copied into an install plan.
 
 ## Known limits
 

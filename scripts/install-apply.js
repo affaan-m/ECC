@@ -20,16 +20,6 @@ const {
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
 
-function argvTarget(argv) {
-  const args = argv.slice(2);
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--target') {
-      return args[index + 1] || null;
-    }
-  }
-  return null;
-}
-
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
   const locales = listSupportedLocales();
@@ -56,7 +46,7 @@ Targets:
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
-  grok         - ECC Grok adapter install (previewInstall/applyInstall). Discovery-only Grok CLI is separate.
+  grok         - Install through the canonical plan/apply/receipt lifecycle into ~/.grok/plugins/ecc/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
 
@@ -73,6 +63,10 @@ Options:
   --enable-hooks      Confirm installing the automatic hook runtime (required
                       when the selected profile/modules materialize hooks)
   --no-hooks          Install everything except the automatic hook runtime
+  --trust             Trust executable Grok capabilities (still requires each consent flag)
+  --consent-hooks     Allow Grok hooks for this install
+  --consent-mcp <ids> Allow named Grok MCP servers, comma-separated
+  --source-sha <sha>   Install or roll back Grok to an exact 40-character Git commit
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
@@ -150,46 +144,8 @@ function printHumanPlan(plan, dryRun) {
 }
 
 async function main() {
+  let rawPlan = null;
   try {
-    if (argvTarget(process.argv) === 'grok') {
-      const { parseArgs } = require('./grok-install');
-      const { parseMcpConsentList, resolveHomeDir, runGrokInstall } = require('./lib/grok-harness-adapter');
-      const parsed = parseArgs(process.argv);
-      if (parsed.help) {
-        showHelp(0);
-      }
-      const grokResult = runGrokInstall({
-        dryRun: parsed.dryRun === true,
-        trust: parsed.trust === true || process.env.ECC_GROK_TRUST === '1',
-        consent: {
-          hooks: parsed.consent.hooks === true || process.env.ECC_GROK_CONSENT_HOOKS === '1',
-          mcp: {
-            ...parseMcpConsentList(process.env.ECC_GROK_CONSENT_MCP || ''),
-            ...parsed.consent.mcp,
-          },
-        },
-        homeDir: resolveHomeDir(),
-        repoRoot: process.cwd(),
-      });
-      const options = { dryRun: parsed.dryRun, json: parsed.json };
-      if (options.json) {
-        console.log(JSON.stringify({ dryRun: options.dryRun === true, grok: grokResult }, null, 2));
-      } else {
-        console.log(options.dryRun ? 'Grok adapter dry-run plan\n' : 'Grok adapter install\n');
-        console.log(`Identity: ${grokResult.plan.identity}`);
-        console.log(`Trust: ${grokResult.plan.trust}`);
-        console.log(`Hooks enabled: ${grokResult.plan.hooksEnabled}`);
-        console.log(`MCP attached: ${grokResult.plan.mcpAttached.join(', ') || '(none)'}`);
-        console.log(`Chrome DevTools: ${grokResult.plan.attachChromeDevtools}`);
-        if (grokResult.receipt) {
-          console.log(`Install-state: ${grokResult.receipt.installStatePath}`);
-        }
-        console.log('\nConsent flags: ECC_GROK_TRUST=1 ECC_GROK_CONSENT_HOOKS=1 ECC_GROK_CONSENT_MCP=name,name');
-        console.log('Or: node scripts/grok-install.js --dry-run --trust --consent-hooks');
-      }
-      return;
-    }
-
     const options = parseInstallArgs(process.argv);
 
     if (options.help) {
@@ -216,7 +172,7 @@ async function main() {
       config,
     });
 
-    const rawPlan = createInstallPlanFromRequest(request, {
+    rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
       env: process.env,
@@ -252,7 +208,11 @@ async function main() {
     }
   } catch (error) {
     process.stderr.write(`Error: ${error.message}${getHelpText()}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    if (rawPlan && typeof rawPlan.dispose === 'function') {
+      rawPlan.dispose();
+    }
   }
 }
 

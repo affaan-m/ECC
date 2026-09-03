@@ -20,7 +20,7 @@ const {
   getLegacyOpencodeLocation,
   inspectLegacyOpencodeState,
 } = require('./install/opencode-legacy-migration');
-const { adaptAntigravityAgent } = require('./install/antigravity-agent');
+const { transformCopyFileContent } = require('./install/content-transform');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./install/link-rewrite');
 const { getInstallTargetAdapter, listInstallTargetAdapters } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
@@ -79,12 +79,16 @@ function buildRecordedManifestRequest(record) {
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
     hookConsent: getRecordedHookConsent(state),
+    trust: request.trust === true,
+    consentMcp: Array.isArray(request.consentMcp) ? [...request.consentMcp] : [],
   };
 }
 
 function resolveRecordedManifestPlan(record, context, options = {}) {
   return createInstallPlanFromRequest(buildRecordedManifestRequest(record), {
     sourceRoot: context.repoRoot,
+    sourceUrl: record.state && record.state.source && record.state.source.repoUrl,
+    sourceSha: record.state && record.state.source && record.state.source.repoCommit,
     projectRoot: context.projectRoot,
     homeDir: context.homeDir,
     env: context.env,
@@ -208,16 +212,6 @@ function buildLinkIndexForOperations(operations, trustedRoot) {
       destRel: path.relative(trustedRoot, operation.destinationPath),
     }));
   return buildInstallIndex(mappings);
-}
-
-function transformCopyFileContent(operation, content) {
-  if (!operation.contentTransform) {
-    return content;
-  }
-  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
-    return adaptAntigravityAgent(content, operation.sourceRelativePath);
-  }
-  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }
 
 function getExpectedCopyFileContent(operation, content, linkIndex) {
@@ -1826,8 +1820,9 @@ function repairInstalledStates(options = {}) {
           exemptValidationCodes: [OPENCODE_PLUGIN_NOT_BUILT_CODE],
         });
         const { plan: desiredPlan } = prepareRepairMigration(rawPlan, record);
+        const repairSourceRoot = desiredPlan.sourceRoot || context.repoRoot;
         const operationHealth = summarizeManagedOperationHealth(
-          context.repoRoot,
+          repairSourceRoot,
           record.targetRoot,
           desiredPlan.operations
         );
@@ -1873,8 +1868,9 @@ function repairInstalledStates(options = {}) {
         migration,
         plan: desiredPlan,
       } = prepareRepairMigration(rawPlan, record);
+      const repairSourceRoot = desiredPlan.sourceRoot || context.repoRoot;
       const operationHealth = summarizeManagedOperationHealth(
-        context.repoRoot,
+        repairSourceRoot,
         record.targetRoot,
         desiredPlan.operations
       );
@@ -1931,7 +1927,7 @@ function repairInstalledStates(options = {}) {
 
       for (const operation of repairOperations) {
         const repairedPath = executeRepairOperation(
-          context.repoRoot,
+          repairSourceRoot,
           operation,
           record.targetRoot,
           repairLinkIndex

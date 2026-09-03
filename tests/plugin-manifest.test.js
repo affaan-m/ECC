@@ -705,7 +705,7 @@ test('grok plugin.json keeps Claude-incompatible fields out of the Grok manifest
   assert.strictEqual(
     grokPlugin.hooks,
     '',
-    'Empty hooks string opts the native Grok CLI surface out of hooks/hooks.json; ECC hook consent is applyInstall'
+    'Empty hooks string opts the native Grok CLI surface out of hooks/hooks.json; ECC hook consent is canonical install state'
   );
 });
 
@@ -777,8 +777,8 @@ test('package.json files includes the Grok plugin directory', () => {
 
 test('.grok-plugin README documents install, trust, enable, MCP, and hook profile', () => {
   const readme = fs.readFileSync(grokPluginReadmePath, 'utf8');
-  assert.ok(readme.includes('previewInstall'), 'ECC trusted install is previewInstall');
-  assert.ok(readme.includes('applyInstall'), 'ECC trusted install is applyInstall');
+  assert.ok(readme.includes('canonical installer'), 'ECC trusted install uses the canonical installer');
+  assert.ok(readme.includes('install-apply.js --target grok'), 'Grok entrypoint delegates to install-apply');
   assert.ok(readme.includes('grok-install.js'), 'Operator ECC consent path is scripts/grok-install.js');
   assert.ok(readme.includes('grok plugin marketplace add affaan-m/ECC'), 'Expected marketplace add for the canonical ECC repo');
   assert.ok(readme.includes('grok plugin enable ecc'), 'Grok plugins stay off until enabled');

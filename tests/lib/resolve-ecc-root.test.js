@@ -2,12 +2,11 @@
  * Tests for scripts/lib/resolve-ecc-root.js
  *
  * Covers the ECC root resolution fallback chain:
- *   1. GROK_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / ECC_PLUGIN_ROOT env vars
+ *   1. CLAUDE_PLUGIN_ROOT env var
  *   2. Standard install (~/.claude/)
  *   3. Exact legacy plugin roots under ~/.claude/plugins/
  *   4. Plugin cache auto-detection
- *   5. Grok plugin homes (~/.grok/plugins/, ~/.grok/installed-plugins/)
- *   6. Fallback to ~/.claude/
+ *   5. Fallback to ~/.claude/
  */
 
 const assert = require('assert');
@@ -18,11 +17,7 @@ const CURRENT_PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')
 ).version;
 
-const {
-  resolveEccRoot,
-  INLINE_RESOLVE,
-  pluginRootFromEnv,
-} = require('../../scripts/lib/resolve-ecc-root');
+const { resolveEccRoot, INLINE_RESOLVE } = require('../../scripts/lib/resolve-ecc-root');
 
 // Sentinel ECC skill that resolveEccRoot() requires (alongside the script tree)
 // before accepting a root for skill consumers. Kept in sync with the module's
@@ -62,24 +57,6 @@ function setupLegacyPluginInstall(homeDir, segments) {
   fs.mkdirSync(path.join(legacyDir, ECC_SKILL_SENTINEL), { recursive: true });
   return legacyDir;
 }
-function setupVendorPluginInstall(homeDir, vendor, segments) {
-  const pluginDir = path.join(homeDir, vendor, 'plugins', ...segments);
-  const scriptDir = path.join(pluginDir, 'scripts', 'lib');
-  fs.mkdirSync(scriptDir, { recursive: true });
-  fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
-  fs.mkdirSync(path.join(pluginDir, ECC_SKILL_SENTINEL), { recursive: true });
-  return pluginDir;
-}
-
-function setupGrokInstalledPlugin(homeDir, dirName) {
-  const pluginDir = path.join(homeDir, '.grok', 'installed-plugins', dirName);
-  const scriptDir = path.join(pluginDir, 'scripts', 'lib');
-  fs.mkdirSync(scriptDir, { recursive: true });
-  fs.writeFileSync(path.join(scriptDir, 'utils.js'), '// stub');
-  fs.mkdirSync(path.join(pluginDir, ECC_SKILL_SENTINEL), { recursive: true });
-  return pluginDir;
-}
-
 function setupPluginCache(homeDir, pluginSlug, orgName, version) {
   const cacheDir = path.join(
     homeDir, '.claude', 'plugins', 'cache',
@@ -524,119 +501,6 @@ module.exports = { resolveEccRoot() { assert.strictEqual(process.env.HOME, ${JSO
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
-  })) passed++; else failed++;
-
-  if (test('pluginRootFromEnv prefers GROK_PLUGIN_ROOT then CLAUDE then ECC', () => {
-    assert.strictEqual(
-      pluginRootFromEnv({
-        GROK_PLUGIN_ROOT: '/grok/root',
-        CLAUDE_PLUGIN_ROOT: '/claude/root',
-        ECC_PLUGIN_ROOT: '/ecc/root',
-      }),
-      '/grok/root'
-    );
-    assert.strictEqual(
-      pluginRootFromEnv({
-        CLAUDE_PLUGIN_ROOT: '/claude/root',
-        ECC_PLUGIN_ROOT: '/ecc/root',
-      }),
-      '/claude/root'
-    );
-    assert.strictEqual(pluginRootFromEnv({ ECC_PLUGIN_ROOT: '/ecc/root' }), '/ecc/root');
-    assert.strictEqual(pluginRootFromEnv({ GROK_PLUGIN_ROOT: '  /trimmed/grok  ' }), '/trimmed/grok');
-    assert.strictEqual(pluginRootFromEnv({ GROK_PLUGIN_ROOT: '   ' }), '');
-    assert.strictEqual(pluginRootFromEnv({}), '');
-  })) passed++; else failed++;
-
-  if (test('reads GROK_PLUGIN_ROOT from process.env when envRoot is omitted', () => {
-    const previous = process.env.GROK_PLUGIN_ROOT;
-    const previousClaude = process.env.CLAUDE_PLUGIN_ROOT;
-    const previousEcc = process.env.ECC_PLUGIN_ROOT;
-    const homeDir = createTempDir();
-    try {
-      process.env.GROK_PLUGIN_ROOT = '/from/grok/env';
-      delete process.env.CLAUDE_PLUGIN_ROOT;
-      delete process.env.ECC_PLUGIN_ROOT;
-      assert.strictEqual(resolveEccRoot({ homeDir }), '/from/grok/env');
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-      if (previous === undefined) delete process.env.GROK_PLUGIN_ROOT;
-      else process.env.GROK_PLUGIN_ROOT = previous;
-      if (previousClaude === undefined) delete process.env.CLAUDE_PLUGIN_ROOT;
-      else process.env.CLAUDE_PLUGIN_ROOT = previousClaude;
-      if (previousEcc === undefined) delete process.env.ECC_PLUGIN_ROOT;
-      else process.env.ECC_PLUGIN_ROOT = previousEcc;
-    }
-  })) passed++; else failed++;
-
-  if (test('finds Grok plugin install at ~/.grok/plugins/ecc', () => {
-    const homeDir = createTempDir();
-    try {
-      const expected = setupVendorPluginInstall(homeDir, '.grok', ['ecc']);
-      const result = resolveEccRoot({ envRoot: '', homeDir });
-      assert.strictEqual(result, expected);
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('finds Grok plugin install at ~/.grok/plugins/ecc@ecc', () => {
-    const homeDir = createTempDir();
-    try {
-      const expected = setupVendorPluginInstall(homeDir, '.grok', ['ecc@ecc']);
-      const result = resolveEccRoot({ envRoot: '', homeDir });
-      assert.strictEqual(result, expected);
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('finds Grok marketplace plugin install at ~/.grok/plugins/marketplaces/ecc', () => {
-    const homeDir = createTempDir();
-    try {
-      const expected = setupVendorPluginInstall(homeDir, '.grok', ['marketplaces', 'ecc']);
-      const result = resolveEccRoot({ envRoot: '', homeDir });
-      assert.strictEqual(result, expected);
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('finds Grok installed-plugins hash directory when that is the only complete root', () => {
-    const homeDir = createTempDir();
-    try {
-      const expected = setupGrokInstalledPlugin(homeDir, 'ecc-ab12cd34');
-      const result = resolveEccRoot({ envRoot: '', homeDir });
-      assert.strictEqual(result, expected);
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('prefers a complete Claude root over a complete Grok root when env is unset', () => {
-    const homeDir = createTempDir();
-    try {
-      const claudeDir = setupStandardInstall(homeDir);
-      setupGrokInstalledPlugin(homeDir, 'ecc-ab12cd34');
-      const result = resolveEccRoot({ envRoot: '', homeDir });
-      assert.strictEqual(result, claudeDir);
-    } finally {
-      fs.rmSync(homeDir, { recursive: true, force: true });
-    }
-  })) passed++; else failed++;
-
-  if (test('INLINE_RESOLVE returns GROK_PLUGIN_ROOT when set', () => {
-    const { execFileSync } = require('child_process');
-    const env = { ...process.env, GROK_PLUGIN_ROOT: '/inline/grok/root' };
-    delete env.CLAUDE_PLUGIN_ROOT;
-    delete env.ECC_PLUGIN_ROOT;
-    const result = execFileSync('node', [
-      '-e', `console.log(${INLINE_RESOLVE})`,
-    ], {
-      env,
-      encoding: 'utf8',
-    }).trim();
-    assert.strictEqual(result, '/inline/grok/root');
   })) passed++; else failed++;
 
   if (test('INLINE_RESOLVE falls back to ~/.claude/ when nothing found', () => {

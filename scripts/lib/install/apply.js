@@ -20,20 +20,10 @@ const {
 const { cleanupLegacyAntigravityInstall } = require('./antigravity-legacy-migration');
 const { cleanupLegacyOpencodeInstall } = require('./opencode-legacy-migration');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
-const { adaptAntigravityAgent } = require('./antigravity-agent');
+const { transformCopyFileContent } = require('./content-transform');
 
 function isMarkdownPath(filePath) {
   return /\.(md|mdx|markdown)$/i.test(String(filePath || ''));
-}
-
-function transformInstallContent(operation, content) {
-  if (!operation.contentTransform) {
-    return content;
-  }
-  if (operation.contentTransform === 'antigravity-agent-frontmatter') {
-    return adaptAntigravityAgent(content, operation.sourceRelativePath);
-  }
-  throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }
 
 // Map every copy-file operation to { sourceRel, destRel } so relative links in
@@ -435,7 +425,7 @@ function applyInstallPlan(plan, dependencies = {}) {
         && isMarkdownPath(operation.destinationPath)
       );
       if (operation.kind === 'copy-file' && (operation.contentTransform || needsLinkRewrite)) {
-        const transformed = transformInstallContent(
+        const transformed = transformCopyFileContent(
           operation,
           fs.readFileSync(operation.sourcePath, 'utf8')
         );

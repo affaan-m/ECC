@@ -87,8 +87,44 @@ function runTests() {
       consent: { mcp: { 'chrome-devtools': true } },
     });
     const mcpPaths = mcpAllowed.map((operation) => String(operation.sourceRelativePath).replace(/\\/g, '/'));
-    assert.ok(!mcpPaths.some((item) => item === '.mcp.json' || item.startsWith('mcp-configs')));
+    assert.ok(mcpPaths.includes('.mcp.json'));
+    assert.ok(mcpAllowed.some((operation) => (
+      operation.contentTransform === 'grok-mcp-consent'
+      && operation.grokMcpIds.includes('chrome-devtools')
+    )));
     assert.ok(!mcpPaths.some((item) => item === 'hooks' || item.startsWith('hooks/')));
+  })) passed++; else failed++;
+
+  if (test('grok MCP consent rejects malformed configs and unknown capabilities', () => {
+    const grok = getInstallTargetAdapter('grok');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-mcp-'));
+    try {
+      fs.writeFileSync(path.join(tempRoot, '.mcp.json'), '{"mcpServers": []}\n');
+      assert.throws(
+        () => grok.planOperations({
+          homeDir: tempRoot,
+          repoRoot: tempRoot,
+          modules: [],
+          trust: true,
+          consent: { mcp: { 'unknown-mcp': true } },
+        }),
+        /mcpServers object/
+      );
+
+      fs.writeFileSync(path.join(tempRoot, '.mcp.json'), '{"mcpServers": {"known-mcp": {}}}\n');
+      assert.throws(
+        () => grok.planOperations({
+          homeDir: tempRoot,
+          repoRoot: tempRoot,
+          modules: [],
+          trust: true,
+          consent: { mcp: { 'unknown-mcp': true } },
+        }),
+        /Unknown Grok MCP capability: unknown-mcp/
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('resolves cursor adapter root and install-state path from project root', () => {

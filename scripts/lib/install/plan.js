@@ -98,6 +98,9 @@ function buildCopyFileOperation({
   destinationPath,
   strategy,
   contentTransform,
+  grokHooksEnabled,
+  grokMcpEnabled,
+  grokMcpIds,
 }) {
   return {
     kind: 'copy-file',
@@ -109,6 +112,9 @@ function buildCopyFileOperation({
     ownership: 'managed',
     scaffoldOnly: false,
     ...(contentTransform ? { contentTransform } : {}),
+    ...(contentTransform === 'grok-plugin-consent' ? { grokHooksEnabled } : {}),
+    ...(contentTransform === 'grok-plugin-consent' ? { grokMcpEnabled } : {}),
+    ...(contentTransform === 'grok-mcp-consent' ? { grokMcpIds: [...grokMcpIds] } : {}),
   };
 }
 
@@ -162,6 +168,9 @@ function materializeScaffoldOperation(sourceRoot, operation) {
         destinationPath: operation.destinationPath,
         strategy: operation.strategy,
         contentTransform: operation.contentTransform,
+        grokHooksEnabled: operation.grokHooksEnabled,
+        grokMcpEnabled: operation.grokMcpEnabled,
+        grokMcpIds: operation.grokMcpIds,
       })
     ];
   }
@@ -179,6 +188,9 @@ function materializeScaffoldOperation(sourceRoot, operation) {
       destinationPath: path.join(operation.destinationPath, relativeFile),
       strategy: operation.strategy,
       contentTransform: operation.contentTransform,
+      grokHooksEnabled: operation.grokHooksEnabled,
+      grokMcpEnabled: operation.grokMcpEnabled,
+      grokMcpIds: operation.grokMcpIds,
     });
   });
 }
@@ -220,9 +232,20 @@ function dedupeCopyFileOperations(operations) {
 }
 
 function createManifestInstallPlan(options = {}) {
-  const sourceRoot = options.sourceRoot || getSourceRoot();
+  const requestedSourceRoot = options.sourceRoot || getSourceRoot();
   const projectRoot = options.projectRoot || process.cwd();
   const target = options.target || 'claude';
+  const adapter = getInstallTargetAdapter(target);
+  const preparedSource = adapter.prepareSource({
+    sourceRoot: requestedSourceRoot,
+    repoRoot: requestedSourceRoot,
+    projectRoot,
+    homeDir: options.homeDir,
+    env: resolveInvocationEnvironment(options),
+    sourceUrl: options.sourceUrl || null,
+    sourceSha: options.sourceSha || null,
+  });
+  const sourceRoot = preparedSource.sourceRoot || requestedSourceRoot;
   const legacyLanguages = Array.isArray(options.legacyLanguages) ? [...options.legacyLanguages] : [];
   const requestProfileId = Object.hasOwn(options, 'requestProfileId') ? options.requestProfileId : options.profileId || null;
   const requestModuleIds = Object.hasOwn(options, 'requestModuleIds') ? [...options.requestModuleIds] : Array.isArray(options.moduleIds) ? [...options.moduleIds] : [];
@@ -247,8 +270,10 @@ function createManifestInstallPlan(options = {}) {
     excludeComponentIds: options.excludeComponentIds || [],
     target,
     exemptValidationCodes: options.exemptValidationCodes || [],
+    trust: options.trust === true,
+    consent: options.consent || {},
+    sourceSha: options.sourceSha || null,
   });
-  const adapter = getInstallTargetAdapter(target);
   const materializedOperations = plan.operations.flatMap(operation => (
     materializeScaffoldOperation(sourceRoot, operation)
   ));
@@ -261,8 +286,9 @@ function createManifestInstallPlan(options = {}) {
       : materializedOperations
   );
   const source = {
-    repoVersion: getPackageVersion(sourceRoot),
-    repoCommit: getRepoCommit(sourceRoot),
+    repoVersion: preparedSource.sourceVersion || getPackageVersion(sourceRoot),
+    repoUrl: preparedSource.sourceUrl || null,
+    repoCommit: preparedSource.sourceSha || getRepoCommit(sourceRoot),
     manifestVersion: getManifestVersion(sourceRoot)
   };
   const statePreview = createStatePreview({
@@ -275,7 +301,11 @@ function createManifestInstallPlan(options = {}) {
       includeComponents: requestIncludeComponentIds,
       excludeComponents: requestExcludeComponentIds,
       legacyLanguages,
-      legacyMode: Boolean(options.legacyMode)
+      legacyMode: Boolean(options.legacyMode),
+      trust: options.trust === true,
+      consentMcp: Object.entries(options.consent && options.consent.mcp || {})
+        .filter(([, allowed]) => allowed === true)
+        .map(([id]) => id),
     },
     resolution: {
       selectedModules: plan.selectedModuleIds,
@@ -285,7 +315,7 @@ function createManifestInstallPlan(options = {}) {
     source
   });
 
-  return {
+  const installPlan = {
     mode: options.mode || 'manifest',
     sourceRoot,
     target,
@@ -312,6 +342,14 @@ function createManifestInstallPlan(options = {}) {
     operations,
     statePreview
   };
+  if (typeof preparedSource.cleanup === 'function') {
+    Object.defineProperty(installPlan, 'dispose', {
+      configurable: false,
+      enumerable: false,
+      value: preparedSource.cleanup,
+    });
+  }
+  return installPlan;
 }
 
 module.exports = {

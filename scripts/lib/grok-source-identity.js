@@ -2,9 +2,17 @@
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const TEMP_SOURCE_ROOTS = new Set();
+
+process.once('exit', () => {
+  for (const tempRoot of TEMP_SOURCE_ROOTS) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
 
 function isGitWorkTreeRoot(dir, pathModule = path) {
   try {
@@ -74,65 +82,163 @@ function copyGitArchive(sourceRoot, sha, dest, pathModule = path) {
   }
 }
 
-function copyInstallSource(sourceRoot, dest, pathModule = path, sha) {
-  if (isGitWorkTreeRoot(sourceRoot, pathModule)) {
-    if (!resolvePinnedGitSha(sourceRoot, sha)) {
-      throw new Error(`pinned SHA ${sha} is not in source git`);
-    }
-    copyGitArchive(sourceRoot, sha, dest, pathModule);
-    return { mode: 'git-archive', sha };
-  }
-
-  fs.cpSync(sourceRoot, dest, { recursive: true });
-  return { mode: 'tree' };
-}
-
-function assertSourceIdentity(sourceRoot, source, pathModule = path) {
-  if (isGitWorkTreeRoot(sourceRoot, pathModule)) {
-    if (!resolvePinnedGitSha(sourceRoot, source && source.sha)) {
-      throw new Error(`pinned SHA ${source && source.sha} is not in source git`);
-    }
-    return 'git-archive';
-  }
-
+function readPinnedMarketplaceSource(sourceRoot, pathModule = path) {
   const catalogPath = pathModule.join(sourceRoot, '.grok-plugin', 'marketplace.json');
-  if (!fs.existsSync(catalogPath)) {
-    return 'tree';
+  let catalog;
+  try {
+    catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Failed to read Grok marketplace source at ${catalogPath}: ${error.message}`);
   }
-
-  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
   const plugin = catalog && Array.isArray(catalog.plugins) ? catalog.plugins[0] : null;
-  const catalogSha = plugin && plugin.source && plugin.source.sha;
-  if (catalogSha && catalogSha !== source.sha) {
-    throw new Error('sourceRoot marketplace sha does not match install plan pin');
+  const source = plugin && plugin.source;
+  if (!source || source.source !== 'url' || typeof source.url !== 'string' || !source.url.trim()) {
+    throw new Error('Grok marketplace source must be a Git URL');
   }
-  return 'tree';
-}
-
-function writePinnedMarketplace(dest, source, pathModule = path) {
-  const catalogPath = pathModule.join(dest, '.grok-plugin', 'marketplace.json');
-  if (!fs.existsSync(catalogPath)) {
-    return false;
+  if (!SHA_PATTERN.test(source.sha || '')) {
+    throw new Error('Grok marketplace source must pin a 40-character lowercase commit SHA');
   }
-  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-  if (!catalog.plugins || !catalog.plugins[0]) {
-    return false;
+  if (typeof plugin.version !== 'string' || !plugin.version.trim()) {
+    throw new Error('Grok marketplace source must declare a plugin version');
   }
-  catalog.plugins[0].source = {
-    source: source.source,
+  return {
     url: source.url,
     sha: source.sha,
+    version: plugin.version,
   };
-  fs.mkdirSync(pathModule.dirname(catalogPath), { recursive: true });
-  fs.writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
-  return true;
+}
+
+function normalizeGitLocation(value, pathModule = path) {
+  const location = String(value || '').trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  if (/^(?:[a-z][a-z0-9+.-]*:\/\/|git@)/i.test(location)) {
+    return location;
+  }
+  return pathModule.resolve(location);
+}
+
+function findRegistrySource(sourceRoot, homeDir, pathModule = path) {
+  const registryPath = pathModule.join(homeDir, '.grok', 'installed-plugins', 'registry.json');
+  let registry;
+  try {
+    registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw new Error(`Failed to read Grok plugin registry at ${registryPath}: ${error.message}`);
+  }
+  const expectedPath = fs.realpathSync(sourceRoot);
+  for (const record of Object.values(registry.repos || {})) {
+    let recordPath;
+    try {
+      recordPath = fs.realpathSync(record.path);
+    } catch {
+      continue;
+    }
+    if (recordPath !== expectedPath || String(record.kind && record.kind.type).toLowerCase() !== 'git') {
+      continue;
+    }
+    return {
+      url: record.kind.url,
+      sha: record.kind.commit,
+    };
+  }
+  return null;
+}
+
+function fetchPinnedGitSource(sourceUrl, sha, parentDir) {
+  const gitDir = path.join(parentDir, 'git');
+  fs.mkdirSync(gitDir, { recursive: true });
+  execFileSync('git', ['init', '--bare', '--quiet', gitDir], { stdio: 'ignore' });
+  execFileSync('git', ['-C', gitDir, 'fetch', '--quiet', '--depth=1', '--no-tags', sourceUrl, sha], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const fetched = execFileSync('git', ['-C', gitDir, 'rev-parse', 'FETCH_HEAD^{commit}'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+  if (fetched !== sha) {
+    throw new Error(`Fetched Grok source commit ${fetched} does not match pinned SHA ${sha}`);
+  }
+  return gitDir;
+}
+
+function assertNoSymlinks(root) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Pinned Grok source contains unsupported symlink: ${entryPath}`);
+    }
+    if (entry.isDirectory()) assertNoSymlinks(entryPath);
+  }
+}
+
+function preparePinnedGrokSource(options = {}) {
+  const sourceRoot = path.resolve(options.sourceRoot || '');
+  const homeDir = path.resolve(options.homeDir || os.homedir());
+  const catalogSource = readPinnedMarketplaceSource(sourceRoot);
+  const sourceUrl = options.sourceUrl || catalogSource.url;
+  const sourceSha = options.sourceSha || catalogSource.sha;
+  if (normalizeGitLocation(sourceUrl) !== normalizeGitLocation(catalogSource.url)) {
+    throw new Error('Recorded Grok source URL does not match the marketplace source');
+  }
+  if (!SHA_PATTERN.test(sourceSha || '')) {
+    throw new Error('Recorded Grok source must pin a 40-character lowercase commit SHA');
+  }
+
+  let gitSourceRoot = null;
+  if (isGitWorkTreeRoot(sourceRoot) && resolvePinnedGitSha(sourceRoot, sourceSha)) {
+    gitSourceRoot = sourceRoot;
+  } else {
+    const registrySource = findRegistrySource(sourceRoot, homeDir);
+    if (!registrySource
+      || normalizeGitLocation(registrySource.url) !== normalizeGitLocation(sourceUrl)
+      || registrySource.sha !== sourceSha) {
+      throw new Error('Non-Git Grok source is unverifiable without matching registry URL/SHA evidence');
+    }
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-source-'));
+  TEMP_SOURCE_ROOTS.add(tempRoot);
+  const snapshotRoot = path.join(tempRoot, 'snapshot');
+  try {
+    if (!gitSourceRoot) {
+      gitSourceRoot = fetchPinnedGitSource(sourceUrl, sourceSha, tempRoot);
+    }
+    copyGitArchive(gitSourceRoot, sourceSha, snapshotRoot);
+    assertNoSymlinks(snapshotRoot);
+    const snapshotManifest = JSON.parse(
+      fs.readFileSync(path.join(snapshotRoot, '.grok-plugin', 'plugin.json'), 'utf8')
+    );
+    if (snapshotManifest.version !== catalogSource.version) {
+      throw new Error(
+        `Pinned Grok plugin version ${snapshotManifest.version || '(missing)'} does not match marketplace version ${catalogSource.version}`
+      );
+    }
+    fs.writeFileSync(path.join(snapshotRoot, '.ecc-source.json'), `${JSON.stringify({
+      source: 'url',
+      url: sourceUrl,
+      sha: sourceSha,
+    }, null, 2)}\n`);
+    return {
+      sourceRoot: snapshotRoot,
+      sourceUrl,
+      sourceSha,
+      sourceVersion: catalogSource.version,
+      cleanup: () => {
+        TEMP_SOURCE_ROOTS.delete(tempRoot);
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    TEMP_SOURCE_ROOTS.delete(tempRoot);
+    throw error;
+  }
 }
 
 module.exports = {
   SHA_PATTERN,
   isGitWorkTreeRoot,
   resolvePinnedGitSha,
-  copyInstallSource,
-  assertSourceIdentity,
-  writePinnedMarketplace,
+  readPinnedMarketplaceSource,
+  preparePinnedGrokSource,
 };
