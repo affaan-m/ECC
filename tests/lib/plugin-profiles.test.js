@@ -420,6 +420,72 @@ run('catalog rows cannot be forged by a multi-line description', () => {
   }
 });
 
+run('generation refuses a selected source that contains a symlink', () => {
+  const fixture = tempDir('ecc-symlink-src-');
+  const outRoot = tempDir('ecc-symlink-out-');
+  try {
+    for (const rel of ['skills/linked-skill', 'commands', 'manifests', '.claude-plugin']) {
+      fs.mkdirSync(path.join(fixture, ...rel.split('/')), { recursive: true });
+    }
+    fs.writeFileSync(path.join(fixture, 'skills', 'linked-skill', 'SKILL.md'),
+      '---\nname: linked-skill\ndescription: A skill whose directory contains a symlink\n---\n');
+    const outsideFile = path.join(fixture, 'outside-secret.txt');
+    fs.writeFileSync(outsideFile, 'not part of any carrier');
+    try {
+      fs.symlinkSync(outsideFile, path.join(fixture, 'skills', 'linked-skill', 'escape.txt'));
+    } catch {
+      console.log('  (skipped: platform denies symlink creation)');
+      return;
+    }
+    fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.1' }));
+    fs.cpSync(path.join(repoRoot, 'manifests'), path.join(fixture, 'manifests'), { recursive: true });
+    fs.writeFileSync(path.join(fixture, 'commands', 'noop.md'), '---\ndescription: noop\n---\n');
+    const plan = resolvePluginProfilePlan({
+      repoRoot: fixture,
+      moduleIds: ['commands-core'],
+      includeComponentIds: ['skill:linked-skill'],
+      pluginName: 'ecc-symlink',
+    });
+    assert.throws(() => generate({ plan, outRoot }), error => {
+      assert.match(error.message, /symlink/i);
+      assert.match(error.message, /linked-skill[\\/]escape\.txt/);
+      return true;
+    });
+    assert.deepStrictEqual(fs.readdirSync(outRoot), [], 'nothing written, no staging leftovers');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('previewProfilePlugin also reports a symlinked source as a blocker, before anything runs', () => {
+  const fixture = tempDir('ecc-symlink-preview-src-');
+  try {
+    for (const rel of ['skills/linked-skill', 'commands', 'manifests', '.claude-plugin']) {
+      fs.mkdirSync(path.join(fixture, ...rel.split('/')), { recursive: true });
+    }
+    fs.writeFileSync(path.join(fixture, 'skills', 'linked-skill', 'SKILL.md'),
+      '---\nname: linked-skill\ndescription: A skill whose directory contains a symlink\n---\n');
+    try {
+      fs.symlinkSync(__filename, path.join(fixture, 'skills', 'linked-skill', 'escape.txt'));
+    } catch {
+      console.log('  (skipped: platform denies symlink creation)');
+      return;
+    }
+    fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.1' }));
+    fs.cpSync(path.join(repoRoot, 'manifests'), path.join(fixture, 'manifests'), { recursive: true });
+    const plan = resolvePluginProfilePlan({
+      repoRoot: fixture,
+      includeComponentIds: ['skill:linked-skill'],
+      pluginName: 'ecc-symlink-preview',
+    });
+    const preview = previewProfilePlugin({ plan, outRoot: tempDir('ecc-symlink-preview-out-'), allowOverBudget: true });
+    assert.ok(preview.blockers.some(b => /symlink/i.test(b)), 'symlink must be a preview blocker, not just a generate-time throw');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 run('generation refuses a pending hook decision and reuses the consent disclosure', () => {
   const outRoot = tempDir('ecc-plugin-pending-');
   try {

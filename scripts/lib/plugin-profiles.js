@@ -398,6 +398,49 @@ function listFilesRecursive(rootDir) {
 }
 
 /**
+ * Find symlinks at or under an absolute path, without following them.
+ *
+ * fs.cpSync({recursive: true}) copies symlinks as symlinks (Node's default
+ * dereference is false), and listFilesRecursive() above only counts
+ * entry.isFile(), so a symlink is invisible to computeTreeDigest(). A
+ * carrier that copies one can silently start serving whatever the link
+ * currently resolves to, outside the receipted, content-addressed tree,
+ * while its digest still reports "unmodified". Selected sources are
+ * rejected outright when they contain one rather than trying to validate
+ * where the link points — see docs/PLUGIN-PROFILES.md's self-containment
+ * rule.
+ *
+ * @param {string} absPath Absolute file or directory to check.
+ * @returns {Array<string>} Absolute paths of any symlinks found, at or
+ *   under absPath. A symlinked directory is reported once and not
+ *   descended into (its target is outside what generation controls).
+ */
+function findSymlinksUnder(absPath) {
+  const found = [];
+  let stat;
+  try {
+    stat = fs.lstatSync(absPath);
+  } catch {
+    return found;
+  }
+  if (stat.isSymbolicLink()) {
+    found.push(absPath);
+    return found;
+  }
+  if (stat.isDirectory()) {
+    for (const entry of fs.readdirSync(absPath, { withFileTypes: true })) {
+      const childPath = path.join(absPath, entry.name);
+      if (entry.isSymbolicLink()) {
+        found.push(childPath);
+      } else if (entry.isDirectory()) {
+        found.push(...findSymlinksUnder(childPath));
+      }
+    }
+  }
+  return found;
+}
+
+/**
  * Validate a `hooks` decision value.
  *
  * @param {unknown} value Candidate decision.
@@ -1049,6 +1092,9 @@ function previewProfilePlugin(options = {}) {
   const includeCatalogSkill = options.includeCatalogSkill !== false;
   const catalogEntries = includeCatalogSkill ? readCatalogEntries(plan.repoRoot) : [];
   const operations = collectCopyOperations(plan, { includeCatalogSkill, catalogEntries });
+  const symlinkPaths = operations
+    .flatMap(operation => findSymlinksUnder(path.join(plan.repoRoot, ...operation.source.split('/'))))
+    .sort();
   const ledger = measureContextLedger(plan, { includeCatalogSkill, measurer: options.measurer, budget: options.budget });
   const existing = fs.existsSync(pluginRoot);
   const existingReceipt = existing ? readProfileReceipt(pluginRoot) : null;
@@ -1061,6 +1107,12 @@ function previewProfilePlugin(options = {}) {
   if (plan.closure.unresolved.length > 0) {
     blockers.push('Unresolved runtime dependencies:\n'
       + plan.closure.unresolved.map(item => `  ${item.from} -> ${item.specifier}`).join('\n'));
+  }
+  if (symlinkPaths.length > 0) {
+    blockers.push('Selected sources contain symlinks, which a generated carrier cannot own '
+      + '(the tree digest that proves a carrier is unmodified does not see through them, '
+      + 'so a link can be repointed after generation without detection):\n'
+      + symlinkPaths.map(absPath => `  ${toPosix(path.relative(plan.repoRoot, absPath))}`).join('\n'));
   }
   if (!ledger.withinBudget && !options.allowOverBudget) {
     blockers.push(`Context ledger ${ledger.tokens} tokens exceeds the declared budget of ${ledger.budget} `
