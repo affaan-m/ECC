@@ -88,7 +88,13 @@ check('run() stays silent for slash commands, short prompts, unroutable prompts,
 });
 
 check('run() suppresses output when routing exceeds its time budget', () => {
-  const result = run(matchingPrompt, { pluginRoot: repoRoot, env: { ...ON, ECC_SKILL_ROUTER_BUDGET_MS: '0.001' } });
+  // A fake clock makes this deterministic regardless of machine speed or
+  // cache state: the first now() call is startedAt (0), every call after
+  // is far in the future, so elapsedMs > budget is guaranteed without
+  // depending on real routing work actually taking measurable time.
+  let calls = 0;
+  const fakeNow = () => (calls++ === 0 ? 0 : 1e9);
+  const result = run(matchingPrompt, { pluginRoot: repoRoot, env: ON, now: fakeNow });
   assert.strictEqual(result.stdout, '');
   assert.match(result.stderr || '', /over the .*budget/);
 });

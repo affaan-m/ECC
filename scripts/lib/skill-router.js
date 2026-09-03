@@ -69,11 +69,29 @@ function listSkillDirs(skillsRoot) {
 
 /**
  * Scan every SKILL.md under a plugin's `skills/` for its id and description.
+ *
+ * This is the expensive path loadCatalog() falls back to on a cache miss,
+ * and it can run on the blocking UserPromptSubmit hook. `deadlineAt`, when
+ * given, is checked before each file: once passed, the scan stops and
+ * returns what it found so far marked incomplete, rather than reading
+ * every remaining skill regardless of how long that takes. This bounds the
+ * *granularity* of the overrun to one file's read, not the whole scan —
+ * it is not a hard real-time guarantee, but it is a real bound instead of
+ * none.
+ *
+ * @param {string} pluginRoot Plugin root to scan.
+ * @param {{deadlineAt?: number}} [options] Optional wall-clock deadline
+ *   (Date.now()-comparable) to stop scanning by.
+ * @returns {{entries: Array<object>, complete: boolean}} Found entries, and
+ *   whether the scan covered every skill directory.
  */
-function readCatalog(pluginRoot) {
+function readCatalog(pluginRoot, { deadlineAt } = {}) {
   const skillsRoot = path.join(pluginRoot, 'skills');
   const entries = [];
   for (const skillId of listSkillDirs(skillsRoot)) {
+    if (deadlineAt !== undefined && Date.now() > deadlineAt) {
+      return { entries, complete: false };
+    }
     const skillPath = path.join(skillsRoot, skillId, 'SKILL.md');
     if (!fs.existsSync(skillPath)) {
       continue;
@@ -81,7 +99,7 @@ function readCatalog(pluginRoot) {
     const { description } = parseFrontmatter(fs.readFileSync(skillPath, 'utf8'));
     entries.push({ id: skillId, description, path: `skills/${skillId}/SKILL.md`, installed: true });
   }
-  return entries;
+  return { entries, complete: true };
 }
 
 function catalogSignature(pluginRoot) {
@@ -130,7 +148,7 @@ function sanitizeCatalogEntries(entries) {
     }));
 }
 
-function loadCatalog(pluginRoot) {
+function loadCatalog(pluginRoot, { deadlineAt } = {}) {
   const signature = catalogSignature(pluginRoot);
   const cachePath = cachePathFor(pluginRoot);
 
@@ -149,8 +167,14 @@ function loadCatalog(pluginRoot) {
     // missing or unreadable cache: rebuild below
   }
 
-  const entries = readCatalog(pluginRoot);
-  writeCatalogCache(cachePath, { signature, builtAt: Date.now(), entries });
+  const { entries, complete } = readCatalog(pluginRoot, { deadlineAt });
+  // Only a complete scan is trustworthy for CACHE_TTL_MS (up to 6 hours): a
+  // scan cut short by the deadline reflects however far the loop got, not
+  // the catalog, and caching it would silently hide skills from every
+  // routing call until the cache expires.
+  if (complete) {
+    writeCatalogCache(cachePath, { signature, builtAt: Date.now(), entries });
+  }
   return entries;
 }
 
@@ -206,6 +230,7 @@ function routePrompt(prompt, options = {}) {
   }
   const maxResults = options.maxResults ?? DEFAULT_MAX_RESULTS;
   const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+  const deadlineAt = options.deadlineAt;
 
   const promptTokens = tokenize(prompt);
   if (promptTokens.size === 0) {
@@ -215,7 +240,7 @@ function routePrompt(prompt, options = {}) {
   const { installedIds, embeddedCatalog } = resolveRouterContext(pluginRoot);
   const scored = [];
 
-  for (const entry of embeddedCatalog || loadCatalog(pluginRoot)) {
+  for (const entry of embeddedCatalog || loadCatalog(pluginRoot, { deadlineAt })) {
     if (entry.id === 'ecc-catalog') {
       continue;
     }
@@ -250,5 +275,6 @@ module.exports = {
   tokenize,
   sanitizeCatalogEntries,
   resolveRouterContext,
+  readCatalog,
   routePrompt,
 };

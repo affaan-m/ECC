@@ -34,7 +34,9 @@ function isEnabled(env = process.env) {
 
 function budgetMs(env = process.env) {
   const raw = Number(env.ECC_SKILL_ROUTER_BUDGET_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_BUDGET_MS;
+  // 0 is a valid budget (effectively "suppress unless routing is instant"),
+  // distinct from an unset/invalid value falling back to the default.
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_BUDGET_MS;
 }
 
 /**
@@ -71,6 +73,9 @@ function buildMessage(matches) {
  */
 function run(inputOrRaw, options = {}) {
   const env = options.env || process.env;
+  // Overridable only for deterministic tests of the elapsedMs > budget
+  // suppression path; production callers never pass this.
+  const now = options.now || Date.now;
   if (!isEnabled(env)) {
     return { exitCode: 0, stdout: '' };
   }
@@ -93,12 +98,20 @@ function run(inputOrRaw, options = {}) {
     || env.CLAUDE_PLUGIN_ROOT
     || path.resolve(__dirname, '..', '..');
 
-  const startedAt = Date.now();
+  const startedAt = now();
+  const budget = budgetMs(env);
+  // deadlineAt bounds the expensive part of routePrompt (a cold catalog
+  // scan) from the inside: it stops reading further skills once the
+  // deadline passes rather than finishing an unbounded scan and only
+  // discarding the output afterward. elapsedMs below still catches
+  // everything else (the embedded-catalog path, scoring, a scan that
+  // finished but ran long) as a final check.
+  const deadlineAt = startedAt + budget;
   try {
-    const matches = routePrompt(prompt, { pluginRoot });
-    const elapsedMs = Date.now() - startedAt;
-    if (elapsedMs > budgetMs(env)) {
-      return { exitCode: 0, stdout: '', stderr: `[SkillRouter] routing took ${elapsedMs}ms, over the ${budgetMs(env)}ms budget; suppressed` };
+    const matches = routePrompt(prompt, { pluginRoot, deadlineAt });
+    const elapsedMs = now() - startedAt;
+    if (elapsedMs > budget) {
+      return { exitCode: 0, stdout: '', stderr: `[SkillRouter] routing took ${elapsedMs}ms, over the ${budget}ms budget; suppressed` };
     }
     if (matches.length === 0) {
       return { exitCode: 0, stdout: '' };

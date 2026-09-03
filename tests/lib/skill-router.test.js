@@ -22,6 +22,7 @@ const {
   tokenize,
   sanitizeCatalogEntries,
   resolveRouterContext,
+  readCatalog,
   routePrompt,
 } = require('../../scripts/lib/skill-router');
 
@@ -187,6 +188,61 @@ run('cache write never writes through a planted symlink', () => {
     delete require.cache[require.resolve('../../scripts/lib/skill-router')];
     fs.rmSync(linkRoot, { recursive: true, force: true });
     fs.rmSync(linkCacheDir, { recursive: true, force: true });
+  }
+});
+
+run('readCatalog stops immediately once an already-past deadline is given, marking the scan incomplete', () => {
+  const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-deadline-'));
+  try {
+    writeSkill(deadlineRoot, 'alpha-skill', 'First skill for deadline test');
+    writeSkill(deadlineRoot, 'beta-skill', 'Second skill for deadline test');
+    writeSkill(deadlineRoot, 'gamma-skill', 'Third skill for deadline test');
+    // An already-expired deadline must be caught on the very first
+    // iteration, before any file is read - this is what bounds a cold scan
+    // from the inside instead of only discarding results after a full,
+    // unbounded scan finishes (Greptile's original repro shape).
+    const result = readCatalog(deadlineRoot, { deadlineAt: Date.now() - 60000 });
+    assert.strictEqual(result.complete, false);
+    assert.deepStrictEqual(result.entries, [], 'an already-expired deadline must stop the scan before reading anything');
+  } finally {
+    fs.rmSync(deadlineRoot, { recursive: true, force: true });
+  }
+});
+
+run('readCatalog completes normally with no deadline or a generous one', () => {
+  const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-deadline-ok-'));
+  try {
+    writeSkill(deadlineRoot, 'alpha-skill', 'First skill for deadline test');
+    writeSkill(deadlineRoot, 'beta-skill', 'Second skill for deadline test');
+
+    const noDeadline = readCatalog(deadlineRoot);
+    assert.strictEqual(noDeadline.complete, true);
+    assert.strictEqual(noDeadline.entries.length, 2);
+
+    const farDeadline = readCatalog(deadlineRoot, { deadlineAt: Date.now() + 60000 });
+    assert.strictEqual(farDeadline.complete, true);
+    assert.strictEqual(farDeadline.entries.length, 2);
+  } finally {
+    fs.rmSync(deadlineRoot, { recursive: true, force: true });
+  }
+});
+
+run('loadCatalog (via routePrompt) never caches an incomplete, deadline-truncated scan', () => {
+  const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-deadline-cache-'));
+  try {
+    writeSkill(deadlineRoot, 'alpha-skill', 'First skill for deadline cache test');
+    const digest = require('crypto').createHash('sha1').update(path.resolve(deadlineRoot)).digest('hex').slice(0, 12);
+    const cacheFile = path.join(cacheDir, `ecc-skill-router-${digest}.json`);
+
+    const truncated = routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot, deadlineAt: Date.now() - 60000 });
+    assert.deepStrictEqual(truncated, [], 'a deadline already in the past finds nothing');
+    assert.ok(!fs.existsSync(cacheFile), 'an incomplete scan must never be written to the long-TTL cache');
+
+    const full = routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot });
+    assert.ok(full.some(m => m.id === 'alpha-skill'), 'a subsequent complete scan still finds the skill');
+    assert.ok(fs.existsSync(cacheFile), 'a complete scan is cached as usual');
+  } finally {
+    fs.rmSync(deadlineRoot, { recursive: true, force: true });
   }
 });
 

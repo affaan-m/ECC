@@ -27,8 +27,23 @@ const flag = (name, fallback) => {
 };
 const fixturePath = path.resolve(repoRoot, flag('fixture', 'tests/fixtures/skill-router/prompts.json'));
 const asJson = args.includes('--json');
-const minPrecision = Number(flag('min-precision', '0'));
-const minRecall = Number(flag('min-recall', '0'));
+
+// flag() returns undefined when its name is the last CLI arg or is
+// misspelled downstream; Number(undefined) is NaN, and every threshold
+// comparison against NaN is false, so a malformed flag used to make the
+// gate this evaluator exists to provide silently never fail. Parsing here
+// fails fast instead.
+function parseThreshold(name, fallback) {
+  const raw = flag(name, fallback);
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.error(`skill-router-eval: --${name} requires a numeric value, got ${JSON.stringify(raw)}`);
+    process.exit(1);
+  }
+  return value;
+}
+const minPrecision = parseThreshold('min-precision', '0');
+const minRecall = parseThreshold('min-recall', '0');
 
 const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-router-eval-cache-'));
 process.env.ECC_SKILL_ROUTER_CACHE_DIR = cacheDir;
@@ -54,7 +69,14 @@ function coldLatencyMs() {
 }
 
 function main() {
-  const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  let fixture;
+  try {
+    fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  } catch (error) {
+    console.error(`skill-router-eval: could not read fixture ${fixturePath}: ${error.message}`);
+    process.exitCode = 1;
+    return;
+  }
   const prompts = fixture.prompts || fixture;
   const misses = [];
   const warmLatencies = [];
@@ -96,8 +118,6 @@ function main() {
     platform: `${os.platform()} ${os.arch()}`,
   };
 
-  fs.rmSync(cacheDir, { recursive: true, force: true });
-
   if (asJson) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -115,4 +135,8 @@ function main() {
   }
 }
 
-main();
+try {
+  main();
+} finally {
+  fs.rmSync(cacheDir, { recursive: true, force: true });
+}

@@ -30,8 +30,13 @@ the opt-in the hook runs and emits nothing.
 - Prompts shorter than 12 characters, slash commands, and `!` commands are
   never routed.
 - Routing that takes longer than `ECC_SKILL_ROUTER_BUDGET_MS` (default 150)
-  emits nothing and logs the overrun to stderr, so a cold catalog scan can
-  never delay prompt submission by more than the budget.
+  emits nothing and logs the overrun to stderr. The deadline is also
+  enforced *inside* a cold catalog scan (checked before each skill file, not
+  only after the whole scan returns), so an oversized or slow-disk catalog
+  is bounded to roughly one file's read past the budget rather than the
+  full scan's duration. This bounds the overrun's granularity, not to zero:
+  a single pathologically slow file read can still exceed the budget before
+  the check runs again.
 - Output is at most a header plus three bullets. Catalog text is flattened
   to one line with control bytes removed before it reaches the model, so a
   crafted description cannot forge additional bullets or terminal escapes.
