@@ -285,13 +285,231 @@ function isInComment(input, idx) {
 }
 
 /**
- * Find the next 'git' token in the input starting from a position.
+ * Shell built-ins/interpreters that re-execute a quoted string as code
+ * (`bash -c '...'`, `eval "..."`, etc.). A `git ...` phrase found inside a
+ * quoted span whose preceding word is NOT one of these is just string data —
+ * e.g. an `echo` message, a heredoc, a JSON test fixture — not a real
+ * invocation, and must not be treated as one.
  */
-function findGit(input, start) {
+const QUOTE_EXEC_COMMANDS = new Set(['eval', 'bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.', 'exec', 'env']);
+
+/**
+ * Find every top-level (non-nested — shell quotes don't nest) quoted span in
+ * the input, tracking quote state from index 0 so a quote opened at the very
+ * start of the command (e.g. `echo '...'`) is honored for matches found deep
+ * inside it.
+ */
+function computeQuoteSpans(input) {
+  const spans = [];
+  let quote = null;
+  let spanStart = null;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        spans.push({ start: spanStart, end: i + 1, quote });
+        quote = null;
+        spanStart = null;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      spanStart = i;
+    }
+  }
+
+  return spans;
+}
+
+/**
+ * Find every `$(...)` (balanced, possibly nested) and backtick-delimited
+ * command substitution in input[start, end). The shell evaluates these
+ * regardless of enclosing double quotes — only single quotes suppress them
+ * entirely — so their content can never be treated as inert text.
+ */
+function findSubstitutionRanges(input, start, end) {
+  const ranges = [];
+  let i = start;
+
+  while (i < end) {
+    const char = input.charAt(i);
+
+    if (char === '\\') {
+      i += 2;
+      continue;
+    }
+
+    if (char === '$' && input.charAt(i + 1) === '(') {
+      const subStart = i;
+      let depth = 1;
+      let subQuote = null;
+      let j = i + 2;
+      while (j < end && depth > 0) {
+        const inner = input.charAt(j);
+
+        // A paren inside a quote nested within the substitution is just
+        // string data to the shell (e.g. `$(printf ')' ; git ...)`) — it
+        // must not affect paren depth, or scanning stops at that literal
+        // `)` and misses everything (including a real bypass) after it.
+        if (subQuote) {
+          if (subQuote === '"' && inner === '\\') {
+            j += 2;
+            continue;
+          }
+          if (inner === subQuote) subQuote = null;
+          j++;
+          continue;
+        }
+
+        if (inner === '\\') {
+          j += 2;
+          continue;
+        }
+        if (inner === '"' || inner === "'") {
+          subQuote = inner;
+          j++;
+          continue;
+        }
+        if (inner === '(') depth++;
+        else if (inner === ')') depth--;
+        j++;
+      }
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    if (char === '`') {
+      const subStart = i;
+      let j = i + 1;
+      while (j < end && input.charAt(j) !== '`') {
+        if (input.charAt(j) === '\\') {
+          j += 2;
+          continue;
+        }
+        j++;
+      }
+      j = Math.min(j + 1, end);
+      ranges.push({ start: subStart, end: j });
+      i = j;
+      continue;
+    }
+
+    i++;
+  }
+
+  return ranges;
+}
+
+/**
+ * Whether a quoted span is the string argument to an exec-style command, e.g.
+ * `bash -c '...'`, `sh -lc "..."`, `eval "..."`, `env -S '...'`,
+ * `bash -O extglob -c '...'`. Walks backward over whitespace-delimited
+ * words, checking each one against the exec-command list, until it either
+ * finds a match or hits a command delimiter (`;`, `&`, `|`, `(`, newline)
+ * that starts a fresh, unrelated command. Checking every word rather than
+ * stopping at the first non-flag one matters because a value-taking flag
+ * (`-O extglob`, `-S <string>`) can put other, unrelated words between the
+ * command name and the quote.
+ */
+function isExecutedSpan(input, span) {
+  let end = span.start;
+  // No fixed hop cap: `end` strictly decreases every iteration (bounded below
+  // by 0), so this always terminates in at most input.length steps. A fixed
+  // cap here previously let enough value-taking flags before the quote (e.g.
+  // several chained `bash -O <optname>` flags before `-c`) push the actual
+  // command name out of reach and wrongly return false.
+  while (true) {
+    while (end > 0 && /\s/.test(input.charAt(end - 1))) end--;
+    if (end === 0) return false;
+    if (/[;&|(\n]/.test(input.charAt(end - 1))) return false;
+
+    let start = end;
+    while (start > 0 && !/[\s;&|()<>\n]/.test(input.charAt(start - 1))) start--;
+    const word = input.slice(start, end);
+    if (!word) return false;
+
+    // Check every word walked over, flag or not — a value-taking flag (e.g.
+    // `bash -O extglob -c '...'`, `env -S '...'`) means the command name can
+    // sit multiple tokens back from the quote, not just past a single flag.
+    const base = word.split('/').pop().toLowerCase();
+    if (QUOTE_EXEC_COMMANDS.has(base)) return true;
+
+    end = start;
+  }
+}
+
+/**
+ * Quoted ranges whose content is inert string data rather than something the
+ * shell will actually execute — i.e. NOT the argument to eval/bash -c/sh -c/etc.
+ *
+ * Single-quoted spans suppress all expansion, so a non-executed one is inert
+ * end to end. Double-quoted spans still run any `$(...)` or backtick command
+ * substitution they contain regardless of what command they're an argument
+ * to, so those sub-ranges are carved out and left un-ignored even when the
+ * enclosing quote itself is inert.
+ */
+function computeIgnoredSpans(input) {
+  const ignored = [];
+
+  for (const span of computeQuoteSpans(input)) {
+    if (isExecutedSpan(input, span)) continue;
+
+    if (span.quote === "'") {
+      ignored.push({ start: span.start, end: span.end });
+      continue;
+    }
+
+    const subs = findSubstitutionRanges(input, span.start + 1, span.end - 1);
+    let cursor = span.start;
+    for (const sub of subs) {
+      if (sub.start > cursor) ignored.push({ start: cursor, end: sub.start });
+      cursor = sub.end;
+    }
+    if (cursor < span.end) ignored.push({ start: cursor, end: span.end });
+  }
+
+  return ignored;
+}
+
+function isWithinIgnoredSpan(ignoredSpans, idx) {
+  return ignoredSpans.some(span => idx > span.start && idx < span.end);
+}
+
+/**
+ * Find the next 'git' token in the input starting from a position, skipping
+ * any match that falls inside an ignored (inert, quoted-as-data) span.
+ */
+function findGit(input, start, ignoredSpans) {
   let pos = start;
   while (pos < input.length) {
     const idx = input.indexOf('git', pos);
     if (idx === -1) return null;
+
+    if (isWithinIgnoredSpan(ignoredSpans, idx)) {
+      const span = ignoredSpans.find(s => idx > s.start && idx < s.end);
+      pos = span.end;
+      continue;
+    }
 
     const isExe = input.slice(idx + 3, idx + 7).toLowerCase() === '.exe';
     const len = isExe ? 7 : 3;
@@ -313,9 +531,9 @@ function findGit(input, start) {
  * Returns { command, offset } where offset is the position right after the
  * subcommand keyword, so callers can scope flag checks to only that portion.
  */
-function detectGitCommand(input, start = 0) {
+function detectGitCommand(input, start = 0, ignoredSpans = computeIgnoredSpans(input)) {
   while (start < input.length) {
-    const git = findGit(input, start);
+    const git = findGit(input, start, ignoredSpans);
     if (!git) return null;
 
     if (isInComment(input, git.idx)) {
@@ -468,9 +686,10 @@ function hasHooksPathOverride(input, detected) {
  */
 function checkCommand(input) {
   let start = 0;
+  const ignoredSpans = computeIgnoredSpans(input);
 
   while (start < input.length) {
-    const detected = detectGitCommand(input, start);
+    const detected = detectGitCommand(input, start, ignoredSpans);
     if (!detected) return { blocked: false };
 
     const { command: gitCommand, offset } = detected;
