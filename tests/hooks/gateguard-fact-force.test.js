@@ -255,6 +255,193 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Test 4d: wrapper-prefixed destructive commands ---
+  /**
+   * Every token-based detector keys on `tokens[0]`, so `sudo rm -rf /` read as
+   * an invocation of `sudo` and was ALLOWED while the bare `rm -rf /` was
+   * denied — the gate missed exactly the privileged spellings it matters most
+   * for. Same for doas/env/command/nohup, `VAR=value` prefixes, sudo's own
+   * flags, and a wrapper appearing after a compound separator.
+   */
+  for (const command of [
+    'sudo rm -rf /important/data',
+    'sudo -u root rm -rf /important/data',
+    'sudo --user=root rm -rf /important/data',
+    'doas rm -rf /important/data',
+    'env rm -rf /important/data',
+    'FOO=bar rm -rf /important/data',
+    'command rm -rf /important/data',
+    'nohup rm -rf /important/data',
+    'sudo git reset --hard',
+    'sudo git clean -fd',
+    'sudo git push --force',
+    'sudo find . -exec rm {} ;',
+    'echo hello && sudo rm -rf /important/data',
+    // A wrapper INSIDE `-exec` runs the same deletion as a bare one.
+    'find . -exec sudo rm {} ;',
+    'find . -exec doas rm {} ;',
+    'find . -exec sudo git reset --hard {} ;',
+    // Option arity is per wrapper: `command -p` is boolean and must leave `rm`
+    // in place, while `nice -n`, `stdbuf -o`, and `ionice -c` consume a value.
+    'command -p rm -rf /important/data',
+    'nice -n 10 rm -rf /important/data',
+    'stdbuf -o L rm -rf /important/data',
+    'stdbuf -oL rm -rf /important/data',
+    'ionice -c 3 rm -rf /important/data',
+    // Quoting the command word routes the check through the quote-aware pass,
+    // which needs the same wrapper normalization.
+    'sudo "rm" -rf /important/data',
+    "sudo 'rm' -rf /important/data",
+    'env "rm" -rf /important/data',
+    'doas "rm" -rf /important/data',
+    'sudo bash -c "rm -rf /important/data"',
+    // `env -S "<cmd>"` RUNS the string. Consuming it as an opaque option value
+    // let the whole command hide behind the option, in all three spellings.
+    'env -S "rm -rf /important/data"',
+    'env --split-string="rm -rf /important/data"',
+    'env -S"rm -rf /important/data"',
+    'env -S "sudo rm -rf /important/data"',
+    'env -S "git reset --hard"',
+    // getopt gives the first argument-taking option in a cluster the rest of
+    // the token, so `-S` is reached through `-v`/`-i` too, attached or not.
+    'env -vS"rm -rf /important/data"',
+    'env -vS "rm -rf /important/data"',
+    'env -iS "rm -rf /important/data"',
+    // The split string carries its own quoting; a whitespace-only split left
+    // the command word as `"rm"`, which matched nothing.
+    `env -S '"rm" -rf /important/data'`,
+    `env -S 'env -S "rm" -rf /important/data'`,
+    // `-uSHELL` is `-u` unsetting SHELL, so `rm` is still the command. Reading
+    // the cluster left to right is what keeps `HELL` from being taken as a
+    // split string and hiding the deletion.
+    'env -uSHELL rm -rf /important/data',
+    'env -uS rm -rf /important/data',
+    // `-p` is not a lookup mode, so the operand still runs.
+    'command -p rm -rf /important/data',
+    // `-exec sh -c '<cmd>'` runs <cmd>. Classifying only the `sh` executable
+    // stopped at the wrapper, so every deletion behind one was allowed while
+    // the bare `-exec rm` spelling was denied.
+    'find . -exec sh -c "rm -rf {}" ;',
+    "find . -exec sh -c 'rm -rf {}' ;",
+    'find . -exec bash -c "rm -rf /important/data" ;',
+    'find . -exec zsh -c "rm -rf /important/data" ;',
+    'find /tmp -type f -exec sh -c "rm -rf {}" ;',
+    // `+` terminates -exec too, and the payload keeps its own wrappers.
+    'find . -exec sh -c "rm -rf {}" +',
+    'find . -exec sh -c "git reset --hard" ;',
+    'find . -exec sh -c "sudo rm -rf /important/data" ;',
+    // Short options cluster, so `-c` is reached through `-e`/`-x` as well —
+    // attached or not, and whether or not `c` comes first.
+    'sh -ec "rm -rf /important/data"',
+    'sh -xc "rm -rf /important/data"',
+    'sh -ce "rm -rf /important/data"',
+    'bash -ec "rm -rf /important/data"',
+    'find . -exec sh -ec "rm -rf {}" ;',
+    // A value-taking option consumes exactly one value and the scan continues
+    // past it. Stopping at one instead cost the plain `-c` that follows, which
+    // is a spelling the shell does run.
+    'sh -o errexit -c "rm -rf /important/data"',
+    'bash --init-file /dev/null -c "rm -rf /important/data"',
+    'bash --rcfile /dev/null -ic "rm -rf /important/data"',
+    'find . -exec sh -o errexit -c "rm -rf {}" ;',
+    // `-Senv` is env's attached split-string form, so these nest for real and
+    // run. Expansion used to stop after a fixed number of layers and hand the
+    // split string back as an opaque option value, which is exactly the thing
+    // expansion exists to prevent: the verdict flipped from denied to allowed
+    // at the cap, and one more wrapper bought a pass.
+    `env ${'-Senv '.repeat(8)}-S "rm -rf /important/data"`,
+    `env ${'-Senv '.repeat(9)}-S "rm -rf /important/data"`,
+    `env ${'-Senv '.repeat(40)}-S "rm -rf /important/data"`
+  ]) {
+    clearState();
+    if (
+      test(`denies a wrapper-prefixed destructive command: ${command}`, () => {
+        // Prime the session so the separate first-command routine gate cannot
+        // be mistaken for a destructive denial.
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        assert.ok(output.hookSpecificOutput, `${command} should carry a permission decision`);
+        assert.strictEqual(
+          output.hookSpecificOutput.permissionDecision,
+          'deny',
+          `${command} must be gated as destructive`
+        );
+        assert.ok(output.hookSpecificOutput.permissionDecisionReason.includes('Destructive'));
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
+  // --- Test 4e: looking past wrappers must not gate ordinary privileged work ---
+  for (const command of [
+    'sudo apt-get update',
+    'sudo systemctl restart nginx',
+    'sudo ls -la /etc',
+    'sudo -u root ls -la /etc',
+    'env NODE_ENV=production npm run build',
+    'command ls',
+    'command -p ls',
+    'command -v rm',
+    'nice -n 10 npm run build',
+    'ionice -c 3 npm test',
+    'stdbuf -o L npm test',
+    'find . -exec sudo chmod 644 {} ;',
+    // `command -v`/`-V` only report where a name resolves; the operand never
+    // runs, so gating it denied a lookup that changes nothing.
+    'command -v git reset --hard',
+    'command -V git reset --hard',
+    'command -pv git reset --hard',
+    // A benign split string must stay benign.
+    'env -S "npm run build"',
+    'env -vS "npm test"',
+    // `-uS` is `-u` unsetting a variable named S, not a split string.
+    'env -uS FOO',
+    'env -C /tmp npm run build',
+    // Looking inside `-c` must classify the payload, not assume the worst of
+    // every shell wrapper.
+    'find . -exec sh -c "echo hello" ;',
+    'sh -c "npm test"',
+    'sh -ec "npm run build"',
+    'bash --norc -c "npm test"',
+    // These two carry a destructive payload on purpose: with a benign one the
+    // assertion passes either way and pins nothing. `-o` takes a value, so `c`
+    // behind it is that value ("invalid option name"), and after `--` the next
+    // word is the script name — neither shell runs the string as a command.
+    'sh -oc "rm -rf /important/data"',
+    'sh -- -c "rm -rf /important/data"',
+    // Deep nesting is not destructive by itself; only what it ends up running
+    // is. A bound that gave up and denied would gate this.
+    `env ${'-Senv '.repeat(40)}-S "npm test"`,
+    'sh -o errexit -c "npm test"'
+  ]) {
+    clearState();
+    if (
+      test(`does not gate an ordinary wrapped command: ${command}`, () => {
+        runBashHook({ tool_name: 'Bash', tool_input: { command: 'printf ready' } });
+        const result = runBashHook({ tool_name: 'Bash', tool_input: { command } });
+        assert.strictEqual(result.code, 0, `hook should exit 0 for ${command}`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `hook should produce JSON output for ${command}`);
+        const decision = output.hookSpecificOutput;
+        if (decision) {
+          const reason = decision.permissionDecisionReason || '';
+          assert.ok(
+            decision.permissionDecision !== 'deny' || !reason.includes('Destructive'),
+            `${command} must not be gated as destructive`
+          );
+        } else {
+          assert.strictEqual(output.tool_name, 'Bash', 'pass-through should preserve input');
+        }
+      })
+    )
+      passed++;
+    else failed++;
+  }
+
   // --- Test 5: denies first routine Bash, allows second ---
   clearState();
   if (

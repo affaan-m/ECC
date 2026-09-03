@@ -338,6 +338,73 @@ function quoteAwareSegments(input) {
 
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
+// Shell options that take a value. A `c` behind one of these inside the same
+// token is that value, not `-c` — but the option only swallows one value, so
+// the scan has to resume after it rather than give up.
+const SHELL_SHORT_OPTIONS_WITH_VALUE = new Set(['o', 'O']);
+const SHELL_LONG_OPTIONS_WITH_VALUE = new Set(['--rcfile', '--init-file']);
+
+/**
+ * Return the command string a shell would run for `-c`, or null.
+ *
+ * `-c` reads its payload from the FOLLOWING argument (`sh -c'cmd'` is an
+ * invalid option, not an attached value), and short options cluster — so
+ * `sh -ec '<cmd>'`, `sh -xc '<cmd>'`, and `sh -ce '<cmd>'` all run exactly
+ * what `sh -c '<cmd>'` runs. Matching only a bare `-c` token left every
+ * clustered spelling unclassified.
+ *
+ * `-o`/`-O` and `--rcfile`/`--init-file` take a value. That only rules out a
+ * `c` sitting inside the same token as its value (`sh -oc 'cmd'`, which the
+ * shell rejects with "invalid option name" rather than running it) — the
+ * option consumes exactly one value, so the scan skips it and keeps looking.
+ * `sh -o errexit -c '<cmd>'` and `bash --init-file /dev/null -c '<cmd>'` both
+ * run the payload.
+ *
+ * @param {string[]} tokens command words, wrappers already stripped
+ * @returns {string|null}
+ */
+function shellDashCPayload(tokens) {
+  if (tokens.length === 0) return null;
+  if (!SHELL_WRAPPERS.has(commandBasename(tokens[0]))) return null;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    // `--` ends the options, and a bare operand is the script name — after
+    // either one there is no `-c` left to find.
+    if (token === '--' || token === '-' || !token.startsWith('-')) return null;
+    if (token.startsWith('--')) {
+      // `--rcfile FILE` holds its value in the next token; `--rcfile=FILE`
+      // holds it in this one and needs no skip.
+      if (SHELL_LONG_OPTIONS_WITH_VALUE.has(token)) i += 1;
+      continue;
+    }
+
+    const body = token.slice(1);
+    let consumesNextToken = false;
+    let carriesCommand = false;
+    for (let j = 0; j < body.length; j++) {
+      const flag = body[j];
+      if (flag === 'c') {
+        carriesCommand = true;
+        break;
+      }
+      if (SHELL_SHORT_OPTIONS_WITH_VALUE.has(flag)) {
+        // Its value is the rest of this token, or the next token when the
+        // option ends the cluster. Either way there is no `-c` in here.
+        consumesNextToken = j === body.length - 1;
+        break;
+      }
+    }
+
+    if (carriesCommand) {
+      const payload = tokens[i + 1];
+      return typeof payload === 'string' ? payload : null;
+    }
+    if (consumesNextToken) i += 1;
+  }
+  return null;
+}
+
 /**
  * Quote-aware destructive check: catches quoted command words, newline
  * separators, quoted `find -exec`, and `sh -c`/`bash -c` wrappers that evade
@@ -349,18 +416,17 @@ const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
  */
 function isDestructiveQuoteAware(raw, depth = 0) {
   if (depth > 4) return false;
-  for (const tokens of quoteAwareSegments(raw)) {
+  for (const segment of quoteAwareSegments(raw)) {
+    if (segment.length === 0) continue;
+    // A quoted command word survives this path as a plain token, so the
+    // wrapper prefix has to be normalized here too (`sudo "rm" -rf /`).
+    const tokens = stripCommandWrappers(segment);
     if (tokens.length === 0) continue;
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
-    if (isDestructiveFindExec(tokens.join(' '))) return true;
-    const base = commandBasename(tokens[0]);
-    if (SHELL_WRAPPERS.has(base)) {
-      const ci = tokens.indexOf('-c');
-      if (ci !== -1 && tokens[ci + 1] && isDestructiveQuoteAware(tokens[ci + 1], depth + 1)) {
-        return true;
-      }
-    }
+    if (isDestructiveFindExecTokens(tokens, depth)) return true;
+    const payload = shellDashCPayload(tokens);
+    if (payload && isDestructiveQuoteAware(payload, depth + 1)) return true;
   }
   return false;
 }
@@ -378,6 +444,174 @@ function commandBasename(token) {
     .replace(/^.*[\\/]/, '')
     .replace(/\.exe$/i, '')
     .toLowerCase();
+}
+
+/**
+ * Command words that run ANOTHER command: the destructive check has to look
+ * past them, or the most dangerous spellings are the ones that slip through.
+ * Every token-based detector keys on `tokens[0]`, so `sudo rm -rf /` reads as
+ * an invocation of `sudo` and is allowed while the bare `rm -rf /` is denied.
+ *
+ * The value is the set of that wrapper's OWN options which consume the
+ * following token, so the value is not mistaken for the wrapped command word.
+ * Arity is per wrapper because the same letter differs between them: `sudo -p`
+ * takes a prompt string, while `command -p` is a boolean that must leave `rm`
+ * as the next token. Long `--flag=value` forms need no entry (single token),
+ * and so do attached short forms (`stdbuf -oL`) — the flag token is skipped
+ * either way.
+ *
+ * @type {Map<string, Set<string>>}
+ */
+const COMMAND_WRAPPERS = new Map([
+  [
+    'sudo',
+    new Set([
+      '-a', '-C', '-c', '-D', '-g', '-h', '-p', '-R', '-r', '-T', '-t', '-U', '-u',
+      '--auth-type', '--close-from', '--login-class', '--chdir', '--group',
+      '--host', '--prompt', '--chroot', '--role', '--command-timeout', '--type',
+      '--other-user', '--user',
+    ]),
+  ],
+  ['doas', new Set(['-a', '-C', '-u'])],
+  ['env', new Set(['-u', '-C', '-S', '--unset', '--chdir', '--split-string'])],
+  ['command', new Set()],
+  ['nohup', new Set()],
+  ['setsid', new Set()],
+  ['stdbuf', new Set(['-i', '-o', '-e', '--input', '--output', '--error'])],
+  ['nice', new Set(['-n', '--adjustment'])],
+  [
+    'ionice',
+    new Set(['-c', '-n', '-p', '-P', '-u', '--class', '--classdata', '--pid', '--pgid', '--uid']),
+  ],
+]);
+
+// `env`'s short options that take an argument. Needed to read a cluster the way
+// getopt does: in `-uS` the `S` is `-u`'s value, not a split-string flag.
+const ENV_SHORT_OPTIONS_WITH_VALUE = new Set(['u', 'C']);
+
+/**
+ * `env -S "<command>"`, `env --split-string=<command>`, and the attached
+ * `-S<command>` form all RUN the string. Return it so the caller can expand it
+ * into tokens instead of consuming it as an opaque option value.
+ *
+ * @param {string} token
+ * @param {string | undefined} next
+ * @returns {{ value: string, consumed: number } | null}
+ */
+function envSplitString(token, next) {
+  if (token === '--split-string') {
+    return typeof next === 'string' ? { value: next, consumed: 2 } : null;
+  }
+  if (token.startsWith('--split-string=')) {
+    return { value: token.slice('--split-string='.length), consumed: 1 };
+  }
+  if (!token.startsWith('-') || token.startsWith('--') || token.length < 2) return null;
+  // Walk the short-option cluster the way getopt does: the first option that
+  // takes an argument claims the rest of the token, or the next word when the
+  // rest is empty. So `-vS "rm -rf /"` and `-vS"rm -rf /"` both reach `-S`,
+  // while `-uS` is `-u` unsetting a variable named `S` and carries no command.
+  for (let i = 1; i < token.length; i += 1) {
+    const flag = token[i];
+    if (flag === 'S') {
+      const attached = token.slice(i + 1);
+      if (attached) return { value: attached, consumed: 1 };
+      return typeof next === 'string' ? { value: next, consumed: 2 } : null;
+    }
+    if (ENV_SHORT_OPTIONS_WITH_VALUE.has(flag)) return null;
+  }
+  return null;
+}
+
+/**
+ * `command -v` / `-V`, including combined forms like `-pv`, only report where a
+ * name resolves — the operand never runs. Every other `command` option still
+ * executes its operand, so `-p` alone is not a lookup.
+ *
+ * @param {string} token
+ * @returns {boolean}
+ */
+function isCommandLookupOnly(token) {
+  return /^-[pvV]*[vV][pvV]*$/.test(token);
+}
+
+/**
+ * Return `tokens` with any leading wrapper commands, their options, and
+ * `VAR=value` assignment prefixes removed, so the caller sees the command that
+ * actually runs.
+ *
+ * Options are only skipped once a wrapper has been seen, so this can never walk
+ * into an unwrapped command's own arguments, and an option's value is only
+ * consumed when the wrapper it belongs to declares that arity. Returns the
+ * input array when there is nothing to strip.
+ *
+ * @param {string[]} tokens
+ * @returns {string[]}
+ */
+function stripCommandWrappers(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  let rest = tokens;
+  let index = 0;
+  let valueFlags = null;
+  let wrapper = null;
+  let expansions = 0;
+  // Every expansion replaces `-S<string>` with the words of that string, which
+  // is a strict substring of the token it came from, so the character count of
+  // what is left strictly decreases and the walk terminates on its own.
+  // Bounding the loop by that count keeps the guarantee without the bound
+  // being reachable. A fixed cap was reachable: past it the split string went
+  // back to being an opaque option value, so the command it runs was hidden
+  // again — `env -Senv -Senv ... -S "rm -rf /x"` is a valid spelling of that
+  // and executes, and it flipped from denied to allowed at exactly the cap.
+  const maxExpansions = tokens.reduce((total, token) => total + String(token).length, 0);
+  while (index < rest.length) {
+    const token = rest[index];
+    const base = commandBasename(token);
+    const wrapperFlags = COMMAND_WRAPPERS.get(base);
+    if (wrapperFlags) {
+      valueFlags = wrapperFlags;
+      wrapper = base;
+      index += 1;
+      continue;
+    }
+    // `FOO=bar rm -rf /` and `env FOO=bar rm -rf /` both put assignments before
+    // the command word.
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1;
+      continue;
+    }
+    if (valueFlags && token.startsWith('-')) {
+      // `env -S "rm -rf /"` RUNS that string. Consuming it as an opaque option
+      // value hid the whole command behind the option, so expand it and keep
+      // walking. Bounded so a self-referential string cannot spin.
+      if (wrapper === 'env') {
+        const split = envSplitString(token, rest[index + 1]);
+        if (split) {
+          // Quote-aware, because the split string carries its own quoting:
+          // `env -S '"rm" -rf /'` must yield `rm`, not `"rm"`, or the command
+          // word never matches. Falls back to a plain split if parsing fails.
+          const words = tokenizeAllowlistedShellWords(split.value) || tokenize(split.value);
+          const expanded = words.concat(rest.slice(index + split.consumed));
+          if (expansions >= maxExpansions) return expanded;
+          rest = expanded;
+          index = 0;
+          valueFlags = null;
+          wrapper = null;
+          expansions += 1;
+          continue;
+        }
+      }
+      // `command -v git reset --hard` only reports where `git` resolves —
+      // nothing runs, so there is no command to classify. Returning the operand
+      // here denied a lookup.
+      if (wrapper === 'command' && isCommandLookupOnly(token)) return [];
+      if (valueFlags.has(token)) index += 1;
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  if (rest === tokens) return index === 0 ? tokens : tokens.slice(index);
+  return rest.slice(index);
 }
 
 /**
@@ -608,22 +842,38 @@ function collectExecutableBodies(raw) {
  * `-exec unlink {} \;`, `-exec git reset --hard {} \;`.
  *
  * @param {string} command
+ * @param {number} [depth] recursion guard shared with isDestructiveQuoteAware
  * @returns {boolean}
  */
-function isDestructiveFindExec(command) {
+function isDestructiveFindExec(command, depth = 0) {
   const raw = String(command || '');
   const trimmed = raw.trim();
   if (!trimmed) {
     return false;
   }
 
-  // Tokenize the whole command line
-  const tokens = tokenize(trimmed);
+  return isDestructiveFindExecTokens(tokenize(trimmed), depth);
+}
+
+/**
+ * Token-taking half of `isDestructiveFindExec`.
+ *
+ * The quote-aware pass already holds correctly split tokens. Joining them
+ * back into one string so this check could re-tokenize it flattened a quoted
+ * `-exec sh -c '<cmd>'` payload into separate words, which is precisely the
+ * command that needed classifying.
+ *
+ * @param {string[]} rawTokens
+ * @param {number} [depth] recursion guard shared with isDestructiveQuoteAware
+ * @returns {boolean}
+ */
+function isDestructiveFindExecTokens(rawTokens, depth = 0) {
+  const tokens = stripCommandWrappers(rawTokens);
   if (!tokens || tokens.length === 0) {
     return false;
   }
 
-  // Must start with `find`
+  // Must start with `find` — after any wrapper prefix (`sudo find . -exec rm`).
   if (commandBasename(tokens[0]) !== 'find') {
     return false;
   }
@@ -648,7 +898,23 @@ function isDestructiveFindExec(command) {
     return false;
   }
 
-  const baseCmd = commandBasename(execTokens[0]);
+  // `find . -exec sudo rm {} \;` runs the same deletion as `-exec rm`, so the
+  // executed command needs the same wrapper normalization as a top-level one.
+  const execCommand = stripCommandWrappers(execTokens);
+  if (execCommand.length === 0) {
+    return false;
+  }
+
+  // `-exec sh -c '<cmd>' \;` runs <cmd> just as a bare `sh -c '<cmd>'` does.
+  // Classifying only the `sh` executable stopped at the wrapper, so the
+  // deletion inside it was never seen — the quote-aware pass already looks
+  // through the same wrapper, and this is the sibling that did not.
+  const execPayload = shellDashCPayload(execCommand);
+  if (execPayload) {
+    return isDestructiveQuoteAware(execPayload, depth + 1);
+  }
+
+  const baseCmd = commandBasename(execCommand[0]);
 
   // Directly destructive commands inside -exec
   if (baseCmd === 'rmdir' || baseCmd === 'unlink') {
@@ -662,7 +928,7 @@ function isDestructiveFindExec(command) {
 
   // `git reset --hard` inside -exec
   if (baseCmd === 'git') {
-    const sub = findGitSubcommand(execTokens);
+    const sub = findGitSubcommand(execCommand);
     if (sub && sub.command === 'reset' && sub.rest.includes('--hard')) {
       return true;
     }
@@ -708,7 +974,9 @@ function isDestructiveBash(command) {
     const stripped = stripQuotedStrings(segment);
     if (DESTRUCTIVE_SQL_DD.test(stripped)) return true;
     if (extra && extra.test(stripped)) return true;
-    const tokens = tokenize(segment);
+    // Look past sudo/doas/env/... so a privileged spelling is not the one that
+    // gets through (the gate matters MORE for those, not less).
+    const tokens = stripCommandWrappers(tokenize(segment));
     if (isDestructiveRm(tokens)) return true;
     if (isDestructiveGit(tokens)) return true;
   }
