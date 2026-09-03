@@ -42,6 +42,74 @@ const repoRoot = path.join(__dirname, '..', '..');
 const bootstrap = path.join(repoRoot, 'scripts', 'hooks', 'plugin-hook-bootstrap.js');
 const { isRawPassthrough } = require(bootstrap);
 const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-pr2380-fixtures-'));
+const SUBPROCESS_TIMEOUT_MS = process.platform === 'darwin' && process.env.CI === 'true'
+  ? 120_000
+  : 30_000;
+const ASYNC_SUPERVISOR_SOURCE = `
+  const { spawn, spawnSync } = require('child_process');
+  const argv = JSON.parse(process.argv[1]);
+  const detached = process.platform !== 'win32';
+  const child = spawn(argv[0], argv.slice(1), {
+    cwd: process.cwd(),
+    env: process.env,
+    detached,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  let childClosed = false;
+  let supervisorFailed = false;
+  const terminateChildTree = () => {
+    if (childClosed || !child.pid) return;
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      return;
+    }
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch (_) {
+      try { child.kill('SIGKILL'); } catch (_) {}
+    }
+  };
+  const relaySignal = signal => {
+    terminateChildTree();
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  };
+  process.once('SIGTERM', () => relaySignal('SIGTERM'));
+  process.once('SIGINT', () => relaySignal('SIGINT'));
+  process.once('exit', terminateChildTree);
+  child.stdout.pipe(process.stdout);
+  child.stderr.pipe(process.stderr);
+  child.stdin.on('error', error => {
+    if (
+      error.code === 'EPIPE' ||
+      error.code === 'EOF' ||
+      error.code === 'ERR_STREAM_DESTROYED'
+    ) {
+      process.stdin.unpipe(child.stdin);
+      process.stdin.resume();
+      return;
+    }
+    supervisorFailed = true;
+    process.stderr.write(error.message + '\\n');
+  });
+  process.stdin.pipe(child.stdin);
+  child.once('error', error => {
+    supervisorFailed = true;
+    process.stderr.write(error.message + '\\n');
+  });
+  child.once('close', (code, signal) => {
+    childClosed = true;
+    if (signal) {
+      process.removeAllListeners(signal);
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exitCode = supervisorFailed ? 1 : (Number.isInteger(code) ? code : 1);
+  });
+`;
 
 function cleanupFixtureDir() {
   fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
@@ -61,29 +129,65 @@ function test(name, fn) {
   }
 }
 
-function runBootstrap(args, input, env) {
-  return spawnSync('node', [bootstrap, ...args], {
+function runSupervised(argv, input, env, options = {}) {
+  return spawnSync(process.execPath, ['-e', ASYNC_SUPERVISOR_SOURCE, JSON.stringify(argv)], {
     input,
     encoding: 'utf8',
     cwd: repoRoot,
     env: { ...process.env, ...(env || {}) },
-    timeout: 30000,
-    maxBuffer: 16 * 1024 * 1024,
+    timeout: options.timeout ?? SUBPROCESS_TIMEOUT_MS,
+    maxBuffer: options.maxBuffer ?? 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });
 }
 
+function runBootstrap(args, input, env) {
+  return runSupervised([process.execPath, bootstrap, ...args], input, env);
+}
+
 function runHookEntry(args, input, env) {
   const loader = `const s=${JSON.stringify(bootstrap)};process.argv.splice(1,0,s);require(s)`;
-  return spawnSync(process.execPath, ['-e', loader, ...args], {
-    input,
-    encoding: 'utf8',
-    cwd: repoRoot,
-    env: { ...process.env, ...(env || {}) },
-    timeout: 30000,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
+  return runSupervised([process.execPath, '-e', loader, ...args], input, env);
+}
+
+function processExists(pid) {
+  if (process.platform === 'win32') {
+    const result = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+      encoding: 'utf8',
+      windowsHide: true
+    });
+    return result.status === 0 && result.stdout.includes(`"${pid}"`);
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function waitForProcessExit(pid, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processExists(pid)) return true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  }
+  return !processExists(pid);
+}
+
+function assertNestedChildCleanup(label, childSource, options) {
+  const pidPath = path.join(FIXTURE_DIR, `${label}-${process.pid}.pid`);
+  const result = runSupervised(
+    [process.execPath, '-e', childSource],
+    '',
+    { ECC_TEST_CHILD_PID_FILE: pidPath },
+    options
+  );
+  assert.ok(result.error, `${label}: supervisor limit must terminate the outer process`);
+  assert.ok(fs.existsSync(pidPath), `${label}: nested child must publish its PID`);
+  const childPid = Number(fs.readFileSync(pidPath, 'utf8'));
+  assert.ok(Number.isInteger(childPid) && childPid > 0, `${label}: expected a valid nested child PID`);
+  assert.ok(waitForProcessExit(childPid), `${label}: nested child ${childPid} survived supervisor termination`);
 }
 
 function realisticPostToolUseEditPayload() {
@@ -108,6 +212,64 @@ console.log('\nplugin-hook-bootstrap raw-echo (no bloat) tests:');
 
 let passed = 0;
 let failed = 0;
+
+if (
+  test('supervisor tolerates a child closing stdin before a large input drains', () => {
+    const result = runSupervised(
+      [process.execPath, '-e', 'process.exit(0)'],
+      'x'.repeat(8 * 1024 * 1024)
+    );
+    assert.strictEqual(result.status, 0, result.stderr);
+  })
+)
+  passed++;
+else failed++;
+
+if (process.platform !== 'win32') {
+  if (
+    test('supervisor preserves child signal termination', () => {
+      const result = runSupervised(
+        [process.execPath, '-e', "process.kill(process.pid, 'SIGTERM')"],
+        ''
+      );
+      assert.strictEqual(result.status, null);
+      assert.strictEqual(result.signal, 'SIGTERM');
+    })
+  )
+    passed++;
+  else failed++;
+}
+
+const persistentChildSource = `
+  const fs = require('fs');
+  fs.writeFileSync(process.env.ECC_TEST_CHILD_PID_FILE, String(process.pid));
+  setInterval(() => {}, 1000);
+`;
+
+if (
+  test('supervisor timeout terminates the nested child', () => {
+    assertNestedChildCleanup('timeout', persistentChildSource, { timeout: 500 });
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('supervisor maxBuffer termination kills the nested child', () => {
+    const noisyChildSource = `
+      const fs = require('fs');
+      fs.writeFileSync(process.env.ECC_TEST_CHILD_PID_FILE, String(process.pid));
+      process.stdout.write('x'.repeat(1024 * 1024));
+      setInterval(() => {}, 1000);
+    `;
+    assertNestedChildCleanup('max-buffer', noisyChildSource, {
+      timeout: 5000,
+      maxBuffer: 1024
+    });
+  })
+)
+  passed++;
+else failed++;
 
 // --- Bug site #1: line 137 (missing args) ---
 if (
