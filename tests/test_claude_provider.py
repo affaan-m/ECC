@@ -114,6 +114,23 @@ def test_generate_text_only_has_no_tool_calls() -> None:
 
 
 @pytest.mark.unit
+def test_generate_rejects_structured_system_content() -> None:
+    provider = make_provider(make_response([]))
+
+    with pytest.raises(TypeError, match="System messages must contain text"):
+        provider.generate(
+            LLMInput(
+                messages=[
+                    Message(
+                        role=Role.SYSTEM,
+                        content=[{"type": "text", "text": "Rules"}],
+                    )
+                ]
+            )
+        )
+
+
+@pytest.mark.unit
 def test_generate_does_not_pass_cache_control_as_top_level_param() -> None:
     # cache_control is a per-content-block field on the Anthropic Messages API,
     # not a top-level parameter. Passing it at the top level raises TypeError

@@ -116,6 +116,7 @@ def interactive_select(
     if providers is None:
         providers = [
             ("claude", "Anthropic Claude ( Sonnet, Opus, Haiku)"),
+            ("minimax", "MiniMax (M2.7)"),
             ("openai", "OpenAI GPT (4o, 4o-mini, 3.5-turbo)"),
             ("ollama", "Local Ollama models"),
         ]
@@ -126,6 +127,9 @@ def interactive_select(
                 ("claude-opus-4-8", "Claude Opus 4.8 - Most capable"),
                 ("claude-sonnet-4-6", "Claude Sonnet 4.6 - Balanced"),
                 ("claude-haiku-4-5", "Claude Haiku 4.5 - Fast"),
+            ],
+            "minimax": [
+                ("MiniMax-M2.7", "MiniMax M2.7 - Long-context text model"),
             ],
             "openai": [
                 ("gpt-4o", "GPT-4o - Most capable"),
