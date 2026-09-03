@@ -245,6 +245,8 @@ function createManifestInstallPlan(options = {}) {
     moduleIds: options.moduleIds || [],
     includeComponentIds: options.includeComponentIds || [],
     excludeComponentIds: options.excludeComponentIds || [],
+    skillProfile: options.skillProfile || null,
+    skillEnabledGroups: requestModuleIds,
     target,
     exemptValidationCodes: options.exemptValidationCodes || [],
   });
@@ -271,6 +273,7 @@ function createManifestInstallPlan(options = {}) {
     installStatePath: plan.installStatePath,
     request: {
       profile: requestProfileId,
+      skillProfile: options.skillProfile || null,
       modules: requestModuleIds,
       includeComponents: requestIncludeComponentIds,
       excludeComponents: requestExcludeComponentIds,

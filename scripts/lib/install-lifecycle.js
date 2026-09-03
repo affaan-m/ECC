@@ -78,6 +78,7 @@ function buildRecordedManifestRequest(record) {
     includeComponentIds: Array.isArray(request.includeComponents) ? [...request.includeComponents] : [],
     excludeComponentIds: Array.isArray(request.excludeComponents) ? [...request.excludeComponents] : [],
     legacyLanguages: Array.isArray(request.legacyLanguages) ? [...request.legacyLanguages] : [],
+    skillProfile: request.skillProfile || null,
     hookConsent: getRecordedHookConsent(state),
   };
 }

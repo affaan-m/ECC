@@ -76,6 +76,7 @@ function main() {
       assert.match(result.stdout, /platform-audit/);
       assert.match(result.stdout, /security-ioc-scan/);
       assert.match(result.stdout, /feedback/);
+      assert.match(result.stdout, /skills-profile/);
     }],
     ['delegates explicit install command', () => {
       const homeDir = createTempDir('ecc-cli-install-home-');

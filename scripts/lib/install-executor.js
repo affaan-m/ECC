@@ -488,6 +488,7 @@ function createLegacyInstallPlan(options = {}) {
     installStatePath: plan.installStatePath,
     request: {
       profile: null,
+      skillProfile: null,
       modules: [],
       legacyLanguages: context.languages,
       legacyMode: true
@@ -552,6 +553,7 @@ function createLegacyCompatInstallPlan(options = {}) {
     requestModuleIds: [],
     requestIncludeComponentIds: includeComponentIds,
     requestExcludeComponentIds: excludeComponentIds,
+    skillProfile: options.skillProfile || null,
     mode: 'legacy-compat'
   });
 }

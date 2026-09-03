@@ -219,6 +219,30 @@ function runTests() {
     ]);
   })) passed += 1; else failed += 1;
 
+  if (test('buildInstallApplyArgs reconstructs a recorded skill profile', () => {
+    const record = {
+      adapter: { target: 'cursor', kind: 'project' },
+      state: {
+        target: { target: 'cursor' },
+        request: {
+          profile: 'developer',
+          modules: [],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+          skillProfile: 'minimal',
+        },
+      },
+    };
+
+    assert.deepStrictEqual(buildInstallApplyArgs(record), [
+      '--target', 'cursor',
+      '--profile', 'developer',
+      '--skill-profile', 'minimal',
+    ]);
+  })) passed += 1; else failed += 1;
+
   if (test('determineInstallCwd uses the project root for project installs', () => {
     const record = {
       adapter: { kind: 'project' },

@@ -3,6 +3,13 @@ const os = require('os');
 const path = require('path');
 const { getInstallTargetAdapter, planInstallTargetScaffold } = require('./install-targets/registry');
 const { resolveInvocationEnvironment } = require('./invocation-environment');
+const {
+  extraSkillIdsFromComponentIds,
+  filterSkillInstallOperations,
+  loadSkillCatalog,
+  selectSkills,
+} = require('./skill-catalog');
+const { VALID_SKILL_PROFILES } = require('./skill-flags');
 
 const DEFAULT_REPO_ROOT = path.join(__dirname, '../..');
 const SUPPORTED_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity', 'codex', 'gemini', 'opencode', 'codebuddy', 'joycode', 'qwen', 'zed', 'hermes', 'openclaw', 'kimi', 'adal'];
@@ -710,9 +717,24 @@ function resolveInstallPlan(options = {}) {
     })
     : null;
 
+  const skillProfile = normalizeSkillProfile(options.skillProfile);
+  const skillEnabledGroups = Object.prototype.hasOwnProperty.call(options, 'skillEnabledGroups')
+    ? dedupeStrings(options.skillEnabledGroups)
+    : explicitModuleIds;
+  const operations = filterOperationsForSkillProfile(
+    scaffoldPlan ? scaffoldPlan.operations : [],
+    {
+      repoRoot: manifests.repoRoot,
+      skillProfile,
+      extraSkillIds: extraSkillIdsFromComponentIds(includedComponentIds),
+      enabledGroups: skillEnabledGroups,
+    }
+  );
+
   return {
     repoRoot: manifests.repoRoot,
     profileId,
+    skillProfile,
     target,
     requestedModuleIds: effectiveRequestedIds,
     explicitModuleIds,
@@ -734,8 +756,38 @@ function resolveInstallPlan(options = {}) {
     homeDir: targetPlanningInput ? targetPlanningInput.homeDir : null,
     targetRoot: scaffoldPlan ? scaffoldPlan.targetRoot : null,
     installStatePath: scaffoldPlan ? scaffoldPlan.installStatePath : null,
-    operations: scaffoldPlan ? scaffoldPlan.operations : [],
+    operations,
   };
+}
+
+function normalizeSkillProfile(rawProfile) {
+  if (rawProfile === undefined || rawProfile === null || String(rawProfile).trim() === '') {
+    return null;
+  }
+  const profile = String(rawProfile).trim().toLowerCase();
+  if (!VALID_SKILL_PROFILES.has(profile)) {
+    throw new Error(`Unknown skill profile: ${rawProfile}. Expected minimal, standard, or full.`);
+  }
+  return profile;
+}
+
+function filterOperationsForSkillProfile(operations, options = {}) {
+  if (!options.skillProfile) {
+    return Array.isArray(operations) ? operations : [];
+  }
+
+  const profileManifestPath = path.join(options.repoRoot || '', 'manifests', 'skill-profiles.json');
+  if (!options.repoRoot || !fs.existsSync(profileManifestPath)) {
+    return Array.isArray(operations) ? operations : [];
+  }
+
+  const catalog = loadSkillCatalog({ repoRoot: options.repoRoot });
+  const selected = selectSkills(catalog, {
+    profile: options.skillProfile,
+    extraSkills: options.extraSkillIds,
+    enabledGroups: options.enabledGroups,
+  });
+  return filterSkillInstallOperations(operations, selected);
 }
 
 module.exports = {

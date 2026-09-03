@@ -96,6 +96,10 @@ function buildInstallApplyArgs(record) {
     args.push('--profile', request.profile);
   }
 
+  if (request.skillProfile) {
+    args.push('--skill-profile', request.skillProfile);
+  }
+
   if (Array.isArray(request.modules) && request.modules.length > 0) {
     args.push('--modules', request.modules.join(','));
   }

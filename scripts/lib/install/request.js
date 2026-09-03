@@ -1,6 +1,7 @@
 'use strict';
 
 const { validateInstallModuleIds, LOCALE_ALIAS_TO_COMPONENT_ID, listSupportedLocales } = require('../install-manifests');
+const { VALID_SKILL_PROFILES } = require('../skill-flags');
 const { resolveHookConsentFlags } = require('./hook-consent');
 
 const LEGACY_INSTALL_TARGETS = ['claude', 'claude-project', 'cursor', 'antigravity'];
@@ -29,6 +30,7 @@ function parseInstallArgs(argv) {
     excludeComponentIds: [],
     languages: [],
     locale: null,
+    skillProfile: null,
     enableHooks: false,
     noHooks: false,
   };
@@ -64,6 +66,13 @@ function parseInstallArgs(argv) {
         parsed.excludeComponentIds.push(componentId.trim());
       }
       index += 1;
+    } else if (arg === '--skill-profile') {
+      const skillProfile = args[index + 1] || '';
+      if (!skillProfile.trim() || skillProfile.startsWith('--')) {
+        throw new Error('Missing value for --skill-profile');
+      }
+      parsed.skillProfile = skillProfile;
+      index += 1;
     } else if (arg === '--locale') {
       const locale = args[index + 1] || '';
       if (!locale || locale.startsWith('--')) {
@@ -96,6 +105,24 @@ function normalizeInstallRequest(options = {}) {
     ? options.config
     : null;
   const profileId = options.profileId || config?.profileId || null;
+  const rawSkillProfile = Object.prototype.hasOwnProperty.call(options, 'skillProfile')
+    && options.skillProfile !== undefined
+    && options.skillProfile !== null
+    ? options.skillProfile
+    : (config && Object.prototype.hasOwnProperty.call(config, 'skillProfile')
+      ? config.skillProfile
+      : null);
+  let skillProfile = null;
+  if (rawSkillProfile !== null && rawSkillProfile !== undefined) {
+    const trimmed = String(rawSkillProfile).trim();
+    if (!trimmed) {
+      throw new Error('Missing value for --skill-profile');
+    }
+    skillProfile = trimmed.toLowerCase();
+    if (!VALID_SKILL_PROFILES.has(skillProfile)) {
+      throw new Error(`Unknown skill profile: ${rawSkillProfile}. Expected minimal, standard, or full.`);
+    }
+  }
   const target = options.target || config?.target || 'claude';
   const moduleIds = validateInstallModuleIds(
     dedupeStrings([...(config?.moduleIds || []), ...(options.moduleIds || [])])
@@ -153,6 +180,7 @@ function normalizeInstallRequest(options = {}) {
       : (usingManifestMode ? 'manifest' : 'legacy-compat'),
     target,
     profileId,
+    skillProfile,
     moduleIds,
     includeComponentIds,
     excludeComponentIds,

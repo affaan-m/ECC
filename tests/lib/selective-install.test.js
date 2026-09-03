@@ -483,6 +483,7 @@ function runTests() {
     });
     assert.ok(result.includes('--with'), 'Help should mention --with');
     assert.ok(result.includes('--without'), 'Help should mention --without');
+    assert.ok(result.includes('--skill-profile'), 'Help should mention --skill-profile');
     assert.ok(result.includes('component'), 'Help should describe components');
     assert.ok(result.includes('zed          - Install project settings'), 'Help should describe Zed target');
   })) passed++; else failed++;

@@ -77,6 +77,18 @@
             "null"
           ]
         },
+        "skillProfile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "minimal",
+            "standard",
+            "full",
+            null
+          ]
+        },
         "modules": {
           "type": "array",
           "items": {

@@ -886,7 +886,7 @@ Stable graduation of the 2.0 line: the control-pane substrate (session adapters 
 
 - **Harness-first release**: ECC is explicitly framed as an agent harness performance system, not just a config pack.
 - **Hook reliability overhaul**: SessionStart root fallback, Stop-phase session summaries, and script-based hooks replacing fragile inline one-liners.
-- **Hook runtime controls**: `ECC_HOOK_PROFILE=minimal|standard|strict` and `ECC_DISABLED_HOOKS=...` for runtime gating without editing hook files.
+- **Hook runtime controls**: `ECC_HOOK_PROFILE=minimal|standard|strict` and `ECC_DISABLED_HOOKS=...` for runtime gating without editing hook files. Skills now have the matching `ECC_SKILL_PROFILE=minimal|standard|full` listing control.
 - **New harness commands**: `/harness-audit`, `/loop-start`, `/loop-status`, `/quality-gate`, `/model-route`.
 - **NanoClaw v2**: model routing, skill hot-load, session branch/search/export/compact/metrics.
 - **Cross-harness parity**: behavior tightened across Claude Code, Cursor, OpenCode, and Codex app/CLI.
@@ -1519,6 +1519,19 @@ Or use the `/setup-pm` command.
 Use runtime flags to tune strictness or disable specific hooks temporarily:
 
 ```bash
+# Skill listing profile (default: standard). Narrows the Claude plugin skill
+# list so ECC does not overflow the shared skill-listing budget.
+export ECC_SKILL_PROFILE=standard
+
+# Opt extra install-module groups into the listing, or drop groups/skills
+export ECC_ENABLED_SKILL_GROUPS=framework-language
+export ECC_DISABLED_SKILL_GROUPS=security
+export ECC_DISABLED_SKILLS=tasteforge-video
+
+# Apply the selected listing to .claude-plugin/plugin.json
+# ecc skills-profile
+# ecc skills-profile --profile full
+
 # Hook strictness profile (default: standard)
 export ECC_HOOK_PROFILE=standard
 

@@ -95,6 +95,58 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('parses --skill-profile', () => {
+    const parsed = parseInstallArgs([
+      'node',
+      'scripts/install-apply.js',
+      '--profile', 'developer',
+      '--skill-profile', 'minimal',
+    ]);
+
+    assert.strictEqual(parsed.skillProfile, 'minimal');
+  })) passed++; else failed++;
+
+  if (test('rejects a whitespace-only --skill-profile', () => {
+    assert.throws(
+      () => parseInstallArgs([
+        'node',
+        'scripts/install-apply.js',
+        '--skill-profile',
+        '   ',
+        '--profile',
+        'developer',
+      ]),
+      /Missing value for --skill-profile/
+    );
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: 'developer',
+        skillProfile: '   ',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+      }),
+      /Missing value for --skill-profile/
+    );
+  })) passed++; else failed++;
+
+  if (test('rejects an unknown --skill-profile', () => {
+    assert.throws(
+      () => normalizeInstallRequest({
+        target: 'claude',
+        profileId: 'developer',
+        skillProfile: 'strict',
+        moduleIds: [],
+        includeComponentIds: [],
+        excludeComponentIds: [],
+        languages: [],
+      }),
+      /Unknown skill profile/
+    );
+  })) passed++; else failed++;
+
   if (test('normalizes legacy language installs into a canonical request', () => {
     const request = normalizeInstallRequest({
       target: 'claude',
@@ -108,6 +160,20 @@ function runTests() {
     assert.deepStrictEqual(request.legacyLanguages, ['typescript', 'python']);
     assert.deepStrictEqual(request.moduleIds, []);
     assert.strictEqual(request.profileId, null);
+  })) passed++; else failed++;
+
+  if (test('preserves skillProfile on legacy-compat requests', () => {
+    const request = normalizeInstallRequest({
+      target: 'claude',
+      profileId: null,
+      moduleIds: [],
+      languages: ['typescript'],
+      skillProfile: 'minimal',
+    });
+
+    assert.strictEqual(request.mode, 'legacy-compat');
+    assert.strictEqual(request.skillProfile, 'minimal');
+    assert.deepStrictEqual(request.legacyLanguages, ['typescript']);
   })) passed++; else failed++;
 
   if (test('normalizes locale-only installs as manifest component requests', () => {
