@@ -2,19 +2,22 @@
   "statusLine": {
     "type": "command",
     "command": "node \"<plugin-root>/scripts/hooks/ecc-statusline.js\"",
-    "description": "ECC statusline: model | task | $cost tools files duration | dir | context bar"
+    "description": "ECC usage bar: 5h/7d rate-limit bars + cache | model, context, cost | ECC version, hooks, plugins"
   },
   "_comments": {
-    "setup": "Replace <plugin-root> with your ECC installation path. For plugin installs, use the resolved path from CLAUDE_PLUGIN_ROOT.",
-    "display": "Shows model name, current task, session cost, tool count, files modified, session duration, directory, and context usage bar with color thresholds.",
+    "setup": "Installed automatically by the ECC installer (launcher at ~/.claude/ecc-statusline.js). For manual setup, replace <plugin-root> with your ECC installation path.",
+    "display": "Three lines: (1) 5h/7d rate-limit usage bars with reset countdowns and prompt-cache hit rate, (2) model with effort/fast badges, context bar, session cost, lines changed, duration, current task, (3) ECC version, hooks profile, enabled plugins with versions, directory.",
     "colors": {
-      "green": "Context used < 50%",
-      "yellow": "Context used < 65%",
-      "orange": "Context used < 80%",
-      "red_blink": "Context used >= 80%"
+      "amber_214": "ECC brand - 5h window label (#F59E0B)",
+      "terracotta_173": "ECC brand - 7d window label (#E07856)",
+      "yellow": "Usage >= 60%",
+      "orange": "Usage >= 80%",
+      "red": "Usage >= 90%"
     },
-    "output_example": "Opus 4.6 | Fixing auth bug | $1.23 47t 5f 15m | myproject ███████░░░ 68%",
-    "dependencies": "Reads bridge file from ecc-metrics-bridge.js PostToolUse hook. Both must be installed for full metrics display.",
+    "output_example": "5h ███████░ 84% ↻1h54m │ 7d █░░░░░░░ 14% ↻4d │ cache 100% \\n Opus 5 xhigh │ ctx █░░░░░░░░░ 13% 1M │ $7.85 +49/-49 36m │ Fixing auth bug \\n ECC 2.2.0 │ hooks standard │ plugins ecc 2.2.0 · swift-lsp 1.0.0 │ myproject",
+    "compact_mode": "Set ECC_STATUSLINE_COMPACT=1 for the legacy single-line format.",
+    "credit": "Inspired by leeguooooo/claude-code-usage-bar (MIT). See docs/STATUSLINE.md.",
+    "dependencies": "Rate-limit line requires a subscription session. Cost/duration segments read the bridge file from ecc-metrics-bridge.js PostToolUse hook.",
     "usage": "Copy the statusLine object to your ~/.claude/settings.json"
   }
 }
