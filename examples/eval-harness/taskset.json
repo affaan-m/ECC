@@ -1,0 +1,19 @@
+{
+  "version": "slugify-tasks/1",
+  "family": "slugify",
+  "description": "Deterministic string tasks used to demonstrate the staged gate. Held-out tasks are only run after smoke and selection pass.",
+  "tasks": [
+    { "id": "t01", "input": "Hello World", "expected": "hello-world" },
+    { "id": "t02", "input": "  leading and trailing  ", "expected": "leading-and-trailing" },
+    { "id": "t03", "input": "Already-slugged", "expected": "already-slugged" },
+    { "id": "t04", "input": "Multiple   spaces   here", "expected": "multiple-spaces-here" },
+    { "id": "t05", "input": "Dashes -- doubled", "expected": "dashes-doubled" },
+    { "id": "t06", "input": "Punctuation, please!", "expected": "punctuation-please" },
+    { "id": "t07", "input": "under_score_case", "expected": "under-score-case" },
+    { "id": "t08", "input": "Trailing dash-", "expected": "trailing-dash" },
+    { "id": "t09", "input": "MiXeD CaSe 123", "expected": "mixed-case-123" },
+    { "id": "t10", "input": "Café au lait", "expected": "cafe-au-lait", "held_out": true },
+    { "id": "t11", "input": "naïve résumé", "expected": "naive-resume", "held_out": true },
+    { "id": "t12", "input": "---", "expected": "", "held_out": true }
+  ]
+}

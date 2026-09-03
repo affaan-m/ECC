@@ -1,0 +1,6 @@
+{
+  "name": "slugify-candidate",
+  "effect_class": "SE0",
+  "entry": "run.js",
+  "note": "Honest candidate: folds diacritics, treats underscores as separators, collapses and trims dashes."
+}
