@@ -72,7 +72,7 @@ class OpenAIProvider(LLMProvider):
         try:
             params: dict[str, Any] = {
                 "model": input.model or "gpt-4o-mini",
-                "messages": [msg.to_dict() for msg in input.messages],
+                "messages": [msg.to_openai_dict() for msg in input.messages],
                 "temperature": input.temperature,
             }
             if input.max_tokens:

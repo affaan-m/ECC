@@ -70,7 +70,7 @@ class _AstraflowBaseProvider(LLMProvider):
         try:
             params: dict[str, Any] = {
                 "model": llm_input.model or self.default_model,
-                "messages": [msg.to_dict() for msg in llm_input.messages],
+                "messages": [msg.to_openai_dict() for msg in llm_input.messages],
             }
             if llm_input.temperature != 1.0:
                 params["temperature"] = llm_input.temperature

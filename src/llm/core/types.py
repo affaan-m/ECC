@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -40,6 +41,22 @@ class Message:
         if self.tool_calls:
             result["tool_calls"] = [
                 {"id": tc.id, "function": {"name": tc.name, "arguments": tc.arguments}}
+                for tc in self.tool_calls
+            ]
+        return result
+
+    def to_openai_dict(self) -> dict[str, Any]:
+        result = self.to_dict()
+        if self.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                    },
+                }
                 for tc in self.tool_calls
             ]
         return result

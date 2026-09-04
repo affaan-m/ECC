@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm.core.types import LLMInput, Message, Role, ToolDefinition
+from llm.core.types import LLMInput, Message, Role, ToolCall, ToolDefinition
+from llm.providers.astraflow import AstraflowProvider
+from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
 from llm.providers.openai import OpenAIProvider
@@ -82,6 +84,55 @@ def test_openai_provider_serializes_tools_for_chat_completions():
             },
         }
     ]
+
+
+@pytest.mark.parametrize(
+    "provider_type",
+    [OpenAIProvider, AstraflowProvider, AtlasProvider],
+)
+def test_openai_compatible_provider_serializes_assistant_tool_calls(provider_type):
+    provider = provider_type(api_key="test")
+    client = _OpenAIClient()
+    provider.client = client
+
+    provider.generate(
+        LLMInput(
+            messages=[
+                Message(role=Role.USER, content="Find ECC"),
+                Message(
+                    role=Role.ASSISTANT,
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_1",
+                            name="search",
+                            arguments={"query": "ecc"},
+                        )
+                    ],
+                ),
+                Message(
+                    role=Role.TOOL,
+                    content="result",
+                    tool_call_id="call_1",
+                ),
+            ]
+        )
+    )
+
+    assert client.completions.params["messages"][1] == {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "arguments": '{"query": "ecc"}',
+                },
+            }
+        ],
+    }
 
 
 def test_openai_provider_can_be_constructed_without_credentials(monkeypatch):
