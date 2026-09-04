@@ -483,16 +483,42 @@ run('the generated tree contains no absolute paths and passes the personal-path 
       }
     }
     const validator = path.join(repoRoot, 'scripts', 'ci', 'validate-no-personal-paths.js');
-    if (fs.existsSync(validator)) {
-      const result = spawnSync(process.execPath, [validator, '--root', pluginRoot], { encoding: 'utf8', cwd: pluginRoot });
-      // The validator may not accept --root; only assert when it clearly ran against the tree.
-      if (result.status !== null && /--root|unknown/i.test(result.stderr || '') === false) {
-        assert.strictEqual(result.status, 0, `validator failed: ${result.stdout}${result.stderr}`);
-      }
-    }
+    assert.ok(fs.existsSync(validator), 'the personal-path validator must exist');
+    const result = spawnSync(process.execPath, [validator, '--root', pluginRoot], { encoding: 'utf8', cwd: pluginRoot });
+    assert.strictEqual(result.status, 0, `validator failed: ${result.stdout}${result.stderr}`);
   } finally {
     fs.rmSync(outRoot, { recursive: true, force: true });
   }
+});
+
+run('the personal-path validator actually fails on a planted personal path', () => {
+  // Without this, the positive assertion above proves only that the validator
+  // exits 0 - which a validator that silently scanned nothing would also do.
+  const carrier = tempDir('ecc-planted-');
+  try {
+    const validator = path.join(repoRoot, 'scripts', 'ci', 'validate-no-personal-paths.js');
+    fs.mkdirSync(path.join(carrier, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(carrier, 'docs', 'leak.md'),
+      `Generated from ${['C:', 'Users', 'realperson', 'src', 'ECC'].join('\\')}\n`
+    );
+    const result = spawnSync(process.execPath, [validator, '--root', carrier], { encoding: 'utf8' });
+    assert.strictEqual(result.status, 1, 'a planted personal path must fail the validator');
+    assert.match(result.stderr, /personal path/i);
+    assert.match(result.stderr, /realperson/);
+  } finally {
+    fs.rmSync(carrier, { recursive: true, force: true });
+  }
+});
+
+run('the personal-path validator rejects a --root that does not exist', () => {
+  const validator = path.join(repoRoot, 'scripts', 'ci', 'validate-no-personal-paths.js');
+  const missing = path.join(os.tmpdir(), 'ecc-no-such-root-1234567890');
+  const result = spawnSync(process.execPath, [validator, '--root', missing], { encoding: 'utf8' });
+  assert.strictEqual(result.status, 2, 'a missing --root is a usage error, not a pass');
+  assert.match(result.stderr, /not a directory/i);
+  const noValue = spawnSync(process.execPath, [validator, '--root'], { encoding: 'utf8' });
+  assert.strictEqual(noValue.status, 2);
 });
 
 run('on-demand skills are copied into the carrier and hashed', () => {
