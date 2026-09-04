@@ -1883,6 +1883,11 @@ copilot skill list
 # 42 project skills: 39 from .agents/skills/, 3 from .claude/commands/
 ```
 
+Copilot CLI 1.0.83 reports all 42 under `Project skills` with `source:
+"project"` and `enabled: true`. The three from `.claude/commands/` are Claude
+command files that Copilot surfaces as skills; they are reported with `path`
+set to the `.claude/commands` directory rather than to a per-skill subdirectory.
+
 To expose the full catalog, place `skills/` where Copilot CLI looks:
 
 ```bash
