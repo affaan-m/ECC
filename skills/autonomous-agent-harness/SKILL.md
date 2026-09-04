@@ -120,6 +120,9 @@ Trigger Claude Code agents remotely for event-driven workflows.
 
 ```bash
 # Trigger from CI/CD
+# NOTE: unverified — api.anthropic.com/dispatch is not a documented public Anthropic API
+# endpoint. Replace with your own trigger (webhook receiver, CI job, etc.) that invokes
+# `claude -p` on your infrastructure.
 curl -X POST "https://api.anthropic.com/dispatch" \
   -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
   -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
@@ -188,26 +191,15 @@ description: Persistent task queue for autonomous operation
 
 ### Step 1: Configure MCP Servers
 
-Ensure these are in `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "memory": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/memory-mcp-server"]
-    },
-    "scheduled-tasks": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/scheduled-tasks-mcp-server"]
-    },
-    "computer-use": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/computer-use-mcp-server"]
-    }
-  }
-}
-```
+> **Unverified:** none of `@anthropic/memory-mcp-server`, `@anthropic/scheduled-tasks-mcp-server`,
+> or `@anthropic/computer-use-mcp-server` are published packages, and the `@anthropic` npm scope
+> itself is unclaimed. Anthropic's real published packages live under `@anthropic-ai` (e.g.
+> `@anthropic-ai/sdk`). Do not add an MCP server entry that runs `npx -y` against an unclaimed
+> scope — if anyone later publishes a package under one of these exact names, following this
+> guide would silently install and run untrusted code with full MCP tool access.
+>
+> Use a memory, scheduling, or computer-use MCP server you have independently verified instead —
+> confirm the package on the npm registry before adding it to `~/.claude.json`.
 
 ### Step 2: Create Base Crons
 
