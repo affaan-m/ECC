@@ -10,7 +10,7 @@
 [![npm ecc-universal](https://img.shields.io/npm/dw/ecc-universal?label=ecc-universal%20weekly%20downloads&logo=npm)](https://www.npmjs.com/package/ecc-universal)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
-> **182K+ স্টার** | **28K+ ফর্ক** | **170+ কন্ট্রিবিউটর** | **12+ ভাষার ইকোসিস্টেম** | **Anthropic Hackathon বিজয়ী**
+> **248K+ স্টার** | **37.4K+ ফর্ক** | **170+ কন্ট্রিবিউটর** | **12+ ভাষার ইকোসিস্টেম** | **Anthropic Hackathon বিজয়ী**
 
 ---
 
