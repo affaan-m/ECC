@@ -14,15 +14,50 @@ const {
 // provide, so neither is installed here.
 const SUPPORTED_SOURCE_PREFIXES = ['agents', 'skills'];
 
+function hasPrefix(normalizedPath, prefix) {
+  return normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`);
+}
+
 function supportsCopilotSourcePath(sourceRelativePath) {
   const normalizedPath = normalizeRelativePath(sourceRelativePath);
-  return SUPPORTED_SOURCE_PREFIXES.some(prefix => (
-    normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
-  ));
+  return SUPPORTED_SOURCE_PREFIXES.some(prefix => hasPrefix(normalizedPath, prefix));
 }
 
 function stripPrefix(normalizedPath, prefix) {
   return normalizedPath === prefix ? '' : normalizedPath.slice(`${prefix}/`.length);
+}
+
+function planSourcePathOperations(module, sourceRelativePath, targetRoot) {
+  const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
+
+  if (hasPrefix(normalizedSourcePath, 'agents')) {
+    return [
+      createManagedOperation({
+        moduleId: module.id,
+        sourceRelativePath: normalizedSourcePath,
+        destinationPath: path.join(
+          targetRoot,
+          'agents',
+          stripPrefix(normalizedSourcePath, 'agents')
+        ),
+        strategy: 'preserve-relative-path',
+        contentTransform: 'copilot-agent-frontmatter',
+      }),
+    ];
+  }
+
+  if (hasPrefix(normalizedSourcePath, 'skills')) {
+    return [
+      createManagedScaffoldOperation(
+        module.id,
+        normalizedSourcePath,
+        path.join(targetRoot, 'skills', stripPrefix(normalizedSourcePath, 'skills')),
+        'preserve-relative-path'
+      ),
+    ];
+  }
+
+  return [];
 }
 
 module.exports = createInstallTargetAdapter({
@@ -44,55 +79,18 @@ module.exports = createInstallTargetAdapter({
     const modules = Array.isArray(input.modules)
       ? input.modules
       : (input.module ? [input.module] : []);
-    const {
-      repoRoot,
-      projectRoot,
-      homeDir,
-    } = input;
+    const { repoRoot, projectRoot, homeDir } = input;
     const targetRoot = adapter.resolveRoot({ repoRoot, projectRoot, homeDir });
 
     return modules.flatMap(module => {
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(supportsCopilotSourcePath)
-        .flatMap(sourceRelativePath => {
-          const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);
-
-          if (
-            normalizedSourcePath === 'agents'
-            || normalizedSourcePath.startsWith('agents/')
-          ) {
-            return [
-              createManagedOperation({
-                moduleId: module.id,
-                sourceRelativePath: normalizedSourcePath,
-                destinationPath: path.join(
-                  targetRoot,
-                  'agents',
-                  stripPrefix(normalizedSourcePath, 'agents')
-                ),
-                strategy: 'preserve-relative-path',
-                contentTransform: 'copilot-agent-frontmatter',
-              }),
-            ];
-          }
-
-          if (
-            normalizedSourcePath === 'skills'
-            || normalizedSourcePath.startsWith('skills/')
-          ) {
-            return [
-              createManagedScaffoldOperation(
-                module.id,
-                normalizedSourcePath,
-                path.join(targetRoot, 'skills', stripPrefix(normalizedSourcePath, 'skills')),
-                'preserve-relative-path'
-              ),
-            ];
-          }
-
-          return [];
-        });
+        .flatMap(sourceRelativePath => planSourcePathOperations(
+          module,
+          sourceRelativePath,
+          targetRoot
+        ));
     });
   },
 });
