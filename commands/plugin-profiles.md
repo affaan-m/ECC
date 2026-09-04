@@ -9,74 +9,47 @@ Manage slim ECC profile plugin carriers from inside Claude Code. A carrier is
 a standalone plugin generated from an install selection: it lists only the
 selected skills, agents, and commands, keeps the rest of the skill catalog
 reachable on demand inside the plugin, and records how it was built in
-`ecc-profile.json`. See `docs/PLUGIN-PROFILES.md` for the underlying tool.
+`ecc-profile.json`.
 
-Profile ids here (`minimal`, `developer`, `opencode`, ...) are **install-profile
+This command is a thin entry point over the `plugin-profiles` skill. Follow
+that skill for the full workflow and rules.
+
+## What This Command Does
+
+1. `list` - show the available install-profile projections and their module counts.
+2. `plan <profile>` - report the context surface, the token ledger with its
+   method label and budget verdict, and the capability decision.
+3. `generate <profile>` - dry run first, resolve every blocker with the user,
+   then generate and show the receipt digests.
+4. `activate <plugin-name>` - offer to write the per-project opt-in to
+   `.claude/settings.json`, merging rather than overwriting, and only after
+   showing the JSON and getting confirmation.
+
+Two things the skill is strict about, repeated here because they are the easy
+mistakes: a narrow context selection never authorizes the hook runtime, so
+never choose `--hooks` for the user; and the default ledger over-counts, so
+"OVER budget" may be a false positive that `--measure provider` clears.
+
+Profile ids (`minimal`, `developer`, `opencode`, ...) are **install-profile
 projections**, not context profiles: ECC has no canonical context-profile
 registry yet, so every receipt records `registry: install-profiles@unbound`.
 
-Run every command below from the ECC plugin root (`${CLAUDE_PLUGIN_ROOT}` when
-set, otherwise the everything-claude-code checkout).
+## Example
 
-## Subcommands
+```
+User: /plugin-profiles generate opencode
 
-### `/plugin-profiles list`
-
-Run `node scripts/plugin-profiles.js list` and show the available install
-profiles with their module counts.
-
-### `/plugin-profiles plan <profile>`
-
-Run `node scripts/plugin-profiles.js plan --profile <profile>` and report:
-
-- the context selection (skills, agents, commands) and the token ledger with
-  its method label and budget verdict;
-- the capability selection: whether the hook runtime is off, enabled at a
-  profile, or still needs a decision.
-
-If the plan says a hook decision is required, ask the user whether to carry
-the hook runtime (`--hooks minimal|standard|strict`) or not (`--hooks off`)
-before offering to generate. Never choose for them.
-
-### `/plugin-profiles generate <profile>`
-
-1. Run `node scripts/plugin-profiles.js generate --profile <profile> --dry-run`
-   first and show the target path, whether an existing directory would be
-   replaced, the ledger, and any blockers.
-2. If the dry run lists blockers, resolve them with the user: a hook decision
-   (`--hooks ...`), an over-budget ledger (`--budget <n>` or
-   `--allow-over-budget`), or a target that is not an unmodified generated
-   carrier (`--force`, only with explicit confirmation).
-3. Run the real `generate` with the agreed flags and show the generated path,
-   the receipt digests, and the printed next steps.
-4. Offer the activation step below.
-
-Pass through extra flags the user asks for (`--name`, `--out`, `--modules`,
-`--with`, `--without`, `--no-catalog`, `--keep-prev`).
-
-### `/plugin-profiles activate <plugin-name>`
-
-Offer to write the per-project opt-in to `.claude/settings.json` in the
-current project:
-
-```json
-{
-  "enabledPlugins": {
-    "ecc@ecc": false,
-    "<plugin-name>@ecc-profiles": true
-  }
-}
+Assistant: (runs plan, then generate --dry-run)
+  Ledger 8,323 tokens - OVER the 8,000 budget. That estimate over-counts by
+  design; --measure provider would give the real number. No hook runtime in
+  this selection, so no capability decision is needed.
+  Proceed with --allow-over-budget, raise the budget, or narrow the selection?
+User: allow it
+Assistant: (generates, reports path + receipt digests, offers activation)
 ```
 
-Merge with any existing `enabledPlugins` block instead of overwriting the
-file. ALWAYS show the resulting JSON and get user confirmation before
-writing - never change plugin activation silently. Remind the user the
-change takes effect on the next session.
+## Related
 
-## Notes
-
-- Custom selections work too: `generate --modules commands-core --with skill:react-patterns`.
-- Regenerate after updating ECC: the carrier is a snapshot, not a live link.
-- The generated `ecc-catalog` skill indexes the full catalog with paths inside
-  the carrier (`on-demand/<skill>/SKILL.md`), so nothing outside the plugin is
-  ever referenced.
+- `plugin-profiles` skill - full workflow, blocker table, receipt reading, rules
+- `docs/PLUGIN-PROFILES.md` - design rules, fail-closed behaviour, receipt schema
+- Source: `scripts/plugin-profiles.js`, `scripts/lib/plugin-profiles/`

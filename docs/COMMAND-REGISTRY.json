@@ -668,7 +668,7 @@
       "primaryAgents": [],
       "allAgents": [],
       "skills": [
-        "react-patterns"
+        "plugin-profiles"
       ],
       "path": "commands/plugin-profiles.md"
     },
@@ -1119,15 +1119,15 @@
         "count": 3
       },
       {
-        "skill": "react-patterns",
-        "count": 3
-      },
-      {
         "skill": "rust-patterns",
         "count": 3
       },
       {
         "skill": "cpp-coding-standards",
+        "count": 2
+      },
+      {
+        "skill": "cpp-testing",
         "count": 2
       }
     ]
