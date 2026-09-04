@@ -81,10 +81,12 @@ def inline_link_targets(text: str) -> list[str]:
             end = text.find(">", start + 1)
             if end != -1:
                 targets.append(text[start : end + 1])
-            continue
+                continue
+            break
         depth = 0
         quote: str | None = None
         escaped = False
+        closed = False
         for end in range(start, len(text)):
             character = text[end]
             if quote is not None:
@@ -103,8 +105,11 @@ def inline_link_targets(text: str) -> list[str]:
             elif character == ")":
                 if depth == 0:
                     targets.append(text[start:end])
+                    closed = True
                     break
                 depth -= 1
+        if not closed:
+            break
     return targets
 
 

@@ -16,12 +16,15 @@ def project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def run_audit(project: Path, scope: str) -> subprocess.CompletedProcess[str]:
+def run_audit(
+    project: Path, scope: str, *, timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), "--root", str(project), "--scope", scope],
         text=True,
         capture_output=True,
         check=False,
+        timeout=timeout,
     )
 
 
@@ -206,6 +209,14 @@ def test_artifact_scope_ignores_optional_markdown_link_titles(project: Path) -> 
         encoding="utf-8",
     )
     result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
+def test_artifact_scope_handles_many_unclosed_inline_links_linearly(
+    project: Path,
+) -> None:
+    (project / "guide.md").write_text("[link](" * 10_000, encoding="utf-8")
+    result = run_audit(project, "artifacts", timeout=2)
     assert result.returncode == 0, result.stdout
 
 
