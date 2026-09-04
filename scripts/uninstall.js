@@ -23,11 +23,15 @@ explicitly, including marker-only AGENTS.md cleanup.
   process.exit(exitCode);
 }
 
-function parseArgs(argv) {
+function parseArgs(argv, env = process.env) {
   const args = argv.slice(2);
+  const dryRunEnv = env.ECC_DRY_RUN;
+  if (dryRunEnv !== undefined && dryRunEnv !== '0' && dryRunEnv !== '1') {
+    throw new Error('ECC_DRY_RUN must be "1" or "0" when set');
+  }
   const parsed = {
     targets: [],
-    dryRun: false,
+    dryRun: dryRunEnv === '1',
     json: false,
     legacyCodexSync: false,
     help: false,

@@ -47,9 +47,16 @@ function writeState(filePath, options) {
 }
 
 function run(args = [], options = {}) {
-  const env = options.homeDir
-    ? { ...process.env, HOME: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
-    : Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CODEX_HOME'))
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key !== 'ECC_DRY_RUN' && key !== 'CODEX_HOME')
+  );
+  const optionEnv = Object.fromEntries(
+    Object.entries(options.env || {}).filter(([key]) => options.homeDir || key !== 'CODEX_HOME')
+  );
+  const homeEnv = options.homeDir
+    ? { HOME: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
+    : {};
+  const env = { ...inheritedEnv, ...optionEnv, ...homeEnv };
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -409,6 +416,74 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(conversationPath, 'utf8'), 'conversation history');
       assert.strictEqual(fs.readFileSync(userFilePath, 'utf8'), 'unrelated');
       assert.ok(!fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('global dry-run environment previews legacy Codex cleanup without removing artifacts', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+      assert.match(uninstallResult.stdout, /Status: PLANNED/);
+      assert.match(uninstallResult.stdout, /Planned changes:/);
+      assert.doesNotMatch(uninstallResult.stdout, /Status: UNINSTALLED|Removed paths:/);
+      assert.ok(fs.existsSync(promptPath), 'global dry-run must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'global dry-run must preserve legacy state');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('rejects an invalid global dry-run value before legacy cleanup', () => {
+    const homeDir = createTempDir('uninstall-legacy-codex-invalid-dry-run-home-');
+    const projectRoot = createTempDir('uninstall-legacy-codex-invalid-dry-run-project-');
+
+    try {
+      const codexHome = path.join(homeDir, '.codex');
+      const promptPath = path.join(codexHome, 'prompts', 'ecc-plan.md');
+      fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+
+      const statePath = beginLegacySyncState({
+        codexHome,
+        backupDir: path.join(codexHome, 'backups', 'ecc-test'),
+      });
+      recordLegacySyncPath({ statePath, filePath: promptPath });
+      fs.writeFileSync(promptPath, '# ECC generated prompt\n');
+      finalizeLegacySyncState({ statePath });
+
+      const uninstallResult = run(['--legacy-codex-sync'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: 'true' },
+      });
+
+      assert.strictEqual(uninstallResult.code, 1);
+      assert.match(uninstallResult.stderr, /ECC_DRY_RUN must be "1" or "0" when set/);
+      assert.ok(fs.existsSync(promptPath), 'invalid dry-run input must preserve legacy artifacts');
+      assert.ok(fs.existsSync(statePath), 'invalid dry-run input must preserve legacy state');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
