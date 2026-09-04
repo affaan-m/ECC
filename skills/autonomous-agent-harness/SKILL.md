@@ -120,9 +120,13 @@ Trigger Claude Code agents remotely for event-driven workflows.
 
 ```bash
 # Trigger from CI/CD
-curl -X POST "https://api.anthropic.com/dispatch" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
-  -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
+# NOTE: unverified — api.anthropic.com/dispatch is not a documented public Anthropic API
+# endpoint. Do not POST ANTHROPIC_API_KEY to it. The shape below is illustrative only;
+# point YOUR_TRIGGER_URL at a webhook receiver or CI job you control that invokes
+# `claude -p` on your own infrastructure.
+# curl -X POST "https://YOUR_TRIGGER_URL" \
+#   -H "Authorization: Bearer $YOUR_TRIGGER_TOKEN" \
+#   -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
 
 # Trigger from webhook
 # GitHub webhook → dispatch → Claude agent → fix → PR
@@ -188,26 +192,19 @@ description: Persistent task queue for autonomous operation
 
 ### Step 1: Configure MCP Servers
 
-Ensure these are in `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "memory": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/memory-mcp-server"]
-    },
-    "scheduled-tasks": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/scheduled-tasks-mcp-server"]
-    },
-    "computer-use": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/computer-use-mcp-server"]
-    }
-  }
-}
-```
+> **Unverified (checked 2026-09-04):** none of `@anthropic/memory-mcp-server`,
+> `@anthropic/scheduled-tasks-mcp-server`, or `@anthropic/computer-use-mcp-server` are published
+> packages — the npm registry returns 404 for all three. The `@anthropic` scope itself is
+> registered (`registry.npmjs.org/-/org/anthropic/user` reports an owner), so this is not an
+> unclaimed-scope risk; it's simply that these three exact package names don't exist yet.
+> Anthropic's actual published packages live under `@anthropic-ai` (e.g. `@anthropic-ai/sdk`).
+> Do not add an MCP server entry that runs `npx -y` against an unpublished package name —
+> if a package is ever published under one of these exact names, `npx -y` would install and
+> run it sight-unseen with full MCP tool access, and there's no guarantee it would be an
+> official or trustworthy release.
+>
+> Use a memory, scheduling, or computer-use MCP server you have independently verified instead —
+> confirm the package on the npm registry before adding it to `~/.claude.json`.
 
 ### Step 2: Create Base Crons
 
