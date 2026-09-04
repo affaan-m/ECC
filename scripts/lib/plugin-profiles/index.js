@@ -44,6 +44,7 @@ const constants = require('./constants');
 const fsUtils = require('./fs-utils');
 const frontmatter = require('./frontmatter');
 const requireGraph = require('./require-graph');
+const loadSmoke = require('./load-smoke');
 const plan = require('./plan');
 const ledger = require('./ledger');
 const carrier = require('./carrier');
@@ -67,8 +68,14 @@ module.exports = {
   parseFrontmatter: frontmatter.parseFrontmatter,
 
   // require graph
+  blankStringLiterals: requireGraph.blankStringLiterals,
   extractRequireSpecifiers: requireGraph.extractRequireSpecifiers,
+  classifyModuleReferences: requireGraph.classifyModuleReferences,
   resolveScriptClosure: requireGraph.resolveScriptClosure,
+
+  // load smoke
+  classifySmokeShape: loadSmoke.classifySmokeShape,
+  runLoadSmoke: loadSmoke.runLoadSmoke,
 
   // plan
   classifyModulePath: plan.classifyModulePath,
@@ -95,6 +102,8 @@ module.exports = {
   collectCopyOperations: carrier.collectCopyOperations,
   verifyStagedRuntime: carrier.verifyStagedRuntime,
   verifyStagedCarrier: carrier.verifyStagedCarrier,
+  collectSmokeTargets: carrier.collectSmokeTargets,
+  reconcileLoadSmoke: carrier.reconcileLoadSmoke,
   buildStagingTree: carrier.buildStagingTree,
   buildReceipt: carrier.buildReceipt,
   writeReceipt: carrier.writeReceipt,

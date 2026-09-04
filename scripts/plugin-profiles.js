@@ -54,7 +54,7 @@ const {
 
 const DEFAULT_OUT_ROOT = path.join(os.homedir(), '.claude', 'ecc-profiles');
 
-const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json', 'dry-run', 'force', 'yes', 'keep-prev', 'allow-over-budget'];
+const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json', 'dry-run', 'force', 'yes', 'keep-prev', 'allow-over-budget', 'help'];
 const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root', 'hooks', 'budget'];
 
 function parseArgs(argv) {
@@ -196,6 +196,13 @@ function printPreview(preview) {
   }
   console.log(`Generates:    ${preview.generatedFiles.join(', ')}`);
   console.log(`Ledger:       ${formatLedger(preview.ledger)}`);
+  if (preview.pendingChecks && preview.pendingChecks.length > 0) {
+    console.log('');
+    console.log('Checks that only run against the staged tree (a dry run writes nothing):');
+    for (const check of preview.pendingChecks) {
+      console.log(`  - ${check}`);
+    }
+  }
   if (preview.blockers.length > 0) {
     console.log('');
     console.log('Generation would be refused:');
@@ -252,8 +259,21 @@ function runGenerate(flags) {
   printGenerationResult(result, { plan, outRoot, marketplaceName });
 }
 
+function printExternalDependencies(receipt) {
+  const external = (receipt.dependencies && receipt.dependencies.external) || [];
+  if (external.length === 0) {
+    return;
+  }
+  console.warn('\nWarning:  the staged load smoke found shipped scripts that need npm packages');
+  console.warn('          no carrier carries. Those commands will fail at runtime:');
+  for (const item of external) {
+    console.warn(`            ${item.file} requires "${item.module}"`);
+  }
+}
+
 function printGenerationResult(result, { plan, outRoot, marketplaceName }) {
   console.log(`\nGenerated: ${result.pluginRoot}`);
+  printExternalDependencies(result.receipt);
   console.log(`Receipt:   ${path.join(result.pluginRoot, 'ecc-profile.json')} (context digest ${result.receipt.context.digest.slice(0, 12)}, tree digest ${result.receipt.treeDigest.slice(0, 12)})`);
   if (result.previousRoot) {
     console.log(`Previous:  ${result.previousRoot}`);
@@ -272,8 +292,22 @@ function printGenerationResult(result, { plan, outRoot, marketplaceName }) {
   console.log('\nRe-run this command after updating ECC to refresh the generated plugin.');
 }
 
+function printUsage() {
+  console.log('Usage: node scripts/plugin-profiles.js <list|plan|generate> [options]');
+  console.log('See the header of this file or docs/PLUGIN-PROFILES.md for options.');
+}
+
 function main() {
-  const { command, flags } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  // `--help` before argument parsing: the staged-carrier load smoke runs this
+  // entry point with `--help` to prove it loads inside a carrier, so the flag
+  // has to work without a subcommand and without touching the filesystem.
+  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
+  const { command, flags } = parseArgs(argv);
 
   switch (command) {
     case 'list':
@@ -286,8 +320,7 @@ function main() {
       runGenerate(flags);
       break;
     default:
-      console.log('Usage: node scripts/plugin-profiles.js <list|plan|generate> [options]');
-      console.log('See the header of this file or docs/PLUGIN-PROFILES.md for options.');
+      printUsage();
       if (command !== 'help') {
         process.exitCode = 1;
       }

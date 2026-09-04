@@ -33,6 +33,26 @@ function stripComments(rawSource) {
 }
 
 /**
+ * Blank the contents of string and template literals, keeping the quotes.
+ *
+ * A require shape that appears inside a string is text, not a dependency:
+ * `scripts/lib/resolve-ecc-root.js` embeds a whole inline resolver in a
+ * template literal, and reading it as a dynamic require would refuse every
+ * carrier that ships it. Emptying the literal removes that reading without
+ * disturbing the surrounding code; `require('./x')` becomes `require('')`,
+ * which the dynamic pattern's `(?!['"])` lookahead already skips.
+ *
+ * @param {string} source Comment-stripped source.
+ * @returns {string} Source with literal contents blanked.
+ */
+function blankStringLiterals(source) {
+  return String(source || '')
+    .replace(/`(?:[^`\\]|\\[\s\S])*`/g, '``')
+    .replace(/'(?:[^'\\\n]|\\[\s\S])*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\[\s\S])*"/g, '""');
+}
+
+/**
  * Extract the relative module specifiers a source file requires.
  *
  * Three shapes are followed: `require('./x')`, `import('./x')`, and
@@ -63,18 +83,54 @@ function extractRequireSpecifiers(rawSource) {
     match = DIRNAME_JOIN_REQUIRE_PATTERN.exec(source);
   }
 
+  // Dynamic detection runs against a copy with every string and template
+  // literal emptied, so a require shape quoted inside text is not read as a
+  // dependency. The blanked source keeps the `require(` tokens of real code
+  // in place, so nothing executable is hidden by this.
+  const codeOnly = blankStringLiterals(source);
   DYNAMIC_REQUIRE_PATTERN.lastIndex = 0;
-  match = DYNAMIC_REQUIRE_PATTERN.exec(source);
+  match = DYNAMIC_REQUIRE_PATTERN.exec(codeOnly);
   while (match !== null) {
     const argument = match[1].trim();
-    const isLiteralDirnameJoin = /^path\.join\(\s*__dirname\s*(?:,\s*['"][^'"]+['"]\s*)+\)$/.test(argument);
+    const isLiteralDirnameJoin = /^path\.join\(\s*__dirname\s*(?:,\s*['"]?[^'"]*['"]?\s*)+\)$/.test(argument);
     if (!isLiteralDirnameJoin) {
       dynamic.push(argument);
     }
-    match = DYNAMIC_REQUIRE_PATTERN.exec(source);
+    match = DYNAMIC_REQUIRE_PATTERN.exec(codeOnly);
   }
 
   return { specifiers, dynamic };
+}
+
+/**
+ * Classify every module reference in a source file into exactly one of three
+ * kinds, which is what the fail-closed rule is stated in terms of:
+ *
+ * - `static-resolved`   a literal relative specifier that resolves to a file
+ * - `static-unresolved` a literal relative specifier that does not resolve
+ * - `dynamic`           a non-literal `require(...)`, which cannot be
+ *                       resolved without running the code
+ *
+ * Bare specifiers (Node builtins, npm packages) are not repo files and are
+ * not classified here.
+ *
+ * @param {string} absPath Absolute path of the file being classified.
+ * @param {string} source File contents.
+ * @returns {Array<{kind: string, specifier?: string, expression?: string, resolved?: string}>}
+ */
+function classifyModuleReferences(absPath, source) {
+  const { specifiers, dynamic } = extractRequireSpecifiers(source);
+  const references = [];
+  for (const specifier of specifiers) {
+    const resolved = resolveModuleCandidate(path.resolve(path.dirname(absPath), specifier));
+    references.push(resolved
+      ? { kind: 'static-resolved', specifier, resolved }
+      : { kind: 'static-unresolved', specifier });
+  }
+  for (const expression of dynamic) {
+    references.push({ kind: 'dynamic', expression });
+  }
+  return references;
 }
 
 /**
@@ -154,6 +210,8 @@ function resolveScriptClosure(entryPaths, repoRoot) {
 }
 
 module.exports = {
+  blankStringLiterals,
   extractRequireSpecifiers,
+  classifyModuleReferences,
   resolveScriptClosure,
 };

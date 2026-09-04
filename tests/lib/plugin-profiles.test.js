@@ -615,6 +615,105 @@ run('generation fails closed when the closure is unresolved and leaves the targe
   }
 });
 
+// --- dynamic requires and the staged load smoke ---------------------------
+
+// A minimal fake repo whose single command is backed by one script. `body` is
+// that script's source, so each test below differs only in how it requires.
+function dynamicRequireFixture(body, extraFiles = {}) {
+  const fixture = tempDir('ecc-dynamic-src-');
+  for (const rel of ['skills', 'commands', 'scripts/lib', '.claude-plugin']) {
+    fs.mkdirSync(path.join(fixture, ...rel.split('/')), { recursive: true });
+  }
+  fs.cpSync(path.join(repoRoot, 'manifests'), path.join(fixture, 'manifests'), { recursive: true });
+  fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.1' }));
+  fs.writeFileSync(path.join(fixture, 'commands', 'dyn.md'), '---\ndescription: dyn\n---\nRun `node scripts/dyn.js`.\n');
+  fs.writeFileSync(path.join(fixture, 'scripts', 'dyn.js'), body);
+  for (const [rel, contents] of Object.entries(extraFiles)) {
+    fs.writeFileSync(path.join(fixture, ...rel.split('/')), contents);
+  }
+  return fixture;
+}
+
+run('a dynamic require with no working fallback refuses generation and names the file', () => {
+  const fixture = dynamicRequireFixture(
+    // No shebang, so the load smoke loads it with require(); the dynamic
+    // require throws because the computed name does not exist.
+    "const name = process.env.ECC_TEST_MODULE || './lib/nope';\nmodule.exports = require(name);\n"
+  );
+  const outRoot = tempDir('ecc-dynamic-out-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot: fixture, moduleIds: ['commands-core'], pluginName: 'ecc-dyn-bad' });
+    assert.deepStrictEqual(
+      plan.closure.dynamic.map(item => item.from),
+      ['scripts/dyn.js'],
+      'the non-literal require must be classified as dynamic'
+    );
+    assert.throws(() => generate({ plan, outRoot }), error => {
+      assert.match(error.message, /load smoke/i);
+      assert.match(error.message, /scripts\/dyn\.js/);
+      return true;
+    });
+    assert.deepStrictEqual(fs.readdirSync(outRoot), [], 'nothing may be written on refusal');
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('a dynamic require with a static fallback that loads is cleared and receipted', () => {
+  const fixture = dynamicRequireFixture(
+    "let mod;\ntry {\n  mod = require(process.env.ECC_TEST_MODULE);\n} catch {\n  mod = require('./lib/fallback');\n}\nmodule.exports = mod;\n",
+    { 'scripts/lib/fallback.js': 'module.exports = { ok: true };\n' }
+  );
+  const outRoot = tempDir('ecc-dynamic-ok-out-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot: fixture, moduleIds: ['commands-core'], pluginName: 'ecc-dyn-ok' });
+    assert.strictEqual(plan.closure.dynamic.length, 1);
+    const { receipt } = generate({ plan, outRoot });
+    assert.strictEqual(receipt.dependencies.dynamic.length, 1);
+    assert.strictEqual(receipt.dependencies.dynamic[0].smokeTested, true);
+    assert.strictEqual(receipt.dependencies.dynamic[0].file, 'scripts/dyn.js');
+    assert.match(receipt.dependencies.dynamic[0].expression, /ECC_TEST_MODULE/);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('a require shape quoted inside a string is text, not a dependency', () => {
+  const source = [
+    'const INLINE = `var r = require(p.join(x, "lib", "thing"));`;',
+    "const NOTE = 'call require(someName) at runtime';",
+    'const real = require(computed);',
+  ].join('\n');
+  const { dynamic } = extractRequireSpecifiers(source);
+  assert.deepStrictEqual(dynamic, ['computed'], 'only the unquoted require is a dynamic dependency');
+});
+
+run('the repo resolves with no unresolved and no dynamic requires on every install profile', () => {
+  for (const profileId of ['opencode', 'minimal', 'developer', 'full']) {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId, hooks: 'off' });
+    assert.deepStrictEqual(plan.closure.unresolved, [], `${profileId}: unresolved static requires`);
+    assert.deepStrictEqual(plan.closure.dynamic, [], `${profileId}: unexpected dynamic requires`);
+  }
+});
+
+run('a missing npm package is recorded as an external dependency, not a closure failure', () => {
+  const outRoot = tempDir('ecc-external-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal', hooks: 'off' });
+    const { receipt } = generate({ plan, outRoot, includeCatalogSkill: false });
+    const external = receipt.dependencies.external;
+    assert.ok(Array.isArray(external), 'external dependencies are recorded');
+    for (const item of external) {
+      assert.ok(item.file && item.module, 'each external record names a file and a package');
+      assert.ok(!item.module.startsWith('.'), 'a relative specifier is a closure failure, not external');
+    }
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
 run('the staged tree is re-verified before the swap', () => {
   const staged = tempDir('ecc-staged-');
   try {

@@ -29,8 +29,10 @@ The generator follows five rules. Each is enforced in code and tested.
    receipt.
 2. **Generation fails closed.** Every shipped command's script dependency
    closure is resolved from the command body. An unresolved static
-   dependency aborts generation with the file and specifier named. The
-   staged tree is re-verified before it is swapped in.
+   dependency aborts generation with the file and specifier named, and a
+   non-literal `require(...)` aborts it too unless the file containing it is
+   proven to load from the staged tree. The staged tree is re-verified, and
+   then load-smoked, before it is swapped in.
 3. **The carrier is self-contained.** On-demand skill content is copied into
    the carrier under `on-demand/` and content-addressed with sha256. No
    absolute path from the generating machine is written anywhere.
@@ -114,9 +116,59 @@ transitive `require()` graph of every referenced script, and copies the
 closure. Directories copied wholesale (for example `scripts/lib` from
 `hooks-runtime`) are closed over too.
 
-Static requires that do not resolve abort generation. Non-literal requires
-(`require(variable)`) cannot be resolved statically; they are reported in
-`plan` output and recorded in the receipt, not silently ignored.
+### Fail closed: the three kinds of module reference
+
+Every `require`/`import` in a shipped script is classified as exactly one of:
+
+| Kind | Example | Treatment |
+|---|---|---|
+| `static-resolved` | `require('./lib/x')` that resolves | copied into the closure |
+| `static-unresolved` | `require('./lib/x')` that does not resolve | **refuses generation**, naming file and specifier |
+| `dynamic` | `require(scriptPath)` | **refuses generation** unless the containing file passes the staged load smoke |
+
+A require shape that appears inside a string or template literal is text, not
+a dependency: `scripts/lib/resolve-ecc-root.js` embeds an entire inline
+resolver in a template literal, and reading that as a dynamic require would
+refuse every carrier that ships it. String and template literals are blanked
+before dynamic detection, so only executable `require(` tokens count.
+
+Bare specifiers (Node builtins, npm packages) are not repo files and are not
+part of the closure — see the load smoke below for how they are surfaced.
+
+### The staged load smoke
+
+A dynamic require cannot be resolved without running the code, so after the
+staged tree passes static verification the generator runs the files that
+contain one, from inside the staged tree, with `cwd` and
+`CLAUDE_PLUGIN_ROOT` set to the staged root, no stdin, and a 10s timeout.
+Every shipped command entry point that advertises `--help` is exercised the
+same way.
+
+What runs is bounded on purpose, because executing shipped code is a real
+action:
+
+| File shape | How it is exercised |
+|---|---|
+| advertises `--help` | `node <file> --help` — loads the whole module graph, then exits without doing work |
+| no shebang (a library module) | `require()`d in a child process |
+| shebang, no `--help`, contains a dynamic require | run with no arguments — the only way to clear the require, and the carrier is about to ship and run that file anyway |
+| shebang, no `--help`, no dynamic require | **not run** — its module scope would do arbitrary work with an empty argv |
+
+Running an installer or an updater to prove a carrier is loadable would be a
+worse outcome than the bug it detects, which is why the last row exists.
+
+A load that fails only because an **npm package** is absent is reported
+separately, as an external dependency, not as a closure failure. Carriers
+have never shipped `node_modules`, and the closure has always been defined
+over repo-relative requires. Those loads are recorded in the receipt under
+`dependencies.external` and printed as a warning, because they mean the
+shipped command will fail at runtime — at ecc@2.2.1 that is
+`scripts/github-coordination.js` (needs `sql.js`) and
+`scripts/install-plan.js` (needs `ajv`).
+
+`--dry-run` writes nothing, so it cannot run the smoke. It instead lists what
+the smoke would check under "Checks that only run against the staged tree",
+so a clean dry run is never mistaken for a verified carrier.
 
 ## Hooks Are a Capability Decision
 
@@ -222,6 +274,9 @@ generation receipt:
 | `context.skills/agents/commands`, `context.digest` | the context surface and a sha256 over every file's content |
 | `capabilities.hooks` | `decision` (`off`/`enabled`), `profile`, capability `groups` |
 | `runtime.paths`, `runtime.held`, `runtime.closureEntries`, `runtime.dynamicRequires` | what shipped, what was withheld, why |
+| `dependencies.dynamic[]` | every non-literal module load, with `smokeTested`, the smoke `shape`, and the file it lives in |
+| `dependencies.external[]` | npm packages a shipped script needs that no carrier carries |
+| `dependencies.loadSmoke[]` | every file the smoke exercised and how it went |
 | `tokenLedger` | method, version, payload format, counts, tokens, budget, verdict |
 | `catalog[]` | every catalog skill with `installed`, carrier-relative `path`, `sha256` |
 | `treeDigest` | sha256 over every file in the carrier except the receipt |
@@ -269,6 +324,10 @@ plugin version tracks the source `package.json` version; the receipt's
 - The generated marketplace is local to the machine. Carriers contain no
   machine-specific paths and can be copied, but treat them as build
   artifacts and regenerate rather than edit them.
+- Carriers do not ship `node_modules`. A shipped command whose script needs
+  an npm package will fail at runtime; the load smoke names those under
+  `dependencies.external` at generation time instead of leaving it to be
+  discovered in a session.
 - The token ledger is an estimate unless a provider-backed measurer is
   injected; the method label says which.
 - Install profiles are not context profiles. Until ECC publishes a canonical

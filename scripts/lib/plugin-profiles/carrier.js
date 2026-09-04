@@ -34,6 +34,7 @@ const { parseFrontmatter } = require('./frontmatter');
 const { extractRequireSpecifiers } = require('./require-graph');
 const { catalogSkillFrontmatter, measureContextLedger } = require('./ledger');
 const { collectBlockers } = require('./plan');
+const { runLoadSmoke } = require('./load-smoke');
 
 /**
  * Read {id, name, description, sha256} for every skill in the source catalog.
@@ -293,17 +294,109 @@ function verifyStagedRuntime(stagedRoot) {
 }
 
 /**
+ * The staged files the load smoke must exercise: every file that contains a
+ * dynamic require, plus every entry script a shipped command invokes.
+ *
+ * @param {object} plan Resolved plan.
+ * @returns {Array<string>} Staged, POSIX-relative paths.
+ */
+function collectSmokeTargets(plan) {
+  return [...new Set([
+    ...plan.closure.dynamic.map(item => item.from),
+    ...plan.closure.entries.map(entry => entry.script),
+  ])].sort();
+}
+
+/**
+ * Fold the smoke results into the per-dynamic-require records the receipt
+ * carries, the external dependencies it names, and the failures that refuse
+ * the carrier.
+ *
+ * A dynamic require is cleared only when its containing file actually loaded
+ * from the staged tree. Anything else is a refusal — that is what fail-closed
+ * means here — with one carve-out: a load that failed only because an npm
+ * package is absent is an external dependency, not an unresolved closure.
+ * Carriers have never shipped `node_modules`, and the closure has always been
+ * defined over repo-relative requires, so that case is named in the receipt
+ * and warned about rather than silently passed or used to refuse every
+ * carrier shipping the script.
+ *
+ * @param {object} plan Resolved plan.
+ * @param {Array<object>} smoke Results from runLoadSmoke.
+ * @returns {{dynamic: Array<object>, external: Array<object>, failures: Array<string>, warnings: Array<string>}}
+ */
+function reconcileLoadSmoke(plan, smoke) {
+  const byFile = new Map(smoke.map(result => [result.file, result]));
+  const dynamic = plan.closure.dynamic.map(item => {
+    const result = byFile.get(item.from);
+    return {
+      file: item.from,
+      expression: item.expression,
+      smokeTested: Boolean(result && result.smokeTested),
+      smokeShape: result ? result.shape : 'not-staged',
+      externalDependency: result ? result.external : null,
+    };
+  });
+
+  const external = smoke
+    .filter(result => result.external)
+    .map(result => ({ file: result.file, module: result.external }));
+
+  const failures = [];
+  const warnings = [];
+  for (const item of dynamic.filter(entry => !entry.smokeTested)) {
+    const result = byFile.get(item.file);
+    const detail = result ? result.error || 'not loaded' : 'file is not in the staged tree';
+    const line = `  ${item.file} -> require(${item.expression}): ${detail}`;
+    if (item.externalDependency) {
+      warnings.push(line);
+    } else {
+      failures.push(line);
+    }
+  }
+  for (const result of smoke) {
+    if (!result.error || dynamic.some(item => item.file === result.file)) {
+      continue;
+    }
+    const line = `  ${result.file} -> ${result.error}`;
+    if (result.external) {
+      warnings.push(line);
+    } else {
+      failures.push(line);
+    }
+  }
+  return { dynamic, external, failures, warnings };
+}
+
+/**
  * Run every staged-tree verification and throw on the first failure.
  *
+ * Static verification comes first because it is free; the load smoke only
+ * runs when the tree is already internally resolvable.
+ *
  * @param {string} stagingRoot Staged plugin directory.
- * @returns {void}
+ * @param {object} plan Resolved plan.
+ * @returns {{smoke: Array<object>, dynamic: Array<object>}} Smoke evidence.
  */
-function verifyStagedCarrier(stagingRoot) {
+function verifyStagedCarrier(stagingRoot, plan) {
   const unresolved = verifyStagedRuntime(stagingRoot);
   if (unresolved.length > 0) {
     throw new Error('Staged carrier failed runtime verification; unresolved requires:\n'
       + unresolved.map(item => `  ${item.from} -> ${item.specifier}`).join('\n'));
   }
+
+  const mustRun = new Set(plan.closure.dynamic.map(item => item.from));
+  const smoke = runLoadSmoke(stagingRoot, collectSmokeTargets(plan), mustRun);
+  const { dynamic, external, failures, warnings } = reconcileLoadSmoke(plan, smoke);
+  if (failures.length > 0) {
+    throw new Error('Staged carrier failed the load smoke test; these module loads could not be '
+      + 'proven to work inside the carrier:\n'
+      + `${failures.join('\n')}\n`
+      + 'A non-literal require cannot be resolved statically, so it is only accepted when the '
+      + 'file containing it loads from the staged tree. Give the require a literal specifier, or '
+      + 'a static fallback that loads.');
+  }
+  return { smoke, dynamic, external, warnings };
 }
 
 /**
@@ -347,6 +440,11 @@ function previewProfilePlugin(options = {}) {
       ...(includeCatalogSkill ? [`skills/${CATALOG_SKILL_ID}/SKILL.md`] : []),
       ...(plan.hooks.decision === 'enabled' ? ['ecc/setup.json'] : []),
     ],
+    // Checks that can only run against a staged tree. A dry run writes
+    // nothing, so it cannot execute them; naming them here keeps the preview
+    // honest about the difference between "no blockers" and "verified".
+    pendingChecks: plan.closure.dynamic.map(item =>
+      `load smoke: ${item.from} must load from the staged tree to clear require(${item.expression})`),
     willReplace: existing,
     existingIsGenerated,
     existingReceipt: existingReceipt
@@ -415,7 +513,7 @@ function buildStagingTree(plan, stagingRoot, { operations, catalogEntries, inclu
  * @param {object} context Ledger, catalog rows, and the replaced receipt.
  * @returns {object} Receipt with a null treeDigest.
  */
-function buildReceipt(plan, { ledger, catalogRows, previousReceipt }) {
+function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification }) {
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
     generatedFrom: PROFILE_GENERATOR_ID,
@@ -439,6 +537,14 @@ function buildReceipt(plan, { ledger, catalogRows, previousReceipt }) {
       held: plan.heldRuntimePaths,
       closureEntries: plan.closure.entries,
       dynamicRequires: plan.closure.dynamic,
+    },
+    dependencies: {
+      // Every non-literal module load that shipped, and the evidence that it
+      // was proven to load from inside the carrier before the swap.
+      dynamic: verification.dynamic,
+      // npm packages a shipped script needs that no carrier carries.
+      external: verification.external,
+      loadSmoke: verification.smoke,
     },
     tokenLedger: ledger,
     catalog: catalogRows,
@@ -583,12 +689,13 @@ function stageVerifyAndSwap(plan, context) {
     catalogEntries,
     includeCatalogSkill,
   });
-  verifyStagedCarrier(stagingRoot);
+  const verification = verifyStagedCarrier(stagingRoot, plan);
 
   const receipt = writeReceipt(stagingRoot, buildReceipt(plan, {
     ledger,
     catalogRows: staged.catalogRows,
     previousReceipt: preview.existingReceipt,
+    verification,
   }));
 
   const keptPreviousRoot = swapIntoPlace({
@@ -616,6 +723,8 @@ module.exports = {
   collectCopyOperations,
   verifyStagedRuntime,
   verifyStagedCarrier,
+  collectSmokeTargets,
+  reconcileLoadSmoke,
   buildStagingTree,
   buildReceipt,
   writeReceipt,
