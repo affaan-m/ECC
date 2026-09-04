@@ -341,7 +341,7 @@ cd ECC
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
 
-GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`.
+GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`. GitHub Copilot CLI additionally discovers the `.agents/skills/` subset from a plain clone with no setup; see [Platform Support](#platform-support) for the full catalog and agents.
 
 For a harness without a native ECC target, use the [manual adaptation guide](docs/MANUAL-ADAPTATION-GUIDE.md). It explains how to carry a small set of ECC skills and workflow instructions into chat-style tools without pretending hooks or native skill discovery are available.
 
@@ -1588,7 +1588,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
-| GitHub Copilot | Instruction-only | Checked-in instructions and prompt files | No ECC hooks, runtime agents, delegation, or native skill discovery. |
+| GitHub Copilot | Instructions, prompts, and native skill/agent discovery (Copilot CLI) | Checked-in instructions and prompt files; skills and agents are discovered by Copilot CLI from existing paths | ECC's hook automations do not run. There is no `copilot` installer target, so placing the full skill and agent catalog is a manual step. |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 ### Cross-tool capability map
@@ -1596,16 +1596,16 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Capability | Claude Code | Codex | Cursor | OpenCode | GitHub Copilot |
 |---|---|---|---|---|---|
 | Instructions | Native | Native `AGENTS.md` | Project rules | Plugin instructions | Native instruction file |
-| Skills | Native installed set | Native plugin set | Build-dependent/project set | Built subset | Prompt/instruction references only |
-| Agents/delegation | Native agents | Codex multi-agent roles; Claude agent files are not installed as roles | Build-dependent project agents | Plugin agents | Not supported |
-| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Not supported |
+| Skills | Native installed set | Native plugin set | Build-dependent/project set | Built subset | Native discovery (Copilot CLI) from `.github/skills/`, `.agents/skills/`, `.claude/skills/` |
+| Agents/delegation | Native agents | Codex multi-agent roles; Claude agent files are not installed as roles | Build-dependent project agents | Plugin agents | Copilot CLI custom agents via `.github/agents/` and `--agent` |
+| ECC hooks | Native plugin hooks | Native reviewed subset with explicit trust | Cursor hook adapter; install-path differences remain | Plugin events | Not ported; Copilot CLI has its own plugin hook system |
 | MCP configuration | Available, explicit activation | Native plugin manifest; legacy sync can merge TOML | Explicit project/user config | Provider/plugin config | Not supplied by ECC |
-| Parity with Claude Code | Primary reference | Partial | Partial | Partial | Not a parity target |
+| Parity with Claude Code | Primary reference | Partial | Partial | Partial | Partial |
 
 **Key architectural decisions:**
 - **AGENTS.md** at root is the universal cross-tool file (read by Claude Code, Cursor, Codex, and OpenCode; GitHub Copilot uses `.github/copilot-instructions.md` instead)
 - **DRY adapter pattern** lets Cursor reuse Claude Code's hook scripts without duplication
-- **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, and OpenCode
+- **Skills format** (SKILL.md with YAML frontmatter) works across Claude Code, Codex, OpenCode, and GitHub Copilot CLI
 - Codex's narrower native hook set is supplemented by `AGENTS.md`, optional `model_instructions_file` overrides, and sandbox permissions
 
 <details>
@@ -1845,7 +1845,7 @@ For the full ECC OpenCode setup, either:
 <details>
 <summary><strong>GitHub Copilot support in depth</strong></summary>
 
-ECC provides **GitHub Copilot support** for VS Code via Copilot Chat's native instruction and prompt file system. No extra tooling required.
+ECC supports **GitHub Copilot** on two surfaces: Copilot Chat in VS Code, via its native instruction and prompt file system, and **GitHub Copilot CLI**, which discovers ECC's skills and agents from paths this repository already ships. No extra tooling is required for either.
 
 #### What's included for GitHub Copilot
 
@@ -1866,6 +1866,75 @@ To use the workflow prompts in Copilot Chat:
 2. Click the **paperclip / attach** icon and select **Prompt...**, or type `/` and choose a prompt.
 3. Select the prompt (e.g. `plan`, `tdd`, `security-review`).
 
+#### Copilot CLI: skills and agents
+
+GitHub Copilot CLI discovers `SKILL.md` skills from `.github/skills/`,
+`.agents/skills/`, `.claude/skills/`, `~/.copilot/skills/`, and
+`~/.agents/skills/`, and custom agents from `.github/agents/`. ECC's skill and
+agent frontmatter (`name`, `description`) is already compatible, so no
+conversion step is needed.
+
+Because ECC ships a skill subset in `.agents/skills/`, a plain clone of this
+repository is picked up by Copilot CLI with no configuration at all:
+
+```bash
+git clone https://github.com/affaan-m/ECC.git && cd ECC
+copilot skill list
+# 42 project skills: 39 from .agents/skills/, 3 from .claude/commands/
+```
+
+Copilot CLI 1.0.83 reports all 42 under `Project skills` with `source:
+"project"` and `enabled: true`. The three from `.claude/commands/` are Claude
+command files that Copilot surfaces as skills; they are reported with `path`
+set to the `.claude/commands` directory rather than to a per-skill subdirectory.
+
+To check this without installing anything, run the npm-distributed build
+against a throwaway clone:
+
+```bash
+git clone --depth 1 https://github.com/affaan-m/ECC.git && cd ECC
+npx -y @github/copilot@1.0.82 skill list --json | jq '[.[] | select(.source=="project")] | length'
+# 42
+```
+
+The same 39 + 3 split is reported by 1.0.82 from npm and by 1.0.83 installed
+locally, so the behaviour is not specific to one build or install method.
+
+To expose the full catalog, place `skills/` where Copilot CLI looks:
+
+```bash
+cp -r skills .github/skills     # or: copilot skill add ./skills
+copilot skill list --json | jq '[.[] | select(.path | contains(".github/skills"))] | length'
+# 286
+```
+
+Filter on the path rather than on `source`, because `source == "project"`
+returns 290 here: the 286 from `.github/skills/` plus the 3 `.claude/commands/`
+entries and the one `.agents/skills/` skill whose name does not collide with a
+full-catalog entry. The other 38 `.agents/skills/` entries resolve to the same
+skill names as their `.github/skills/` counterparts and are de-duplicated in
+favor of `.github/skills/`.
+
+Copilot registers a skill under the `name` in its `SKILL.md` frontmatter, not
+its directory name, so catalog folders whose names differ from their frontmatter
+(for example `scientific-db-pubmed-database`, which declares
+`name: pubmed-database`) still load — they are just listed under the frontmatter
+name.
+
+Agents work the same way:
+
+```bash
+cp -r agents .github/agents
+copilot --agent architect -p "Review this module's boundaries"
+```
+
+Verified against Copilot CLI 1.0.83. All 286 skills load and report
+`enabled: true`. Agents load and run; agent files that declare a Claude model
+name (`model: opus`, `model: sonnet`) emit a warning and fall back to the
+session's default model, so remove or remap `model:` if you want to pin one.
+
+There is no `copilot` target in `install.sh` yet — the steps above are manual.
+
 #### Feature coverage
 
 | ECC Feature | Copilot equivalent |
@@ -1878,12 +1947,24 @@ To use the workflow prompts in Copilot Chat:
 | Build error resolution | `build-fix` prompt |
 | Refactoring | `refactor` prompt |
 | Commit message format | Per-task instruction in `settings.json` |
-| Hooks / automation | Not supported (Copilot has no hook system) |
-| Agents / delegation | Not supported (Copilot has no subagent API) |
+| Skills | Native discovery in Copilot CLI (`.github/skills/`, `.agents/skills/`) |
+| Agents / delegation | Copilot CLI custom agents (`.github/agents/`, `--agent`) |
+| Hooks / automation | ECC's hooks are not ported (Copilot CLI has its own plugin hook system) |
 
 #### Limitations
 
-GitHub Copilot does not have a hook system or a subagent API, so ECC's hook automations (auto-format, TypeScript check, session persistence, dev-server guard) and agent delegation are unavailable. The instruction and prompt layer still brings the full ECC coding philosophy (standards, security, TDD, and workflow) into every Copilot Chat session.
+ECC's hook automations (auto-format, TypeScript check, session persistence,
+dev-server guard) are written against Claude Code's hook event model and are
+not ported to Copilot. Copilot CLI does expose a hook system through its plugin
+format, but ECC does not currently ship a Copilot plugin, so none of ECC's hooks
+run there.
+
+ECC also does not install a `copilot` target, so skill and agent placement is
+manual (see above). Skills that shell out to bundled scripts assume the same
+interpreters as on Claude Code. Copilot Chat in VS Code does not read
+`.github/skills/` or `.github/agents/`; those paths are Copilot CLI surfaces.
+The instruction and prompt layer is what carries ECC's coding philosophy into
+Copilot Chat sessions.
 </details>
 
 <details>
@@ -2108,7 +2189,7 @@ Yes. ECC is cross-platform:
 - **Gemini CLI**: Experimental project-local support via `.gemini/GEMINI.md` and shared installer plumbing.
 - **OpenCode**: Beta plugin integration in `.opencode/`; models follow the user's OpenCode selection, while catalog parity remains limited.
 - **Codex**: Supported native marketplace plugin for the app and CLI, plus repo-local configuration. The older sync flow remains available only for compatibility.
-- **GitHub Copilot (VS Code)**: Instruction and prompt layer via `.github/copilot-instructions.md`, `.vscode/settings.json`, and `.github/prompts/`.
+- **GitHub Copilot**: Instruction and prompt layer for Copilot Chat via `.github/copilot-instructions.md`, `.vscode/settings.json`, and `.github/prompts/`. Copilot CLI additionally discovers ECC skills (`.agents/skills/`, `.github/skills/`) and custom agents (`.github/agents/`).
 - **Antigravity**: Native Antigravity 2.0 setup for workflows, skills, custom agents, and flattened rules in `.agents/`. See [Antigravity Guide](docs/ANTIGRAVITY-GUIDE.md).
 - **JoyCode / CodeBuddy**: Project-local selective install adapters for commands, agents, skills, and flattened rules. See [JoyCode Adapter Guide](docs/JOYCODE-GUIDE.md).
 - **Qwen CLI**: Home-directory selective install adapter for commands, agents, skills, rules, and Qwen config. See [Qwen CLI Adapter Guide](docs/QWEN-GUIDE.md).
