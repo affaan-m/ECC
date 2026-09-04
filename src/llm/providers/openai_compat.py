@@ -22,12 +22,17 @@ def _to_openai_tool_call_param(
     tool_call: ToolCall,
 ) -> ChatCompletionMessageToolCallParam:
     """Convert a domain tool call to the OpenAI request schema."""
+    try:
+        arguments = json.dumps(tool_call.arguments, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OpenAI tool call arguments must be valid JSON") from exc
+
     return {
         "id": tool_call.id,
         "type": "function",
         "function": {
             "name": tool_call.name,
-            "arguments": json.dumps(tool_call.arguments),
+            "arguments": arguments,
         },
     }
 

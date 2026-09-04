@@ -145,12 +145,36 @@ def test_openai_compatible_provider_serializes_assistant_tool_calls(
         {"role": "tool", "content": "result", "tool_call_id": "call_1"},
     ]
 
-    client.completions.params = None
+    submitted_params = client.completions.params
     with pytest.raises(ValueError, match="tool messages require a tool_call_id"):
         provider.generate(
             LLMInput(messages=[Message(role=Role.TOOL, content="unlinked result")])
         )
-    assert client.completions.params is None
+    assert client.completions.params is submitted_params
+
+    for invalid_arguments in ({"score": float("nan")}, {"value": object()}):
+        with pytest.raises(
+            ValueError,
+            match="tool call arguments must be valid JSON",
+        ):
+            provider.generate(
+                LLMInput(
+                    messages=[
+                        Message(
+                            role=Role.ASSISTANT,
+                            content="",
+                            tool_calls=[
+                                ToolCall(
+                                    id="call_invalid",
+                                    name="score",
+                                    arguments=invalid_arguments,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+        assert client.completions.params is submitted_params
 
 
 def test_openai_provider_can_be_constructed_without_credentials(monkeypatch):
