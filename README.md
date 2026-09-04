@@ -20,6 +20,7 @@
 <p align="center">
   <strong>Language:</strong>
   <a href="README.md">English</a> |
+  <a href="docs/bn/README.md">বাংলা</a> |
   <a href="docs/pt-BR/README.md">Português (Brasil)</a> |
   <a href="README.zh-CN.md">简体中文</a> |
   <a href="docs/zh-TW/README.md">繁體中文</a> |
@@ -31,8 +32,7 @@
   <a href="docs/th/README.md">ไทย</a> |
   <a href="docs/de-DE/README.md">Deutsch</a> |
   <a href="docs/es/README.md">Español</a> |
-  <a href="docs/uk-UA/README.md">Українська</a> |
-  <a href="docs/bn/README.md">বাংলা</a>
+  <a href="docs/uk-UA/README.md">Українська</a>
 </p>
 
 <p align="center">
