@@ -19,13 +19,21 @@ function canonicalArgs(argv = process.argv.slice(2)) {
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--target') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error('Missing value for --target');
+      }
       index += 1;
       continue;
     }
     args.push(argument);
     if (SELECTION_FLAGS.has(argument)) hasSelection = true;
     if (VALUE_FLAGS.has(argument)) {
-      if (index + 1 < argv.length) args.push(argv[index + 1]);
+      const value = argv[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error(`Missing value for ${argument}`);
+      }
+      args.push(value);
       index += 1;
     } else if (!argument.startsWith('-')) {
       hasSelection = true;

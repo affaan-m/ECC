@@ -247,11 +247,13 @@ function runTests() {
     const destination = path.join(parent, 'snapshot');
     const calls = [];
     try {
+      const archive = Buffer.from('archive');
       copyGitArchive('/source', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', destination, (...args) => {
         calls.push(args);
-        return Buffer.alloc(0);
+        return archive;
       });
       assert.deepStrictEqual(calls[1][1], ['-x', '-f', '-', '-C', destination]);
+      assert.deepStrictEqual(calls[1][2].input, archive);
     } finally {
       fs.rmSync(parent, { recursive: true, force: true });
     }

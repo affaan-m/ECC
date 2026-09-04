@@ -139,6 +139,11 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('Grok alias rejects option-prefixed values for value flags', () => {
+    assert.throws(() => canonicalArgs(['--target', '--dry-run']), /Missing value for --target/);
+    assert.throws(() => canonicalArgs(['--consent-mcp', '--dry-run']), /Missing value for --consent-mcp/);
+  })) passed++; else failed++;
+
   if (test('plans Grok through the canonical request with a local pinned fixture', () => {
     const homeDir = createTempDir('install-apply-grok-home-');
     const fixtureRoot = createTempDir('install-apply-grok-source-');
@@ -148,11 +153,17 @@ function runTests() {
       const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
       const marketplacePath = path.join(sourceRoot, '.grok-plugin', 'marketplace.json');
       const marketplace = readJson(marketplacePath);
-      marketplace.plugins[0] = {
-        ...marketplace.plugins[0],
-        source: { source: 'url', url: sourceRoot, sha: sourceSha },
+      const updatedMarketplace = {
+        ...marketplace,
+        plugins: [
+          {
+            ...marketplace.plugins[0],
+            source: { source: 'url', url: sourceRoot, sha: sourceSha },
+          },
+          ...marketplace.plugins.slice(1),
+        ],
       };
-      fs.writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`);
+      fs.writeFileSync(marketplacePath, `${JSON.stringify(updatedMarketplace, null, 2)}\n`);
 
       const result = run(
         ['--target', 'grok', '--profile', 'minimal', '--dry-run', '--json'],
