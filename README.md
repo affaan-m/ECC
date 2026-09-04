@@ -340,6 +340,7 @@ cd ECC
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
+| GitHub Copilot | `./install.sh --profile full --target copilot` | Installs skills to `.github/skills/` and agents to `.github/agents/` for Copilot CLI |
 
 GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`. GitHub Copilot CLI additionally discovers the `.agents/skills/` subset from a plain clone with no setup; see [Platform Support](#platform-support) for the full catalog and agents.
 
@@ -1588,7 +1589,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
 | Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
-| GitHub Copilot | Instructions, prompts, and native skill/agent discovery (Copilot CLI) | Checked-in instructions and prompt files; skills and agents are discovered by Copilot CLI from existing paths | ECC's hook automations do not run. There is no `copilot` installer target, so placing the full skill and agent catalog is a manual step. |
+| GitHub Copilot | Instructions, prompts, and native skill/agent discovery (Copilot CLI) | `./install.sh --profile full --target copilot`, or checked-in instructions and prompt files | ECC's hook automations do not run, and rules and commands are not installed by the target. |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
 
 ### Cross-tool capability map
@@ -1933,7 +1934,31 @@ Verified against Copilot CLI 1.0.83. All 286 skills load and report
 name (`model: opus`, `model: sonnet`) emit a warning and fall back to the
 session's default model, so remove or remap `model:` if you want to pin one.
 
-There is no `copilot` target in `install.sh` yet — the steps above are manual.
+#### Installing with the `copilot` target
+
+The steps above copy files by hand. The `copilot` install target does the same
+placement and additionally rewrites agent frontmatter so no warning is emitted:
+
+```bash
+./install.sh --profile full --target copilot
+# Windows: ./install.ps1 --profile full --target copilot
+```
+
+That writes skills to `.github/skills/`, agents to `.github/agents/`, and an
+install-state file to `.github/ecc-install-state.json`. Nothing is written
+outside `.github/`.
+
+The `full` profile places 285 skills and 68 agents. That is one skill fewer
+than the 286 a manual `cp -r skills .github/skills` produces: `dmux-workflows`
+belongs to the `orchestration` module, which ships tmux and shell worker
+scripts and does not target Copilot. Copy `skills/dmux-workflows` by hand if
+you want it.
+
+Claude-only agent frontmatter (`model`, `tools`, `color`) is dropped during the
+copy: Copilot resolves the model from your own configuration, and it governs
+tool access per session through `--allow-tool`/`--deny-tool` rather than through
+agent frontmatter. ECC's rules, commands, and hooks are not installed by this
+target.
 
 #### Feature coverage
 
@@ -1959,12 +1984,12 @@ not ported to Copilot. Copilot CLI does expose a hook system through its plugin
 format, but ECC does not currently ship a Copilot plugin, so none of ECC's hooks
 run there.
 
-ECC also does not install a `copilot` target, so skill and agent placement is
-manual (see above). Skills that shell out to bundled scripts assume the same
-interpreters as on Claude Code. Copilot Chat in VS Code does not read
-`.github/skills/` or `.github/agents/`; those paths are Copilot CLI surfaces.
-The instruction and prompt layer is what carries ECC's coding philosophy into
-Copilot Chat sessions.
+ECC also does not install rules, commands, or hooks for Copilot. The `copilot`
+target installs skills and agents only. Skills that shell out to bundled
+scripts assume the same interpreters as on Claude Code. Copilot Chat in VS Code
+does not read `.github/skills/` or `.github/agents/`; those paths are Copilot
+CLI surfaces. The instruction and prompt layer is what carries ECC's coding
+philosophy into Copilot Chat sessions.
 </details>
 
 <details>
