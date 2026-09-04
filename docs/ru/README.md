@@ -19,7 +19,7 @@
 ![Perl](https://img.shields.io/badge/-Perl-39457E?logo=perl&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **140K+ звёзд** | **21K+ форков** | **170+ участников** | **12+ языковых экосистем** | **победитель хакатона Anthropic**
+> **248K+ звёзд** | **37.4K+ форков** | **170+ участников** | **12+ языковых экосистем** | **победитель хакатона Anthropic**
 
 ---
 
