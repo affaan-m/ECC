@@ -38,6 +38,7 @@ Targets:
   cursor       - Install rules, hooks, and bundled Cursor configs to ./.cursor/
   antigravity  - Install rules, workflows, skills, and agents to ./.agents/
   codex        - Install shared agents/config into ~/.codex/
+  copilot      - Install skills and agents into ./.github/ for GitHub Copilot CLI (ECC hooks not configured)
   gemini       - Install project-local Gemini config into ./.gemini/
   opencode     - Install into OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME/opencode, or ~/.config/opencode/
   codebuddy    - Install commands, agents, skills, and flattened rules into ./.codebuddy/
