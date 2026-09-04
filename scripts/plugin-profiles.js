@@ -249,7 +249,10 @@ function runGenerate(flags) {
 
   const result = generateProfilePlugin(generationOptions);
   writeMarketplaceManifest({ outRoot, marketplaceName });
+  printGenerationResult(result, { plan, outRoot, marketplaceName });
+}
 
+function printGenerationResult(result, { plan, outRoot, marketplaceName }) {
   console.log(`\nGenerated: ${result.pluginRoot}`);
   console.log(`Receipt:   ${path.join(result.pluginRoot, 'ecc-profile.json')} (context digest ${result.receipt.context.digest.slice(0, 12)}, tree digest ${result.receipt.treeDigest.slice(0, 12)})`);
   if (result.previousRoot) {
