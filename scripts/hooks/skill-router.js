@@ -100,15 +100,21 @@ function run(inputOrRaw, options = {}) {
 
   const startedAt = now();
   const budget = budgetMs(env);
-  // deadlineAt bounds the expensive part of routePrompt (a cold catalog
-  // scan) from the inside: it stops reading further skills once the
-  // deadline passes rather than finishing an unbounded scan and only
-  // discarding the output afterward. elapsedMs below still catches
-  // everything else (the embedded-catalog path, scoring, a scan that
-  // finished but ran long) as a final check.
-  const deadlineAt = startedAt + budget;
   try {
-    const matches = routePrompt(prompt, { pluginRoot, deadlineAt });
+    // routePrompt never builds a catalog. It reads one cache file (or the
+    // carrier's embedded catalog) and scores against it, so the work here is
+    // bounded by construction rather than by a deadline. The budget check
+    // below stays as defence in depth against a pathological prompt or a
+    // very large cache.
+    const matches = routePrompt(prompt, { pluginRoot });
+    if (matches === null) {
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '[SkillRouter] no usable catalog cache; suggesting nothing. '
+          + 'The cache is built at SessionStart and at carrier generation, never on prompt submit.',
+      };
+    }
     const elapsedMs = now() - startedAt;
     if (elapsedMs > budget) {
       return { exitCode: 0, stdout: '', stderr: `[SkillRouter] routing took ${elapsedMs}ms, over the ${budget}ms budget; suppressed` };

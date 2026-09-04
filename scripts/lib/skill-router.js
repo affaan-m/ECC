@@ -148,12 +148,21 @@ function sanitizeCatalogEntries(entries) {
     }));
 }
 
-function loadCatalog(pluginRoot, { deadlineAt } = {}) {
+/**
+ * Read the catalog cache, or null when there is nothing usable.
+ *
+ * This is the ONLY filesystem work the prompt-submit path does beyond one
+ * stat of the skills directory: one readFileSync, no directory walk, no
+ * write. A missing, stale, or malformed cache is not an error and does not
+ * trigger a build here — see buildCatalogCache.
+ *
+ * @param {string} pluginRoot Plugin root to route within.
+ * @returns {Array<object>|null} Sanitized entries, or null.
+ */
+function readCatalogCache(pluginRoot) {
   const signature = catalogSignature(pluginRoot);
-  const cachePath = cachePathFor(pluginRoot);
-
   try {
-    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    const cached = JSON.parse(fs.readFileSync(cachePathFor(pluginRoot), 'utf8'));
     if (cached.signature
       && cached.signature.dirCount === signature.dirCount
       && cached.signature.mtimeMs === signature.mtimeMs
@@ -164,18 +173,52 @@ function loadCatalog(pluginRoot, { deadlineAt } = {}) {
       return sanitizeCatalogEntries(cached.entries);
     }
   } catch {
-    // missing or unreadable cache: rebuild below
+    // missing, unreadable, or malformed: the caller emits nothing
   }
+  return null;
+}
 
+/**
+ * Build and persist the catalog cache. NEVER called from the prompt-submit
+ * path: catalog construction is a directory walk over every skill, and the
+ * hot path's guarantee is that it performs two filesystem reads and no
+ * construction at all. Callers are carrier generation and the SessionStart
+ * hook.
+ *
+ * @param {string} pluginRoot Plugin root to scan.
+ * @param {object} [options] Options.
+ * @param {number} [options.deadlineAt] Date.now()-comparable scan deadline.
+ * @returns {{entries: Array<object>, complete: boolean, written: boolean}}
+ */
+function buildCatalogCache(pluginRoot, { deadlineAt } = {}) {
+  const signature = catalogSignature(pluginRoot);
   const { entries, complete } = readCatalog(pluginRoot, { deadlineAt });
   // Only a complete scan is trustworthy for CACHE_TTL_MS (up to 6 hours): a
   // scan cut short by the deadline reflects however far the loop got, not
   // the catalog, and caching it would silently hide skills from every
   // routing call until the cache expires.
+  let written = false;
   if (complete) {
-    writeCatalogCache(cachePath, { signature, builtAt: Date.now(), entries });
+    writeCatalogCache(cachePathFor(pluginRoot), { signature, builtAt: Date.now(), entries });
+    written = true;
   }
-  return entries;
+  return { entries, complete, written };
+}
+
+/**
+ * The catalog for a routing call.
+ *
+ * Returns null when the cache is missing, stale, or malformed. The caller
+ * emits nothing and writes one line to stderr; it does not build. A skill the
+ * router would have suggested but the cache does not know about is a stale
+ * cache, which the next SessionStart fixes — not something to pay for on
+ * every prompt.
+ *
+ * @param {string} pluginRoot Plugin root to route within.
+ * @returns {Array<object>|null} Sanitized entries, or null.
+ */
+function loadCatalog(pluginRoot) {
+  return readCatalogCache(pluginRoot);
 }
 
 /**
@@ -230,7 +273,6 @@ function routePrompt(prompt, options = {}) {
   }
   const maxResults = options.maxResults ?? DEFAULT_MAX_RESULTS;
   const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
-  const deadlineAt = options.deadlineAt;
 
   const promptTokens = tokenize(prompt);
   if (promptTokens.size === 0) {
@@ -238,9 +280,16 @@ function routePrompt(prompt, options = {}) {
   }
 
   const { installedIds, embeddedCatalog } = resolveRouterContext(pluginRoot);
+  // A carrier embeds its catalog in the receipt, so it needs no cache at
+  // all. Otherwise the cache is read, never built: a missing or stale cache
+  // yields no suggestions rather than a directory walk on the hot path.
+  const catalog = embeddedCatalog || loadCatalog(pluginRoot);
+  if (!catalog) {
+    return null;
+  }
   const scored = [];
 
-  for (const entry of embeddedCatalog || loadCatalog(pluginRoot, { deadlineAt })) {
+  for (const entry of catalog) {
     if (entry.id === 'ecc-catalog') {
       continue;
     }
@@ -276,5 +325,8 @@ module.exports = {
   sanitizeCatalogEntries,
   resolveRouterContext,
   readCatalog,
+  readCatalogCache,
+  buildCatalogCache,
+  cachePathFor,
   routePrompt,
 };

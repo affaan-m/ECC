@@ -1,11 +1,26 @@
 # Skill Router (opt-in)
 
-A `UserPromptSubmit` hook that scores each prompt against the skill catalog
-with offline token matching and injects up to three matching skills as
-context for the turn. Installed skills are suggested directly; skills a
-generated profile carrier holds on demand are suggested with their path
-inside the plugin (`on-demand/<skill>/SKILL.md`). Nothing outside the plugin
-is ever referenced.
+A discovery affordance inside an already-selected carrier. It does not decide
+what a session can do; the carrier already did that.
+
+A `UserPromptSubmit` hook scores each prompt against the catalog the carrier
+already holds and names up to three skills that look relevant. It **suggests;
+it never loads**. The model reads a skill because it decided to, from a path
+inside the plugin — the router only shortens the distance between "I need
+something" and "it is at `on-demand/<skill>/SKILL.md`".
+
+That boundary is what makes the feature small enough to be worth having:
+
+- **A skill the router would suggest but the carrier did not carry is a
+  carrier defect, not a router job.** The fix is the profile selection, not
+  a wider router.
+- **Mis-selection cannot escalate capability.** Because the output is
+  suggest-only, a prompt crafted to steer the router at best wastes three
+  lines of context on the wrong skill. There is no path from a bad
+  suggestion to a loaded skill, an executed script, or a changed permission:
+  the router has no side effects and no privileges the turn did not already
+  have.
+- Nothing outside the plugin is ever referenced.
 
 The router changes what the model sees on every matching prompt, so it is a
 separate behavioral feature from profile carriers and is **off by default**.
@@ -29,14 +44,16 @@ the opt-in the hook runs and emits nothing.
 
 - Prompts shorter than 12 characters, slash commands, and `!` commands are
   never routed.
+- **The hot path performs two filesystem reads and never constructs a
+  catalog.** One `statSync` of the skills directory (the cache signature)
+  and one `readFileSync` of the cache. Scoring is in-memory. Catalog
+  construction — a directory walk that reads every `SKILL.md` — cannot
+  happen on prompt submit, by construction rather than by deadline: with no
+  usable cache the hook emits nothing and writes one line to stderr.
 - Routing that takes longer than `ECC_SKILL_ROUTER_BUDGET_MS` (default 150)
-  emits nothing and logs the overrun to stderr. The deadline is also
-  enforced *inside* a cold catalog scan (checked before each skill file, not
-  only after the whole scan returns), so an oversized or slow-disk catalog
-  is bounded to roughly one file's read past the budget rather than the
-  full scan's duration. This bounds the overrun's granularity, not to zero:
-  a single pathologically slow file read can still exceed the budget before
-  the check runs again.
+  emits nothing and logs the overrun to stderr. This is now defence in
+  depth against a pathological prompt or a very large cache rather than the
+  primary bound.
 - Output is at most a header plus three bullets. Catalog text is flattened
   to one line with control bytes removed before it reaches the model, so a
   crafted description cannot forge additional bullets or terminal escapes.
@@ -45,9 +62,29 @@ the opt-in the hook runs and emits nothing.
 - The catalog cache lives under `~/.claude/cache` (override:
   `ECC_SKILL_ROUTER_CACHE_DIR`), is written with mode 0600 through an
   exclusive temp file and atomic rename, and never follows a planted symlink.
+  A cache that is missing, stale (its signature no longer matches the skills
+  directory), or malformed is treated as absent: no suggestions, no rebuild.
 - Through `run-with-flags.js`, a disabled, dry-run, or missing
   UserPromptSubmit hook emits empty stdout rather than echoing the raw
   payload into context.
+
+## Where the catalog is built
+
+Never on prompt submit. Two places, both off the hot path:
+
+| Install shape | Source of the catalog |
+|---|---|
+| Generated profile carrier | The receipt. `ecc-profile.json` already carries the full catalog with per-skill paths, so a carrier needs no cache at all. |
+| Non-carrier install | `scripts/hooks/skill-router-cache.js`, a SessionStart hook gated by the same opt-in env var, with a 2s scan budget. |
+
+A cold catalog build over this repository takes roughly **1.4 seconds**
+(`skill-router-eval.js`, cold build+route). That is what used to sit behind a
+deadline on a blocking prompt hook; it is now paid once per session, at
+session start, where a delay costs one session start rather than every turn.
+
+The in-scan deadline is kept for the SessionStart build as defence in depth:
+an incomplete scan is never written to the long-TTL cache, because caching a
+truncated scan would silently hide skills for up to six hours.
 
 ## Evidence
 
@@ -77,6 +114,31 @@ node scripts/ci/skill-router-eval.js            # human-readable
 node scripts/ci/skill-router-eval.js --json     # machine-readable
 node scripts/ci/skill-router-eval.js --min-precision 0.9 --min-recall 0.9   # gate
 ```
+
+### The adversarial slice
+
+`tests/fixtures/skill-router/prompts-adversarial.json` is 25 prompts phrased
+the way a problem is actually experienced, deliberately sharing **no content
+tokens** with the target skill's id or description ("the page jumps around
+when I tab through the form" for `frontend-a11y`).
+
+```bash
+node scripts/ci/skill-router-eval.js --fixture tests/fixtures/skill-router/prompts-adversarial.json
+```
+
+| Fixture | precision@3 | recall@3 |
+|---|---|---|
+| `prompts.json` (52) | 0.962 | 0.962 |
+| `prompts-adversarial.json` (25) | **0.214** | **0.120** |
+
+That gap is the honest characterisation of a token-overlap router: it works
+when the user already knows the vocabulary and mostly does not when they do
+not. Two thirds of the adversarial prompts route nothing at all, which is the
+preferable failure — silence rather than a confident wrong suggestion.
+
+This slice is reported, not gated. Tuning the router against it by adding
+these phrasings to skill descriptions would move the number without moving
+the capability, and the fixture says so in its own notes.
 
 ## Scoring
 

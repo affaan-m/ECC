@@ -23,6 +23,7 @@ const {
   sanitizeCatalogEntries,
   resolveRouterContext,
   readCatalog,
+  buildCatalogCache,
   routePrompt,
 } = require('../../scripts/lib/skill-router');
 
@@ -34,6 +35,15 @@ let failed = 0;
 function run(name, fn) {
   if (test(name, fn)) passed++;
   else failed++;
+}
+
+// routePrompt reads the catalog cache and never builds one, so a fixture
+// root has to have its cache built first - exactly as a real install does at
+// SessionStart. Tests that assert on a cold, cacheless root call routePrompt
+// directly instead.
+function routeWithCache(prompt, options) {
+  buildCatalogCache(options.pluginRoot);
+  return routePrompt(prompt, options);
 }
 
 function writeSkill(rootDir, skillId, description) {
@@ -64,7 +74,7 @@ run('routePrompt requires pluginRoot', () => {
 });
 
 run('routePrompt finds a matching skill in the real catalog', () => {
-  const matches = routePrompt('apply react patterns when refactoring this component', { pluginRoot: repoRoot });
+  const matches = routeWithCache('apply react patterns when refactoring this component', { pluginRoot: repoRoot });
   assert.ok(matches.length > 0);
   assert.ok(matches.some(m => m.id.includes('react')), `Expected a react skill, got ${matches.map(m => m.id).join(', ')}`);
   assert.ok(matches.every(m => m.installed), 'Full catalog root: every match is installed');
@@ -72,6 +82,7 @@ run('routePrompt finds a matching skill in the real catalog', () => {
 });
 
 run('routePrompt returns nothing for unroutable prompts', () => {
+  buildCatalogCache(repoRoot);
   assert.deepStrictEqual(routePrompt('zzqx wvvk pfff', { pluginRoot: repoRoot }), []);
 });
 
@@ -147,9 +158,15 @@ run('a poisoned cache with malformed entries does not break routing', () => {
   const poisonedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-poison-'));
   try {
     writeSkill(poisonedRoot, 'database-migration', 'Database schema migration workflow');
-    routePrompt('database migration workflow please', { pluginRoot: poisonedRoot });
-    const cacheFile = fs.readdirSync(cacheDir).map(f => path.join(cacheDir, f)).find(f => f.endsWith('.json'));
-    assert.ok(cacheFile, 'Expected a cache file');
+    // Snapshot first: cacheDir is shared with every earlier test in this
+    // file, so "the first .json in the directory" can be another test's
+    // cache and this test would then poison the wrong file and assert
+    // nothing about the routing it just did.
+    const before = new Set(fs.readdirSync(cacheDir));
+    buildCatalogCache(poisonedRoot);
+    const created = fs.readdirSync(cacheDir).filter(f => !before.has(f) && f.endsWith('.json'));
+    assert.strictEqual(created.length, 1, `Expected exactly one new cache file, got ${created.join(', ')}`);
+    const cacheFile = path.join(cacheDir, created[0]);
     const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
     cached.entries = [{ id: 99, description: 'malformed' }, { id: 'ok-skill', description: 'fine' }];
     fs.writeFileSync(cacheFile, JSON.stringify(cached));
@@ -177,8 +194,8 @@ run('cache write never writes through a planted symlink', () => {
     }
     process.env.ECC_SKILL_ROUTER_CACHE_DIR = linkCacheDir;
     delete require.cache[require.resolve('../../scripts/lib/skill-router')];
-    const { routePrompt: route } = require('../../scripts/lib/skill-router');
-    route('victim skill catalog scan trigger', { pluginRoot: linkRoot });
+    const { buildCatalogCache: build } = require('../../scripts/lib/skill-router');
+    build(linkRoot);
     assert.strictEqual(fs.readFileSync(victimFile, 'utf8'), 'ORIGINAL');
     assert.ok(fs.lstatSync(plantedLink).isFile(), 'cache path must end up a regular file');
     assert.deepStrictEqual(fs.readdirSync(linkCacheDir).filter(f => f.endsWith('.tmp')), []);
@@ -227,22 +244,81 @@ run('readCatalog completes normally with no deadline or a generous one', () => {
   }
 });
 
-run('loadCatalog (via routePrompt) never caches an incomplete, deadline-truncated scan', () => {
+run('buildCatalogCache never caches an incomplete, deadline-truncated scan', () => {
   const deadlineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-deadline-cache-'));
   try {
     writeSkill(deadlineRoot, 'alpha-skill', 'First skill for deadline cache test');
     const digest = require('crypto').createHash('sha1').update(path.resolve(deadlineRoot)).digest('hex').slice(0, 12);
     const cacheFile = path.join(cacheDir, `ecc-skill-router-${digest}.json`);
 
-    const truncated = routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot, deadlineAt: Date.now() - 60000 });
-    assert.deepStrictEqual(truncated, [], 'a deadline already in the past finds nothing');
+    const truncated = buildCatalogCache(deadlineRoot, { deadlineAt: Date.now() - 60000 });
+    assert.strictEqual(truncated.complete, false, 'a deadline already in the past cannot complete');
+    assert.strictEqual(truncated.written, false);
     assert.ok(!fs.existsSync(cacheFile), 'an incomplete scan must never be written to the long-TTL cache');
+    assert.strictEqual(
+      routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot }),
+      null,
+      'with no cache written, routing has nothing to read'
+    );
 
-    const full = routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot });
-    assert.ok(full.some(m => m.id === 'alpha-skill'), 'a subsequent complete scan still finds the skill');
+    const full = buildCatalogCache(deadlineRoot);
+    assert.strictEqual(full.complete, true);
     assert.ok(fs.existsSync(cacheFile), 'a complete scan is cached as usual');
+    const matches = routePrompt('alpha skill deadline cache test', { pluginRoot: deadlineRoot });
+    assert.ok(matches.some(m => m.id === 'alpha-skill'), 'routing reads the freshly built cache');
   } finally {
     fs.rmSync(deadlineRoot, { recursive: true, force: true });
+  }
+});
+
+run('the prompt path reads the cache and never builds one', () => {
+  // This is the hot-path guarantee: with no cache, routePrompt returns null,
+  // writes nothing, and does not walk the skills directory.
+  const coldRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-cold-'));
+  try {
+    writeSkill(coldRoot, 'beta-skill', 'A skill that exists on disk but not in any cache');
+    const before = new Set(fs.readdirSync(cacheDir));
+
+    assert.strictEqual(
+      routePrompt('beta skill that exists on disk', { pluginRoot: coldRoot }),
+      null,
+      'a cold root must yield no suggestions rather than a catalog scan'
+    );
+    assert.deepStrictEqual(
+      fs.readdirSync(cacheDir).filter(f => !before.has(f)),
+      [],
+      'routing must not create a cache file'
+    );
+
+    buildCatalogCache(coldRoot);
+    const matches = routePrompt('beta skill that exists on disk', { pluginRoot: coldRoot });
+    assert.ok(Array.isArray(matches) && matches.some(m => m.id === 'beta-skill'),
+      'once the cache exists, the same prompt routes');
+  } finally {
+    fs.rmSync(coldRoot, { recursive: true, force: true });
+  }
+});
+
+run('a stale cache is ignored without being rebuilt on the prompt path', () => {
+  const staleRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-skill-router-stale-'));
+  try {
+    writeSkill(staleRoot, 'gamma-skill', 'A skill whose cache signature will be invalidated');
+    buildCatalogCache(staleRoot);
+    const digest = require('crypto').createHash('sha1').update(path.resolve(staleRoot)).digest('hex').slice(0, 12);
+    const cacheFile = path.join(cacheDir, `ecc-skill-router-${digest}.json`);
+    const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+    cached.signature = { dirCount: cached.signature.dirCount + 99, mtimeMs: 1 };
+    fs.writeFileSync(cacheFile, JSON.stringify(cached));
+
+    const sizeBefore = fs.statSync(cacheFile).size;
+    assert.strictEqual(
+      routePrompt('gamma skill signature', { pluginRoot: staleRoot }),
+      null,
+      'a signature mismatch means no usable catalog'
+    );
+    assert.strictEqual(fs.statSync(cacheFile).size, sizeBefore, 'the prompt path must not rewrite the cache');
+  } finally {
+    fs.rmSync(staleRoot, { recursive: true, force: true });
   }
 });
 

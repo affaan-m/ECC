@@ -35,6 +35,12 @@ const asJson = args.includes('--json');
 // fails fast instead.
 function parseThreshold(name, fallback) {
   const raw = flag(name, fallback);
+  // Number('') and Number('   ') are 0, which is finite, so an empty flag
+  // value would silently become "no threshold" instead of a usage error.
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    console.error(`skill-router-eval: --${name} requires a numeric value, got ${JSON.stringify(raw)}`);
+    process.exit(1);
+  }
   const value = Number(raw);
   if (!Number.isFinite(value)) {
     console.error(`skill-router-eval: --${name} requires a numeric value, got ${JSON.stringify(raw)}`);
@@ -48,7 +54,12 @@ const minRecall = parseThreshold('min-recall', '0');
 const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-router-eval-cache-'));
 process.env.ECC_SKILL_ROUTER_CACHE_DIR = cacheDir;
 
-const { routePrompt } = require('../lib/skill-router');
+const { routePrompt, buildCatalogCache } = require('../lib/skill-router');
+
+// Routing reads the catalog cache and never builds one, so the eval builds it
+// first, exactly as a real install does at SessionStart. Cold-start latency is
+// measured separately below.
+buildCatalogCache(repoRoot);
 
 function percentile(values, p) {
   if (values.length === 0) return 0;
@@ -57,9 +68,14 @@ function percentile(values, p) {
 }
 
 function coldLatencyMs() {
-  // Fresh process + empty cache: the first prompt pays the full catalog scan.
+  // Fresh process + empty cache. This is the SessionStart cost now, not the
+  // prompt cost: the catalog scan happens in buildCatalogCache, and the
+  // routing call after it reads what that wrote. The prompt path never pays
+  // this, which is the whole point of the split.
   const coldCache = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-router-eval-cold-'));
-  const script = `const t=Date.now();require(${JSON.stringify(path.join(repoRoot, 'scripts', 'lib', 'skill-router.js'))}).routePrompt('apply react patterns when refactoring this component',{pluginRoot:${JSON.stringify(repoRoot)}});process.stdout.write(String(Date.now()-t));`;
+  const lib = JSON.stringify(path.join(repoRoot, 'scripts', 'lib', 'skill-router.js'));
+  const root = JSON.stringify(repoRoot);
+  const script = `const t=Date.now();const r=require(${lib});r.buildCatalogCache(${root});r.routePrompt('apply react patterns when refactoring this component',{pluginRoot:${root}});process.stdout.write(String(Date.now()-t));`;
   const result = spawnSync(process.execPath, ['-e', script], {
     encoding: 'utf8',
     env: { ...process.env, ECC_SKILL_ROUTER_CACHE_DIR: coldCache },
@@ -90,7 +106,7 @@ function main() {
     const startedAt = process.hrtime.bigint();
     const matches = routePrompt(entry.prompt, { pluginRoot: repoRoot });
     warmLatencies.push(Number(process.hrtime.bigint() - startedAt) / 1e6);
-    const ids = matches.map(m => m.id);
+    const ids = (matches || []).map(m => m.id);
     if (ids.length > 0) routed += 1;
     if (entry.expected.some(id => ids.includes(id))) {
       hits += 1;
@@ -123,7 +139,7 @@ function main() {
   } else {
     console.log(`Skill router eval - ${report.prompts} prompts from ${report.fixture}`);
     console.log(`  precision@3: ${report.precisionAt3}  recall@3: ${report.recallAt3}  (hits ${hits}, routed ${routed})`);
-    console.log(`  latency warm p50/p95: ${report.latencyMs.warmP50}ms / ${report.latencyMs.warmP95}ms; cold (3 runs): ${coldRuns.join(', ')}ms`);
+      console.log(`  latency warm p50/p95: ${report.latencyMs.warmP50}ms / ${report.latencyMs.warmP95}ms (prompt path); cold build+route (3 runs): ${coldRuns.join(', ')}ms (SessionStart path)`);
     for (const miss of misses) {
       console.log(`  miss: "${miss.prompt}" expected ${miss.expected.join('|')} got ${miss.got.join(', ') || '(none)'}`);
     }
