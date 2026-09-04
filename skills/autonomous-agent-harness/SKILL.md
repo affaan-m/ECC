@@ -121,11 +121,12 @@ Trigger Claude Code agents remotely for event-driven workflows.
 ```bash
 # Trigger from CI/CD
 # NOTE: unverified — api.anthropic.com/dispatch is not a documented public Anthropic API
-# endpoint. Replace with your own trigger (webhook receiver, CI job, etc.) that invokes
-# `claude -p` on your infrastructure.
-curl -X POST "https://api.anthropic.com/dispatch" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
-  -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
+# endpoint. Do not POST ANTHROPIC_API_KEY to it. The shape below is illustrative only;
+# point YOUR_TRIGGER_URL at a webhook receiver or CI job you control that invokes
+# `claude -p` on your own infrastructure.
+# curl -X POST "https://YOUR_TRIGGER_URL" \
+#   -H "Authorization: Bearer $YOUR_TRIGGER_TOKEN" \
+#   -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
 
 # Trigger from webhook
 # GitHub webhook → dispatch → Claude agent → fix → PR
@@ -191,12 +192,16 @@ description: Persistent task queue for autonomous operation
 
 ### Step 1: Configure MCP Servers
 
-> **Unverified:** none of `@anthropic/memory-mcp-server`, `@anthropic/scheduled-tasks-mcp-server`,
-> or `@anthropic/computer-use-mcp-server` are published packages, and the `@anthropic` npm scope
-> itself is unclaimed. Anthropic's real published packages live under `@anthropic-ai` (e.g.
-> `@anthropic-ai/sdk`). Do not add an MCP server entry that runs `npx -y` against an unclaimed
-> scope — if anyone later publishes a package under one of these exact names, following this
-> guide would silently install and run untrusted code with full MCP tool access.
+> **Unverified (checked 2026-09-04):** none of `@anthropic/memory-mcp-server`,
+> `@anthropic/scheduled-tasks-mcp-server`, or `@anthropic/computer-use-mcp-server` are published
+> packages — the npm registry returns 404 for all three. The `@anthropic` scope itself is
+> registered (`registry.npmjs.org/-/org/anthropic/user` reports an owner), so this is not an
+> unclaimed-scope risk; it's simply that these three exact package names don't exist yet.
+> Anthropic's actual published packages live under `@anthropic-ai` (e.g. `@anthropic-ai/sdk`).
+> Do not add an MCP server entry that runs `npx -y` against an unpublished package name —
+> if a package is ever published under one of these exact names, `npx -y` would install and
+> run it sight-unseen with full MCP tool access, and there's no guarantee it would be an
+> official or trustworthy release.
 >
 > Use a memory, scheduling, or computer-use MCP server you have independently verified instead —
 > confirm the package on the npm registry before adding it to `~/.claude.json`.
