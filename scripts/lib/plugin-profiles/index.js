@@ -61,6 +61,8 @@ module.exports = {
   HOOK_PROFILES: constants.HOOK_PROFILES,
   DEFAULT_CONTEXT_BUDGET_TOKENS: constants.DEFAULT_CONTEXT_BUDGET_TOKENS,
   LISTING_PAYLOAD_FORMAT: constants.LISTING_PAYLOAD_FORMAT,
+  CONSERVATIVE_CHARS_PER_TOKEN: constants.CONSERVATIVE_CHARS_PER_TOKEN,
+  DEFAULT_PROVIDER_MODEL: constants.DEFAULT_PROVIDER_MODEL,
   COMMAND_RUNTIME_DATA: constants.COMMAND_RUNTIME_DATA,
 
   // shared helpers
@@ -88,6 +90,8 @@ module.exports = {
 
   // ledger
   DEFAULT_TOKEN_MEASURER: ledger.DEFAULT_TOKEN_MEASURER,
+  createProviderMeasurer: ledger.createProviderMeasurer,
+  resolveMeasurer: ledger.resolveMeasurer,
   estimateTokens: ledger.estimateTokens,
   buildListingEntries: ledger.buildListingEntries,
   buildListingPayload: ledger.buildListingPayload,

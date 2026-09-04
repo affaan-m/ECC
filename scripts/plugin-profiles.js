@@ -25,6 +25,14 @@
  * Context budget:
  *   --budget <tokens>         Declared listing budget (default: 8000)
  *   --allow-over-budget       Generate even when the ledger exceeds the budget
+ *   --measure <estimate|provider>
+ *                             How to count listing tokens. `estimate` (default)
+ *                             is offline and deliberately over-counts, so an
+ *                             "under budget" verdict is safe. `provider` calls
+ *                             Anthropic count_tokens on the exact payload and
+ *                             requires ANTHROPIC_API_KEY; it never silently
+ *                             falls back to the estimate.
+ *   --model <id>              Model for --measure provider (default: claude-sonnet-4-5)
  *
  * Output (generate):
  *   --out <dir>               Output marketplace root (default: ~/.claude/ecc-profiles)
@@ -46,6 +54,7 @@ const {
   DEFAULT_MARKETPLACE_NAME,
   HOOK_PROFILES,
   measureContextLedger,
+  resolveMeasurer,
   resolvePluginProfilePlan,
   previewProfilePlugin,
   generateProfilePlugin,
@@ -55,7 +64,7 @@ const {
 const DEFAULT_OUT_ROOT = path.join(os.homedir(), '.claude', 'ecc-profiles');
 
 const BOOLEAN_FLAGS = ['no-catalog', 'no-hooks', 'json', 'dry-run', 'force', 'yes', 'keep-prev', 'allow-over-budget', 'help'];
-const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root', 'hooks', 'budget'];
+const VALUE_FLAGS = ['profile', 'modules', 'with', 'without', 'name', 'out', 'marketplace-name', 'repo-root', 'hooks', 'budget', 'measure', 'model'];
 
 function parseArgs(argv) {
   const args = { command: argv[0] || 'help', flags: {} };
@@ -112,6 +121,16 @@ function resolveBudgetFlag(flags) {
   return budget;
 }
 
+function resolveMeasurerFlag(flags) {
+  if (flags.measure === undefined && flags.model === undefined) {
+    return undefined;
+  }
+  if (flags.model !== undefined && flags.measure !== 'provider') {
+    throw new Error('--model only applies to --measure provider');
+  }
+  return resolveMeasurer(flags.measure, { model: flags.model });
+}
+
 function buildPlanOptions(flags) {
   return {
     repoRoot: flags['repo-root'] || undefined,
@@ -127,7 +146,10 @@ function buildPlanOptions(flags) {
 
 function formatLedger(ledger) {
   const status = ledger.withinBudget ? 'within' : 'OVER';
-  return `${ledger.tokens} tokens (${ledger.method}@${ledger.methodVersion}, ${ledger.chars} chars, `
+  const label = ledger.model
+    ? `${ledger.method}@${ledger.methodVersion}/${ledger.model}`
+    : `${ledger.method}@${ledger.methodVersion}`;
+  return `${ledger.tokens} tokens (${label}, ${ledger.chars} chars, `
     + `${ledger.entries.skills} skills/${ledger.entries.agents} agents/${ledger.entries.commands} commands) `
     + `- ${status} budget ${ledger.budget}`;
 }
@@ -173,7 +195,10 @@ function runList() {
 
 function runPlan(flags) {
   const plan = resolvePluginProfilePlan(buildPlanOptions(flags));
-  const ledger = measureContextLedger(plan, { includeCatalogSkill: !flags['no-catalog'] });
+  const ledger = measureContextLedger(plan, {
+    includeCatalogSkill: !flags['no-catalog'],
+    measurer: resolveMeasurerFlag(flags),
+  });
   if (flags.json) {
     console.log(JSON.stringify({ ...plan, ledger, estimatedCatalogTokens: ledger.tokens }, null, 2));
     return;
@@ -227,6 +252,7 @@ function runGenerate(flags) {
     plan,
     outRoot,
     includeCatalogSkill,
+    measurer: resolveMeasurerFlag(flags),
     force: Boolean(flags.force),
     allowOverBudget: Boolean(flags['allow-over-budget']),
     keepPrevious: Boolean(flags['keep-prev']),

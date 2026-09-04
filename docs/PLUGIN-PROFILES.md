@@ -42,10 +42,12 @@ The generator follows five rules. Each is enforced in code and tested.
    generated carrier (receipt present *and* tree digest matches). The
    receipt, `ecc-profile.json`, records inputs, digests, decisions, and the
    ledger.
-5. **The token ledger is labelled and enforced.** The listing payload is
-   measured with a named method and version and gated against a declared
-   budget (default 8000 tokens). Over budget refuses unless
-   `--allow-over-budget`.
+5. **The token ledger is labelled, conservative, and enforced.** The listing
+   payload is measured with a named method and version, hashed, and gated
+   against a declared budget (default 8000 tokens). The offline default
+   over-counts on purpose, so "within budget" is safe to act on and "over
+   budget" can be a false positive that `--measure provider` clears. Over
+   budget refuses unless `--allow-over-budget`.
 
 ## Quick Start
 
@@ -58,6 +60,9 @@ node scripts/plugin-profiles.js plan --profile developer
 
 # See the exact file list, deletions, and any blockers; write nothing
 node scripts/plugin-profiles.js generate --profile developer --hooks off --dry-run
+
+# Clear an over-budget verdict with the real tokenizer before accepting it
+ANTHROPIC_API_KEY=... node scripts/plugin-profiles.js plan --profile developer --measure provider
 
 # Generate the carrier + local marketplace (default: ~/.claude/ecc-profiles)
 node scripts/plugin-profiles.js generate --profile developer --hooks off --allow-over-budget
@@ -201,33 +206,85 @@ blocker without failing.
 shape Claude Code lists them:
 
 ```text
-Ledger:     6647 tokens (chars-per-token-estimate@1, 26585 chars, 49 skills/0 agents/95 commands) - within budget 8000
+Ledger:     8323 tokens (chars-per-token-conservative@1, 26633 chars, 49 skills/0 agents/95 commands) - OVER budget 8000
 ```
 
-The default measurer is a labelled estimate (`chars-per-token-estimate@1`,
-four characters per token). Claude's tokenizer is not public, so the number
-is not exact; the method and version travel with the number in the receipt
-so it is never mistaken for a measurement. Library callers can inject a
-provider-backed measurer through `measureContextLedger(plan, { measurer })`.
+### The estimate is conservative by construction
+
+Claude's tokenizer is not public and this CLI is network-free by default, so
+the default number is an estimate. It is deliberately **conservative**:
+`chars-per-token-conservative@1` divides by **3.2** characters per token, not
+the ~4 rule of thumb, so it over-counts.
+
+That asymmetry is the point. The verdict is only safe in one direction:
+
+- **"within budget" can be trusted.** The real count is very unlikely to be
+  higher than an estimate that already over-counts.
+- **"OVER budget" may be a false positive.** Clear it with
+  `--measure provider`, which counts the exact payload with the real
+  tokenizer, or accept it with `--allow-over-budget`.
+
+Every ledger records `method`, `methodVersion`, `model` (provider only),
+`listingTokens`, `budget`, the verdict, and `payloadSha256` — the hash of the
+exact string that was measured — so a number can always be tied back to what
+produced it, and an estimate is never mistaken for a measurement.
+
+### Measuring with the provider
+
+```bash
+ANTHROPIC_API_KEY=... node scripts/plugin-profiles.js plan --profile opencode --measure provider
+ANTHROPIC_API_KEY=... node scripts/plugin-profiles.js plan --profile opencode --measure provider --model claude-opus-4-1
+```
+
+`--measure provider` calls Anthropic `count_tokens` on the exact listing
+payload. Without `ANTHROPIC_API_KEY` it **refuses**; it never silently falls
+back to the estimate, because a caller who asked for a measurement must not
+be handed an estimate wearing the measurement's label. `--model` defaults to
+`claude-sonnet-4-5` and only applies to `--measure provider`.
+
+### Calibrating the ratio
+
+`3.2` is a **placeholder, not yet a measurement.** The tool that turns it into
+one is manual, because it needs the network and a key:
+
+```bash
+ANTHROPIC_API_KEY=... node scripts/ci/calibrate-token-estimate.js
+```
+
+It measures `tests/fixtures/token-calibration/*.txt` — real listing payloads,
+the only text this estimate is ever applied to — reports the observed
+chars/token per file, and prints the ratio that keeps the estimate
+conservative at the 95th percentile. Record the result here:
+
+| Date | Model | Corpus files | Observed p5 chars/token | Adopted ratio |
+|---|---|---|---|---|
+| _not yet run_ | — | 15 | — | 3.2 (placeholder) |
+
+Until that row is filled in, treat the ratio as an assumption that
+over-counts on purpose, not as a calibrated constant.
+
+### Budget
 
 The budget is declared per invocation (`--budget <tokens>`, default 8000).
 When the ledger exceeds it, `generate` refuses; pass `--allow-over-budget`
 to proceed with the over-budget verdict recorded in the receipt.
 
-Approximate ledger by install profile at ecc@2.2.1 (estimate, catalog skill
+Ledger by install profile at ecc@2.2.1 (conservative estimate, catalog skill
 included; regenerate with `plan` for current numbers):
 
-| Profile | Skills | Agents | Commands | Estimated tokens |
-|---|---|---|---|---|
-| opencode | 48 | 0 | 95 | ~6.6k |
-| minimal | 48 | 68 | 95 | ~10.5k |
-| developer | 125 | 68 | 95 | ~15.6k |
-| full | 286 | 68 | 95 | ~28.3k |
+| Profile | Skills | Agents | Commands | Chars | Estimated tokens |
+|---|---|---|---|---|---|
+| opencode | 48 | 0 | 95 | 26,633 | 8,323 |
+| minimal | 48 | 68 | 95 | 42,078 | 13,150 |
+| developer | 125 | 68 | 95 | 62,638 | 19,575 |
+| full | 286 | 68 | 95 | 113,343 | 35,420 |
 
-`commands-core` ships every command and `agents-core` every agent, so the
-install profiles are not tuned to the default budget; use `--without` or
-module-level selection to narrow, or declare a budget that matches the
-profile.
+Every install profile is over the 8k default budget, `opencode` included —
+it was within budget under the old four-chars-per-token estimate and is not
+under the conservative one. `commands-core` ships every command and
+`agents-core` every agent, so no install profile is tuned to a context
+budget. Narrow with `--without` or module-level selection, declare a budget
+that matches the profile, or use finer-grained modules.
 
 ## The ecc-catalog Skill and On-Demand Content
 
@@ -277,7 +334,7 @@ generation receipt:
 | `dependencies.dynamic[]` | every non-literal module load, with `smokeTested`, the smoke `shape`, and the file it lives in |
 | `dependencies.external[]` | npm packages a shipped script needs that no carrier carries |
 | `dependencies.loadSmoke[]` | every file the smoke exercised and how it went |
-| `tokenLedger` | method, version, payload format, counts, tokens, budget, verdict |
+| `tokenLedger` | method, version, model (provider only), payload format, `payloadSha256`, counts, chars, tokens, budget, verdict |
 | `catalog[]` | every catalog skill with `installed`, carrier-relative `path`, `sha256` |
 | `treeDigest` | sha256 over every file in the carrier except the receipt |
 | `previous` | the replaced carrier's `treeDigest` and `createdAt`, or null |
@@ -328,8 +385,10 @@ plugin version tracks the source `package.json` version; the receipt's
   an npm package will fail at runtime; the load smoke names those under
   `dependencies.external` at generation time instead of leaving it to be
   discovered in a session.
-- The token ledger is an estimate unless a provider-backed measurer is
-  injected; the method label says which.
+- The token ledger is a conservative estimate unless `--measure provider` is
+  used; the method label and `payloadSha256` say exactly what produced the
+  number. The 3.2 chars/token ratio is a placeholder until
+  `scripts/ci/calibrate-token-estimate.js` is run and its result recorded.
 - Install profiles are not context profiles. Until ECC publishes a canonical
   context-profile registry, the profile ids here are the install profiles
   and the budget is declared per invocation.

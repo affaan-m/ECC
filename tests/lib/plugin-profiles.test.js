@@ -18,6 +18,10 @@ const {
   ON_DEMAND_DIR,
   PROFILE_METADATA_FILE,
   DEFAULT_CONTEXT_BUDGET_TOKENS,
+  CONSERVATIVE_CHARS_PER_TOKEN,
+  buildListingEntries,
+  buildListingPayload,
+  resolveMeasurer,
   classifyModulePath,
   parseFrontmatter,
   flattenLine,
@@ -275,7 +279,7 @@ run('every shipped command with a script reference gets its closure', () => {
 run('measureContextLedger labels its method and compares against the budget', () => {
   const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
   const ledger = measureContextLedger(plan);
-  assert.strictEqual(ledger.method, 'chars-per-token-estimate');
+  assert.strictEqual(ledger.method, 'chars-per-token-conservative');
   assert.strictEqual(ledger.methodVersion, '1');
   assert.strictEqual(ledger.budget, DEFAULT_CONTEXT_BUDGET_TOKENS);
   assert.strictEqual(ledger.entries.skills, plan.skills.length + 1, 'catalog skill counts as an entry');
@@ -292,6 +296,68 @@ run('an injected measurer replaces the estimator and is recorded', () => {
   assert.strictEqual(ledger.method, 'test-counter');
   assert.strictEqual(ledger.methodVersion, '9');
   assert.strictEqual(ledger.withinBudget, true);
+});
+
+run('the estimate divides by the declared ratio, not a number hard-coded in the test', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+  const ledger = measureContextLedger(plan);
+  assert.strictEqual(ledger.tokens, Math.ceil(ledger.chars / CONSERVATIVE_CHARS_PER_TOKEN));
+  assert.ok(CONSERVATIVE_CHARS_PER_TOKEN < 4,
+    'the default measurer must over-count relative to the ~4 chars/token rule of thumb');
+});
+
+run('the ledger records the payload hash so a number can be tied to what was measured', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+  const ledger = measureContextLedger(plan);
+  const payload = buildListingPayload(buildListingEntries(plan, true));
+  assert.match(ledger.payloadSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(
+    ledger.payloadSha256,
+    require('crypto').createHash('sha256').update(payload).digest('hex')
+  );
+});
+
+run('--measure provider refuses without an API key instead of falling back to the estimate', () => {
+  assert.throws(
+    () => resolveMeasurer('provider', { apiKey: '' }),
+    error => {
+      assert.match(error.message, /ANTHROPIC_API_KEY/);
+      return true;
+    }
+  );
+});
+
+run('--measure accepts only estimate and provider', () => {
+  assert.strictEqual(resolveMeasurer(undefined).method, 'chars-per-token-conservative');
+  assert.strictEqual(resolveMeasurer('estimate').method, 'chars-per-token-conservative');
+  assert.throws(() => resolveMeasurer('guess'), /expects estimate or provider/);
+});
+
+run('a provider measurer labels its method and model in the ledger', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+  const measurer = resolveMeasurer('provider', { apiKey: 'test-key', model: 'claude-test-1' });
+  assert.strictEqual(measurer.method, 'anthropic-count-tokens');
+  assert.strictEqual(measurer.model, 'claude-test-1');
+  // Substitute the network call; the point under test is the labelling.
+  const ledger = measureContextLedger(plan, {
+    measurer: { ...measurer, measure: () => 1234 },
+    budget: 5000,
+  });
+  assert.strictEqual(ledger.tokens, 1234);
+  assert.strictEqual(ledger.method, 'anthropic-count-tokens');
+  assert.strictEqual(ledger.model, 'claude-test-1');
+  assert.strictEqual(ledger.withinBudget, true);
+});
+
+run('the calibration corpus exists and holds real listing payloads', () => {
+  const corpus = path.join(repoRoot, 'tests', 'fixtures', 'token-calibration');
+  const files = fs.readdirSync(corpus).filter(name => name.endsWith('.txt'));
+  assert.ok(files.length >= 5, `expected a calibration corpus, found ${files.length} files`);
+  for (const name of files) {
+    const text = fs.readFileSync(path.join(corpus, name), 'utf8');
+    assert.ok(text.length > 0, `${name} is empty`);
+    assert.ok(/^[^\n]+: /.test(text), `${name} is not in the listing payload shape`);
+  }
 });
 
 run('slim profile listing cost is far below the full catalog', () => {
@@ -327,7 +393,7 @@ run('generateProfilePlugin writes a self-contained carrier with a receipt', () =
     assert.match(receipt.context.digest, /^[0-9a-f]{64}$/);
     assert.match(receipt.treeDigest, /^[0-9a-f]{64}$/);
     assert.strictEqual(receipt.capabilities.hooks.decision, 'off');
-    assert.strictEqual(receipt.tokenLedger.method, 'chars-per-token-estimate');
+    assert.strictEqual(receipt.tokenLedger.method, 'chars-per-token-conservative');
     assert.strictEqual(receipt.previous, null);
     assert.ok(receipt.catalog.length > 100, 'full catalog recorded');
     assert.ok(receipt.catalog.every(row => /^[0-9a-f]{64}$/.test(row.sha256)), 'every catalog row is content-addressed');
