@@ -11,7 +11,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { applyInstallPlan, previewInstallPlan } = require('../../scripts/lib/install-executor');
 const { repairInstalledStates, uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
-const { copyGitArchive } = require('../../scripts/lib/grok-source-identity');
+const { copyGitArchive, fetchPinnedGitSource } = require('../../scripts/lib/grok-source-identity');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 let passed = 0;
@@ -129,6 +129,7 @@ function inspectWithGrok(fixture) {
     timeout: 30000,
   });
   if (result.error && result.error.code === 'ENOENT') return null;
+  if (result.error) throw result.error;
   assert.strictEqual(result.status, 0, result.stderr || result.stdout);
   return JSON.parse(result.stdout);
 }
@@ -238,6 +239,46 @@ function runTests() {
       });
     } finally {
       fs.rmSync(fixture.parent, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('canonical source extraction forces tar to read the piped archive', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-tar-'));
+    const destination = path.join(parent, 'snapshot');
+    const calls = [];
+    try {
+      copyGitArchive('/source', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', destination, (...args) => {
+        calls.push(args);
+        return Buffer.alloc(0);
+      });
+      assert.deepStrictEqual(calls[1][1], ['-x', '-f', '-', '-C', destination]);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('pinned source fetch is bounded and reports the fetch failure', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-fetch-'));
+    const calls = [];
+    try {
+      assert.throws(() => fetchPinnedGitSource(
+        'https://example.invalid/ECC.git',
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        parent,
+        (command, args, options) => {
+          calls.push({ command, args, options });
+          if (args.includes('fetch')) {
+            const error = new Error('fetch timed out');
+            error.stderr = Buffer.from('network stalled');
+            throw error;
+          }
+          return '';
+        }
+      ), /Failed to fetch pinned Grok source.*network stalled/);
+      assert.ok(Number.isInteger(calls[1].options.timeout));
+      assert.ok(calls[1].options.timeout > 0);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
     }
   })) passed++; else failed++;
 

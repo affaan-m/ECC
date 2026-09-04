@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const GIT_FETCH_TIMEOUT_MS = 60_000;
 const TEMP_SOURCE_ROOTS = new Set();
 
 process.once('exit', () => {
@@ -49,7 +50,7 @@ function copyGitArchive(sourceRoot, sha, dest, execute = execFileSync) {
     ['-C', sourceRoot, 'archive', '--format=tar', sha],
     { maxBuffer: 512 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }
   );
-  execute('tar', ['-x', '-C', dest], {
+  execute('tar', ['-x', '-f', '-', '-C', dest], {
     input: archive,
     maxBuffer: 512 * 1024 * 1024,
     stdio: ['pipe', 'ignore', 'pipe'],
@@ -118,14 +119,20 @@ function findRegistrySource(sourceRoot, homeDir, pathModule = path) {
   return null;
 }
 
-function fetchPinnedGitSource(sourceUrl, sha, parentDir) {
+function fetchPinnedGitSource(sourceUrl, sha, parentDir, execute = execFileSync) {
   const gitDir = path.join(parentDir, 'git');
   fs.mkdirSync(gitDir, { recursive: true });
-  execFileSync('git', ['init', '--bare', '--quiet', gitDir], { stdio: 'ignore' });
-  execFileSync('git', ['-C', gitDir, 'fetch', '--quiet', '--depth=1', '--no-tags', sourceUrl, sha], {
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  const fetched = execFileSync('git', ['-C', gitDir, 'rev-parse', 'FETCH_HEAD^{commit}'], {
+  execute('git', ['init', '--bare', '--quiet', gitDir], { stdio: 'ignore' });
+  try {
+    execute('git', ['-C', gitDir, 'fetch', '--quiet', '--depth=1', '--no-tags', sourceUrl, sha], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: GIT_FETCH_TIMEOUT_MS,
+    });
+  } catch (error) {
+    const detail = String(error.stderr || error.message || error).trim();
+    throw new Error(`Failed to fetch pinned Grok source ${sha}${detail ? `: ${detail}` : ''}`);
+  }
+  const fetched = execute('git', ['-C', gitDir, 'rev-parse', 'FETCH_HEAD^{commit}'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
@@ -215,6 +222,7 @@ function preparePinnedGrokSource(options = {}) {
 module.exports = {
   SHA_PATTERN,
   copyGitArchive,
+  fetchPinnedGitSource,
   isGitWorkTreeRoot,
   resolvePinnedGitSha,
   readPinnedMarketplaceSource,

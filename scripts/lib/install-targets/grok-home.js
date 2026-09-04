@@ -90,10 +90,11 @@ module.exports = createInstallTargetAdapter({
     });
     const hooksEnabled = allowHooks && operations.some((operation) => isHooksPath(operation.sourceRelativePath));
     const pluginRoot = path.join(adapter.resolveRoot(input), 'plugins', 'ecc');
-    if (hooksEnabled) {
+    const hooksManifestPath = path.join(pluginRoot, 'hooks', 'hooks.json');
+    if (hooksEnabled && !operations.some((operation) => operation.destinationPath === hooksManifestPath)) {
       operations.push({
         ...adapter.createScaffoldOperation('hooks-runtime', 'hooks/hooks.json', input),
-        destinationPath: path.join(pluginRoot, 'hooks', 'hooks.json'),
+        destinationPath: hooksManifestPath,
         contentTransform: 'grok-hook-boundary',
       });
     }

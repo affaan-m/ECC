@@ -5,17 +5,33 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SELECTION_FLAGS = new Set(['--profile', '--modules', '--with', '--skill', '--skills', '--config']);
+const VALUE_FLAGS = new Set([
+  ...SELECTION_FLAGS,
+  '--without',
+  '--locale',
+  '--consent-mcp',
+  '--source-sha',
+]);
 
 function canonicalArgs(argv = process.argv.slice(2)) {
   const args = [];
+  let hasSelection = false;
   for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === '--target') {
+    const argument = argv[index];
+    if (argument === '--target') {
       index += 1;
       continue;
     }
-    args.push(argv[index]);
+    args.push(argument);
+    if (SELECTION_FLAGS.has(argument)) hasSelection = true;
+    if (VALUE_FLAGS.has(argument)) {
+      if (index + 1 < argv.length) args.push(argv[index + 1]);
+      index += 1;
+    } else if (!argument.startsWith('-')) {
+      hasSelection = true;
+    }
   }
-  if (!args.some((argument) => SELECTION_FLAGS.has(argument)) && !args.includes('--help') && !args.includes('-h')) {
+  if (!hasSelection && !args.includes('--help') && !args.includes('-h')) {
     args.unshift('--profile', 'full');
   }
   return ['--target', 'grok', ...args];

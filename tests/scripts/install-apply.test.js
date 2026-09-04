@@ -9,6 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { canonicalArgs } = require('../../scripts/grok-install');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
 const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
@@ -130,12 +131,32 @@ function runTests() {
     assert.ok(result.stderr.includes('cannot be combined'));
   })) passed++; else failed++;
 
-  if (test('plans Grok through the canonical request and install-plan JSON contract', () => {
+  if (test('Grok alias does not add the default profile to positional language selections', () => {
+    assert.deepStrictEqual(canonicalArgs(['typescript']), ['--target', 'grok', 'typescript']);
+    assert.deepStrictEqual(
+      canonicalArgs(['--dry-run']),
+      ['--target', 'grok', '--profile', 'full', '--dry-run']
+    );
+  })) passed++; else failed++;
+
+  if (test('plans Grok through the canonical request with a local pinned fixture', () => {
     const homeDir = createTempDir('install-apply-grok-home-');
+    const fixtureRoot = createTempDir('install-apply-grok-source-');
+    const sourceRoot = path.join(fixtureRoot, 'source');
     try {
+      execFileSync('git', ['clone', '--quiet', '--no-local', path.dirname(path.dirname(SCRIPT)), sourceRoot]);
+      const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
+      const marketplacePath = path.join(sourceRoot, '.grok-plugin', 'marketplace.json');
+      const marketplace = readJson(marketplacePath);
+      marketplace.plugins[0] = {
+        ...marketplace.plugins[0],
+        source: { source: 'url', url: sourceRoot, sha: sourceSha },
+      };
+      fs.writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`);
+
       const result = run(
         ['--target', 'grok', '--profile', 'minimal', '--dry-run', '--json'],
-        { cwd: path.dirname(path.dirname(SCRIPT)), homeDir }
+        { cwd: sourceRoot, homeDir }
       );
       assert.strictEqual(result.code, 0, result.stderr);
       const payload = JSON.parse(result.stdout);
@@ -149,6 +170,7 @@ function runTests() {
       )));
     } finally {
       cleanup(homeDir);
+      cleanup(fixtureRoot);
     }
   })) passed++; else failed++;
 

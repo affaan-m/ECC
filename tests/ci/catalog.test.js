@@ -13,6 +13,7 @@ const {
   buildCatalog,
   formatExpectation,
   runCatalogCheck,
+  syncCatalogDescription,
 } = require('../../scripts/ci/catalog');
 
 function createTestDir() {
@@ -181,6 +182,24 @@ function runTests() {
 
   let passed = 0;
   let failed = 0;
+
+  if (test('catalog description updaters return immutable replacements', () => {
+    const original = JSON.stringify({
+      description: 'Fixture - 9 agents, 9 skills, 9 legacy command shims',
+    });
+    const updated = syncCatalogDescription(
+      original,
+      {
+        agents: { count: 1 },
+        skills: { count: 2 },
+        commands: { count: 3 },
+      },
+      'fixture description',
+      parsed => parsed.description,
+      (parsed, description) => ({ ...parsed, description })
+    );
+    assert.strictEqual(JSON.parse(updated).description, 'Fixture - 1 agents, 2 skills, 3 legacy command shims');
+  })) passed++; else failed++;
 
   if (test('builds catalog counts from a supplied root', () => {
     const testDir = createTestDir();

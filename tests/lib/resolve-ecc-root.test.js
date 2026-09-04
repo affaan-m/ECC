@@ -242,6 +242,17 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('continues to the legacy cache when the current cache slug is absent', () => {
+    const homeDir = createTempDir();
+    try {
+      const expected = setupPluginCache(homeDir, 'everything-claude-code', 'legacy-org', '1.7.0');
+      const result = resolveEccRoot({ envRoot: '', homeDir });
+      assert.strictEqual(result, expected);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   // ─── Fallback ───
 
   if (test('falls back to ~/.claude/ when nothing is found', () => {

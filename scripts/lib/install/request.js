@@ -87,7 +87,11 @@ function parseInstallArgs(argv) {
       parsed.consentMcp = dedupeStrings((args[index + 1] || '').split(','));
       index += 1;
     } else if (arg === '--source-sha') {
-      parsed.sourceSha = args[index + 1] || null;
+      const sourceSha = args[index + 1] || '';
+      if (!sourceSha || sourceSha.startsWith('-')) {
+        throw new Error('Missing value for --source-sha');
+      }
+      parsed.sourceSha = sourceSha;
       index += 1;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;

@@ -555,8 +555,7 @@ function syncCatalogDescription(content, catalog, source, getDescription, setDes
     source
   );
 
-  setDescription(parsed, nextDescription);
-  return `${JSON.stringify(parsed, null, 2)}\n`;
+  return `${JSON.stringify(setDescription(parsed, nextDescription), null, 2)}\n`;
 }
 
 function createDocumentSpecs(paths = {}) {
@@ -608,7 +607,7 @@ function createDocumentSpecs(paths = {}) {
         catalog,
         '.claude-plugin/plugin.json description',
         parsed => parsed.description,
-        (parsed, description) => { parsed.description = description; }
+        (parsed, description) => ({ ...parsed, description })
       ),
     },
     {
@@ -623,7 +622,13 @@ function createDocumentSpecs(paths = {}) {
         catalog,
         '.claude-plugin/marketplace.json plugin description',
         parsed => parsed.plugins?.[0]?.description,
-        (parsed, description) => { parsed.plugins[0].description = description; }
+        (parsed, description) => ({
+          ...parsed,
+          plugins: [
+            { ...parsed.plugins[0], description },
+            ...parsed.plugins.slice(1),
+          ],
+        })
       ),
     },
   ];

@@ -69,6 +69,21 @@ function runTests() {
     );
   })) passed++; else failed++;
 
+  if (test('rejects a missing or flag-like Grok rollback source pin', () => {
+    for (const suffix of [[], ['--dry-run'], ['-h'], ['-']]) {
+      assert.throws(
+        () => parseInstallArgs([
+          'node',
+          'scripts/install-apply.js',
+          '--target', 'grok',
+          '--source-sha',
+          ...suffix,
+        ]),
+        /Missing value for --source-sha/
+      );
+    }
+  })) passed++; else failed++;
+
   if (test('parses --locale argument', () => {
     const parsed = parseInstallArgs([
       'node',

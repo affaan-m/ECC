@@ -114,6 +114,11 @@ function runTests() {
       writeCompleteRoot(nativeRoot);
       assert.strictEqual(adapter.resolveGrokPluginRoot({ homeDir, env: {} }), nativeRoot);
       assert.strictEqual(adapter.resolveGrokPluginRoot({ homeDir, enabled: false }), null);
+      assert.strictEqual(adapter.resolveGrokPluginRoot({
+        homeDir,
+        enabled: false,
+        env: { GROK_PLUGIN_ROOT: nativeRoot },
+      }), null);
 
       const otherCachedRoot = path.join(homeDir, '.grok', 'plugins', 'cache', 'ecc', 'affaan-m', '9.9.9');
       writeCompleteRoot(otherCachedRoot, otherSha);
@@ -122,6 +127,12 @@ function runTests() {
       assert.strictEqual(adapter.listCachedGrokVersions(homeDir).length, 2);
       assert.strictEqual(adapter.selectPinnedCachedVersion(adapter.listCachedGrokVersions(homeDir), sha).installedRoot, cachedRoot);
       assert.strictEqual(adapter.resolveGrokPluginRoot({ homeDir, pinnedSha: sha }), cachedRoot);
+      assert.strictEqual(
+        adapter.resolveGrokPluginRoot({ homeDir, pinnedSha: 'cccccccccccccccccccccccccccccccccccccccc' }),
+        null
+      );
+      fs.writeFileSync(path.join(cachedRoot, '.ecc-source.json'), '{not json');
+      assert.strictEqual(adapter.resolveGrokPluginRoot({ homeDir, pinnedSha: sha }), null);
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }

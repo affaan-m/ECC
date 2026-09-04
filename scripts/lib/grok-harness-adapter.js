@@ -47,7 +47,11 @@ function grokHomeDir(homeDir, pathModule = path) {
 
 function grokInstallStatePath(homeDir, pathModule = path) {
   if (pathModule === path) return grokHomeTarget.getInstallStatePath({ homeDir });
-  return pathModule.join(homeDir, GROK_HOME_DIRNAME, 'ecc', 'install-state.json');
+  return pathModule.join(
+    homeDir,
+    ...grokHomeTarget.rootSegments,
+    ...grokHomeTarget.installStatePathSegments
+  );
 }
 
 function readJsonIfPresent(filePath) {
@@ -121,11 +125,11 @@ function findRootInGrokHome(homeDir, probe, pathModule = path) {
 
 function resolveGrokPluginRoot(options = {}) {
   const pathModule = options.pathModule || path;
+  if (options.enabled === false) return null;
   const envRoot = options.envRoot !== undefined
     ? trimEnv(options.envRoot)
     : grokPluginRootFromEnv(options.env || {});
   if (envRoot) return envRoot;
-  if (options.enabled === false) return null;
 
   const homeDir = options.homeDir || os.homedir();
   const pinnedSha = options.pinnedSha || (options.source && options.source.sha) || '';
@@ -134,6 +138,7 @@ function resolveGrokPluginRoot(options = {}) {
     if (pinned && isCompleteRoot(pinned.installedRoot, options.probe, pathModule)) {
       return pinned.installedRoot;
     }
+    return null;
   }
   return findRootInGrokHome(homeDir, options.probe, pathModule);
 }
