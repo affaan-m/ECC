@@ -27,6 +27,7 @@ const {
   listFilesRecursive,
 } = require('./fs-utils');
 const { resolveScriptClosure } = require('./require-graph');
+const { resolveContextProfile, buildContextProfileReceipt } = require('./context-profile');
 
 const COMMAND_SCRIPT_REFERENCE_PATTERN = /scripts\/[A-Za-z0-9_./-]+\.js/g;
 
@@ -89,7 +90,7 @@ function normalizeHookDecision(value) {
 function buildHookDecisionMessage() {
   return 'This selection would carry ECC\'s automatic hook runtime, which can:\n'
     + `${formatHookCapabilityDisclosure()}\n`
-    + 'A context profile does not authorize lifecycle automation. Pass '
+    + 'A narrow context selection does not authorize lifecycle automation. Pass '
     + '--hooks <minimal|standard|strict> to carry the hook runtime at that '
     + 'profile, or --hooks off (alias --no-hooks) to generate the carrier without it.';
 }
@@ -340,12 +341,13 @@ function resolveFullClosure(acc, repoRoot) {
  * @param {object} context Everything resolvePluginProfilePlan worked out.
  * @returns {object} Resolved plan.
  */
-function assemblePlan({ options, repoRoot, pluginName, installPlan, acc, closure, hookDecision, decision }) {
+function assemblePlan({ options, repoRoot, pluginName, installPlan, acc, closure, hookDecision, decision, contextProfile }) {
   const rootPackage = readJson(path.join(repoRoot, 'package.json'), 'package.json');
   return {
     repoRoot,
     pluginName,
     profileId: installPlan.profileId,
+    contextProfile: buildContextProfileReceipt(contextProfile),
     version: rootPackage.version,
     profileInput: {
       profileId: options.profileId || null,
@@ -410,7 +412,15 @@ function resolvePluginProfilePlan(options = {}) {
     throw new Error(`Invalid plugin name "${pluginName}"; expected lowercase letters, digits, and hyphens`);
   }
 
-  const acc = expandSurface(installPlan.selectedModules, { repoRoot, hookDecision });
+  // The surface comes from the binding seam and nowhere else. When the
+  // canonical context-profile registry is published, that file changes and
+  // this call site does not. See context-profile.js.
+  const contextProfile = resolveContextProfile(installPlan.profileId, {
+    selectedModules: installPlan.selectedModules,
+    repoRoot,
+    expand: modules => expandSurface(modules, { repoRoot, hookDecision }),
+  });
+  const acc = contextProfile.expansion;
   const closure = resolveFullClosure(acc, repoRoot);
 
   // A dependency may itself be a held hook path, so the recorded decision is
@@ -418,7 +428,9 @@ function resolvePluginProfilePlan(options = {}) {
   coverDependencies(acc, closure, hookDecision !== null && hookDecision !== 'off');
   const decision = resolveHookDecisionState(hookDecision, acc.heldRuntimePaths);
 
-  return assemblePlan({ options, repoRoot, pluginName, installPlan, acc, closure, hookDecision, decision });
+  return assemblePlan({
+    options, repoRoot, pluginName, installPlan, acc, closure, hookDecision, decision, contextProfile,
+  });
 }
 
 /**

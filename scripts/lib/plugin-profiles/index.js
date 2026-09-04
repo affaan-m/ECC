@@ -9,8 +9,8 @@
  *
  * Design rules (see docs/PLUGIN-PROFILES.md):
  *
- * - Context and capabilities are separate decisions. A narrow install-profile
- *   projection never implies the hook runtime; hooks need an explicit
+ * - Context and capabilities are separate decisions. A narrow context
+ *   selection never implies the hook runtime; hooks need an explicit
  *   `hooks` decision, recorded in the receipt.
  * - Generation fails closed. Every shipped command's script dependency
  *   closure is resolved; an unresolved static dependency aborts generation
@@ -29,6 +29,9 @@
  *   fs-utils.js       path, hash, listing, and symlink-sweep helpers
  *   frontmatter.js    the two catalog fields, without a YAML dependency
  *   require-graph.js  static require()/import() extraction and closure walk
+ *   context-profile.js  the ONLY place a context surface is resolved from an
+ *                     id; the seam a canonical registry binds to
+ *   load-smoke.js     bounded execution of staged files, to clear dynamics
  *   plan.js           surface expansion, dependency cover, refusals
  *   ledger.js         listing payload, measurers, budget verdict
  *   carrier.js        copy ops, staging, verification, swap, receipt
@@ -45,6 +48,7 @@ const fsUtils = require('./fs-utils');
 const frontmatter = require('./frontmatter');
 const requireGraph = require('./require-graph');
 const loadSmoke = require('./load-smoke');
+const contextProfile = require('./context-profile');
 const plan = require('./plan');
 const ledger = require('./ledger');
 const carrier = require('./carrier');
@@ -78,6 +82,13 @@ module.exports = {
   // load smoke
   classifySmokeShape: loadSmoke.classifySmokeShape,
   runLoadSmoke: loadSmoke.runLoadSmoke,
+
+  // context-profile binding seam
+  UNBOUND_REGISTRY: contextProfile.UNBOUND_REGISTRY,
+  PROJECTION_SOURCE: contextProfile.PROJECTION_SOURCE,
+  resolveContextProfile: contextProfile.resolveContextProfile,
+  buildContextProfileReceipt: contextProfile.buildContextProfileReceipt,
+  listProjectedProfileIds: contextProfile.listProjectedProfileIds,
 
   // plan
   classifyModulePath: plan.classifyModulePath,

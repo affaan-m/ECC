@@ -22,7 +22,7 @@ and chosen per project via `enabledPlugins`.
 The generator follows five rules. Each is enforced in code and tested.
 
 1. **Context and capabilities are separate decisions.** A narrow context
-   profile never implies the hook runtime. If the selection includes
+   selection never implies the hook runtime. If the selection includes
    `hooks-runtime`, `generate` refuses until you pass `--hooks
    <minimal|standard|strict>` or `--hooks off`, showing the same six-group
    capability disclosure the installer uses. The decision is recorded in the
@@ -177,7 +177,7 @@ so a clean dry run is never mistaken for a verified carrier.
 
 ## Hooks Are a Capability Decision
 
-Hooks cost no session context, but a narrow context profile does not
+Hooks cost no session context, but a narrow context selection does not
 authorize lifecycle automation. `generate` therefore requires an explicit
 decision whenever the selection would carry the hook runtime:
 
@@ -187,7 +187,7 @@ plugin-profiles: This selection would carry ECC's automatic hook runtime, which 
   1. Automatically format or otherwise modify project source files.
   2. Rewrite requested commands and start, replace, or terminate processes.
   ...
-A context profile does not authorize lifecycle automation. Pass
+A narrow context selection does not authorize lifecycle automation. Pass
 --hooks <minimal|standard|strict> to carry the hook runtime at that
 profile, or --hooks off (alias --no-hooks) to generate the carrier without it.
 ```
@@ -285,6 +285,42 @@ under the conservative one. `commands-core` ships every command and
 `agents-core` every agent, so no install profile is tuned to a context
 budget. Narrow with `--without` or module-level selection, declare a budget
 that matches the profile, or use finer-grained modules.
+
+## Context-profile binding
+
+A carrier's context surface has to be resolved from *something*. The intended
+source is ECC's canonical, versioned context-profile registry — the thing ids
+like `lean@1` and `full@1` name. **That registry is not published, so nothing
+in this repository binds to it.**
+
+What this generator deliberately does *not* do is invent a second one.
+Defining profile ids here with their own semantics would create a parallel
+contract that has to be reconciled later, and every carrier generated in the
+meantime would be indistinguishable from a canonically-bound one.
+
+Instead there is a single, visible seam:
+`scripts/lib/plugin-profiles/context-profile.js`.
+
+- **Today** it *projects* ECC's install-profile ids
+  (`manifests/install-profiles.json`) onto a context surface. Install
+  profiles are an installer concept; `minimal`, `developer`, `opencode` and
+  the rest are **install-profile projections**, not context profiles.
+- **The registry field is the literal string `install-profiles@unbound`**,
+  and `contextProfileDigest` is `null`. Both are written into every receipt
+  and printed by `plan`:
+
+  ```text
+  Profile:    minimal (registry: install-profiles@unbound, projected from manifests/install-profiles.json)
+  ```
+
+  so no carrier can be read as bound to a registry that does not exist.
+- **`resolvePluginProfilePlan` calls `resolveContextProfile` and nothing else**
+  to obtain the surface. That is enforced by the code path, not by
+  convention.
+
+When the canonical registry is published, binding to it is a change to that
+one file plus the receipt schema — the `registry` literal and the digest.
+No call site moves.
 
 ## The ecc-catalog Skill and On-Demand Content
 
@@ -389,6 +425,6 @@ plugin version tracks the source `package.json` version; the receipt's
   used; the method label and `payloadSha256` say exactly what produced the
   number. The 3.2 chars/token ratio is a placeholder until
   `scripts/ci/calibrate-token-estimate.js` is run and its result recorded.
-- Install profiles are not context profiles. Until ECC publishes a canonical
-  context-profile registry, the profile ids here are the install profiles
-  and the budget is declared per invocation.
+- The context surface is a projection of install profiles, not a binding to
+  a canonical context-profile registry. See "Context-profile binding" above
+  for the seam and what changes when that registry exists.

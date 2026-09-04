@@ -19,7 +19,7 @@
  *   --hooks <off|minimal|standard|strict>
  *                             Carry the hook runtime at that profile. Required
  *                             whenever the selection includes hooks-runtime;
- *                             a context profile never implies automation.
+ *                             a narrow context selection never implies automation.
  *   --no-hooks                Alias for --hooks off
  *
  * Context budget:
@@ -159,6 +159,8 @@ function printPlanSummary(plan, ledger) {
   console.log(`Modules:      ${plan.selectedModuleIds.join(', ')}`);
   console.log('');
   console.log('Context selection');
+  console.log(`  Profile:    ${plan.contextProfile.id || '(custom selection)'} `
+    + `(registry: ${plan.contextProfile.registry}, projected from ${plan.contextProfile.source})`);
   console.log(`  Surface:    ${plan.skills.length} skills, ${plan.agents.length} agents, ${plan.commands.length} commands`);
   console.log(`  Ledger:     ${formatLedger(ledger)}`);
   console.log('');

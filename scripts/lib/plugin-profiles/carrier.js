@@ -522,6 +522,10 @@ function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification
     createdAt: new Date().toISOString(),
     pluginName: plan.pluginName,
     profileId: plan.profileId,
+    // Where this carrier's context surface came from. `registry` is the
+    // literal `install-profiles@unbound` until ECC publishes a canonical
+    // context-profile registry, so no carrier can be read as bound to one.
+    contextProfile: plan.contextProfile,
     version: plan.version,
     profileInput: plan.profileInput,
     selectedModuleIds: plan.selectedModuleIds,

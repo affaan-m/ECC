@@ -22,6 +22,9 @@ const {
   buildListingEntries,
   buildListingPayload,
   resolveMeasurer,
+  UNBOUND_REGISTRY,
+  resolveContextProfile,
+  listProjectedProfileIds,
   classifyModulePath,
   parseFrontmatter,
   flattenLine,
@@ -272,6 +275,63 @@ run('every shipped command with a script reference gets its closure', () => {
   assert.ok(entries.some(e => e.command === 'plugin-profiles.md'), 'plugin-profiles must map to its script');
   assert.ok(plan.runtimePaths.includes('scripts/lib/skill-evolution/health.js'), 'skills-health dependency must ship');
   assert.ok(plan.runtimePaths.includes('manifests'), 'runtime data must ship');
+});
+
+// --- context-profile binding seam --------------------------------------------
+
+run('the plan sources its surface from the binding seam and reports it as unbound', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal' });
+  assert.strictEqual(plan.contextProfile.id, 'minimal');
+  assert.strictEqual(plan.contextProfile.registry, UNBOUND_REGISTRY);
+  assert.strictEqual(plan.contextProfile.registry, 'install-profiles@unbound');
+  assert.strictEqual(plan.contextProfile.digest, null);
+  assert.strictEqual(plan.contextProfile.source, 'manifests/install-profiles.json');
+});
+
+run('a custom module selection carries a null profile id, still unbound', () => {
+  const plan = resolvePluginProfilePlan({ repoRoot, moduleIds: ['commands-core'] });
+  assert.strictEqual(plan.contextProfile.id, null);
+  assert.strictEqual(plan.contextProfile.registry, UNBOUND_REGISTRY);
+  assert.strictEqual(plan.contextProfile.digest, null);
+});
+
+run('the receipt records the unbound registry so no carrier looks canonically bound', () => {
+  const outRoot = tempDir('ecc-seam-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, moduleIds: ['commands-core'], pluginName: 'ecc-seam' });
+    const { receipt } = generate({ plan, outRoot, includeCatalogSkill: false });
+    assert.strictEqual(receipt.contextProfile.registry, 'install-profiles@unbound');
+    assert.strictEqual(receipt.contextProfile.digest, null);
+    assert.strictEqual(receipt.contextProfile.source, 'manifests/install-profiles.json');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('resolveContextProfile is the only surface source, and never invents a registry', () => {
+  const resolved = resolveContextProfile('anything-at-all', {
+    repoRoot,
+    selectedModules: [],
+    expand: () => ({
+      skillDirs: new Set(['b', 'a']),
+      agentFiles: new Set(['x.md']),
+      commandFiles: new Set(),
+      runtimePaths: new Set(),
+      heldRuntimePaths: new Set(),
+      skippedPaths: new Set(),
+      warnings: [],
+    }),
+  });
+  assert.strictEqual(resolved.registry, 'install-profiles@unbound', 'registry is a literal, never derived from the id');
+  assert.strictEqual(resolved.contextProfileDigest, null);
+  assert.deepStrictEqual(resolved.surface.skills, ['a', 'b'], 'surface comes from the injected expansion');
+  assert.deepStrictEqual(resolved.surface.agents, ['x.md']);
+});
+
+run('the projection only offers ids that exist in the install-profile manifest', () => {
+  const ids = listProjectedProfileIds(repoRoot);
+  assert.ok(ids.includes('minimal') && ids.includes('full'), `unexpected projected ids: ${ids.join(', ')}`);
+  assert.ok(!ids.includes('lean'), 'no canonical context-profile id may be invented here');
 });
 
 // --- ledger ------------------------------------------------------------------

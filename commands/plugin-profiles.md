@@ -11,6 +11,10 @@ selected skills, agents, and commands, keeps the rest of the skill catalog
 reachable on demand inside the plugin, and records how it was built in
 `ecc-profile.json`. See `docs/PLUGIN-PROFILES.md` for the underlying tool.
 
+Profile ids here (`minimal`, `developer`, `opencode`, ...) are **install-profile
+projections**, not context profiles: ECC has no canonical context-profile
+registry yet, so every receipt records `registry: install-profiles@unbound`.
+
 Run every command below from the ECC plugin root (`${CLAUDE_PLUGIN_ROOT}` when
 set, otherwise the everything-claude-code checkout).
 
