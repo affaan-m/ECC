@@ -14,7 +14,7 @@ const VALUE_FLAGS = new Set([
 ]);
 
 function canonicalArgs(argv = process.argv.slice(2)) {
-  const args = [];
+  let args = [];
   let hasSelection = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -23,24 +23,27 @@ function canonicalArgs(argv = process.argv.slice(2)) {
       if (!value || value.startsWith('-')) {
         throw new Error('Missing value for --target');
       }
+      if (value !== 'grok') {
+        throw new Error(`Invalid value for --target: ${value}; expected grok`);
+      }
       index += 1;
       continue;
     }
-    args.push(argument);
+    args = [...args, argument];
     if (SELECTION_FLAGS.has(argument)) hasSelection = true;
     if (VALUE_FLAGS.has(argument)) {
       const value = argv[index + 1];
       if (!value || value.startsWith('-')) {
         throw new Error(`Missing value for ${argument}`);
       }
-      args.push(value);
+      args = [...args, value];
       index += 1;
     } else if (!argument.startsWith('-')) {
       hasSelection = true;
     }
   }
   if (!hasSelection && !args.includes('--help') && !args.includes('-h')) {
-    args.unshift('--profile', 'full');
+    args = ['--profile', 'full', ...args];
   }
   return ['--target', 'grok', ...args];
 }

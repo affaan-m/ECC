@@ -142,6 +142,7 @@ function runTests() {
   if (test('Grok alias rejects option-prefixed values for value flags', () => {
     assert.throws(() => canonicalArgs(['--target', '--dry-run']), /Missing value for --target/);
     assert.throws(() => canonicalArgs(['--consent-mcp', '--dry-run']), /Missing value for --consent-mcp/);
+    assert.throws(() => canonicalArgs(['--target', 'claude']), /Invalid value for --target: claude/);
   })) passed++; else failed++;
 
   if (test('plans Grok through the canonical request with a local pinned fixture', () => {

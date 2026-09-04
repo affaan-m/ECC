@@ -245,11 +245,11 @@ function runTests() {
   if (test('canonical source extraction forces tar to read the piped archive', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-grok-tar-'));
     const destination = path.join(parent, 'snapshot');
-    const calls = [];
+    let calls = [];
     try {
       const archive = Buffer.from('archive');
       copyGitArchive('/source', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', destination, (...args) => {
-        calls.push(args);
+        calls = [...calls, args];
         return archive;
       });
       assert.deepStrictEqual(calls[1][1], ['-x', '-f', '-', '-C', destination]);
