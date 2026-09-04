@@ -208,7 +208,10 @@ function preparePinnedGrokSource(options = {}) {
     const snapshotManifest = JSON.parse(
       fs.readFileSync(path.join(snapshotRoot, '.grok-plugin', 'plugin.json'), 'utf8')
     );
-    if (snapshotManifest.version !== catalogSource.version) {
+    // The current catalog version proves the default pin. An explicit
+    // rollback pin may intentionally resolve an older release, whose version
+    // must come from that immutable snapshot instead of today's catalog.
+    if (sourceSha === catalogSource.sha && snapshotManifest.version !== catalogSource.version) {
       throw new Error(
         `Pinned Grok plugin version ${snapshotManifest.version || '(missing)'} does not match marketplace version ${catalogSource.version}`
       );
@@ -222,7 +225,7 @@ function preparePinnedGrokSource(options = {}) {
       sourceRoot: snapshotRoot,
       sourceUrl,
       sourceSha,
-      sourceVersion: catalogSource.version,
+      sourceVersion: snapshotManifest.version,
       cleanup: () => {
         TEMP_SOURCE_ROOTS.delete(tempRoot);
         fs.rmSync(tempRoot, { recursive: true, force: true });

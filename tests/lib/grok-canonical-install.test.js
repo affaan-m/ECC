@@ -65,14 +65,14 @@ function createPinnedFixture() {
   });
   const pluginManifestPath = path.join(sourceRoot, '.grok-plugin', 'plugin.json');
   const pluginManifest = JSON.parse(fs.readFileSync(pluginManifestPath, 'utf8'));
-  writeJson(pluginManifestPath, { ...pluginManifest, version: '2.2.1' });
+  writeJson(pluginManifestPath, { ...pluginManifest, version: '2.1.0' });
   const payloadSha = commit(sourceRoot, 'fixture payload');
 
   const marketplacePath = path.join(sourceRoot, '.grok-plugin', 'marketplace.json');
   const marketplace = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
   marketplace.plugins[0] = {
     ...marketplace.plugins[0],
-    version: '2.2.1',
+    version: '2.1.0',
     source: {
       source: 'url',
       url: sourceRoot,
@@ -248,7 +248,7 @@ function runTests() {
       writeJson(marketplacePath, marketplace);
       assert.throws(
         () => createPlan(fixture, { hooks: false, mcp: [] }),
-        /plugin version 2\.2\.1 does not match marketplace version 9\.9\.9/
+        /Pinned Grok plugin version 2\.1\.0 does not match marketplace version 9\.9\.9/
       );
     } finally {
       fs.rmSync(fixture.parent, { recursive: true, force: true });
@@ -308,9 +308,14 @@ function runTests() {
       const firstState = JSON.parse(fs.readFileSync(firstPlan.installStatePath, 'utf8'));
 
       fs.writeFileSync(path.join(fixture.sourceRoot, 'commands', 'plan.md'), 'upgraded payload\n');
+      writeJson(path.join(fixture.sourceRoot, '.grok-plugin', 'plugin.json'), {
+        ...JSON.parse(fs.readFileSync(path.join(fixture.sourceRoot, '.grok-plugin', 'plugin.json'), 'utf8')),
+        version: '2.2.1',
+      });
       const upgradedSha = commit(fixture.sourceRoot, 'upgraded payload');
       const marketplacePath = path.join(fixture.sourceRoot, '.grok-plugin', 'marketplace.json');
       const marketplace = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
+      marketplace.plugins[0].version = '2.2.1';
       marketplace.plugins[0].source.sha = upgradedSha;
       writeJson(marketplacePath, marketplace);
       commit(fixture.sourceRoot, 'upgraded catalog');
@@ -347,6 +352,7 @@ function runTests() {
         fs.readFileSync(path.join(installedRoot(fixture), 'commands', 'plan.md'), 'utf8'),
         'pinned payload\n'
       );
+      assert.strictEqual(rolledBackState.source.repoVersion, '2.1.0');
 
       const uninstall = uninstallInstalledStates({
         repoRoot: fixture.sourceRoot,
