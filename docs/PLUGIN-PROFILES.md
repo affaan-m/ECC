@@ -258,7 +258,7 @@ conservative at the 95th percentile. Record the result here:
 
 | Date | Model | Corpus files | Observed p5 chars/token | Adopted ratio |
 |---|---|---|---|---|
-| _not yet run_ | — | 15 | — | 3.2 (placeholder) |
+| *not yet run* | — | 15 | — | 3.2 (placeholder) |
 
 Until that row is filled in, treat the ratio as an assumption that
 over-counts on purpose, not as a calibrated constant.
@@ -285,6 +285,32 @@ under the conservative one. `commands-core` ships every command and
 `agents-core` every agent, so no install profile is tuned to a context
 budget. Narrow with `--without` or module-level selection, declare a budget
 that matches the profile, or use finer-grained modules.
+
+## Measured impact
+
+The token ledger measures the *listing payload this repository builds*. What a
+session actually pays is a different number, observable only in a real Claude
+Code session, and it is the one worth quoting.
+
+`scripts/ci/measure-session-context.md` is the procedure: three otherwise
+identical fresh sessions (full `ecc@ecc`, a generated `ecc-minimal`, a
+generated `ecc-opencode`), reading `cache_creation_input_tokens` off the first
+assistant turn, run twice in opposite order.
+
+| Arm | cache_creation_input_tokens | Saving vs full |
+|---|---|---|
+| full `ecc@ecc` | *pending* | — |
+| `ecc-minimal` carrier | *pending* | *pending* |
+| `ecc-opencode` carrier | *pending* | *pending* |
+
+Environment: *pending*.
+
+**These are not yet filled in.** An earlier, pre-rework single-machine
+observation of roughly 7.2k tokens saved is not carried forward here: it was
+taken before the module split, the conservative ledger, and the
+`commands-runtime` change, on an unscripted setup, and a saving reported
+without its baseline and its environment cannot be checked. Run the procedure
+and record all three raw numbers before quoting any figure.
 
 ## Context-profile binding
 
