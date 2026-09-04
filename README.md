@@ -1887,9 +1887,22 @@ To expose the full catalog, place `skills/` where Copilot CLI looks:
 
 ```bash
 cp -r skills .github/skills     # or: copilot skill add ./skills
-copilot skill list --json | jq '[.[] | select(.source=="project")] | length'
+copilot skill list --json | jq '[.[] | select(.path | contains(".github/skills"))] | length'
 # 286
 ```
+
+Filter on the path rather than on `source`, because `source == "project"`
+returns 290 here: the 286 from `.github/skills/` plus the 3 `.claude/commands/`
+entries and the one `.agents/skills/` skill whose name does not collide with a
+full-catalog entry. The other 38 `.agents/skills/` entries resolve to the same
+skill names as their `.github/skills/` counterparts and are de-duplicated in
+favor of `.github/skills/`.
+
+Copilot registers a skill under the `name` in its `SKILL.md` frontmatter, not
+its directory name, so catalog folders whose names differ from their frontmatter
+(for example `scientific-db-pubmed-database`, which declares
+`name: pubmed-database`) still load — they are just listed under the frontmatter
+name.
 
 Agents work the same way:
 
