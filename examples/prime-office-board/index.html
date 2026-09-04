@@ -1,0 +1,1143 @@
+<title>PRIME 事務所ボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@600;700&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --paper:#FAF7F2; --surface:#FFFFFF; --surface-2:#F3EEE5; --surface-3:#E9E1D3;
+  --line:#E2DACC; --line-strong:#CCC0AC;
+  --ink:#1B161C; --ink-2:#453D47; --muted:#756A5E;
+  --brass:#9C6C1F; --brass-soft:#F5E8CC; --brass-line:#D9BE8B;
+  --ok:#2C7A5B; --ok-soft:#DFF0E7;
+  --warn:#B0670F; --warn-soft:#FAEAD3;
+  --bad:#A63244; --bad-soft:#F8E0E3;
+  --cool:#3E6497; --cool-soft:#E4EAF5;
+  --shadow:0 1px 2px rgba(27,22,28,.05), 0 14px 34px -22px rgba(27,22,28,.45);
+  --r:4px;
+  --mono:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,-apple-system,sans-serif;
+  --serif:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --paper:#16131A; --surface:#1D1922; --surface-2:#252029; --surface-3:#2F2833;
+    --line:#332C3A; --line-strong:#4A4152;
+    --ink:#EEE7DC; --ink-2:#C6BCB3; --muted:#968B82;
+    --brass:#D5A54D; --brass-soft:#3B2E19; --brass-line:#5C4726;
+    --ok:#5CB88D; --ok-soft:#17342A;
+    --warn:#E09A4B; --warn-soft:#3A2A15;
+    --bad:#E2717F; --bad-soft:#3A1B21;
+    --cool:#83A6D8; --cool-soft:#1B2432;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 36px -22px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#16131A; --surface:#1D1922; --surface-2:#252029; --surface-3:#2F2833;
+  --line:#332C3A; --line-strong:#4A4152;
+  --ink:#EEE7DC; --ink-2:#C6BCB3; --muted:#968B82;
+  --brass:#D5A54D; --brass-soft:#3B2E19; --brass-line:#5C4726;
+  --ok:#5CB88D; --ok-soft:#17342A;
+  --warn:#E09A4B; --warn-soft:#3A2A15;
+  --bad:#E2717F; --bad-soft:#3A1B21;
+  --cool:#83A6D8; --cool-soft:#1B2432;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 36px -22px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{margin:0; text-wrap:balance; font-weight:700}
+p{margin:0}
+button{font:inherit; color:inherit; cursor:pointer}
+input,select,textarea{font:inherit; color:inherit}
+a{color:var(--brass); text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--brass); outline-offset:2px; border-radius:2px}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+/* ---------- shell ---------- */
+.wrap{max-width:1200px; margin:0 auto; padding:0 20px}
+@media (max-width:640px){ .wrap{padding:0 12px} }
+
+.masthead{background:var(--surface); border-bottom:1px solid var(--line)}
+.mast-in{display:flex; flex-wrap:wrap; align-items:center; gap:18px; padding:14px 0}
+.brand{display:flex; align-items:baseline; gap:10px; margin-right:auto}
+.brand .mark{
+  font-family:var(--serif); font-size:23px; letter-spacing:.16em; font-weight:700;
+  color:var(--brass);
+}
+.brand .sub{font-size:12.5px; color:var(--muted); letter-spacing:.09em}
+
+/* office door */
+.door{
+  display:flex; align-items:center; gap:12px;
+  border:1px solid var(--line); background:var(--surface-2);
+  padding:8px 10px 8px 14px; border-radius:var(--r);
+}
+.door.open{background:var(--ok-soft); border-color:color-mix(in srgb, var(--ok) 40%, transparent)}
+.door .lamp{width:11px; height:11px; border-radius:50%; background:var(--line-strong); flex:none}
+.door.open .lamp{background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent)}
+.door .txt{display:flex; flex-direction:column; line-height:1.25}
+.door .txt b{font-size:14px}
+.door .txt small{font-size:11px; color:var(--muted)}
+
+.here{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.avatars{display:flex; gap:-4px}
+.av{
+  width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+  font-size:12px; font-weight:700; color:#fff; border:2px solid var(--surface); margin-left:-6px;
+  flex:none;
+}
+.av:first-child{margin-left:0}
+.av.off{opacity:.32; filter:grayscale(1)}
+
+/* buttons */
+.btn{
+  border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  padding:6px 12px; border-radius:var(--r); font-size:13.5px; font-weight:500;
+  transition:background .12s ease, border-color .12s ease;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.sm{padding:3px 9px; font-size:12.5px}
+.btn.primary{background:var(--brass); border-color:var(--brass); color:#fff}
+:root[data-theme="dark"] .btn.primary, :root:not([data-theme="light"]) .btn.primary{color:#1B140A}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .btn.primary{color:#fff} }
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent; background:transparent; color:var(--muted)}
+.btn.ghost:hover{background:var(--surface-2); color:var(--ink)}
+.btn.danger{color:var(--bad); border-color:color-mix(in srgb, var(--bad) 40%, transparent)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+
+/* tabs */
+.tabs{background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30}
+.tabs-in{display:flex; gap:2px; overflow-x:auto; scrollbar-width:none}
+.tabs-in::-webkit-scrollbar{display:none}
+.tab{
+  border:0; background:none; padding:11px 14px; font-size:14px; font-weight:500;
+  color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap;
+}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--brass); border-bottom-color:var(--brass); font-weight:700}
+.tab .badge{
+  display:inline-block; min-width:17px; padding:0 5px; margin-left:6px; border-radius:9px;
+  background:var(--bad); color:#fff; font-size:10.5px; font-weight:700; line-height:17px;
+  font-family:var(--mono);
+}
+
+main{padding:22px 0 80px}
+.grid-home{display:grid; grid-template-columns:minmax(0,1.62fr) minmax(0,1fr); gap:26px; align-items:start}
+@media (max-width:900px){ .grid-home{grid-template-columns:minmax(0,1fr)} }
+
+/* section heads */
+.sec{margin-bottom:30px}
+.sec-head{display:flex; align-items:baseline; gap:10px; margin-bottom:10px; flex-wrap:wrap}
+.sec-head h2{font-family:var(--serif); font-size:17px; letter-spacing:.04em}
+.sec-head .hint{font-size:12px; color:var(--muted)}
+.sec-head .spacer{margin-left:auto}
+.eyebrow{
+  font-size:10.5px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--muted); font-weight:700; font-family:var(--mono);
+}
+
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--r)}
+.rows{border-top:1px solid var(--line)}
+.row{display:flex; gap:12px; padding:11px 14px; border-bottom:1px solid var(--line); align-items:flex-start}
+.row:hover{background:var(--surface-2)}
+.empty{padding:22px 14px; color:var(--muted); font-size:13px; text-align:center; border-bottom:1px solid var(--line)}
+
+/* chips */
+.chip{
+  display:inline-flex; align-items:center; gap:5px; padding:1px 8px; border-radius:999px;
+  font-size:11.5px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
+  background:var(--surface-3); color:var(--ink-2);
+}
+.chip.ok{background:var(--ok-soft); color:var(--ok)}
+.chip.warn{background:var(--warn-soft); color:var(--warn)}
+.chip.bad{background:var(--bad-soft); color:var(--bad)}
+.chip.cool{background:var(--cool-soft); color:var(--cool)}
+.chip.brass{background:var(--brass-soft); color:var(--brass)}
+.chip .dot{width:6px; height:6px; border-radius:50%; background:currentColor}
+
+.who{display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700}
+.who .pip{width:9px;height:9px;border-radius:50%;flex:none}
+
+/* today board */
+.today-row{display:grid; grid-template-columns:150px minmax(0,1fr); gap:14px; padding:13px 14px; border-bottom:1px solid var(--line)}
+@media (max-width:560px){ .today-row{grid-template-columns:minmax(0,1fr); gap:6px} }
+.today-meta{display:flex; flex-direction:column; gap:6px}
+.today-plan{font-size:14px; color:var(--ink-2); white-space:pre-wrap; word-break:break-word}
+.today-plan.blank{color:var(--muted); font-style:italic}
+.ng{font-size:12.5px; color:var(--bad); font-weight:500}
+.ng .num{font-weight:600}
+
+textarea, input[type=text], input[type=number], input[type=date], input[type=time], input[type=password], input[type=url], select{
+  width:100%; background:var(--paper); border:1px solid var(--line-strong); border-radius:var(--r);
+  padding:7px 9px; font-size:14px;
+}
+textarea{resize:vertical; min-height:70px; line-height:1.6}
+label.f{display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); font-weight:700}
+.fields{display:grid; gap:12px}
+.fields.two{grid-template-columns:1fr 1fr}
+@media (max-width:560px){ .fields.two{grid-template-columns:1fr} }
+
+/* calendar */
+.cal-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--surface)}
+table.cal{border-collapse:separate; border-spacing:0; font-size:12px; min-width:100%}
+table.cal th, table.cal td{border-bottom:1px solid var(--line); border-right:1px solid var(--line); padding:0}
+table.cal th.name, table.cal td.name{
+  position:sticky; left:0; z-index:2; background:var(--surface); min-width:118px;
+  padding:6px 10px; text-align:left; border-right:1px solid var(--line-strong);
+}
+table.cal thead th{background:var(--surface-2); font-weight:700; font-size:11px; color:var(--muted); padding:5px 0; text-align:center; min-width:34px}
+table.cal thead th.sat{color:var(--cool)}
+table.cal thead th.sun{color:var(--bad)}
+table.cal td.day{text-align:center; height:44px; vertical-align:middle}
+.cell{
+  width:100%; height:44px; border:0; background:transparent; display:flex;
+  flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:0;
+}
+.cell:hover{background:var(--surface-2)}
+.cell .k{font-size:11px; font-weight:700; line-height:1}
+.cell .marks{display:flex; gap:2px; height:5px; align-items:center}
+.cell .m{width:5px; height:5px; border-radius:50%}
+.m.ngm{background:var(--bad)}
+.m.notem{background:var(--brass)}
+td.k-off{background:var(--bad-soft)}
+td.k-work{background:var(--brass-soft)}
+td.k-half{background:var(--cool-soft)}
+td.today-col{box-shadow:inset 0 0 0 2px var(--brass)}
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:10px; align-items:center}
+.legend i{display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:5px; vertical-align:-2px}
+
+/* tiles */
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:var(--r); overflow:hidden}
+.tile{background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px}
+.tile .lab{font-size:11px; letter-spacing:.12em; color:var(--muted); font-weight:700; font-family:var(--mono)}
+.tile .val{font-family:var(--mono); font-size:23px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.2}
+.tile .val.bad{color:var(--bad)} .tile .val.ok{color:var(--ok)} .tile .val.warn{color:var(--warn)}
+.tile .sub{font-size:11.5px; color:var(--muted)}
+
+/* task rows */
+.t-row{display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:11px; padding:11px 14px; border-bottom:1px solid var(--line); align-items:start}
+.t-row:hover{background:var(--surface-2)}
+.t-title{font-size:14.5px; font-weight:500; word-break:break-word}
+.t-row.done .t-title{text-decoration:line-through; color:var(--muted)}
+.t-meta{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:4px}
+.t-detail{font-size:12.5px; color:var(--muted); white-space:pre-wrap; margin-top:3px; word-break:break-word}
+.t-acts{display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end}
+.tick{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line-strong);background:transparent;margin-top:2px;flex:none;display:grid;place-items:center;padding:0}
+.tick.on{background:var(--ok); border-color:var(--ok); color:#fff; font-size:11px}
+.wanted{border-left:3px solid var(--brass)}
+
+/* table */
+.tbl-scroll{overflow-x:auto}
+table.data{width:100%; border-collapse:collapse; font-size:13.5px; min-width:640px}
+table.data th{
+  text-align:left; font-size:11px; letter-spacing:.1em; color:var(--muted); font-weight:700;
+  font-family:var(--mono); padding:8px 12px; border-bottom:1px solid var(--line-strong); white-space:nowrap;
+}
+table.data td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle}
+table.data tr:hover td{background:var(--surface-2)}
+table.data td.r, table.data th.r{text-align:right}
+tr.paid td:not(.acts){opacity:.55}
+
+/* vault */
+.lockbox{max-width:430px; margin:10px auto; padding:26px; text-align:center}
+.lockbox .glyph{font-size:30px; margin-bottom:6px}
+.secret{display:flex; align-items:center; gap:6px}
+.secret code{
+  font-family:var(--mono); font-size:13px; background:var(--surface-2); padding:2px 7px;
+  border-radius:3px; border:1px solid var(--line); min-width:88px; display:inline-block;
+  word-break:break-all;
+}
+.note{
+  font-size:12.5px; color:var(--muted); background:var(--surface-2); border:1px solid var(--line);
+  border-left:3px solid var(--brass); padding:10px 13px; border-radius:2px; line-height:1.7;
+}
+
+/* modal */
+.scrim{position:fixed; inset:0; background:rgba(20,16,22,.55); backdrop-filter:blur(2px); z-index:100; display:grid; place-items:center; padding:16px}
+.modal{background:var(--surface); border:1px solid var(--line-strong); border-radius:6px; box-shadow:var(--shadow); width:min(560px,100%); max-height:88vh; display:flex; flex-direction:column}
+.modal header{padding:15px 18px 11px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px}
+.modal header h3{font-family:var(--serif); font-size:16px}
+.modal .body{padding:16px 18px; overflow:auto}
+.modal footer{padding:12px 18px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap}
+.modal footer .left{margin-right:auto}
+
+.toast{
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%); z-index:200;
+  background:var(--ink); color:var(--paper); padding:9px 17px; border-radius:999px;
+  font-size:13px; font-weight:500; box-shadow:var(--shadow); pointer-events:none;
+}
+.banner{
+  background:var(--warn-soft); color:var(--warn); border-bottom:1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  font-size:13px; padding:8px 0; font-weight:500;
+}
+.presets{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
+.preset{border:1px dashed var(--line-strong); background:transparent; color:var(--muted); font-size:12px; padding:2px 9px; border-radius:999px}
+.preset:hover{border-style:solid; color:var(--brass); border-color:var(--brass)}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
+</style>
+
+<div class="masthead">
+  <div class="wrap mast-in">
+    <div class="brand">
+      <span class="mark">PRIME</span>
+      <span class="sub">事務所ボード</span>
+    </div>
+    <div id="doorBox"></div>
+    <div id="hereBox" class="here"></div>
+  </div>
+</div>
+<div id="bannerBox"></div>
+<nav class="tabs"><div class="wrap tabs-in" id="tabs" role="tablist"></div></nav>
+<main class="wrap" id="view"></main>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+<script>
+(function(){
+"use strict";
+
+/* ============================ helpers ============================ */
+const $ = (s, r) => (r || document).querySelector(s);
+const el = id => document.getElementById(id);
+const h = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const ymd = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const today = () => ymd(new Date());
+const nowIso = () => new Date().toISOString();
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now() + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9_-]/g, "");
+const DOW = ["日","月","火","水","木","金","土"];
+const daysInMonth = ym => { const p = ym.split("-").map(Number); return new Date(p[0], p[1], 0).getDate(); };
+const dow = (ym, d) => { const p = ym.split("-").map(Number); return new Date(p[0], p[1] - 1, d).getDay(); };
+const md = s => s ? (Number(s.slice(5,7)) + "/" + Number(s.slice(8,10))) : "";
+const yen = n => "¥" + Number(n || 0).toLocaleString("ja-JP");
+const hhmm = iso => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const stamp = iso => { if (!iso) return ""; const d = new Date(iso); if (isNaN(d)) return "";
+  return (ymd(d) === today() ? "" : (d.getMonth()+1) + "/" + d.getDate() + " ") + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+function daysUntil(dateStr){
+  if (!dateStr) return null;
+  const a = new Date(today() + "T00:00:00"), b = new Date(dateStr + "T00:00:00");
+  if (isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+function ls(k, v){
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){}
+  return null;
+}
+const PALETTE = ["#9C6C1F","#3E6497","#2C7A5B","#A63244","#6B4E8F","#B0670F","#2F7E86","#8A5A3B"];
+const KINDS = { work:{ label:"出勤", cls:"k-work", chip:"brass" }, off:{ label:"公休", cls:"k-off", chip:"bad" },
+                half:{ label:"半休", cls:"k-half", chip:"warn" }, "":{ label:"未定", cls:"", chip:"" } };
+const MEDIA_PRESETS = ["シティヘブンネット","エステ魂","メンエス魂","リフナビ","メンズエステ求人","エステの達人","X (旧Twitter)","公式LINE","Instagram","Googleビジネス","予約システム","勤怠システム"];
+
+/* ============================ state ============================ */
+const S = {
+  db: null, dbState: "connecting",     // connecting | ready | off
+  me: ls("prime.me") || "",
+  tab: ls("prime.tab") || "home",
+  month: today().slice(0, 7),
+  members: [], office: { doorOpen:false }, tasks: [], payments: [], vault: [], vaultCfg: null,
+  sched: {}, schedUnsub: null,
+  key: null, vaultErr: "", taskFilter: "all", payFilter: "unpaid",
+  modal: null, reveal: {}
+};
+const meMember = () => S.members.find(m => m.id === S.me) || null;
+const member = id => S.members.find(m => m.id === id) || null;
+const meName = () => { const m = meMember(); return m ? m.name : "不明"; };
+
+function toast(msg){
+  const r = el("toastRoot");
+  r.innerHTML = '<div class="toast">' + h(msg) + "</div>";
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { r.innerHTML = ""; }, 2400);
+}
+function guard(p, okMsg){
+  return Promise.resolve(p).then(r => { if (okMsg) toast(okMsg); return r; })
+    .catch(e => {
+      const c = e && e.code;
+      toast(c === "quota_exceeded" ? "保存できません。古いデータを削除してください。"
+        : c === "resource_exhausted" ? "操作が多すぎます。少し待って再度お試しください。"
+        : c === "revoked" || c === "not_granted" ? "共有データへの権限がありません。"
+        : "保存に失敗しました。もう一度お試しください。");
+      throw e;
+    });
+}
+
+/* ============================ db wiring ============================ */
+async function boot(){
+  render();
+  let db = null;
+  try { db = await window.claude.use("db"); } catch(e){ db = null; }
+  if (!db){ S.dbState = "off"; render(); return; }
+  S.db = db; S.dbState = "ready";
+  const onErr = () => {};
+  db.collection("members").onSnapshot(snap => {
+    S.members = snap.docs.map(d => Object.assign({ id: d.id }, d.data()))
+      .sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+    render();
+  }, onErr);
+  db.doc("office/state").onSnapshot(d => { S.office = d.exists ? d.data() : { doorOpen:false }; render(); }, onErr);
+  db.collection("tasks").onSnapshot(s => { S.tasks = s.docs.map(d => Object.assign({ id:d.id }, d.data())); render(); }, onErr);
+  db.collection("payments").onSnapshot(s => { S.payments = s.docs.map(d => Object.assign({ id:d.id }, d.data())); render(); }, onErr);
+  db.collection("vault").onSnapshot(s => { S.vault = s.docs.map(d => Object.assign({ id:d.id }, d.data())); render(); }, onErr);
+  db.doc("vault_meta/config").onSnapshot(d => { S.vaultCfg = d.exists ? d.data() : null; render(); }, onErr);
+  watchMonth();
+  render();
+}
+function watchMonth(){
+  if (!S.db) return;
+  if (S.schedUnsub) { S.schedUnsub(); S.schedUnsub = null; }
+  S.sched = {};
+  S.schedUnsub = S.db.collection("sched").where("month", "==", S.month).onSnapshot(s => {
+    const next = {};
+    s.docs.forEach(d => { next[d.id] = d.data(); });
+    S.sched = next; render();
+  }, () => {});
+}
+const dayOf = (memberId, date) => {
+  const doc = S.sched[memberId + "__" + date.slice(0, 7)];
+  return (doc && doc.days && doc.days[date]) || null;
+};
+async function saveDay(memberId, date, day){
+  if (!S.db) return;
+  const month = date.slice(0, 7), id = memberId + "__" + month, ref = S.db.doc("sched/" + id);
+  const full = Object.assign({ kind:"", plan:"", ngFrom:"", ngTo:"", note:"" }, day,
+    { updatedAt: nowIso(), updatedBy: S.me });
+  const body = { memberId: memberId, month: month, days: {} };
+  body.days[date] = full;
+  try { await ref.update(body); }
+  catch(e){
+    if (e && (e.code === "invalid_argument" || e.code === "transform_error")){
+      const cur = S.sched[id] || { memberId: memberId, month: month, days: {} };
+      const days = Object.assign({}, cur.days || {});
+      days[date] = full;
+      await ref.set({ memberId: memberId, month: month, days: days });
+    } else throw e;
+  }
+}
+
+/* ============================ crypto (媒体アカウント) ============================ */
+const TE = new TextEncoder(), TD = new TextDecoder();
+const b64 = buf => { const b = new Uint8Array(buf); let s = ""; for (let i=0;i<b.length;i++) s += String.fromCharCode(b[i]); return btoa(s); };
+const ub64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const VERIFY_TOKEN = "PRIME-VAULT-V1";
+async function deriveKey(pass, saltB64){
+  const km = await crypto.subtle.importKey("raw", TE.encode(pass), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name:"PBKDF2", salt: ub64(saltB64), iterations: 250000, hash:"SHA-256" },
+    km, { name:"AES-GCM", length:256 }, false, ["encrypt","decrypt"]);
+}
+async function sealJson(key, obj){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name:"AES-GCM", iv: iv }, key, TE.encode(JSON.stringify(obj)));
+  return { iv: b64(iv), ct: b64(ct) };
+}
+async function openJson(key, blob){
+  const pt = await crypto.subtle.decrypt({ name:"AES-GCM", iv: ub64(blob.iv) }, key, ub64(blob.ct));
+  return JSON.parse(TD.decode(pt));
+}
+async function copy(text, what){
+  try { await navigator.clipboard.writeText(text); toast((what || "") + "をコピーしました"); }
+  catch(e){ toast("コピーできませんでした。長押しで選択してください。"); }
+}
+
+/* ============================ render: shell ============================ */
+const TABS = [
+  { id:"home",   label:"ホーム" },
+  { id:"sched",  label:"スケジュール" },
+  { id:"tasks",  label:"タスク" },
+  { id:"pay",    label:"支払い" },
+  { id:"vault",  label:"媒体アカウント" },
+  { id:"set",    label:"設定" }
+];
+function openTasks(){ return S.tasks.filter(t => t.status !== "done"); }
+function wantedTasks(){ return openTasks().filter(t => !t.assignee); }
+function unpaid(){ return S.payments.filter(p => p.status !== "paid"); }
+
+function render(){
+  renderDoor(); renderHere(); renderBanner(); renderTabs();
+  const v = el("view");
+  if (S.dbState === "connecting"){ v.innerHTML = '<p class="empty" style="border:0">共有データを読み込んでいます…</p>'; return; }
+  if (S.dbState === "ready" && !meMember()){ v.innerHTML = viewIdentity(); return; }
+  v.innerHTML = S.tab === "sched" ? viewSched()
+    : S.tab === "tasks" ? viewTasks()
+    : S.tab === "pay"   ? viewPay()
+    : S.tab === "vault" ? viewVault()
+    : S.tab === "set"   ? viewSettings()
+    : viewHome();
+}
+function renderTabs(){
+  const badges = { tasks: wantedTasks().length, pay: unpaid().filter(p => (daysUntil(p.due) !== null && daysUntil(p.due) <= 0)).length };
+  el("tabs").innerHTML = TABS.map(t =>
+    '<button class="tab" role="tab" aria-selected="' + (S.tab === t.id) + '" data-tab="' + t.id + '">' + h(t.label) +
+    (badges[t.id] ? '<span class="badge num">' + badges[t.id] + "</span>" : "") + "</button>").join("");
+}
+function renderBanner(){
+  const b = el("bannerBox");
+  b.innerHTML = S.dbState === "off"
+    ? '<div class="banner"><div class="wrap">共有データに接続できていません。この画面での変更は保存されません。ページを再読み込みしてください。</div></div>'
+    : "";
+}
+function renderDoor(){
+  const open = !!(S.office && S.office.doorOpen);
+  const by = S.office && S.office.updatedBy ? (member(S.office.updatedBy) || {}).name : "";
+  el("doorBox").innerHTML =
+    '<div class="door ' + (open ? "open" : "") + '">' +
+      '<span class="lamp"></span>' +
+      '<span class="txt"><b>事務所 ' + (open ? "あいてます" : "しまっています") + "</b>" +
+        "<small>" + (S.office && S.office.updatedAt ? h((by || "誰か") + " が " + stamp(S.office.updatedAt)) : "まだ記録がありません") + "</small></span>" +
+      '<button class="btn sm" data-act="door">' + (open ? "閉めた" : "開けた") + "</button>" +
+    "</div>";
+}
+function renderHere(){
+  const box = el("hereBox");
+  if (!S.members.length){ box.innerHTML = ""; return; }
+  const here = S.members.filter(m => m.present);
+  const me = meMember();
+  box.innerHTML =
+    '<div class="avatars">' + S.members.map(m =>
+      '<span class="av' + (m.present ? "" : " off") + '" style="background:' + h(m.color || "#888") + '" title="' +
+      h(m.name + (m.present ? "・在席" : "・不在")) + '">' + h((m.name || "?").slice(0, 1)) + "</span>").join("") + "</div>" +
+    '<span class="chip ' + (here.length ? "ok" : "") + '"><span class="dot"></span>在席 ' + here.length + " / " + S.members.length + "</span>" +
+    (me ? '<button class="btn sm ' + (me.present ? "" : "primary") + '" data-act="present">' +
+      (me.present ? "事務所を出る" : "事務所に入った") + "</button>" : "");
+}
+
+/* ============================ view: 本人確認 ============================ */
+function viewIdentity(){
+  return '<div class="sec" style="max-width:460px;margin:36px auto">' +
+    '<div class="eyebrow">はじめに</div>' +
+    '<h2 style="font-family:var(--serif);font-size:21px;margin:6px 0 4px">あなたはどなたですか？</h2>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin-bottom:16px">選んだ名前でこのブラウザを記憶します。在席・予定・タスクはこの名前で記録されます。</p>' +
+    '<div class="panel"><div class="rows" style="border-top:0">' +
+    (S.members.length ? S.members.map(m =>
+      '<button class="row" style="width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:none" data-act="pick-me" data-id="' + h(m.id) + '">' +
+      '<span class="who"><span class="pip" style="background:' + h(m.color) + '"></span>' + h(m.name) + "</span></button>").join("")
+      : '<div class="empty">まだ誰も登録されていません。下から追加してください。</div>') +
+    "</div>" +
+    '<div style="padding:14px"><div class="fields"><label class="f">新しく登録する名前' +
+    '<input type="text" id="newMemberName" maxlength="12" placeholder="例：ゆうな"></label>' +
+    '<button class="btn primary" data-act="add-me">この名前で始める</button></div></div></div></div>';
+}
+
+/* ============================ view: ホーム ============================ */
+function kindChip(k){
+  const K = KINDS[k || ""];
+  return '<span class="chip ' + K.chip + '">' + K.label + "</span>";
+}
+function todayRow(m){
+  const d = dayOf(m.id, today()) || {};
+  const isMe = m.id === S.me;
+  const ng = d.ngFrom || d.ngTo
+    ? '<div class="ng">連絡不可 <span class="num">' + h(d.ngFrom || "--:--") + "〜" + h(d.ngTo || "--:--") + "</span>" +
+      (d.note ? " ・ " + h(d.note) : "") + "</div>" : (d.note ? '<div class="ng">' + h(d.note) + "</div>" : "");
+  return '<div class="today-row">' +
+    '<div class="today-meta">' +
+      '<span class="who"><span class="pip" style="background:' + h(m.color) + '"></span>' + h(m.name) +
+      (isMe ? ' <span style="color:var(--muted);font-weight:400;font-size:11px">(あなた)</span>' : "") + "</span>" +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + kindChip(d.kind) +
+        (m.present ? '<span class="chip ok"><span class="dot"></span>事務所</span>' : "") + "</div>" +
+    "</div>" +
+    '<div>' +
+      '<div class="today-plan' + (d.plan ? "" : " blank") + '">' + (d.plan ? h(d.plan) : "今日の動きは未記入") + "</div>" + ng +
+      '<div style="margin-top:7px"><button class="btn sm" data-act="edit-day" data-id="' + h(m.id) + '" data-date="' + today() + '">' +
+        (isMe ? "自分の今日を書く" : "この日を編集") + "</button></div>" +
+    "</div></div>";
+}
+function dueChip(due, doneish){
+  if (!due) return "";
+  const n = daysUntil(due);
+  if (n === null) return "";
+  const cls = doneish ? "" : n < 0 ? "bad" : n === 0 ? "warn" : n <= 3 ? "warn" : "cool";
+  const txt = n < 0 ? md(due) + " (" + Math.abs(n) + "日超過)" : n === 0 ? "今日まで" : n === 1 ? "明日まで" : md(due) + " (あと" + n + "日)";
+  return '<span class="chip ' + cls + '">' + h(txt) + "</span>";
+}
+function whoChip(id){
+  const m = member(id);
+  if (!m) return '<span class="chip brass">募集中</span>';
+  return '<span class="chip" style="background:' + h(m.color) + '22;color:' + h(m.color) + '">' + h(m.name) + "</span>";
+}
+function viewHome(){
+  const soon = openTasks().filter(t => t.assignee && t.due && daysUntil(t.due) !== null && daysUntil(t.due) <= 7)
+    .sort((a,b) => (a.due||"").localeCompare(b.due||""));
+  const wanted = wantedTasks().sort((a,b) => (a.due||"9").localeCompare(b.due||"9"));
+  const bills = unpaid().sort((a,b) => (a.due||"9").localeCompare(b.due||"9")).slice(0, 4);
+  const load = S.members.map(m => ({ m: m, n: openTasks().filter(t => t.assignee === m.id).length }));
+
+  return '<div class="grid-home">' +
+    "<div>" +
+      '<section class="sec"><div class="sec-head"><div class="eyebrow">' + h(today().replace(/-/g,"/")) + " (" + DOW[new Date().getDay()] + ")" +
+        '</div><div class="spacer"></div><span class="hint">今日の全員の動き</span></div>' +
+        '<h2 style="font-family:var(--serif);font-size:19px;margin-bottom:12px">今日は誰が、何をしていますか</h2>' +
+        '<div class="panel">' + (S.members.length ? S.members.map(todayRow).join("") : '<div class="empty">メンバーがいません</div>') + "</div>" +
+      "</section>" +
+      '<section class="sec"><div class="sec-head"><h2>手が空いている人へ</h2>' +
+        '<span class="hint">担当が決まっていない作業です。引き受けると自分のタスクになります。</span></div>' +
+        '<div class="panel">' + (wanted.length ? wanted.map(function(t){ return taskRow(t); }).join("") : '<div class="empty">募集中の作業はありません</div>') + "</div>" +
+      "</section>" +
+    "</div>" +
+    "<div>" +
+      '<section class="sec"><div class="sec-head"><h2>いまの持ち分</h2></div>' +
+        '<div class="panel"><div class="rows" style="border-top:0">' +
+        (load.length ? load.map(x =>
+          '<div class="row" style="align-items:center"><span class="who" style="flex:1"><span class="pip" style="background:' + h(x.m.color) + '"></span>' +
+          h(x.m.name) + '</span><span class="num" style="font-size:17px;font-weight:600;color:' + (x.n >= 4 ? "var(--bad)" : x.n ? "var(--ink)" : "var(--muted)") + '">' +
+          x.n + '</span><span style="font-size:11px;color:var(--muted);align-self:flex-end;padding-bottom:3px">件</span></div>').join("")
+          : '<div class="empty">—</div>') + "</div></div></section>" +
+      '<section class="sec"><div class="sec-head"><h2>期限が近い</h2></div>' +
+        '<div class="panel">' + (soon.length ? soon.map(function(t){ return taskRow(t, true); }).join("") : '<div class="empty">7日以内の期限はありません</div>') + "</div></section>" +
+      '<section class="sec"><div class="sec-head"><h2>支払い予定</h2><div class="spacer"></div>' +
+        '<span class="chip ' + (unpaid().length ? "warn" : "ok") + '">未払い ' + unpaid().length + "件</span></div>" +
+        '<div class="panel"><div class="rows" style="border-top:0">' +
+        (bills.length ? bills.map(p =>
+          '<div class="row" style="align-items:center;gap:10px"><div style="flex:1;min-width:0">' +
+          '<div style="font-size:13.5px;font-weight:500">' + h(p.title) + "</div>" +
+          '<div style="margin-top:3px;display:flex;gap:6px;flex-wrap:wrap">' + dueChip(p.due) +
+          (p.payee ? '<span class="chip">' + h(p.payee) + "</span>" : "") + "</div></div>" +
+          '<span class="num" style="font-weight:600">' + h(yen(p.amount)) + "</span></div>").join("")
+          : '<div class="empty">未払いはありません</div>') + "</div></div></section>" +
+    "</div></div>";
+}
+
+/* ============================ view: スケジュール ============================ */
+function shiftMonth(delta){
+  const p = S.month.split("-").map(Number);
+  const d = new Date(p[0], p[1] - 1 + delta, 1);
+  S.month = d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  watchMonth(); render();
+}
+function viewSched(){
+  const ym = S.month, n = daysInMonth(ym), t = today();
+  let head = '<tr><th class="name">メンバー</th>';
+  for (let d = 1; d <= n; d++){
+    const w = dow(ym, d);
+    head += '<th class="' + (w === 0 ? "sun" : w === 6 ? "sat" : "") + '">' + d + "<br>" + DOW[w] + "</th>";
+  }
+  head += "</tr>";
+  const body = S.members.map(m => {
+    let r = '<td class="name"><span class="who"><span class="pip" style="background:' + h(m.color) + '"></span>' + h(m.name) + "</span></td>";
+    for (let d = 1; d <= n; d++){
+      const date = ym + "-" + pad(d), day = dayOf(m.id, date) || {};
+      const K = KINDS[day.kind || ""];
+      const marks = ((day.ngFrom || day.ngTo) ? '<span class="m ngm"></span>' : "") + ((day.plan || day.note) ? '<span class="m notem"></span>' : "");
+      r += '<td class="day ' + K.cls + (date === t ? " today-col" : "") + '">' +
+        '<button class="cell" data-act="edit-day" data-id="' + h(m.id) + '" data-date="' + date + '" title="' + h(m.name + " " + date) + '">' +
+        '<span class="k">' + (day.kind ? K.label.slice(0, 2) : "") + '</span><span class="marks">' + marks + "</span></button></td>";
+    }
+    return "<tr>" + r + "</tr>";
+  }).join("");
+  const label = ym.slice(0, 4) + "年" + Number(ym.slice(5, 7)) + "月";
+  return '<section class="sec"><div class="sec-head">' +
+    '<h2>' + h(label) + " の勤務・休み</h2>" +
+    '<div class="spacer"></div>' +
+    '<button class="btn sm" data-act="month" data-delta="-1">← 前の月</button>' +
+    '<button class="btn sm" data-act="month" data-delta="0">今月</button>' +
+    '<button class="btn sm" data-act="month" data-delta="1">次の月 →</button></div>' +
+    '<div class="cal-scroll"><table class="cal"><thead>' + head + "</thead><tbody>" +
+    (S.members.length ? body : '<tr><td class="name">—</td><td colspan="' + n + '" style="padding:18px;text-align:center;color:var(--muted)">メンバーがいません</td></tr>') +
+    "</tbody></table></div>" +
+    '<div class="legend">' +
+      '<span><i style="background:var(--brass-soft);border:1px solid var(--brass-line)"></i>出勤</span>' +
+      '<span><i style="background:var(--bad-soft);border:1px solid var(--line)"></i>公休</span>' +
+      '<span><i style="background:var(--cool-soft);border:1px solid var(--line)"></i>半休</span>' +
+      '<span><i style="background:var(--bad);border-radius:50%"></i>連絡がつかない時間帯あり</span>' +
+      '<span><i style="background:var(--brass);border-radius:50%"></i>その日の予定メモあり</span>' +
+      '<span style="margin-left:auto">マスを押すと編集できます</span></div>' +
+    "</section>" +
+    '<section class="sec"><div class="sec-head"><h2>連絡がつかない時間帯（今月）</h2></div><div class="panel"><div class="rows" style="border-top:0">' +
+    (function(){
+      const out = [];
+      S.members.forEach(m => {
+        const doc = S.sched[m.id + "__" + ym];
+        if (!doc || !doc.days) return;
+        Object.keys(doc.days).sort().forEach(date => {
+          const d = doc.days[date];
+          if (d && (d.ngFrom || d.ngTo)) out.push({ m: m, date: date, d: d });
+        });
+      });
+      if (!out.length) return '<div class="empty">今月の登録はありません</div>';
+      return out.sort((a,b) => a.date.localeCompare(b.date)).map(x =>
+        '<div class="row" style="align-items:center"><span class="num" style="width:56px;color:var(--muted)">' + h(md(x.date)) +
+        "(" + DOW[dow(ym, Number(x.date.slice(8, 10)))] + ")</span>" +
+        '<span class="who" style="width:110px"><span class="pip" style="background:' + h(x.m.color) + '"></span>' + h(x.m.name) + "</span>" +
+        '<span class="ng" style="flex:1"><span class="num">' + h(x.d.ngFrom || "--:--") + "〜" + h(x.d.ngTo || "--:--") + "</span>" +
+        (x.d.note ? " ・ " + h(x.d.note) : "") + "</span></div>").join("");
+    })() + "</div></div></section>";
+}
+
+/* ============================ view: タスク ============================ */
+function taskRow(t, compact){
+  const done = t.status === "done";
+  const takenBy = t.assignee ? member(t.assignee) : null;
+  return '<div class="t-row' + (done ? " done" : "") + (!t.assignee && !done ? " wanted" : "") + '">' +
+    '<button class="tick' + (done ? " on" : "") + '" data-act="toggle-task" data-id="' + h(t.id) + '" aria-label="完了切り替え">' + (done ? "✓" : "") + "</button>" +
+    '<div><div class="t-title">' + h(t.title) + "</div>" +
+      (t.detail ? '<div class="t-detail">' + h(t.detail) + "</div>" : "") +
+      '<div class="t-meta">' + whoChip(t.assignee) + dueChip(t.due, done) +
+        (t.status === "doing" ? '<span class="chip cool">進行中</span>' : "") +
+        (t.sample ? '<span class="chip">サンプル</span>' : "") +
+        '<span style="font-size:11px;color:var(--muted)">' + h((member(t.createdBy) || {}).name || "") +
+        (t.createdAt ? " が " + h(stamp(t.createdAt)) + " に登録" : "") + "</span></div></div>" +
+    (compact ? "" : '<div class="t-acts">' +
+      (!done && !t.assignee ? '<button class="btn sm primary" data-act="take" data-id="' + h(t.id) + '">引き受ける</button>' : "") +
+      (!done && t.assignee === S.me && t.status !== "doing" ? '<button class="btn sm" data-act="start" data-id="' + h(t.id) + '">着手</button>' : "") +
+      (!done && t.assignee && t.assignee !== S.me ? '<button class="btn sm" data-act="take" data-id="' + h(t.id) + '">代わる</button>' : "") +
+      (!done && t.assignee ? '<button class="btn sm ghost" data-act="release" data-id="' + h(t.id) + '">手放す</button>' : "") +
+      '<button class="btn sm ghost" data-act="edit-task" data-id="' + h(t.id) + '">編集</button>' +
+    "</div>") + "</div>";
+}
+function viewTasks(){
+  const f = S.taskFilter;
+  const all = S.tasks.slice().sort((a,b) => {
+    const rank = t => t.status === "done" ? 2 : t.assignee ? 1 : 0;
+    return rank(a) - rank(b) || (a.due || "9999").localeCompare(b.due || "9999") || (b.createdAt || "").localeCompare(a.createdAt || "");
+  });
+  const list = all.filter(t =>
+    f === "wanted" ? (!t.assignee && t.status !== "done")
+    : f === "mine" ? (t.assignee === S.me && t.status !== "done")
+    : f === "done" ? t.status === "done"
+    : t.status !== "done");
+  const chips = [["all","未完了"],["wanted","募集中"],["mine","自分の分"],["done","完了"]];
+  return '<section class="sec"><div class="sec-head"><h2>作業とその期限</h2>' +
+    '<span class="hint">担当を空にすると「募集中」になり、手が空いた人が引き受けられます。</span>' +
+    '<div class="spacer"></div><button class="btn primary" data-act="new-task">＋ 作業を登録</button></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+    chips.map(c => '<button class="btn sm' + (f === c[0] ? " primary" : "") + '" data-act="task-filter" data-f="' + c[0] + '">' + c[1] +
+      "</button>").join("") + "</div>" +
+    '<div class="panel">' + (list.length ? list.map(function(t){ return taskRow(t); }).join("") : '<div class="empty">該当する作業はありません</div>') + "</div></section>";
+}
+
+/* ============================ view: 支払い ============================ */
+function viewPay(){
+  const up = unpaid();
+  const overdue = up.filter(p => { const n = daysUntil(p.due); return n !== null && n < 0; });
+  const sum = up.reduce((a, p) => a + Number(p.amount || 0), 0);
+  const thisMonth = S.payments.filter(p => p.status === "paid" && (p.paidAt || "").slice(0, 7) === today().slice(0, 7));
+  const paidSum = thisMonth.reduce((a, p) => a + Number(p.amount || 0), 0);
+  const list = S.payments.filter(p => S.payFilter === "paid" ? p.status === "paid" : S.payFilter === "all" ? true : p.status !== "paid")
+    .sort((a,b) => (a.status === "paid" ? 1 : 0) - (b.status === "paid" ? 1 : 0) || (a.due || "9999").localeCompare(b.due || "9999"));
+  const chips = [["unpaid","未払い"],["paid","支払済"],["all","すべて"]];
+  return '<section class="sec"><div class="sec-head"><h2>支払い管理</h2>' +
+    '<div class="spacer"></div><button class="btn primary" data-act="new-pay">＋ 支払いを登録</button></div>' +
+    '<div class="tiles" style="margin-bottom:16px">' +
+      '<div class="tile"><span class="lab">未払い合計</span><span class="val ' + (sum ? "warn" : "ok") + ' ">' + h(yen(sum)) + '</span><span class="sub">' + up.length + " 件</span></div>" +
+      '<div class="tile"><span class="lab">期限超過</span><span class="val ' + (overdue.length ? "bad" : "ok") + '">' + overdue.length + '</span><span class="sub">' +
+        (overdue.length ? h(overdue.map(p => p.title).slice(0, 2).join("、")) : "なし") + "</span></div>" +
+      '<div class="tile"><span class="lab">今月の支払済</span><span class="val">' + h(yen(paidSum)) + '</span><span class="sub">' + thisMonth.length + " 件</span></div>" +
+    "</div>" +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+    chips.map(c => '<button class="btn sm' + (S.payFilter === c[0] ? " primary" : "") + '" data-act="pay-filter" data-f="' + c[0] + '">' + c[1] + "</button>").join("") + "</div>" +
+    '<div class="panel tbl-scroll"><table class="data"><thead><tr>' +
+    "<th>期日</th><th>名目</th><th>支払先</th><th class=\"r\">金額</th><th>方法</th><th>担当</th><th></th></tr></thead><tbody>" +
+    (list.length ? list.map(p =>
+      '<tr class="' + (p.status === "paid" ? "paid" : "") + '">' +
+        "<td>" + (p.status === "paid" ? '<span class="chip ok">済 ' + h(md(p.paidAt ? p.paidAt.slice(0,10) : p.due)) + "</span>" : dueChip(p.due) || '<span class="chip">未定</span>') + "</td>" +
+        "<td>" + h(p.title) + (p.note ? '<div style="font-size:11.5px;color:var(--muted)">' + h(p.note) + "</div>" : "") + "</td>" +
+        "<td>" + h(p.payee || "—") + "</td>" +
+        '<td class="r num" style="font-weight:600">' + h(yen(p.amount)) + "</td>" +
+        "<td>" + h(p.method || "—") + "</td>" +
+        "<td>" + (p.assignee ? whoChip(p.assignee) : '<span class="chip brass">未定</span>') + "</td>" +
+        '<td class="acts" style="white-space:nowrap;text-align:right">' +
+          '<button class="btn sm" data-act="toggle-pay" data-id="' + h(p.id) + '">' + (p.status === "paid" ? "未払いに戻す" : "支払った") + "</button> " +
+          '<button class="btn sm ghost" data-act="edit-pay" data-id="' + h(p.id) + '">編集</button></td></tr>').join("")
+      : '<tr><td colspan="7" style="text-align:center;padding:22px;color:var(--muted)">該当する支払いはありません</td></tr>') +
+    "</tbody></table></div></section>";
+}
+
+/* ============================ view: 媒体アカウント ============================ */
+function viewVault(){
+  const intro = '<section class="sec"><div class="sec-head"><h2>媒体アカウント</h2>' +
+    '<span class="hint">各媒体のURL・ID・パスワードをまとめておく場所です。</span></div>';
+  if (!crypto.subtle) return intro + '<div class="note">この環境では暗号化が使えないため、この機能は利用できません。</div></section>';
+  if (!S.vaultCfg){
+    return intro +
+      '<div class="note" style="margin-bottom:16px">ID・パスワードは<strong>この画面の中で暗号化してから</strong>保存します。合言葉はどこにも保存されないので、合言葉を知っているスタッフだけが中身を読めます。<br>合言葉を忘れると復元できません。必ず全員で共有し、控えを残してください。</div>' +
+      '<div class="panel lockbox"><div class="glyph">🔐</div>' +
+      '<h3 style="font-family:var(--serif);font-size:17px;margin-bottom:4px">合言葉を決める</h3>' +
+      '<p style="font-size:13px;color:var(--muted);margin-bottom:14px">最初の一人が決めて、他のスタッフに伝えてください。</p>' +
+      '<div class="fields" style="text-align:left">' +
+      '<label class="f">合言葉（8文字以上）<input type="password" id="vp1" autocomplete="new-password"></label>' +
+      '<label class="f">もう一度<input type="password" id="vp2" autocomplete="new-password"></label>' +
+      '<button class="btn primary" data-act="vault-init">この合言葉で始める</button></div></div></section>';
+  }
+  if (!S.key){
+    return intro +
+      '<div class="panel lockbox"><div class="glyph">🔑</div>' +
+      '<h3 style="font-family:var(--serif);font-size:17px;margin-bottom:4px">合言葉を入力</h3>' +
+      '<p style="font-size:13px;color:var(--muted);margin-bottom:14px">スタッフ間で共有している合言葉を入れてください。</p>' +
+      '<div class="fields" style="text-align:left">' +
+      '<label class="f">合言葉<input type="password" id="vp1" autocomplete="current-password"></label>' +
+      (S.vaultErr ? '<p style="color:var(--bad);font-size:12.5px;font-weight:700">' + h(S.vaultErr) + "</p>" : "") +
+      '<button class="btn primary" data-act="vault-unlock">解錠する</button></div></div></section>';
+  }
+  const rows = S.vault.slice().sort((a,b) => (a.media || "").localeCompare(b.media || "", "ja"));
+  return intro.replace("</div>", '<div class="spacer"></div><button class="btn sm ghost" data-act="vault-lock">施錠する</button>' +
+      '<button class="btn primary" data-act="new-vault">＋ 媒体を追加</button></div>') +
+    '<div class="panel tbl-scroll"><table class="data" style="min-width:720px"><thead><tr>' +
+    "<th>媒体</th><th>URL</th><th>ID</th><th>パスワード</th><th>メモ</th><th></th></tr></thead><tbody>" +
+    (rows.length ? rows.map(v => {
+      const r = S.reveal[v.id];
+      return "<tr>" +
+        "<td style=\"font-weight:700\">" + h(v.media) + "</td>" +
+        "<td>" + (v.url ? '<a href="' + h(v.url) + '" target="_blank" rel="noopener noreferrer">開く ↗</a>' : "—") + "</td>" +
+        '<td><span class="secret"><code>' + (r ? h(r.loginId || "—") : "••••••••") + "</code>" +
+          (r ? '<button class="btn sm ghost" data-act="copy-v" data-id="' + h(v.id) + '" data-k="loginId">複製</button>' : "") + "</span></td>" +
+        '<td><span class="secret"><code>' + (r ? h(r.password || "—") : "••••••••") + "</code>" +
+          (r ? '<button class="btn sm ghost" data-act="copy-v" data-id="' + h(v.id) + '" data-k="password">複製</button>' : "") + "</span></td>" +
+        '<td style="color:var(--muted);font-size:12.5px">' + h(v.note || "") + "</td>" +
+        '<td style="white-space:nowrap;text-align:right">' +
+          '<button class="btn sm" data-act="reveal" data-id="' + h(v.id) + '">' + (r ? "隠す" : "表示") + "</button> " +
+          '<button class="btn sm ghost" data-act="edit-vault" data-id="' + h(v.id) + '">編集</button></td></tr>';
+    }).join("") : '<tr><td colspan="6" style="text-align:center;padding:22px;color:var(--muted)">まだ登録がありません</td></tr>') +
+    "</tbody></table></div>" +
+    '<p style="font-size:12px;color:var(--muted);margin-top:10px">保存されているのは暗号文だけです。合言葉はこのブラウザのメモリ上にのみ置かれ、タブを閉じると消えます。</p></section>';
+}
+
+/* ============================ view: 設定 ============================ */
+function viewSettings(){
+  const samples = S.tasks.filter(t => t.sample).length + S.payments.filter(p => p.sample).length;
+  return '<section class="sec"><div class="sec-head"><h2>スタッフ</h2>' +
+    '<div class="spacer"></div><button class="btn primary" data-act="new-member">＋ スタッフを追加</button></div>' +
+    '<div class="panel"><div class="rows" style="border-top:0">' +
+    (S.members.length ? S.members.map(m =>
+      '<div class="row" style="align-items:center;gap:10px">' +
+      '<span class="who" style="flex:1"><span class="pip" style="background:' + h(m.color) + '"></span>' + h(m.name) +
+      (m.id === S.me ? ' <span class="chip">あなた</span>' : "") + "</span>" +
+      '<span class="chip ' + (m.present ? "ok" : "") + '">' + (m.present ? "在席" : "不在") + "</span>" +
+      '<button class="btn sm ghost" data-act="edit-member" data-id="' + h(m.id) + '">編集</button></div>').join("")
+      : '<div class="empty">—</div>') + "</div></div></section>" +
+    '<section class="sec"><div class="sec-head"><h2>この端末</h2></div>' +
+    '<div class="panel"><div class="rows" style="border-top:0">' +
+      '<div class="row" style="align-items:center"><span style="flex:1">いまの表示名</span><b>' + h(meName()) + "</b>" +
+      '<button class="btn sm" data-act="switch-me">切り替える</button></div>' +
+      (samples ? '<div class="row" style="align-items:center"><span style="flex:1">サンプル行（' + samples +
+        '件）</span><button class="btn sm danger" data-act="clear-samples">まとめて削除</button></div>' : "") +
+    "</div></div></section>" +
+    '<section class="sec"><div class="sec-head"><h2>データの扱い</h2></div>' +
+    '<div class="note">このボードはリンクを知っている社内メンバーだけが開けます。予定・タスク・支払いは全員が読み書きできます。<br>' +
+    '媒体のID・パスワードは合言葉で暗号化してから保存されるため、合言葉を知らない人には読めません。<br>' +
+    '銀行やクレジットカードの認証情報など、漏れると被害が大きいものはここに置かないでください。</div></section>';
+}
+
+/* ============================ modal ============================ */
+function closeModal(){ S.modal = null; el("modalRoot").innerHTML = ""; }
+function showModal(title, bodyHtml, footerHtml){
+  el("modalRoot").innerHTML =
+    '<div class="scrim" data-scrim="1"><div class="modal" role="dialog" aria-modal="true" aria-label="' + h(title) + '">' +
+    "<header><h3>" + h(title) + '</h3><div style="margin-left:auto"></div>' +
+    '<button class="btn sm ghost" data-act="close-modal" aria-label="閉じる">✕</button></header>' +
+    '<div class="body">' + bodyHtml + "</div><footer>" + footerHtml + "</footer></div></div>";
+  const first = $(".modal .body input, .modal .body textarea, .modal .body select");
+  if (first) first.focus();
+}
+function memberOptions(sel, blankLabel){
+  return '<option value="">' + h(blankLabel || "— なし —") + "</option>" +
+    S.members.map(m => '<option value="' + h(m.id) + '"' + (m.id === sel ? " selected" : "") + ">" + h(m.name) + "</option>").join("");
+}
+function modalDay(memberId, date){
+  const m = member(memberId) || {}, d = dayOf(memberId, date) || {};
+  const w = DOW[dow(date.slice(0, 7), Number(date.slice(8, 10)))];
+  showModal(m.name + " ・ " + date.replace(/-/g, "/") + "（" + w + "）",
+    '<div class="fields">' +
+    '<label class="f">その日の区分<select id="d_kind">' +
+      ["", "work", "off", "half"].map(k => '<option value="' + k + '"' + ((d.kind || "") === k ? " selected" : "") + ">" +
+        KINDS[k].label + "</option>").join("") + "</select></label>" +
+    '<label class="f">今日1日の動き（全員が見られます）<textarea id="d_plan" placeholder="例：13時まで在宅で写真の差し替え、15時から事務所、夕方に面接1件">' + h(d.plan || "") + "</textarea></label>" +
+    '<div class="fields two">' +
+      '<label class="f">連絡がつかない時間帯（開始）<input type="time" id="d_ngf" value="' + h(d.ngFrom || "") + '"></label>' +
+      '<label class="f">同（終了）<input type="time" id="d_ngt" value="' + h(d.ngTo || "") + '"></label></div>' +
+    '<label class="f">補足（理由・行き先など）<input type="text" id="d_note" maxlength="60" value="' + h(d.note || "") + '"></label></div>',
+    '<button class="btn ghost left" data-act="clear-day" data-id="' + h(memberId) + '" data-date="' + date + '">この日を空にする</button>' +
+    '<button class="btn" data-act="close-modal">やめる</button>' +
+    '<button class="btn primary" data-act="save-day" data-id="' + h(memberId) + '" data-date="' + date + '">保存</button>');
+}
+function modalTask(t){
+  t = t || {};
+  showModal(t.id ? "作業を編集" : "作業を登録",
+    '<div class="fields">' +
+    '<label class="f">やること<input type="text" id="t_title" maxlength="80" value="' + h(t.title || "") + '" placeholder="例：新人プロフィールの写真を差し替える"></label>' +
+    '<label class="f">詳細・手順<textarea id="t_detail" placeholder="任せる相手が迷わないように書いておくと引き受けてもらいやすいです">' + h(t.detail || "") + "</textarea></label>" +
+    '<div class="fields two">' +
+      '<label class="f">担当<select id="t_assignee">' + memberOptions(t.assignee, "— 募集中（誰か手が空いた人）—") + "</select></label>" +
+      '<label class="f">いつまでに<input type="date" id="t_due" value="' + h(t.due || "") + '"></label></div>' +
+    "</div>",
+    (t.id ? '<button class="btn danger left" data-act="del-task" data-id="' + h(t.id) + '">削除</button>' : "") +
+    '<button class="btn" data-act="close-modal">やめる</button>' +
+    '<button class="btn primary" data-act="save-task" data-id="' + h(t.id || "") + '">保存</button>');
+}
+function modalPay(p){
+  p = p || {};
+  showModal(p.id ? "支払いを編集" : "支払いを登録",
+    '<div class="fields">' +
+    '<div class="fields two">' +
+      '<label class="f">名目<input type="text" id="p_title" maxlength="60" value="' + h(p.title || "") + '" placeholder="例：事務所家賃"></label>' +
+      '<label class="f">支払先<input type="text" id="p_payee" maxlength="40" value="' + h(p.payee || "") + '" placeholder="例：◯◯不動産"></label></div>' +
+    '<div class="fields two">' +
+      '<label class="f">金額（円）<input type="number" id="p_amount" min="0" step="1" value="' + h(p.amount != null ? p.amount : "") + '"></label>' +
+      '<label class="f">期日<input type="date" id="p_due" value="' + h(p.due || "") + '"></label></div>' +
+    '<div class="fields two">' +
+      '<label class="f">支払方法<input type="text" id="p_method" maxlength="30" value="' + h(p.method || "") + '" placeholder="例：口座振替 / カード / 現金"></label>' +
+      '<label class="f">担当<select id="p_assignee">' + memberOptions(p.assignee, "— 未定 —") + "</select></label></div>" +
+    '<label class="f">メモ<input type="text" id="p_note" maxlength="80" value="' + h(p.note || "") + '"></label></div>',
+    (p.id ? '<button class="btn danger left" data-act="del-pay" data-id="' + h(p.id) + '">削除</button>' : "") +
+    '<button class="btn" data-act="close-modal">やめる</button>' +
+    '<button class="btn primary" data-act="save-pay" data-id="' + h(p.id || "") + '">保存</button>');
+}
+function modalVault(v, plain){
+  v = v || {}; plain = plain || {};
+  showModal(v.id ? "媒体アカウントを編集" : "媒体アカウントを追加",
+    '<div class="fields">' +
+    '<label class="f">媒体名<input type="text" id="v_media" maxlength="40" value="' + h(v.media || "") + '" placeholder="例：シティヘブンネット"></label>' +
+    '<div class="presets">' + MEDIA_PRESETS.map(x => '<button type="button" class="preset" data-act="preset" data-v="' + h(x) + '">' + h(x) + "</button>").join("") + "</div>" +
+    '<label class="f">管理画面のURL<input type="url" id="v_url" value="' + h(v.url || "") + '" placeholder="https://"></label>' +
+    '<div class="fields two">' +
+      '<label class="f">ID<input type="text" id="v_id" value="' + h(plain.loginId || "") + '" autocomplete="off"></label>' +
+      '<label class="f">パスワード<input type="text" id="v_pw" value="' + h(plain.password || "") + '" autocomplete="off"></label></div>' +
+    '<label class="f">メモ（暗号化されません）<input type="text" id="v_note" maxlength="60" value="' + h(v.note || "") + '"></label>' +
+    '<p style="font-size:12px;color:var(--muted)">IDとパスワードは保存時に暗号化されます。媒体名・URL・メモは暗号化されないので、機密はメモに書かないでください。</p></div>',
+    (v.id ? '<button class="btn danger left" data-act="del-vault" data-id="' + h(v.id) + '">削除</button>' : "") +
+    '<button class="btn" data-act="close-modal">やめる</button>' +
+    '<button class="btn primary" data-act="save-vault" data-id="' + h(v.id || "") + '">保存</button>');
+}
+function modalMember(m){
+  m = m || {};
+  showModal(m.id ? "スタッフを編集" : "スタッフを追加",
+    '<div class="fields">' +
+    '<label class="f">名前<input type="text" id="m_name" maxlength="12" value="' + h(m.name || "") + '"></label>' +
+    '<label class="f">色<div style="display:flex;gap:6px;flex-wrap:wrap" id="m_colors">' +
+      PALETTE.map(c => '<button type="button" class="preset" data-act="pick-color" data-v="' + c +
+        '" style="background:' + c + ';width:30px;height:30px;border-radius:50%;border:2px solid ' +
+        ((m.color || "") === c ? "var(--ink)" : "transparent") + '"></button>').join("") + "</div></label>" +
+    '<input type="hidden" id="m_color" value="' + h(m.color || PALETTE[S.members.length % PALETTE.length]) + '"></div>',
+    (m.id && m.id !== S.me ? '<button class="btn danger left" data-act="del-member" data-id="' + h(m.id) + '">削除</button>' : "") +
+    '<button class="btn" data-act="close-modal">やめる</button>' +
+    '<button class="btn primary" data-act="save-member" data-id="' + h(m.id || "") + '">保存</button>');
+}
+
+/* ============================ actions ============================ */
+const val = id => { const n = el(id); return n ? n.value.trim() : ""; };
+async function setDoor(){
+  if (!S.db) return;
+  await guard(S.db.doc("office/state").set({
+    doorOpen: !(S.office && S.office.doorOpen), updatedBy: S.me, updatedAt: nowIso()
+  }));
+}
+async function setPresent(){
+  const m = meMember(); if (!m || !S.db) return;
+  await guard(S.db.doc("members/" + m.id).update({ present: !m.present, presentAt: nowIso() }));
+}
+async function addMember(name, color){
+  const id = uid();
+  await guard(S.db.doc("members/" + id).set({
+    name: name, color: color || PALETTE[S.members.length % PALETTE.length], present: false, createdAt: nowIso()
+  }));
+  return id;
+}
+async function saveTaskFromModal(id){
+  const title = val("t_title");
+  if (!title){ toast("やることを入力してください"); return; }
+  const body = { title: title, detail: val("t_detail"), assignee: val("t_assignee"), due: val("t_due") };
+  if (id){
+    const cur = S.tasks.find(t => t.id === id) || {};
+    if (body.assignee && body.assignee !== cur.assignee){ body.takenBy = body.assignee; body.takenAt = nowIso(); }
+    await guard(S.db.doc("tasks/" + id).update(body), "保存しました");
+  } else {
+    body.status = "open"; body.createdBy = S.me; body.createdAt = nowIso();
+    if (body.assignee){ body.takenBy = body.assignee; body.takenAt = nowIso(); }
+    await guard(S.db.collection("tasks").add(body), "登録しました");
+  }
+  closeModal();
+}
+async function savePayFromModal(id){
+  const title = val("p_title");
+  if (!title){ toast("名目を入力してください"); return; }
+  const body = { title: title, payee: val("p_payee"), amount: Number(val("p_amount") || 0),
+    due: val("p_due"), method: val("p_method"), assignee: val("p_assignee"), note: val("p_note") };
+  if (id) await guard(S.db.doc("payments/" + id).update(body), "保存しました");
+  else { body.status = "unpaid"; body.createdBy = S.me; body.createdAt = nowIso();
+    await guard(S.db.collection("payments").add(body), "登録しました"); }
+  closeModal();
+}
+async function saveVaultFromModal(id){
+  const media = val("v_media");
+  if (!media){ toast("媒体名を入力してください"); return; }
+  if (!S.key){ toast("先に合言葉で解錠してください"); return; }
+  const sealed = await sealJson(S.key, { loginId: val("v_id"), password: val("v_pw") });
+  const body = { media: media, url: val("v_url"), note: val("v_note"), enc: sealed, updatedBy: S.me, updatedAt: nowIso() };
+  if (id){ await guard(S.db.doc("vault/" + id).update(body), "保存しました"); delete S.reveal[id]; }
+  else await guard(S.db.collection("vault").add(body), "保存しました");
+  closeModal(); render();
+}
+async function vaultInit(){
+  const p1 = val("vp1"), p2 = val("vp2");
+  if (p1.length < 8){ toast("合言葉は8文字以上にしてください"); return; }
+  if (p1 !== p2){ toast("2つの合言葉が一致しません"); return; }
+  const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+  const key = await deriveKey(p1, salt);
+  const verify = await sealJson(key, VERIFY_TOKEN);
+  await guard(S.db.doc("vault_meta/config").set({ v: 1, salt: salt, verify: verify, createdBy: S.me, createdAt: nowIso() }));
+  S.key = key; S.vaultErr = ""; render(); toast("合言葉を設定しました");
+}
+async function vaultUnlock(){
+  const p = val("vp1");
+  if (!p){ return; }
+  try {
+    const key = await deriveKey(p, S.vaultCfg.salt);
+    const t = await openJson(key, S.vaultCfg.verify);
+    if (t !== VERIFY_TOKEN) throw new Error("bad");
+    S.key = key; S.vaultErr = "";
+  } catch(e){ S.vaultErr = "合言葉が違います。"; }
+  render();
+}
+async function revealOne(id){
+  if (S.reveal[id]){ delete S.reveal[id]; render(); return; }
+  const v = S.vault.find(x => x.id === id);
+  if (!v || !v.enc || !S.key) return;
+  try { S.reveal[id] = await openJson(S.key, v.enc); }
+  catch(e){ toast("この行は今の合言葉では読めません"); }
+  render();
+}
+async function clearSamples(){
+  const jobs = S.tasks.filter(t => t.sample).map(t => S.db.doc("tasks/" + t.id).delete())
+    .concat(S.payments.filter(p => p.sample).map(p => S.db.doc("payments/" + p.id).delete()));
+  await guard(Promise.all(jobs), "サンプルを削除しました");
+}
+
+/* ============================ events ============================ */
+document.addEventListener("click", async function(ev){
+  const tabBtn = ev.target.closest("[data-tab]");
+  if (tabBtn){ S.tab = tabBtn.dataset.tab; ls("prime.tab", S.tab); render(); return; }
+  const btn = ev.target.closest("[data-act]");
+  if (!btn){
+    if (ev.target.dataset && ev.target.dataset.scrim) closeModal();
+    return;
+  }
+  const a = btn.dataset.act, id = btn.dataset.id;
+  try {
+    switch (a){
+      case "close-modal": closeModal(); break;
+      case "door": await setDoor(); break;
+      case "present": await setPresent(); break;
+      case "month":
+        if (btn.dataset.delta === "0"){ S.month = today().slice(0, 7); watchMonth(); render(); }
+        else shiftMonth(Number(btn.dataset.delta));
+        break;
+      case "pick-me": S.me = id; ls("prime.me", id); render(); break;
+      case "add-me": {
+        const name = val("newMemberName");
+        if (!name){ toast("名前を入力してください"); break; }
+        const nid = await addMember(name);
+        S.me = nid; ls("prime.me", nid); render();
+        break;
+      }
+      case "switch-me": S.me = ""; ls("prime.me", ""); render(); break;
+
+      case "edit-day": modalDay(id, btn.dataset.date); break;
+      case "save-day":
+        await guard(saveDay(id, btn.dataset.date, {
+          kind: val("d_kind"), plan: val("d_plan"), ngFrom: val("d_ngf"), ngTo: val("d_ngt"), note: val("d_note")
+        }), "保存しました");
+        closeModal(); break;
+      case "clear-day":
+        await guard(saveDay(id, btn.dataset.date, { kind:"", plan:"", ngFrom:"", ngTo:"", note:"" }), "空にしました");
+        closeModal(); break;
+
+      case "task-filter": S.taskFilter = btn.dataset.f; render(); break;
+      case "new-task": modalTask(null); break;
+      case "edit-task": modalTask(S.tasks.find(t => t.id === id)); break;
+      case "save-task": await saveTaskFromModal(id); break;
+      case "del-task": await guard(S.db.doc("tasks/" + id).delete(), "削除しました"); closeModal(); break;
+      case "toggle-task": {
+        const t = S.tasks.find(x => x.id === id) || {};
+        await guard(S.db.doc("tasks/" + id).update(t.status === "done"
+          ? { status: t.assignee ? "doing" : "open", doneAt: "" }
+          : { status: "done", doneAt: nowIso(), doneBy: S.me }));
+        break;
+      }
+      case "take":
+        await guard(S.db.doc("tasks/" + id).update({ assignee: S.me, takenBy: S.me, takenAt: nowIso(), status: "doing" }), "引き受けました");
+        break;
+      case "start": await guard(S.db.doc("tasks/" + id).update({ status: "doing" })); break;
+      case "release": await guard(S.db.doc("tasks/" + id).update({ assignee: "", status: "open" }), "募集中に戻しました"); break;
+
+      case "pay-filter": S.payFilter = btn.dataset.f; render(); break;
+      case "new-pay": modalPay(null); break;
+      case "edit-pay": modalPay(S.payments.find(p => p.id === id)); break;
+      case "save-pay": await savePayFromModal(id); break;
+      case "del-pay": await guard(S.db.doc("payments/" + id).delete(), "削除しました"); closeModal(); break;
+      case "toggle-pay": {
+        const p = S.payments.find(x => x.id === id) || {};
+        await guard(S.db.doc("payments/" + id).update(p.status === "paid"
+          ? { status: "unpaid", paidAt: "", paidBy: "" }
+          : { status: "paid", paidAt: nowIso(), paidBy: S.me }));
+        break;
+      }
+
+      case "vault-init": await vaultInit(); break;
+      case "vault-unlock": await vaultUnlock(); break;
+      case "vault-lock": S.key = null; S.reveal = {}; render(); toast("施錠しました"); break;
+      case "new-vault": modalVault(null, null); break;
+      case "edit-vault": {
+        const v = S.vault.find(x => x.id === id);
+        let plain = S.reveal[id];
+        if (!plain && v && v.enc && S.key){ try { plain = await openJson(S.key, v.enc); } catch(e){ plain = null; } }
+        modalVault(v, plain);
+        break;
+      }
+      case "save-vault": await saveVaultFromModal(id); break;
+      case "del-vault": await guard(S.db.doc("vault/" + id).delete(), "削除しました"); delete S.reveal[id]; closeModal(); break;
+      case "reveal": await revealOne(id); break;
+      case "copy-v": {
+        const r = S.reveal[id];
+        if (r) copy(r[btn.dataset.k] || "", btn.dataset.k === "password" ? "パスワード" : "ID");
+        break;
+      }
+      case "preset": { const n = el("v_media"); if (n){ n.value = btn.dataset.v; n.focus(); } break; }
+
+      case "new-member": modalMember(null); break;
+      case "edit-member": modalMember(member(id)); break;
+      case "pick-color": {
+        el("m_color").value = btn.dataset.v;
+        Array.prototype.forEach.call(el("m_colors").children, function(c){
+          c.style.borderColor = c.dataset.v === btn.dataset.v ? "var(--ink)" : "transparent";
+        });
+        break;
+      }
+      case "save-member": {
+        const name = val("m_name"), color = val("m_color");
+        if (!name){ toast("名前を入力してください"); break; }
+        if (id) await guard(S.db.doc("members/" + id).update({ name: name, color: color }), "保存しました");
+        else await addMember(name, color);
+        closeModal(); break;
+      }
+      case "del-member":
+        await guard(S.db.doc("members/" + id).delete(), "削除しました");
+        if (id === S.me){ S.me = ""; ls("prime.me", ""); }
+        closeModal(); break;
+
+      case "clear-samples": await clearSamples(); break;
+    }
+  } catch(e){ /* guard() already surfaced it */ }
+});
+document.addEventListener("keydown", function(ev){
+  if (ev.key === "Escape" && el("modalRoot").innerHTML) closeModal();
+});
+
+/* keep typing safe: skip body re-render while an input in the main view has focus */
+const _render = render;
+render = function(){
+  const f = document.activeElement;
+  const v = el("view");
+  if (f && v && v.contains(f) && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName)){
+    renderDoor(); renderHere(); renderBanner(); renderTabs(); return;
+  }
+  _render();
+};
+
+boot();
+})();
+</script>
