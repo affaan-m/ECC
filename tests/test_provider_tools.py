@@ -1,7 +1,10 @@
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+from llm.core.interface import LLMProvider
 from llm.core.types import LLMInput, Message, Role, ToolCall, ToolDefinition
 from llm.providers.astraflow import AstraflowProvider
 from llm.providers.atlas import AtlasProvider
@@ -86,12 +89,15 @@ def test_openai_provider_serializes_tools_for_chat_completions():
     ]
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "provider_type",
     [OpenAIProvider, AstraflowProvider, AtlasProvider],
 )
-def test_openai_compatible_provider_serializes_assistant_tool_calls(provider_type):
-    provider = provider_type(api_key="test")
+def test_openai_compatible_provider_serializes_assistant_tool_calls(
+    provider_type: Callable[..., LLMProvider],
+) -> None:
+    provider = cast(Any, provider_type(api_key="test"))
     client = _OpenAIClient()
     provider.client = client
 
@@ -119,20 +125,32 @@ def test_openai_compatible_provider_serializes_assistant_tool_calls(provider_typ
         )
     )
 
-    assert client.completions.params["messages"][1] == {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "type": "function",
-                "function": {
-                    "name": "search",
-                    "arguments": '{"query": "ecc"}',
+    assert client.completions.params is not None
+    assert client.completions.params["messages"] == [
+        {"role": "user", "content": "Find ECC"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "search",
+                        "arguments": '{"query": "ecc"}',
+                    },
                 },
-            }
-        ],
-    }
+            ],
+        },
+        {"role": "tool", "content": "result", "tool_call_id": "call_1"},
+    ]
+
+    client.completions.params = None
+    with pytest.raises(ValueError, match="tool messages require a tool_call_id"):
+        provider.generate(
+            LLMInput(messages=[Message(role=Role.TOOL, content="unlinked result")])
+        )
+    assert client.completions.params is None
 
 
 def test_openai_provider_can_be_constructed_without_credentials(monkeypatch):

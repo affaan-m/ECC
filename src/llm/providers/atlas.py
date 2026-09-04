@@ -16,6 +16,7 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.openai_compat import to_openai_message_param
 
 ATLAS_BASE_URL = "https://api.atlascloud.ai/v1"
 DEFAULT_ATLAS_MODEL = "deepseek-ai/deepseek-v4-pro"
@@ -83,7 +84,7 @@ class AtlasProvider(LLMProvider):
         try:
             params: dict[str, Any] = {
                 "model": llm_input.model or self.default_model,
-                "messages": [msg.to_openai_dict() for msg in llm_input.messages],
+                "messages": [to_openai_message_param(msg) for msg in llm_input.messages],
             }
             if llm_input.temperature != 1.0:
                 params["temperature"] = llm_input.temperature
