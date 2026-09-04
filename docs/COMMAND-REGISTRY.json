@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 100,
   "commands": [
     {
       "command": "aside",
@@ -313,6 +313,59 @@
         "tdd-workflow"
       ],
       "path": "commands/go-test.md"
+    },
+    {
+      "command": "governance-audit",
+      "description": "Read-only audit of documentation governance and artifact-link integrity. Run deterministic checks first; only after they pass, judge semantic ownership and evidence drift. Never modify files.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-audit.md"
+    },
+    {
+      "command": "governance-init",
+      "description": "Create a day-zero governance scaffold for a new empty project: concise CLAUDE.md, thin Codex AGENTS.md bridge, governance workflow, append-only project history, optional pre-commit guard, and initial local commit. Use /governance for existing codebases.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-init.md"
+    },
+    {
+      "command": "governance-retro",
+      "description": "Review append-only project history to find modules and defect classes that recur, detect standard drift, and propose repeated failures for deterministic tests, lint, or schema checks.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-retro.md"
+    },
+    {
+      "command": "governance-sync",
+      "description": "Synchronize project governance at stage closeout from the actual diff: spine, CONTEXT, ADR, CONTRACT, TESTS, REGRESSION, and Issue Tracker references.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "docs-governance"
+      ],
+      "path": "commands/governance-sync.md"
+    },
+    {
+      "command": "governance",
+      "description": "Apply living-document governance to an existing project by discovering its real structure, reusing or incrementally updating charter, map, status, and history roles, and adding a thin Codex AGENTS.md bridge when needed.",
+      "type": "review",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [],
+      "path": "commands/governance.md"
     },
     {
       "command": "gradle-build",
@@ -852,6 +905,17 @@
       "path": "commands/refactor-clean.md"
     },
     {
+      "command": "regression-audit",
+      "description": "Run the changed module and every required downstream acceptance command from the regression ledger. Exit codes are the final delivery gate. Use init to draft a ledger from reproducible repository evidence.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "module-regression"
+      ],
+      "path": "commands/regression-audit.md"
+    },
+    {
       "command": "resume-session",
       "description": "Load the most recent session file from ~/.claude/session-data/ and resume work with full context from where the last session ended.",
       "type": "testing",
@@ -1033,8 +1097,8 @@
       "orchestration": 11,
       "planning": 2,
       "refactoring": 1,
-      "review": 15,
-      "testing": 53
+      "review": 16,
+      "testing": 58
     },
     "topAgents": [
       {
@@ -1084,6 +1148,10 @@
         "count": 6
       },
       {
+        "skill": "docs-governance",
+        "count": 4
+      },
+      {
         "skill": "orch-add-feature",
         "count": 4
       },
@@ -1113,10 +1181,6 @@
       },
       {
         "skill": "cpp-coding-standards",
-        "count": 2
-      },
-      {
-        "skill": "cpp-testing",
         "count": 2
       }
     ]

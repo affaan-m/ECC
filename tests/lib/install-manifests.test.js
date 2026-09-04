@@ -92,6 +92,24 @@ function runTests() {
     assert.ok(modules.some(module => module.id === 'orchestration'), 'Should include orchestration');
   })) passed++; else failed++;
 
+  if (test('resolves documentation-governance for every advertised target', () => {
+    const module = loadInstallManifests().modulesById.get('documentation-governance');
+    assert.ok(module, 'Should include documentation-governance');
+    assert.ok(Array.isArray(module.targets) && module.targets.length > 0,
+      'documentation-governance should advertise at least one install target');
+    for (const target of module.targets) {
+      const plan = resolveInstallPlan({ moduleIds: [module.id], target });
+      assert.ok(plan.selectedModuleIds.includes(module.id),
+        `documentation-governance should resolve for ${target}`);
+      assert.ok(!plan.skippedModuleIds.includes(module.id),
+        `documentation-governance should not be skipped for ${target}`);
+      for (const dependencyId of module.dependencies) {
+        assert.ok(plan.selectedModuleIds.includes(dependencyId),
+          `documentation-governance should resolve ${dependencyId} for ${target}`);
+      }
+    }
+  })) passed++; else failed++;
+
   if (test('lists install components from the real project', () => {
     const components = listInstallComponents();
     assert.ok(components.some(component => component.id === 'lang:typescript'),
