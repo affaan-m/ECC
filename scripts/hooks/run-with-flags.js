@@ -150,9 +150,42 @@ function buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw) {
   return parts.join(' ') + '\n';
 }
 
+function parseApplyPatchPayload(value) {
+  if (typeof value !== 'string') return null;
+
+  const lines = value.replace(/\r\n/g, '\n').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  if (lines[0] !== '*** Begin Patch' || lines.at(-1) !== '*** End Patch') {
+    return null;
+  }
+
+  const operation = lines[1]?.match(/^\*\*\* (Add|Update) File: (.+)$/);
+  if (!operation || operation[2].includes('\0') || lines.slice(2, -1).some(line => /^\*\*\* (?:Begin Patch|End Patch|(?:Add|Update) File: )/.test(line))) {
+    return null;
+  }
+
+  return {
+    toolName: operation[1] === 'Add' ? 'Write' : 'Edit',
+    filePath: operation[2]
+  };
+}
+
+function buildApplyPatchHookInput(raw, patch) {
+  return JSON.stringify({
+    tool: patch.toolName,
+    tool_name: patch.toolName,
+    tool_input: {
+      file_path: patch.filePath,
+      content: raw
+    }
+  });
+}
+
 async function main() {
   const [, , hookId, relScriptPath, profilesCsv] = process.argv;
   const { raw, truncated } = await readStdinRaw();
+  const applyPatch = parseApplyPatchPayload(raw);
+  const hookInput = applyPatch ? buildApplyPatchHookInput(raw, applyPatch) : raw;
 
   // Oversized payloads: never echo the truncated string — a JSON document
   // cut mid-stream is treated by the harness as a hook failure, blocking the
@@ -160,25 +193,30 @@ async function main() {
   // pass-through paths fail open. The hook itself still runs and receives
   // the truncated flag (run() context / ECC_HOOK_INPUT_TRUNCATED), so
   // security hooks like config-protection can still choose to block.
-  const sanitizeEcho = text => (truncated && text === raw ? '' : text);
+  //
+  // Cursor's ApplyPatch tool provides its patch envelope as free-form stdin.
+  // Policy hooks still need the target path, so valid single-file envelopes
+  // are presented as the existing Write/Edit JSON shape. Suppress only the
+  // synthetic no-op response; denials and additional context pass through.
+  const sanitizeEcho = text => ((truncated && text === hookInput) || (applyPatch !== null && (text === hookInput || text === raw)) ? '' : text);
   if (truncated) {
     process.stderr.write(`[Hook] stdin exceeded ${MAX_STDIN} bytes for ${hookId || 'unknown'}; suppressing pass-through (fail-open unless the hook blocks)\n`);
   }
 
   if (!hookId || !relScriptPath) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout(sanitizeEcho(hookInput), 0);
     return;
   }
 
   if (!isHookEnabled(hookId, { profiles: profilesCsv })) {
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout(sanitizeEcho(hookInput), 0);
     return;
   }
 
   if (isDryRun()) {
-    const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, raw);
+    const preview = buildDryRunPreview(hookId, relScriptPath, profilesCsv, hookInput);
     process.stderr.write(preview);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout(sanitizeEcho(hookInput), 0);
     return;
   }
 
@@ -189,13 +227,13 @@ async function main() {
   // Prevent path traversal outside the plugin root
   if (!scriptPath.startsWith(resolvedRoot + path.sep)) {
     process.stderr.write(`[Hook] Path traversal rejected for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout(sanitizeEcho(hookInput), 0);
     return;
   }
 
   if (!fs.existsSync(scriptPath)) {
     process.stderr.write(`[Hook] Script not found for ${hookId}: ${scriptPath}\n`);
-    exitWithStdout(sanitizeEcho(raw), 0);
+    exitWithStdout(sanitizeEcho(hookInput), 0);
     return;
   }
 
@@ -224,25 +262,25 @@ async function main() {
       // hands back a pending Promise, which resolveHookResult reads as "no
       // opinion" and silently degrades to pass-through. Synchronous hooks are
       // unaffected: awaiting a plain value just costs a microtask.
-      const output = await hookModule.run(raw, {
+      const output = await hookModule.run(hookInput, {
         hookId,
         pluginRoot,
         scriptPath,
         truncated,
         maxStdin: MAX_STDIN
       });
-      const result = resolveHookResult(raw, output);
+      const result = resolveHookResult(hookInput, output);
       exitWithStdout(sanitizeEcho(result.stdout), result.exitCode);
     } catch (runErr) {
       process.stderr.write(`[Hook] run() error for ${hookId}: ${runErr.message}\n`);
-      exitWithStdout(sanitizeEcho(raw), 0);
+      exitWithStdout(sanitizeEcho(hookInput), 0);
     }
     return;
   }
 
   // Legacy path: spawn a child Node process for hooks without run() export
   const result = spawnSync(process.execPath, [scriptPath], {
-    input: raw,
+    input: hookInput,
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -256,7 +294,7 @@ async function main() {
     timeout: 30000
   });
 
-  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(raw, result));
+  const legacyStdout = sanitizeEcho(resolveLegacySpawnStdout(hookInput, result));
   if (result.stderr) process.stderr.write(result.stderr);
 
   if (result.error || result.signal || result.status === null) {
