@@ -1888,6 +1888,18 @@ Copilot CLI 1.0.83 reports all 42 under `Project skills` with `source:
 command files that Copilot surfaces as skills; they are reported with `path`
 set to the `.claude/commands` directory rather than to a per-skill subdirectory.
 
+To check this without installing anything, run the npm-distributed build
+against a throwaway clone:
+
+```bash
+git clone --depth 1 https://github.com/affaan-m/ECC.git && cd ECC
+npx -y @github/copilot@1.0.82 skill list --json | jq '[.[] | select(.source=="project")] | length'
+# 42
+```
+
+The same 39 + 3 split is reported by 1.0.82 from npm and by 1.0.83 installed
+locally, so the behaviour is not specific to one build or install method.
+
 To expose the full catalog, place `skills/` where Copilot CLI looks:
 
 ```bash
