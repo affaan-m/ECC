@@ -42,44 +42,18 @@ function resolvePinnedGitSha(sourceRoot, sha) {
   }
 }
 
-function listGitTreeFiles(sourceRoot, sha) {
-  return execFileSync(
-    'git',
-    ['-C', sourceRoot, 'ls-tree', '-r', '--name-only', '-z', sha],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
-  ).split('\0').filter(Boolean);
-}
-
-function copyGitTreeFiles(sourceRoot, sha, dest, pathModule = path) {
-  const files = listGitTreeFiles(sourceRoot, sha);
-  for (const relative of files) {
-    const content = execFileSync(
-      'git',
-      ['-C', sourceRoot, 'show', `${sha}:${relative}`],
-      { maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }
-    );
-    const to = pathModule.join(dest, relative);
-    fs.mkdirSync(pathModule.dirname(to), { recursive: true });
-    fs.writeFileSync(to, content);
-  }
-}
-
-function copyGitArchive(sourceRoot, sha, dest, pathModule = path) {
+function copyGitArchive(sourceRoot, sha, dest, execute = execFileSync) {
   fs.mkdirSync(dest, { recursive: true });
-  try {
-    const archive = execFileSync(
-      'git',
-      ['-C', sourceRoot, 'archive', '--format=tar', sha],
-      { maxBuffer: 512 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }
-    );
-    execFileSync('tar', ['-x', '-C', dest], {
-      input: archive,
-      maxBuffer: 512 * 1024 * 1024,
-      stdio: ['pipe', 'ignore', 'pipe'],
-    });
-  } catch {
-    copyGitTreeFiles(sourceRoot, sha, dest, pathModule);
-  }
+  const archive = execute(
+    'git',
+    ['-C', sourceRoot, 'archive', '--format=tar', sha],
+    { maxBuffer: 512 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }
+  );
+  execute('tar', ['-x', '-C', dest], {
+    input: archive,
+    maxBuffer: 512 * 1024 * 1024,
+    stdio: ['pipe', 'ignore', 'pipe'],
+  });
 }
 
 function readPinnedMarketplaceSource(sourceRoot, pathModule = path) {
@@ -240,6 +214,7 @@ function preparePinnedGrokSource(options = {}) {
 
 module.exports = {
   SHA_PATTERN,
+  copyGitArchive,
   isGitWorkTreeRoot,
   resolvePinnedGitSha,
   readPinnedMarketplaceSource,

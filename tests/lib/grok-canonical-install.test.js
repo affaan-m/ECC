@@ -11,6 +11,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { applyInstallPlan, previewInstallPlan } = require('../../scripts/lib/install-executor');
 const { repairInstalledStates, uninstallInstalledStates } = require('../../scripts/lib/install-lifecycle');
 const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
+const { copyGitArchive } = require('../../scripts/lib/grok-source-identity');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 let passed = 0;
@@ -214,6 +215,27 @@ function runTests() {
         'pinned payload\n'
       );
       assert.ok(!fs.existsSync(path.join(installedRoot(fixture), 'untracked.txt')));
+    } finally {
+      fs.rmSync(fixture.parent, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('canonical source extraction fails closed when tar is unavailable', () => {
+    const fixture = createPinnedFixture();
+    try {
+      const destination = path.join(fixture.parent, 'snapshot');
+      const tarUnavailable = (command) => {
+        if (command === 'git') return Buffer.alloc(0);
+        const error = new Error('tar executable not found');
+        error.code = 'ENOENT';
+        error.path = 'tar';
+        throw error;
+      };
+      assert.throws(() => copyGitArchive(fixture.sourceRoot, fixture.payloadSha, destination, tarUnavailable), (error) => {
+        assert.strictEqual(error.code, 'ENOENT');
+        assert.strictEqual(error.path, 'tar');
+        return true;
+      });
     } finally {
       fs.rmSync(fixture.parent, { recursive: true, force: true });
     }
