@@ -242,6 +242,67 @@ Feature parity matrix এবং বিস্তারিত adapter নোটে
 
 ---
 
+## অবদান রাখুন
+
+ECC একটি community-driven open-source প্রজেক্ট। আপনি বিভিন্ন জায়গায় অবদান রাখতে পারেন:
+
+| কোথায় | কী যোগ করতে পারেন |
+|---|---|
+| `agents/` | নতুন specialized agent (reviewer, planner, build-resolver ইত্যাদি) |
+| `skills/` | workflow skill, domain knowledge, coding pattern |
+| `hooks/` | automation, linting, security check, session hook |
+| `rules/` | language/framework-specific coding standard |
+| `commands/` | legacy slash-command compatibility shim |
+| `docs/` | README অনুবাদ, গাইড, troubleshooting doc |
+| `tests/` | regression test, install/doc validation |
+| `.cursor/`, `.codex/`, `.opencode/` | cross-harness adapter update |
+
+**বিশেষভাবে প্রয়োজন:**
+
+- **Agents** — ভাষা-specific reviewer (Rust, C#, Kotlin), framework expert (Rails, FastAPI), DevOps (Kubernetes, Terraform), domain expert (ML, mobile)
+- **Skills** — testing strategy, API design, deployment pattern, security checklist
+- **Hooks** — formatting, typecheck, secret detection, session persistence
+- **অনুবাদ** — `docs/<locale>/` (যেমন `docs/bn/`, `docs/ja-JP/`, `docs/zh-CN/`) — agents, skills, commands অনুবাদ বা README আপডেট
+- **Security** — AgentShield rule, vulnerability fix ([SECURITY.md](../../SECURITY.md) দেখুন)
+
+### দ্রুত শুরু
+
+```bash
+# 1. Fork ও clone
+gh repo fork affaan-m/ECC --clone
+cd ECC
+
+# 2. Branch তৈরি
+git checkout -b feat/my-contribution
+
+# 3. আপনার অবদান যোগ করুন (নিচে দেখুন)
+
+# 4. লোকালি টেস্ট
+node tests/run-all.js
+cp -r skills/my-skill ~/.claude/skills/   # skill হলে
+
+# 5. PR পাঠান
+git add . && git commit -m "feat(skills): add my-skill" && git push -u origin feat/my-contribution
+```
+
+**Skill যোগ করতে:** `skills/your-skill-name/SKILL.md` (YAML frontmatter সহ)
+
+**Agent যোগ করতে:** `agents/your-agent.md` (name, description, tools, model frontmatter)
+
+**বাংলা অনুবাদে অবদান:** `docs/bn/` — README, agents, skills, commands mirror; ইংরেজি README authoritative source হিসেবে রাখুন।
+
+**গুরুত্বপূর্ণ সতর্কতা:** `.claude-plugin/plugin.json`-এ `"hooks"` field যোগ করবেন **না** — Claude Code v2.1+ plugin hooks স্বয়ংক্রিয়ভাবে load করে।
+
+### আরও গাইড
+
+- [Contributing guide](../../CONTRIBUTING.md) — সম্পূর্ণ PR process
+- [Skill development guide](../SKILL-DEVELOPMENT-GUIDE.md)
+- [Skill placement policy](../SKILL-PLACEMENT-POLICY.md)
+- [GitHub Discussions](https://github.com/affaan-m/ECC/discussions) — প্রশ্ন, আইডিয়া, Show & Tell
+- [GitHub Issues](https://github.com/affaan-m/ECC/issues) — bug report বা feature request
+
+---
+
 ## গুরুত্বপূর্ণ ডকুমেন্ট
 
 - [ইংরেজি README](../../README.md) — সম্পূর্ণ ও authoritative উৎস
