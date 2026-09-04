@@ -273,8 +273,12 @@ run('every shipped command with a script reference gets its closure', () => {
   const entries = plan.closure.entries;
   assert.ok(entries.some(e => e.command === 'skill-health.md' && e.script === 'scripts/skills-health.js'), 'skill-health must map to its script');
   assert.ok(entries.some(e => e.command === 'plugin-profiles.md'), 'plugin-profiles must map to its script');
-  assert.ok(plan.runtimePaths.includes('scripts/lib/skill-evolution/health.js'), 'skills-health dependency must ship');
-  assert.ok(plan.runtimePaths.includes('manifests'), 'runtime data must ship');
+  // A dependency may be covered by an exact path or by a directory the
+  // selection already carries (commands-runtime ships scripts/lib/skill-evolution
+  // wholesale), so assert coverage rather than one spelling of it.
+  const covers = target => plan.runtimePaths.some(p => p === target || target.startsWith(`${p}/`));
+  assert.ok(covers('scripts/lib/skill-evolution/health.js'), 'skills-health dependency must ship');
+  assert.ok(covers('manifests/install-profiles.json'), 'runtime data must ship');
 });
 
 // --- context-profile binding seam --------------------------------------------

@@ -57,6 +57,45 @@
       "stability": "stable"
     },
     {
+      "id": "commands-runtime",
+      "kind": "commands",
+      "description": "Module closure and runtime data required by the command entry scripts in commands-core. Without it those scripts fail with MODULE_NOT_FOUND on any target that does not also install hooks-runtime.",
+      "paths": [
+        "manifests",
+        "scripts/lib/agent-data-home.js",
+        "scripts/lib/cursor-agent-names.js",
+        "scripts/lib/install-manifests.js",
+        "scripts/lib/install-targets",
+        "scripts/lib/install/hook-consent.js",
+        "scripts/lib/invocation-environment.js",
+        "scripts/lib/opencode-paths.js",
+        "scripts/lib/path-safety.js",
+        "scripts/lib/plugin-profiles.js",
+        "scripts/lib/plugin-profiles",
+        "scripts/lib/skill-evolution",
+        "scripts/lib/utils.js"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi",
+        "adal"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
       "id": "commands-core",
       "kind": "commands",
       "description": "Core slash-command library and command docs.",
@@ -81,7 +120,9 @@
         "kimi",
         "adal"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "commands-runtime"
+      ],
       "defaultInstall": true,
       "cost": "medium",
       "stability": "stable"
