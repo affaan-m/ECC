@@ -31,6 +31,10 @@ function parseInstallArgs(argv) {
     locale: null,
     enableHooks: false,
     noHooks: false,
+    trust: false,
+    consentHooks: false,
+    consentMcp: [],
+    sourceSha: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -75,6 +79,20 @@ function parseInstallArgs(argv) {
       parsed.enableHooks = true;
     } else if (arg === '--no-hooks') {
       parsed.noHooks = true;
+    } else if (arg === '--trust') {
+      parsed.trust = true;
+    } else if (arg === '--consent-hooks') {
+      parsed.consentHooks = true;
+    } else if (arg === '--consent-mcp') {
+      parsed.consentMcp = dedupeStrings((args[index + 1] || '').split(','));
+      index += 1;
+    } else if (arg === '--source-sha') {
+      const sourceSha = args[index + 1] || '';
+      if (!sourceSha || sourceSha.startsWith('-')) {
+        throw new Error('Missing value for --source-sha');
+      }
+      parsed.sourceSha = sourceSha;
+      index += 1;
     } else if (arg === '--dry-run') {
       parsed.dryRun = true;
     } else if (arg === '--json') {
@@ -126,7 +144,16 @@ function normalizeInstallRequest(options = {}) {
     ...(Array.isArray(options.legacyLanguages) ? options.legacyLanguages : []),
     ...(Array.isArray(options.languages) ? options.languages : []),
   ]).map(language => language.toLowerCase()));
-  const hookConsent = resolveHookConsentFlags(options);
+  const hookConsent = resolveHookConsentFlags({
+    ...options,
+    enableHooks: options.enableHooks === true || options.consentHooks === true,
+  });
+  const trust = options.trust === true;
+  const consentMcp = dedupeStrings(options.consentMcp || []);
+  const sourceSha = options.sourceSha || null;
+  if (sourceSha && (target !== 'grok' || !/^[0-9a-f]{40}$/.test(sourceSha))) {
+    throw new Error('--source-sha requires --target grok and a 40-character lowercase commit SHA');
+  }
   if (hookConsent === 'declined' && moduleIds.includes('hooks-runtime')) {
     throw new Error('--no-hooks cannot be combined with an explicit hooks-runtime module selection');
   }
@@ -158,6 +185,9 @@ function normalizeInstallRequest(options = {}) {
     excludeComponentIds,
     legacyLanguages,
     hookConsent,
+    trust,
+    consentMcp,
+    sourceSha,
     configPath: config?.path || options.configPath || null,
   };
 }

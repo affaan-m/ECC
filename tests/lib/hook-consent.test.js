@@ -116,18 +116,25 @@ function runTests() {
 
   if (test('withHookConsent attaches the decision without mutating enabled plans', () => {
     const plan = buildHookPlan();
+    const dispose = () => {};
+    Object.defineProperty(plan, 'dispose', { enumerable: false, value: dispose });
     const enabled = withHookConsent(plan, 'enabled');
     assert.strictEqual(enabled.hookConsent, 'enabled');
     assert.strictEqual(enabled.operations.length, 3);
     assert.strictEqual(enabled.statePreview.request.hookConsent, 'enabled');
+    assert.strictEqual(enabled.dispose, dispose);
     const unset = withHookConsent(plan, null);
     assert.strictEqual(unset.hookConsent, null);
     assert.strictEqual(unset.statePreview.request.hookConsent, null);
+    assert.strictEqual(unset.dispose, dispose);
     assert.throws(() => withHookConsent(plan, 'maybe'), /Unknown hook consent decision/);
   })) passed++; else failed++;
 
   if (test('declined consent strips the hook runtime from plan and state preview', () => {
-    const declined = withHookConsent(buildHookPlan(), 'declined');
+    const plan = buildHookPlan();
+    const dispose = () => {};
+    Object.defineProperty(plan, 'dispose', { enumerable: false, value: dispose });
+    const declined = withHookConsent(plan, 'declined');
     assert.strictEqual(declined.hookConsent, 'declined');
     assert.strictEqual(declined.operations.length, 1);
     assert.deepStrictEqual(declined.selectedModuleIds, ['rules-core']);
@@ -135,6 +142,7 @@ function runTests() {
     assert.strictEqual(declined.statePreview.operations.length, 1);
     assert.strictEqual(declined.statePreview.request.hookConsent, 'declined');
     assert.deepStrictEqual(declined.statePreview.resolution.selectedModules, ['rules-core']);
+    assert.strictEqual(declined.dispose, dispose);
   })) passed++; else failed++;
 
   if (test('assertHookConsentReady holds hook materialization without consent', () => {

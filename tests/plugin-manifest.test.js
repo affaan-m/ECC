@@ -2,8 +2,10 @@
  * Tests for plugin manifests:
  *   - .claude-plugin/plugin.json (Claude Code plugin)
  *   - .codex-plugin/plugin.json (Codex native plugin)
+ *   - .grok-plugin/plugin.json (Grok Build plugin)
  *   - .mcp.json (MCP server config at plugin root)
  *   - .agents/plugins/marketplace.json (Codex marketplace discovery)
+ *   - .grok-plugin/marketplace.json (Grok Build marketplace)
  *
  * Enforces rules from:
  *   - .claude-plugin/PLUGIN_SCHEMA_NOTES.md (Claude Code validator rules)
@@ -659,6 +661,139 @@ test('user-facing docs do not use the legacy non-URL marketplace add form', () =
   }
 
   assert.deepStrictEqual(offenders, [], `Legacy non-URL marketplace add form must not appear in user-facing docs: ${offenders.join(', ')}`);
+});
+
+// ── Grok Build plugin manifest ────────────────────────────────────────────────
+console.log('\n=== .grok-plugin/plugin.json ===\n');
+
+const grokPluginPath = path.join(repoRoot, '.grok-plugin', 'plugin.json');
+const grokMarketplacePath = path.join(repoRoot, '.grok-plugin', 'marketplace.json');
+const grokPluginReadmePath = path.join(repoRoot, '.grok-plugin', 'README.md');
+
+test('grok plugin.json exists', () => {
+  assert.ok(fs.existsSync(grokPluginPath), 'Expected .grok-plugin/plugin.json to exist');
+});
+
+test('grok marketplace.json exists', () => {
+  assert.ok(fs.existsSync(grokMarketplacePath), 'Expected .grok-plugin/marketplace.json to exist');
+});
+
+test('grok plugin README exists', () => {
+  assert.ok(fs.existsSync(grokPluginReadmePath), 'Expected .grok-plugin/README.md to exist');
+});
+
+const grokPlugin = fs.existsSync(grokPluginPath)
+  ? loadJsonObject(grokPluginPath, '.grok-plugin/plugin.json')
+  : {};
+const grokMarketplace = fs.existsSync(grokMarketplacePath)
+  ? loadJsonObject(grokMarketplacePath, '.grok-plugin/marketplace.json')
+  : {};
+
+test('grok plugin.json uses short plugin slug and matching version', () => {
+  assert.strictEqual(grokPlugin.name, 'ecc');
+  assert.strictEqual(grokPlugin.version, expectedVersion);
+});
+
+test('grok plugin.json keeps Claude-incompatible fields out of the Grok manifest', () => {
+  assert.ok(!('userConfig' in grokPlugin), 'Grok does not honor Claude userConfig; hook profile stays on ECC_HOOK_PROFILE');
+  assert.strictEqual(
+    grokPlugin.mcpServers,
+    '',
+    'Empty mcpServers string opts the native Grok trusted plugin surface out of root .mcp.json / chrome-devtools'
+  );
+  assert.ok(!('agents' in grokPlugin), 'Grok discovers agents/ by convention');
+  assert.strictEqual(
+    grokPlugin.hooks,
+    '',
+    'Empty hooks string opts the native Grok CLI surface out of hooks/hooks.json; ECC hook consent is canonical install state'
+  );
+});
+
+test('grok plugin.json description includes catalog counts', () => {
+  assert.ok(
+    typeof grokPlugin.description === 'string'
+      && /\d+\s+agents,\s+\d+\s+skills,\s+\d+\s+legacy command shims/i.test(grokPlugin.description),
+    'Grok plugin description must include catalog counts so scripts/ci/catalog.js can keep them in sync'
+  );
+});
+
+test('grok plugin.json points at canonical ECC identity', () => {
+  assert.strictEqual(grokPlugin.homepage, 'https://ecc.tools');
+  assert.strictEqual(grokPlugin.repository, 'https://github.com/affaan-m/ECC');
+  assert.strictEqual(grokPlugin.license, 'MIT');
+  assert.ok(grokPlugin.author && grokPlugin.author.name, 'Expected author.name');
+  assert.strictEqual(grokPlugin.logo, 'assets/ecc-icon.svg');
+  assert.ok(fs.existsSync(path.join(repoRoot, grokPlugin.logo)), 'Expected Grok plugin logo to exist');
+});
+
+test('grok marketplace.json names the ecc catalog and plugin', () => {
+  assert.strictEqual(grokMarketplace.name, 'ecc');
+  assert.ok(typeof grokMarketplace.description === 'string' && grokMarketplace.description.trim(), 'Grok marketplace.json may have a top-level description');
+  assert.ok(Array.isArray(grokMarketplace.plugins) && grokMarketplace.plugins.length > 0, 'Expected plugins array');
+  assert.strictEqual(grokMarketplace.plugins[0].name, 'ecc');
+  assert.strictEqual(grokMarketplace.plugins[0].version, expectedVersion);
+});
+
+test('grok marketplace plugin source is a Git URL of the whole repo, not ./', () => {
+  const plugin = grokMarketplace.plugins[0];
+  assert.ok(plugin.source && typeof plugin.source === 'object', 'Grok rejects Claude\'s string source "./" as an empty marketplace path');
+  assert.notStrictEqual(plugin.source, './');
+  assert.strictEqual(plugin.source.source, 'url');
+  assert.strictEqual(plugin.source.url, 'https://github.com/affaan-m/ECC.git');
+  assert.ok(/^[0-9a-f]{40}$/.test(plugin.source.sha), 'Whole-repo Grok source must pin a 40-character lowercase commit SHA');
+  const trackedAdapter = require('child_process')
+    .execFileSync('git', ['ls-files', 'scripts/lib/grok-harness-adapter.js'], { cwd: repoRoot, encoding: 'utf8' })
+    .trim();
+  if (trackedAdapter) {
+    require('child_process').execFileSync(
+      'git',
+      ['show', `${plugin.source.sha}:scripts/lib/grok-harness-adapter.js`],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+  }
+  assert.notStrictEqual(
+    plugin.source.sha,
+    'd8409a4b0813771235555e32e3d8046a73988bfa',
+    'Do not pin the TasteForge main merge unless that commit contains the Grok adapter'
+  );
+  assert.ok(!plugin.source.path, 'Do not point Grok at plugins/ecc; Codex already proved thin subdir copies drop runtime files');
+});
+
+test('grok marketplace plugin description includes catalog counts', () => {
+  assert.ok(
+    typeof grokMarketplace.plugins[0].description === 'string'
+      && /\d+\s+agents,\s+\d+\s+skills,\s+\d+\s+legacy command shims/i.test(grokMarketplace.plugins[0].description),
+    'Grok marketplace plugin description must include catalog counts'
+  );
+});
+
+test('package.json files includes the Grok plugin directory', () => {
+  assert.ok(Array.isArray(rootPackage.files), 'Expected package.json files array');
+  assert.ok(
+    rootPackage.files.includes('.grok-plugin/'),
+    'npm pack must include .grok-plugin/ so published tarballs remain Grok-installable'
+  );
+});
+
+test('.grok-plugin README documents install, trust, enable, MCP, and hook profile', () => {
+  const readme = fs.readFileSync(grokPluginReadmePath, 'utf8');
+  assert.ok(readme.includes('canonical installer'), 'ECC trusted install uses the canonical installer');
+  assert.ok(readme.includes('install-apply.js --target grok'), 'Grok entrypoint delegates to install-apply');
+  assert.ok(readme.includes('grok-install.js'), 'Operator ECC consent path is scripts/grok-install.js');
+  assert.ok(readme.includes('grok plugin marketplace add affaan-m/ECC'), 'Expected marketplace add for the canonical ECC repo');
+  assert.ok(readme.includes('grok plugin enable ecc'), 'Grok plugins stay off until enabled');
+  assert.ok(
+    /not ECC capability consent|not ECC consent|discovery/i.test(readme),
+    'Grok CLI --trust must not be documented as ECC capability consent'
+  );
+  assert.ok(readme.includes('ECC_HOOK_PROFILE'), 'Grok has no Claude userConfig; document ECC_HOOK_PROFILE');
+  assert.ok(readme.includes('.mcp.json'), 'Document root .mcp.json as a consent-gated MCP source');
+  assert.ok(readme.includes('chrome-devtools'), 'Name chrome-devtools as a consent-gated MCP capability');
+  assert.ok(
+    /consent|explicit/i.test(readme) && /does not|without consent|not attach/i.test(readme),
+    'Document that trusted Grok installs do not attach chrome-devtools without consent'
+  );
+  assert.ok(readme.includes('grok plugin validate'), 'Expected a machine-checkable validation command');
 });
 
 test('.codex-plugin README uses current marketplace add flow', () => {

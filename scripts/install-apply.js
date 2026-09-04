@@ -46,6 +46,7 @@ Targets:
   zed          - Install project settings, commands, agents, skills, and flattened rules into ./.zed/
   hermes       - Install shared rules/skills/commands into ~/.hermes/
   kimi         - Install Kimi Code project instructions, skills, and MCP config into ./.kimi-code/ (ECC hooks not configured)
+  grok         - Install through the canonical plan/apply/receipt lifecycle into ~/.grok/plugins/ecc/
   openclaw     - Install shared rules/skills/commands into ~/.openclaw/
   adal         - Install shared rules/skills/commands into ./.adal/
 
@@ -62,6 +63,10 @@ Options:
   --enable-hooks      Confirm installing the automatic hook runtime (required
                       when the selected profile/modules materialize hooks)
   --no-hooks          Install everything except the automatic hook runtime
+  --trust             Trust executable Grok capabilities (still requires each consent flag)
+  --consent-hooks     Allow Grok hooks for this install
+  --consent-mcp <ids> Allow named Grok MCP servers, comma-separated
+  --source-sha <sha>   Install or roll back Grok to an exact 40-character Git commit
   --dry-run    Show the install plan without copying files
   --json       Emit machine-readable plan/result JSON
   --help       Show this help text
@@ -139,6 +144,7 @@ function printHumanPlan(plan, dryRun) {
 }
 
 async function main() {
+  let rawPlan = null;
   try {
     const options = parseInstallArgs(process.argv);
 
@@ -165,7 +171,8 @@ async function main() {
       ...options,
       config,
     });
-    const rawPlan = createInstallPlanFromRequest(request, {
+
+    rawPlan = createInstallPlanFromRequest(request, {
       projectRoot: process.cwd(),
       homeDir: process.env.HOME || os.homedir(),
       env: process.env,
@@ -201,7 +208,11 @@ async function main() {
     }
   } catch (error) {
     process.stderr.write(`Error: ${error.message}${getHelpText()}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    if (rawPlan && typeof rawPlan.dispose === 'function') {
+      rawPlan.dispose();
+    }
   }
 }
 

@@ -103,9 +103,10 @@ function resolveLegacySpawnStdout(raw, result) {
 }
 
 function getPluginRoot() {
-  if (process.env.CLAUDE_PLUGIN_ROOT && process.env.CLAUDE_PLUGIN_ROOT.trim()) {
-    return process.env.CLAUDE_PLUGIN_ROOT;
-  }
+  const configuredRoot = [process.env.CLAUDE_PLUGIN_ROOT, process.env.ECC_PLUGIN_ROOT]
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .find(Boolean);
+  if (configuredRoot) return configuredRoot;
   return path.resolve(__dirname, '..', '..');
 }
 

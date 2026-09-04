@@ -9,6 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const yaml = require('js-yaml');
 const { applyInstallPlan } = require('../../scripts/lib/install/apply');
+const { canonicalArgs } = require('../../scripts/grok-install');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'install-apply.js');
 const DEFAULT_INSTALL_APPLY_TIMEOUT_MS = process.platform === 'win32' ? 30000 : 10000;
@@ -128,6 +129,61 @@ function runTests() {
     const result = run(['--profile', 'core', 'typescript']);
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('cannot be combined'));
+  })) passed++; else failed++;
+
+  if (test('Grok alias does not add the default profile to positional language selections', () => {
+    assert.deepStrictEqual(canonicalArgs(['typescript']), ['--target', 'grok', 'typescript']);
+    assert.deepStrictEqual(
+      canonicalArgs(['--dry-run']),
+      ['--target', 'grok', '--profile', 'full', '--dry-run']
+    );
+  })) passed++; else failed++;
+
+  if (test('Grok alias rejects option-prefixed values for value flags', () => {
+    assert.throws(() => canonicalArgs(['--target', '--dry-run']), /Missing value for --target/);
+    assert.throws(() => canonicalArgs(['--consent-mcp', '--dry-run']), /Missing value for --consent-mcp/);
+    assert.throws(() => canonicalArgs(['--target', 'claude']), /Invalid value for --target: claude/);
+  })) passed++; else failed++;
+
+  if (test('plans Grok through the canonical request with a local pinned fixture', () => {
+    const homeDir = createTempDir('install-apply-grok-home-');
+    const fixtureRoot = createTempDir('install-apply-grok-source-');
+    const sourceRoot = path.join(fixtureRoot, 'source');
+    try {
+      execFileSync('git', ['clone', '--quiet', '--no-local', path.dirname(path.dirname(SCRIPT)), sourceRoot]);
+      const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim();
+      const marketplacePath = path.join(sourceRoot, '.grok-plugin', 'marketplace.json');
+      const marketplace = readJson(marketplacePath);
+      const updatedMarketplace = {
+        ...marketplace,
+        plugins: [
+          {
+            ...marketplace.plugins[0],
+            source: { source: 'url', url: sourceRoot, sha: sourceSha },
+          },
+          ...marketplace.plugins.slice(1),
+        ],
+      };
+      fs.writeFileSync(marketplacePath, `${JSON.stringify(updatedMarketplace, null, 2)}\n`);
+
+      const result = run(
+        ['--target', 'grok', '--profile', 'minimal', '--dry-run', '--json'],
+        { cwd: sourceRoot, homeDir }
+      );
+      assert.strictEqual(result.code, 0, result.stderr);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.dryRun, true);
+      assert.strictEqual(payload.grok, undefined);
+      assert.strictEqual(payload.plan.target, 'grok');
+      assert.strictEqual(payload.plan.adapter.id, 'grok-home');
+      assert.ok(payload.plan.operations.length > 0);
+      assert.ok(payload.plan.operations.every((operation) => (
+        ['copy-file', 'render-template', 'merge-json', 'remove'].includes(operation.kind)
+      )));
+    } finally {
+      cleanup(homeDir);
+      cleanup(fixtureRoot);
+    }
   })) passed++; else failed++;
 
   if (test('installs Claude rules and writes install-state', () => {

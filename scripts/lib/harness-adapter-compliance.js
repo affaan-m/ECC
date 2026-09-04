@@ -98,6 +98,45 @@ const ADAPTER_RECORDS = Object.freeze([
     ],
   },
   {
+    id: 'grok-build',
+    harness: 'Grok Build',
+    state: 'Adapter-backed',
+    supported_assets: [
+      'Grok plugin and marketplace manifests',
+      'shared skills',
+      'commands',
+      'hooks only after adapter hook consent',
+      'MCP opted out on the native plugin surface (`mcpServers: ""` and `hooks: ""`)',
+    ],
+    unsupported_surfaces: [
+      'Claude userConfig hook profiles are ignored; use ECC_HOOK_PROFILE',
+      'ECC agent tool allowlists use Claude names and are not mapped in Grok agent frontmatter',
+      'No plugin rules/ surface',
+    ],
+    install_or_onramp: [
+      '`node scripts/grok-install.js --dry-run` / `node scripts/grok-install.js` (canonical `grok` install-state under ~/.grok/ecc/)',
+      '`grok plugin marketplace add affaan-m/ECC && grok plugin install ecc && grok plugin enable ecc` (discovery only; not ECC consent)',
+    ],
+    verification_commands: [
+      '`grok plugin validate .`',
+      '`node tests/lib/grok-harness-adapter.test.js`',
+      '`node tests/plugin-manifest.test.js`',
+    ],
+    risk_notes: [
+      'Grok rejects Claude marketplace source "./"; pin a url+sha catalog in .grok-plugin/marketplace.json to a commit that contains the Grok adapter',
+      'ECC consent is the canonical install-apply receipt path; native Grok CLI discovery opts hooks and MCP out via empty plugin.json fields; the full skill catalog is large',
+    ],
+    last_verified_at: '2026-09-03',
+    owner: 'ECC maintainers',
+    source_docs: [
+      '.grok-plugin/plugin.json',
+      '.grok-plugin/marketplace.json',
+      '.grok-plugin/README.md',
+      'scripts/lib/grok-harness-adapter.js',
+      'scripts/lib/install-targets/grok-home.js',
+    ],
+  },
+  {
     id: 'opencode',
     harness: 'OpenCode',
     state: 'Adapter-backed',
