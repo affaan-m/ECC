@@ -2969,6 +2969,8 @@ function runTests() {
         'pwsh -Command "Remove-Item -Force C:/tmp/demo"',
         "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
         "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
+        'pwsh -Command "Write-Output ready; $runtimePayload"',
         'Write-Output "$(Remove-Item -Force C:/tmp/demo)"',
         '& { Remove-Item -Force C:/tmp/demo }',
         'if ($true) { Remove-Item -Force C:/tmp/demo }',

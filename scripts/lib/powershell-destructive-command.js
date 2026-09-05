@@ -525,6 +525,58 @@ function decodeDoubleQuotedString(content) {
   return value;
 }
 
+function expandStaticDoubleQuotedString(content, state, findings) {
+  const input = String(content || '');
+  let value = '';
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (char === '`' && index + 1 < input.length) {
+      const escaped = input[index + 1];
+      index += 1;
+      if (escaped === '\r' && input[index + 1] === '\n') index += 1;
+      else if (escaped !== '\n') value += escaped;
+      continue;
+    }
+    if (char !== '$') {
+      value += char;
+      continue;
+    }
+
+    if (input[index + 1] === '(') {
+      const group = readBalancedGroup(input, index + 1, '(', ')');
+      const reference = group ? variableReference(group.body) : null;
+      const staticValue = reference ? state?.staticScalars.get(reference) : undefined;
+      if (!group || staticValue === undefined) {
+        findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+        return null;
+      }
+      value += staticValue;
+      index = group.end - 1;
+      continue;
+    }
+
+    const referenceMatch = input.slice(index).match(
+      /^(?:\$\{[^}]+\}|\$(?:[A-Za-z_][\w-]*:)?[A-Za-z_][\w-]*(?:\[[^\]]+\]|\.[A-Za-z_][\w-]*)*)/
+    );
+    if (!referenceMatch) {
+      value += char;
+      continue;
+    }
+
+    const reference = variableReference(referenceMatch[0]);
+    const staticValue = reference ? state?.staticScalars.get(reference) : undefined;
+    if (staticValue === undefined) {
+      findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+      return null;
+    }
+    value += staticValue;
+    index += referenceMatch[0].length - 1;
+  }
+
+  return value;
+}
+
 function leadingStaticStringResult(source) {
   const input = String(source || '');
   let index = 0;
@@ -818,6 +870,12 @@ function extractExecutableContainers(input, options = {}) {
     if (!isScriptBlock) {
       if (isSubexpression || invokesContainerResult(prefix)) {
         resolvedCommand = staticOutputResult(group.body);
+        if (resolvedCommand === null && isSubexpression) {
+          const scalarReference = variableReference(group.body);
+          if (scalarReference) {
+            resolvedCommand = options.staticScalars?.get(scalarReference) ?? null;
+          }
+        }
       } else if (/^(?:start-process|saps|start)\b/i.test(currentClause(prefix))) {
         resolvedCommand = staticStringArrayResult(group.body);
       } else if (/^new-object\b/i.test(currentClause(prefix))) {
@@ -865,7 +923,9 @@ function parseStatements(input) {
   let segment = [];
   let segmentQuotedTokens = [];
   let segmentQuoteKinds = [];
+  let segmentTokenSources = [];
   let word = '';
+  let wordSource = '';
   let wordHasQuotedContent = false;
   let wordHasUnquotedContent = false;
   let wordQuoteKind = null;
@@ -880,8 +940,10 @@ function parseStatements(input) {
       segmentQuoteKinds.push(
         wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
       );
+      segmentTokenSources.push(wordSource);
     }
     word = '';
+    wordSource = '';
     wordHasQuotedContent = false;
     wordHasUnquotedContent = false;
     wordQuoteKind = null;
@@ -893,6 +955,7 @@ function parseStatements(input) {
         invokedByCallOperator: { value: callOperatorPending },
         quotedTokens: { value: segmentQuotedTokens },
         quoteKinds: { value: segmentQuoteKinds },
+        tokenSources: { value: segmentTokenSources },
       });
       statement.push(segment);
       callOperatorPending = false;
@@ -900,6 +963,7 @@ function parseStatements(input) {
     segment = [];
     segmentQuotedTokens = [];
     segmentQuoteKinds = [];
+    segmentTokenSources = [];
   };
   const flushStatement = () => {
     flushSegment();
@@ -913,11 +977,13 @@ function parseStatements(input) {
     if (quote === "'") {
       if (char === "'" && input[index + 1] === "'") {
         word += "'";
+        wordSource += "''";
         index += 1;
       } else if (char === "'") {
         quote = null;
       } else {
         word += char;
+        wordSource += char;
         wordHasQuotedContent = true;
       }
       continue;
@@ -926,13 +992,17 @@ function parseStatements(input) {
     if (char === '`') {
       if (index + 1 >= input.length) {
         word += '`';
+        wordSource += '`';
         continue;
       }
       const escaped = input[index + 1];
+      wordSource += `\`${escaped}`;
       index += 1;
       if (escaped === '\n' || escaped === '\r') {
-        flushWord();
-        if (escaped === '\r' && input[index + 1] === '\n') index += 1;
+        if (escaped === '\r' && input[index + 1] === '\n') {
+          wordSource += '\n';
+          index += 1;
+        }
       } else {
         word += escaped;
         if (quote) wordHasQuotedContent = true;
@@ -946,6 +1016,7 @@ function parseStatements(input) {
         quote = null;
       } else {
         word += char;
+        wordSource += char;
         wordHasQuotedContent = true;
       }
       continue;
@@ -961,12 +1032,14 @@ function parseStatements(input) {
     if (char === '(') {
       parenDepth += 1;
       word += char;
+      wordSource += char;
       wordHasUnquotedContent = true;
       continue;
     }
     if (char === ')' && parenDepth > 0) {
       parenDepth -= 1;
       word += char;
+      wordSource += char;
       wordHasUnquotedContent = true;
       continue;
     }
@@ -990,6 +1063,7 @@ function parseStatements(input) {
     }
 
     word += char;
+    wordSource += char;
     wordHasUnquotedContent = true;
   }
 
@@ -1141,16 +1215,28 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
     if (isCommandFlag(token)) {
       let payload = tokens.slice(index + 1).join(' ');
       const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens) : null;
-      const payloadReference = tokens.quoteKinds?.[index + 1] === "'"
-        ? null
-        : variableReference(payload);
-      if (payloadReference) {
-        const staticValue = scanState?.staticScalars.get(payloadReference);
-        if (staticValue === undefined) {
-          findings.add(RULE_IDS.DYNAMIC_EXECUTION);
-          return;
+      const payloadIndex = index + 1;
+      const hasOnePayloadToken = tokens.length === payloadIndex + 1;
+      if (hasOnePayloadToken && tokens.quoteKinds?.[payloadIndex] === '"') {
+        const expanded = expandStaticDoubleQuotedString(
+          tokens.tokenSources?.[payloadIndex] ?? payload,
+          scanState,
+          findings
+        );
+        if (expanded === null) return;
+        payload = expanded;
+      } else {
+        const payloadReference = tokens.quoteKinds?.[payloadIndex] === "'"
+          ? null
+          : variableReference(payload);
+        if (payloadReference) {
+          const staticValue = scanState?.staticScalars.get(payloadReference);
+          if (staticValue === undefined) {
+            findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+            return;
+          }
+          payload = staticValue;
         }
-        payload = staticValue;
       }
       if (pipelinePayload || (payload && payload !== '-')) {
         addNestedScan(

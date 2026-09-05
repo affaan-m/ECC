@@ -240,6 +240,14 @@ async function runTests() {
         expectedRules: ['powershell.remove-item.force'],
       },
       {
+        command: "$payload='Remove-Item -Force C:/private/expanded-command-sentinel'; pwsh -Command \"Write-Output ready; $payload\"",
+        expectedRules: ['powershell.remove-item.force'],
+      },
+      {
+        command: 'pwsh -Command "Write-Output ready; $runtimePayload"',
+        expectedRules: ['powershell.dynamic-execution'],
+      },
+      {
         command: `pwsh -EncodedCommand ${encodedPayload}`,
         expectedRules: ['powershell.remove-item.wildcard'],
       },

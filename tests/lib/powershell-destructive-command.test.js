@@ -458,13 +458,22 @@ test('classifies static execution primitives', () => {
     "$args = '-Command \"Remove-Item -Force C:/tmp/demo\"'; Start-Process pwsh -ArgumentList $args",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
+    "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
+    "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $($payload)\"",
     "$payload = \"Remove-Item `\n-Force C:/tmp/demo\"; pwsh -Command $payload",
   ]) {
     expectRules(command, [RULES.REMOVE_FORCE]);
   }
   expectRules('Invoke-Expression $runtimeValue', [RULES.DYNAMIC_EXECUTION]);
   expectRules('pwsh -Command $runtimeValue', [RULES.DYNAMIC_EXECUTION]);
+  expectRules('pwsh -Command "Write-Output ready; $runtimeValue"', [
+    RULES.DYNAMIC_EXECUTION,
+  ]);
+  expectRules('pwsh -Command "Write-Output ready; $($runtimeValue)"', [
+    RULES.DYNAMIC_EXECUTION,
+  ]);
   expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command '$payload'");
+  expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output `$payload\"");
   expectRules('Start-Process pwsh -ArgumentList $runtimeArgs', [RULES.DYNAMIC_EXECUTION]);
   expectRules("$cmd='Remove-'; $cmd+='Item'; & $cmd -Force C:/tmp/demo", [
     RULES.DYNAMIC_EXECUTION,
