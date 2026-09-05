@@ -228,6 +228,8 @@ test('classifies powershell and pwsh command payloads recursively', () => {
     RULES.REMOVE_FORCE,
   ]);
   expectRules('pwsh -cwa "Remove-Item -Force C:/tmp/demo"', [RULES.REMOVE_FORCE]);
+  expectRules('pwsh -Command:"Remove-Item -Force C:/tmp/demo"', [RULES.REMOVE_FORCE]);
+  expectRules('pwsh -Command:Remove-Item -Force C:/tmp/demo', [RULES.REMOVE_FORCE]);
   expectRules(
     "Start-Process pwsh -ArgumentList '-NoProfile -Command \"Remove-Item -Force C:/tmp/demo\"'",
     [RULES.REMOVE_FORCE]
@@ -277,6 +279,13 @@ test('classifies UTF-16LE EncodedCommand payloads', () => {
   ).toString('base64');
 
   expectRules(`pwsh -EncodedCommand ${payload}`, [RULES.REMOVE_WILDCARD]);
+  expectRules(`pwsh -EncodedCommand:${payload}`, [RULES.REMOVE_WILDCARD]);
+  expectRules(`$payload='${payload}'; pwsh -EncodedCommand:$payload`, [
+    RULES.REMOVE_WILDCARD,
+  ]);
+  expectRules('pwsh -EncodedCommand $runtimePayload', [RULES.DYNAMIC_EXECUTION]);
+  expectSafe(`$payload='${payload}'; pwsh -EncodedCommand:\`$payload`);
+  expectSafe(`$payload='${payload}'; pwsh -EncodedCommand:'$payload'`);
 });
 
 test('ignores an invalid EncodedCommand payload without throwing', () => {
@@ -460,6 +469,7 @@ test('classifies static execution primitives', () => {
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $($payload)\"",
+    "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command:$payload",
     "$payload = \"Remove-Item `\n-Force C:/tmp/demo\"; pwsh -Command $payload",
   ]) {
     expectRules(command, [RULES.REMOVE_FORCE]);
@@ -474,6 +484,8 @@ test('classifies static execution primitives', () => {
   ]);
   expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command '$payload'");
   expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output `$payload\"");
+  expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command:`$payload");
+  expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command:'$payload'");
   expectRules('Start-Process pwsh -ArgumentList $runtimeArgs', [RULES.DYNAMIC_EXECUTION]);
   expectRules("$cmd='Remove-'; $cmd+='Item'; & $cmd -Force C:/tmp/demo", [
     RULES.DYNAMIC_EXECUTION,
@@ -511,6 +523,10 @@ test('classifies static execution primitives', () => {
   );
   expectRules(
     "$ExecutionContext.InvokeCommand.InvokeScript(\"Write-Output safe; `\nRemove-Item -Force C:/tmp/demo\")",
+    [RULES.REMOVE_FORCE]
+  );
+  expectRules(
+    "$ExecutionContext.InvokeCommand.InvokeScript(\"Write-Output safe; `\rRemove-Item -Force C:/tmp/demo\")",
     [RULES.REMOVE_FORCE]
   );
 });

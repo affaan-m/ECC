@@ -2962,11 +2962,17 @@ function runTests() {
 
   if (
     test('denies direct and nested destructive PowerShell commands', () => {
+      const encodedPayload = Buffer.from(
+        'Remove-Item -Force C:/tmp/demo',
+        'utf16le'
+      ).toString('base64');
       const commands = [
         'Remove-Item -Recurse C:/tmp/demo',
         'rp -Force HKCU:/Software/Demo -Name setting',
         'Clear-Disk -Number 2 -RemoveData -Confirm:$false',
         'pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        'pwsh -Command:"Remove-Item -Force C:/tmp/demo"',
+        `pwsh -EncodedCommand:${encodedPayload}`,
         "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
         "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
         "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",

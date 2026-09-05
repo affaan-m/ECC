@@ -520,7 +520,7 @@ function decodeDoubleQuotedString(content) {
     const escaped = input[index + 1];
     index += 1;
     if (escaped === '\r' && input[index + 1] === '\n') index += 1;
-    else if (escaped !== '\n') value += escaped;
+    if (escaped !== '\r' && escaped !== '\n') value += escaped;
   }
   return value;
 }
@@ -535,7 +535,7 @@ function expandStaticDoubleQuotedString(content, state, findings) {
       const escaped = input[index + 1];
       index += 1;
       if (escaped === '\r' && input[index + 1] === '\n') index += 1;
-      else if (escaped !== '\n') value += escaped;
+      if (escaped !== '\r' && escaped !== '\n') value += escaped;
       continue;
     }
     if (char !== '$') {
@@ -596,7 +596,7 @@ function leadingStaticStringResult(source) {
       const escaped = input[index + 1];
       index += 2;
       if (escaped === '\r' && input[index] === '\n') index += 1;
-      else if (escaped !== '\n') value += escaped;
+      if (escaped !== '\r' && escaped !== '\n') value += escaped;
       continue;
     }
     if (char === quote) return value;
@@ -924,11 +924,14 @@ function parseStatements(input) {
   let segmentQuotedTokens = [];
   let segmentQuoteKinds = [];
   let segmentTokenSources = [];
+  let segmentInlineValueQuoteKinds = [];
   let word = '';
   let wordSource = '';
   let wordHasQuotedContent = false;
   let wordHasUnquotedContent = false;
   let wordQuoteKind = null;
+  let wordInlineValueQuoteKind = null;
+  let wordInlineValueQuoteClosed = false;
   let quote = null;
   let parenDepth = 0;
   let callOperatorPending = false;
@@ -941,12 +944,19 @@ function parseStatements(input) {
         wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
       );
       segmentTokenSources.push(wordSource);
+      segmentInlineValueQuoteKinds.push(
+        wordInlineValueQuoteClosed && wordInlineValueQuoteKind !== 'mixed'
+          ? wordInlineValueQuoteKind
+          : null
+      );
     }
     word = '';
     wordSource = '';
     wordHasQuotedContent = false;
     wordHasUnquotedContent = false;
     wordQuoteKind = null;
+    wordInlineValueQuoteKind = null;
+    wordInlineValueQuoteClosed = false;
   };
   const flushSegment = () => {
     flushWord();
@@ -956,6 +966,7 @@ function parseStatements(input) {
         quotedTokens: { value: segmentQuotedTokens },
         quoteKinds: { value: segmentQuoteKinds },
         tokenSources: { value: segmentTokenSources },
+        inlineValueQuoteKinds: { value: segmentInlineValueQuoteKinds },
       });
       statement.push(segment);
       callOperatorPending = false;
@@ -964,6 +975,7 @@ function parseStatements(input) {
     segmentQuotedTokens = [];
     segmentQuoteKinds = [];
     segmentTokenSources = [];
+    segmentInlineValueQuoteKinds = [];
   };
   const flushStatement = () => {
     flushSegment();
@@ -981,6 +993,7 @@ function parseStatements(input) {
         index += 1;
       } else if (char === "'") {
         quote = null;
+        if (wordInlineValueQuoteKind === "'") wordInlineValueQuoteClosed = true;
       } else {
         word += char;
         wordSource += char;
@@ -1004,6 +1017,7 @@ function parseStatements(input) {
           index += 1;
         }
       } else {
+        if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
         word += escaped;
         if (quote) wordHasQuotedContent = true;
         else wordHasUnquotedContent = true;
@@ -1014,6 +1028,7 @@ function parseStatements(input) {
     if (quote === '"') {
       if (char === '"') {
         quote = null;
+        if (wordInlineValueQuoteKind === '"') wordInlineValueQuoteClosed = true;
       } else {
         word += char;
         wordSource += char;
@@ -1023,6 +1038,11 @@ function parseStatements(input) {
     }
 
     if (char === "'" || char === '"') {
+      if (wordInlineValueQuoteClosed) {
+        wordInlineValueQuoteKind = 'mixed';
+      } else if (wordInlineValueQuoteKind === null && /^-+[^:\s]+:$/.test(word)) {
+        wordInlineValueQuoteKind = char;
+      }
       quote = char;
       wordHasQuotedContent = true;
       wordQuoteKind = wordQuoteKind === null || wordQuoteKind === char ? char : 'mixed';
@@ -1030,6 +1050,7 @@ function parseStatements(input) {
     }
 
     if (char === '(') {
+      if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
       parenDepth += 1;
       word += char;
       wordSource += char;
@@ -1037,6 +1058,7 @@ function parseStatements(input) {
       continue;
     }
     if (char === ')' && parenDepth > 0) {
+      if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
       parenDepth -= 1;
       word += char;
       wordSource += char;
@@ -1062,6 +1084,7 @@ function parseStatements(input) {
       continue;
     }
 
+    if (wordInlineValueQuoteClosed) wordInlineValueQuoteKind = 'mixed';
     word += char;
     wordSource += char;
     wordHasUnquotedContent = true;
@@ -1207,17 +1230,50 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
     const token = tokens[index];
 
     if (isEncodedCommandFlag(token)) {
-      const decoded = decodeUtf16LeBase64(tokens[index + 1]);
+      const inlinePayload = parameterValue(token);
+      let encodedPayload = inlinePayload || tokens[index + 1];
+      const payloadIndex = index + 1;
+      const quoteKind = tokens.quoteKinds?.[payloadIndex];
+      const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
+      if ((inlinePayload && inlineQuoteKind !== "'") ||
+          (!inlinePayload && encodedPayload && quoteKind !== "'")) {
+        const source = inlinePayload
+          ? parameterValue(tokens.tokenSources?.[index] || token)
+          : tokens.tokenSources?.[payloadIndex] ?? encodedPayload;
+        const expanded = expandStaticDoubleQuotedString(
+          source || encodedPayload,
+          scanState,
+          findings
+        );
+        if (expanded === null) return;
+        encodedPayload = expanded;
+      }
+      const decoded = decodeUtf16LeBase64(encodedPayload);
       if (decoded !== null) addNestedScan(decoded, depth, findings, analysis, {}, scanState);
       return;
     }
 
     if (isCommandFlag(token)) {
-      let payload = tokens.slice(index + 1).join(' ');
+      const inlinePayload = parameterValue(token);
+      let payload = inlinePayload
+        ? [inlinePayload, ...tokens.slice(index + 1)].join(' ')
+        : tokens.slice(index + 1).join(' ');
       const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens) : null;
       const payloadIndex = index + 1;
-      const hasOnePayloadToken = tokens.length === payloadIndex + 1;
-      if (hasOnePayloadToken && tokens.quoteKinds?.[payloadIndex] === '"') {
+      const hasOnePayloadToken = !inlinePayload && tokens.length === payloadIndex + 1;
+      const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
+      if (inlinePayload && inlineQuoteKind !== "'") {
+        const inlineSource = parameterValue(tokens.tokenSources?.[index] || token);
+        const expanded = expandStaticDoubleQuotedString(
+          inlineSource || inlinePayload,
+          scanState,
+          findings
+        );
+        if (expanded === null) return;
+        payload = [expanded, ...tokens.slice(index + 1)].join(' ');
+      } else if (inlinePayload) {
+        payload = [inlinePayload, ...tokens.slice(index + 1)].join(' ');
+      } else if (hasOnePayloadToken && tokens.quoteKinds?.[payloadIndex] !== "'") {
         const expanded = expandStaticDoubleQuotedString(
           tokens.tokenSources?.[payloadIndex] ?? payload,
           scanState,

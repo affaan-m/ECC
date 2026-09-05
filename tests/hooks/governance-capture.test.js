@@ -240,6 +240,10 @@ async function runTests() {
         expectedRules: ['powershell.remove-item.force'],
       },
       {
+        command: 'pwsh -Command:"Remove-Item -Force C:/private/inline-command-sentinel"',
+        expectedRules: ['powershell.remove-item.force'],
+      },
+      {
         command: "$payload='Remove-Item -Force C:/private/expanded-command-sentinel'; pwsh -Command \"Write-Output ready; $payload\"",
         expectedRules: ['powershell.remove-item.force'],
       },
@@ -249,6 +253,10 @@ async function runTests() {
       },
       {
         command: `pwsh -EncodedCommand ${encodedPayload}`,
+        expectedRules: ['powershell.remove-item.wildcard'],
+      },
+      {
+        command: `pwsh -EncodedCommand:${encodedPayload}`,
         expectedRules: ['powershell.remove-item.wildcard'],
       },
       {
@@ -302,7 +310,7 @@ async function runTests() {
         'Should not store raw command text'
       );
       assert.ok(
-        !JSON.stringify(approvalEvent).includes(command),
+        !JSON.stringify(approvalEvent).includes(JSON.stringify(command).slice(1, -1)),
         'Serialized governance evidence should not leak the raw command'
       );
     }

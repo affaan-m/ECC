@@ -201,7 +201,7 @@ for static variables embedded in nested double-quoted command payloads.
 
 - Focused classifier and hook suites: 531 passed, 0 failed.
 - Full repository suite: 4,217 passed, 0 failed.
-- Coverage gate: passed at 89.23% statements, 81.29% branches, 94.56%
+- Coverage gate: passed at 89.23% statements, 81.28% branches, 94.56%
   functions, and 89.23% lines.
 - Supply-chain IOC scan: passed for all 224 inspected files.
 - ESLint, Markdown lint, hook validation, personal-path validation, and
