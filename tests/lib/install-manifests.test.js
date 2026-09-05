@@ -279,6 +279,7 @@ function runTests() {
       [
         'rules-core',
         'agents-core',
+        'commands-runtime',
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
@@ -304,6 +305,7 @@ function runTests() {
       [
         'rules-core',
         'agents-core',
+        'commands-runtime',
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
@@ -328,6 +330,7 @@ function runTests() {
       [
         'rules-core',
         'agents-core',
+        'commands-runtime',
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
@@ -360,6 +363,7 @@ function runTests() {
       [
         'rules-core',
         'agents-core',
+        'commands-runtime',
         'commands-core',
         'platform-configs',
         'skill-unified-memory',
