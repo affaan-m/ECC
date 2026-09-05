@@ -77,15 +77,26 @@ function run(inputOrRaw, _options = {}) {
  */
 function main() {
   let data = '';
+  let truncated = false;
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', c => {
     if (data.length < MAX_STDIN) {
       const remaining = MAX_STDIN - data.length;
       data += c.substring(0, remaining);
+      if (c.length > remaining) truncated = true;
+    } else {
+      truncated = true;
     }
   });
 
   process.stdin.on('end', () => {
+    if (truncated) {
+      // Truncated stdin is never echoed: a JSON document cut mid-stream is
+      // reported by the harness as invalid hook output (#2924).
+      process.stderr.write('[Hook] doc-file-warning: stdin exceeded 1MB; suppressing pass-through (fail-open)\n');
+      return;
+    }
+
     const result = run(data);
 
     if (result.stderr) {

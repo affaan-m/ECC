@@ -90,19 +90,30 @@ function run(rawInput) {
 // ── stdin entry point (backwards-compatible) ────────────────────
 if (require.main === module) {
   let data = '';
+  let truncated = false;
   process.stdin.setEncoding('utf8');
 
   process.stdin.on('data', chunk => {
     if (data.length < MAX_STDIN) {
       const remaining = MAX_STDIN - data.length;
       data += chunk.substring(0, remaining);
+      if (chunk.length > remaining) truncated = true;
+    } else {
+      truncated = true;
     }
   });
 
   process.stdin.on('end', () => {
+    if (truncated) {
+      // Truncated stdin is never echoed: a JSON document cut mid-stream is
+      // reported by the harness as invalid hook output (#2924).
+      process.stderr.write('[Hook] post-edit-format: stdin exceeded 1MB; suppressing pass-through (fail-open)\n');
+      process.exit(0);
+    }
     data = run(data);
-    process.stdout.write(data);
-    process.exit(0);
+    // Flush before exiting: process.exit() with stdout on a pipe can drop
+    // buffered output, truncating the pass-through payload (#2924).
+    process.stdout.write(data, () => process.exit(0));
   });
 }
 
