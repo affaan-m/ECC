@@ -2964,8 +2964,10 @@ function runTests() {
     test('denies direct and nested destructive PowerShell commands', () => {
       const commands = [
         'Remove-Item -Recurse C:/tmp/demo',
+        'rp -Force HKCU:/Software/Demo -Name setting',
         'Clear-Disk -Number 2 -RemoveData -Confirm:$false',
         'pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
         'Write-Output "$(Remove-Item -Force C:/tmp/demo)"',
         '& { Remove-Item -Force C:/tmp/demo }',
         'if ($true) { Remove-Item -Force C:/tmp/demo }',

@@ -98,6 +98,7 @@ test('classifies recursive Remove-Item aliases', () => {
   for (const alias of ['ri', 'rm', 'rmdir', 'rd', 'del', 'erase']) {
     expectRules(`${alias} -Recurse C:/tmp/demo`, [RULES.REMOVE_RECURSE]);
   }
+  expectRules('rp -Force HKCU:/Software/Demo -Name setting', [RULES.REMOVE_FORCE]);
   expectRules('Remove-ItemProperty -Force HKCU:/Software/Demo -Name setting', [
     RULES.REMOVE_FORCE,
   ]);
@@ -455,10 +456,13 @@ test('classifies static execution primitives', () => {
     "$cmd = 'Remove-Item -Force C:/tmp/demo'; & ([scriptblock]::Create($cmd))",
     "$name = 'Remove-Item'; & $name -Force C:/tmp/demo",
     "$args = '-Command \"Remove-Item -Force C:/tmp/demo\"'; Start-Process pwsh -ArgumentList $args",
+    "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
   ]) {
     expectRules(command, [RULES.REMOVE_FORCE]);
   }
   expectRules('Invoke-Expression $runtimeValue', [RULES.DYNAMIC_EXECUTION]);
+  expectRules('pwsh -Command $runtimeValue', [RULES.DYNAMIC_EXECUTION]);
+  expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command '$payload'");
   expectRules('Start-Process pwsh -ArgumentList $runtimeArgs', [RULES.DYNAMIC_EXECUTION]);
   expectRules("$cmd='Remove-'; $cmd+='Item'; & $cmd -Force C:/tmp/demo", [
     RULES.DYNAMIC_EXECUTION,
@@ -490,6 +494,13 @@ test('classifies static execution primitives', () => {
     "$ExecutionContext.InvokeCommand.InvokeScript('Remove-Item -Force C:/tmp/demo')",
     [RULES.REMOVE_FORCE]
   );
+});
+
+test('scans malformed InvokeScript string arguments in bounded time', () => {
+  const command = `$ExecutionContext.InvokeCommand.InvokeScript("${'`!'.repeat(10000)}`;
+  const startedAt = Date.now();
+  expectRules(command, [RULES.DYNAMIC_EXECUTION]);
+  assert.ok(Date.now() - startedAt < 1000, 'malformed string scan should remain bounded');
 });
 
 test('classifies command names composed from static subexpression output', () => {

@@ -325,7 +325,7 @@ async function runTests() {
   })) passed += 1; else failed += 1;
 
   if (await test('PowerShell governance normalizes tool casing and redacts assignment prefixes', async () => {
-    const command = "$password='governance-secret-sentinel'; Remove-Item -Force C:/tmp/demo";
+    const command = "$label='governance-private-marker'; Remove-Item -Force C:/tmp/demo";
     for (const toolName of ['PowerShell', 'powershell', 'POWERSHELL']) {
       const events = analyzeForGovernanceEvents({
         tool_name: toolName,
@@ -337,8 +337,22 @@ async function runTests() {
       assert.ok(approvalEvent, `${toolName} should raise approval_requested`);
       assert.strictEqual(approvalEvent.payload.toolName, 'PowerShell');
       assert.strictEqual(approvalEvent.payload.commandName, null);
-      assert.ok(!JSON.stringify(events).includes('governance-secret-sentinel'));
+      assert.ok(!JSON.stringify(events).includes('governance-private-marker'));
     }
+  })) passed += 1; else failed += 1;
+
+  if (await test('PowerShell governance redacts quoted expression prefixes', async () => {
+    const command = "'quoted-private-marker' ; Remove-Item -Force C:/tmp/demo";
+    const events = analyzeForGovernanceEvents({
+      tool_name: 'PowerShell',
+      tool_input: { command },
+    }, {
+      hookPhase: 'pre',
+    });
+    const approvalEvent = events.find(event => event.eventType === 'approval_requested');
+    assert.ok(approvalEvent, 'quoted prefix should still raise approval_requested');
+    assert.strictEqual(approvalEvent.payload.commandName, null);
+    assert.ok(!JSON.stringify(events).includes('quoted-private-marker'));
   })) passed += 1; else failed += 1;
 
   if (await test('PowerShell elevation events are captured without raw command leakage', async () => {

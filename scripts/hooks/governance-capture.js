@@ -133,6 +133,13 @@ function summarizeCommand(command) {
     };
   }
 
+  if (trimmed.startsWith("'") || trimmed.startsWith('"')) {
+    return {
+      commandName: null,
+      commandFingerprint: fingerprintCommand(trimmed),
+    };
+  }
+
   const firstToken = trimmed.split(/\s+/)[0] || '';
   // Static method invocations can attach their arguments to the first token,
   // for example `[IO.File]::Delete('private-path')`. Keep the operation name

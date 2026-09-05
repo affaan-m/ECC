@@ -28,6 +28,7 @@ const RULE_IDS = Object.freeze({
 const DELETE_COMMANDS = new Set([
   'remove-item',
   'remove-itemproperty',
+  'rp',
   'ri',
   'rm',
   'rmdir',
@@ -505,6 +506,33 @@ function staticStringResult(body) {
   if ((quote !== "'" && quote !== '"') || value[value.length - 1] !== quote) return null;
   const content = value.slice(1, -1);
   return quote === "'" ? content.replace(/''/g, "'") : content.replace(/`(.)/gs, '$1');
+}
+
+function leadingStaticStringResult(source) {
+  const input = String(source || '');
+  let index = 0;
+  while (/\s/.test(input[index] || '')) index += 1;
+  const quote = input[index];
+  if (quote !== "'" && quote !== '"') return null;
+  index += 1;
+  let value = '';
+  while (index < input.length) {
+    const char = input[index];
+    if (quote === "'" && char === "'" && input[index + 1] === "'") {
+      value += "'";
+      index += 2;
+      continue;
+    }
+    if (quote === '"' && char === '`' && index + 1 < input.length) {
+      value += input[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === quote) return value;
+    value += char;
+    index += 1;
+  }
+  return null;
 }
 
 function staticScalarResult(body, depth = 0) {
@@ -1083,8 +1111,19 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
     }
 
     if (isCommandFlag(token)) {
-      const payload = tokens.slice(index + 1).join(' ');
+      let payload = tokens.slice(index + 1).join(' ');
       const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens) : null;
+      const payloadReference = tokens.quotedTokens?.[index + 1] === true
+        ? null
+        : variableReference(payload);
+      if (payloadReference) {
+        const staticValue = scanState?.staticScalars.get(payloadReference);
+        if (staticValue === undefined) {
+          findings.add(RULE_IDS.DYNAMIC_EXECUTION);
+          return;
+        }
+        payload = staticValue;
+      }
       if (pipelinePayload || (payload && payload !== '-')) {
         addNestedScan(
           pipelinePayload || payload,
@@ -1558,8 +1597,7 @@ function scanInvokeScriptCalls(source, unquoted, depth, findings, analysis, stat
   const pattern = /\$executioncontext\.invokecommand\.invokescript\s*\(/gi;
   while (pattern.exec(unquoted) !== null) {
     const argumentSource = source.slice(pattern.lastIndex);
-    const literal = argumentSource.match(/^\s*(?:'(?:''|[^'])*'|"(?:`[\s\S]|[^"])*")/);
-    const payload = literal ? staticStringResult(literal[0].trim()) : null;
+    const payload = leadingStaticStringResult(argumentSource);
     if (payload === null) {
       findings.add(RULE_IDS.DYNAMIC_EXECUTION);
     } else {
