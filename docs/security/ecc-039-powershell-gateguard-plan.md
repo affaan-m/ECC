@@ -7,7 +7,7 @@
 - Priority: critical
 - Baseline: `origin/main` at `e04ea0b9`
 - Source to salvage: PR #2721 at `4a2e59ba`
-- Implementation state: implemented and under Gate 2 review
+- Implementation state: implemented in PR #2961 and under hosted verification
 
 The fix spans the security enforcement path, governance evidence, configured
 hook routing, post-tool dispatch, and cross-platform regression coverage. It is
@@ -193,14 +193,15 @@ the supported Node and package-manager CI matrix at the exact proposed head.
 
 ## Implementation and Verification Results
 
-The implementation is complete locally and remains uncommitted for Gate 2.
-It adds the shared classifier, dedicated PowerShell hook routes, exact
+The implementation is committed in PR #2961. It adds the shared classifier,
+dedicated PowerShell hook routes, exact
 GateGuard/governance rule parity, redacted evidence, case-insensitive tool
-matching, and post-tool governance dispatch.
+matching, post-tool governance dispatch, and the review-driven hardening needed
+for static variables embedded in nested double-quoted command payloads.
 
-- Focused classifier and hook suites: 529 passed, 0 failed.
-- Full repository suite: 4,215 passed, 0 failed.
-- Coverage gate: passed at 89.23% statements, 81.28% branches, 94.55%
+- Focused classifier and hook suites: 531 passed, 0 failed.
+- Full repository suite: 4,217 passed, 0 failed.
+- Coverage gate: passed at 89.23% statements, 81.29% branches, 94.56%
   functions, and 89.23% lines.
 - Supply-chain IOC scan: passed for all 224 inspected files.
 - ESLint, Markdown lint, hook validation, personal-path validation, and
