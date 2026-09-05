@@ -944,11 +944,11 @@ function parseStatements(input) {
         wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
       );
       segmentTokenSources.push(wordSource);
-      segmentInlineValueQuoteKinds = [...segmentInlineValueQuoteKinds,
+      segmentInlineValueQuoteKinds.push(
         wordInlineValueQuoteClosed && wordInlineValueQuoteKind !== 'mixed'
           ? wordInlineValueQuoteKind
           : null
-      ];
+      );
     }
     word = '';
     wordSource = '';
