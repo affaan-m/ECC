@@ -1,6 +1,6 @@
 ---
 name: skill-health
-description: Show skill portfolio health dashboard with charts and analytics
+description: Show skill portfolio health dashboard with charts and analytics. Use for the quantitative usage/success-rate dashboard; for a qualitative compliance or quality audit use the skill-stocktake skill.
 command: true
 ---
 
