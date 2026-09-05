@@ -243,7 +243,14 @@ const executingPayloads = [
   ['block bash -c double-quoted payload', 'bash -c "git commit -n -m x"'],
   ['block eval payload', 'eval "git commit --no-verify -m x"'],
   ['block bash heredoc payload', 'bash <<EOF\ngit commit -n -m x\nEOF'],
-  ['block bypass in a whitespace-separated command sequence', 'git commit -n -m x            git commit --no-verify -m x            git commit -am x -n            git push --no-verify'],
+  ['block second command in a chain', 'git commit -m ok; git commit --no-verify -m x'],
+  ['block third command in a chain', 'git add -A && git commit -m ok && git push --no-verify'],
+  ['block combined short flag after a clean command', 'git commit -m ok; git commit -am x -n'],
+  ['block bypass in a whitespace-separated command sequence', 'git commit -m ok            git push --no-verify'],
+  ['block ANSI-C quoted git executable', "$'git' commit -n -m x"],
+  ['block ANSI-C quoted git with long flag', "$'git' commit --no-verify -m x"],
+  ['block line-continued commit bypass', 'git commit \\\n--no-verify -m x'],
+  ['block heredoc line-continued commit bypass', 'cat <<EOF | bash\ngit commit \\\n--no-verify -m x\nEOF'],
 ];
 
 for (const [name, command] of executingPayloads) {
@@ -270,6 +277,12 @@ const nonLeakingPayloads = [
   ['assignment literal does not inherit quoted echo -n data', 'old="git commit -q"; echo " -n"'],
   ['push literal does not inherit quoted printf long flag data', "payload='git push'; printf ' --no-verify'"],
   ['printf literal does not inherit later quoted echo -n data', 'printf "%s" "git commit -q"; echo " -n"'],
+  ['quoted git executable does not inherit later grep -n', '"git" status; grep -n needle file'],
+  ['assembled git executable does not inherit later bash -n', "g''it status && bash -n script.sh"],
+  ['quoted git executable does not inherit quoted echo -n data', "'git' status; echo \" -n\""],
+  ['quoted git commit does not inherit later bash -n', '"git" commit -m x; bash -n y.sh'],
+  ['ANSI-C quoted status does not inherit later grep -n', "$'git' status; grep -n needle file"],
+  ['heredoc python string line ending in backslash does not inherit later bash -n', 'python3 - <<\'PY\'\nprint("git commit -q \\\n")\nPY\nbash -n x.sh'],
 ];
 
 for (const [name, command] of nonLeakingPayloads) {
