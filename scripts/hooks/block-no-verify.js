@@ -162,11 +162,14 @@ function tokenizeShellWords(input, start = 0, end = input.length) {
   return tokens;
 }
 
-function findCommandSegmentEnd(input, start) {
+/**
+ * Find the end of a shell command segment without scanning beyond `limit`.
+ */
+function findCommandSegmentEnd(input, start, limit = input.length) {
   let quote = null;
   let escaped = false;
 
-  for (let i = start; i < input.length; i++) {
+  for (let i = start; i < limit; i++) {
     const char = input.charAt(i);
 
     if (escaped) {
@@ -200,7 +203,7 @@ function findCommandSegmentEnd(input, start) {
     }
   }
 
-  return input.length;
+  return limit;
 }
 
 function commitOptionConsumesNextValue(value) {
@@ -252,24 +255,256 @@ function isCommitNoVerifyShortFlag(value) {
 }
 
 /**
- * Check if a position in the input is inside a shell comment.
+ * Precompute the positions that follow a comment marker on their current line.
+ * This preserves the hook's existing comment heuristic without rescanning a
+ * potentially long line for every `git` candidate.
  */
-function isInComment(input, idx) {
-  const lineStart = input.lastIndexOf('\n', idx - 1) + 1;
-  const before = input.slice(lineStart, idx);
-  for (let i = 0; i < before.length; i++) {
-    if (before.charAt(i) === '#') {
-      const prev = i > 0 ? before.charAt(i - 1) : '';
-      if (prev !== '$' && prev !== '\\') return true;
+function buildCommentMask(input) {
+  const comments = new Uint8Array(input.length);
+  let afterCommentMarker = false;
+  let quote = null;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charAt(i);
+    if (char === '\n') {
+      afterCommentMarker = false;
+      escaped = false;
+      continue;
+    }
+
+    comments[i] = afterCommentMarker ? 1 : 0;
+
+    if (afterCommentMarker) continue;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === '#' && (i === 0 || /[\s;&|()]/.test(input.charAt(i - 1)))) {
+      const previous = i > 0 ? input.charAt(i - 1) : '';
+      if (previous !== '$' && previous !== '\\') afterCommentMarker = true;
     }
   }
-  return false;
+
+  return comments;
 }
 
 /**
- * Find the next 'git' token in the input starting from a position.
+ * Compute the maximum scan endpoint for characters inside outer quotes and
+ * heredoc body lines. The hook deliberately keeps every `git` candidate: quoted
+ * data may later be executed by a shell. Bounds only prevent a candidate's flag
+ * scan from leaking into unrelated text after its enclosing quote or body line.
  */
-function findGit(input, start) {
+function buildScanBoundaries(input) {
+  const boundaries = new Int32Array(input.length);
+  boundaries.fill(-1);
+
+  const pendingHeredocs = [];
+  let quote = null;
+  let quoteStart = -1;
+  let escaped = false;
+  let comment = false;
+
+  for (let i = 0; i < input.length; i++) {
+    if ((i === 0 || input.charAt(i - 1) === '\n') && pendingHeredocs.length > 0) {
+      const lineEnd = input.indexOf('\n', i);
+      const physicalEnd = lineEnd === -1 ? input.length : lineEnd;
+      const contentEnd = input.charAt(physicalEnd - 1) === '\r' ? physicalEnd - 1 : physicalEnd;
+      const heredoc = pendingHeredocs[0];
+      const line = input.slice(i, contentEnd);
+      const comparableLine = heredoc.stripTabs ? line.replace(/^\t+/, '') : line;
+
+      if (comparableLine === heredoc.delimiter) {
+        pendingHeredocs.shift();
+      } else {
+        boundaries.fill(contentEnd, i, contentEnd);
+      }
+
+      i = physicalEnd;
+      continue;
+    }
+
+    const char = input.charAt(i);
+
+    if (comment) {
+      if (char === '\n') comment = false;
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (quote === '"' && char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        boundaries.fill(i, quoteStart + 1, i);
+        quote = null;
+        quoteStart = -1;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      quoteStart = i;
+      continue;
+    }
+
+    if (char === '#' && (i === 0 || /[\s;&|()]/.test(input.charAt(i - 1)))) {
+      comment = true;
+      continue;
+    }
+
+    if (char === '<' && input.charAt(i + 1) === '<' && input.charAt(i + 2) !== '<') {
+      const heredocMatch = /^<<(-?)[ \t]*(?:'([^']+)'|"([^"]+)"|([^ \t\r\n;|&()<>]+))/.exec(input.slice(i));
+      if (heredocMatch) {
+        pendingHeredocs.push({
+          delimiter: heredocMatch[2] || heredocMatch[3] || heredocMatch[4],
+          stripTabs: heredocMatch[1] === '-',
+        });
+        i += heredocMatch[0].length - 1;
+      }
+    }
+  }
+
+  if (quote) boundaries.fill(input.length, quoteStart + 1);
+  return boundaries;
+}
+
+/**
+ * Return the enclosing quote or heredoc-line endpoint for a candidate.
+ */
+function getScanBoundary(boundaries, idx, fallback) {
+  const boundary = boundaries[idx];
+  return boundary >= 0 ? boundary : fallback;
+}
+
+/**
+ * Parse the first non-global-option word after a `git` executable token.
+ * Git chooses that word as its subcommand, so later words cannot change it.
+ */
+function findGitSubcommand(input, start, end) {
+  let value = '';
+  let tokenStart = -1;
+  let quote = null;
+  let escaped = false;
+  let expectOptionValue = false;
+
+  /**
+   * Classify a completed word, returning a protected Git subcommand if found.
+   */
+  function classifyWord() {
+    if (tokenStart === -1) return null;
+
+    const completed = { value, start: tokenStart };
+    value = '';
+    tokenStart = -1;
+
+    if (expectOptionValue) {
+      expectOptionValue = false;
+      return null;
+    }
+
+    if (completed.value.startsWith('-')) {
+      if (completed.value === '-c' || completed.value === '-C' ||
+          completed.value === '--work-tree' || completed.value === '--git-dir' ||
+          completed.value === '--namespace' || completed.value === '--super-prefix') {
+        expectOptionValue = true;
+      }
+      return null;
+    }
+
+    return {
+      terminal: true,
+      command: GIT_COMMANDS_WITH_NO_VERIFY.includes(completed.value) ? completed.value : null,
+      start: completed.start,
+    };
+  }
+
+  for (let i = start; i < end; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      if (tokenStart === -1) tokenStart = i - 1;
+      value += char;
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else if (quote === '"' && char === '\\') {
+        escaped = true;
+      } else {
+        if (tokenStart === -1) tokenStart = i;
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      if (tokenStart === -1) tokenStart = i;
+      quote = char;
+      continue;
+    }
+
+    if (char === '\\') {
+      if (tokenStart === -1) tokenStart = i;
+      escaped = true;
+      continue;
+    }
+
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') {
+      const completed = classifyWord();
+      if (completed?.terminal) return completed;
+      if (char === ';' || char === '|' || char === '&' || char === '\n') return null;
+      continue;
+    }
+
+    if (tokenStart === -1) tokenStart = i;
+    value += char;
+  }
+
+  return classifyWord();
+}
+
+
+/**
+ * Find the next contiguous raw `git` token starting from a position.
+ */
+function findRawGit(input, start) {
   let pos = start;
   while (pos < input.length) {
     const idx = input.indexOf('git', pos);
@@ -284,10 +519,149 @@ function findGit(input, start) {
     }
 
     const before = idx > 0 ? input[idx - 1] : ' ';
-    if (VALID_BEFORE_GIT.includes(before)) return { idx, len };
+    if (VALID_BEFORE_GIT.includes(before)) return { idx, len, end: idx + len };
     pos = idx + 1;
   }
   return null;
+}
+
+/**
+ * Find a shell word assembled through quoting or escapes that evaluates to
+ * `git` or `git.exe`. Only words before `end` need inspection because a raw
+ * candidate at that position is already known to be earlier.
+ */
+function findAssembledGit(input, start, end) {
+  let value = '';
+  let tokenStart = -1;
+  let quote = null;
+  let escaped = false;
+
+  /**
+   * Complete the current word and return it when it evaluates to Git.
+   */
+  function completeWord(wordEnd) {
+    if (tokenStart === -1) return null;
+    const normalized = value.toLowerCase();
+    const candidate = normalized === 'git' || normalized === 'git.exe'
+      ? { idx: tokenStart, len: wordEnd - tokenStart, end: wordEnd }
+      : null;
+    value = '';
+    tokenStart = -1;
+    return candidate;
+  }
+
+  for (let i = start; i < end; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      value += char;
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else if (quote === '"' && char === '\\') {
+        escaped = true;
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      if (tokenStart === -1) tokenStart = i;
+      quote = char;
+      continue;
+    }
+
+    if (char === '\\') {
+      if (tokenStart === -1) tokenStart = i;
+      escaped = true;
+      continue;
+    }
+
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') {
+      const candidate = completeWord(i);
+      if (candidate) return candidate;
+      continue;
+    }
+
+    if (tokenStart === -1) tokenStart = i;
+    value += char;
+  }
+
+  return completeWord(end);
+}
+
+/**
+ * Find the next raw or shell-assembled Git executable token.
+ */
+function findGit(input, start) {
+  const rawCandidate = findRawGit(input, start);
+  const assembledCandidate = findAssembledGit(
+    input,
+    start,
+    rawCandidate ? rawCandidate.idx : input.length
+  );
+  return assembledCandidate || rawCandidate;
+}
+
+/**
+ * Normalize the shell word containing `idx`, including adjacent quoted and
+ * escaped fragments, and return its raw endpoint.
+ */
+function assembleShellWordContaining(input, idx) {
+  let wordStart = idx;
+  while (wordStart > 0 && !/[\s;&|]/.test(input.charAt(wordStart - 1))) {
+    wordStart--;
+  }
+
+  let value = '';
+  let quote = null;
+  let escaped = false;
+  let wordEnd = input.length;
+
+  for (let i = wordStart; i < input.length; i++) {
+    const char = input.charAt(i);
+
+    if (escaped) {
+      value += char;
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else if (quote === '"' && char === '\\') {
+        escaped = true;
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') {
+      wordEnd = i;
+      break;
+    }
+
+    value += char;
+  }
+
+  return { value: value.toLowerCase(), end: wordEnd };
 }
 
 /**
@@ -295,77 +669,46 @@ function findGit(input, start) {
  * Returns { command, offset } where offset is the position right after the
  * subcommand keyword, so callers can scope flag checks to only that portion.
  */
-function detectGitCommand(input, start = 0) {
+function detectGitCommand(input, boundaries, comments, start = 0) {
   while (start < input.length) {
     const git = findGit(input, start);
     if (!git) return null;
 
-    if (isInComment(input, git.idx)) {
-      start = git.idx + git.len;
+    if (comments[git.idx]) {
+      start = git.end;
       continue;
     }
 
-    // Find the first matching subcommand token after "git".
-    // We pick the one closest to "git" so that argument values like
-    // "git push origin commit" don't misclassify "commit" as the subcommand.
-    let bestCmd = null;
-    let bestIdx = Infinity;
+    const rawGitEnd = git.end;
+    const enclosingEnd = getScanBoundary(boundaries, git.idx, input.length);
+    const quotedExecutable = enclosingEnd === rawGitEnd;
+    const assembledWord = quotedExecutable
+      ? assembleShellWordContaining(input, git.idx)
+      : null;
+    const assembledExecutable = assembledWord &&
+      (assembledWord.value === 'git' || assembledWord.value === 'git.exe');
 
-    for (const cmd of GIT_COMMANDS_WITH_NO_VERIFY) {
-      let searchPos = git.idx + git.len;
-      while (searchPos < input.length) {
-        const cmdIdx = input.indexOf(cmd, searchPos);
-        if (cmdIdx === -1) break;
-
-        const before = cmdIdx > 0 ? input[cmdIdx - 1] : ' ';
-        const after = input[cmdIdx + cmd.length] || ' ';
-        if (!/\s/.test(before)) { searchPos = cmdIdx + 1; continue; }
-        if (!/[\s;&#|>)\]}"']/.test(after) && after !== '') { searchPos = cmdIdx + 1; continue; }
-        if (/[;|]/.test(input.slice(git.idx + git.len, cmdIdx))) break;
-        if (isInComment(input, cmdIdx)) { searchPos = cmdIdx + 1; continue; }
-
-        // Verify this token is the first non-flag word after "git" — i.e. the
-        // actual subcommand, not an argument value to a different subcommand.
-        const gap = input.slice(git.idx + git.len, cmdIdx);
-        const tokens = gap.trim().split(/\s+/).filter(Boolean);
-        // Every token before the candidate must be a flag or a flag argument.
-        // Git global flags like -c take a value argument (e.g. -c key=value).
-        let onlyFlagsAndArgs = true;
-        let expectFlagArg = false;
-        for (const t of tokens) {
-          if (expectFlagArg) { expectFlagArg = false; continue; }
-          if (t.startsWith('-')) {
-            // -c is a git global flag that takes the next token as its argument
-            if (t === '-c' || t === '-C' || t === '--work-tree' || t === '--git-dir' ||
-                t === '--namespace' || t === '--super-prefix') {
-              expectFlagArg = true;
-            }
-            continue;
-          }
-          onlyFlagsAndArgs = false;
-          break;
-        }
-        if (!onlyFlagsAndArgs) { searchPos = cmdIdx + 1; continue; }
-
-        if (cmdIdx < bestIdx) {
-          bestIdx = cmdIdx;
-          bestCmd = cmd;
-        }
-        break;
-      }
+    if (quotedExecutable && !assembledExecutable) {
+      start = git.end;
+      continue;
     }
 
-    if (bestCmd) {
+    const gitEnd = assembledExecutable ? assembledWord.end : rawGitEnd;
+    const scanEnd = quotedExecutable ? input.length : enclosingEnd;
+
+    const subcommand = findGitSubcommand(input, gitEnd, scanEnd);
+    if (subcommand?.command) {
       return {
-        command: bestCmd,
-        offset: bestIdx + bestCmd.length,
+        command: subcommand.command,
+        offset: subcommand.start + subcommand.command.length,
         gitStart: git.idx,
-        gitEnd: git.idx + git.len,
-        commandStart: bestIdx,
+        gitEnd,
+        commandStart: subcommand.start,
+        scanEnd,
       };
     }
 
-    start = git.idx + git.len;
+    start = git.end;
   }
   return null;
 }
@@ -376,8 +719,8 @@ function detectGitCommand(input, start = 0) {
  * right after the detected subcommand keyword) so that flags belonging to
  * earlier commands in a chain are not falsely matched.
  */
-function hasNoVerifyFlag(input, command, offset) {
-  const segmentEnd = findCommandSegmentEnd(input, offset);
+function hasNoVerifyFlag(input, command, offset, scanEnd) {
+  const segmentEnd = findCommandSegmentEnd(input, offset, scanEnd);
   const tokens = tokenizeShellWords(input, offset, segmentEnd);
   let skipNext = false;
 
@@ -449,10 +792,12 @@ function hasHooksPathOverride(input, detected) {
  * Check a command string for git hook bypass attempts.
  */
 function checkCommand(input) {
+  const boundaries = buildScanBoundaries(input);
+  const comments = buildCommentMask(input);
   let start = 0;
 
   while (start < input.length) {
-    const detected = detectGitCommand(input, start);
+    const detected = detectGitCommand(input, boundaries, comments, start);
     if (!detected) return { blocked: false };
 
     const { command: gitCommand, offset } = detected;
@@ -464,14 +809,14 @@ function checkCommand(input) {
       };
     }
 
-    if (hasNoVerifyFlag(input, gitCommand, offset)) {
+    if (hasNoVerifyFlag(input, gitCommand, offset, detected.scanEnd)) {
       return {
         blocked: true,
         reason: `BLOCKED: --no-verify flag is not allowed with git ${gitCommand}. Git hooks must not be bypassed.`,
       };
     }
 
-    start = findCommandSegmentEnd(input, offset) + 1;
+    start = findCommandSegmentEnd(input, offset, detected.scanEnd) + 1;
   }
 
   return { blocked: false };
