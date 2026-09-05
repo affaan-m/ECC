@@ -2860,6 +2860,75 @@ function runTests() {
     passed++;
   else failed++;
 
+  // --- Exempt glob anchoring (#2921): patterns must not match arbitrary suffixes ---
+  clearState();
+  if (
+    test('does NOT exempt a partial-segment match: services/** must not match my-services/ (#2921)', () => {
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/proj/my-services/x.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: 'services/**' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'unanchored suffix match is fixed by boundary anchoring');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('exempts a segment-boundary match for the same glob: services/** in any repo', () => {
+      const input = {
+        tool_name: 'Edit',
+        tool_input: { file_path: '/proj/services/x.js', old_string: 'a', new_string: 'b' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: 'services/**' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'segment-boundary path stays exempt');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('does NOT exempt a path where the glob name is only a directory component: *.md (#2921)', () => {
+      const input = {
+        tool_name: 'Write',
+        tool_input: { file_path: '/proj/notes.md/outline.txt', content: 'x' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: '*.md' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'end-anchored glob must not match a mid-path .md directory');
+    })
+  )
+    passed++;
+  else failed++;
+
+  clearState();
+  if (
+    test('lowercases patterns so uppercase globs are not silently dead: README.md (#2921)', () => {
+      const input = {
+        tool_name: 'Write',
+        tool_input: { file_path: '/proj/readme.md', content: 'x' }
+      };
+      const result = runHook(input, { GATEGUARD_EXEMPT_GLOBS: 'README.md' });
+      const output = parseOutput(result.stdout);
+      assert.ok(output, 'should produce JSON output');
+      if (output.hookSpecificOutput) {
+        assert.notStrictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'pattern case must not break matching');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
   // Cleanup only the temp directory created by this test file.
   try {
     if (fs.existsSync(stateDir)) {

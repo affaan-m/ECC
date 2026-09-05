@@ -106,6 +106,13 @@ function getExtraDestructiveRegex() {
 // this / what schema" carries no signal. Memoized on the env value; fail-open (a
 // malformed pattern is dropped, never throws). `*` matches within a path segment,
 // `**` across segments, `?` a single char.
+//
+// Compiled patterns are anchored with `(^|/)` ... `$` (#2921): an unanchored pattern
+// such as `services/**` or `*.md` would otherwise match those names as a suffix of
+// ANY absolute path (e.g. `/other/repo/services/x` or `C:/docs/notes.md`), exempting
+// far more than the operator intended. Patterns are also lowercased because
+// `normalizeForMatch` lowercases the candidate path — a pattern written as
+// `README.md` would otherwise never match anything.
 let exemptCacheKey = null;
 let exemptCacheRegexes = null;
 function getExemptMatchers() {
@@ -120,12 +127,15 @@ function getExemptMatchers() {
     .filter(Boolean)
     .map(glob => {
       const source = glob
+        .toLowerCase()                          // candidate paths are lowercased too (#2921)
         .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metachars, keep * and ?
         .split('**')                           // ** boundaries (cross-segment)
         .map(part => part.replace(/\*/g, '[^/]*').replace(/\?/g, '.'))
         .join('.*');                           // ** -> across segments
       try {
-        return new RegExp(source);
+        // Anchor to path boundaries so globs are repo-relative, not
+        // "match this name anywhere on the machine" (#2921).
+        return new RegExp('(^|/)' + source + '$');
       } catch (_) {
         return null;
       }
