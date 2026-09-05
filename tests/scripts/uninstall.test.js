@@ -47,9 +47,10 @@ function writeState(filePath, options) {
 }
 
 function run(args = [], options = {}) {
-  const env = options.homeDir
+  const baseEnv = options.homeDir
     ? { ...process.env, HOME: options.homeDir, CODEX_HOME: path.join(options.homeDir, '.codex') }
-    : Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CODEX_HOME'))
+    : Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CODEX_HOME'));
+  const env = { ...baseEnv, ...(options.env || {}) };
 
   try {
     const stdout = execFileSync('node', [SCRIPT, ...args], {
@@ -285,6 +286,138 @@ function runTests() {
       assert.ok(parsed.results[0].plannedRemovals.includes(renderedPath));
       assert.ok(fs.existsSync(renderedPath));
       assert.ok(fs.existsSync(statePath));
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  // #2952: the global `ecc --dry-run uninstall` prefix sets ECC_DRY_RUN=1.
+  // The uninstaller must honor it exactly like the subcommand-level flag.
+  if (test('honors global ECC_DRY_RUN=1 without mutating managed files (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      // No --dry-run flag: the global flag form must still be a no-op.
+      const uninstallResult = run(['--target', 'cursor', '--json'], {
+        cwd: projectRoot,
+        homeDir,
+        env: { ECC_DRY_RUN: '1' },
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      const parsed = JSON.parse(uninstallResult.stdout);
+      assert.strictEqual(parsed.dryRun, true, 'ECC_DRY_RUN=1 must enable dry-run mode');
+      assert.ok(parsed.results[0].plannedRemovals.includes(renderedPath));
+      assert.ok(fs.existsSync(renderedPath), 'managed file must survive the dry run');
+      assert.ok(fs.existsSync(statePath), 'install-state must survive the dry run');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
+  if (test('phrases dry-run human output as an unmistakable preview (#2952)', () => {
+    const homeDir = createTempDir('uninstall-home-');
+    const projectRoot = createTempDir('uninstall-project-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      fs.mkdirSync(targetRoot, { recursive: true });
+      const normalizedTargetRoot = fs.realpathSync(targetRoot);
+      const statePath = path.join(normalizedTargetRoot, 'ecc-install-state.json');
+      const renderedPath = path.join(normalizedTargetRoot, 'generated.md');
+      fs.writeFileSync(renderedPath, '# generated\n');
+
+      writeState(statePath, {
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: normalizedTargetRoot,
+        installStatePath: statePath,
+        request: {
+          profile: null,
+          modules: ['platform-configs'],
+          includeComponents: [],
+          excludeComponents: [],
+          legacyLanguages: [],
+          legacyMode: false,
+        },
+        resolution: {
+          selectedModules: ['platform-configs'],
+          skippedModules: [],
+        },
+        operations: [
+          {
+            kind: 'render-template',
+            moduleId: 'platform-configs',
+            sourceRelativePath: '.cursor/generated.md.template',
+            destinationPath: renderedPath,
+            strategy: 'render-template',
+            ownership: 'managed',
+            scaffoldOnly: false,
+            renderedContent: '# generated\n',
+          },
+        ],
+        source: {
+          repoVersion: CURRENT_PACKAGE_VERSION,
+          repoCommit: 'abc123',
+          manifestVersion: CURRENT_MANIFEST_VERSION,
+        },
+      });
+
+      const uninstallResult = run(['--target', 'cursor', '--dry-run'], {
+        cwd: projectRoot,
+        homeDir,
+      });
+      assert.strictEqual(uninstallResult.code, 0, uninstallResult.stderr);
+
+      assert.ok(uninstallResult.stdout.includes('dry run'), 'summary header must carry the dry-run marker');
+      assert.ok(uninstallResult.stdout.includes('WOULD UNINSTALL (dry run)'), 'status must use conditional wording');
+      assert.ok(uninstallResult.stdout.includes('Would remove:'), 'path count must use conditional wording');
+      assert.ok(!uninstallResult.stdout.includes('Status: UNINSTALLED'), 'dry run must not claim UNINSTALLED');
+      assert.ok(!uninstallResult.stdout.includes('Removed paths:'), 'dry run must not claim removal');
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
