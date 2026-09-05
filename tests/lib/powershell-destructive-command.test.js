@@ -470,6 +470,7 @@ test('classifies static execution primitives', () => {
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $($payload)\"",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command:$payload",
+    "$payload = 'Remove-Item'; pwsh -Command $payload -Force C:/tmp/demo",
     "$payload = \"Remove-Item `\n-Force C:/tmp/demo\"; pwsh -Command $payload",
   ]) {
     expectRules(command, [RULES.REMOVE_FORCE]);
@@ -480,6 +481,9 @@ test('classifies static execution primitives', () => {
     RULES.DYNAMIC_EXECUTION,
   ]);
   expectRules('pwsh -Command "Write-Output ready; $($runtimeValue)"', [
+    RULES.DYNAMIC_EXECUTION,
+  ]);
+  expectRules('pwsh -Command $runtimeValue -Force C:/tmp/demo', [
     RULES.DYNAMIC_EXECUTION,
   ]);
   expectSafe("$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command '$payload'");

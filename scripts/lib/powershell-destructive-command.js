@@ -944,11 +944,11 @@ function parseStatements(input) {
         wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
       );
       segmentTokenSources.push(wordSource);
-      segmentInlineValueQuoteKinds.push(
+      segmentInlineValueQuoteKinds = [...segmentInlineValueQuoteKinds,
         wordInlineValueQuoteClosed && wordInlineValueQuoteKind !== 'mixed'
           ? wordInlineValueQuoteKind
           : null
-      );
+      ];
     }
     word = '';
     wordSource = '';
@@ -1260,7 +1260,6 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
         : tokens.slice(index + 1).join(' ');
       const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens) : null;
       const payloadIndex = index + 1;
-      const hasOnePayloadToken = !inlinePayload && tokens.length === payloadIndex + 1;
       const inlineQuoteKind = tokens.inlineValueQuoteKinds?.[index];
       if (inlinePayload && inlineQuoteKind !== "'") {
         const inlineSource = parameterValue(tokens.tokenSources?.[index] || token);
@@ -1273,14 +1272,14 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
         payload = [expanded, ...tokens.slice(index + 1)].join(' ');
       } else if (inlinePayload) {
         payload = [inlinePayload, ...tokens.slice(index + 1)].join(' ');
-      } else if (hasOnePayloadToken && tokens.quoteKinds?.[payloadIndex] !== "'") {
+      } else if (tokens[payloadIndex] && tokens.quoteKinds?.[payloadIndex] !== "'") {
         const expanded = expandStaticDoubleQuotedString(
-          tokens.tokenSources?.[payloadIndex] ?? payload,
+          tokens.tokenSources?.[payloadIndex] ?? tokens[payloadIndex],
           scanState,
           findings
         );
         if (expanded === null) return;
-        payload = expanded;
+        payload = [expanded, ...tokens.slice(payloadIndex + 1)].join(' ');
       } else {
         const payloadReference = tokens.quoteKinds?.[payloadIndex] === "'"
           ? null

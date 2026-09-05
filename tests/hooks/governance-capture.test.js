@@ -252,6 +252,10 @@ async function runTests() {
         expectedRules: ['powershell.dynamic-execution'],
       },
       {
+        command: 'pwsh -Command $runtimePayload -Force C:/private/runtime-command-sentinel',
+        expectedRules: ['powershell.dynamic-execution'],
+      },
+      {
         command: `pwsh -EncodedCommand ${encodedPayload}`,
         expectedRules: ['powershell.remove-item.wildcard'],
       },
@@ -411,7 +415,7 @@ async function runTests() {
         'Should not store raw command text'
       );
       assert.ok(
-        !JSON.stringify(securityEvent).includes(command),
+        !JSON.stringify(securityEvent).includes(JSON.stringify(command).slice(1, -1)),
         'Serialized governance evidence should not leak the raw command'
       );
     }
