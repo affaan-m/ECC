@@ -102,7 +102,6 @@ if (require.main === module) {
   process.stdin.on('end', () => {
     data = run(data);
     process.stdout.write(data);
-    process.exit(0);
   });
 }
 
