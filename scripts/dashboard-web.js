@@ -6,6 +6,15 @@
  * Usage: node scripts/dashboard-web.js [port]
  * Open http://localhost:3456
  *
+ * The server only binds to loopback and has no authentication, by design --
+ * it is meant to be viewed on the same machine it runs on. To check it from
+ * another device you control (a tablet, a laptop), use standard SSH local
+ * port forwarding instead of exposing the port itself:
+ *   ssh -L 3456:127.0.0.1:3456 <user>@<this-machine> -p <ssh-port>
+ * then open http://127.0.0.1:3456 on the *remote* device. This requires
+ * only SSH access you already control on your own machine -- nothing here
+ * opens the dashboard to the network.
+ *
  * Contribution: https://github.com/affaan-m/ECC
  */
 

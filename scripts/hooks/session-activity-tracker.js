@@ -567,7 +567,13 @@ function buildActivityRow(input, env = process.env) {
   }
 
   const toolName = String(input?.tool_name || '').trim();
-  const sessionId = String(env.ECC_SESSION_ID || env.CLAUDE_SESSION_ID || '').trim();
+  // Claude Code does not set CLAUDE_SESSION_ID as an environment variable for
+  // hook subprocesses -- the session id is only available in the hook's own
+  // stdin JSON payload. Prefer that; keep the env vars as a fallback for any
+  // caller that does set them.
+  const sessionId = String(
+    input?.session_id || env.ECC_SESSION_ID || env.CLAUDE_SESSION_ID || ''
+  ).trim();
   if (!toolName || !sessionId) {
     return null;
   }
