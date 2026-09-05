@@ -106,7 +106,7 @@ function runTests() {
   // 1. Passes through input on stdout
   (test('passes through input on stdout', () => {
     const input = {
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-4-20250514',
       usage: { input_tokens: 100, output_tokens: 50 },
     };
     const inputStr = JSON.stringify(input);
@@ -124,7 +124,7 @@ function runTests() {
       {
         type: 'assistant',
         message: {
-          model: 'claude-sonnet-5',
+          model: 'claude-sonnet-4-20250514',
           usage: {
             input_tokens: 1000,
             output_tokens: 500,
@@ -137,7 +137,7 @@ function runTests() {
       {
         type: 'assistant',
         message: {
-          model: 'claude-opus-5',
+          model: 'claude-opus-4-20250514',
           usage: {
             input_tokens: 25,
             output_tokens: 5,
@@ -160,7 +160,7 @@ function runTests() {
     const row = JSON.parse(content);
     assert.strictEqual(row.session_id, 'session-from-hook', 'Expected input session ID to be recorded');
     assert.strictEqual(row.transcript_path, transcriptPath, 'Expected transcript_path to be recorded');
-    assert.strictEqual(row.model, 'claude-opus-5', 'Expected last assistant model to be recorded');
+    assert.strictEqual(row.model, 'claude-opus-4-20250514', 'Expected last assistant model to be recorded');
     assert.strictEqual(row.input_tokens, 1025, 'Expected input_tokens to be summed from transcript');
     assert.strictEqual(row.output_tokens, 505, 'Expected output_tokens to be summed from transcript');
     assert.strictEqual(row.cache_write_tokens, 200, 'Expected cache write tokens to be summed from transcript');
@@ -185,11 +185,11 @@ function runTests() {
     writeTranscript(transcriptPath, [
       // One API response split into 3 content-block lines, all carrying the
       // same message.id and the same usage — must be counted exactly once.
-      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-5', usage: sharedUsage } },
-      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-5', usage: sharedUsage } },
-      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-5', usage: sharedUsage } },
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
+      { type: 'assistant', message: { id: 'msg_01AAA', model: 'claude-sonnet-4-20250514', usage: sharedUsage } },
       // A second, distinct response.
-      { type: 'assistant', message: { id: 'msg_01BBB', model: 'claude-sonnet-5', usage: { input_tokens: 25, output_tokens: 5 } } },
+      { type: 'assistant', message: { id: 'msg_01BBB', model: 'claude-sonnet-4-20250514', usage: { input_tokens: 25, output_tokens: 5 } } },
     ]);
 
     const result = runScript(
@@ -234,7 +234,7 @@ function runTests() {
   // 5. Handles missing usage fields gracefully
   (test('handles missing usage fields gracefully', () => {
     const tmpHome = makeTempDir();
-    const input = { model: 'claude-sonnet-5' };
+    const input = { model: 'claude-sonnet-4-20250514' };
     const inputStr = JSON.stringify(input);
     const result = runScript(input, withTempHome(tmpHome));
     assert.strictEqual(result.code, 0, `Expected exit code 0, got ${result.code}`);
@@ -255,7 +255,7 @@ function runTests() {
   (test('prefers ECC_SESSION_ID over CLAUDE_SESSION_ID when both are present', () => {
     const tmpHome = makeTempDir();
     const input = {
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-4-20250514',
       usage: { input_tokens: 120, output_tokens: 30 },
     };
     const result = runScript(input, {
@@ -277,7 +277,7 @@ function runTests() {
     const tmpHome = makeTempDir();
     const input = {
       session_id: 'hook-session-abc',
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-4-20250514',
       usage: { input_tokens: 120, output_tokens: 30 },
     };
     const result = runScript(input, {
@@ -303,7 +303,7 @@ function runTests() {
       {
         type: 'assistant',
         message: {
-          model: 'claude-opus-5',
+          model: 'claude-opus-4-20250514',
           usage: {
             input_tokens: 10000,
             output_tokens: 5000,
@@ -434,8 +434,8 @@ function runTests() {
     );
   }) ? passed++ : failed++);
 
-  // 10. Sonnet 5 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
-  (test('prices Sonnet 5 at $18 per 1M input + 1M output tokens', () => {
+  // 10. Sonnet 4.6 keeps the existing $3/$15 rate and is not mistaken for Sonnet 5.
+  (test('prices Sonnet 4.6 at $18 per 1M input + 1M output tokens', () => {
     const tmpHome = makeTempDir();
     const sessionId = `sonnet46-${process.pid}-${Date.now()}`;
     const transcriptPath = path.join(tmpHome, 'session.jsonl');
@@ -444,7 +444,7 @@ function runTests() {
         type: 'assistant',
         message: {
           id: 'msg_sonnet46',
-          model: 'claude-sonnet-5',
+          model: 'claude-sonnet-4-6',
           usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
         },
       },
@@ -460,7 +460,7 @@ function runTests() {
 
       const metricsFile = path.join(tmpHome, '.claude', 'metrics', 'costs.jsonl');
       const row = JSON.parse(fs.readFileSync(metricsFile, 'utf8').trim());
-      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 5 1M/1M to remain $18.00');
+      assert.strictEqual(row.estimated_cost_usd, 18, 'Expected Sonnet 4.6 1M/1M to remain $18.00');
     } finally {
       removeHarnessCostCache(sessionId);
       fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -534,7 +534,7 @@ function runTests() {
   }) ? passed++ : failed++);
 
   // 10d. Opus 4.0's dated ID has no explicit minor segment. It must retain
-  // the legacy $15/$75 rate while Opus 5 uses the current $5/$25 rate.
+  // the legacy $15/$75 rate while Opus 4.5 uses the current $5/$25 rate.
   (test('distinguishes the dated Opus 4.0 snapshot from current Opus 4.x', () => {
     const priceModel = model => {
       const tmpHome = makeTempDir();
@@ -567,14 +567,14 @@ function runTests() {
     };
 
     assert.strictEqual(
-      priceModel('claude-opus-5'),
+      priceModel('claude-opus-4-20250514'),
       90,
       'Expected dated Opus 4.0 to retain the legacy $15/$75 rate'
     );
     assert.strictEqual(
-      priceModel('claude-opus-5'),
+      priceModel('claude-opus-4-5-20251101'),
       30,
-      'Expected Opus 5 to use the current $5/$25 rate'
+      'Expected Opus 4.5 to use the current $5/$25 rate'
     );
   }) ? passed++ : failed++);
 
@@ -587,7 +587,7 @@ function runTests() {
       {
         type: 'assistant',
         message: {
-          model: 'claude-sonnet-5',
+          model: 'claude-sonnet-4-20250514',
           usage: { input_tokens: 1000, output_tokens: 500 },
         },
       },
