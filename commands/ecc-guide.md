@@ -1,5 +1,5 @@
 ---
-description: Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface.
+description: Navigate ECC's current agents, skills, commands, hooks, install profiles, and docs from the live repository surface. Slash-command surface of the ecc-guide skill — use when the user asks how to navigate ECC or what to install; the skill body is canonical and carries the trigger clause.
 ---
 
 # /ecc-guide
