@@ -505,7 +505,24 @@ function staticStringResult(body) {
   const quote = value[0];
   if ((quote !== "'" && quote !== '"') || value[value.length - 1] !== quote) return null;
   const content = value.slice(1, -1);
-  return quote === "'" ? content.replace(/''/g, "'") : content.replace(/`(.)/gs, '$1');
+  return quote === "'" ? content.replace(/''/g, "'") : decodeDoubleQuotedString(content);
+}
+
+function decodeDoubleQuotedString(content) {
+  const input = String(content || '');
+  let value = '';
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (char !== '`' || index + 1 >= input.length) {
+      value += char;
+      continue;
+    }
+    const escaped = input[index + 1];
+    index += 1;
+    if (escaped === '\r' && input[index + 1] === '\n') index += 1;
+    else if (escaped !== '\n') value += escaped;
+  }
+  return value;
 }
 
 function leadingStaticStringResult(source) {
@@ -524,8 +541,10 @@ function leadingStaticStringResult(source) {
       continue;
     }
     if (quote === '"' && char === '`' && index + 1 < input.length) {
-      value += input[index + 1];
+      const escaped = input[index + 1];
       index += 2;
+      if (escaped === '\r' && input[index] === '\n') index += 1;
+      else if (escaped !== '\n') value += escaped;
       continue;
     }
     if (char === quote) return value;
@@ -845,9 +864,11 @@ function parseStatements(input) {
   let statement = [];
   let segment = [];
   let segmentQuotedTokens = [];
+  let segmentQuoteKinds = [];
   let word = '';
   let wordHasQuotedContent = false;
   let wordHasUnquotedContent = false;
+  let wordQuoteKind = null;
   let quote = null;
   let parenDepth = 0;
   let callOperatorPending = false;
@@ -856,10 +877,14 @@ function parseStatements(input) {
     if (word) {
       segment.push(word);
       segmentQuotedTokens.push(wordHasQuotedContent && !wordHasUnquotedContent);
+      segmentQuoteKinds.push(
+        wordHasQuotedContent && !wordHasUnquotedContent ? wordQuoteKind : null
+      );
     }
     word = '';
     wordHasQuotedContent = false;
     wordHasUnquotedContent = false;
+    wordQuoteKind = null;
   };
   const flushSegment = () => {
     flushWord();
@@ -867,12 +892,14 @@ function parseStatements(input) {
       Object.defineProperties(segment, {
         invokedByCallOperator: { value: callOperatorPending },
         quotedTokens: { value: segmentQuotedTokens },
+        quoteKinds: { value: segmentQuoteKinds },
       });
       statement.push(segment);
       callOperatorPending = false;
     }
     segment = [];
     segmentQuotedTokens = [];
+    segmentQuoteKinds = [];
   };
   const flushStatement = () => {
     flushSegment();
@@ -927,6 +954,7 @@ function parseStatements(input) {
     if (char === "'" || char === '"') {
       quote = char;
       wordHasQuotedContent = true;
+      wordQuoteKind = wordQuoteKind === null || wordQuoteKind === char ? char : 'mixed';
       continue;
     }
 
@@ -1047,7 +1075,7 @@ function collectStaticScalarAssignments(input, state) {
     assignmentCounts.set(name, (assignmentCounts.get(name) || 0) + 1);
   }
   const pattern = new RegExp(
-    String.raw`(?:^|[;\r\n])\s*${variable}\s*=\s*(?:'((?:''|[^'])*)'|"((?:\x60[\s\S]|[^"])*)")\s*(?=;|\r?\n|$)`,
+    String.raw`(?:^|[;\r\n])\s*${variable}\s*=\s*(?:'((?:''|[^'])*)'|"((?:\x60[\s\S]|[^\x60"])*)")\s*(?=;|\r?\n|$)`,
     'g'
   );
   let match;
@@ -1055,7 +1083,7 @@ function collectStaticScalarAssignments(input, state) {
     if (match[3] !== undefined && /(^|[^`])\$/.test(match[3])) continue;
     const value = match[2] !== undefined
       ? match[2].replace(/''/g, "'")
-      : match[3].replace(/`(.)/gs, '$1');
+      : decodeDoubleQuotedString(match[3]);
     state.staticScalars.set(match[1].toLowerCase(), value);
   }
   for (const [name, count] of assignmentCounts) {
@@ -1113,7 +1141,7 @@ function scanNestedPowerShell(tokens, depth, findings, analysis, scanState, upst
     if (isCommandFlag(token)) {
       let payload = tokens.slice(index + 1).join(' ');
       const pipelinePayload = payload === '-' ? staticPipelineInput(upstreamTokens) : null;
-      const payloadReference = tokens.quotedTokens?.[index + 1] === true
+      const payloadReference = tokens.quoteKinds?.[index + 1] === "'"
         ? null
         : variableReference(payload);
       if (payloadReference) {
@@ -1594,7 +1622,7 @@ function staticAliasDefinition(tokens, quotedTokens = []) {
 }
 
 function scanInvokeScriptCalls(source, unquoted, depth, findings, analysis, state) {
-  const pattern = /\$executioncontext\.invokecommand\.invokescript\s*\(/gi;
+  const pattern = /(?:\$\{executioncontext\}|\$executioncontext)\.invokecommand\.invokescript\s*\(/gi;
   while (pattern.exec(unquoted) !== null) {
     const argumentSource = source.slice(pattern.lastIndex);
     const payload = leadingStaticStringResult(argumentSource);

@@ -738,13 +738,10 @@ function classifyDestructiveCommand(toolName, command) {
   const normalizedTool = String(toolName || '').toLowerCase();
   if (normalizedTool !== 'bash' && normalizedTool !== 'powershell') return [];
 
-  const findings = [];
-  if (isDestructiveBash(command)) {
-    findings.push('gateguard.bash-compatible-destructive');
-  }
-  if (normalizedTool === 'powershell') {
-    findings.push(...classifyPowerShellDestructiveCommand(command));
-  }
+  const findings = [
+    ...(isDestructiveBash(command) ? ['gateguard.bash-compatible-destructive'] : []),
+    ...(normalizedTool === 'powershell' ? classifyPowerShellDestructiveCommand(command) : []),
+  ];
   return [...new Set(findings)];
 }
 

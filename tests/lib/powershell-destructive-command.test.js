@@ -457,6 +457,8 @@ test('classifies static execution primitives', () => {
     "$name = 'Remove-Item'; & $name -Force C:/tmp/demo",
     "$args = '-Command \"Remove-Item -Force C:/tmp/demo\"'; Start-Process pwsh -ArgumentList $args",
     "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
+    "$payload = 'Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
+    "$payload = \"Remove-Item `\n-Force C:/tmp/demo\"; pwsh -Command $payload",
   ]) {
     expectRules(command, [RULES.REMOVE_FORCE]);
   }
@@ -494,13 +496,23 @@ test('classifies static execution primitives', () => {
     "$ExecutionContext.InvokeCommand.InvokeScript('Remove-Item -Force C:/tmp/demo')",
     [RULES.REMOVE_FORCE]
   );
+  expectRules(
+    "${ExecutionContext}.InvokeCommand.InvokeScript('Remove-Item -Force C:/tmp/demo')",
+    [RULES.REMOVE_FORCE]
+  );
+  expectRules(
+    "$ExecutionContext.InvokeCommand.InvokeScript(\"Write-Output safe; `\nRemove-Item -Force C:/tmp/demo\")",
+    [RULES.REMOVE_FORCE]
+  );
 });
 
 test('scans malformed InvokeScript string arguments in bounded time', () => {
   const command = `$ExecutionContext.InvokeCommand.InvokeScript("${'`!'.repeat(10000)}`;
+  const assignment = '$payload = "' + '`!'.repeat(10000);
   const startedAt = Date.now();
   expectRules(command, [RULES.DYNAMIC_EXECUTION]);
-  assert.ok(Date.now() - startedAt < 1000, 'malformed string scan should remain bounded');
+  expectSafe(assignment);
+  assert.ok(Date.now() - startedAt < 4000, 'malformed string scan should remain below hook timeout');
 });
 
 test('classifies command names composed from static subexpression output', () => {
