@@ -206,7 +206,7 @@ blocker without failing.
 shape Claude Code lists them:
 
 ```text
-Ledger:     8323 tokens (chars-per-token-conservative@1, 26633 chars, 49 skills/0 agents/95 commands) - OVER budget 8000
+Ledger:     8431 tokens (chars-per-token-conservative@1, 26977 chars, 50 skills/0 agents/95 commands) - OVER budget 8000
 ```
 
 ### The estimate is conservative by construction
@@ -274,10 +274,13 @@ included; regenerate with `plan` for current numbers):
 
 | Profile | Skills | Agents | Commands | Chars | Estimated tokens |
 |---|---|---|---|---|---|
-| opencode | 48 | 0 | 95 | 26,633 | 8,323 |
-| minimal | 48 | 68 | 95 | 42,078 | 13,150 |
-| developer | 125 | 68 | 95 | 62,638 | 19,575 |
-| full | 286 | 68 | 95 | 113,343 | 35,420 |
+| opencode | 49 | 0 | 95 | 26,977 | 8,431 |
+| minimal | 49 | 68 | 95 | 42,422 | 13,257 |
+| core | 49 | 68 | 95 | 42,422 | 13,257 |
+| security | 68 | 68 | 95 | 48,080 | 15,025 |
+| research | 75 | 68 | 95 | 50,190 | 15,685 |
+| developer | 126 | 68 | 95 | 62,982 | 19,682 |
+| full | 287 | 68 | 95 | 113,687 | 35,528 |
 
 Every install profile is over the 8k default budget, `opencode` included —
 it was within budget under the old four-chars-per-token estimate and is not
