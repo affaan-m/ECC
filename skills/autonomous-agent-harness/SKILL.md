@@ -119,17 +119,20 @@ Trigger Claude Code agents remotely for event-driven workflows.
 **Dispatch patterns:**
 
 ```bash
-# Trigger from CI/CD
-curl -X POST "https://api.anthropic.com/dispatch" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
-  -d '{"prompt": "Build failed on main. Diagnose and fix.", "project": "/repo"}'
+# Trigger from CI/CD (GitHub Actions runs claude CLI, no remote dispatch API needed)
+# .github/workflows/agent-fix.yml: gh workflow run agent-fix -f prompt="Diagnose main build failure"
+claude -p "Build failed on main. Diagnose and fix." --project /repo
 
 # Trigger from webhook
-# GitHub webhook → dispatch → Claude agent → fix → PR
+# GitHub webhook -> CI runner -> claude -p -> fix -> PR
 
 # Trigger from another agent
 claude -p "Analyze the output of the security scan and create issues for findings"
 ```
+
+Note: there is no `api.anthropic.com/dispatch` endpoint. Remote triggering works
+by executing the `claude` CLI from the machine that owns the target workspace —
+cron, CI jobs, or webhooks that shell out to `claude -p`.
 
 ### 4. Computer Use
 
@@ -188,26 +191,29 @@ description: Persistent task queue for autonomous operation
 
 ### Step 1: Configure MCP Servers
 
-Ensure these are in `~/.claude.json`:
+Scheduled tasks need no MCP server — Claude Code's native crons cover them (Step 2).
+For persistent memory, add the published reference memory server to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "memory": {
       "command": "npx",
-      "args": ["-y", "@anthropic/memory-mcp-server"]
-    },
-    "scheduled-tasks": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/scheduled-tasks-mcp-server"]
-    },
-    "computer-use": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/computer-use-mcp-server"]
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
     }
   }
 }
 ```
+
+Do not install packages under the `@anthropic/*` npm scope (for example
+`@anthropic/memory-mcp-server`): these names are not published by Anthropic, and
+`npx -y` against an unclaimed scope is a supply-chain risk if the name is ever
+claimed. Anthropic's real npm packages live under `@anthropic-ai/*`, and its MCP
+reference servers under `@modelcontextprotocol/*`.
+
+Computer use is not provided by an npm MCP server; it requires the Claude Desktop
+app or the reference computer-use environment. Skip Step 4 if you only need CLI
+automation.
 
 ### Step 2: Create Base Crons
 
