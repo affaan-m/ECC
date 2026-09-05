@@ -112,7 +112,7 @@ function runAnalyzeOnce(options = {}) {
       '    [ -e "$candidate" ] || [ -L "$candidate" ] || continue',
       "    printf 'found\n' > \"${CLAUDE_STUB_ATTACK_FILE}\"",
       '    rm -f "$candidate"',
-      "    printf '%s\n' '${ANALYSIS_COMPLETE_RECORD}' > \"$candidate\"",
+      `    printf '%s\n' '${ANALYSIS_COMPLETE_RECORD}' > "$candidate"`,
       '  done',
       'fi',
       'if [ "${CLAUDE_STUB_DELAY_SECONDS:-0}" != "0" ]; then',
@@ -148,7 +148,9 @@ function runAnalyzeOnce(options = {}) {
     if (existingLog) fs.writeFileSync(logFile, existingLog);
 
     const inheritedEnv = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => key !== 'CLAUDE_PLUGIN_ROOT')
+      Object.entries(process.env).filter(
+        ([key]) => key !== 'CLAUDE_PLUGIN_ROOT' && !key.startsWith('ECC_OBSERVER_')
+      )
     );
     const childEnv = {
       ...inheritedEnv,
@@ -173,6 +175,10 @@ function runAnalyzeOnce(options = {}) {
       CONFIG_DIR: projectDir,
       CLV2_IS_WINDOWS: 'false',
       ECC_OBSERVER_TIMEOUT_SECONDS: String(observerTimeoutSeconds),
+      ECC_OBSERVER_MAX_ANALYSIS_LINES: '500',
+      ECC_OBSERVER_MAX_TURNS: '20',
+      ECC_OBSERVER_MODEL: 'haiku',
+      ECC_OBSERVER_ALLOW_WINDOWS: 'false',
     };
 
     const startedAt = Date.now();
