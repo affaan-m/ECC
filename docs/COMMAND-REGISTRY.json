@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 94,
+  "totalCommands": 95,
   "commands": [
     {
       "command": "aside",
@@ -662,6 +662,17 @@
       "path": "commands/plan.md"
     },
     {
+      "command": "plugin-profiles",
+      "description": "Generate and manage slim ECC profile plugin carriers - list profiles, plan the listing ledger and capability decision, generate a receipted plugin, and activate it per project.",
+      "type": "planning",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "plugin-profiles"
+      ],
+      "path": "commands/plugin-profiles.md"
+    },
+    {
       "command": "pm2",
       "description": "Analyze a project and generate PM2 service commands for detected frontend, backend, or database services.",
       "type": "general",
@@ -1031,7 +1042,7 @@
       "build": 2,
       "general": 10,
       "orchestration": 11,
-      "planning": 2,
+      "planning": 3,
       "refactoring": 1,
       "review": 15,
       "testing": 53
