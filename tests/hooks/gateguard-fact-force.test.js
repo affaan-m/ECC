@@ -105,6 +105,38 @@ function runBashHook(input, env = {}) {
   };
 }
 
+function runPowerShellHook(input, env = {}) {
+  const rawInput = typeof input === 'string' ? input : JSON.stringify(input);
+  const result = spawnSync(
+    'node',
+    [
+      runner,
+      'pre:powershell:gateguard-fact-force',
+      'scripts/hooks/gateguard-fact-force.js',
+      'standard,strict'
+    ],
+    {
+      input: rawInput,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ECC_HOOK_PROFILE: 'standard',
+        GATEGUARD_STATE_DIR: stateDir,
+        CLAUDE_SESSION_ID: TEST_SESSION_ID,
+        ...env
+      },
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }
+  );
+
+  return {
+    code: Number.isInteger(result.status) ? result.status : 1,
+    stdout: result.stdout || '',
+    stderr: result.stderr || ''
+  };
+}
+
 function parseOutput(stdout) {
   try {
     return JSON.parse(stdout);
@@ -2855,6 +2887,160 @@ function runTests() {
       const output = parseOutput(result.stdout);
       assert.ok(output, 'should produce JSON output');
       assert.strictEqual(output.hookSpecificOutput.permissionDecision, 'deny', 'no exemptions when unset');
+    })
+  )
+    passed++;
+  else failed++;
+
+  // --- PowerShell tool consumer contract ---
+  if (
+    test('normalizes PowerShell tool-name casing before destructive classification', () => {
+      for (const toolName of ['PowerShell', 'powershell', 'POWERSHELL']) {
+        clearState();
+        const result = runPowerShellHook({
+          tool_name: toolName,
+          tool_input: { command: 'Remove-Item -Force C:/tmp/demo' }
+        });
+        assert.strictEqual(result.code, 0, `${toolName} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${toolName} should produce JSON output`);
+        assert.strictEqual(
+          output.hookSpecificOutput?.permissionDecision,
+          'deny',
+          `${toolName} should be denied`
+        );
+        assert.match(
+          output.hookSpecificOutput.permissionDecisionReason,
+          /Destructive command detected/
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies the first routine PowerShell command and allows its retry', () => {
+      clearState();
+      const input = {
+        tool_name: 'PowerShell',
+        tool_input: { command: 'Get-Date' }
+      };
+
+      const first = runPowerShellHook(input);
+      assert.strictEqual(first.code, 0, 'first PowerShell hook should exit 0');
+      const firstOutput = parseOutput(first.stdout);
+      assert.ok(firstOutput, 'first PowerShell attempt should produce JSON output');
+      assert.strictEqual(
+        firstOutput.hookSpecificOutput?.permissionDecision,
+        'deny',
+        'first routine PowerShell command should be denied'
+      );
+      assert.match(
+        firstOutput.hookSpecificOutput.permissionDecisionReason,
+        /pre:powershell:gateguard-fact-force/,
+        'recovery guidance should name the independently configurable PowerShell hook ID'
+      );
+
+      const retry = runPowerShellHook(input);
+      assert.strictEqual(retry.code, 0, 'PowerShell retry should exit 0');
+      const retryOutput = parseOutput(retry.stdout);
+      assert.ok(retryOutput, 'PowerShell retry should produce JSON output');
+      if (retryOutput.hookSpecificOutput) {
+        assert.notStrictEqual(
+          retryOutput.hookSpecificOutput.permissionDecision,
+          'deny',
+          'routine PowerShell retry should be allowed'
+        );
+      } else {
+        assert.strictEqual(retryOutput.tool_name, 'PowerShell');
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('denies direct and nested destructive PowerShell commands', () => {
+      const encodedPayload = Buffer.from(
+        'Remove-Item -Force C:/tmp/demo',
+        'utf16le'
+      ).toString('base64');
+      const commands = [
+        'Remove-Item -Recurse C:/tmp/demo',
+        'rp -Force HKCU:/Software/Demo -Name setting',
+        'Clear-Disk -Number 2 -RemoveData -Confirm:$false',
+        'pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        'pwsh -Command:"Remove-Item -Force C:/tmp/demo"',
+        `pwsh -EncodedCommand:${encodedPayload}`,
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command $payload",
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"$payload\"",
+        "$payload='Remove-Item -Force C:/tmp/demo'; pwsh -Command \"Write-Output ready; $payload\"",
+        "$payload='Remove-Item'; pwsh -Command $payload -Force C:/tmp/demo",
+        'pwsh -Command "Write-Output ready; $runtimePayload"',
+        'pwsh -Command $runtimePayload -Force C:/tmp/demo',
+        'Write-Output "$(Remove-Item -Force C:/tmp/demo)"',
+        '& { Remove-Item -Force C:/tmp/demo }',
+        'if ($true) { Remove-Item -Force C:/tmp/demo }',
+        '@(Remove-Item -Force C:/tmp/demo)',
+        'cmd /c "rd /s /q C:/tmp/demo"',
+        'Remove-Item `\n-Force C:/tmp/demo',
+        '# (\nRemove-Item -Force C:/tmp/demo',
+        '<# ignored <# #> Remove-Item -Force C:/tmp/demo',
+        'function cleanup { Remove-Item -Force C:/tmp/demo }; if ($true) { cleanup }',
+        'cmd /c pwsh -Command "Remove-Item -Force C:/tmp/demo"',
+        '@"\n" # $(Remove-Item -Force C:/tmp/demo)\n"@',
+        '& ‘Remove-Item’ -Force C:/tmp/demo',
+        'Invoke-Expression $runtimeValue'
+      ];
+
+      for (const command of commands) {
+        clearState();
+        const result = runPowerShellHook({
+          tool_name: 'PowerShell',
+          tool_input: { command }
+        });
+        assert.strictEqual(result.code, 0, `${command} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${command} should produce JSON output`);
+        assert.strictEqual(
+          output.hookSpecificOutput?.permissionDecision,
+          'deny',
+          `${command} should be denied`
+        );
+        assert.match(
+          output.hookSpecificOutput.permissionDecisionReason,
+          /Destructive command detected/
+        );
+      }
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    test('allows benign PowerShell after the shared routine shell gate is satisfied', () => {
+      clearState();
+      writeState({ checked: ['__bash_session__'], last_active: Date.now() });
+
+      for (const command of ['Get-ChildItem C:/tmp', 'Remove-Item C:/tmp/notes.txt']) {
+        const result = runPowerShellHook({
+          tool_name: 'PowerShell',
+          tool_input: { command }
+        });
+        assert.strictEqual(result.code, 0, `${command} hook should exit 0`);
+        const output = parseOutput(result.stdout);
+        assert.ok(output, `${command} should produce JSON output`);
+        if (output.hookSpecificOutput) {
+          assert.notStrictEqual(
+            output.hookSpecificOutput.permissionDecision,
+            'deny',
+            `${command} should not receive a destructive denial`
+          );
+        } else {
+          assert.strictEqual(output.tool_name, 'PowerShell');
+        }
+      }
     })
   )
     passed++;
