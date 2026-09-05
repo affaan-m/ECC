@@ -1,5 +1,5 @@
 ---
-description: "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes"
+description: "Alias of /pr for the PRP workflow series — same PR creation flow, differing only in suggesting /prp-commit for uncommitted changes. Use /pr unless already mid-PRP-series."
 argument-hint: "[base-branch] (default: main)"
 ---
 
