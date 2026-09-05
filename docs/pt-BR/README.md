@@ -278,7 +278,7 @@ npx ecc-agentshield scan
 # Corrigir automaticamente problemas seguros
 npx ecc-agentshield scan --fix
 
-# Análise profunda com três agentes Opus 4.6
+# Análise profunda com três agentes Opus 5
 npx ecc-agentshield scan --opus --stream
 
 # Gerar configuração segura do zero

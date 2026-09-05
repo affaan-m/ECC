@@ -203,13 +203,13 @@ The harness should simplify as models improve. Following Anthropic's evolution:
 - 2-agent minimum: Initializer + Coding Agent
 - Heavy scaffolding compensates for model limitations
 
-### Stage 2 — Capable Models (Opus 4.5-class)
+### Stage 2 — Capable Models (Opus 5class)
 - Full 3-agent harness: Planner + Generator + Evaluator
 - Sprint contracts before each implementation phase
 - 10-sprint decomposition for complex apps
 - Context resets still useful but less critical
 
-### Stage 3 — Frontier Models (Opus 4.6-class)
+### Stage 3 — Frontier Models (Opus 5class)
 - Simplified harness: single planning pass, continuous generation
 - Evaluation reduced to single end-pass (model is smarter)
 - No sprint structure needed

@@ -52,7 +52,7 @@ function writeTranscript(lines) {
   return filePath;
 }
 
-function usageRecord(tokens, model = 'claude-sonnet-4-6', extra = {}) {
+function usageRecord(tokens, model = 'claude-sonnet-5', extra = {}) {
   return JSON.stringify({
     type: 'assistant',
     message: {
@@ -86,9 +86,9 @@ test('sums input + cache_read + cache_creation from the latest usage record', ()
 });
 
 test('returns the model id alongside the token count', () => {
-  const file = tracked(writeTranscript([usageRecord({ input: 1000 }, 'claude-opus-4-5[1m]')]));
+  const file = tracked(writeTranscript([usageRecord({ input: 1000 }, 'claude-opus-5[1m]')]));
   const result = readLatestContextTokens(file);
-  assert.strictEqual(result.model, 'claude-opus-4-5[1m]');
+  assert.strictEqual(result.model, 'claude-opus-5[1m]');
 });
 
 test('skips trailing records without usage (e.g. tool results)', () => {
@@ -147,13 +147,13 @@ delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
 delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
 
 test('defaults to the standard 200k window', () => {
-  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-4-6'), STANDARD_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-5'), STANDARD_CONTEXT_WINDOW_TOKENS);
 });
 
 test('honors an explicit ECC_CONTEXT_WINDOW_TOKENS override (e.g. 400k models, #2290)', () => {
   process.env.ECC_CONTEXT_WINDOW_TOKENS = '400000';
   try {
-    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-x'), 400000);
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-5'), 400000);
   } finally {
     delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
   }
@@ -162,7 +162,7 @@ test('honors an explicit ECC_CONTEXT_WINDOW_TOKENS override (e.g. 400k models, #
 test('honors Claude Code native CLAUDE_CODE_AUTO_COMPACT_WINDOW override', () => {
   process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '400000';
   try {
-    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-x'), 400000);
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-5'), 400000);
   } finally {
     delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
   }
@@ -171,18 +171,18 @@ test('honors Claude Code native CLAUDE_CODE_AUTO_COMPACT_WINDOW override', () =>
 test('ignores a non-positive / invalid window override', () => {
   process.env.ECC_CONTEXT_WINDOW_TOKENS = 'not-a-number';
   try {
-    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-4-6'), STANDARD_CONTEXT_WINDOW_TOKENS);
+    assert.strictEqual(resolveContextWindowTokens(50000, 'claude-sonnet-5'), STANDARD_CONTEXT_WINDOW_TOKENS);
   } finally {
     delete process.env.ECC_CONTEXT_WINDOW_TOKENS;
   }
 });
 
 test('detects a 1M window from the [1m] model marker', () => {
-  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-4-5[1m]'), LARGE_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(50000, 'claude-opus-5[1m]'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
 test('detects a 1M window when observed tokens exceed 200k (marker dropped)', () => {
-  assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-4-5'), LARGE_CONTEXT_WINDOW_TOKENS);
+  assert.strictEqual(resolveContextWindowTokens(220000, 'claude-opus-5'), LARGE_CONTEXT_WINDOW_TOKENS);
 });
 
 test('recognizes claude-fable-5 as a 1M window without a [1m] marker or 200k+ tokens (#2461)', () => {
@@ -240,7 +240,7 @@ test('an env override is a detected window, not inferred', () => {
 });
 
 test('a [1m] marker is a detected window, not inferred', () => {
-  assert.strictEqual(isContextWindowInferred(187000, 'claude-opus-4-5[1m]'), false);
+  assert.strictEqual(isContextWindowInferred(187000, 'claude-opus-5[1m]'), false);
 });
 
 test('a known large-window family is a detected window, not inferred', () => {

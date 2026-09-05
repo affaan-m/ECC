@@ -5,9 +5,9 @@ description: "Initial gitagent export surface for ECC's shared skill catalog, go
 author: affaan-m
 license: MIT
 model:
-  preferred: claude-opus-4-6
+  preferred: claude-opus-5
   fallback:
-    - claude-sonnet-4-6
+    - claude-sonnet-5
 skills:
   - agent-architecture-audit
   - agent-eval

@@ -34,7 +34,7 @@ export ATLAS_BASE_URL=https://api.atlascloud.ai/v1
 <details>
 <summary>All Atlas Cloud LLM models (59+)</summary>
 
-- **Anthropic**: `anthropic/claude-haiku-4.5-20251001`, `anthropic/claude-opus-4.8`, `anthropic/claude-sonnet-4.6`
+- **Anthropic**: `anthropic/claude-haiku-4.5-20251001`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`
 - **OpenAI**: `openai/gpt-5.4`, `openai/gpt-5.5`
 - **Google Gemini**: `google/gemini-3.1-flash-lite`, `google/gemini-3.1-pro-preview`, `google/gemini-3.5-flash`
 - **Qwen**: `qwen/qwen2.5-7b-instruct`, `Qwen/Qwen3-235B-A22B-Instruct-2507`, `qwen/qwen3-235b-a22b-thinking-2507`, `qwen/qwen3-30b-a3b`, `Qwen/Qwen3-30B-A3B-Instruct-2507`, `qwen/qwen3-30b-a3b-thinking-2507`, `qwen/qwen3-32b`, `qwen/qwen3-8b`, `Qwen/Qwen3-Coder`, `qwen/qwen3-coder-next`, `qwen/qwen3-max-2026-01-23`, `Qwen/Qwen3-Next-80B-A3B-Instruct`, `Qwen/Qwen3-Next-80B-A3B-Thinking`, `Qwen/Qwen3-VL-235B-A22B-Instruct`, `qwen/qwen3-vl-235b-a22b-thinking`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen/qwen3-vl-30b-a3b-thinking`, `qwen/qwen3-vl-8b-instruct`, `qwen/qwen3.5-122b-a10b`, `qwen/qwen3.5-27b`, `qwen/qwen3.5-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.6-plus`
@@ -60,7 +60,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="anthropic/claude-sonnet-4.6",
+    model="anthropic/claude-sonnet-5",
     messages=[{"role": "user", "content": "Hello from ECC + Atlas Cloud!"}],
 )
 print(response.choices[0].message.content)

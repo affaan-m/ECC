@@ -695,7 +695,7 @@ npx ecc-agentshield scan
 # Автоисправление безопасных проблем
 npx ecc-agentshield scan --fix
 
-# Глубокий анализ с тремя агентами Opus 4.6
+# Глубокий анализ с тремя агентами Opus 5
 npx ecc-agentshield scan --opus --stream
 
 # Генерировать безопасный конфиг с нуля
@@ -704,7 +704,7 @@ npx ecc-agentshield init
 
 **Что сканируется:** CLAUDE.md, settings.json, MCP configs, хуки, определения агентов и навыки по 5 категориям: обнаружение секретов (14 паттернов), аудит разрешений, анализ hook injection, профилирование рисков MCP-серверов и ревью конфигураций агентов.
 
-**Флаг `--opus`** запускает три агента Claude Opus 4.6 в pipeline red-team/blue-team/auditor. Атакующий ищет цепочки эксплойтов, защитник оценивает защиты, а аудитор синтезирует оба результата в приоритизированную оценку рисков. Это adversarial reasoning, а не просто matching паттернов.
+**Флаг `--opus`** запускает три агента Claude Opus 5 в pipeline red-team/blue-team/auditor. Атакующий ищет цепочки эксплойтов, защитник оценивает защиты, а аудитор синтезирует оба результата в приоритизированную оценку рисков. Это adversarial reasoning, а не просто matching паттернов.
 
 **Форматы вывода:** терминал (цветовая оценка A-F), JSON (CI pipelines), Markdown, HTML. Exit code 2 при критических находках для build gates.
 

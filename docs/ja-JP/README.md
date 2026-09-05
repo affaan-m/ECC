@@ -364,7 +364,7 @@ npx ecc-agentshield scan
 # 安全な問題を自動修正
 npx ecc-agentshield scan --fix
 
-# Opus 4.6 による深い分析
+# Opus 5 による深い分析
 npx ecc-agentshield scan --opus --stream
 
 # ゼロから安全な設定を生成

@@ -14,7 +14,7 @@
 
 Skill'ler, belirli kapsamlar ve iş akışlarıyla sınırlandırılmış kurallar gibi çalışır. Belirli bir iş akışını yürütmeniz gerektiğinde prompt'lara kısayol görevi görürler.
 
-Opus 4.5 ile uzun bir kodlama oturumundan sonra ölü kodu ve gevşek .md dosyalarını temizlemek mi istiyorsunuz? `/refactor-clean` çalıştırın. Test mi gerekli? `/tdd`, `/e2e`, `/test-coverage`. Skill'ler ayrıca codemap'leri de içerebilir - Claude'un keşfe context harcamadan kod tabanınızda hızlıca gezinmesi için bir yöntem.
+Opus 5 ile uzun bir kodlama oturumundan sonra ölü kodu ve gevşek .md dosyalarını temizlemek mi istiyorsunuz? `/refactor-clean` çalıştırın. Test mi gerekli? `/tdd`, `/e2e`, `/test-coverage`. Skill'ler ayrıca codemap'leri de içerebilir - Claude'un keşfe context harcamadan kod tabanınızda hızlıca gezinmesi için bir yöntem.
 
 ![Terminal showing chained commands](../assets/images/shortform/02-chaining-commands.jpeg)
 *Command'ları zincirleme*
@@ -367,7 +367,7 @@ Kullanıcı, dizin, kirli göstergeli git branch, kalan context %, model, zaman 
 *Mac root dizinimde örnek statusline*
 
 ```
-affoon:~ ctx:65% Opus 4.5 19:52
+affoon:~ ctx:65% Opus 5 19:52
 ▌▌ plan mode on (shift+tab to cycle)
 ```
 
