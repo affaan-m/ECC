@@ -220,6 +220,19 @@ def test_artifact_scope_handles_many_unclosed_inline_links_linearly(
     assert result.returncode == 0, result.stdout
 
 
+@pytest.mark.parametrize("prefix", ("<unterminated ", "unterminated "))
+def test_artifact_scope_checks_link_after_unclosed_destination(
+    project: Path, prefix: str
+) -> None:
+    (project / "index.md").write_text(
+        f"[broken]({prefix}[missing](missing-guide.md)\n",
+        encoding="utf-8",
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: 'index.md' -> 'missing-guide.md'" in result.stdout
+
+
 def test_artifact_scope_ignores_links_inside_code_examples(project: Path) -> None:
     (project / "guide.md").write_text(
         "`[inline](missing-inline.md)`\n\n```md\n[fenced](missing-fenced.md)\n```\n",
@@ -274,6 +287,17 @@ def test_artifact_scope_checks_reference_style_markdown_links(
     assert result.returncode == 1
     assert "Broken Markdown link" in result.stdout
     assert "missing-guide.md" in result.stdout
+
+
+def test_artifact_scope_checks_continuation_line_reference_target(
+    project: Path,
+) -> None:
+    (project / "index.md").write_text(
+        "[docs]\n\n[docs]:\n  missing-guide.md\n", encoding="utf-8"
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 1
+    assert "Broken Markdown link: 'index.md' -> 'missing-guide.md'" in result.stdout
 
 
 def test_adr_scope_requires_every_file_in_index(project: Path) -> None:

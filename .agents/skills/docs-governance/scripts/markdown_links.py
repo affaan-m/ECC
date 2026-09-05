@@ -9,6 +9,7 @@ INLINE_LINK_START_RE = re.compile(r"\[[^\]\n]*\]\(")
 REFERENCE_DEFINITION_RE = re.compile(
     r"""(?mx)
     ^\ {0,3}\[(?P<label>[^\]\n]+)\]:[\t\ ]*
+    (?:\r?\n[\t\ ]+)?
     (?P<target><[^>\n]+>|[^\t\ \n]+)
     (?:[\t\ ]+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\([^()]*\)))?
     [\t\ ]*$
@@ -75,19 +76,21 @@ def without_inline_code(text: str) -> str:
 
 def inline_link_targets(text: str) -> list[str]:
     targets: list[str] = []
-    for match in INLINE_LINK_START_RE.finditer(text):
+    matches = list(INLINE_LINK_START_RE.finditer(text))
+    for index, match in enumerate(matches):
         start = match.end()
+        next_start = (
+            matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        )
         if start < len(text) and text[start] == "<":
-            end = text.find(">", start + 1)
+            end = text.find(">", start + 1, next_start)
             if end != -1:
                 targets.append(text[start : end + 1])
-                continue
-            break
+            continue
         depth = 0
         quote: str | None = None
         escaped = False
-        closed = False
-        for end in range(start, len(text)):
+        for end in range(start, next_start):
             character = text[end]
             if quote is not None:
                 if escaped:
@@ -105,11 +108,8 @@ def inline_link_targets(text: str) -> list[str]:
             elif character == ")":
                 if depth == 0:
                     targets.append(text[start:end])
-                    closed = True
                     break
                 depth -= 1
-        if not closed:
-            break
     return targets
 
 
