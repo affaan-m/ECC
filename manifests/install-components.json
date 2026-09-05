@@ -399,6 +399,14 @@
       ]
     },
     {
+      "id": "agent:spec-miner",
+      "family": "agent",
+      "description": "Behavioral spec extraction agent for brownfield codebases.",
+      "modules": [
+        "agents-core"
+      ]
+    },
+    {
       "id": "agent:tdd-guide",
       "family": "agent",
       "description": "Test-driven development guidance agent.",
