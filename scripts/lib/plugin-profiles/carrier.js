@@ -35,6 +35,7 @@ const { extractRequireSpecifiers } = require('./require-graph');
 const { catalogSkillFrontmatter, measureContextLedger } = require('./ledger');
 const { collectBlockers } = require('./plan');
 const { runLoadSmoke } = require('./load-smoke');
+const { pruneUnshippableCommands } = require('./unshippable');
 
 /**
  * Read {id, name, description, sha256} for every skill in the source catalog.
@@ -143,14 +144,18 @@ function writeCatalogSkill(plan, pluginRoot, catalogRows) {
  * Build the `.claude-plugin/plugin.json` document for a generated plugin.
  *
  * @param {object} plan Resolved plan.
- * @param {{hasSkills: boolean, hasCommands: boolean}} shape Which keys apply.
+ * @param {{hasSkills: boolean, hasCommands: boolean, commandCount?: number}} shape Which keys
+ *   apply, plus the shipped command count when it differs from `plan.commands.length` (a
+ *   command omitted for an unshippable npm dependency is not copied, so the description must
+ *   not advertise it).
  * @returns {object} Plugin manifest.
  */
-function buildPluginManifest(plan, { hasSkills, hasCommands }) {
+function buildPluginManifest(plan, { hasSkills, hasCommands, commandCount }) {
   const rootPluginPath = path.join(plan.repoRoot, '.claude-plugin', 'plugin.json');
   const rootPlugin = fs.existsSync(rootPluginPath)
     ? readJson(rootPluginPath, '.claude-plugin/plugin.json')
     : {};
+  const shippedCommandCount = Number.isFinite(commandCount) ? commandCount : plan.commands.length;
 
   // Claude Code's plugin validator rejects `agents` and v2.1+ auto-loads
   // hooks/hooks.json, so neither field may appear here (see
@@ -160,7 +165,7 @@ function buildPluginManifest(plan, { hasSkills, hasCommands }) {
     name: plan.pluginName,
     version: plan.version,
     description: `ECC profile plugin "${plan.profileId || 'custom'}" generated from ecc@${plan.version} - `
-      + `${plan.skills.length} skills, ${plan.agents.length} agents, ${plan.commands.length} commands. `
+      + `${plan.skills.length} skills, ${plan.agents.length} agents, ${shippedCommandCount} commands. `
       + 'The full skill catalog stays available on demand via the ecc-catalog skill.',
     author: rootPlugin.author,
     homepage: rootPlugin.homepage,
@@ -456,16 +461,16 @@ function previewProfilePlugin(options = {}) {
 }
 
 /**
- * Copy every planned source into the staging tree and write the files the
- * generator synthesizes: the catalog skill, the plugin manifest, and the
- * pinned hook profile.
+ * Copy every planned source into the staging tree. Nothing here can yet know
+ * which commands are unshippable — that is only provable by verifying the
+ * staged tree — so this stops at the copy.
  *
  * @param {object} plan Resolved plan.
  * @param {string} stagingRoot Staging directory (already created).
- * @param {object} context Operations, catalog entries, and catalog toggle.
- * @returns {{catalogRows: Array<object>, catalogSkillCount: number, manifest: object}}
+ * @param {object} context Copy operations.
+ * @returns {void}
  */
-function buildStagingTree(plan, stagingRoot, { operations, catalogEntries, includeCatalogSkill }) {
+function buildStagingTree(plan, stagingRoot, { operations }) {
   for (const operation of operations) {
     fs.cpSync(
       path.join(plan.repoRoot, ...operation.source.split('/')),
@@ -473,7 +478,20 @@ function buildStagingTree(plan, stagingRoot, { operations, catalogEntries, inclu
       { recursive: true }
     );
   }
+}
 
+/**
+ * Write the files the generator synthesizes: the catalog skill, the plugin
+ * manifest, and the pinned hook profile. Split from `buildStagingTree` so it
+ * runs after `pruneUnshippableCommands` — the manifest's command count must
+ * reflect what is actually in `commands/`, not the pre-verification plan.
+ *
+ * @param {object} plan Resolved plan.
+ * @param {string} stagingRoot Staging directory (already created).
+ * @param {object} context Catalog entries, catalog toggle, and shipped commands.
+ * @returns {{catalogRows: Array<object>, catalogSkillCount: number, manifest: object}}
+ */
+function finalizeStagingTree(plan, stagingRoot, { catalogEntries, includeCatalogSkill, shippedCommands }) {
   const installed = new Set(plan.skills);
   const catalogRows = catalogEntries.map(entry => ({
     id: entry.id,
@@ -486,7 +504,8 @@ function buildStagingTree(plan, stagingRoot, { operations, catalogEntries, inclu
 
   const manifest = buildPluginManifest(plan, {
     hasSkills: plan.skills.length > 0 || includeCatalogSkill,
-    hasCommands: plan.commands.length > 0,
+    hasCommands: shippedCommands.length > 0,
+    commandCount: shippedCommands.length,
   });
   fs.mkdirSync(path.join(stagingRoot, '.claude-plugin'), { recursive: true });
   fs.writeFileSync(path.join(stagingRoot, '.claude-plugin', 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -510,10 +529,12 @@ function buildStagingTree(plan, stagingRoot, { operations, catalogEntries, inclu
  * which is the only thing that knows the tree is final.
  *
  * @param {object} plan Resolved plan.
- * @param {object} context Ledger, catalog rows, and the replaced receipt.
+ * @param {object} context Ledger, catalog rows, the replaced receipt, and the
+ *   pruning result (shipped/omitted commands, and why).
  * @returns {object} Receipt with a null treeDigest.
  */
-function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification }) {
+function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification, pruned }) {
+  const shippedCommands = pruned ? pruned.shippedCommands : plan.commands;
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
     generatedFrom: PROFILE_GENERATOR_ID,
@@ -532,7 +553,10 @@ function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification
     context: {
       skills: plan.skills,
       agents: plan.agents,
-      commands: plan.commands,
+      // What actually shipped. A command whose only entry script needs an
+      // npm package no carrier carries is not in this list — see
+      // dependencies.omittedCommands for which ones and why.
+      commands: shippedCommands,
       digest: computeContextDigest(plan),
     },
     capabilities: { hooks: plan.hooks },
@@ -548,6 +572,9 @@ function buildReceipt(plan, { ledger, catalogRows, previousReceipt, verification
       dynamic: verification.dynamic,
       // npm packages a shipped script needs that no carrier carries.
       external: verification.external,
+      // Commands removed from this carrier because an entry script proven
+      // above needs one of those packages, and which script/module forced it.
+      omittedCommands: pruned ? pruned.reasons : [],
       loadSmoke: verification.smoke,
     },
     tokenLedger: ledger,
@@ -606,7 +633,7 @@ function swapIntoPlace({ stagingRoot, pluginRoot, previousRoot, keepPrevious }) 
  * @returns {object} Generation result.
  */
 function buildGenerationResult(plan, context) {
-  const { pluginRoot, previousRoot, staged, receipt, ledger, includeCatalogSkill } = context;
+  const { pluginRoot, previousRoot, staged, receipt, ledger, includeCatalogSkill, pruned } = context;
   return {
     pluginRoot,
     previousRoot,
@@ -618,9 +645,11 @@ function buildGenerationResult(plan, context) {
     counts: {
       skills: plan.skills.length + (includeCatalogSkill ? 1 : 0),
       agents: plan.agents.length,
-      commands: plan.commands.length,
+      // Reflects what was actually copied; see counts.omittedCommands.
+      commands: pruned.shippedCommands.length,
       runtimePaths: plan.runtimePaths.length,
       onDemandSkills: staged.catalogRows.filter(row => !row.installed).length,
+      omittedCommands: pruned.omittedCommands.length,
     },
   };
 }
@@ -688,18 +717,24 @@ function stageVerifyAndSwap(plan, context) {
   const { preview, options, ledger, includeCatalogSkill, stagingRoot, previousRoot, pluginRoot, state } = context;
   const catalogEntries = includeCatalogSkill ? readCatalogEntries(plan.repoRoot) : [];
 
-  const staged = buildStagingTree(plan, stagingRoot, {
-    operations: preview.operations,
+  buildStagingTree(plan, stagingRoot, { operations: preview.operations });
+  const verification = verifyStagedCarrier(stagingRoot, plan);
+  // Proven-unshippable commands come out of the staged tree before the
+  // catalog and manifest are written, so neither advertises one.
+  const pruned = pruneUnshippableCommands(plan, stagingRoot, verification);
+
+  const staged = finalizeStagingTree(plan, stagingRoot, {
     catalogEntries,
     includeCatalogSkill,
+    shippedCommands: pruned.shippedCommands,
   });
-  const verification = verifyStagedCarrier(stagingRoot, plan);
 
   const receipt = writeReceipt(stagingRoot, buildReceipt(plan, {
     ledger,
     catalogRows: staged.catalogRows,
     previousReceipt: preview.existingReceipt,
     verification,
+    pruned,
   }));
 
   const keptPreviousRoot = swapIntoPlace({
@@ -711,7 +746,7 @@ function stageVerifyAndSwap(plan, context) {
   state.swapped = true;
 
   return buildGenerationResult(plan, {
-    pluginRoot, previousRoot: keptPreviousRoot, staged, receipt, ledger, includeCatalogSkill,
+    pluginRoot, previousRoot: keptPreviousRoot, staged, receipt, ledger, includeCatalogSkill, pruned,
   });
 }
 
@@ -730,6 +765,7 @@ module.exports = {
   collectSmokeTargets,
   reconcileLoadSmoke,
   buildStagingTree,
+  finalizeStagingTree,
   buildReceipt,
   writeReceipt,
   swapIntoPlace,

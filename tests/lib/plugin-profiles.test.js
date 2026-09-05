@@ -870,6 +870,90 @@ run('a missing npm package is recorded as an external dependency, not a closure 
   }
 });
 
+run('a command whose only entry script needs an unshippable npm package is omitted, not shipped broken', () => {
+  const outRoot = tempDir('ecc-omit-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal', hooks: 'off' });
+    const { pluginRoot, receipt, counts } = generate({ plan, outRoot, includeCatalogSkill: false });
+
+    // github-coordination.js needs sql.js, which no carrier ships (see the
+    // dedicated external-dependency test above). Every command backed by it
+    // must be a real repro, or this test is checking nothing.
+    const affected = plan.closure.entries
+      .filter(entry => entry.script === 'scripts/github-coordination.js')
+      .map(entry => entry.command);
+    assert.ok(affected.length > 0, 'fixture assumption: some command still uses github-coordination.js');
+
+    for (const commandFile of affected) {
+      assert.ok(!fs.existsSync(path.join(pluginRoot, 'commands', commandFile)),
+        `${commandFile} references an unshippable script and must not be staged`);
+      assert.ok(!receipt.context.commands.includes(commandFile),
+        `${commandFile} must not be in the receipt's shipped command list`);
+    }
+
+    const reasons = receipt.dependencies.omittedCommands;
+    assert.ok(Array.isArray(reasons) && reasons.length > 0, 'the receipt names what was omitted and why');
+    const sqlReason = reasons.find(item => item.module === 'sql.js');
+    assert.ok(sqlReason, 'the sql.js omission is named');
+    assert.deepStrictEqual([...sqlReason.commands].sort(), [...affected].sort(),
+      'the named commands match the actual closure, not a guess');
+
+    // The backing script is still on disk (it costs nothing not to have it
+    // there, and something else might still need it) — only the command
+    // that promised a working slash command is gone.
+    assert.ok(fs.existsSync(path.join(pluginRoot, 'scripts', 'github-coordination.js')),
+      'the orphaned script is left in the carrier, not deleted');
+
+    assert.strictEqual(receipt.context.commands.length, counts.commands,
+      'the receipt and the result counts agree on what shipped');
+    assert.ok(counts.omittedCommands >= affected.length,
+      'the omitted count reflects at least the reproduced case');
+    assert.strictEqual(plan.commands.length - receipt.context.commands.length, counts.omittedCommands,
+      'shipped + omitted accounts for every planned command');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('an omitted command shrinks the manifest description instead of leaving it stale', () => {
+  const outRoot = tempDir('ecc-omit-manifest-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal', hooks: 'off' });
+    const { manifest, receipt } = generate({ plan, outRoot, includeCatalogSkill: false });
+    assert.ok(receipt.context.commands.length < plan.commands.length,
+      'fixture assumption: this profile does omit at least one command');
+    assert.ok(manifest.description.includes(`${receipt.context.commands.length} commands`),
+      'the manifest describes the shipped count, not the pre-verification plan count');
+    assert.ok(!manifest.description.includes(`${plan.commands.length} commands`),
+      'the manifest must not advertise commands that are not actually there');
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
+run('a command backed by a working script ships normally alongside an omitted one', () => {
+  const outRoot = tempDir('ecc-omit-sibling-');
+  try {
+    const plan = resolvePluginProfilePlan({ repoRoot, profileId: 'minimal', hooks: 'off' });
+    const { pluginRoot, receipt } = generate({ plan, outRoot, includeCatalogSkill: false });
+    // A command with no npm-external dependency anywhere in its closure is
+    // an ordinary, unaffected command; pick one deterministically.
+    const ordinary = plan.commands.find(commandFile => {
+      const scripts = plan.closure.entries
+        .filter(entry => entry.command === commandFile)
+        .map(entry => entry.script);
+      return scripts.length > 0
+        && !receipt.dependencies.omittedCommands.some(item => item.commands.includes(commandFile));
+    });
+    assert.ok(ordinary, 'fixture assumption: at least one scripted command is unaffected');
+    assert.ok(fs.existsSync(path.join(pluginRoot, 'commands', ordinary)),
+      `${ordinary} has no external dependency and must still ship`);
+    assert.ok(receipt.context.commands.includes(ordinary));
+  } finally {
+    fs.rmSync(outRoot, { recursive: true, force: true });
+  }
+});
+
 run('the staged tree is re-verified before the swap', () => {
   const staged = tempDir('ecc-staged-');
   try {

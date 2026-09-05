@@ -166,10 +166,15 @@ A load that fails only because an **npm package** is absent is reported
 separately, as an external dependency, not as a closure failure. Carriers
 have never shipped `node_modules`, and the closure has always been defined
 over repo-relative requires. Those loads are recorded in the receipt under
-`dependencies.external` and printed as a warning, because they mean the
-shipped command will fail at runtime — at ecc@2.2.1 that is
-`scripts/github-coordination.js` (needs `sql.js`) and
-`scripts/install-plan.js` (needs `ajv`).
+`dependencies.external`, and the command(s) they back are omitted from the
+carrier rather than shipped guaranteed to crash — at ecc@2.2.1 that is every
+command backed by `scripts/github-coordination.js` (needs `sql.js`) or
+`scripts/install-plan.js` (needs `ajv`), named under
+`dependencies.omittedCommands` and printed as a warning at generation time.
+A command with more than one entry script is omitted whole when any one of
+them is unshippable. The backing script itself stays in the carrier — it may
+still be required by something else, and an unreferenced script costs
+nothing toward the ledger.
 
 `--dry-run` writes nothing, so it cannot run the smoke. It instead lists what
 the smoke would check under "Checks that only run against the staged tree",
@@ -393,11 +398,12 @@ generation receipt:
 |---|---|
 | `schemaVersion`, `generatedFrom`, `generatorVersion`, `eccVersion`, `createdAt` | provenance |
 | `profileInput`, `selectedModuleIds` | the exact selection inputs |
-| `context.skills/agents/commands`, `context.digest` | the context surface and a sha256 over every file's content |
+| `context.skills/agents/commands`, `context.digest` | the context surface actually shipped (an omitted command is not in this list) and a sha256 over every file's content |
 | `capabilities.hooks` | `decision` (`off`/`enabled`), `profile`, capability `groups` |
 | `runtime.paths`, `runtime.held`, `runtime.closureEntries`, `runtime.dynamicRequires` | what shipped, what was withheld, why |
 | `dependencies.dynamic[]` | every non-literal module load, with `smokeTested`, the smoke `shape`, and the file it lives in |
 | `dependencies.external[]` | npm packages a shipped script needs that no carrier carries |
+| `dependencies.omittedCommands[]` | commands removed from `context.commands` because of an entry in `external[]`, with the `commands`, `script`, and `module` responsible |
 | `dependencies.loadSmoke[]` | every file the smoke exercised and how it went |
 | `tokenLedger` | method, version, model (provider only), payload format, `payloadSha256`, counts, chars, tokens, budget, verdict |
 | `catalog[]` | every catalog skill with `installed`, carrier-relative `path`, `sha256` |
@@ -446,10 +452,13 @@ plugin version tracks the source `package.json` version; the receipt's
 - The generated marketplace is local to the machine. Carriers contain no
   machine-specific paths and can be copied, but treat them as build
   artifacts and regenerate rather than edit them.
-- Carriers do not ship `node_modules`. A shipped command whose script needs
-  an npm package will fail at runtime; the load smoke names those under
-  `dependencies.external` at generation time instead of leaving it to be
-  discovered in a session.
+- Carriers do not ship `node_modules`. A command whose entry script needs an
+  npm package is omitted rather than shipped broken; the load smoke names
+  the package under `dependencies.external` and the omission under
+  `dependencies.omittedCommands` at generation time instead of leaving it to
+  fail in a session. At ecc@2.2.1 that omits every `/epic-*` command
+  (`sql.js`) and `/project-init` (`ajv`) from every carrier until one of
+  those packages is bundled.
 - The token ledger is a conservative estimate unless `--measure provider` is
   used; the method label and `payloadSha256` say exactly what produced the
   number. The 3.2 chars/token ratio is a placeholder until
