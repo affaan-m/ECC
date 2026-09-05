@@ -1,5 +1,5 @@
 ---
-description: Comprehensive PR review using specialized agents
+description: Comprehensive PR review using specialized agents. Use when the user wants a deep multi-agent PR review (silent-failure, test-gap, and type-design specialists) rather than a quick diff check — for a single-pass review use /code-review, for the orch-review workflow use /orch-review.
 ---
 
 Run a comprehensive multi-perspective review of a pull request.

@@ -1,5 +1,5 @@
 ---
-description: Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings.
+description: Detect a project's stack and produce a dry-run ECC onboarding plan using the repository's install manifests and stack mappings. Use when onboarding a NEW repository into ECC or re-planning its install profile; to change an existing install use /configure-ecc or the agent-sort skill.
 ---
 
 # /project-init
