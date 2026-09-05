@@ -103,6 +103,7 @@ Run ALL scan categories:
 4. Dangerous files check (CRITICAL)
 5. Configuration completeness (WARNING)
 6. Git history audit
+7. Unreadable files (WARNING)
 
 Generate SANITIZATION_REPORT.md inside {STAGING_PATH}/ with PASS/FAIL verdict.
 """
@@ -115,7 +116,21 @@ Wait for completion. Read `{STAGING_PATH}/SANITIZATION_REPORT.md`.
 - If fix: Apply fixes, re-run sanitizer (maximum 3 retry attempts — after 3 FAILs, present all findings and ask user to fix manually)
 - If abort: Clean up staging directory
 
-**If PASS or PASS WITH WARNINGS:** Continue to Step 5.
+**Read the report's `## Unreadable Files` section — not stdout — after the fix/rescan loop above has
+settled.** The sanitizer writes every file Step 7 could not read, and every path it could not
+traverse, into that section of `SANITIZATION_REPORT.md`, with an explicit empty-list marker when
+there are none. If the section lists any file, show it verbatim — path and mime/reason per line —
+and ask: "These were never read. Confirm you've opened them, or abort?" A report that says PASS while
+this section is non-empty is wrong about itself, and that is the case you least want to wave through,
+so gate on the section's contents, not on the verdict. The unreadable set is the repo's binary assets
+and doesn't change between rescans, so ask once against the final report, not on each retry. Most
+repos trip this on a logo or a font; that it fires often is the point, not a fault. On abort, clean
+up the staging directory and stop.
+
+**Continue to Step 5 only when the verdict is PASS or PASS WITH WARNINGS _and_ the `## Unreadable
+Files` section is empty (or the user has confirmed every file it lists).** Any FAIL — including an
+exhausted-retry FAIL after the 3 attempts above — and any unconfirmed unreadable file stops the
+pipeline here: nothing is packaged or published past a scan that did not clear.
 
 #### Step 5: Run Packager Agent
 
@@ -187,7 +202,7 @@ Run sanitizer independently. Resolve path: if PROJECT contains `/`, treat as a p
 ```
 Agent(
   subagent_type="opensource-sanitizer",
-  prompt="Verify sanitization of: {resolved_path}. Run all 6 scan categories and generate SANITIZATION_REPORT.md."
+  prompt="Verify sanitization of: {resolved_path}. Run all 7 scan categories and generate SANITIZATION_REPORT.md."
 )
 ```
 
