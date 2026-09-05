@@ -299,7 +299,7 @@ npx ecc-agentshield scan
 # 안전한 문제 자동 수정
 npx ecc-agentshield scan --fix
 
-# 3개의 Opus 4.6 에이전트로 정밀 분석
+# 3개의 Opus 5 에이전트로 정밀 분석
 npx ecc-agentshield scan --opus --stream
 
 # 안전한 설정을 처음부터 생성
@@ -308,7 +308,7 @@ npx ecc-agentshield init
 
 **스캔 대상:** CLAUDE.md, settings.json, MCP 설정, 훅, 에이전트 정의, 스킬 — 시크릿 감지(14개 패턴), 권한 감사, 훅 인젝션 분석, MCP 서버 위험 프로파일링, 에이전트 설정 검토의 5가지 카테고리.
 
-**`--opus` 플래그**는 레드팀/블루팀/감사관 파이프라인으로 3개의 Claude Opus 4.6 에이전트를 실행합니다. 공격자가 익스플로잇 체인을 찾고, 방어자가 보호 조치를 평가하며, 감사관이 양쪽의 결과를 종합하여 우선순위가 매겨진 위험 평가를 작성합니다.
+**`--opus` 플래그**는 레드팀/블루팀/감사관 파이프라인으로 3개의 Claude Opus 5 에이전트를 실행합니다. 공격자가 익스플로잇 체인을 찾고, 방어자가 보호 조치를 평가하며, 감사관이 양쪽의 결과를 종합하여 우선순위가 매겨진 위험 평가를 작성합니다.
 
 Claude Code에서 `/security-scan`을 사용하거나, [GitHub Action](https://github.com/affaan-m/agentshield)으로 CI에 추가하세요.
 

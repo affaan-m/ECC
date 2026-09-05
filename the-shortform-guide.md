@@ -14,7 +14,7 @@ Here's my complete setup after 10 months of daily use: skills, hooks, subagents,
 
 Skills are the primary workflow surface. They act like scoped workflow bundles: reusable prompts, structure, supporting files, and codemaps when you need a particular execution pattern.
 
-After a long session of coding with Opus 4.5, you want to clean out dead code and loose .md files? Run `/refactor-clean`. Need testing? `/tdd`, `/e2e`, `/test-coverage`. Those slash entries are convenient, but the real durable unit is the underlying skill. Skills can also include codemaps - a way for Claude to quickly navigate your codebase without burning context on exploration.
+After a long session of coding with Opus 5, you want to clean out dead code and loose .md files? Run `/refactor-clean`. Need testing? `/tdd`, `/e2e`, `/test-coverage`. Those slash entries are convenient, but the real durable unit is the underlying skill. Skills can also include codemaps - a way for Claude to quickly navigate your codebase without burning context on exploration.
 
 ![Terminal showing chained commands](./assets/images/shortform/02-chaining-commands.jpeg)
 *Chaining commands together*
@@ -367,7 +367,7 @@ Shows user, directory, git branch with dirty indicator, context remaining %, mod
 *Example statusline in my Mac root directory*
 
 ```
-affoon:~ ctx:65% Opus 4.5 19:52
+affoon:~ ctx:65% Opus 5 19:52
 ▌▌ plan mode on (shift+tab to cycle)
 ```
 

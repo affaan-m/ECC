@@ -619,7 +619,7 @@ npx ecc-agentshield scan
 # Corrección automática de problemas seguros
 npx ecc-agentshield scan --fix
 
-# Análisis profundo con tres agentes Opus 4.6
+# Análisis profundo con tres agentes Opus 5
 npx ecc-agentshield scan --opus --stream
 
 # Generar configuración segura desde cero
@@ -628,7 +628,7 @@ npx ecc-agentshield init
 
 **Qué analiza:** CLAUDE.md, settings.json, configuraciones de MCP, hooks, definiciones de agentes y skills en 5 categorías — detección de secretos (14 patrones), auditoría de permisos, análisis de inyección en hooks, perfilado de riesgo de servidores MCP y revisión de configuración de agentes.
 
-**El flag `--opus`** ejecuta tres agentes Claude Opus 4.6 en un pipeline red-team/blue-team/auditor. El atacante encuentra cadenas de exploits, el defensor evalúa las protecciones y el auditor sintetiza ambos en una evaluación de riesgo priorizada. Razonamiento adversarial, no solo coincidencia de patrones.
+**El flag `--opus`** ejecuta tres agentes Claude Opus 5 en un pipeline red-team/blue-team/auditor. El atacante encuentra cadenas de exploits, el defensor evalúa las protecciones y el auditor sintetiza ambos en una evaluación de riesgo priorizada. Razonamiento adversarial, no solo coincidencia de patrones.
 
 **Formatos de salida:** Terminal (color graduado A-F), JSON (pipelines de CI), Markdown, HTML. Código de salida 2 en hallazgos críticos para puertas de build.
 

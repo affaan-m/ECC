@@ -14,7 +14,7 @@ Aquí está mi configuración completa tras 10 meses de uso diario: skills, hook
 
 Las skills son la superficie principal de flujo de trabajo. Actúan como paquetes de flujo de trabajo con alcance definido: prompts reutilizables, estructura, archivos de soporte y codemaps cuando necesitas un patrón de ejecución específico.
 
-Después de una sesión larga de codificación con Opus 4.5, ¿quieres limpiar código muerto y archivos .md sueltos? Ejecuta `/refactor-clean`. ¿Necesitas pruebas? `/tdd`, `/e2e`, `/test-coverage`. Esas entradas slash son convenientes, pero la unidad duradera real es la skill subyacente. Las skills también pueden incluir codemaps — una forma para que Claude navegue rápidamente tu código base sin quemar contexto en exploración.
+Después de una sesión larga de codificación con Opus 5, ¿quieres limpiar código muerto y archivos .md sueltos? Ejecuta `/refactor-clean`. ¿Necesitas pruebas? `/tdd`, `/e2e`, `/test-coverage`. Esas entradas slash son convenientes, pero la unidad duradera real es la skill subyacente. Las skills también pueden incluir codemaps — una forma para que Claude navegue rápidamente tu código base sin quemar contexto en exploración.
 
 ![Terminal mostrando comandos encadenados](../../assets/images/shortform/02-chaining-commands.jpeg)
 *Encadenando comandos juntos*
@@ -365,7 +365,7 @@ Muestra usuario, directorio, rama de git con indicador de modificaciones, % de c
 *Ejemplo de statusline en mi directorio raíz de Mac*
 
 ```
-affoon:~ ctx:65% Opus 4.5 19:52
+affoon:~ ctx:65% Opus 5 19:52
 ▌▌ plan mode on (shift+tab to cycle)
 ```
 

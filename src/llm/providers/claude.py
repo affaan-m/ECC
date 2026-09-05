@@ -15,8 +15,8 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, Role, ToolCall
 
-_DEFAULT_MODEL = "claude-sonnet-4-6"
-_OPUS_ADAPTIVE_ONLY_PREFIXES = ("claude-opus-4-7", "claude-opus-4-8")
+_DEFAULT_MODEL = "claude-sonnet-5"
+_OPUS_ADAPTIVE_ONLY_PREFIXES = ("claude-opus-5",)
 
 
 def _uses_adaptive_thinking_only(model: str) -> bool:
@@ -30,7 +30,7 @@ class ClaudeProvider(LLMProvider):
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"), base_url=base_url)
         self._models = [
             ModelInfo(
-                name="claude-opus-4-8",
+                name="claude-opus-5",
                 provider=ProviderType.CLAUDE,
                 supports_tools=True,
                 supports_vision=True,
@@ -38,7 +38,7 @@ class ClaudeProvider(LLMProvider):
                 context_window=1_000_000,
             ),
             ModelInfo(
-                name="claude-sonnet-4-6",
+                name="claude-sonnet-5",
                 provider=ProviderType.CLAUDE,
                 supports_tools=True,
                 supports_vision=True,

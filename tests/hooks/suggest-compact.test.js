@@ -658,14 +658,14 @@ function runTests() {
 
   let transcriptSeq = 0;
 
-  function writeTranscriptFixture(tokens, model = 'claude-sonnet-4-6') {
+  function writeTranscriptFixture(tokens, model = 'claude-sonnet-5') {
     transcriptSeq += 1;
     const filePath = path.join(os.tmpdir(), `compact-transcript-${process.pid}-${transcriptSeq}.jsonl`);
     writeTranscriptTokens(filePath, tokens, model);
     return filePath;
   }
 
-  function writeTranscriptTokens(filePath, tokens, model = 'claude-sonnet-4-6') {
+  function writeTranscriptTokens(filePath, tokens, model = 'claude-sonnet-5') {
     const record = JSON.stringify({
       type: 'assistant',
       message: {
@@ -766,7 +766,7 @@ function runTests() {
     try {
       runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
       // Default interval is 60k: 160k threshold + 60k => next bucket at 220k.
-      writeTranscriptTokens(transcript, 230000, 'claude-sonnet-4-6[1m]');
+      writeTranscriptTokens(transcript, 230000, 'claude-sonnet-5[1m]');
       const result = runCompactWithInput(
         { session_id: ctx.sessionId, transcript_path: transcript },
         // Pin the threshold so window detection (230k > 200k => 1M window,
@@ -783,11 +783,11 @@ function runTests() {
 
   if (test('uses the 250k default threshold for [1m] models', () => {
     const ctx = createContextContext();
-    const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5[1m]');
+    const transcript = writeTranscriptFixture(230000, 'claude-opus-5[1m]');
     try {
       const silent = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
       assert.strictEqual(silent.stdout.trim(), '', `230k on a 1M window must stay silent. Got: "${silent.stdout}"`);
-      writeTranscriptTokens(transcript, 260000, 'claude-opus-4-5[1m]');
+      writeTranscriptTokens(transcript, 260000, 'claude-opus-5[1m]');
       const fired = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
       assert.ok(fired.stdout.includes('26% of 1M window'), `260k on a 1M window should fire. Got: "${fired.stdout}"`);
     } finally {
@@ -799,7 +799,7 @@ function runTests() {
 
   if (test('treats >200k observed tokens as a 1M window even without the [1m] marker', () => {
     const ctx = createContextContext();
-    const transcript = writeTranscriptFixture(230000, 'claude-opus-4-5');
+    const transcript = writeTranscriptFixture(230000, 'claude-opus-5');
     try {
       const result = runCompactWithInput({ session_id: ctx.sessionId, transcript_path: transcript });
       // 230k would exceed the 160k standard threshold, but the observed size

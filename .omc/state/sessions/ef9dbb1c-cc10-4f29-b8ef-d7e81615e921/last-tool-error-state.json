@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd ~/dev/ECC && perl -pi -e 's/\\\\(\\\"claude-opus-5\\\", \\\"claude-opus-5\\\"\\\\)/(\\\"claude-opus-5\\\",)/' src/llm/providers/claude.py && sed -n '18,20p' src/llm/providers/claude.py\\necho \\\"=== cost...",
+  "error": "Exit code 1\n_DEFAULT_MODEL = \"claude-sonnet-5\"\n_OPUS_ADAPTIVE_ONLY_PREFIXES = (\"claude-opus-5\",)\n\n=== cost-tracker.js diff ===\ndiff --git a/scripts/hooks/cost-tracker.js b/scripts/hooks/cost-tracker.js\nindex 981f6761..9c0c0988 100755\n--- a/scripts/hooks/cost-tracker.js\n+++ b/scripts/hooks/cost-tracker.js\n@@ -28,7 +28,7 @@\n  *   prefers that authoritative value over the transcript-sum estimate when\n  *   the cache is fresh (≤ 300s). The transcript-sum is kept as a safe\n  *   fallback because:\n- *...",
+  "timestamp": "2026-09-05T05:13:09.976Z",
+  "retry_count": 1
+}

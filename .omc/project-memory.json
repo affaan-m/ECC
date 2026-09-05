@@ -1,0 +1,380 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1788585421445,
+  "projectRoot": "/Users/mlubich/dev/ECC",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": ">=18",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": "yarn",
+    "runtime": "Node.js 18"
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "yarn test",
+    "lintCommand": "yarn lint",
+    "devCommand": null,
+    "scripts": {
+      "welcome": "echo '\\n  ecc-universal installed!\\n  Run: ecc typescript\\n  Compat: ecc-install typescript\\n  Docs: https://github.com/affaan-m/ECC\\n  Run or self-host any open-source model.\\n  Compute: Itô is the preferred compute sponsor — https://compute.itomarkets.com\\n  Any GPU provider works. This sponsorship link is passive: it does not invoke an RFQ, reserve capacity, provision compute, or configure serving.\\n  Separately, the opt-in ecc ito find bridge invokes the explicitly configured canonical Itô CLI and submits a live authenticated RFQ; it does not reserve capacity.\\n  Managed inference through Itô is not live yet.\\n'",
+      "catalog:check": "node scripts/ci/catalog.js --text",
+      "catalog:sync": "node scripts/ci/catalog.js --write --text",
+      "command-registry:generate": "node scripts/ci/generate-command-registry.js",
+      "command-registry:write": "node scripts/ci/generate-command-registry.js --write",
+      "command-registry:check": "node scripts/ci/generate-command-registry.js --check",
+      "lint": "eslint . && markdownlint '**/*.md' --ignore node_modules",
+      "harness:adapters": "node scripts/harness-adapter-compliance.js",
+      "harness:audit": "node scripts/harness-audit.js",
+      "observability:ready": "node scripts/observability-readiness.js",
+      "operator:dashboard": "node scripts/operator-readiness-dashboard.js",
+      "preview-pack:smoke": "node scripts/preview-pack-smoke.js",
+      "release:approval-gate": "node scripts/release-approval-gate.js",
+      "release:video-suite": "node scripts/release-video-suite.js",
+      "control:pane": "node scripts/control-pane.js",
+      "platform:audit": "node scripts/platform-audit.js",
+      "discussion:audit": "node scripts/discussion-audit.js",
+      "security:ioc-scan": "node scripts/ci/scan-supply-chain-iocs.js",
+      "security:advisory-sources": "node scripts/ci/supply-chain-advisory-sources.js",
+      "test:plugin-setup-platform": "node docker/plugin-setup/run-platform-tests.js",
+      "claw": "node scripts/claw.js",
+      "orchestrate:status": "node scripts/orchestration-status.js",
+      "orchestrate:worker": "bash scripts/orchestrate-codex-worker.sh",
+      "orchestrate:tmux": "node scripts/orchestrate-worktrees.js",
+      "test": "node scripts/ci/check-unicode-safety.js && node scripts/ci/validate-agents.js && node scripts/ci/validate-commands.js && node scripts/ci/validate-rules.js && node scripts/ci/validate-skills.js && node scripts/ci/validate-hooks.js && node scripts/ci/validate-install-manifests.js && node scripts/ci/validate-no-personal-paths.js && npm run catalog:check && npm run command-registry:check && node tests/run-all.js",
+      "coverage": "c8 --all --include=\"scripts/**/*.js\" --include=\"scripts/**/*.mjs\" --check-coverage --lines 80 --functions 80 --branches 79 --statements 80 --reporter=text --reporter=lcov node tests/run-all.js",
+      "build:opencode": "node scripts/build-opencode.js",
+      "prepack": "npm run build:opencode",
+      "dashboard": "python3 ./ecc_dashboard.py",
+      "dashboard:web": "node scripts/dashboard-web.js"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "docs",
+      "examples",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "agents": {
+      "path": "agents",
+      "purpose": null,
+      "fileCount": 68,
+      "lastAccessed": 1788585421422,
+      "keyFiles": [
+        "a11y-architect.md",
+        "agent-evaluator.md",
+        "architect.md",
+        "build-error-resolver.md",
+        "chief-of-staff.md"
+      ]
+    },
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 6,
+      "lastAccessed": 1788585421428,
+      "keyFiles": [
+        "ecc-icon.svg",
+        "hero.png",
+        "hero.svg",
+        "star-history-dark.svg",
+        "star-history-data.tsv"
+      ]
+    },
+    "commands": {
+      "path": "commands",
+      "purpose": null,
+      "fileCount": 94,
+      "lastAccessed": 1788585421428,
+      "keyFiles": [
+        "aside.md",
+        "auto-update.md",
+        "build-fix.md",
+        "checkpoint.md",
+        "code-review.md"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 2,
+      "lastAccessed": 1788585421428,
+      "keyFiles": [
+        "github-native-coordination.json",
+        "project-stack-mappings.json"
+      ]
+    },
+    "contexts": {
+      "path": "contexts",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1788585421429,
+      "keyFiles": [
+        "dev.md",
+        "research.md",
+        "review.md"
+      ]
+    },
+    "docker": {
+      "path": "docker",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1788585421429,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 35,
+      "lastAccessed": 1788585421431,
+      "keyFiles": [
+        "ANTIGRAVITY-GUIDE.md",
+        "ARCHITECTURE-IMPROVEMENTS.md",
+        "ATLAS-CLOUD-GUIDE.md",
+        "CODEX-NAVIGATION-GUIDE.md",
+        "COMMAND-AGENT-MAP.md"
+      ]
+    },
+    "ecc2": {
+      "path": "ecc2",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1788585421431,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "rust-toolchain.toml"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 11,
+      "lastAccessed": 1788585421432,
+      "keyFiles": [
+        "CLAUDE.md",
+        "django-api-CLAUDE.md",
+        "go-microservice-CLAUDE.md",
+        "harmonyos-app-CLAUDE.md",
+        "hud-status-contract.json"
+      ]
+    },
+    "hooks": {
+      "path": "hooks",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1788585421432,
+      "keyFiles": [
+        "README.md",
+        "codex-hooks.json",
+        "hooks.json"
+      ]
+    },
+    "integrations": {
+      "path": "integrations",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1788585421434,
+      "keyFiles": []
+    },
+    "legacy-command-shims": {
+      "path": "legacy-command-shims",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788585421435,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "manifests": {
+      "path": "manifests",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1788585421436,
+      "keyFiles": [
+        "install-components.json",
+        "install-modules.json",
+        "install-profiles.json"
+      ]
+    },
+    "mcp-configs": {
+      "path": "mcp-configs",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788585421436,
+      "keyFiles": [
+        "mcp-servers.json"
+      ]
+    },
+    "plugins": {
+      "path": "plugins",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788585421436,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "research": {
+      "path": "research",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788585421437,
+      "keyFiles": [
+        "ecc2-codebase-analysis.md"
+      ]
+    },
+    "rules": {
+      "path": "rules",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1788585421437,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "scaffolds": {
+      "path": "scaffolds",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1788585421437,
+      "keyFiles": []
+    },
+    "schemas": {
+      "path": "schemas",
+      "purpose": "Schema definitions",
+      "fileCount": 11,
+      "lastAccessed": 1788585421439,
+      "keyFiles": [
+        "ecc-install-config.schema.json",
+        "hooks.schema.json",
+        "install-components.schema.json",
+        "install-modules.schema.json",
+        "install-profiles.schema.json"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 51,
+      "lastAccessed": 1788585421440,
+      "keyFiles": [
+        "auto-update.js",
+        "build-opencode.js",
+        "catalog.js",
+        "claw.js",
+        "consult.js"
+      ]
+    },
+    "skills": {
+      "path": "skills",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1788585421441,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1788585421441,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 21,
+      "lastAccessed": 1788585421442,
+      "keyFiles": [
+        "__init__.py",
+        "codex-config.test.js",
+        "codex-native-hooks.test.js",
+        "conftest.py",
+        "gan-harness.test.js"
+      ]
+    },
+    "workflows": {
+      "path": "workflows",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1788585421442,
+      "keyFiles": [
+        "README.md",
+        "orch-review.workflow.js"
+      ]
+    },
+    "ecc2/src": {
+      "path": "ecc2/src",
+      "purpose": "Source code",
+      "fileCount": 3,
+      "lastAccessed": 1788585421443,
+      "keyFiles": [
+        "harness_eval.rs",
+        "main.rs",
+        "notifications.rs"
+      ]
+    },
+    "tests/docs": {
+      "path": "tests/docs",
+      "purpose": "Documentation",
+      "fileCount": 17,
+      "lastAccessed": 1788585421445,
+      "keyFiles": [
+        "antigravity-guide.test.js",
+        "canary-watch.test.js",
+        "codex-navigation-map.test.js"
+      ]
+    },
+    "tests/fixtures": {
+      "path": "tests/fixtures",
+      "purpose": "Test fixtures",
+      "fileCount": 2,
+      "lastAccessed": 1788585421445,
+      "keyFiles": [
+        "fake-claude-plugin.js",
+        "run-guided-install-pty.js"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

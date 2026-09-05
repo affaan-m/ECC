@@ -427,7 +427,7 @@ function runTests() {
 
   if (test('rejects agent with empty tools value', () => {
     const testDir = createTestDir();
-    fs.writeFileSync(path.join(testDir, 'empty.md'), '---\nmodel: claude-sonnet-4-5-20250929\ntools:\n---\n# Empty tools');
+    fs.writeFileSync(path.join(testDir, 'empty.md'), '---\nmodel: claude-sonnet-5\ntools:\n---\n# Empty tools');
     const result = runValidatorWithDir('validate-agents', 'AGENTS_DIR', testDir);
     assert.strictEqual(result.code, 1, 'Should reject empty tools');
     assert.ok(result.stderr.includes('tools'), 'Should mention tools field');

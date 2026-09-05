@@ -91,7 +91,7 @@ Understanding what persists helps you compact with confidence:
 
 > ### Don't rely on the task list surviving — it may not exist
 >
-> Claude Code **2.1.233 removed the todo/task tools by default** on Opus 4.8, Sonnet 5,
+> Claude Code **2.1.233 removed the todo/task tools by default** on Opus 5, Sonnet 5,
 > Fable 5, Mythos 5 and newer models (`TodoWrite`, `TaskCreate/Get/Update/List`).
 > `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` brings them back, but that is a per-machine
 > environment setting — **it does not travel with this skill**, so you cannot assume the
