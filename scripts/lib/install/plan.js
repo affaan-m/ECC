@@ -292,7 +292,10 @@ function createManifestInstallPlan(options = {}) {
     adapter: {
       id: adapter.id,
       target: adapter.target,
-      kind: adapter.kind
+      kind: adapter.kind,
+      // #2964: propagate the opt-in ownership-guard flag so apply/preview can
+      // skip user-owned destinations instead of overwriting them.
+      preserveUserOwnedFiles: Boolean(adapter.preserveUserOwnedFiles)
     },
     homeDir: plan.homeDir,
     targetRoot: plan.targetRoot,

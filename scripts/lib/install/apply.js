@@ -17,6 +17,7 @@ const {
   prepareClaudeSkillMigration,
   removeLegacyClaudeSkillFiles,
 } = require('./claude-skill-migration');
+const { prepareUserOwnedFileGuard } = require('./ownership-guard');
 const { cleanupLegacyAntigravityInstall } = require('./antigravity-legacy-migration');
 const { cleanupLegacyOpencodeInstall } = require('./opencode-legacy-migration');
 const { buildInstallIndex, rewriteRelativeLinks } = require('./link-rewrite');
@@ -335,7 +336,7 @@ function buildResolvedClaudeHooks(plan) {
 }
 
 function previewInstallPlan(plan) {
-  const migration = prepareClaudeSkillMigration(plan);
+  const migration = prepareUserOwnedFileGuard(plan, prepareClaudeSkillMigration(plan));
   const hookConsentWarnings = planMaterializesHookRuntime(plan) && plan.hookConsent !== 'enabled'
     ? ['Applying this plan requires an explicit hook decision: --enable-hooks or --no-hooks.']
     : [];
@@ -363,7 +364,7 @@ function applyInstallPlan(plan, dependencies = {}) {
   if (typeof beforeInstallStateRead === 'function') {
     beforeInstallStateRead({ plan });
   }
-  const migration = prepareClaudeSkillMigration(plan);
+  const migration = prepareUserOwnedFileGuard(plan, prepareClaudeSkillMigration(plan));
   const appliedPlan = {
     ...plan,
     operations: migration.appliedOperations,
