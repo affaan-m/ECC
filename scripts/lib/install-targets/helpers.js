@@ -260,6 +260,10 @@ function createInstallTargetAdapter(config) {
     target: config.target,
     kind: config.kind,
     nativeRootRelativePath: config.nativeRootRelativePath || null,
+    // #2964: opt-in ownership guard. When true, the installer skips copy-file
+    // operations whose destination already exists but is not recorded in ECC
+    // install-state, instead of overwriting the file and claiming ownership.
+    preserveUserOwnedFiles: Boolean(config.preserveUserOwnedFiles),
     supports(target) {
       return target === config.target || target === config.id;
     },

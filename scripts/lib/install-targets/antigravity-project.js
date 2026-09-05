@@ -23,6 +23,10 @@ module.exports = createInstallTargetAdapter({
   kind: 'project',
   rootSegments: ['.agents'],
   installStatePathSegments: ['ecc-install-state.json'],
+  // #2964: first adapter to adopt the user-owned-file ownership guard. Existing
+  // .agents files that ECC did not install are skipped with a warning instead
+  // of being overwritten and recorded as managed.
+  preserveUserOwnedFiles: true,
   supportsModule(module) {
     const paths = Array.isArray(module && module.paths) ? module.paths : [];
     return paths.length > 0;
