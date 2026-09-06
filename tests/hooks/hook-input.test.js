@@ -9,6 +9,9 @@ const { PassThrough } = require('stream');
 const { readStdinRaw } = require('../../scripts/hooks/hook-input');
 const { run: runConfigProtection } = require('../../scripts/hooks/config-protection');
 
+const TEST_STDIN_LIMIT = 1024;
+const STREAM_SETTLEMENT_TIMEOUT_MS = 500;
+
 async function test(name, fn) {
   try {
     await fn();
@@ -23,7 +26,7 @@ async function test(name, fn) {
 
 async function readFromErroredStream(partialInput) {
   const stream = new PassThrough();
-  const resultPromise = readStdinRaw(stream, { maxStdin: 1024 });
+  const resultPromise = readStdinRaw(stream, { maxStdin: TEST_STDIN_LIMIT });
   stream.write(partialInput);
   stream.destroy(new Error('simulated stdin read failure'));
   return resultPromise;
@@ -31,14 +34,14 @@ async function readFromErroredStream(partialInput) {
 
 async function readFromClosedStream(partialInput) {
   const stream = new PassThrough();
-  const resultPromise = readStdinRaw(stream, { maxStdin: 1024 });
+  const resultPromise = readStdinRaw(stream, { maxStdin: TEST_STDIN_LIMIT });
   stream.write(partialInput);
   stream.destroy();
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error('readStdinRaw did not settle after stream close')),
-      500
+      STREAM_SETTLEMENT_TIMEOUT_MS
     );
     resultPromise.then(
       result => {
@@ -62,7 +65,7 @@ async function runTests() {
   if (
     await test('clean end preserves complete input', async () => {
       const stream = new PassThrough();
-      const resultPromise = readStdinRaw(stream, { maxStdin: 1024 });
+      const resultPromise = readStdinRaw(stream, { maxStdin: TEST_STDIN_LIMIT });
       stream.end('{"complete":true}');
 
       assert.deepStrictEqual(await resultPromise, {
@@ -104,7 +107,7 @@ async function runTests() {
       const inputResult = await readFromErroredStream(partialInput);
       const hookResult = runConfigProtection(inputResult.raw, {
         truncated: inputResult.truncated,
-        maxStdin: 1024
+        maxStdin: TEST_STDIN_LIMIT
       });
 
       assert.strictEqual(inputResult.truncated, true);
