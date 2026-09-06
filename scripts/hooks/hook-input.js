@@ -49,13 +49,16 @@ function readStdinRaw(stream = process.stdin, options = {}) {
       if (!truncated) raw += decoder.end();
       resolve({ raw, truncated });
     };
-    stream.once('end', finish);
-    stream.once('error', () => {
-      // A transport error can leave a syntactically plausible prefix behind.
-      // Mark it incomplete so safety hooks retain their fail-closed behavior.
+    const finishIncomplete = () => {
+      if (settled) return;
       truncated = true;
       finish();
-    });
+    };
+    stream.once('end', finish);
+    // A transport error or premature close can leave a syntactically plausible
+    // prefix behind. Mark it incomplete so safety hooks remain fail closed.
+    stream.once('error', finishIncomplete);
+    stream.once('close', finishIncomplete);
   });
 }
 

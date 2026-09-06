@@ -29,6 +29,30 @@ async function readFromErroredStream(partialInput) {
   return resultPromise;
 }
 
+async function readFromClosedStream(partialInput) {
+  const stream = new PassThrough();
+  const resultPromise = readStdinRaw(stream, { maxStdin: 1024 });
+  stream.write(partialInput);
+  stream.destroy();
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('readStdinRaw did not settle after stream close')),
+      500
+    );
+    resultPromise.then(
+      result => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 async function runTests() {
   console.log('\nHook input reader tests:');
 
@@ -54,6 +78,18 @@ async function runTests() {
     await test('stream error marks partial input as truncated', async () => {
       const partialInput = '{"tool_name":"Write","tool_input":{';
       const result = await readFromErroredStream(partialInput);
+
+      assert.strictEqual(result.raw, partialInput);
+      assert.strictEqual(result.truncated, true);
+    })
+  )
+    passed++;
+  else failed++;
+
+  if (
+    await test('close without end marks partial input as truncated', async () => {
+      const partialInput = '{"tool_name":"Write","tool_input":{';
+      const result = await readFromClosedStream(partialInput);
 
       assert.strictEqual(result.raw, partialInput);
       assert.strictEqual(result.truncated, true);
