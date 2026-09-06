@@ -59,6 +59,8 @@ ALWAYS validate at system boundaries:
 
 ## Naming Conventions
 
+Follow the language-specific coding style guide when one exists (Python → `snake_case`, Rust → `snake_case`, etc.). Where no language-specific guide applies:
+
 - Variables and functions: `camelCase` with descriptive names
 - Booleans: prefer `is`, `has`, `should`, or `can` prefixes
 - Interfaces, types, and components: `PascalCase`

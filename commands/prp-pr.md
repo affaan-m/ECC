@@ -1,5 +1,5 @@
 ---
-description: "Create a GitHub PR from current branch with unpushed commits — discovers templates, analyzes changes, pushes"
+description: "Create a GitHub PR from current branch using the PRP workflow — discovers PRP templates, analyzes changes, pushes; use /prp-commit to commit"
 argument-hint: "[base-branch] (default: main)"
 ---
 
