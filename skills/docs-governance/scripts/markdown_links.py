@@ -9,7 +9,7 @@ INLINE_LINK_START_RE = re.compile(r"\[[^\]\n]*\]\(")
 REFERENCE_DEFINITION_RE = re.compile(
     r"""(?mx)
     ^\ {0,3}\[(?P<label>[^\]\n]+)\]:[\t\ ]*
-    (?:\r?\n[\t\ ]+)?
+    (?:\r?\n[\t\ ]*)?
     (?P<target><[^>\n]+>|[^\t\ \n]+)
     (?:[\t\ ]+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\([^()]*\)))?
     [\t\ ]*$
@@ -77,20 +77,46 @@ def without_inline_code(text: str) -> str:
 def inline_link_targets(text: str) -> list[str]:
     targets: list[str] = []
     matches = list(INLINE_LINK_START_RE.finditer(text))
-    for index, match in enumerate(matches):
+    index = 0
+    cursor = 0
+    while index < len(matches):
+        match = matches[index]
+        if match.start() < cursor:
+            index += 1
+            continue
         start = match.end()
-        next_start = (
-            matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        )
+        candidate_index = index + 1
         if start < len(text) and text[start] == "<":
-            end = text.find(">", start + 1, next_start)
-            if end != -1:
-                targets.append(text[start : end + 1])
+            end = start + 1
+            while end < len(text):
+                if (
+                    candidate_index < len(matches)
+                    and end == matches[candidate_index].start()
+                ):
+                    index = candidate_index
+                    break
+                if text[end] == ">":
+                    targets.append(text[start : end + 1])
+                    cursor = end + 1
+                    index = candidate_index
+                    break
+                end += 1
+            else:
+                break
             continue
         depth = 0
         quote: str | None = None
         escaped = False
-        for end in range(start, next_start):
+        end = start
+        while end < len(text):
+            if (
+                candidate_index < len(matches)
+                and end == matches[candidate_index].start()
+            ):
+                if quote is None:
+                    index = candidate_index
+                    break
+                candidate_index += 1
             character = text[end]
             if quote is not None:
                 if escaped:
@@ -99,17 +125,24 @@ def inline_link_targets(text: str) -> list[str]:
                     escaped = True
                 elif character == quote:
                     quote = None
+                end += 1
                 continue
             if character in {"'", '"'}:
                 quote = character
+                end += 1
                 continue
             if character == "(":
                 depth += 1
             elif character == ")":
                 if depth == 0:
                     targets.append(text[start:end])
+                    cursor = end + 1
+                    index = candidate_index
                     break
                 depth -= 1
+            end += 1
+        else:
+            break
     return targets
 
 

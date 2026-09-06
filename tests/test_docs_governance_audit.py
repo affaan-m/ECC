@@ -262,6 +262,15 @@ def test_artifact_scope_ignores_title_with_closing_parenthesis(project: Path) ->
     assert result.returncode == 0, result.stdout
 
 
+def test_artifact_scope_ignores_link_like_text_in_title(project: Path) -> None:
+    (project / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (project / "index.md").write_text(
+        '[guide](guide.md "See [example](missing.md)")\n', encoding="utf-8"
+    )
+    result = run_audit(project, "artifacts")
+    assert result.returncode == 0, result.stdout
+
+
 def test_artifact_scope_checks_angle_wrapped_destination_with_title(
     project: Path,
 ) -> None:
@@ -289,11 +298,12 @@ def test_artifact_scope_checks_reference_style_markdown_links(
     assert "missing-guide.md" in result.stdout
 
 
+@pytest.mark.parametrize("target_line", ("  missing-guide.md", "missing-guide.md"))
 def test_artifact_scope_checks_continuation_line_reference_target(
-    project: Path,
+    project: Path, target_line: str
 ) -> None:
     (project / "index.md").write_text(
-        "[docs]\n\n[docs]:\n  missing-guide.md\n", encoding="utf-8"
+        f"[docs]\n\n[docs]:\n{target_line}\n", encoding="utf-8"
     )
     result = run_audit(project, "artifacts")
     assert result.returncode == 1
