@@ -3372,6 +3372,54 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('doctor and repair surface malformed Claude settings errors', () => {
+    const homeDir = createTempDir('install-lifecycle-claude-home-');
+    const projectRoot = createTempDir('install-lifecycle-project-');
+
+    try {
+      const targetRoot = path.join(homeDir, '.claude');
+      const settingsPath = path.join(targetRoot, 'settings.json');
+      const managedHooks = currentManagedHooks(targetRoot);
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(settingsPath, '{ invalid json\n');
+      writeClaudeState(homeDir, {
+        operations: [
+          managedOperation('update-claude-settings', settingsPath, {
+            sourceRelativePath: 'hooks/hooks.json',
+            strategy: 'update-claude-settings',
+            managedHooks,
+          }),
+        ],
+      });
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      const issue = report.results[0].issues.find(candidate => (
+        candidate.code === 'invalid-claude-settings'
+      ));
+      assert.strictEqual(report.results[0].status, 'error');
+      assert.ok(issue, 'doctor should report an invalid Claude settings issue');
+      assert.match(issue.message, /Failed to inspect Claude settings/);
+
+      const repair = repairInstalledStates({
+        repoRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        targets: ['claude'],
+      });
+      assert.strictEqual(repair.results[0].status, 'error');
+      assert.match(repair.results[0].error, /Failed to inspect Claude settings/);
+      assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), '{ invalid json\n');
+    } finally {
+      cleanup(homeDir);
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('repair restores managed Claude hooks while preserving user settings and hooks', () => {
     const homeDir = createTempDir('install-lifecycle-claude-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');

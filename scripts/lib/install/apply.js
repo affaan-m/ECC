@@ -209,20 +209,27 @@ function shouldSetClaudeCommitAttributionPreference(plan) {
 }
 
 function writeClaudeCommitAttributionPreference(settingsPath, options = {}) {
+  let settings;
   try {
-    let changed = false;
-    updateSettingsAtomic(settingsPath, settings => {
-      if (hasExplicitCommitAttributionPreference(settings)) {
-        return { settings };
-      }
-      changed = true;
-      return { settings: withCommitAttributionDisabled(settings) };
-    }, options);
-    return changed;
+    settings = readSettings(settingsPath);
   } catch (_error) {
     // Unreadable or malformed settings belong to the user; leave them untouched.
     return false;
   }
+
+  if (hasExplicitCommitAttributionPreference(settings)) {
+    return false;
+  }
+
+  let changed = false;
+  updateSettingsAtomic(settingsPath, latestSettings => {
+    if (hasExplicitCommitAttributionPreference(latestSettings)) {
+      return { settings: latestSettings };
+    }
+    changed = true;
+    return { settings: withCommitAttributionDisabled(latestSettings) };
+  }, options);
+  return changed;
 }
 
 function isMcpConfigPath(filePath) {

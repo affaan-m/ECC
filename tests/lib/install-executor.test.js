@@ -498,8 +498,9 @@ function runTests() {
     const tempDir = createTempDir('install-executor-claude-hooks-');
     try {
       for (const target of ['claude', 'claude-project']) {
-        const homeDir = path.join(tempDir, `${target} home "quoted" $dollar %percent%`);
-        const projectRoot = path.join(tempDir, `${target} project "quoted" $dollar %percent%`);
+        const quoted = process.platform === 'win32' ? 'quoted' : '"quoted"';
+        const homeDir = path.join(tempDir, `${target} home ${quoted} $dollar %percent%`);
+        const projectRoot = path.join(tempDir, `${target} project ${quoted} $dollar %percent%`);
         fs.mkdirSync(homeDir, { recursive: true });
         fs.mkdirSync(projectRoot, { recursive: true });
 
@@ -564,6 +565,54 @@ function runTests() {
         assert.deepStrictEqual(stateOperation.managedHooks, operation.managedHooks);
       }
     } finally {
+      cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('Claude commit-attribution atomic write failures abort installation', () => {
+    const tempDir = createTempDir('install-executor-attribution-failure-');
+    const originalRenameSync = fs.renameSync;
+    try {
+      const homeDir = path.join(tempDir, 'home');
+      const projectRoot = path.join(tempDir, 'project');
+      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(projectRoot, { recursive: true });
+      const rawPlan = createManifestInstallPlan({
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot,
+        target: 'claude',
+        moduleIds: ['hooks-runtime'],
+      });
+      const plan = {
+        ...rawPlan,
+        hookConsent: 'enabled',
+        statePreview: {
+          ...rawPlan.statePreview,
+          request: { ...rawPlan.statePreview.request, hookConsent: 'enabled' },
+        },
+      };
+      const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+      let settingsCommitCount = 0;
+      fs.renameSync = function failAttributionCommit(sourcePath, destinationPath) {
+        if (path.resolve(String(destinationPath)) === path.resolve(settingsPath)) {
+          settingsCommitCount += 1;
+          if (settingsCommitCount === 2) {
+            throw new Error('injected attribution rename failure');
+          }
+        }
+        return originalRenameSync.call(fs, sourcePath, destinationPath);
+      };
+
+      assert.throws(
+        () => applyInstallPlanDirect(plan),
+        /injected attribution rename failure/
+      );
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.ok(settings.hooks.SessionStart.some(entry => entry.id === 'session:start'));
+      assert.strictEqual(Object.hasOwn(settings, 'includeCoAuthoredBy'), false);
+    } finally {
+      fs.renameSync = originalRenameSync;
       cleanup(tempDir);
     }
   })) passed++; else failed++;

@@ -1300,11 +1300,12 @@ function inspectManagedOperation(repoRoot, trustedRoot, operation, linkIndex = n
         destinationPath,
         managedHookInspection: inspection
       };
-    } catch (_error) {
+    } catch (error) {
       return {
-        status: 'drifted',
+        status: 'invalid-settings',
         operation,
-        destinationPath
+        destinationPath,
+        error: `Failed to inspect Claude settings at ${destinationPath}: ${error.message}`
       };
     }
   }
@@ -1337,6 +1338,8 @@ function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations, targ
         summary.unsafeSource.push(inspection);
       } else if (inspection.status === 'unsafe-destination') {
         summary.unsafeDestination.push(inspection);
+      } else if (inspection.status === 'invalid-settings') {
+        summary.invalidSettings.push(inspection);
       } else if (inspection.status === 'unverified' || inspection.status === 'invalid-destination') {
         summary.unverified.push(inspection);
       }
@@ -1348,6 +1351,7 @@ function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations, targ
       missingSource: [],
       unsafeSource: [],
       unsafeDestination: [],
+      invalidSettings: [],
       unverified: []
     }
   );
@@ -1374,7 +1378,9 @@ function getUnsafeOperationResult(record, operationHealth) {
     ? getUnsafeManagedDestinationError(operationHealth)
     : operationHealth.unsafeSource.length > 0
       ? createUnsafeRepairSourceError().message
-      : null;
+      : operationHealth.invalidSettings.length > 0
+        ? operationHealth.invalidSettings[0].error
+        : null;
   if (!error) {
     return null;
   }
@@ -1662,6 +1668,17 @@ function analyzeRecord(record, context) {
         'error',
         'unsafe-repair-source',
         `${operationHealth.unsafeSource.length} managed operation(s) reference unsafe repair source metadata`
+      )
+    );
+  }
+
+  if (operationHealth.invalidSettings.length > 0) {
+    issues.push(
+      buildIssue(
+        'error',
+        'invalid-claude-settings',
+        operationHealth.invalidSettings[0].error,
+        { paths: operationHealth.invalidSettings.map(entry => entry.destinationPath) }
       )
     );
   }
