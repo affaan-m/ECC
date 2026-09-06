@@ -47,6 +47,10 @@ function runTests() {
       readme.includes('%USERPROFILE%\\\\.claude'),
       'README should call out the correct Windows Claude config root'
     );
+    assert.ok(
+      readme.includes('registers the resolved\nhook entries in `~/.claude/settings.json`'),
+      'README should explain that manual installs register hooks in Claude settings'
+    );
   })) passed++; else failed++;
 
   if (test('hooks/README mirrors supported manual install guidance', () => {
@@ -61,6 +65,10 @@ function runTests() {
     assert.ok(
       hooksReadme.includes('pwsh -File .\\install.ps1 --target claude --modules hooks-runtime --enable-hooks'),
       'hooks/README should document the supported PowerShell hook install path'
+    );
+    assert.ok(
+      hooksReadme.includes('registers the resolved\nhook entries in `~/.claude/settings.json`'),
+      'hooks/README should explain that manual installs register hooks in Claude settings'
     );
   })) passed++; else failed++;
 

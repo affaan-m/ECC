@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { validateManagedHooks } = require('./install/claude-settings');
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -208,6 +209,38 @@ function createFallbackValidator() {
           && !/^[a-f0-9]{64}$/i.test(operation.contentSha256)
         ) {
           pushError(`${instancePath}/contentSha256`, 'must be a SHA-256 hex digest');
+        }
+        if (operation.kind === 'update-claude-settings') {
+          if (!['claude', 'claude-project'].includes(state.target && state.target.target)) {
+            pushError(`${instancePath}/kind`, 'is only valid for Claude targets');
+          }
+          if (operation.moduleId !== 'hooks-runtime') {
+            pushError(`${instancePath}/moduleId`, 'must equal hooks-runtime');
+          }
+          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== 'hooks/hooks.json') {
+            pushError(`${instancePath}/sourceRelativePath`, 'must equal hooks/hooks.json');
+          }
+          if (
+            isNonEmptyString(state.target && state.target.root)
+            && isNonEmptyString(operation.destinationPath)
+          ) {
+            const expectedDestination = path.resolve(state.target.root, 'settings.json');
+            const actualDestination = path.resolve(operation.destinationPath);
+            const pathsMatch = process.platform === 'win32'
+              ? expectedDestination.toLowerCase() === actualDestination.toLowerCase()
+              : expectedDestination === actualDestination;
+            if (!pathsMatch) {
+              pushError(
+                `${instancePath}/destinationPath`,
+                'must equal the canonical Claude settings path'
+              );
+            }
+          }
+          try {
+            validateManagedHooks(operation.managedHooks);
+          } catch (error) {
+            pushError(`${instancePath}/managedHooks`, error.message);
+          }
         }
       }
     }
