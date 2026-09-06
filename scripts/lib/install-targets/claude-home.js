@@ -5,6 +5,7 @@ const {
   createRemappedOperation,
   isForeignPlatformPath,
   normalizeRelativePath,
+  planClaudeHooksOperations,
 } = require('./helpers');
 
 const CLAUDE_ECC_NAMESPACE = 'ecc';
@@ -66,7 +67,14 @@ module.exports = createInstallTargetAdapter({
       const paths = Array.isArray(module.paths) ? module.paths : [];
       return paths
         .filter(p => !isForeignPlatformPath(p, adapter.target))
-        .map(sourceRelativePath => {
+        .flatMap(sourceRelativePath => {
+          if (
+            module.id === 'hooks-runtime'
+            && normalizeRelativePath(sourceRelativePath) === 'hooks'
+          ) {
+            return planClaudeHooksOperations(adapter, module, planningInput);
+          }
+
           const managedDestinationPath = getClaudeManagedDestinationPath(
             adapter,
             sourceRelativePath,
@@ -74,16 +82,16 @@ module.exports = createInstallTargetAdapter({
           );
 
           if (managedDestinationPath) {
-            return createRemappedOperation(
+            return [createRemappedOperation(
               adapter,
               module.id,
               sourceRelativePath,
               managedDestinationPath,
               { strategy: 'preserve-relative-path' }
-            );
+            )];
           }
 
-          return adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput);
+          return [adapter.createScaffoldOperation(module.id, sourceRelativePath, planningInput)];
         });
     });
   },

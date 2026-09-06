@@ -122,6 +122,11 @@
         "hooks"
       ],
       "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Stable identifier for a matcher entry. Required and globally unique in wrapped object format."
+        },
         "matcher": {
           "oneOf": [
             {
@@ -142,6 +147,24 @@
           "type": "string"
         }
       }
+    },
+    "managedMatcherEntry": {
+      "allOf": [
+        { "$ref": "#/$defs/matcherEntry" },
+        {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "hooks": { "type": "array", "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "managedMatcherRequiredEntry": {
+      "allOf": [
+        { "$ref": "#/$defs/managedMatcherEntry" },
+        { "type": "object", "required": ["matcher"] }
+      ]
     }
   },
   "oneOf": [
@@ -175,10 +198,18 @@
               "SessionEnd"
             ]
           },
+          "patternProperties": {
+            "^(SessionStart|PreToolUse|PermissionRequest|PostToolUse|PostToolUseFailure|SubagentStart|PreCompact|InstructionsLoaded|TeammateIdle|TaskCompleted|ConfigChange|WorktreeCreate|WorktreeRemove|SessionEnd)$": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/managedMatcherRequiredEntry"
+              }
+            }
+          },
           "additionalProperties": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/matcherEntry"
+              "$ref": "#/$defs/managedMatcherEntry"
             }
           }
         }

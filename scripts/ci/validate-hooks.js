@@ -154,8 +154,17 @@ function validateHooks() {
 
   // Support both object format { hooks: {...} } and array format
   const hooks = data.hooks || data;
+  const requiresStableIds = Boolean(
+    data
+    && typeof data === 'object'
+    && !Array.isArray(data)
+    && data.hooks
+    && typeof data.hooks === 'object'
+    && !Array.isArray(data.hooks)
+  );
   let hasErrors = false;
   let totalMatchers = 0;
+  const matcherIdLocations = new Map();
 
   if (typeof hooks === 'object' && !Array.isArray(hooks)) {
     // Object format: { EventType: [matchers] }
@@ -179,20 +188,32 @@ function validateHooks() {
           hasErrors = true;
           continue;
         }
+        const matcherLabel = `${eventType}[${i}]`;
+        if (requiresStableIds && !isNonEmptyString(matcher.id)) {
+          console.error(`ERROR: ${matcherLabel} missing or invalid 'id' field`);
+          hasErrors = true;
+        } else if (requiresStableIds && matcherIdLocations.has(matcher.id)) {
+          console.error(
+            `ERROR: ${matcherLabel} has duplicate id '${matcher.id}' (already used by ${matcherIdLocations.get(matcher.id)})`
+          );
+          hasErrors = true;
+        } else if (requiresStableIds) {
+          matcherIdLocations.set(matcher.id, matcherLabel);
+        }
         if (!('matcher' in matcher) && !EVENTS_WITHOUT_MATCHER.has(eventType)) {
-          console.error(`ERROR: ${eventType}[${i}] missing 'matcher' field`);
+          console.error(`ERROR: ${matcherLabel} missing 'matcher' field`);
           hasErrors = true;
         } else if ('matcher' in matcher && typeof matcher.matcher !== 'string' && (typeof matcher.matcher !== 'object' || matcher.matcher === null)) {
-          console.error(`ERROR: ${eventType}[${i}] has invalid 'matcher' field`);
+          console.error(`ERROR: ${matcherLabel} has invalid 'matcher' field`);
           hasErrors = true;
         }
-        if (!matcher.hooks || !Array.isArray(matcher.hooks)) {
-          console.error(`ERROR: ${eventType}[${i}] missing 'hooks' array`);
+        if (!matcher.hooks || !Array.isArray(matcher.hooks) || matcher.hooks.length === 0) {
+          console.error(`ERROR: ${matcherLabel} missing 'hooks' array`);
           hasErrors = true;
         } else {
           // Validate each hook entry
           for (let j = 0; j < matcher.hooks.length; j++) {
-            if (validateHookEntry(matcher.hooks[j], `${eventType}[${i}].hooks[${j}]`)) {
+            if (validateHookEntry(matcher.hooks[j], `${matcherLabel}.hooks[${j}]`)) {
               hasErrors = true;
             }
           }

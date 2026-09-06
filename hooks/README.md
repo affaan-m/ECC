@@ -33,7 +33,11 @@ bash ./install.sh --target claude --modules hooks-runtime --enable-hooks
 pwsh -File .\install.ps1 --target claude --modules hooks-runtime --enable-hooks
 ```
 
-That installs resolved hooks to `~/.claude/hooks/hooks.json`. On Windows, the Claude config root is `%USERPROFILE%\\.claude`.
+That installs the hook scripts under `~/.claude/` and registers the resolved
+hook entries in `~/.claude/settings.json`. Existing user settings and hook
+entries are preserved, while ECC-owned entries are tracked by stable ID for
+idempotent updates and safe uninstall. On Windows, the Claude config root is
+`%USERPROFILE%\.claude`.
 
 ### PreToolUse Hooks
 

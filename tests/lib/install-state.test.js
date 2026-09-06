@@ -84,6 +84,105 @@ function runTests() {
     assert.strictEqual(state.operations.length, 1);
   })) passed++; else failed++;
 
+  if (test('validates managed hook metadata for Claude settings operations', () => {
+    const baseOptions = {
+      adapter: { id: 'claude-home', target: 'claude', kind: 'home' },
+      targetRoot: '/home/test/.claude',
+      installStatePath: '/home/test/.claude/ecc/install-state.json',
+      request: {
+        profile: 'core',
+        modules: ['hooks-runtime'],
+        includeComponents: [],
+        excludeComponents: [],
+        legacyLanguages: [],
+        legacyMode: false,
+        hookConsent: 'enabled',
+      },
+      resolution: { selectedModules: ['hooks-runtime'], skippedModules: [] },
+      source: { repoVersion: CURRENT_PACKAGE_VERSION, repoCommit: 'abc123', manifestVersion: 1 },
+    };
+    const operation = {
+      kind: 'update-claude-settings',
+      moduleId: 'hooks-runtime',
+      sourceRelativePath: 'hooks/hooks.json',
+      destinationPath: '/home/test/.claude/settings.json',
+      strategy: 'merge-hook-ids',
+      ownership: 'managed',
+      scaffoldOnly: false,
+      managedHooks: {
+        SessionStart: [{
+          id: 'session:start',
+          matcher: '.*',
+          hooks: [{ type: 'command', command: 'node start.js' }],
+        }],
+      },
+    };
+
+    assert.doesNotThrow(() => createInstallState({ ...baseOptions, operations: [operation] }));
+    assert.throws(
+      () => createInstallState({
+        ...baseOptions,
+        operations: [{ ...operation, moduleId: 'not-hooks-runtime' }],
+      }),
+      /moduleId.*hooks-runtime/
+    );
+    assert.throws(
+      () => createInstallState({
+        ...baseOptions,
+        operations: [{ ...operation, sourceRelativePath: 'attacker.json' }],
+      }),
+      /sourceRelativePath.*hooks\/hooks\.json/
+    );
+    assert.throws(
+      () => createInstallState({
+        ...baseOptions,
+        operations: [{
+          ...operation,
+          destinationPath: '/home/test/.claude/settings.local.json',
+        }],
+      }),
+      /destinationPath.*canonical Claude settings path/
+    );
+    assert.throws(
+      () => createInstallState({
+        ...baseOptions,
+        adapter: { id: 'cursor-project', target: 'cursor', kind: 'project' },
+        targetRoot: '/repo/.cursor',
+        installStatePath: '/repo/.cursor/ecc-install-state.json',
+        operations: [{
+          ...operation,
+          destinationPath: '/repo/.cursor/settings.json',
+        }],
+      }),
+      /only valid for Claude targets/
+    );
+    assert.throws(
+      () => createInstallState({
+        ...baseOptions,
+        operations: [{
+          ...operation,
+          managedHooks: {
+            SessionStart: [{
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'node start.js' }],
+            }],
+          },
+        }],
+      }),
+      /managedHooks.*Invalid hook entry/
+    );
+    assert.doesNotThrow(() => createInstallState({
+      ...baseOptions,
+      operations: [{
+        ...operation,
+        managedHooks: {
+          SessionStart: [{ id: 'shared', hooks: [] }],
+          LegacyEvent: [{ id: 'shared', hooks: [{ type: 'legacy' }] }],
+        },
+      }],
+    }));
+  })) passed++; else failed++;
+
   if (test('writes and reads install-state from disk', () => {
     const testDir = createTestDir();
     const statePath = path.join(testDir, 'ecc-install-state.json');
