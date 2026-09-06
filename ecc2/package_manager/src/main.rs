@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 static SAFE_NAME_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[@a-zA-Z0-9_./-]+$").unwrap());
 
 // Safe args regex: alphanumeric, whitespace, dashes, dots, slashes, equals, colons, commas, quotes, @, *, +
-static SAFE_ARGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[@a-zA-Z0-9\s_./:=,'"*+-]+$"#).unwrap());
+static ref SAFE_ARGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[\w \-A-Z0-9/\.,:=\*\+]+$").unwrap());
 
 #[derive(Error, Debug)]
 pub enum PackageManagerError {
