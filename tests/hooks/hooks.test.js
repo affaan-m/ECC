@@ -2736,8 +2736,9 @@ async function runTests() {
           (Array.isArray(hook.command) && hook.command[0] === 'node' && hook.command[1] === '-e') || (typeof hook.command === 'string' && hook.command.startsWith('node -e "')),
           'Lifecycle hook should use inline node resolver'
         );
-        assert.ok(commandText.includes('run-with-flags.js'), 'Lifecycle hook should resolve the runner script');
+        assert.ok(commandText.includes('lifecycle-hook-bootstrap.js'), 'Lifecycle hook should resolve the shared lifecycle bootstrap');
         assert.ok(commandText.includes('CLAUDE_PLUGIN_ROOT'), 'Lifecycle hook should consult CLAUDE_PLUGIN_ROOT');
+        assert.ok(commandText.includes("process.platform==='win32'"), 'Lifecycle hook should normalize Git Bash drive roots before loading the bootstrap');
         assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), 'Lifecycle hook should not depend on raw shell placeholder expansion');
         assert.ok(commandText.includes('resolve-ecc-root'), 'Lifecycle hook should delegate to the committed resolver module');
         assert.ok(!commandText.includes('find '), 'Lifecycle hook should not scan arbitrary plugin paths with find');
@@ -2761,8 +2762,9 @@ async function runTests() {
               const usesInlineResolver = commandStart.startsWith('node -e') && commandText.includes('run-with-flags.js');
               const usesPluginBootstrap = commandStart.startsWith('node -e') && commandText.includes('plugin-hook-bootstrap.js');
               const usesDirectPostDispatcher = commandStart.startsWith('node -e') && commandText.includes('posttooluse-dispatcher.js') && commandText.includes('resolve-ecc-root');
+              const usesLifecycleBootstrap = commandStart.startsWith('node -e') && commandText.includes('lifecycle-hook-bootstrap.js') && commandText.includes('resolve-ecc-root');
               assert.ok(!commandText.includes('${CLAUDE_PLUGIN_ROOT}'), `Script paths should not depend on raw shell placeholder expansion: ${commandText.substring(0, 80)}...`);
-              assert.ok(usesInlineResolver || usesPluginBootstrap || usesDirectPostDispatcher, `Script paths should use the inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
+              assert.ok(usesInlineResolver || usesPluginBootstrap || usesDirectPostDispatcher || usesLifecycleBootstrap, `Script paths should use a safe inline resolver or plugin bootstrap: ${commandText.substring(0, 80)}...`);
             }
           }
         }

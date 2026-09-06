@@ -96,7 +96,7 @@ function buildEccSkeleton(repoRoot) {
   const hooksDir = path.join(root, "scripts", "hooks")
   fs.mkdirSync(hooksDir, { recursive: true })
 
-  for (const name of ["run-with-flags.js", "session-end-marker.js", "pretooluse-visible-output.js"]) {
+  for (const name of ["hook-input.js", "run-with-flags.js", "session-end-marker.js", "pretooluse-visible-output.js"]) {
     fs.cpSync(path.join(repoRoot, "scripts", "hooks", name), path.join(hooksDir, name))
   }
   fs.cpSync(path.join(repoRoot, "scripts", "lib"), path.join(root, "scripts", "lib"), { recursive: true })
