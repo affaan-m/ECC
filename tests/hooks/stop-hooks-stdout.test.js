@@ -126,7 +126,7 @@ function runRegisteredStopHookWithMissingRoot(entry, input) {
       ECC_PLUGIN_ROOT: missingRoot
     },
     shell: true,
-    timeout: 60000,
+    timeout: SUBPROCESS_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe']
   });

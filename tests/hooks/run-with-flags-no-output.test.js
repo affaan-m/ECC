@@ -102,6 +102,43 @@ function runSessionStartBootstrapWithMissingRoot(input = payload) {
   });
 }
 
+function runSessionStartBootstrapWithLargeOutput(channel, exitCode) {
+  const outputBytes = 512 * 1024;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-session-start-output-'));
+  const fixtureRunner = path.join(root, 'scripts', 'hooks', 'run-with-flags.js');
+  fs.mkdirSync(path.dirname(fixtureRunner), { recursive: true });
+  fs.writeFileSync(
+    fixtureRunner,
+    [
+      "const size = Number(process.env.ECC_TEST_OUTPUT_BYTES);",
+      "const output = 'x'.repeat(size);",
+      "if (process.env.ECC_TEST_OUTPUT_CHANNEL !== 'stderr') process.stdout.write(output);",
+      "if (process.env.ECC_TEST_OUTPUT_CHANNEL !== 'stdout') process.stderr.write(output.replaceAll('x', 'y'));",
+      "process.exitCode = Number(process.env.ECC_TEST_EXIT_CODE);"
+    ].join('\n') + '\n'
+  );
+
+  try {
+    return spawnSync(process.execPath, [sessionStartBootstrap], {
+      input: payload,
+      encoding: 'utf8',
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: root,
+        ECC_PLUGIN_ROOT: root,
+        ECC_TEST_OUTPUT_BYTES: String(outputBytes),
+        ECC_TEST_OUTPUT_CHANNEL: channel,
+        ECC_TEST_EXIT_CODE: String(exitCode)
+      },
+      timeout: 30000,
+      maxBuffer: 4 * 1024 * 1024
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function runConfiguredHookWithMissingRoot(entry, input = payload) {
   const missingRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-hook-missing-root-'));
   fs.rmSync(missingRoot, { recursive: true, force: true });
@@ -460,6 +497,41 @@ if (
     const result = runSessionStartBootstrapWithMissingRoot();
     assertSilent(result);
     assert.match(result.stderr, /could not resolve ECC plugin root/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('SessionStart bootstrap flushes large additionalContext output before exit', () => {
+    const result = runSessionStartBootstrapWithLargeOutput('stdout', 0);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(Buffer.byteLength(result.stdout, 'utf8'), 512 * 1024);
+    assert.match(result.stdout, /^x+$/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('SessionStart bootstrap flushes large non-zero exit output before exit', () => {
+    const result = runSessionStartBootstrapWithLargeOutput('stderr', 7);
+    assert.strictEqual(result.status, 7, result.stderr.slice(-200));
+    assert.strictEqual(Buffer.byteLength(result.stderr, 'utf8'), 512 * 1024);
+    assert.match(result.stderr, /^y+$/);
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('SessionStart bootstrap flushes both large output streams before exit', () => {
+    const result = runSessionStartBootstrapWithLargeOutput('both', 9);
+    assert.strictEqual(result.status, 9, result.stderr.slice(-200));
+    assert.strictEqual(Buffer.byteLength(result.stdout, 'utf8'), 512 * 1024);
+    assert.strictEqual(Buffer.byteLength(result.stderr, 'utf8'), 512 * 1024);
+    assert.match(result.stdout, /^x+$/);
+    assert.match(result.stderr, /^y+$/);
   })
 )
   passed++;

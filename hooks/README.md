@@ -107,7 +107,15 @@ export ECC_HOOK_PROFILE=standard
 export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 
 # Lower the hook input cap in bytes (default and maximum: 1048576).
-# Truncated PreToolUse safety checks fail closed.
+# run-with-flags.js adds runner-level fail-closed handling for
+# pre:edit-write:gateguard-fact-force and pre:mcp-health-check because they
+# cannot inspect the complete request. Other safety hooks, including the Bash
+# dispatcher and config protection, retain their own fail-closed behavior.
+# If a trusted tool call legitimately exceeds the cap, retry with a smaller
+# input or temporarily set ECC_GATEGUARD=off (or GATEGUARD_DISABLED=1) for
+# GateGuard, or ECC_MCP_HEALTH_FAIL_OPEN=yes for MCP health, then restore it.
+# These switches reduce only the named protection while enabled; they do not
+# bypass the Bash dispatcher or config-protection checks.
 export ECC_HOOK_INPUT_MAX_BYTES=524288
 
 # Disable only GateGuard during setup or recovery

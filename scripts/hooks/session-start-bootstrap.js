@@ -31,6 +31,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { resolveEccRoot } = require('../lib/resolve-ecc-root');
 const { readStdinRaw, resolveMaxStdin } = require('./hook-input');
+const { exitAfterFlush } = require('./lifecycle-hook-bootstrap');
 
 async function main() {
   const maxStdin = resolveMaxStdin(process.env.ECC_HOOK_INPUT_MAX_BYTES, {
@@ -72,11 +73,8 @@ async function main() {
     );
 
     const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-    if (stdout) process.stdout.write(stdout);
-
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
+    let stderr = typeof result.stderr === 'string' ? result.stderr : '';
+    let exitCode = Number.isInteger(result.status) ? result.status : 0;
 
     if (result.error || result.status === null || result.signal) {
       const reason = result.error
@@ -84,11 +82,12 @@ async function main() {
         : result.signal
           ? 'signal ' + result.signal
           : 'missing exit status';
-      process.stderr.write('[SessionStart] ERROR: session-start hook failed: ' + reason + '\n');
-      process.exit(1);
+      stderr += '[SessionStart] ERROR: session-start hook failed: ' + reason + '\n';
+      exitCode = 1;
     }
 
-    process.exit(Number.isInteger(result.status) ? result.status : 0);
+    exitAfterFlush(stdout, stderr, exitCode);
+    return;
   }
 
   process.stderr.write(

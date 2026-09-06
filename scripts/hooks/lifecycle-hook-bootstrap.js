@@ -23,21 +23,16 @@ function resolveTimeout(value) {
 
 function exitAfterFlush(stdout, stderr, exitCode) {
   process.exitCode = exitCode;
-  let pendingWrites = 1;
+  let pendingWrites = 2;
   const finish = () => {
     pendingWrites -= 1;
     if (pendingWrites === 0) process.exit(exitCode);
   };
 
-  if (stdout) {
-    pendingWrites += 1;
-    process.stdout.write(stdout, finish);
-  }
-  if (stderr) {
-    pendingWrites += 1;
-    process.stderr.write(stderr, finish);
-  }
-  process.nextTick(finish);
+  // Empty writes still queue callbacks behind any earlier diagnostics on the
+  // same stream, so both streams are drained before the explicit exit.
+  process.stdout.write(stdout || '', finish);
+  process.stderr.write(stderr || '', finish);
 }
 
 async function main() {
@@ -122,4 +117,4 @@ function cli() {
 
 if (require.main === module) cli();
 
-module.exports = { cli, main, resolveTimeout };
+module.exports = { cli, exitAfterFlush, main, resolveTimeout };
