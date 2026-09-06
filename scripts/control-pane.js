@@ -8,6 +8,7 @@ const {
   parseArgs,
   usage,
 } = require('./lib/control-pane/server');
+const { describeMissingDependencyError } = require('./lib/missing-dependency');
 
 function openBrowser(url) {
   if (process.platform !== 'darwin') return;
@@ -55,7 +56,7 @@ async function main(argv = process.argv) {
 
 if (require.main === module) {
   main().catch(error => {
-    console.error(`[control-pane] ${error.message}`);
+    console.error(`[control-pane] ${describeMissingDependencyError(error) || error.message}`);
     process.exit(1);
   });
 }
