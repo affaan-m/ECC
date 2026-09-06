@@ -3,6 +3,8 @@ name: network-config-validation
 description: Pre-deployment checks for router and switch configuration, including dangerous commands, duplicate addresses, subnet overlaps, stale references, management-plane risk, and IOS-style security hygiene. Use when reviewing a router or switch configuration before deployment.
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Network Config Validation

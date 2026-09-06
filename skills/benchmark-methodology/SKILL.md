@@ -7,6 +7,7 @@ description: >-
   leadership, pricing, client's strategic tension) with explicit 1–5 rubrics
   and a tension-plot. Precedes competitive-report-structure.
 license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Benchmark Methodology

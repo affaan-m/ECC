@@ -5,6 +5,8 @@ metadata:
   origin: ECC
 allowed-tools: Read Grep Glob Bash(python:*)
 argument-hint: "[task description]"
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # VideoDB Skill

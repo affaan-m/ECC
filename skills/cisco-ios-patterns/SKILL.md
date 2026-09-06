@@ -3,6 +3,8 @@ name: cisco-ios-patterns
 description: Cisco IOS and IOS-XE review patterns for show commands, config hierarchy, wildcard masks, ACL placement, interface hygiene, and safe change-window verification. Use when reading, writing, or reviewing Cisco IOS / IOS-XE configuration or planning a change window.
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Cisco IOS Patterns

@@ -4,6 +4,8 @@ description: Use this skill when writing new features, fixing bugs, or refactori
 argument-hint: <path/to/*.plan.md>
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Test-Driven Development Workflow

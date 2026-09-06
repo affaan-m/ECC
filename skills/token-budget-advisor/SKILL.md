@@ -15,6 +15,8 @@ description: >-
   "token" refers to auth/session/payment tokens rather than response size.
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Token Budget Advisor (TBA)

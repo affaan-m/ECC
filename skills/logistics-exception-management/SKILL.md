@@ -15,6 +15,7 @@ metadata:
   author: evos
   clawdbot:
     emoji: ""
+compatibility: [claude-code, codex]
 ---
 
 # Logistics Exception Management

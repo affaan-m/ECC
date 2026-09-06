@@ -4,6 +4,8 @@ description: Build a new API connector or provider by matching the target repo's
 metadata:
   version: "1.0.0"
   origin: ECC direct-port adaptation
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # API Connector Builder

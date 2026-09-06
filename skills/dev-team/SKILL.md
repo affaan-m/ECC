@@ -4,6 +4,8 @@ description: Simulate a collaborative dev team session where multiple role-based
 metadata:
   origin: community
   inspired-by: bmad-method (party mode)
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Dev Team

@@ -5,6 +5,8 @@ metadata:
   origin: ECC
   status: scaffold
   aliases: ito-serve, hosted-open-weights
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Itô Inference

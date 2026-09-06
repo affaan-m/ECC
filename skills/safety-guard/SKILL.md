@@ -3,6 +3,8 @@ name: safety-guard
 description: Use this skill to prevent destructive operations when working on production systems or running agents autonomously.
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Safety Guard — Prevent Destructive Operations

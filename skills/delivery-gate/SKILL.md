@@ -4,6 +4,8 @@ description: Stop hook that blocks Claude from finishing until quality checks pa
 metadata:
   version: 1.1.1
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Delivery Gate — Mechanical Quality Gate for Claude Code
