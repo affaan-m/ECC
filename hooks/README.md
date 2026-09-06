@@ -106,6 +106,10 @@ export ECC_HOOK_PROFILE=standard
 # Disable specific hook IDs (comma-separated)
 export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 
+# Lower the hook input cap in bytes (default and maximum: 1048576).
+# Truncated PreToolUse safety checks fail closed.
+export ECC_HOOK_INPUT_MAX_BYTES=524288
+
 # Disable only GateGuard during setup or recovery
 export ECC_GATEGUARD=off
 
@@ -139,7 +143,10 @@ update the plugin and change those preferences.
 
 ### Writing Your Own Hook
 
-Hooks are shell commands that receive tool input as JSON on stdin and must output JSON on stdout.
+Hooks are shell commands that receive tool input as JSON on stdin. A hook with
+no decision or context to return should leave stdout empty. Only explicit hook
+output, such as a deny decision or `additionalContext`, should be written to
+stdout; the input payload must not be echoed as a no-op response.
 
 **Basic structure:**
 
@@ -161,8 +168,7 @@ process.stdin.on('end', () => {
   // Block (PreToolUse only): exit with code 2
   // process.exit(2);
 
-  // Always output the original data to stdout
-  console.log(data);
+  // No opinion: leave stdout empty.
 });
 ```
 
@@ -213,7 +219,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Edit",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const ns=i.tool_input?.new_string||'';if(/TODO|FIXME|HACK/.test(ns)){console.error('[Hook] New TODO/FIXME added - consider creating an issue')}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const ns=i.tool_input?.new_string||'';if(/TODO|FIXME|HACK/.test(ns)){console.error('[Hook] New TODO/FIXME added - consider creating an issue')}})\""
   }],
   "description": "Warn when adding TODO/FIXME comments"
 }
@@ -226,7 +232,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Write",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const c=i.tool_input?.content||'';const lines=c.split('\\n').length;if(lines>800){console.error('[Hook] BLOCKED: File exceeds 800 lines ('+lines+' lines)');console.error('[Hook] Split into smaller, focused modules');process.exit(2)}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const c=i.tool_input?.content||'';const lines=c.split('\\n').length;if(lines>800){console.error('[Hook] BLOCKED: File exceeds 800 lines ('+lines+' lines)');console.error('[Hook] Split into smaller, focused modules');process.exit(2)}})\""
   }],
   "description": "Block creation of files larger than 800 lines"
 }
@@ -239,7 +245,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Edit",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/\\.py$/.test(p)){const{execFileSync}=require('child_process');try{execFileSync('ruff',['format',p],{stdio:'pipe'})}catch(e){}}console.log(d)})\""
+    "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/\\.py$/.test(p)){const{execFileSync}=require('child_process');try{execFileSync('ruff',['format',p],{stdio:'pipe'})}catch(e){}}})\""
   }],
   "description": "Auto-format Python files with ruff after edits"
 }
@@ -252,7 +258,7 @@ Async hooks run in the background. They cannot block tool execution.
   "matcher": "Write",
   "hooks": [{
     "type": "command",
-    "command": "node -e \"const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/src\\/.*\\.(ts|js)$/.test(p)&&!/\\.test\\.|\\.spec\\./.test(p)){const testPath=p.replace(/\\.(ts|js)$/,'.test.$1');if(!fs.existsSync(testPath)){console.error('[Hook] No test file found for: '+p);console.error('[Hook] Expected: '+testPath);console.error('[Hook] Consider writing tests first (/tdd)')}}console.log(d)})\""
+    "command": "node -e \"const fs=require('fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/src\\/.*\\.(ts|js)$/.test(p)&&!/\\.test\\.|\\.spec\\./.test(p)){const testPath=p.replace(/\\.(ts|js)$/,'.test.$1');if(!fs.existsSync(testPath)){console.error('[Hook] No test file found for: '+p);console.error('[Hook] Expected: '+testPath);console.error('[Hook] Consider writing tests first (/tdd)')}}})\""
   }],
   "description": "Remind to create tests when adding new source files"
 }
