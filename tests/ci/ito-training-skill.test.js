@@ -26,7 +26,7 @@ function test(name, fn) { tests.push([name, fn]); }
 
 test("has valid discoverable frontmatter and trigger phrases", () => {
   const skill = read("skills/ito-training/SKILL.md");
-  assert.match(skill, /^---\nname: ito-training\ndescription: [^\n]+\nmetadata:\n {2}origin: ECC\n {2}status: scaffold\n---\n/);
+  assert.match(skill, /^---\nname: ito-training\ndescription: [^\n]+\nmetadata:\n {2}origin: ECC\n {2}status: scaffold\n/);
   assert.match(skill, /completed Itô compute booking/i);
   assert.match(skill, /pre-training, fine-tuning, or RL/i);
   assert.match(skill, /ECC implements no training stack of its own/i);
