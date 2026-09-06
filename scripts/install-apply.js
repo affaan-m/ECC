@@ -19,6 +19,7 @@ const {
 } = require('./lib/install/request');
 const { getComputeSponsorCopy } = require('./lib/compute-sponsor');
 const { stripAnsi } = require('./lib/utils');
+const { describeMissingDependencyError } = require('./lib/missing-dependency');
 
 function getHelpText() {
   const languages = listLegacyCompatibilityLanguages();
@@ -200,7 +201,12 @@ async function main() {
       printHumanPlan(result, false);
     }
   } catch (error) {
-    process.stderr.write(`Error: ${error.message}${getHelpText()}`);
+    const missingDependencyMessage = describeMissingDependencyError(error);
+    process.stderr.write(
+      missingDependencyMessage
+        ? `Error: ${missingDependencyMessage}\n`
+        : `Error: ${error.message}${getHelpText()}`
+    );
     process.exit(1);
   }
 }
