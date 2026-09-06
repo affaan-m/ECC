@@ -1,6 +1,7 @@
 ---
 name: verification-loop
 description: "A comprehensive verification system for Claude Code sessions. Use when verifying a Claude Code session's work before claiming it is complete."
+license: MIT
 ---
 
 # Verification Loop Skill
