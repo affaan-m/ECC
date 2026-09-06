@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const { validateManagedHooks } = require('./install/claude-settings');
+const {
+  CLAUDE_HOOKS_CONFIG_PATH,
+  getClaudeSettingsPath,
+  validateRecordedManagedHooks,
+} = require('./install/claude-settings');
 
 // Dependency-free, self-contained validation. The installer closure must not
 // require any non-builtin package (enterprise supply-chain vetting: the vetted
@@ -217,14 +221,14 @@ function createFallbackValidator() {
           if (operation.moduleId !== 'hooks-runtime') {
             pushError(`${instancePath}/moduleId`, 'must equal hooks-runtime');
           }
-          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== 'hooks/hooks.json') {
+          if (String(operation.sourceRelativePath).replace(/\\/g, '/') !== CLAUDE_HOOKS_CONFIG_PATH) {
             pushError(`${instancePath}/sourceRelativePath`, 'must equal hooks/hooks.json');
           }
           if (
             isNonEmptyString(state.target && state.target.root)
             && isNonEmptyString(operation.destinationPath)
           ) {
-            const expectedDestination = path.resolve(state.target.root, 'settings.json');
+            const expectedDestination = path.resolve(getClaudeSettingsPath(state.target.root));
             const actualDestination = path.resolve(operation.destinationPath);
             const pathsMatch = process.platform === 'win32'
               ? expectedDestination.toLowerCase() === actualDestination.toLowerCase()
@@ -237,7 +241,7 @@ function createFallbackValidator() {
             }
           }
           try {
-            validateManagedHooks(operation.managedHooks);
+            validateRecordedManagedHooks(operation.managedHooks);
           } catch (error) {
             pushError(`${instancePath}/managedHooks`, error.message);
           }

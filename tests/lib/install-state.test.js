@@ -169,28 +169,18 @@ function runTests() {
           },
         }],
       }),
-      /managedHooks.*non-empty unique id/
+      /managedHooks.*Invalid hook entry/
     );
-    assert.throws(
-      () => createInstallState({
-        ...baseOptions,
-        operations: [{
-          ...operation,
-          managedHooks: {
-            SessionStart: [{
-              id: 'duplicate',
-              matcher: '.*',
-              hooks: [{ type: 'command', command: 'node start.js' }],
-            }],
-            Stop: [{
-              id: 'duplicate',
-              hooks: [{ type: 'command', command: 'node stop.js' }],
-            }],
-          },
-        }],
-      }),
-      /managedHooks.*globally unique id/
-    );
+    assert.doesNotThrow(() => createInstallState({
+      ...baseOptions,
+      operations: [{
+        ...operation,
+        managedHooks: {
+          SessionStart: [{ id: 'shared', hooks: [] }],
+          LegacyEvent: [{ id: 'shared', hooks: [{ type: 'legacy' }] }],
+        },
+      }],
+    }));
   })) passed++; else failed++;
 
   if (test('writes and reads install-state from disk', () => {

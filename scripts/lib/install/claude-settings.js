@@ -1,12 +1,16 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { isDeepStrictEqual } = require('util');
 const { writeFileAtomic } = require('../atomic-write');
+const { acquireSettingsLock, runWithSettingsLock } = require('./claude-settings-lock');
 
+const CLAUDE_SETTINGS_FILENAME = 'settings.json';
+const CLAUDE_HOOKS_CONFIG_PATH = 'hooks/hooks.json';
 const PLUGIN_ROOT_PLACEHOLDER = '${CLAUDE_PLUGIN_ROOT}';
+const PLUGIN_ROOT_ENV_PROLOGUE = 'var e=process.env.CLAUDE_PLUGIN_ROOT;';
+const PLUGIN_ROOT_ENV_READ = /\bprocess\.env\.CLAUDE_PLUGIN_ROOT\b(?!\s*=)/;
 const VALID_EVENTS = new Set([
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PermissionRequest',
   'PostToolUse', 'PostToolUseFailure', 'Notification', 'SubagentStart',
@@ -18,7 +22,6 @@ const EVENTS_WITHOUT_MATCHER = new Set([
   'UserPromptSubmit', 'Notification', 'Stop', 'SubagentStop',
 ]);
 const VALID_HOOK_TYPES = new Set(['command', 'http', 'prompt', 'agent']);
-const INVALID_LOCK_STALE_MS = 5 * 60 * 1000;
 
 function isJsonObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -42,6 +45,23 @@ function cloneValue(value) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
+}
+
+function getClaudeSettingsPath(targetRoot) {
+  return path.join(targetRoot, CLAUDE_SETTINGS_FILENAME);
+}
+
+function assertClaudeSettingsPath(destinationPath, trustedRoot) {
+  const resolvedDestination = path.resolve(destinationPath);
+  const resolvedExpected = path.resolve(getClaudeSettingsPath(trustedRoot));
+  const pathsMatch = process.platform === 'win32'
+    ? resolvedDestination.toLowerCase() === resolvedExpected.toLowerCase()
+    : resolvedDestination === resolvedExpected;
+  if (!pathsMatch) {
+    throw new Error(
+      `Refusing to manage Claude hooks outside the canonical settings file: ${destinationPath}`
+    );
+  }
 }
 
 function validateHookHandler(hook, label) {
@@ -167,6 +187,30 @@ function validateManagedHooks(managedHooks, label = 'managed hooks') {
   return cloneValue(managedHooks);
 }
 
+function validateRecordedManagedHooks(managedHooks, label = 'recorded managed hooks') {
+  if (!isJsonObject(managedHooks) || Object.keys(managedHooks).length === 0) {
+    throw new Error(`Invalid ${label}: expected a non-empty JSON object`);
+  }
+  for (const [event, entries] of Object.entries(managedHooks)) {
+    if (!isNonEmptyString(event) || !Array.isArray(entries) || entries.length === 0) {
+      throw new Error(`Invalid ${label}.${event}: expected a non-empty hook array`);
+    }
+    const seenIds = new Set();
+    entries.forEach((entry, index) => {
+      if (!isJsonObject(entry) || !isNonEmptyString(entry.id) || !Array.isArray(entry.hooks)) {
+        throw new Error(`Invalid hook entry at ${label}.${event}[${index}]`);
+      }
+      if (seenIds.has(entry.id)) {
+        throw new Error(
+          `Invalid ${label}: expected unique id "${entry.id}" within event "${event}"`
+        );
+      }
+      seenIds.add(entry.id);
+    });
+  }
+  return cloneValue(managedHooks);
+}
+
 function validateSettings(settings, label = 'Claude settings') {
   if (!isJsonObject(settings)) {
     throw new Error(`Invalid ${label}: expected a JSON object`);
@@ -210,6 +254,18 @@ function replacePluginRootPlaceholders(value, pluginRoot) {
 function resolveManagedHookCommands(managedHooks, targetRoot) {
   const encodedRoot = Buffer.from(targetRoot, 'utf8').toString('base64');
   const rootExpression = `Buffer.from('${encodedRoot}','base64').toString('utf8')`;
+  const resolveCommand = command => {
+    const resolved = command
+      .split(PLUGIN_ROOT_ENV_PROLOGUE)
+      .join(`var e=${rootExpression};`);
+    if (PLUGIN_ROOT_ENV_READ.test(resolved)) {
+      throw new Error(
+        'Unable to resolve CLAUDE_PLUGIN_ROOT in a managed hook command; '
+        + 'the hooks.json command prologue no longer matches the expected form'
+      );
+    }
+    return resolved;
+  };
   return Object.fromEntries(
     Object.entries(managedHooks).map(([event, entries]) => [
       event,
@@ -219,9 +275,7 @@ function resolveManagedHookCommands(managedHooks, targetRoot) {
           ...hook,
           ...(typeof hook.command === 'string'
             ? {
-              command: hook.command
-                .split('var e=process.env.CLAUDE_PLUGIN_ROOT;')
-                .join(`var e=${rootExpression};`),
+              command: resolveCommand(hook.command),
             }
             : {}),
         })),
@@ -333,139 +387,6 @@ function assertSettingsSnapshotUnchanged(settingsPath, snapshot) {
   }
 }
 
-function createSettingsLock(lockPath) {
-  const tempPath = `${lockPath}.create-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
-  let descriptor;
-  let ownedStats;
-  try {
-    descriptor = fs.openSync(tempPath, 'wx', 0o600);
-    fs.writeFileSync(descriptor, `${JSON.stringify({
-      pid: process.pid,
-      startedAt: new Date().toISOString(),
-      token: crypto.randomBytes(16).toString('hex'),
-    })}\n`);
-    fs.fsyncSync(descriptor);
-    ownedStats = fs.fstatSync(descriptor, { bigint: true });
-    fs.closeSync(descriptor);
-    descriptor = undefined;
-    fs.linkSync(tempPath, lockPath);
-  } catch (error) {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-    fs.rmSync(tempPath, { force: true });
-    throw error;
-  }
-  fs.rmSync(tempPath, { force: true });
-
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    const quarantinePath = `${lockPath}.release-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
-    fs.renameSync(lockPath, quarantinePath);
-    const quarantinedStats = fs.lstatSync(quarantinePath, { bigint: true });
-    if (!sameFileIdentity(quarantinedStats, ownedStats)) {
-      if (!fs.existsSync(lockPath)) fs.renameSync(quarantinePath, lockPath);
-      throw new Error(`Refusing to release a changed Claude settings lock: ${lockPath}`);
-    }
-    fs.rmSync(quarantinePath, { force: true });
-  };
-}
-
-function sameFileIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
-}
-
-function inspectSettingsLock(lockPath) {
-  const descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
-  try {
-    const stats = fs.fstatSync(descriptor, { bigint: true });
-    const pathStats = fs.lstatSync(lockPath, { bigint: true });
-    if (
-      !stats.isFile()
-      || pathStats.isSymbolicLink()
-      || !pathStats.isFile()
-      || !sameFileIdentity(stats, pathStats)
-    ) {
-      return { metadata: null, stats };
-    }
-    let metadata = null;
-    try {
-      metadata = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
-    } catch (_error) {
-      // Invalid locks may be recovered only after the bounded lease below.
-    }
-    return { metadata, stats };
-  } finally {
-    fs.closeSync(descriptor);
-  }
-}
-
-function processIsAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code !== 'ESRCH';
-  }
-}
-
-function recoverSettingsLock(lockPath) {
-  const recoveryPath = `${lockPath}.recover`;
-  try {
-    fs.mkdirSync(recoveryPath, { mode: 0o700 });
-  } catch (error) {
-    if (error && error.code === 'EEXIST') return null;
-    throw error;
-  }
-
-  const quarantinePath = `${lockPath}.stale-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
-  try {
-    let inspected;
-    try {
-      inspected = inspectSettingsLock(lockPath);
-    } catch (error) {
-      if (error && error.code === 'ENOENT') return createSettingsLock(lockPath);
-      throw error;
-    }
-    const validOwner = Number.isSafeInteger(inspected.metadata && inspected.metadata.pid)
-      && inspected.metadata.pid > 0;
-    const stale = validOwner
-      ? !processIsAlive(inspected.metadata.pid)
-      : Date.now() - Number(inspected.stats.mtimeMs) >= INVALID_LOCK_STALE_MS;
-    if (!stale) return null;
-
-    fs.renameSync(lockPath, quarantinePath);
-    const quarantinedStats = fs.lstatSync(quarantinePath, { bigint: true });
-    if (!sameFileIdentity(quarantinedStats, inspected.stats)) {
-      if (!fs.existsSync(lockPath)) fs.renameSync(quarantinePath, lockPath);
-      return null;
-    }
-    fs.rmSync(quarantinePath, { force: true });
-    return createSettingsLock(lockPath);
-  } finally {
-    fs.rmSync(recoveryPath, { recursive: true, force: true });
-    fs.rmSync(quarantinePath, { force: true });
-  }
-}
-
-function acquireSettingsLock(settingsPath) {
-  const lockPath = `${settingsPath}.ecc.lock`;
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  try {
-    return createSettingsLock(lockPath);
-  } catch (error) {
-    if (!error || error.code !== 'EEXIST') {
-      throw error;
-    }
-  }
-  const recovered = recoverSettingsLock(lockPath);
-  if (recovered) return recovered;
-  throw new Error(
-    `Another ECC process is updating Claude settings: ${settingsPath}. `
-    + `If no ECC process is active, inspect and remove ${lockPath}.`
-  );
-}
-
 function updateSettingsAtomic(settingsPath, transform, options = {}) {
   const update = () => {
     const maxAttempts = options.maxAttempts || 3;
@@ -492,12 +413,7 @@ function updateSettingsAtomic(settingsPath, transform, options = {}) {
   if (options.lockHeld) {
     return update();
   }
-  const releaseLock = acquireSettingsLock(settingsPath);
-  try {
-    return update();
-  } finally {
-    releaseLock();
-  }
+  return runWithSettingsLock(settingsPath, update);
 }
 
 function reference(event, id) {
@@ -534,7 +450,7 @@ function mergeManagedHooks(settings, managedHooks, options = {}) {
   const previousHooks = options.previousManagedHooks === undefined
     || options.previousManagedHooks === null
     ? null
-    : validateManagedHooks(options.previousManagedHooks, 'previous managed hooks');
+    : validateRecordedManagedHooks(options.previousManagedHooks, 'previous managed hooks');
   const repair = options.mode === 'repair' || options.repair === true;
   if (options.mode !== undefined && options.mode !== 'merge' && options.mode !== 'repair') {
     throw new Error(`Unknown Claude settings merge mode: ${options.mode}`);
@@ -677,7 +593,7 @@ function withoutProperty(object, omittedKey) {
 
 function uninstallManagedHooks(settings, recordedManagedHooks) {
   const validatedSettings = validateSettings(settings);
-  const recordedHooks = validateManagedHooks(recordedManagedHooks, 'recorded managed hooks');
+  const recordedHooks = validateRecordedManagedHooks(recordedManagedHooks);
   const currentHooks = validatedSettings.hooks || {};
 
   for (const [event, recordedEntries] of Object.entries(recordedHooks)) {
@@ -735,7 +651,11 @@ function uninstallManagedHooks(settings, recordedManagedHooks) {
 }
 
 module.exports = {
+  CLAUDE_HOOKS_CONFIG_PATH,
+  CLAUDE_SETTINGS_FILENAME,
   acquireSettingsLock,
+  assertClaudeSettingsPath,
+  getClaudeSettingsPath,
   inspectManagedHooks,
   materializeManagedHooks,
   mergeManagedHooks,
@@ -743,8 +663,10 @@ module.exports = {
   readSettings,
   repairManagedHooks,
   replacePluginRootPlaceholders,
+  runWithSettingsLock,
   updateSettingsAtomic,
   uninstallManagedHooks,
   validateManagedHooks,
+  validateRecordedManagedHooks,
   validateSettings,
 };

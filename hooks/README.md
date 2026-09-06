@@ -37,7 +37,7 @@ That installs the hook scripts under `~/.claude/` and registers the resolved
 hook entries in `~/.claude/settings.json`. Existing user settings and hook
 entries are preserved, while ECC-owned entries are tracked by stable ID for
 idempotent updates and safe uninstall. On Windows, the Claude config root is
-`%USERPROFILE%\\.claude`.
+`%USERPROFILE%\.claude`.
 
 ### PreToolUse Hooks
 

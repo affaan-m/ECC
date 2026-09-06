@@ -207,7 +207,7 @@ function validateHooks() {
           console.error(`ERROR: ${matcherLabel} has invalid 'matcher' field`);
           hasErrors = true;
         }
-        if (!matcher.hooks || !Array.isArray(matcher.hooks)) {
+        if (!matcher.hooks || !Array.isArray(matcher.hooks) || matcher.hooks.length === 0) {
           console.error(`ERROR: ${matcherLabel} missing 'hooks' array`);
           hasErrors = true;
         } else {

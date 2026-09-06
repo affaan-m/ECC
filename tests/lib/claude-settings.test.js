@@ -10,6 +10,8 @@ const os = require('os');
 const path = require('path');
 
 const {
+  runWithSettingsLock,
+  materializeManagedHooks,
   inspectManagedHooks,
   mergeManagedHooks,
   parseSettings,
@@ -78,15 +80,49 @@ function runTests() {
       { BogusEvent: [entry('bad:event', 'bad')] },
       { SessionStart: [{ id: 'missing:hooks', matcher: '.*' }] },
       { SessionStart: [{ id: 'bad:command', matcher: '.*', hooks: [{ type: 'command' }] }] },
-      {
-        SessionStart: [{ id: 'shared' }],
-        Stop: [{ id: 'shared' }],
-      },
     ];
 
     for (const invalid of invalidValues) {
       assert.throws(() => validateManagedHooks(invalid), /managed hooks|hook entry|unique id/i);
     }
+    assert.throws(
+      () => validateManagedHooks({
+        Stop: [entry('shared', 'a')],
+        SubagentStop: [entry('shared', 'b')],
+      }),
+      /expected globally unique id "shared"/
+    );
+  })) passed++; else failed++;
+
+  if (test('materializes hook roots and rejects unresolved environment references', () => {
+    const source = {
+      hooks: {
+        Stop: [entry(
+          'ecc:stop',
+          'var e=process.env.CLAUDE_PLUGIN_ROOT; '
+            + 'process.env.CLAUDE_PLUGIN_ROOT=r; ${CLAUDE_PLUGIN_ROOT}'
+        )],
+      },
+    };
+    const before = clone(source);
+    const materialized = materializeManagedHooks(source, '/opt/ecc');
+    const command = materialized.Stop[0].hooks[0].command;
+    const encodedRoot = command.match(/Buffer\.from\('([^']+)','base64'\)/)[1];
+
+    assert.deepStrictEqual(source, before);
+    assert.ok(!command.includes('var e=process.env.CLAUDE_PLUGIN_ROOT;'));
+    assert.ok(!command.includes('${CLAUDE_PLUGIN_ROOT}'));
+    assert.strictEqual(Buffer.from(encodedRoot, 'base64').toString('utf8'), '/opt/ecc');
+    assert.throws(() => materializeManagedHooks({}, '/opt/ecc'), /hooks object/);
+    assert.throws(() => materializeManagedHooks(source, ''), /target root/);
+    assert.throws(
+      () => materializeManagedHooks({
+        hooks: {
+          Stop: [entry('ecc:stop', 'node -e "const e=process.env.CLAUDE_PLUGIN_ROOT"')],
+        },
+      }, '/opt/ecc'),
+      /Unable to resolve CLAUDE_PLUGIN_ROOT/
+    );
   })) passed++; else failed++;
 
   if (test('replaces every plugin-root placeholder recursively and immutably', () => {
@@ -229,6 +265,71 @@ function runTests() {
         outer: true,
       });
       assert.ok(!fs.existsSync(lockPath));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates honor an already-held lock', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-lock-held-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    try {
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+      updateSettingsAtomic(
+        settingsPath,
+        settings => ({ settings: { ...settings, held: true } }),
+        { lockHeld: true }
+      );
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), { held: true });
+      assert.ok(fs.existsSync(lockPath));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('settings lock release failures do not replace the primary update error', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-release-error-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const lockPath = `${settingsPath}.ecc.lock`;
+    try {
+      let caught;
+      try {
+        runWithSettingsLock(settingsPath, () => {
+          fs.rmSync(lockPath, { force: true });
+          throw new Error('primary settings failure');
+        });
+      } catch (error) {
+        caught = error;
+      }
+      assert.ok(caught);
+      assert.strictEqual(caught.message, 'primary settings failure');
+      assert.ok(caught.releaseError);
+      assert.strictEqual(caught.releaseError.code, 'ENOENT');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates refuse a symlinked destination', () => {
+    if (process.platform === 'win32') {
+      console.log('    (file symlink support is environment-dependent on Windows; skipping)');
+      return;
+    }
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-symlink-'));
+    const realPath = path.join(tempDir, 'real.json');
+    const settingsPath = path.join(tempDir, 'settings.json');
+    try {
+      fs.writeFileSync(realPath, '{"theme":"dark"}\n', { mode: 0o600 });
+      fs.symlinkSync(realPath, settingsPath);
+      assert.throws(
+        () => updateSettingsAtomic(
+          settingsPath,
+          settings => ({ settings: { ...settings, managed: true } })
+        ),
+        error => error.code === 'ELOOP' || error.code === 'ECC_SETTINGS_CHANGED'
+      );
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(realPath, 'utf8')), { theme: 'dark' });
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -538,6 +639,19 @@ function runTests() {
     assert.deepStrictEqual(result.settings, { theme: 'dark' });
     assert.deepStrictEqual(result.removed, [{ event: 'Stop', id: 'ecc:stop' }]);
     assert.deepStrictEqual(result.retained, []);
+  })) passed++; else failed++;
+
+  if (test('uninstall accepts structurally valid hooks from an older runtime contract', () => {
+    const recorded = {
+      LegacyEvent: [{
+        id: 'ecc:legacy',
+        hooks: [{ type: 'legacy-handler', payload: { version: 1 } }],
+      }],
+    };
+    const result = uninstallManagedHooks({ hooks: clone(recorded) }, recorded);
+
+    assert.deepStrictEqual(result.settings, {});
+    assert.deepStrictEqual(result.removed, [{ event: 'LegacyEvent', id: 'ecc:legacy' }]);
   })) passed++; else failed++;
 
   if (test('all settings transforms reject non-array hook events before changing data', () => {

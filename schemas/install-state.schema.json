@@ -218,26 +218,8 @@
             "type": "object",
             "minProperties": 1,
             "propertyNames": {
-              "enum": [
-                "SessionStart",
-                "UserPromptSubmit",
-                "PreToolUse",
-                "PermissionRequest",
-                "PostToolUse",
-                "PostToolUseFailure",
-                "Notification",
-                "SubagentStart",
-                "Stop",
-                "SubagentStop",
-                "PreCompact",
-                "InstructionsLoaded",
-                "TeammateIdle",
-                "TaskCompleted",
-                "ConfigChange",
-                "WorktreeCreate",
-                "WorktreeRemove",
-                "SessionEnd"
-              ]
+              "type": "string",
+              "pattern": "\\S"
             },
             "additionalProperties": {
               "type": "array",

@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 
 const {
@@ -6,42 +5,10 @@ const {
   createRemappedOperation,
   isForeignPlatformPath,
   normalizeRelativePath,
+  planClaudeHooksOperations,
 } = require('./helpers');
 
 const CLAUDE_ECC_NAMESPACE = 'ecc';
-const CLAUDE_HOOKS_CONFIG_PATH = 'hooks/hooks.json';
-
-function planClaudeHooksOperations(adapter, module, input) {
-  const sourceHooksRoot = path.join(input.repoRoot || '', 'hooks');
-  const operations = [
-    createRemappedOperation(
-      adapter,
-      module.id,
-      CLAUDE_HOOKS_CONFIG_PATH,
-      path.join(adapter.resolveRoot(input), 'settings.json'),
-      {
-        kind: 'update-claude-settings',
-        strategy: 'merge-hook-ids',
-      }
-    ),
-  ];
-
-  if (!input.repoRoot || !fs.existsSync(sourceHooksRoot)) {
-    return operations;
-  }
-
-  return [
-    ...operations,
-    ...fs.readdirSync(sourceHooksRoot, { withFileTypes: true })
-      .filter(entry => entry.name !== 'hooks.json')
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .map(entry => adapter.createScaffoldOperation(
-        module.id,
-        path.join('hooks', entry.name),
-        input
-      )),
-  ];
-}
 
 function getClaudeManagedDestinationPath(adapter, sourceRelativePath, input) {
   const normalizedSourcePath = normalizeRelativePath(sourceRelativePath);

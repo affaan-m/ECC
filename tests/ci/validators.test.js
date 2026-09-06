@@ -2694,6 +2694,37 @@ function runTests() {
     cleanupTestDir(testDir);
   })) passed++; else failed++;
 
+  if (test('rejects wrapped matcher entry missing a required matcher', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      hooks: {
+        SessionStart: [{
+          id: 'test:missing-matcher',
+          hooks: [{ type: 'command', command: 'echo start' }]
+        }]
+      }
+    }));
+
+    const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1);
+    assert.ok(result.stderr.includes('matcher'), result.stderr);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
+  if (test('rejects wrapped matcher entry with an empty handlers array', () => {
+    const testDir = createTestDir();
+    const hooksFile = path.join(testDir, 'hooks.json');
+    fs.writeFileSync(hooksFile, JSON.stringify({
+      hooks: { Stop: [{ id: 'test:empty-handlers', hooks: [] }] }
+    }));
+
+    const result = runValidatorWithDir('validate-hooks', 'HOOKS_FILE', hooksFile);
+    assert.strictEqual(result.code, 1);
+    assert.ok(result.stderr.includes('hooks'), result.stderr);
+    cleanupTestDir(testDir);
+  })) passed++; else failed++;
+
   if (test('rejects wrapped matcher entry with whitespace-only id', () => {
     const testDir = createTestDir();
     const hooksFile = path.join(testDir, 'hooks.json');

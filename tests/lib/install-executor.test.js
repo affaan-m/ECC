@@ -182,14 +182,7 @@ function runTests() {
         target: 'claude',
         moduleIds: ['hooks-runtime'],
       });
-      const plan = {
-        ...rawPlan,
-        hookConsent: 'enabled',
-        statePreview: {
-          ...rawPlan.statePreview,
-          request: { ...rawPlan.statePreview.request, hookConsent: 'enabled' },
-        },
-      };
+      const plan = withHookConsent(rawPlan, 'enabled');
       const settingsPath = path.join(homeDir, '.claude', 'settings.json');
 
       applyInstallPlanDirect(plan, {
@@ -584,14 +577,7 @@ function runTests() {
         target: 'claude',
         moduleIds: ['hooks-runtime'],
       });
-      const plan = {
-        ...rawPlan,
-        hookConsent: 'enabled',
-        statePreview: {
-          ...rawPlan.statePreview,
-          request: { ...rawPlan.statePreview.request, hookConsent: 'enabled' },
-        },
-      };
+      const plan = withHookConsent(rawPlan, 'enabled');
       const settingsPath = path.join(homeDir, '.claude', 'settings.json');
       let settingsCommitCount = 0;
       fs.renameSync = function failAttributionCommit(sourcePath, destinationPath) {

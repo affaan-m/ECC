@@ -23,7 +23,10 @@ const {
   readInstallState,
   writeInstallState,
 } = require('../../scripts/lib/install-state');
-const { materializeManagedHooks } = require('../../scripts/lib/install/claude-settings');
+const {
+  assertClaudeSettingsPath,
+  materializeManagedHooks,
+} = require('../../scripts/lib/install/claude-settings');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CURRENT_PACKAGE_VERSION = JSON.parse(
@@ -3479,7 +3482,10 @@ function runTests() {
   })) passed++; else failed++;
 
   if (test('repair creates missing Claude settings with private permissions', () => {
-    if (process.platform === 'win32') return;
+    if (process.platform === 'win32') {
+      console.log('    (POSIX file modes unsupported on this platform; skipping)');
+      return;
+    }
     const homeDir = createTempDir('install-lifecycle-claude-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
 
@@ -3710,7 +3716,6 @@ function runTests() {
       assert.strictEqual(doctor.results[0].status, 'error');
       assert.ok(doctor.results[0].issues.some(issue => (
         issue.code === 'unsafe-managed-destination'
-        || issue.code === 'invalid-install-state'
       )));
       assert.strictEqual(repair.results[0].status, 'error');
       assert.match(repair.results[0].error, /final symlink/);
@@ -3726,24 +3731,17 @@ function runTests() {
     }
   })) passed++; else failed++;
 
-  if (test('Claude settings lifecycle refuses a non-canonical settings destination', () => {
+  if (test('Claude settings path validation refuses a non-canonical destination', () => {
     const homeDir = createTempDir('install-lifecycle-claude-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');
 
     try {
       const targetRoot = path.join(homeDir, '.claude');
       const destinationPath = path.join(targetRoot, 'settings.local.json');
-      const managedHooks = currentManagedHooks(targetRoot);
       fs.mkdirSync(targetRoot, { recursive: true });
       assert.throws(
-        () => writeClaudeState(homeDir, {
-          operations: [
-            managedOperation('update-claude-settings', destinationPath, {
-              managedHooks,
-            }),
-          ],
-        }),
-        /canonical Claude settings path/
+        () => assertClaudeSettingsPath(destinationPath, targetRoot),
+        /outside the canonical settings file/
       );
       assert.ok(!fs.existsSync(destinationPath));
     } finally {

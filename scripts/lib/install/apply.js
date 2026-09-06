@@ -11,12 +11,14 @@ const {
 const { readInstallState, writeInstallState } = require('../install-state');
 const { assertHookConsentReady, planMaterializesHookRuntime } = require('./hook-consent');
 const {
-  acquireSettingsLock,
+  getClaudeSettingsPath,
   mergeManagedHooks,
   readSettings,
+  runWithSettingsLock,
   uninstallManagedHooks,
   updateSettingsAtomic,
   validateManagedHooks,
+  validateRecordedManagedHooks,
 } = require('./claude-settings');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
@@ -293,13 +295,13 @@ function findPreviousManagedHooks(previousState, plan, operation) {
 
   const previousOperation = (previousState.operations || []).find(candidate => (
     candidate.kind === operation.kind
-    && candidate.destinationPath === operation.destinationPath
+    && comparablePath(candidate.destinationPath) === comparablePath(operation.destinationPath)
   ));
   if (!previousOperation || !previousOperation.managedHooks) {
     return null;
   }
 
-  return validateManagedHooks(
+  return validateRecordedManagedHooks(
     previousOperation.managedHooks,
     'previous managed hooks'
   );
@@ -421,19 +423,17 @@ function applyInstallPlan(plan, dependencies = {}) {
   const isClaudeManualTarget = plan.adapter
     && (plan.adapter.target === 'claude' || plan.adapter.target === 'claude-project');
   const settingsPathToLock = isClaudeManualTarget
-    ? path.join(plan.targetRoot, 'settings.json')
+    ? getClaudeSettingsPath(plan.targetRoot)
     : null;
   if (settingsPathToLock) {
     assertSafeInstallOperation(plan, { destinationPath: settingsPathToLock });
   }
-  const releaseSettingsLock = settingsPathToLock
-    ? acquireSettingsLock(settingsPathToLock)
-    : null;
-  try {
-    return applyInstallPlanLocked(plan, dependencies, Boolean(releaseSettingsLock));
-  } finally {
-    if (releaseSettingsLock) releaseSettingsLock();
-  }
+  return settingsPathToLock
+    ? runWithSettingsLock(
+      settingsPathToLock,
+      () => applyInstallPlanLocked(plan, dependencies, true)
+    )
+    : applyInstallPlanLocked(plan, dependencies, false);
 }
 
 function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = false) {
@@ -581,7 +581,7 @@ function applyInstallPlanLocked(plan, dependencies = {}, settingsLockHeld = fals
 
       if (shouldSetClaudeCommitAttributionPreference(appliedPlan)) {
         writeClaudeCommitAttributionPreference(
-          path.join(plan.targetRoot, 'settings.json'),
+          getClaudeSettingsPath(plan.targetRoot),
           { lockHeld: settingsLockHeld }
         );
       }

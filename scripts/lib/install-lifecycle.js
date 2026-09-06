@@ -3,6 +3,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
+const { isDeepStrictEqual } = require('util');
 
 const { loadInstallManifests } = require('./install-manifests');
 const { readInstallState, validateInstallState } = require('./install-state');
@@ -22,6 +23,8 @@ const {
 } = require('./install/opencode-legacy-migration');
 const {
   acquireSettingsLock,
+  assertClaudeSettingsPath,
+  getClaudeSettingsPath,
   inspectManagedHooks,
   materializeManagedHooks,
   repairManagedHooks,
@@ -532,22 +535,11 @@ function readJsonNoFollow(filePath) {
   return JSON.parse(readFileNoFollow(filePath, 'utf8'));
 }
 
-function expectedClaudeSettingsPath(targetRoot) {
-  return path.join(targetRoot, 'settings.json');
-}
-
 function assertClaudeSettingsDestination(operation, trustedRoot, target = null) {
   if (target && target !== 'claude' && target !== 'claude-project') {
     throw new Error('Refusing to manage Claude hooks for a non-Claude target.');
   }
-  if (path.resolve(operation.destinationPath) !== path.resolve(
-    expectedClaudeSettingsPath(trustedRoot)
-  )) {
-    throw new Error(
-      `Refusing to manage Claude hooks outside the canonical settings file: `
-      + `${operation.destinationPath}`
-    );
-  }
+  assertClaudeSettingsPath(operation.destinationPath, trustedRoot);
 }
 
 function writeContainedFile(destinationPath, content, trustedRoot, action, mode) {
@@ -714,7 +706,7 @@ function deepRemoveJsonSubset(currentValue, managedValue) {
   return currentValue === managedValue ? JSON_REMOVE_SENTINEL : currentValue;
 }
 
-function hydrateRecordedOperations(repoRoot, operations) {
+function hydrateRecordedOperations(repoRoot, operations, trustedRoot) {
   return operations.map(operation => {
     if (operation.kind === 'update-claude-settings') {
       const sourcePath = resolveOperationSourcePath(repoRoot, operation);
@@ -729,7 +721,7 @@ function hydrateRecordedOperations(repoRoot, operations) {
         previousManagedHooks: operation.managedHooks,
         managedHooks: materializeManagedHooks(
           readJsonNoFollow(sourcePath),
-          path.dirname(operation.destinationPath)
+          trustedRoot
         ),
       };
     }
@@ -1357,12 +1349,6 @@ function summarizeManagedOperationHealth(repoRoot, trustedRoot, operations, targ
   );
 }
 
-function hookRepairOperations(operationHealth) {
-  return operationHealth.drifted
-    .filter(entry => entry.operation.kind === 'update-claude-settings')
-    .map(entry => ({ ...entry.operation }));
-}
-
 function getUnsafeManagedDestinationError(operationHealth) {
   const hasFinalSymlink = operationHealth.unsafeDestination.some(
     inspection => inspection.reason === 'final-symlink'
@@ -1806,7 +1792,11 @@ function createRepairPlanFromRecord(record, context, options = {}) {
     record.legacyLayout !== 'opencode'
     && (state.request.legacyMode || shouldRepairFromRecordedOperations(state))
   ) {
-    const operations = hydrateRecordedOperations(context.repoRoot, getManagedOperations(state));
+    const operations = hydrateRecordedOperations(
+      context.repoRoot,
+      getManagedOperations(state),
+      record.targetRoot
+    );
     const statePreview = buildRecordedStatePreview(state, context, operations);
 
     return {
@@ -1951,15 +1941,14 @@ function repairInstalledStates(options = {}) {
 
     let releaseSettingsLock = null;
     try {
-      if (
-        !options.dryRun
+      const settingsPathToLock = !options.dryRun
         && getManagedOperations(record.state || {}).some(
           operation => operation.kind === 'update-claude-settings'
         )
-      ) {
-        releaseSettingsLock = acquireSettingsLock(
-          path.join(record.targetRoot, 'settings.json')
-        );
+        ? getClaudeSettingsPath(record.targetRoot)
+        : null;
+      if (settingsPathToLock) {
+        releaseSettingsLock = acquireSettingsLock(settingsPathToLock);
       }
       const needsOpencodeBuild = record.adapter.target === 'opencode'
         && hasOpencodeBuildError(getOpencodeBuildValidationIssues(context));
@@ -2107,16 +2096,13 @@ function repairInstalledStates(options = {}) {
       const repairOperations = [
         ...operationHealth.missing.map(entry => ({ ...entry.operation })),
         ...operationHealth.drifted.map(entry => ({ ...entry.operation })),
-        ...hookRepairOperations({
-          drifted: desiredPlan.operations
-            .filter(operation => (
-              operation.kind === 'update-claude-settings'
-              && operation.previousManagedHooks
-              && JSON.stringify(operation.previousManagedHooks)
-                !== JSON.stringify(operation.managedHooks)
-            ))
-            .map(operation => ({ operation })),
-        }),
+        ...desiredPlan.operations
+          .filter(operation => (
+            operation.kind === 'update-claude-settings'
+            && operation.previousManagedHooks
+            && !isDeepStrictEqual(operation.previousManagedHooks, operation.managedHooks)
+          ))
+          .map(operation => ({ ...operation })),
       ].filter((operation, index, items) => items.findIndex(candidate => (
         candidate.kind === operation.kind
         && candidate.destinationPath === operation.destinationPath
@@ -2333,7 +2319,7 @@ function uninstallInstalledStates(options = {}) {
       const operations = getManagedOperations(state);
       if (operations.some(operation => operation.kind === 'update-claude-settings')) {
         releaseSettingsLock = acquireSettingsLock(
-          path.join(record.targetRoot, 'settings.json')
+          getClaudeSettingsPath(record.targetRoot)
         );
       }
 

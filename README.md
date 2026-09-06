@@ -562,7 +562,7 @@ and safe uninstall.
 
 If you installed ECC via `/plugin install`, do not copy those hooks into `settings.json`. Claude Code v2.1+ already auto-loads plugin `hooks/hooks.json`, and duplicating them in `settings.json` causes duplicate execution and cross-platform hook conflicts.
 
-On Windows, Claude's config root is `%USERPROFILE%\\.claude`; install the hook runtime with:
+On Windows, Claude's config root is `%USERPROFILE%\.claude`; install the hook runtime with:
 
 ```powershell
 pwsh -File .\install.ps1 --target claude --modules hooks-runtime --enable-hooks
