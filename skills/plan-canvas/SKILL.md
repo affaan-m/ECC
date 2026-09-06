@@ -4,6 +4,8 @@ description: Open plans and HTML artifacts in a local browser canvas where the h
 metadata:
   version: "1.0.0"
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Plan Canvas

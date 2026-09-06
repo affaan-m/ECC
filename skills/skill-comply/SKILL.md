@@ -4,6 +4,8 @@ description: Visualize whether skills, rules, and agent definitions are actually
 metadata:
   origin: ECC
 tools: Read, Bash
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # skill-comply: Automated Compliance Measurement

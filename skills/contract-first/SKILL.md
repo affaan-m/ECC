@@ -3,6 +3,8 @@ name: contract-first
 description: Use when multiple consumers and providers must evolve an API or event schema without field drift, integration surprises, or one side silently redefining the interface.
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Contract-First Collaboration

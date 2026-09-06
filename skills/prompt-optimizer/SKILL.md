@@ -16,6 +16,8 @@ metadata:
   origin: community
   author: YannJY02
   version: "1.0.0"
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Prompt Optimizer

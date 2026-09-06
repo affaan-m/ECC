@@ -4,6 +4,8 @@ description: Formal evaluation framework for Claude Code sessions implementing e
 metadata:
   origin: ECC
 tools: Read, Write, Edit, Bash, Grep, Glob
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Eval Harness Skill

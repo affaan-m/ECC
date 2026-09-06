@@ -433,7 +433,7 @@ function runTests() {
       .split('\n')
       .filter(line => /^[a-z][a-z-]*:/.test(line))
       .map(line => line.split(':')[0]);
-    assert.deepStrictEqual(frontmatterKeys, ['name', 'description']);
+    assert.deepStrictEqual(frontmatterKeys, ['name', 'description', 'license', 'compatibility']);
     assert.match(frontmatter, /executable.*argument array/i);
     assert.match(frontmatter, /visible terminal/i);
     assert.match(skill, /shell:\s*false/);

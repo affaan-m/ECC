@@ -2,6 +2,8 @@
 name: agent-self-evaluation
 description: Use after completing any non-trivial task. The agent self-rates its output on 5 axes — accuracy, completeness, clarity, actionability, conciseness — with concrete evidence per criterion. Produces a structured 1-5 scorecard with specific improvement suggestions.
 origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Agent Self-Evaluation

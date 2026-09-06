@@ -4,6 +4,8 @@ description: Full-stack diagnostic for agent and LLM applications. Audits the 12
 metadata:
   origin: oh-my-agent-check
 tools: Read, Write, Edit, Bash, Grep, Glob
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Agent Architecture Audit

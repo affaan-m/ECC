@@ -4,6 +4,8 @@ description: Design, implement, and audit inclusive digital products using WCAG 
   standards. Use this skill to generate semantic ARIA for Web and accessibility traits for Web and Native platforms (iOS/Android).
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Accessibility (WCAG 2.2)

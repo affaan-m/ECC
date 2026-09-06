@@ -3,6 +3,8 @@ name: ralphinho-rfc-pipeline
 description: RFC-driven multi-agent DAG execution pattern with quality gates, merge queues, and work unit orchestration. Use when running RFC-driven multi-agent execution with quality gates and a merge queue.
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Ralphinho RFC Pipeline

@@ -3,6 +3,8 @@ name: laravel-tdd
 description: Laravel testing strategies with PHPUnit, Pest, model factories, HTTP tests, Sanctum authentication testing, mocking, and coverage. Use when writing Laravel tests with PHPUnit or Pest, or driving a Laravel feature test-first.
 metadata:
   origin: ECC
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # Laravel Testing with TDD

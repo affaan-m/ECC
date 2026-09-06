@@ -3,6 +3,8 @@ name: repo-scan
 description: Bootstrap pointer that installs the external repo-scan skill from a pinned, reviewable commit. Use when repo-scan must be installed before running its cross-stack source-code asset audit; this ECC pointer does not perform the audit itself.
 metadata:
   origin: community
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # repo-scan

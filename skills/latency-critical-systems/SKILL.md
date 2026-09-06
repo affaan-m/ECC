@@ -5,6 +5,7 @@ license: MIT
 metadata:
   origin: ECC
 tools: Read, Write, Edit, Bash, Grep, Glob
+compatibility: [claude-code, codex]
 ---
 
 # Latency Critical Systems

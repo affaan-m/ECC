@@ -4,6 +4,7 @@ description: "A comprehensive verification system for Claude Code sessions. Use 
 license: MIT
 metadata:
   origin: ECC
+compatibility: [claude-code, codex]
 ---
 
 # Verification Loop Skill

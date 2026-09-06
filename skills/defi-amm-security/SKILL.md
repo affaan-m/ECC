@@ -4,6 +4,8 @@ description: Security checklist for Solidity AMM contracts, liquidity pools, and
 metadata:
   version: "1.0.0"
   origin: ECC direct-port adaptation
+license: MIT
+compatibility: [claude-code, codex]
 ---
 
 # DeFi AMM Security
