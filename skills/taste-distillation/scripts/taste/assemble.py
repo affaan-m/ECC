@@ -162,7 +162,9 @@ def overlay(
     )
     _run([
         "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
-        "-i", str(clip), "-i", str(image), "-filter_complex", fc,
+        # Keep the still alive until the video ends; shortest=1 otherwise
+        # terminates every shot after the image's single decoded frame.
+        "-i", str(clip), "-loop", "1", "-i", str(image), "-filter_complex", fc,
         "-c:v", "libx264", "-crf", "14", "-preset", "veryfast",
         "-pix_fmt", "yuv420p", "-an", str(dst),
     ])

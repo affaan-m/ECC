@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import math
 import tempfile
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -223,13 +222,12 @@ def forge(
                 rot = 0.0 if wash else float(rng.uniform(-0.6, 0.6))
                 opa = overlay_opacity * (0.75 if wash else 1.25)
                 dst = work_dir / f"ov_{i:03d}.mp4"
-                try:
-                    stamped.append(asm.overlay(
-                        clip, plate, dst, opacity=min(0.95, opa), scale=sc,
-                        position=pos, rotate=rot, width=W, height=H))
-                    continue
-                except RuntimeError as exc:
-                    print(f"      !! overlay failed on shot {i}: {str(exc)[:80]}", file=sys.stderr)
+                # Requested overlays are part of the output contract. A failed
+                # composite must not produce a successful, unstamped handoff.
+                stamped.append(asm.overlay(
+                    clip, plate, dst, opacity=min(0.95, opa), scale=sc,
+                    position=pos, rotate=rot, width=W, height=H))
+                continue
             stamped.append(clip)
         order = stamped
 
