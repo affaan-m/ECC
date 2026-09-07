@@ -8,7 +8,10 @@ const { loadInstallManifests } = require('./install-manifests');
 const { readInstallState, validateInstallState } = require('./install-state');
 const { assertWithinTrustedRoot } = require('./path-safety');
 const { createInstallPlanFromRequest } = require('./install/runtime');
-const { getRecordedHookConsent } = require('./install/hook-consent');
+const {
+  disableOpenCodeHookPluginRegistration,
+  getRecordedHookConsent,
+} = require('./install/hook-consent');
 const {
   prepareClaudeSkillMigration,
 } = require('./install/claude-skill-migration');
@@ -216,6 +219,9 @@ function transformCopyFileContent(operation, content) {
   }
   if (operation.contentTransform === 'antigravity-agent-frontmatter') {
     return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'opencode-disable-ecc-hooks') {
+    return disableOpenCodeHookPluginRegistration(content, operation.sourceRelativePath);
   }
   throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }

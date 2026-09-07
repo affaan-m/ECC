@@ -9,7 +9,11 @@ const {
   withCommitAttributionDisabled,
 } = require('../claude-commit-attribution');
 const { writeInstallState } = require('../install-state');
-const { assertHookConsentReady, planMaterializesHookRuntime } = require('./hook-consent');
+const {
+  assertHookConsentReady,
+  disableOpenCodeHookPluginRegistration,
+  planMaterializesHookRuntime,
+} = require('./hook-consent');
 const { filterMcpConfig, parseDisabledMcpServers } = require('../mcp-config');
 const { assertWithinTrustedRoot } = require('../path-safety');
 const {
@@ -32,6 +36,9 @@ function transformInstallContent(operation, content) {
   }
   if (operation.contentTransform === 'antigravity-agent-frontmatter') {
     return adaptAntigravityAgent(content, operation.sourceRelativePath);
+  }
+  if (operation.contentTransform === 'opencode-disable-ecc-hooks') {
+    return disableOpenCodeHookPluginRegistration(content, operation.sourceRelativePath);
   }
   throw new Error(`Unknown install content transform: ${operation.contentTransform}`);
 }
