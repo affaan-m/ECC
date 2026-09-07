@@ -324,6 +324,12 @@ identify the 5 most engaging 30-second clips for social media."
 5. **Generate selectively.** Only use AI generation for assets that don't exist, not for everything.
 6. **Taste is the last layer.** AI clears repetitive work. You make the final creative calls.
 
+## Native Fusion Presets
+
+[ITO Production v1](assets/fusion/ito-production-v1/README.md) provides restrained highlight bloom, opposing RGB spatial offsets and a luminance/edge halo. The exact files passed prior native import, save/reopen and short motion-render checks after two-source visual review. These are starting values requiring shot-specific review; the halo does not detect or track subjects.
+
+[ITO V28](assets/fusion/ito-v28/README.md) contains preserved, native-verified Fusion graph snippets and an idempotent Lua installer. These are technical compatibility examples, **not recommended production defaults**: their documented visual limitations require tuning and taste review before use. See the bundle provenance for the scope of prior import and render checks.
+
 ## Related Skills
 
 - `fal-ai-media` — AI image, video, and audio generation
