@@ -260,6 +260,7 @@ async function withClient(fn, options = {}) {
         { name, arguments: toolArguments }
       ),
       callToolRaw: params => request('tools/call', params),
+      ping: params => request('ping', params),
     };
     phase = 'callback';
     await Promise.race([Promise.resolve().then(() => fn(client, fixture)), transportFailure]);
@@ -390,6 +391,25 @@ async function main() {
         client.listToolsRaw({ unexpected: true }),
         /-32602/
       );
+    });
+  });
+
+  await test('accepts the reserved _meta param on ping and rejects malformed values (#2810)', async () => {
+    await withClient(async client => {
+      assert.deepStrictEqual(await client.ping({ _meta: { progressToken: 'progress-1' } }), {});
+      assert.deepStrictEqual(await client.ping(), {});
+      assert.deepStrictEqual(await client.ping({}), {});
+
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.ping({ _meta: badMeta }),
+          /-32602/,
+          `expected ping _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      await assert.rejects(client.ping({ unexpected: true }), /-32602/);
+      await assert.rejects(client.ping({ _meta: {}, unexpected: true }), /-32602/);
     });
   });
 
