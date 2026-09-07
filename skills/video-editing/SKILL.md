@@ -24,6 +24,26 @@ AI video editing is useful when you stop asking it to create the whole video and
 
 ## The Pipeline
 
+For measured reference-driven work, chain `taste-distillation` into
+`taste-application`, then return here for the editor and final-output review.
+The standalone taste skills can use existing footage; generation is optional.
+
+Before live editor or DAW changes, save a versioned project checkpoint and
+verify the file exists. Save and verify another checkpoint after the changes.
+An API readback proves the current in-memory state, not that it was saved.
+Keep rendered media, editable projects, and creative approval as separate
+states in the handoff.
+
+For MIDI-driven audio, check pitches against the receiving rack's note mapping
+and audition the result; successful clip creation can still produce silence.
+For reconstructed projects, validate through native load and save, sort events
+in timeline order, verify sample links and mute states, then check and audition
+the exact exported audio for unintended silence. XML parsing alone does not
+prove that the DAW accepted every clip or produced audible output.
+Check a bridge's capability handshake before invoking newer commands. Do not
+enable upload or training-data telemetry as a side effect of a creative task;
+use a supported local control path when consent or capability is absent.
+
 ```
 Screen Studio / raw footage
   → Claude / Codex

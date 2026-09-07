@@ -7,6 +7,13 @@ metadata:
 
 # TasteForge Video
 
+For the complete standalone creative pipeline, use `taste-distillation` then
+`taste-application`. Those ECC skills ship their Python scripts directly:
+measure references, generate or pass through existing takes, grade, cut,
+composite, verify, and hand off to Blender and Resolve. No separate video
+repository is required for that flow. This skill documents the separately
+maintained offline compatibility package and its strict evidence contract.
+
 TasteForge turns "make it feel like this reference" into a repeatable,
 inspectable workflow: interview taste, distill it into a structured style
 pack, validate the pack, apply its measured cadence and look to local media,
@@ -38,7 +45,7 @@ explains it and does not vendor or duplicate its code.
 
 ## Local Deterministic Operations vs Provider Generation
 
-This boundary is the core of the skill. Everything ECC can actually run is
+This boundary is the core of this compatibility skill. Its operations are
 **local, deterministic, and offline**:
 
 | Operation | Deterministic? | ECC may run |
@@ -55,7 +62,7 @@ This boundary is the core of the skill. Everything ECC can actually run is
 **Provider generation must fail closed in ECC.** Any live Fal (or other
 provider) call — generating shots, minting prop meshes, hosted VLM
 distillation — requires explicit separately authorized execution under a
-separate lane with its own review. ECC never calls Fal, never reads any API
+separate lane with its own review. In this compatibility lane, ECC never calls Fal, never reads any API
 key or other credentials (`FAL_KEY` included), uploads no media, and mutates
 no provider account state. When a request needs provider generation, state
 exactly that boundary, run the local half (interview, pack validation,
@@ -88,6 +95,38 @@ interpret their JSON — not to reimplement cadence planning, LUT/grade
 statistics, or timeline emission. If the canonical package is absent, say so
 and stop; do not reconstruct its logic inline.
 
+The `python3 -m tasteforge` compatibility CLI requires that separate local
+Python package. The standalone `taste-distillation` and `taste-application`
+scripts ship in ECC's opt-in media-generation module with their own Python
+requirements. Neither path requires publishing the user's repository or media.
+
+Before resuming a saved checkout, record its commit and inspect local branches
+and worktrees for later implementation fixes. Run the canonical package's tests
+and `python3 -m tasteforge apply --help`; ECC's text and fixture tests do not
+prove that the selected Python checkout implements this contract.
+
+## Chaining the Creative Skills
+
+| Stage | Owner | Reviewable result |
+|---|---|---|
+| Creative direction | `taste` | Named genres, reference observations, chosen look and avoid list |
+| Distillation and planning | `tasteforge-video` | Measured evidence, separate genre specs, dry-run manifests and cadence plan |
+| Editing and effects | `video-editing`, with the chosen renderer such as Remotion, Manim, or Fusion | Applied footage, actual tracks, editable effects and timeline |
+| Optional generated assets or voice | `fal-ai-media` or the selected audio workflow, under its own authorization | Provider receipt and inspected output |
+| Delivery | Editing workflow, then `content-engine` when requested | Reviewed exact export and distribution copy |
+
+Use only the stages the project needs. The `taste` skill's historical
+angelcore/cloud-trance palette and beat grammar are optional creative examples;
+they must not override the current brief or merge distinct numbered genres.
+Use each genre's actual references for its direction, including 3D Cyber Glitch
+and Fluid Sketch. TasteForge does not replace these skills or require every
+renderer. Keep 3D materials, geometry, wireframe behavior,
+motion, and composition explicit in the genre signature. A 3D request manifest
+is a plan for an asset; it is not a mesh. A subject-anchor descriptor names a
+tracking requirement; it is not evidence that a subject was detected or tracked.
+Inspect actual tracks, track-loss behavior, and rendered subject frames before
+claiming that CV effects have been applied reliably.
+
 ## Workflow
 
 1. **Interview** (`interview`): collect answers for the look axes — palette,
@@ -109,6 +148,30 @@ and stop; do not reconstruct its logic inline.
 6. **Audit** (`provenance`): report lineage — recovered-source digests,
    generation history, fixture provenance, provider references as
    pointer-only records.
+
+### Applying Real Footage Without Repeated Sources
+
+When the brief requires no repeated clips, use a canonical checkout supporting
+`apply --no-repeat --fps`, and set the output frame rate explicitly. If those
+flags are absent, report the implementation gap rather than silently using
+legacy round-robin selection. Strict mode uses each normalized source path at
+most once in manifest order and rejects insufficient or too-short sources.
+Prepare enough reviewed selects to fill the cadence plan. This is source-level
+uniqueness, not support for distinct in/out ranges from the same recording.
+
+The application report is a cut plan. It does not perform visual shot ranking,
+grade footage, apply a LUT, render overlays, or import a Resolve project.
+Keep the pack's measured reference cadence separate from the output frame rate.
+
+The export CLI expects `{"clips": [...]}`. Wrap the application's
+`timeline_events` under `clips` before exporting, and pass the same `--fps`
+used for application; export's default frame rate must not reconform the plan.
+Check the emitted event count, total frames, unique sources, and media linkage
+before handing the timeline to the editing workflow.
+When that workflow applies overlapping effects in an NLE, allocate compatible
+tracks and read back every requested start, end, and duration. A returned item
+or a successful append call alone does not prove that every scheduled effect
+was placed; reject missing, shifted, or truncated placements before rendering.
 
 ## File-Driven Multimodal Contract
 

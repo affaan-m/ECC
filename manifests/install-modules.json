@@ -715,7 +715,9 @@
         "skills/video-editing",
         "skills/videodb",
         "skills/taste",
-        "skills/tasteforge-video"
+        "skills/tasteforge-video",
+        "skills/taste-distillation",
+        "skills/taste-application"
       ],
       "targets": [
         "claude",
