@@ -150,7 +150,7 @@ with a +24.9 a\* cast. Grounded, it describes the cast correctly and infers the
 secondary accent independently.
 
 Ban hedging words (`varied`, `mixed`, `dynamic`, `some`, `often`, `neutral`,
-`or `) — a model cannot render "varied lighting". **Enforce the ban in code, not
+`or`) — a model cannot render "varied lighting". **Enforce the ban in code, not
 just in the prompt:** it was violated in roughly one run in three. Re-ask
 per-field, keep the least-hedged answer after N attempts rather than failing.
 
