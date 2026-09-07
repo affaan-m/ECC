@@ -186,7 +186,7 @@ test('rejects forged capability maps before routing', () => {
   );
 });
 
-test('hard backend constraints reject impossible local target claims', () => {
+test('Tier 0 defers every non-SRT backend even when it is reported available', () => {
   const manifest = validateManifest(buildManifest({
     needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services'] },
   }));
@@ -199,7 +199,9 @@ test('hard backend constraints reject impossible local target claims', () => {
     },
   };
   const decision = routeManifest(manifest, capabilities);
-  assert.strictEqual(decision.routes[0].backend, 'ci');
+  assert.strictEqual(decision.result, 'error');
+  assert.strictEqual(decision.routes[0].backend, null);
+  assert.match(decision.routes[0].reason, /no implemented Tier 0 backend/);
 });
 
 test('requires an explicit macOS target for iOS Simulator', () => {
@@ -391,16 +393,11 @@ test('CLI dry-run emits only a routable JSON decision on stdout', () => {
     fs.writeFileSync(capabilitiesPath, JSON.stringify({
       schema_version: 1,
       host: { os: 'macos', arch: 'arm64' },
-      backends: {
-        microsandbox: {
-          available: true,
-          capabilities: ['domain-network-policy'],
-        },
-      },
+      backends: { srt: { available: true } },
     }));
     const result = runCli([
       'run',
-      path.join(fixtureRoot, 'valid.yaml'),
+      path.join(fixtureRoot, 'srt-benign.yaml'),
       '--dry-run',
       '--capabilities',
       capabilitiesPath,
@@ -410,7 +407,7 @@ test('CLI dry-run emits only a routable JSON decision on stdout', () => {
     assert.strictEqual(result.stderr, '');
     const output = JSON.parse(result.stdout);
     assert.strictEqual(output.result, 'routable');
-    assert.strictEqual(output.routes[0].backend, 'microsandbox');
+    assert.strictEqual(output.routes[0].backend, 'srt');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
