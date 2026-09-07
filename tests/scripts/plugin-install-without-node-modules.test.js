@@ -30,8 +30,28 @@ function test(name, fn) {
 }
 
 function copyRuntimeFiles(destDir) {
-  for (const entry of ['scripts', 'schemas', 'manifests']) {
+  for (const entry of ['scripts', 'schemas', 'manifests', 'package.json']) {
     fs.cpSync(path.join(REPO_ROOT, entry), path.join(destDir, entry), { recursive: true });
+  }
+}
+
+// Node's module resolution walks up the directory tree looking for
+// node_modules, so if any ancestor of pluginDir happened to have one, a
+// require('ajv') from inside pluginDir could resolve there instead of
+// hitting the MODULE_NOT_FOUND path this test exists to exercise. Confirm
+// the fixture is actually isolated before trusting any of the results below.
+function assertNoNodeModulesInAncestry(dir) {
+  let current = dir;
+  while (true) {
+    if (fs.existsSync(path.join(current, 'node_modules'))) {
+      throw new Error(
+        `Fixture is not isolated: ${path.join(current, 'node_modules')} exists, so this test ` +
+        'would resolve dependencies from there instead of exercising the missing-dependency path.'
+      );
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
 }
 
@@ -63,6 +83,10 @@ function runTests() {
   const pluginDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-plugin-install-'));
 
   try {
+    if (test('fixture has no node_modules anywhere in its ancestor chain', () => {
+      assertNoNodeModulesInAncestry(pluginDir);
+    })) passed++; else failed++;
+
     copyRuntimeFiles(pluginDir);
 
     if (test('install-plan.js --list-profiles runs without ajv installed', () => {
