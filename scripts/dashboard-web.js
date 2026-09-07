@@ -21,24 +21,32 @@ function parsePort(v) {
 const PORT = parsePort(process.argv[2] || process.env.ECC_DASHBOARD_PORT || '3456');
 const ROOT = path.resolve(__dirname, '..');
 
+function parseFrontmatter(c) {
+  const m = c.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return {};
+  const fm = {};
+  for (const l of m[1].split('\n')) {
+    const s = l.indexOf(':'); if (s <= 0) continue;
+    let k = l.slice(0, s).trim(), v = l.slice(s + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (v.startsWith('[') && v.endsWith(']')) { try { v = JSON.parse(v); } catch { v = v.slice(1, -1).split(',').map(x => x.trim().replace(/["']/g, '')); } }
+    fm[k] = v;
+  }
+  fm._body = c.replace(/^---[\s\S]*?---\n*/, '').trim();
+  return fm;
+}
 function readFrontmatter(p) {
   try {
-    const c = fs.readFileSync(p, 'utf8');
-    const m = c.match(/^---\n([\s\S]*?)\n---/);
-    if (!m) return {};
-    const fm = {};
-    for (const l of m[1].split('\n')) {
-      const s = l.indexOf(':'); if (s <= 0) continue;
-      let k = l.slice(0, s).trim(), v = l.slice(s + 1).trim();
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
-      if (v.startsWith('[') && v.endsWith(']')) { try { v = JSON.parse(v); } catch { v = v.slice(1, -1).split(',').map(x => x.trim().replace(/["']/g, '')); } }
-      fm[k] = v;
-    }
-    fm._body = c.replace(/^---[\s\S]*?---\n*/, '').trim();
-    return fm;
+    return parseFrontmatter(fs.readFileSync(p, 'utf8'));
   } catch { return {}; }
 }
-function readSkill(p) { try { const c = fs.readFileSync(p, 'utf8'); const fm = readFrontmatter(p); return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() }; } catch { return { d: '', b: '' }; } }
+function readSkill(p) {
+  try {
+    const c = fs.readFileSync(p, 'utf8');
+    const fm = parseFrontmatter(c);
+    return { d: fm.description || '', b: c.replace(/^---[\s\S]*?---\n*/, '').trim() };
+  } catch { return { d: '', b: '' }; }
+}
 
 function loadAgents(_root) {
   const root = _root || ROOT;

@@ -179,6 +179,28 @@ test('readSkill parses skill frontmatter and body', () => {
   cleanup(testRoot);
 });
 
+test('readSkill reads each skill file only once', () => {
+  const { readSkill } = require(SCRIPT);
+  testRoot = createTempDir('ecc-test-');
+  const skillPath = path.join(testRoot, 'SKILL.md');
+  writeFile(testRoot, 'SKILL.md', '---\ndescription: A test skill\n---\nbody');
+  const originalReadFileSync = fs.readFileSync;
+  let readCount = 0;
+  fs.readFileSync = (...args) => {
+    readCount++;
+    return originalReadFileSync(...args);
+  };
+
+  try {
+    readSkill(skillPath);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+    cleanup(testRoot);
+  }
+
+  assert.strictEqual(readCount, 1);
+});
+
 test('readSkill returns empty defaults for missing file', () => {
   const { readSkill } = require(SCRIPT);
   const skill = readSkill('/nonexistent/skill/SKILL.md');
