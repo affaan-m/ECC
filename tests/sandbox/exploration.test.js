@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { validateManifest } = require('../../scripts/sandbox/contracts');
 const {
+  appendEvent,
   createRun,
   listEvents,
   readRun,
@@ -20,6 +21,9 @@ const {
 const {
   exploreFromSession,
   handles,
+  listRuns,
+  stopSession,
+  streamEvents,
 } = require('../../scripts/sandbox/interactive-cli');
 const { watchLaunch } = require('../../scripts/sandbox/launch-watchdog');
 const {
@@ -293,6 +297,51 @@ test('manifest-first launch rejects every route except rootless Podman Tier 1 wi
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+test('outside-agent monitoring lists, redacts, streams, and stops the session', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-direct-monitor-test-'));
+  try {
+    const { manifestPath } = writeManifest(root);
+    const created = createRun({
+      root,
+      manifestPath,
+      manifestDigest: 'a'.repeat(64),
+      exploration: true,
+      route: { backend: 'podman', tier: 1, os: 'linux', arch: 'arm64' },
+    });
+    updateState(created.run_id, root, { status: 'exploring' });
+    const secret = `ghp_${'a'.repeat(32)}`;
+    appendEvent(created.run_id, root, {
+      type: 'exploration.output',
+      phase: 'exploration',
+      stream: 'pty',
+      text: `token=${secret}\nready\n`,
+    });
+
+    assert.strictEqual(listRuns(root)[0].run_id, created.run_id);
+    let streamed = '';
+    const originalWrite = process.stdout.write;
+    try {
+      process.stdout.write = chunk => {
+        streamed += String(chunk);
+        return true;
+      };
+      assert.strictEqual(streamEvents(created.run_id, root, false), 0);
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    assert.strictEqual(streamed.includes(secret), false);
+    assert.match(streamed, /\[REDACTED\]/);
+    assert.match(streamed, /ready/);
+
+    const stopped = stopSession(created.run_id, root);
+    assert.strictEqual(stopped.result, 'stopped');
+    assert.strictEqual(readRun(created.run_id, root).state.status, 'completed');
+    assert.strictEqual(listEvents(created.run_id, root).at(-1).type, 'exploration.stopped');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
