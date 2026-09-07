@@ -88,15 +88,19 @@ module.exports = createInstallTargetAdapter({
         }));
     }).sort((left, right) => {
       const getPriority = value => {
-        if (value === '.cursor') {
+        if (value === 'hooks') {
           return 0;
         }
 
-        if (value === 'rules') {
+        if (value === '.cursor') {
           return 1;
         }
 
-        return 2;
+        if (value === 'rules') {
+          return 2;
+        }
+
+        return 3;
       };
 
       const leftPriority = getPriority(left.sourceRelativePath);
@@ -161,6 +165,23 @@ module.exports = createInstallTargetAdapter({
         }));
       }
 
+      if (sourceRelativePath === 'hooks') {
+        return takeUniqueOperations([
+          createManagedOperation({
+            moduleId: module.id,
+            sourceRelativePath: path.join('.cursor', 'hooks'),
+            destinationPath: path.join(targetRoot, 'hooks'),
+            strategy: 'preserve-relative-path',
+          }),
+          createManagedOperation({
+            moduleId: module.id,
+            sourceRelativePath: path.join('.cursor', 'hooks.json'),
+            destinationPath: path.join(targetRoot, 'hooks.json'),
+            strategy: 'preserve-relative-path',
+          }),
+        ]);
+      }
+
       if (sourceRelativePath === '.cursor') {
         const cursorRoot = path.join(repoRoot, '.cursor');
         if (!fs.existsSync(cursorRoot) || !fs.statSync(cursorRoot).isDirectory()) {
@@ -169,7 +190,7 @@ module.exports = createInstallTargetAdapter({
 
         const childOperations = fs.readdirSync(cursorRoot, { withFileTypes: true })
           .sort((left, right) => left.name.localeCompare(right.name))
-          .filter(entry => entry.name !== 'rules')
+          .filter(entry => !['rules', 'hooks', 'hooks.json'].includes(entry.name))
           .map(entry => createManagedOperation({
             moduleId: module.id,
             sourceRelativePath: path.join('.cursor', entry.name),

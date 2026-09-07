@@ -26,7 +26,17 @@ const { findProjectRoot, detectFormatter, resolveFormatterBin } = require('../li
 
 const MAX_STDIN = 1024 * 1024;
 // Total ms budget reserved for all batches (leaves headroom below the 300s Stop timeout)
-const TOTAL_BUDGET_MS = 270_000;
+const DEFAULT_TOTAL_BUDGET_MS = 270_000;
+const MAX_TOTAL_BUDGET_MS = 270_000;
+
+function getTotalBudgetMs(env = process.env) {
+  const raw = String(env.ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS || '').trim();
+  if (!/^\d+$/.test(raw)) return DEFAULT_TOTAL_BUDGET_MS;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_TOTAL_BUDGET_MS)
+    : DEFAULT_TOTAL_BUDGET_MS;
+}
 
 // Characters cmd.exe treats as separators/operators when shell: true is used.
 // Includes spaces and parentheses to guard paths like "C:\Users\John Doe\...".
@@ -197,7 +207,8 @@ function main() {
   // Distribute the budget evenly across all batches so the cumulative total
   // stays within the Stop hook wall-clock limit even in large monorepos.
   const totalBatches = byProjectRoot.size + byTsConfigDir.size;
-  const perBatchMs = totalBatches > 0 ? Math.floor(TOTAL_BUDGET_MS / totalBatches) : 60_000;
+  const totalBudgetMs = getTotalBudgetMs();
+  const perBatchMs = totalBatches > 0 ? Math.floor(totalBudgetMs / totalBatches) : 60_000;
 
   for (const [root, batch] of byProjectRoot) formatBatch(root, batch, perBatchMs);
   for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs);
@@ -248,4 +259,9 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, parseAccumulator, isPluginClonePath };
+module.exports = {
+  run,
+  parseAccumulator,
+  isPluginClonePath,
+  getTotalBudgetMs,
+};

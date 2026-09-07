@@ -1586,7 +1586,7 @@ See [affaan-m/ECC#2065](https://github.com/affaan-m/ECC/issues/2065).
 |---|---|---|---|
 | Claude Code | Stable primary | Plugin or selective installer | The plugin advertises the installed catalog to the model; use a selective/manual profile when context footprint matters. Optional shell-backed skills are not portable to every OS. |
 | Codex | Supported native plugin | Codex marketplace plugin or repo config | Native hooks require an explicit trust decision and do not use Claude's hook profiles. The legacy sync is compatibility-only. |
-| Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build, and ECC's installer paths do not yet expose identical hook sets ([#2419](https://github.com/affaan-m/ECC/issues/2419)). |
+| Cursor | Beta project adapter | Selective installer into `.cursor/` | Agent discovery varies by Cursor build; hook events use profile-gated dispatchers, but full Claude feature parity is not claimed. |
 | OpenCode | Beta built plugin | Build plugin, then selective installer | ECC ships a subset of the catalog; connect a provider and select a model in OpenCode ([#2617](https://github.com/affaan-m/ECC/issues/2617)). |
 | GitHub Copilot | Instruction-only | Checked-in instructions and prompt files | No ECC hooks, runtime agents, delegation, or native skill discovery. |
 | Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode | Experimental/minimal adapters | Harness-specific selective target | File placement and instruction portability are tested; full Claude feature parity is not claimed. |
@@ -1630,7 +1630,7 @@ ECC provides Cursor IDE support with hooks, rules, agents, skills, commands, and
 | Component | Count | Details |
 |-----------|-------|---------|
 | Hook Events | 15 | sessionStart, beforeShellExecution, afterFileEdit, beforeMCPExecution, beforeSubmitPrompt, and 10 more |
-| Hook Scripts | 16 | Thin Node.js scripts delegating to `scripts/hooks/` via shared adapter |
+| Hook Entrypoints | 15 | Thin Node.js event dispatchers delegating to `scripts/hooks/` via shared adapter |
 | Rules | 34 | 9 common (alwaysApply) + 25 language-specific (TypeScript, Python, Go, Swift, PHP) |
 | Agents | 48 | `.cursor/agents/ecc-*.md` when installed; prefixed to avoid collisions with user or marketplace agents |
 | Skills | Shared + Bundled | `.cursor/skills/` for translated additions |
@@ -1664,7 +1664,7 @@ Continuous learning v2 instincts remain separate under `CLV2_HOMUNCULUS_DIR` (de
 
 #### Hook architecture (DRY adapter pattern)
 
-Cursor has **more hook events than Claude Code** (20 vs 8). The `.cursor/hooks/adapter.js` module transforms Cursor's stdin JSON to Claude Code's format, allowing existing `scripts/hooks/*.js` to be reused without duplication.
+Cursor has **more hook events than Claude Code** (20 vs 8). The `.cursor/hooks/adapter.js` module transforms Cursor's stdin JSON to Claude Code's format, allowing existing `scripts/hooks/*.js` to be reused without duplication. Each Cursor event is registered with one event-level dispatcher so enabled checks run in a deterministic order and remain compatible with Cursor versions that execute only the first matching entry. The adapter resolves the shared runtime from both the ECC checkout and an installed project's `.cursor/scripts/` tree.
 
 ```
 Cursor stdin JSON -> adapter.js -> transforms -> scripts/hooks/*.js
@@ -1672,8 +1672,8 @@ Cursor stdin JSON -> adapter.js -> transforms -> scripts/hooks/*.js
 ```
 
 Key hooks:
-- **beforeShellExecution**: Blocks dev servers outside tmux (exit 2), git push review
-- **afterFileEdit**: Auto-format + TypeScript check + console.log warning
+- **beforeShellExecution**: Blocks git hook bypasses and dev servers outside tmux (exit 2), then adds profile-gated shell reminders
+- **afterFileEdit / stop**: Accumulates edited JS/TS files and runs one profile-gated format/typecheck batch at Stop, alongside the console.log audit
 - **beforeSubmitPrompt**: Detects secrets (sk-, ghp_, AKIA patterns) in prompts
 - **beforeTabFileRead**: Blocks Tab from reading .env, .key, .pem files (exit 2)
 - **beforeMCPExecution / afterMCPExecution**: MCP audit logging

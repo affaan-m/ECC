@@ -1,23 +1,36 @@
 #!/usr/bin/env node
-const { readStdin, hookEnabled } = require('./adapter');
-const { splitShellSegments } = require('../../scripts/lib/shell-split');
+const {
+  readStdin,
+  hookEnabled,
+  runExistingHook,
+  transformToClaude,
+} = require('./adapter');
 
 readStdin()
   .then(raw => {
     try {
-      const input = JSON.parse(raw || '{}');
-      const cmd = String(input.command || input.args?.command || '');
+      let input;
+      let cmd;
+      try {
+        input = JSON.parse(raw || '{}');
+        cmd = String(input.command || input.args?.command || '');
+      } catch {
+        input = {};
+        cmd = String(raw || '');
+      }
+      const claudeInput = transformToClaude(input, {
+        tool_input: { command: cmd },
+      });
+      const claudeRaw = JSON.stringify(claudeInput);
+
+      // Cursor may execute only the first hook registered for an event. Keep
+      // every blocking shell guard behind this single event-level dispatcher.
+      if (hookEnabled('pre:bash:block-no-verify', ['minimal', 'standard', 'strict'])) {
+        runExistingHook('block-no-verify.js', claudeRaw);
+      }
 
       if (hookEnabled('pre:bash:dev-server-block', ['standard', 'strict']) && process.platform !== 'win32') {
-        const segments = splitShellSegments(cmd);
-        const tmuxLauncher = /^\s*tmux\s+(new|new-session|new-window|split-window)\b/;
-        const devPattern = /\b(npm\s+run\s+dev|pnpm(?:\s+run)?\s+dev|yarn\s+dev|bun\s+run\s+dev)\b/;
-        const hasBlockedDev = segments.some(segment => devPattern.test(segment) && !tmuxLauncher.test(segment));
-        if (hasBlockedDev) {
-          console.error('[ECC] BLOCKED: Dev server must run in tmux for log access');
-          console.error('[ECC] Use: tmux new-session -d -s dev "npm run dev"');
-          process.exit(2);
-        }
+        runExistingHook('pre-bash-dev-server-block.js', claudeRaw);
       }
 
       if (

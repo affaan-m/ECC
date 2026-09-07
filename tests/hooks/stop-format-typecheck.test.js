@@ -13,7 +13,11 @@ const os = require('os');
 const path = require('path');
 
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
-const { parseAccumulator, isPluginClonePath } = require('../../scripts/hooks/stop-format-typecheck');
+const {
+  getTotalBudgetMs,
+  isPluginClonePath,
+  parseAccumulator,
+} = require('../../scripts/hooks/stop-format-typecheck');
 
 function test(name, fn) {
   try {
@@ -201,6 +205,21 @@ if (test('parseAccumulator ignores blank lines and trims whitespace', () => {
   const raw = '  /tmp/a.ts  \n\n/tmp/b.ts\n\n';
   const result = parseAccumulator(raw);
   assert.deepStrictEqual(result, ['/tmp/a.ts', '/tmp/b.ts']);
+})) passed++; else failed++;
+
+if (test('getTotalBudgetMs honors a bounded dispatcher budget', () => {
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '210000' }),
+    210000
+  );
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '999999' }),
+    270000
+  );
+  assert.strictEqual(
+    getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: 'invalid' }),
+    270000
+  );
 })) passed++; else failed++;
 
 if (test('stop hook clears accumulator after processing duplicates', () => {

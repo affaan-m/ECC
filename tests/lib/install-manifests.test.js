@@ -249,7 +249,7 @@ function runTests() {
         && operation.destinationPath === path.join(projectRoot, '.cursor', 'hooks.json')
         && operation.strategy === 'preserve-relative-path'
       )),
-      'Should preserve non-rule Cursor platform files'
+      'Developer Cursor installs should register hooks through hooks-runtime'
     );
     assert.ok(
       plan.operations.some(operation => (
