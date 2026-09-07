@@ -104,7 +104,7 @@ test('parses the manifest-first launch command with bounded purpose, consent, an
   );
 });
 
-test('manifest-first launch creates no state without y consent', () => {
+test('manifest-first launch creates no run without y consent', () => {
   for (const consentArgs of [[], ['--consent', 'n']]) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-direct-consent-test-'));
     try {
@@ -130,7 +130,24 @@ test('manifest-first launch creates no state without y consent', () => {
             + 'for testing isolated backend feature behavior? y/n'
         );
       }
-      assert.deepStrictEqual(fs.readdirSync(root), ['sandbox.json']);
+      assert.deepStrictEqual(
+        fs.readdirSync(root).sort(),
+        consentArgs.length === 0 ? ['.proposals', 'sandbox.json'] : ['sandbox.json']
+      );
+      assert.strictEqual(
+        fs.readdirSync(root).some(name => name.startsWith('run_')),
+        false
+      );
+      if (consentArgs.length === 0) {
+        const pending = fs.readdirSync(path.join(root, '.proposals'));
+        assert.strictEqual(pending.length, 1);
+        if (process.platform !== 'win32') {
+          assert.strictEqual(
+            fs.statSync(path.join(root, '.proposals', pending[0])).mode & 0o777,
+            0o600
+          );
+        }
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -149,7 +166,7 @@ test('manifest-first launch rejects bare y without the returned proposal ID', ()
       root,
       launch: () => { throw new Error('bare consent launched a terminal'); },
     }), /consent y requires --proposal/i);
-    assert.deepStrictEqual(fs.readdirSync(root), ['sandbox.json']);
+    assert.deepStrictEqual(fs.readdirSync(root).sort(), ['sandbox.json']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -218,6 +235,18 @@ test('manifest-first launch starts a monitored non-evidence Podman exploration a
     assert.strictEqual(events[0].purpose, 'isolated backend feature behavior');
     assert.strictEqual(events[0].prompt, stored.session.consent.prompt);
     assert.strictEqual(events[1].evidence, false);
+    assert.deepStrictEqual(fs.readdirSync(path.join(root, '.proposals')), []);
+
+    assert.throws(() => createInteractiveLaunch(parseLaunchArgs([
+      manifestPath,
+      '--purpose', 'isolated backend feature behavior',
+      '--consent', 'y',
+      '--proposal', proposal.proposal_id,
+      '--terminal', 'terminal.app',
+    ]), launchContext(manifestPath, sandboxManifest), {
+      root,
+      launch: () => { throw new Error('replayed consent launched a terminal'); },
+    }), /already used|unavailable|expired/i);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -271,7 +300,7 @@ test('manifest-first launch binds y consent to the exact proposed manifest', () 
       root,
       launch: () => { throw new Error('changed proposal launched a terminal'); },
     }), /proposal.*no longer matches|proposal.*changed/i);
-    assert.deepStrictEqual(fs.readdirSync(root), ['sandbox.json']);
+    assert.deepStrictEqual(fs.readdirSync(root).sort(), ['.proposals', 'sandbox.json']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -374,6 +403,7 @@ test('Podman exploration replays setup, opens a PTY, and always cleans its label
   const shell = calls.find(call => call.argv.includes('--interactive'));
   assert.ok(shell.argv.includes('--tty'));
   assert.deepStrictEqual(calls.at(-1).argv.slice(0, 4), ['rm', '--force', '--time', '0']);
+  assert.strictEqual(calls.at(-1).argv[4], 'b'.repeat(64));
 });
 
 test('Podman setup keeps the manifest timeout while its human shell gets a bounded exploration lease', () => {
@@ -417,12 +447,16 @@ test('Podman exploration registers its replica before start and clears only afte
     });
     updateState(created.run_id, root, { status: 'exploring' });
     const calls = [];
+    const secret = `ghp_${'c'.repeat(32)}`;
     const run = (_executable, argv) => {
       calls.push(argv);
       if (argv[0] === 'info') return { status: 0, stdout: '{"host":{"security":{"rootless":true}}}', stderr: '' };
       if (argv[0] === 'image') return { status: 0, stdout: `sha256:${'a'.repeat(64)}\n`, stderr: '' };
       if (argv[0] === 'create') return { status: 0, stdout: `${'b'.repeat(64)}\n`, stderr: '' };
       if (argv[0] === 'start') assert.strictEqual(readResources(created.run_id, root)[0].kind, 'podman');
+      if (argv.includes('printf setup')) {
+        return { status: 0, stdout: `token=${secret}\nsetup ready\n`, stderr: '' };
+      }
       return { status: 0, stdout: '', stderr: '' };
     };
     const session = require('../../scripts/sandbox/session-store').readRun(created.run_id, root).session;
@@ -435,9 +469,18 @@ test('Podman exploration registers its replica before start and clears only afte
       clearResource: selector => require('../../scripts/sandbox/session-store').clearResource(
         created.run_id, root, session.owner_token, selector
       ),
+      emit: event => appendEvent(created.run_id, root, event),
     });
     assert.strictEqual(readResources(created.run_id, root).length, 0);
     assert.strictEqual(calls.at(-1)[0], 'rm');
+    assert.strictEqual(calls.at(-1)[4], 'b'.repeat(64));
+    const setupOutput = listEvents(created.run_id, root)
+      .filter(event => event.type === 'exploration.output')
+      .map(event => event.text)
+      .join('');
+    assert.strictEqual(setupOutput.includes(secret), false);
+    assert.match(setupOutput, /\[REDACTED\]/);
+    assert.match(setupOutput, /setup ready/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

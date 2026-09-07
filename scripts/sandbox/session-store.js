@@ -422,6 +422,7 @@ function clearResource(runId, root, ownerToken, selector = {}) {
     const matches = resource => (
       (!selector.kind || resource.kind === selector.kind)
       && (!selector.name || resource.name === selector.name)
+      && (!selector.id || resource.id === selector.id)
       && (!selector.pid || resource.pid === selector.pid)
     );
     const retained = Object.keys(selector).length === 0 ? [] : resources.filter(resource => !matches(resource));

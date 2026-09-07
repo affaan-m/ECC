@@ -65,7 +65,7 @@ ecc-sandbox launch examples/sandbox/review-tier1-podman.yaml \
 ```
 
 The proposal becomes invalid if the manifest, capabilities, route, purpose, or
-terminal changes between calls.
+terminal changes between calls. It is single-use and expires after ten minutes.
 
 ## User And Agent Interaction
 
@@ -115,8 +115,10 @@ and network access.
 
 Terminal launch uses exact argument arrays with `shell: false`. WezTerm uses its
 multiplexer when available. Terminal.app uses an argv-bound AppleScript handoff
-to a private, self-deleting command wrapper. Only explicitly allowlisted
-environment variables reach the launched command.
+to a private, self-deleting command wrapper. Allowlisted values stay in a
+separate mode-0600 file and a bounded watchdog expires launch artifacts that a
+terminal never consumes. Only explicitly allowlisted environment variables
+reach the launched command.
 
 Each exploration uses an unguessable container name and ownership labels. The
 guardian removes only resources whose immutable identity and labels match the

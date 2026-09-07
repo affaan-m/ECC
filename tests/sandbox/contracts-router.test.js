@@ -92,10 +92,11 @@ function sampleSingleReport(overrides = {}) {
   };
 }
 
-function runCli(args) {
+function runCli(args, env = process.env) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
+    env,
     shell: false,
     timeout: SUBPROCESS_TIMEOUT_MS,
   });
@@ -152,7 +153,7 @@ test('CLI launch returns the exact Tier 1 consent proposal without provisioning'
       '--purpose', 'isolated backend feature behavior',
       '--terminal', 'terminal.app',
       '--capabilities', capabilitiesPath,
-    ]);
+    ], { ...process.env, XDG_STATE_HOME: path.join(temporaryRoot, 'state') });
     assert.strictEqual(result.status, 0, result.stderr);
     const proposal = JSON.parse(result.stdout);
     assert.strictEqual(proposal.result, 'consent-required');
@@ -258,7 +259,7 @@ test('rejects forged capability maps before routing', () => {
   );
 });
 
-test('Tier 0 defers every non-SRT backend even when it is reported available', () => {
+test('unimplemented native and CI backends remain unroutable', () => {
   const manifest = validateManifest(buildManifest({
     needs: { os: ['macos'], arch: ['arm64'], capabilities: ['services'] },
   }));
@@ -273,7 +274,7 @@ test('Tier 0 defers every non-SRT backend even when it is reported available', (
   const decision = routeManifest(manifest, capabilities);
   assert.strictEqual(decision.result, 'error');
   assert.strictEqual(decision.routes[0].backend, null);
-  assert.match(decision.routes[0].reason, /no implemented Tier 0 backend/);
+  assert.match(decision.routes[0].reason, /no implemented Tier 0 or Tier 1 backend/);
 });
 
 test('requires an explicit macOS target for iOS Simulator', () => {

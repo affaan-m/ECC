@@ -41,8 +41,10 @@ For Terminal.app, the launcher writes the reviewed target command to a private
 temporary directory and passes only that command-file path to macOS `open`.
 The command file quotes every target argv entry as one shell word, self-deletes
 before it starts the target, and removes its directory. A failed `open` call
-also removes the private temporary launcher. The dry-run plan and outer process
-argv never contain allowlisted environment values.
+also removes the private temporary launcher. A detached watchdog expires any
+launcher or environment file that Terminal.app never consumes. The dry-run
+plan, command wrapper, and outer process argv never contain allowlisted
+environment values.
 
 ## Filter the launch environment
 
@@ -67,15 +69,17 @@ caller must allowlist `PATH` when the selected terminal or target executable
 depends on normal executable lookup. Add locale or display variables only after
 reviewing their values and confirming the selected terminal needs them.
 
-Terminal.app stores allowlisted values only inside its mode-0700 temporary
-launcher until that launcher starts and self-deletes. It does not place those
-values in the launch plan or the outer `open` argv. Prefer an empty allowlist or
-safe non-secret variables for sandbox work.
+Terminal.app stores allowlisted values only in a mode-0600 environment file
+inside a mode-0700 temporary directory. Its command wrapper contains only that
+file's path. The target-side wrapper consumes and removes the file before the
+reviewed target starts, and a bounded watchdog removes unconsumed artifacts.
+Prefer an empty allowlist or safe non-secret variables for sandbox work.
 
 WezTerm filtered launches pass only a private mode-0600 environment-file path
 in the spawned argv. The target-side wrapper consumes and removes that file
 before it executes the reviewed target, so reversible environment values do not
-appear in the WezTerm client process arguments.
+appear in the WezTerm client process arguments. The same bounded watchdog
+expires the file if the terminal handoff succeeds but the target never starts.
 
 ## Recover from terminal configuration
 

@@ -13,6 +13,10 @@ The router exposes Tier 1 only when the probe verifies a reachable rootless
 Podman service. An installed CLI or a machine that merely reports `Running`
 does not satisfy readiness.
 
+The capability schema and probe may describe later backends, but the Tier 0
+router never returns them as runnable. A backend becomes routable only in the
+separate PR that supplies its executable adapter and acceptance evidence.
+
 ## User Path
 
 1. Start a rootless Podman machine or service.

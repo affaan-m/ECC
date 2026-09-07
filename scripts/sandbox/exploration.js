@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { loadManifest } = require('./contracts');
-const { appendEvent, clearResource, readRun, writeResource } = require('./session-store');
+const {
+  appendEvent, clearResource, readRun, redactText, writeResource,
+} = require('./session-store');
 const { buildCreateArgs, normalizeImageId, podmanInfoIsRootless, DEFAULT_IMAGE } = require('./backends/podman');
 
 const MIN_INTERACTIVE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -44,6 +46,19 @@ function requireSuccess(result, message) {
   return result;
 }
 
+function publishSetupOutput(options, stream, text) {
+  if (!text) return;
+  const entry = options.emit?.({
+    type: 'exploration.output',
+    phase: 'setup',
+    stream,
+    text: String(text),
+  });
+  const safeText = entry?.text ?? redactText(text).text;
+  const destination = stream === 'stderr' ? process.stderr : process.stdout;
+  destination.write(safeText);
+}
+
 function runPodmanExploration(manifest, options) {
   const run = options.run || defaultRun;
   const cwd = path.resolve(options.cwd || process.cwd());
@@ -62,10 +77,9 @@ function runPodmanExploration(manifest, options) {
     runId: options.runId, ownerToken: options.ownerToken,
   });
   createArgs.splice(createArgs.length - 3, 0, '--label', 'io.ecc.sandbox.exploration=true');
-  let created = false;
+  let containerId = null;
   try {
     const create = requireSuccess(run('podman', createArgs, { cwd }), 'Podman exploration create failed');
-    created = true;
     let id = String(create.stdout || '').trim().split(/\r?\n/, 1)[0];
     if (!/^[a-f0-9]{64}$/i.test(id)) {
       id = String(requireSuccess(
@@ -74,6 +88,7 @@ function runPodmanExploration(manifest, options) {
       ).stdout || '').trim();
     }
     if (!/^[a-f0-9]{64}$/i.test(id)) throw new Error('Podman exploration did not return an immutable container ID');
+    containerId = id;
     options.registerResource?.({ kind: 'podman', name, id });
     options.emit?.({ type: 'resource.registered', phase: 'provision', resource_kind: 'podman', resource_name: name });
     requireSuccess(run('podman', ['start', id], { cwd }), 'Podman exploration start failed');
@@ -81,8 +96,10 @@ function runPodmanExploration(manifest, options) {
     for (const command of manifest.steps.setup) {
       options.emit?.({ type: 'exploration.setup.started', phase: 'exploration', command });
       const setup = run('podman', ['exec', id, '/bin/bash', '-lc', command], {
-        cwd, stdio: 'inherit', timeout: manifest.resources.timeout * 1000,
+        cwd, encoding: 'utf8', timeout: manifest.resources.timeout * 1000,
       });
+      publishSetupOutput(options, 'stdout', setup.stdout);
+      publishSetupOutput(options, 'stderr', setup.stderr || setup.error?.message);
       options.emit?.({
         type: setup.error || setup.status !== 0 ? 'exploration.setup.warning' : 'exploration.setup.completed',
         phase: 'exploration', command, exit: Number.isInteger(setup.status) ? setup.status : 2,
@@ -93,10 +110,13 @@ function runPodmanExploration(manifest, options) {
     });
     return { exitCode: Number.isInteger(shell.status) ? shell.status : 2, backend: 'podman', resource: name };
   } finally {
-    if (created) {
-      const removed = run('podman', ['rm', '--force', '--time', '0', name], { cwd, timeout: 30_000 });
+    if (containerId) {
+      const removed = run('podman', ['rm', '--force', '--time', '0', containerId], {
+        cwd,
+        timeout: 30_000,
+      });
       if (!removed.error && removed.status === 0) {
-        options.clearResource?.({ kind: 'podman', name });
+        options.clearResource?.({ kind: 'podman', name, id: containerId });
         options.emit?.({ type: 'resource.cleared', phase: 'cleanup', resource_kind: 'podman', resource_name: name });
       }
     }
@@ -139,6 +159,7 @@ function runExploration(runId, root, dependencies = {}) {
 
 module.exports = {
   explorationName,
+  publishSetupOutput,
   runExploration,
   runPodmanExploration,
 };

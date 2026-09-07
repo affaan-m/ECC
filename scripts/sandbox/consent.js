@@ -1,8 +1,16 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const {
+  ensurePrivateDirectory,
+  validateStateRoot,
+  writeJsonAtomic,
+} = require('./session-store');
 
 const MAX_PURPOSE_BYTES = 240;
+const PROPOSAL_TTL_MS = 10 * 60 * 1000;
 const TERMINAL_ALIASES = new Map([
   ['wezterm', 'wezterm'],
   ['terminal', 'terminal.app'],
@@ -80,7 +88,7 @@ function buildTier1ConsentPrompt(manifest, purpose) {
   return `Would you like to launch a Tier 1 rootless Podman sandbox with ${naturalList(properties)}, for testing ${normalizedPurpose}? y/n`;
 }
 
-function buildProposalId(details) {
+function normalizedProposalDetails(details) {
   const purpose = validatePurpose(details.purpose);
   const terminal = normalizeTerminal(details.terminal);
   if (!/^[a-f0-9]{64}$/.test(details.manifestDigest || '')) {
@@ -89,7 +97,7 @@ function buildProposalId(details) {
   const route = Object.fromEntries(['backend', 'tier', 'os', 'arch'].map(field => (
     [field, details.route?.[field] ?? null]
   )));
-  const payload = JSON.stringify({
+  return {
     schema_version: 1,
     flow: details.flow,
     manifest_digest: details.manifestDigest,
@@ -97,20 +105,98 @@ function buildProposalId(details) {
     route,
     purpose,
     terminal,
-  });
-  return `proposal_${crypto.createHash('sha256').update(payload).digest('hex')}`;
+  };
 }
 
-function requireMatchingProposal(provided, expected, decision) {
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map(key => [key, stableValue(value[key])])
+  );
+}
+
+function proposalBinding(details) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify(stableValue(normalizedProposalDetails(details))))
+    .digest('hex');
+}
+
+function proposalDirectory(root) {
+  const stateRoot = ensurePrivateDirectory(validateStateRoot(root));
+  const directory = path.join(stateRoot, '.proposals');
+  if (fs.existsSync(directory)) {
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error('Sandbox consent proposal store must be a private directory');
+    }
+  } else {
+    fs.mkdirSync(directory, { mode: 0o700 });
+  }
+  fs.chmodSync(directory, 0o700);
+  return directory;
+}
+
+function createConsentProposal(root, details, options = {}) {
+  const now = options.now || Date.now();
+  const randomBytes = options.randomBytes || crypto.randomBytes;
+  const proposalId = `proposal_${randomBytes(32).toString('hex')}`;
+  const directory = proposalDirectory(root);
+  writeJsonAtomic(path.join(directory, `${proposalId}.json`), {
+    schema_version: 1,
+    proposal_id: proposalId,
+    binding: proposalBinding(details),
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + PROPOSAL_TTL_MS).toISOString(),
+  });
+  return proposalId;
+}
+
+function readProposal(filePath) {
+  const stat = fs.lstatSync(filePath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) {
+    throw new Error('Sandbox consent proposal must be a bounded regular file');
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function consumeConsentProposal(root, provided, details, options = {}) {
   const proposalId = validateProposalId(provided);
-  if (decision !== 'y') return proposalId;
   if (!proposalId) {
     throw new Error('--consent y requires --proposal from the prior consent-required response');
   }
-  const left = Buffer.from(proposalId);
-  const right = Buffer.from(expected);
-  if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
-    throw new Error('consent proposal no longer matches the sandbox environment; request a new proposal');
+  const directory = proposalDirectory(root);
+  const source = path.join(directory, `${proposalId}.json`);
+  const consuming = path.join(
+    directory,
+    `.consuming-${proposalId}-${crypto.randomBytes(8).toString('hex')}`
+  );
+  try {
+    fs.renameSync(source, consuming);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error('consent proposal is unavailable, expired, or already used; request a new proposal');
+    }
+    throw error;
+  }
+  try {
+    const record = readProposal(consuming);
+    const now = options.now || Date.now();
+    const validShape = record?.schema_version === 1
+      && record.proposal_id === proposalId
+      && /^[a-f0-9]{64}$/.test(record.binding || '')
+      && Number.isFinite(Date.parse(record.expires_at));
+    if (!validShape || Date.parse(record.expires_at) < now) {
+      throw new Error('consent proposal is invalid or expired; request a new proposal');
+    }
+    const expected = proposalBinding(details);
+    const left = Buffer.from(record.binding);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+      throw new Error('consent proposal no longer matches the sandbox environment; request a new proposal');
+    }
+  } finally {
+    fs.rmSync(consuming, { force: true });
   }
   return proposalId;
 }
@@ -141,11 +227,13 @@ function consentProposal(manifest, purpose, decision, proposalId) {
 
 module.exports = {
   MAX_PURPOSE_BYTES,
-  buildProposalId,
+  PROPOSAL_TTL_MS,
   buildTier1ConsentPrompt,
   consentProposal,
+  consumeConsentProposal,
+  createConsentProposal,
   normalizeTerminal,
-  requireMatchingProposal,
+  proposalBinding,
   validateConsent,
   validateProposalId,
   validatePurpose,

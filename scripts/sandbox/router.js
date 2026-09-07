@@ -4,11 +4,6 @@ const os = require('os');
 const { validateCapabilities } = require('./contracts');
 
 const TARGET_OSES = ['linux', 'macos', 'windows'];
-const TIER_TWO_BACKENDS = {
-  linux: ['lima'],
-  macos: ['lume', 'tart'],
-  windows: ['windows-sandbox', 'hyper-v', 'dockur-windows'],
-};
 
 function normalizeOs(platform = process.platform) {
   const values = {
@@ -68,15 +63,6 @@ function backendSupports(capabilities, backend, shard, manifest) {
   const hardConstraints = {
     srt: shard.os === host.os && shard.arch === host.arch,
     podman: shard.os === 'linux' && shard.arch === host.arch,
-    microsandbox: shard.os === 'linux' && shard.arch === host.arch,
-    lume: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
-    // DECISION: CONVENTIONS item 14 permits a real Lima Linux guest on macOS.
-    lima: ['linux', 'macos'].includes(host.os) && shard.os === 'linux' && shard.arch === host.arch,
-    tart: host.os === 'macos' && host.arch === 'arm64' && shard.os === 'macos' && shard.arch === 'arm64',
-    'windows-sandbox': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
-    'hyper-v': host.os === 'windows' && shard.os === 'windows' && shard.arch === host.arch,
-    'dockur-windows': false,
-    ci: Array.isArray(entry.targets) && entry.targets.some(target => targetMatches(target, shard)),
   };
   if (!hardConstraints[backend]) return false;
   if (Array.isArray(entry.targets) && !entry.targets.some(target => targetMatches(target, shard))) {
@@ -130,7 +116,6 @@ function tierZeroEligible(manifest, shard, host) {
 }
 
 function tierOneEligible(manifest, shard) {
-  // DECISION: CONVENTIONS item 2 keeps native service/GUI evidence out of containers.
   return (
     shard.os === 'linux'
     && manifest.needs.native === false
@@ -139,17 +124,7 @@ function tierOneEligible(manifest, shard) {
 }
 
 function tierOneCandidates(manifest) {
-  const network = networkNeeds(manifest);
-  // DECISION: CONVENTIONS item 9 fails closed on unenforced domain allowlists.
-  if (network.domainAllowlist) return ['microsandbox'];
-  if (manifest.needs.trust === 'untrusted' || network.open) {
-    return ['microsandbox', 'podman'];
-  }
-  return ['podman'];
-}
-
-function tierTwoCandidates(shard) {
-  return TIER_TWO_BACKENDS[shard.os] || [];
+  return networkNeeds(manifest).domainAllowlist ? [] : ['podman'];
 }
 
 function firstSupported(candidates, capabilities, shard, manifest) {
@@ -157,63 +132,33 @@ function firstSupported(candidates, capabilities, shard, manifest) {
 }
 
 function routeNotes(backend, manifest) {
+  if (backend !== 'podman') return [];
   const notes = [];
   const network = networkNeeds(manifest);
-  if (
-    backend === 'podman'
-    && (manifest.needs.trust === 'untrusted' || network.open)
-  ) {
-    notes.push('microsandbox unavailable; using documented degraded Podman isolation');
+  if (manifest.needs.trust === 'untrusted') {
+    notes.push('rootless Podman is container isolation, not a VM security boundary');
   }
-  if (backend === 'podman' && network.open) {
-    notes.push('Tier 1 container v1 network policy is unrestricted for network:*');
-  }
-  if (backend === 'tart') {
-    notes.push('Tart uses Fair Source 100 licensing; personal use is free, while some large organizational server installations require a paid license');
+  if (network.open) {
+    notes.push('Tier 1 Podman network policy is unrestricted for network:*');
   }
   return notes;
 }
 
-function missingRoute(shard, manifest, capabilities, localOnly) {
-  const network = networkNeeds(manifest);
-  if (
-    network.domainAllowlist
-    && tierOneEligible(manifest, shard)
-    && !backendSupports(capabilities, 'microsandbox', shard, manifest)
-  ) {
+function missingRoute(shard, manifest) {
+  if (networkNeeds(manifest).domainAllowlist && tierOneEligible(manifest, shard)) {
     return {
-      reason: 'strict domain allowlists require a probed microsandbox with domain-network-policy in Tier 1 v1',
-      fix: 'Install or update microsandbox: curl -fsSL https://install.microsandbox.dev | sh',
-    };
-  }
-  if (network.domainAllowlist) {
-    return {
-      reason: `no ${shard.os}/${shard.arch} native or CI backend enforces strict domain allowlists in v1`,
-      fix: 'Target Linux with microsandbox, or remove native OS needs after reviewing the network policy',
-    };
-  }
-  if (!localOnly && !backendEntry(capabilities, 'ci').available) {
-    return {
-      reason: `no local backend satisfies ${shard.os}/${shard.arch}, and GitHub CLI authentication is unavailable`,
-      fix: 'Enable CI fallback: gh auth login',
-    };
-  }
-  if (localOnly) {
-    return {
-      reason: `no local backend satisfies ${shard.os}/${shard.arch}`,
-      fix: 'Remove --local-only or install the native backend reported by ecc-sandbox probe',
+      reason: 'Tier 1 Podman cannot enforce strict domain network allowlists',
+      fix: 'Use network disabled, request network:*, or defer this test to a later network-policy backend',
     };
   }
   return {
-    reason: `no available backend satisfies ${shard.os}/${shard.arch}`,
-    fix: 'Run ecc-sandbox probe --refresh and enable one of the reported backend setup commands',
+    reason: `no implemented Tier 0 or Tier 1 backend satisfies ${shard.os}/${shard.arch}`,
+    fix: 'Use a host-matching Tier 0 claim or a Linux-compatible rootless Podman Tier 1 claim',
   };
 }
 
-function resolveShard(manifest, capabilities, shard, options = {}) {
+function resolveShard(manifest, capabilities, shard, _options = {}) {
   const host = capabilities.host;
-  const network = networkNeeds(manifest);
-
   const rules = [
     {
       id: 'tier-0-process',
@@ -223,25 +168,11 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
       reason: 'host-matching process isolation satisfies the declared needs',
     },
     {
-      id: 'tier-1-ephemeral',
+      id: 'tier-1-podman',
       tier: 1,
       eligible: () => tierOneEligible(manifest, shard),
       candidates: () => tierOneCandidates(manifest),
-      reason: 'an ephemeral Linux environment is the cheapest clean venue for the declared needs',
-    },
-    {
-      id: 'tier-2-native',
-      tier: 2,
-      eligible: () => !network.domainAllowlist,
-      candidates: () => tierTwoCandidates(shard),
-      reason: 'OS-native behavior requires a local full VM',
-    },
-    {
-      id: 'ci-fallback',
-      tier: 3,
-      eligible: () => !options.localOnly && !network.domainAllowlist,
-      candidates: () => ['ci'],
-      reason: 'the requested OS or native capability is unavailable locally',
+      reason: 'rootless Podman provides the requested disposable Linux environment',
     },
   ];
 
@@ -268,7 +199,7 @@ function resolveShard(manifest, capabilities, shard, options = {}) {
     backend: null,
     tier: null,
     rule: null,
-    ...missingRoute(shard, manifest, capabilities, options.localOnly),
+    ...missingRoute(shard, manifest),
     notes: [],
     result: 'error',
   };
@@ -289,7 +220,6 @@ function routeManifest(manifest, capabilities, options = {}) {
 
 module.exports = {
   TARGET_OSES,
-  TIER_TWO_BACKENDS,
   defaultHost,
   expandTargets,
   networkNeeds,
