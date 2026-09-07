@@ -22,7 +22,7 @@ const {
   mockRunner,
 } = require('./backends/srt');
 
-const COMMANDS = ['probe', 'run', 'report', 'escalate'];
+const COMMANDS = ['probe', 'run', 'report'];
 
 function writeJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -35,7 +35,6 @@ function help() {
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
       'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
-      'ecc-sandbox escalate <report.json>',
     ],
     commands: COMMANDS,
   };
