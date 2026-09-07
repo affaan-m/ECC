@@ -326,8 +326,6 @@ function probeCapabilities(options = {}) {
   const lumeVersion = commandVersion(run, 'lume');
   const limaVersion = commandVersion(run, 'limactl');
   const tartVersion = commandVersion(run, 'tart');
-  const dockerVersion = commandVersion(run, 'docker');
-  const dockerInfo = dockerVersion ? run('docker', ['info', '--format', '{{json .ServerVersion}}']) : null;
   const windows = platform === 'windows'
     ? detectWindowsFeatures(run, architecture)
     : {
@@ -361,12 +359,6 @@ function probeCapabilities(options = {}) {
         fileExists,
       }),
       podman: detectPodman(run, platform, architecture),
-      docker: backend(Boolean(dockerVersion) && succeeded(dockerInfo), {
-        version: dockerVersion,
-        state: dockerVersion && succeeded(dockerInfo) ? 'ready' : 'unavailable',
-        targets: dockerVersion && succeeded(dockerInfo) ? target : [],
-        reason: dockerVersion ? 'Docker fallback detected' : 'Docker fallback not detected',
-      }),
       microsandbox: backend(Boolean(microsandboxVersion) && Boolean(virtualization), {
         version: microsandboxVersion,
         state: microsandboxVersion && virtualization ? 'ready' : 'unavailable',

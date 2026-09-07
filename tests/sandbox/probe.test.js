@@ -123,7 +123,6 @@ test('probes a ready Apple Silicon macOS host', () => {
     srt: true,
     podman: true,
     podmanRunning: true,
-    docker: true,
     msb: true,
     lume: true,
     limactl: true,
@@ -133,7 +132,7 @@ test('probes a ready Apple Silicon macOS host', () => {
   }));
   assert.strictEqual(capabilities.host.os, 'macos');
   assert.strictEqual(capabilities.host.virtualization, 'available');
-  for (const name of ['srt', 'podman', 'docker', 'microsandbox', 'lume', 'lima', 'tart', 'ci']) {
+  for (const name of ['srt', 'podman', 'microsandbox', 'lume', 'lima', 'tart', 'ci']) {
     assert.strictEqual(capabilities.backends[name].available, true, name);
   }
   assert.ok(capabilities.backends.microsandbox.capabilities.includes('domain-network-policy'));
@@ -234,14 +233,14 @@ test('requires the one-time Windows SRT provisioning before reporting ready', ()
   assert.match(capabilities.backends.srt.fix, /windows-install/);
 });
 
-test('reports actionable setup commands without recommending Docker', () => {
+test('reports actionable setup commands for the Podman-only Tier one contract', () => {
   const capabilities = probeCapabilities(commonOptions('darwin', 'arm64', {
     virtualization: true,
   }));
   assert.match(capabilities.backends.podman.fix, /brew install podman/);
   assert.match(capabilities.backends.srt.fix, /npm install -g/);
   assert.match(capabilities.backends.ci.fix, /gh auth login/);
-  assert.strictEqual(capabilities.backends.docker.fix, undefined);
+  assert.strictEqual(Object.hasOwn(capabilities.backends, 'docker'), false);
 });
 
 test('reports host-appropriate setup commands', () => {

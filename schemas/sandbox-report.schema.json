@@ -58,7 +58,7 @@
         "dotfiles_touched"
       ],
       "properties": {
-        "method": { "enum": ["podman-layer", "docker-layer", "scan", "none"] },
+        "method": { "enum": ["podman-layer", "scan", "none"] },
         "complete": { "type": "boolean" },
         "files_added": { "$ref": "#/definitions/stringArray" },
         "files_changed": { "$ref": "#/definitions/stringArray" },
@@ -104,7 +104,6 @@
           "enum": [
             "srt",
             "podman",
-            "docker",
             "microsandbox",
             "lume",
             "lima",
@@ -145,7 +144,7 @@
           "then": { "properties": { "tier": { "const": 0 } } }
         },
         {
-          "if": { "properties": { "backend": { "enum": ["podman", "docker", "microsandbox"] } } },
+          "if": { "properties": { "backend": { "enum": ["podman", "microsandbox"] } } },
           "then": {
             "properties": {
               "tier": { "const": 1 },

@@ -3,12 +3,34 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const childProcess = require('child_process');
 
 const DEFAULT_TERMINAL = 'wezterm';
+const TERMINAL_APP = 'terminal.app';
+const TERMINAL_WRAPPER_TOKEN = '__ECC_TERMINAL_WRAPPER__';
 const SPAWN_KILL_SIGNAL = 'SIGTERM';
 const SYNC_TIMEOUT_MS = 10_000;
-const SUPPORTED_TERMINALS = new Set([DEFAULT_TERMINAL]);
+const TERMINAL_ALIASES = new Map([
+  [DEFAULT_TERMINAL, DEFAULT_TERMINAL],
+  ['terminal', TERMINAL_APP],
+  ['terminal.app', TERMINAL_APP],
+  ['macos-terminal', TERMINAL_APP],
+]);
+const SUPPORTED_TERMINALS = new Set([DEFAULT_TERMINAL, TERMINAL_APP]);
+const TERMINAL_APP_LAUNCH_SCRIPT = Object.freeze([
+  '-e', 'on run argv',
+  '-e', 'set launcherPath to item 1 of argv',
+  '-e', 'tell application "Terminal"',
+  '-e', 'activate',
+  '-e', 'do script (quoted form of launcherPath)',
+  '-e', 'end tell',
+  '-e', 'end run',
+]);
+const MAX_FILTERED_ENVIRONMENT_BYTES = 256 * 1024;
+const MAX_FILTERED_ENVIRONMENT_ENTRIES = 128;
+const FILTERED_ENVIRONMENT_PREFIX = 'ecc-terminal-env-';
 
 function usage() {
   return `Open an executable and its argument array in a visible terminal.
@@ -18,10 +40,12 @@ Usage:
   node skills/terminal-opener/scripts/open-terminal.js --detect [--terminal <name>] [--json]
 
 Options:
-  --terminal <name>  Terminal adapter (default: ECC_TERMINAL or wezterm).
+  --terminal <name>  Terminal adapter: wezterm or terminal.app (default: ECC_TERMINAL or wezterm).
   --cwd <path>       Initial host directory (default: current directory).
   --recover          Start a standalone terminal with stock configuration.
   --standalone       Alias for --recover.
+  --filtered-env     Inherit no environment variables unless allowed explicitly.
+  --allow-env <name> Allow one existing variable in filtered mode; repeatable.
   --detect           Check whether the selected terminal can be launched.
   --launch           Explicitly open the terminal (the default only prints a plan).
   --dry-run          Explicitly print the launch plan without opening a terminal.
@@ -41,6 +65,11 @@ function validateTerminalName(value) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value)) {
     throw new Error('Invalid terminal name; use a simple adapter name such as wezterm.');
   }
+}
+
+function normalizeTerminalName(value) {
+  validateTerminalName(value);
+  return TERMINAL_ALIASES.get(String(value).toLowerCase()) || value;
 }
 
 function validateCwd(value) {
@@ -69,12 +98,314 @@ function validateExecutable(value) {
       'Executable must be one argv entry, not an interpolated shell command string.'
     );
   }
+  if (value.startsWith('-')) {
+    throw new Error('Executable must not begin with a hyphen; use an explicit path instead.');
+  }
 }
 
 function validateArgv(argv) {
   for (const argument of argv) {
     if (argument.includes('\0')) throw new Error('Arguments must not contain NUL bytes.');
   }
+}
+
+function validateEnvironmentName(value) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    throw new Error('Invalid environment variable name; use letters, digits, and underscores.');
+  }
+}
+
+function normalizeEnvironment(environment = {}) {
+  const mode = environment.mode || 'inherit';
+  if (!['inherit', 'filtered'].includes(mode)) {
+    throw new Error('Environment mode must be "inherit" or "filtered".');
+  }
+  const allowlist = environment.allowlist || [];
+  if (!Array.isArray(allowlist)) throw new Error('Environment allowlist must be an array.');
+  for (const name of allowlist) validateEnvironmentName(name);
+  return { mode, allowlist: [...new Set(allowlist)] };
+}
+
+function buildSpawnEnvironment(environment, sourceEnv = process.env) {
+  const policy = normalizeEnvironment(environment);
+  if (policy.mode === 'inherit') return undefined;
+  return Object.fromEntries(policy.allowlist.flatMap(name => (
+    Object.prototype.hasOwnProperty.call(sourceEnv, name) && sourceEnv[name] !== undefined
+      ? [[name, String(sourceEnv[name])]]
+      : []
+  )));
+}
+
+function buildOuterProcessEnvironment(plan, spawnEnvironment) {
+  if (plan.terminal === TERMINAL_APP && spawnEnvironment !== undefined) return {};
+  return spawnEnvironment;
+}
+
+function decodeSpawnEnvironment(payload) {
+  if (
+    typeof payload !== 'string'
+    || payload.length === 0
+    || payload.length > Math.ceil(MAX_FILTERED_ENVIRONMENT_BYTES * 4 / 3)
+    || !/^[A-Za-z0-9_-]+$/.test(payload)
+  ) {
+    throw new Error('Invalid filtered environment payload.');
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Invalid filtered environment payload.');
+  }
+  return validateDecodedEnvironment(parsed);
+}
+
+function validateDecodedEnvironment(parsed) {
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('Filtered environment payload must be an object.');
+  }
+  const entries = Object.entries(parsed);
+  if (entries.length > MAX_FILTERED_ENVIRONMENT_ENTRIES) {
+    throw new Error('Filtered environment exceeds the 128-variable launch limit.');
+  }
+  for (const [name, value] of entries) {
+    validateEnvironmentName(name);
+    if (typeof value !== 'string' || value.includes('\0')) {
+      throw new Error('Filtered environment values must be strings without NUL bytes.');
+    }
+  }
+  return Object.fromEntries(entries);
+}
+
+function buildFilteredTargetArgs(plan, environmentPath) {
+  const targetArgs = [plan.executable, ...plan.argv];
+  return [
+    process.execPath,
+    __filename,
+    '--run-filtered-file',
+    environmentPath,
+    '--',
+    ...targetArgs,
+  ];
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function buildTerminalAppScript(plan, spawnEnvironment) {
+  const commandArgs = [plan.executable, ...plan.argv].map(shellQuote).join(' ');
+  const environmentPrefix = spawnEnvironment === undefined
+    ? 'exec'
+    : `exec /usr/bin/env -i ${Object.entries(spawnEnvironment).map(([name, value]) => (
+        `${name}=${shellQuote(value)}`
+      )).join(' ')}`;
+  return [
+    '#!/bin/sh',
+    'wrapper_path=$0',
+    'rm -f "$wrapper_path"',
+    'rmdir "$(dirname "$wrapper_path")" 2>/dev/null || true',
+    `cd ${shellQuote(plan.cwd)} || exit $?`,
+    `${environmentPrefix} ${commandArgs}`,
+    '',
+  ].join('\n');
+}
+
+function removeTerminalAppLauncher(temporaryRoot, fsImpl) {
+  try {
+    fsImpl.rmSync(temporaryRoot, { recursive: true, force: true });
+  } catch {
+    // Cleanup is best effort after the launcher has already failed.
+  }
+}
+
+function materializeFilteredEnvironment(environment, dependencies = {}) {
+  const fsImpl = dependencies.fs || fs;
+  const mkdtempSync = dependencies.mkdtempSync
+    || fsImpl.mkdtempSync?.bind(fsImpl)
+    || fs.mkdtempSync;
+  const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), FILTERED_ENVIRONMENT_PREFIX));
+  const environmentPath = path.join(temporaryRoot, 'environment.json');
+  const serialized = JSON.stringify(environment);
+  try {
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_FILTERED_ENVIRONMENT_BYTES) {
+      throw new Error('Filtered environment exceeds the 256 KiB launch limit.');
+    }
+    fsImpl.chmodSync(temporaryRoot, 0o700);
+    fsImpl.writeFileSync(environmentPath, serialized, {
+      encoding: 'utf8', mode: 0o600, flag: 'wx',
+    });
+    fsImpl.chmodSync(environmentPath, 0o600);
+  } catch (error) {
+    removeTerminalAppLauncher(temporaryRoot, fsImpl);
+    throw error;
+  }
+  return {
+    path: environmentPath,
+    cleanup: () => removeTerminalAppLauncher(temporaryRoot, fsImpl),
+  };
+}
+
+function readFilteredEnvironmentFile(environmentPath, dependencies = {}) {
+  const fsImpl = dependencies.fs || fs;
+  const resolved = path.resolve(environmentPath);
+  const directory = path.dirname(resolved);
+  const realpath = fsImpl.realpathSync.native || fsImpl.realpathSync;
+  const temporaryRoot = realpath(os.tmpdir());
+  const canonicalParent = realpath(path.dirname(directory));
+  const directoryStat = fsImpl.lstatSync(directory);
+  const fileStat = fsImpl.lstatSync(resolved);
+  const ownerMatches = typeof process.getuid !== 'function'
+    || (directoryStat.uid === process.getuid() && fileStat.uid === process.getuid());
+  if (
+    canonicalParent !== temporaryRoot
+    || !path.basename(directory).startsWith(FILTERED_ENVIRONMENT_PREFIX)
+    || path.basename(resolved) !== 'environment.json'
+    || !directoryStat.isDirectory()
+    || directoryStat.isSymbolicLink()
+    || (directoryStat.mode & 0o077) !== 0
+    || !fileStat.isFile()
+    || fileStat.isSymbolicLink()
+    || fileStat.nlink !== 1
+    || (fileStat.mode & 0o077) !== 0
+    || fileStat.size > MAX_FILTERED_ENVIRONMENT_BYTES
+    || !ownerMatches
+  ) {
+    throw new Error('Filtered environment file failed private-file validation.');
+  }
+  let descriptor;
+  let content;
+  try {
+    descriptor = fsImpl.openSync(
+      resolved,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)
+    );
+    const openedStat = fsImpl.fstatSync(descriptor);
+    if (
+      openedStat.dev !== fileStat.dev
+      || openedStat.ino !== fileStat.ino
+      || openedStat.nlink !== 1
+      || openedStat.size !== fileStat.size
+      || !openedStat.isFile()
+      || (openedStat.mode & 0o077) !== 0
+      || openedStat.size > MAX_FILTERED_ENVIRONMENT_BYTES
+      || (typeof process.getuid === 'function' && openedStat.uid !== process.getuid())
+    ) {
+      throw new Error('Filtered environment file changed during validation.');
+    }
+    content = fsImpl.readFileSync(descriptor, 'utf8');
+  } finally {
+    if (descriptor !== undefined) fsImpl.closeSync(descriptor);
+    removeTerminalAppLauncher(directory, fsImpl);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Filtered environment file is invalid JSON.');
+  }
+  return validateDecodedEnvironment(parsed);
+}
+
+function materializeTerminalAppLaunch(plan, spawnEnvironment, dependencies = {}) {
+  if (!Array.isArray(plan.args)) {
+    throw new Error('Terminal.app launch plan args must be an array.');
+  }
+  const wrapperTokens = plan.args.filter(argument => argument === TERMINAL_WRAPPER_TOKEN);
+  if (wrapperTokens.length !== 1) {
+    throw new Error('Terminal.app launch plan must contain exactly one launcher token.');
+  }
+  validateCwd(plan.cwd);
+  validateExecutable(plan.executable);
+  if (!Array.isArray(plan.argv)) {
+    throw new Error('Terminal.app launch plan target argv must be an array.');
+  }
+  validateArgv(plan.argv);
+
+  const fsImpl = dependencies.fs || fs;
+  const mkdtempSync = dependencies.mkdtempSync || fsImpl.mkdtempSync?.bind(fsImpl) || fs.mkdtempSync;
+  const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), 'ecc-terminal-app-'));
+  const wrapperPath = path.join(temporaryRoot, 'launch.command');
+  try {
+    fsImpl.chmodSync(temporaryRoot, 0o700);
+    fsImpl.writeFileSync(wrapperPath, buildTerminalAppScript(plan, spawnEnvironment), {
+      encoding: 'utf8',
+      mode: 0o700,
+      flag: 'wx',
+    });
+    fsImpl.chmodSync(wrapperPath, 0o700);
+  } catch (error) {
+    removeTerminalAppLauncher(temporaryRoot, fsImpl);
+    throw error;
+  }
+  return {
+    args: plan.args.map(argument => (
+      argument === TERMINAL_WRAPPER_TOKEN ? wrapperPath : argument
+    )),
+    cleanup: () => removeTerminalAppLauncher(temporaryRoot, fsImpl),
+  };
+}
+
+function materializeTerminalArgs(plan, args, environmentPath) {
+  if (!environmentPath) return [...args];
+  const targetArgs = [plan.executable, ...plan.argv];
+  const targetStart = args.length - targetArgs.length;
+  if (
+    targetStart < 1
+    || args[targetStart - 1] !== '--'
+    || !targetArgs.every((entry, index) => args[targetStart + index] === entry)
+  ) {
+    throw new Error('Launch plan target argv does not match its executable contract.');
+  }
+  return [
+    ...args.slice(0, targetStart),
+    ...buildFilteredTargetArgs(plan, environmentPath),
+  ];
+}
+
+function prepareTerminalArgs(plan, args, spawnEnvironment, dependencies) {
+  if (spawnEnvironment === undefined) {
+    return { args: [...args], cleanup() {} };
+  }
+  const materialized = materializeFilteredEnvironment(spawnEnvironment, dependencies);
+  try {
+    return {
+      args: materializeTerminalArgs(plan, args, materialized.path),
+      cleanup: materialized.cleanup,
+    };
+  } catch (error) {
+    materialized.cleanup();
+    throw error;
+  }
+}
+
+function runFilteredCommand(payload, commandArgv, dependencies = {}) {
+  const environment = decodeSpawnEnvironment(payload);
+  const [executable, ...argv] = commandArgv;
+  validateExecutable(executable);
+  validateArgv(argv);
+  const spawnSyncImpl = dependencies.spawnSync || childProcess.spawnSync;
+  const result = spawnSyncImpl(executable, argv, {
+    env: environment,
+    shell: false,
+    stdio: 'inherit',
+  });
+  if (result.error) throw new Error(`Unable to run ${executable}: ${result.error.message}`);
+  return Number.isInteger(result.status) ? result.status : 1;
+}
+
+function runFilteredCommandFile(environmentPath, commandArgv, dependencies = {}) {
+  const environment = readFilteredEnvironmentFile(environmentPath, dependencies);
+  const [executable, ...argv] = commandArgv;
+  validateExecutable(executable);
+  validateArgv(argv);
+  const spawnSyncImpl = dependencies.spawnSync || childProcess.spawnSync;
+  const result = spawnSyncImpl(executable, argv, {
+    env: environment,
+    shell: false,
+    stdio: 'inherit',
+  });
+  if (result.error) throw new Error(`Unable to run ${executable}: ${result.error.message}`);
+  return Number.isInteger(result.status) ? result.status : 1;
 }
 
 function readValue(argv, index, option) {
@@ -87,7 +418,7 @@ function readValue(argv, index, option) {
 
 function parseArgs(argv, context = {}) {
   const env = context.env || process.env;
-  const initialTerminal = env.ECC_TERMINAL || DEFAULT_TERMINAL;
+  const initialTerminal = normalizeTerminalName(env.ECC_TERMINAL || DEFAULT_TERMINAL);
   const initialCwd = context.cwd || process.cwd();
   const options = {
     argv: [],
@@ -95,6 +426,7 @@ function parseArgs(argv, context = {}) {
     detect: false,
     dryRun: true,
     executable: undefined,
+    environment: { mode: 'inherit', allowlist: [] },
     help: false,
     json: false,
     mode: 'normal',
@@ -112,10 +444,22 @@ function parseArgs(argv, context = {}) {
     }
     if (argument === '--terminal' || argument === '--cwd') {
       const value = readValue(argv, index, argument);
-      options[argument.slice(2)] = value;
+      options[argument.slice(2)] = argument === '--terminal'
+        ? normalizeTerminalName(value)
+        : value;
       index += 1;
     } else if (argument === '--recover' || argument === '--standalone') {
       options.mode = 'recover';
+    } else if (argument === '--filtered-env') {
+      options.environment = { ...options.environment, mode: 'filtered' };
+    } else if (argument === '--allow-env') {
+      const value = readValue(argv, index, argument);
+      validateEnvironmentName(value);
+      options.environment = {
+        ...options.environment,
+        allowlist: [...options.environment.allowlist, value],
+      };
+      index += 1;
     } else if (argument === '--detect') {
       options.detect = true;
     } else if (argument === '--launch') {
@@ -136,14 +480,18 @@ function parseArgs(argv, context = {}) {
   if (launchRequested && dryRunRequested) {
     throw new Error('--launch and --dry-run are mutually exclusive.');
   }
+  if (options.environment.allowlist.length > 0 && options.environment.mode !== 'filtered') {
+    throw new Error('--allow-env requires --filtered-env.');
+  }
 
-  validateTerminalName(options.terminal);
+  options.terminal = normalizeTerminalName(options.terminal);
   validateCwd(options.cwd);
   if (!options.help && !options.detect && !options.executable) {
     throw new Error('An executable is required after --.');
   }
   if (options.executable) validateExecutable(options.executable);
   validateArgv(options.argv);
+  options.environment = normalizeEnvironment(options.environment);
   return options;
 }
 
@@ -151,9 +499,10 @@ function unsupportedPlan(options) {
   return {
     ok: false,
     reason: 'unsupported-terminal',
-    action: `Terminal "${options.terminal}" is not supported. Install WezTerm, then rerun with --terminal wezterm.`,
+    action: `Terminal "${options.terminal}" is not supported. Rerun with --terminal wezterm or --terminal terminal.app.`,
     terminal: options.terminal,
     executable: options.executable,
+    environment: normalizeEnvironment(options.environment),
     argv: [...options.argv],
     cwd: options.cwd,
     dryRun: options.dryRun,
@@ -166,16 +515,38 @@ function unsupportedPlan(options) {
 }
 
 function buildLaunchPlan(options) {
-  if (!SUPPORTED_TERMINALS.has(options.terminal)) return unsupportedPlan(options);
+  const terminal = normalizeTerminalName(options.terminal);
+  const normalizedOptions = { ...options, terminal };
+  if (!SUPPORTED_TERMINALS.has(terminal)) return unsupportedPlan(normalizedOptions);
 
   const commandArgs = options.executable ? [options.executable, ...options.argv] : [];
   const recover = options.mode === 'recover';
+  if (terminal === TERMINAL_APP) {
+    return {
+      ok: true,
+      reason: null,
+      action: null,
+      terminal,
+      executable: options.executable,
+      environment: normalizeEnvironment(options.environment),
+      argv: [...options.argv],
+      cwd: options.cwd,
+      dryRun: options.dryRun,
+      launchMode: 'app',
+      command: '/usr/bin/osascript',
+      args: [...TERMINAL_APP_LAUNCH_SCRIPT, TERMINAL_WRAPPER_TOKEN],
+      fallback: null,
+      probe: { command: '/usr/bin/osascript', args: ['-e', 'id of application "Terminal"'] },
+      wrapper: 'temporary-command-file',
+    };
+  }
   return {
     ok: true,
     reason: null,
     action: null,
-    terminal: options.terminal,
+    terminal,
     executable: options.executable,
+    environment: normalizeEnvironment(options.environment),
     argv: [...options.argv],
     cwd: options.cwd,
     dryRun: options.dryRun,
@@ -195,17 +566,20 @@ function buildLaunchPlan(options) {
 }
 
 function unavailableCapability(plan, reason, detail) {
+  const action = plan.terminal === TERMINAL_APP
+    ? 'Use macOS Terminal.app on this host, or rerun with --terminal wezterm.'
+    : 'Install WezTerm and ensure wezterm is on PATH, then rerun with --detect.';
   return {
     terminal: plan.terminal,
     supported: true,
     available: false,
     reason,
     detail,
-    action: 'Install WezTerm and ensure wezterm is on PATH, then rerun with --detect.',
+    action,
   };
 }
 
-function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync) {
+function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync, context = {}) {
   if (!plan.ok) {
     return {
       terminal: plan.terminal,
@@ -219,11 +593,17 @@ function detectTerminalCapability(plan, spawnSyncImpl = childProcess.spawnSync) 
 
   let result;
   try {
+    const spawnEnvironment = buildSpawnEnvironment(
+      plan.environment,
+      context.env === undefined ? process.env : context.env
+    );
+    const outerEnvironment = buildOuterProcessEnvironment(plan, spawnEnvironment);
     result = spawnSyncImpl(plan.probe.command, plan.probe.args, {
       encoding: 'utf8',
       killSignal: SPAWN_KILL_SIGNAL,
       shell: false,
       timeout: SYNC_TIMEOUT_MS,
+      ...(outerEnvironment === undefined ? {} : { env: outerEnvironment }),
     });
   } catch (error) {
     return unavailableCapability(plan, 'probe-failed', error.message);
@@ -255,7 +635,7 @@ function reportDetachedError(error) {
   process.exitCode = 1;
 }
 
-function launchDetached(command, args, cwd, spawnImpl, onDetachedError) {
+function launchDetached(command, args, cwd, spawnImpl, onDetachedError, spawnEnvironment) {
   let child;
   try {
     child = spawnImpl(command, args, {
@@ -263,6 +643,7 @@ function launchDetached(command, args, cwd, spawnImpl, onDetachedError) {
       detached: true,
       shell: false,
       stdio: 'ignore',
+      ...(spawnEnvironment === undefined ? {} : { env: spawnEnvironment }),
     });
   } catch (error) {
     throw new Error(`Unable to start ${command}: ${error.message}`, { cause: error });
@@ -284,26 +665,82 @@ function launch(plan, dependencies = {}) {
   const spawnSyncImpl = dependencies.spawnSync || childProcess.spawnSync;
   const spawnImpl = dependencies.spawn || childProcess.spawn;
   const onDetachedError = dependencies.onDetachedError || reportDetachedError;
-  const capability = detectTerminalCapability(plan, spawnSyncImpl);
+  const sourceEnv = dependencies.env === undefined ? process.env : dependencies.env;
+  const spawnEnvironment = buildSpawnEnvironment(plan.environment, sourceEnv);
+  const capability = detectTerminalCapability(plan, spawnSyncImpl, { env: sourceEnv });
   if (!capability.available) {
     throw new Error(`${capability.reason}: ${capability.action}`);
   }
 
+  if (plan.terminal === TERMINAL_APP) {
+    const materialized = materializeTerminalAppLaunch(plan, spawnEnvironment, dependencies);
+    const outerEnvironment = buildOuterProcessEnvironment(plan, spawnEnvironment);
+    let result;
+    try {
+      result = spawnSyncImpl(plan.command, materialized.args, {
+        cwd: plan.cwd,
+        encoding: 'utf8',
+        killSignal: SPAWN_KILL_SIGNAL,
+        shell: false,
+        timeout: SYNC_TIMEOUT_MS,
+        ...(outerEnvironment === undefined ? {} : { env: outerEnvironment }),
+      });
+    } catch (error) {
+      materialized.cleanup();
+      throw new Error(`Unable to start Terminal.app: ${error.message}`, { cause: error });
+    }
+    if (result.error) {
+      materialized.cleanup();
+      throw new Error(`Unable to start Terminal.app: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      materialized.cleanup();
+      throw new Error(
+        `Unable to start Terminal.app: launcher exited with status ${result.status}: ${String(
+          result.stderr || ''
+        ).trim()}`
+      );
+    }
+    return { strategy: 'terminal-app', capability };
+  }
+
+  const primary = prepareTerminalArgs(plan, plan.args, spawnEnvironment, dependencies);
+
   if (plan.launchMode === 'recover') {
-    launchDetached(plan.command, plan.args, plan.cwd, spawnImpl, onDetachedError);
+    try {
+      launchDetached(
+        plan.command,
+        primary.args,
+        plan.cwd,
+        spawnImpl,
+        error => { primary.cleanup(); onDetachedError(error); },
+        spawnEnvironment
+      );
+    } catch (error) {
+      primary.cleanup();
+      throw error;
+    }
     return { strategy: 'detached-recover', capability };
   }
 
-  const muxResult = spawnSyncImpl(plan.command, plan.args, {
-    cwd: plan.cwd,
-    encoding: 'utf8',
-    killSignal: SPAWN_KILL_SIGNAL,
-    shell: false,
-    timeout: SYNC_TIMEOUT_MS,
-  });
+  let muxResult;
+  try {
+    muxResult = spawnSyncImpl(plan.command, primary.args, {
+      cwd: plan.cwd,
+      encoding: 'utf8',
+      killSignal: SPAWN_KILL_SIGNAL,
+      shell: false,
+      timeout: SYNC_TIMEOUT_MS,
+      ...(spawnEnvironment === undefined ? {} : { env: spawnEnvironment }),
+    });
+  } catch (error) {
+    primary.cleanup();
+    throw error;
+  }
   if (!muxResult.error && muxResult.status === 0) {
     return { strategy: 'mux', capability };
   }
+  primary.cleanup();
 
   const muxFailure = muxResult.error
     ? muxResult.error.message
@@ -311,13 +748,22 @@ function launch(plan, dependencies = {}) {
         muxResult.stderr || ''
       ).trim()}`;
 
-  launchDetached(
-    plan.fallback.command,
-    plan.fallback.args,
-    plan.cwd,
-    spawnImpl,
-    onDetachedError
+  const fallback = prepareTerminalArgs(
+    plan, plan.fallback.args, spawnEnvironment, dependencies
   );
+  try {
+    launchDetached(
+      plan.fallback.command,
+      fallback.args,
+      plan.cwd,
+      spawnImpl,
+      error => { fallback.cleanup(); onDetachedError(error); },
+      spawnEnvironment
+    );
+  } catch (error) {
+    fallback.cleanup();
+    throw error;
+  }
   return { strategy: 'detached-fallback', capability, muxFailure };
 }
 
@@ -358,7 +804,16 @@ function printCapability(capability, json) {
 
 function main() {
   try {
-    const options = parseArgs(process.argv.slice(2));
+    const argv = process.argv.slice(2);
+    if (argv[0] === '--run-filtered-file') {
+      const boundary = argv.indexOf('--', 2);
+      if (!argv[1] || boundary < 0 || boundary === argv.length - 1) {
+        throw new Error('Filtered launch requires a private environment file and executable argv.');
+      }
+      process.exitCode = runFilteredCommandFile(argv[1], argv.slice(boundary + 1));
+      return;
+    }
+    const options = parseArgs(argv);
     if (options.help) {
       process.stdout.write(usage());
       return;
@@ -388,9 +843,13 @@ if (require.main === module) main();
 
 module.exports = {
   buildLaunchPlan,
+  buildSpawnEnvironment,
+  buildTerminalAppScript,
   detectTerminalCapability,
   formatLaunchResult,
   launch,
   parseArgs,
+  runFilteredCommand,
+  runFilteredCommandFile,
   usage,
 };

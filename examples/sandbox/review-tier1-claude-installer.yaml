@@ -1,0 +1,18 @@
+name: review-tier1-claude-installer
+needs:
+  os: [linux]
+  capabilities:
+    - clean-home
+    - pkg-install
+  trust: first-party
+  native: false
+resources:
+  cpu: 2
+  memory: 1GB
+  timeout: 300
+steps:
+  setup:
+    - mkdir -p /home/ecc/ecc-project && cd /home/ecc/ecc-project && /workspace/source/install.sh --target claude-project --profile full --json > install.json
+  assert:
+    - cd /home/ecc/ecc-project && node /workspace/source/scripts/ecc.js doctor --target claude-project --json > doctor.json && node -e 'const r=require("./doctor.json"); const drift=r.results[0].issues.find(issue=>issue.code==="drifted-managed-files"); if(drift) throw new Error(drift.message); if(r.summary.warningCount!==0||r.summary.errorCount!==0) throw new Error("doctor is not clean"); console.log(JSON.stringify({fixed:true,warnings:r.summary.warningCount,errors:r.summary.errorCount}))'
+report: install-diff

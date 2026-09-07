@@ -15,6 +15,11 @@ const {
   validateReport,
 } = require('../../scripts/sandbox/contracts');
 const { defaultHost, routeManifest } = require('../../scripts/sandbox/router');
+const {
+  createRun,
+  readRun,
+  updateState,
+} = require('../../scripts/sandbox/session-store');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const fixtureRoot = path.join(repoRoot, 'tests', 'fixtures', 'sandbox');
@@ -97,6 +102,73 @@ function runCli(args) {
 }
 
 console.log('\n=== ECC sandbox contracts and router tests ===\n');
+
+test('public help exposes Tier 1 controls but omits internal commands', () => {
+  const result = runCli(['--help']);
+  assert.strictEqual(result.status, 0, result.stderr);
+  const catalog = JSON.parse(result.stdout);
+  assert.ok(catalog.commands.includes('launch'));
+  assert.ok(catalog.commands.includes('listen'));
+  assert.ok(catalog.commands.includes('stop'));
+  assert.ok(!catalog.commands.includes('_explore'));
+  assert.ok(catalog.commands.every(command => !command.startsWith('_')));
+});
+
+test('real CLI dispatch accepts the internal launch watchdog command', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-watchdog-cli-test-'));
+  try {
+    const manifestPath = path.join(root, 'sandbox.yaml');
+    fs.writeFileSync(manifestPath, 'name: watchdog-dispatch\n');
+    const created = createRun({
+      root,
+      manifestPath,
+      manifestDigest: 'a'.repeat(64),
+      exploration: true,
+      route: { backend: 'podman', tier: 1, os: 'linux', arch: 'arm64' },
+    });
+    updateState(created.run_id, root, { status: 'exploring' });
+
+    const result = runCli(['_watch-launch', created.run_id, '--state-root', root]);
+
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(readRun(created.run_id, root).state.status, 'exploring');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('CLI launch returns the exact Tier 1 consent proposal without provisioning', () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-launch-cli-test-'));
+  try {
+    const capabilitiesPath = path.join(temporaryRoot, 'capabilities.json');
+    fs.writeFileSync(capabilitiesPath, `${JSON.stringify({
+      schema_version: 1,
+      host: { os: 'macos', arch: 'arm64' },
+      backends: { podman: { available: true } },
+    })}\n`);
+    const result = runCli([
+      'launch',
+      path.join(repoRoot, 'examples', 'sandbox', 'review-tier1-podman.yaml'),
+      '--purpose', 'isolated backend feature behavior',
+      '--terminal', 'terminal.app',
+      '--capabilities', capabilitiesPath,
+    ]);
+    assert.strictEqual(result.status, 0, result.stderr);
+    const proposal = JSON.parse(result.stdout);
+    assert.strictEqual(proposal.result, 'consent-required');
+    assert.strictEqual(proposal.creates_run, false);
+    assert.match(proposal.proposal_id, /^proposal_[a-f0-9]{64}$/);
+    assert.strictEqual(proposal.terminal, 'terminal.app');
+    assert.strictEqual(
+      proposal.consent_prompt,
+      'Would you like to launch a Tier 1 rootless Podman sandbox with '
+        + 'a clean Linux home, a read-only source mount, and networking disabled, '
+        + 'for testing isolated backend feature behavior? y/n'
+    );
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test('loads and validates the canonical YAML manifest fixture', () => {
   const manifest = loadManifest(path.join(fixtureRoot, 'valid.yaml'));
@@ -247,7 +319,6 @@ for (const testCase of routingFixtures.cases) {
     const expectedTier = {
       srt: 0,
       podman: 1,
-      docker: 1,
       microsandbox: 1,
       lume: 2,
       lima: 2,

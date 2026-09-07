@@ -19,8 +19,13 @@ const {
 const { executeSrt } = require('./backends/srt');
 const { executeContainer } = require('./backends/podman');
 const { loadMockScenario, mockRunner } = require('./mock');
+const interactiveCli = require('./interactive-cli');
 
-const COMMANDS = ['probe', 'run', 'report'];
+const COMMANDS = [
+  'probe', 'run', 'report',
+  ...interactiveCli.PUBLIC_COMMANDS,
+  '_explore', '_guard', '_watch-launch',
+];
 
 function writeJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -33,8 +38,12 @@ function help() {
       'ecc-sandbox probe [--refresh] [--cache <file>] [--mock <capabilities.json>]',
       'ecc-sandbox run <sandbox.yaml> [--dry-run] [--local-only] [--capabilities <file>] [--mock <file>]',
       'ecc-sandbox report <report.json>',
+      'ecc-sandbox launch <sandbox.yaml> --purpose <text> [--terminal wezterm|terminal.app] [--consent y|n --proposal <id>] [--capabilities <file>]',
+      'ecc-sandbox listen <run-id> [--follow] [--format jsonl]',
+      'ecc-sandbox status <run-id>',
+      'ecc-sandbox stop <run-id>',
     ],
-    commands: COMMANDS,
+    commands: COMMANDS.filter(command => !command.startsWith('_')),
   };
 }
 
@@ -105,7 +114,6 @@ function emptyCapabilityMap() {
     backends: Object.fromEntries([
       'srt',
       'podman',
-      'docker',
       'microsandbox',
       'lume',
       'lima',
@@ -163,7 +171,7 @@ function runExecution(options) {
     throw new Error('Multiple-route execution is unavailable until the aggregate execution phase');
   }
   const route = resolved.decision.routes[0];
-  if (!['srt', 'podman', 'docker'].includes(route.backend)) {
+  if (!['srt', 'podman'].includes(route.backend)) {
     throw new Error(`${route.backend} execution is unavailable until its adapter phase`);
   }
 
@@ -240,6 +248,13 @@ function main(argv = process.argv.slice(2)) {
   }
   if (!COMMANDS.includes(command)) {
     throw new Error(`Unknown command: ${command}`);
+  }
+  if (interactiveCli.handles(command)) {
+    return interactiveCli.runCommand(command, args, {
+      cliPath: path.resolve(__filename),
+      resolveRun,
+      writeJson,
+    });
   }
   if (command === 'run') {
     const options = parseRunArgs(args);

@@ -68,6 +68,12 @@ function buildCreateArgs(manifest, options) {
     '--user', '1000:1000',
     '--hostname', 'ecc-sandbox',
   ];
+  if (options.runId && options.ownerToken) {
+    args.push(
+      '--label', `io.ecc.sandbox.run=${options.runId}`,
+      '--label', `io.ecc.sandbox.owner=${options.ownerToken}`
+    );
+  }
   if (manifest.needs.trust === 'untrusted') {
     args.push('--security-opt', 'no-new-privileges');
   }
@@ -157,7 +163,7 @@ function imageBuildFix(runtime) {
 
 function executeContainer(manifest, options = {}) {
   const runtime = options.runtime || 'podman';
-  if (!['podman', 'docker'].includes(runtime)) {
+  if (runtime !== 'podman') {
     throw new Error(`Unsupported Tier 1 runtime: ${runtime}`);
   }
   const cwd = path.resolve(options.cwd || process.cwd());

@@ -92,6 +92,44 @@ function runTests() {
     assert.ok(modules.some(module => module.id === 'orchestration'), 'Should include orchestration');
   })) passed++; else failed++;
 
+  if (test('core and default engineering installs place both sandbox interaction skills natively', () => {
+    const repoRoot = path.join(__dirname, '..', '..');
+    const destinations = {
+      'claude-project': {
+        projectRoot: '/workspace/claude-project',
+        skillsRoot: path.join('/workspace/claude-project', '.claude', 'skills'),
+      },
+      codex: {
+        homeDir: '/Users/example',
+        skillsRoot: path.join('/Users/example', '.codex', 'skills'),
+      },
+      kimi: {
+        projectRoot: '/workspace/kimi-project',
+        skillsRoot: path.join('/workspace/kimi-project', '.kimi-code', 'skills'),
+      },
+    };
+
+    for (const profileId of ['core', 'developer']) {
+      for (const [target, targetOptions] of Object.entries(destinations)) {
+        const plan = resolveInstallPlan({
+          repoRoot,
+          profileId,
+          target,
+          ...targetOptions,
+        });
+        for (const skillId of ['sandbox-testing', 'terminal-opener']) {
+          assert.ok(
+            plan.operations.some(operation => (
+              operation.sourceRelativePath === `skills/${skillId}`
+              && operation.destinationPath === path.join(targetOptions.skillsRoot, skillId)
+            )),
+            `${profileId} ${target} plan must install ${skillId} at its native skill destination`
+          );
+        }
+      }
+    }
+  })) passed++; else failed++;
+
   if (test('lists install components from the real project', () => {
     const components = listInstallComponents();
     assert.ok(components.some(component => component.id === 'lang:typescript'),
