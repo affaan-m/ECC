@@ -222,12 +222,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@opencode-ai/plugin@npm:1.18.25":
-  version: 1.18.25
-  resolution: "@opencode-ai/plugin@npm:1.18.25"
+"@opencode-ai/plugin@npm:1.18.27":
+  version: 1.18.27
+  resolution: "@opencode-ai/plugin@npm:1.18.27"
   dependencies:
     "@ai-sdk/provider": "npm:3.0.8"
-    "@opencode-ai/sdk": "npm:1.18.25"
+    "@opencode-ai/sdk": "npm:1.18.27"
     effect: "npm:4.0.0-beta.83"
     zod: "npm:4.1.8"
   peerDependencies:
@@ -241,16 +241,16 @@ __metadata:
       optional: true
     "@opentui/solid":
       optional: true
-  checksum: 10c0/a930eb7d80c31bf720a335cf3d0205b6d0032a96afae929a53db4d9d56b66fbf35ea0818c836c56de2cc24145af0d1607b1c76b8ab271946833974612037510f
+  checksum: 10c0/e5bee559eac1f35dbcc0e22056caed6b019cbd41e4ef4ae9bcd0ae12011fac9455ad0724c3570bf093fcaadcfc261ecee86e41cf1201f042f1a12d61a36aa0f0
   languageName: node
   linkType: hard
 
-"@opencode-ai/sdk@npm:1.18.25":
-  version: 1.18.25
-  resolution: "@opencode-ai/sdk@npm:1.18.25"
+"@opencode-ai/sdk@npm:1.18.27":
+  version: 1.18.27
+  resolution: "@opencode-ai/sdk@npm:1.18.27"
   dependencies:
     cross-spawn: "npm:7.0.6"
-  checksum: 10c0/dce06e5dab1ce0cb0e58da29885ff799a702f69cfde0b3812203dbd1958b4cd013513bb6ee9567b7645a24615cb40d10e8e47ec652b4dcd3938feb8a2cff656c
+  checksum: 10c0/9a43a2e6ac2754e1dadcecbd12d3a2119dcce4fab8c8783128b6136a236c1abc1053f6f68f1f69c9dace25ce76ebc023847ca9f7149047c53b08ce18b7198079
   languageName: node
   linkType: hard
 
@@ -312,12 +312,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:26.4.0":
-  version: 26.4.0
-  resolution: "@types/node@npm:26.4.0"
+"@types/node@npm:26.4.1":
+  version: 26.4.1
+  resolution: "@types/node@npm:26.4.1"
   dependencies:
     undici-types: "npm:~8.3.0"
-  checksum: 10c0/e6fc94ea3b58fb8040b38c465dec1c53c1fd9d2c092c81f699d28799726baf59f12e1600318e79e8e6f985bb919dab6ae820180b942b8e38c51acaad63e8aada
+  checksum: 10c0/29568336db8bc67740744782492af0e81ab1f88d86eaa07e38cf0a4c8bae7250a7b4b85c80ac1014fc98b2bc6d4bcac872b2c494ee0671b3880eada7c1fdbc94
   languageName: node
   linkType: hard
 
@@ -600,12 +600,12 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:9.39.2"
     "@iarna/toml": "npm:2.2.5"
-    "@opencode-ai/plugin": "npm:1.18.25"
-    "@types/node": "npm:26.4.0"
+    "@opencode-ai/plugin": "npm:1.18.27"
+    "@types/node": "npm:26.4.1"
     ajv: "npm:8.20.0"
     c8: "npm:11.0.0"
     eslint: "npm:10.9.1"
-    globals: "npm:17.11.0"
+    globals: "npm:17.12.0"
     js-yaml: "npm:4.3.1"
     markdownlint-cli: "npm:0.49.1"
     sql.js: "npm:1.14.2"
@@ -930,10 +930,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"globals@npm:17.11.0":
-  version: 17.11.0
-  resolution: "globals@npm:17.11.0"
-  checksum: 10c0/5e1be3d816e04d4d0d01b1cdd40e46b5fb6b5e9f15aece9a5919b060e0fb1b3f1b9e7327dce97ef19e05513a6d65872e0834999ddea251557556dddd0f5fde30
+"globals@npm:17.12.0":
+  version: 17.12.0
+  resolution: "globals@npm:17.12.0"
+  checksum: 10c0/8325cf8818c848871d17c32974c2c74e9c5f09c1b0e04421886f64f21e77c3e95f3ba25586743895a73acd860ada151132481d87d44a1f12993ae7758a694d03
   languageName: node
   linkType: hard
 
