@@ -79,6 +79,7 @@ def test_gate_allows_caution_by_default() -> None:
 def test_gate_rejects_new_by_default() -> None:
     with pytest.raises(AuraUntrusted) as exc_info:
         before_settle("did:aura:fresh-bot", _fetch=FETCH)
+    assert exc_info.value is not None
     assert exc_info.value.verdict.verdict == "new"
 
 
