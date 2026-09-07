@@ -1,12 +1,12 @@
 # Claude Code'un Her Şeyine Dair Uzun Kılavuz
 
-![Header: The Longform Guide to Everything Claude Code](../assets/images/longform/01-header.png)
+![Header: The Longform Guide to Everything Claude Code](../../assets/images/longform/01-header.png)
 
 ---
 
 > **Ön Koşul**: Bu kılavuz [Claude Code'un Her Şeyine Dair Kısa Kılavuz](./the-shortform-guide.md) üzerine kuruludur. Skill'leri, hook'ları, subagent'ları, MCP'leri ve plugin'leri henüz kurmadıysanız önce onu okuyun.
 
-![Reference to Shorthand Guide](../assets/images/longform/02-shortform-reference.png)
+![Reference to Shorthand Guide](../../assets/images/longform/02-shortform-reference.png)
 *Kısa Kılavuz - önce onu okuyun*
 
 Kısa kılavuzda, temel kurulumu ele aldım: etkili bir Claude Code iş akışının omurgasını oluşturan skill'ler ve command'lar, hook'lar, subagent'lar, MCP'ler, plugin'ler ve yapılandırma desenleri. Bu kurulum kılavuzu ve temel altyapıydı.
@@ -39,7 +39,7 @@ Lazy loading ile, context window sorunu çoğunlukla çözülmüştür. Ancak to
 
 Oturumlar arasında memory paylaşımı için, ilerlemeyi özetleyen ve kontrol eden, ardından `.claude` klasörünüzde bir `.tmp` dosyasına kaydeden ve oturumunuz sonuna kadar ona ekleyen bir skill veya command en iyi bahistir. Ertesi gün bunu context olarak kullanabilir ve kaldığı yerden devam edebilir, her oturum için yeni bir dosya oluşturun böylece eski context'i yeni işe kirletmezsiniz.
 
-![Session Storage File Tree](../assets/images/longform/03-session-storage.png)
+![Session Storage File Tree](../../assets/images/longform/03-session-storage.png)
 *Oturum depolama örneği -> <https://github.com/affaan-m/everything-claude-code/tree/main/examples/sessions>*
 
 Claude mevcut durumu özetleyen bir dosya oluşturur. İnceleyin, gerekirse düzenlemeler isteyin, ardından yeniden başlayın. Yeni konuşma için, sadece dosya yolunu sağlayın. Özellikle context limitlerini aşarken ve karmaşık işi sürdürmeniz gerektiğinde kullanışlıdır. Bu dosyalar şunları içermelidir:
@@ -110,7 +110,7 @@ Kullandığınız araçları optimize edin ve görev için yeterli olan en ucuz 
 
 **Model Seçimi Hızlı Referans:**
 
-![Model Selection Table](../assets/images/longform/04-model-selection.png)
+![Model Selection Table](../../assets/images/longform/04-model-selection.png)
 *Çeşitli yaygın görevlerde subagent'ların varsayımsal kurulumu ve seçimlerin arkasındaki akıl yürütme*
 
 | Görev Türü                    | Model  | Neden                                            |
@@ -128,14 +128,14 @@ Kodlama görevlerinin %90'ı için Sonnet'i varsayılan yapın. İlk deneme baş
 
 **Fiyatlandırma Referansı:**
 
-![Claude Model Pricing](../assets/images/longform/05-pricing-table.png)
+![Claude Model Pricing](../../assets/images/longform/05-pricing-table.png)
 *Kaynak: <https://platform.claude.com/docs/en/about-claude/pricing>*
 
 **Araca Özgü Optimizasyonlar:**
 
 grep'i mgrep ile değiştirin - geleneksel grep veya ripgrep'e kıyasla ortalama ~%50 token azaltması:
 
-![mgrep Benchmark](../assets/images/longform/06-mgrep-benchmark.png)
+![mgrep Benchmark](../../assets/images/longform/06-mgrep-benchmark.png)
 *50 görevlik benchmark'ımızda, mgrep + Claude Code, grep tabanlı iş akışlarına kıyasla benzer veya daha iyi değerlendirilen kalitede ~2 kat daha az token kullandı. Kaynak: @mixedbread-ai tarafından mgrep*
 
 **Modüler Kod Tabanı Faydaları:**
@@ -181,7 +181,7 @@ Kod değişiklikleri için ana sohbet, kod tabanı ve mevcut durumu hakkında so
 
 **Keyfi Terminal Sayıları Üzerine:**
 
-![Boris on Parallel Terminals](../assets/images/longform/07-boris-parallel.png)
+![Boris on Parallel Terminals](../../assets/images/longform/07-boris-parallel.png)
 *Boris (Anthropic) birden fazla Claude instance'ı çalıştırma üzerine*
 
 Boris'in paralelleştirme hakkında ipuçları var. 5 Claude instance'ını yerel olarak ve 5'ini upstream çalıştırmak gibi şeyler önerdi. Keyfi terminal miktarları belirlemeye karşı tavsiyede bulunurum. Bir terminalin eklenmesi gerçek bir zorunluluktan olmalıdır.
@@ -202,7 +202,7 @@ cd ../project-feature-a && claude
 
 Instance'larınızı ölçeklendirmeye başlıyorsanız VE birbirleriyle örtüşen kod üzerinde çalışan birden fazla Claude instance'ınız varsa, git worktree'leri kullanmanız ve her biri için çok iyi tanımlanmış bir plana sahip olmanız zorunludur. Tüm sohbetlerinizi adlandırmak için `/rename <name here>` kullanın.
 
-![Two Terminal Setup](../assets/images/longform/08-two-terminals.png)
+![Two Terminal Setup](../../assets/images/longform/08-two-terminals.png)
 *Başlangıç Kurulumu: Kodlama için Sol Terminal, Sorular için Sağ Terminal - /rename ve /fork kullanın*
 
 **Cascade Yöntemi:**
@@ -314,7 +314,7 @@ alias q='cd ~/Desktop/projects'
 
 ## Kilometre Taşı
 
-![25k+ GitHub Stars](../assets/images/longform/09-25k-stars.png)
+![25k+ GitHub Stars](../../assets/images/longform/09-25k-stars.png)
 *Bir haftadan kısa sürede 25.000+ GitHub yıldızı*
 
 ---
