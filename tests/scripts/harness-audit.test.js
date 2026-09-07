@@ -583,10 +583,16 @@ function runTests() {
       fs.writeFileSync(path.join(projectRoot, 'active', 'test_active.py'), '');
       fs.writeFileSync(path.join(projectRoot, 'inactive', 'test_inactive.py'), '');
       assert.strictEqual(countPythonTestFiles(projectRoot), 1);
-
       const parsed = JSON.parse(run(['repo', '--format', 'json'], { cwd: projectRoot, homeDir }));
       assert.ok(parsed.checks.some(check => check.id === 'consumer-test-suite' && check.pass));
       assert.ok(parsed.checks.some(check => check.id === 'consumer-eval-coverage' && !check.pass));
+
+      fs.writeFileSync(path.join(projectRoot, 'pytest.ini'), '[invalid]\nvalue = true\n');
+      assert.strictEqual(
+        countPythonTestFiles(projectRoot),
+        5,
+        'Existing pytest.ini must win by presence and use default root discovery'
+      );
     } finally {
       cleanup(homeDir);
       cleanup(projectRoot);
@@ -684,7 +690,6 @@ function runTests() {
     const cases = [
       ['# Do not commit .env files\nnode_modules/\n', false],
       ['environment.json\n.envexample\n', false],
-      ['[z-a]env\n', false],
       ['[z-a]env\n', false],
       ['.env.example\n', false],
       ['.env\n', true],

@@ -154,12 +154,10 @@ function getActivePytestConfig(rootDir) {
     const configPath = path.join(rootDir, fileName);
     if (!fs.existsSync(configPath)) continue;
     const text = safeRead(configPath);
-    if (!text.trim() || /^\s*\[pytest]\s*$/m.test(text)) {
-      return {
-        paths: parseIniOption(text, 'pytest', 'testpaths'),
-        pythonFiles: parseIniOption(text, 'pytest', 'python_files'),
-      };
-    }
+    return {
+      paths: parseIniOption(text, 'pytest', 'testpaths'),
+      pythonFiles: parseIniOption(text, 'pytest', 'python_files'),
+    };
   }
 
   const pyproject = safeRead(path.join(rootDir, 'pyproject.toml'));
@@ -391,24 +389,30 @@ function gitignoreIgnoresEnvFiles(text) {
     'config/.env',
     'secrets.env',
   ];
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gitignore-'));
-  const repoRoot = path.join(tempRoot, 'repo');
-  const templateRoot = path.join(tempRoot, 'template');
+  let tempRoot;
 
   try {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-gitignore-'));
+    const repoRoot = path.join(tempRoot, 'repo');
+    const templateRoot = path.join(tempRoot, 'template');
+    const globalExcludesPath = path.join(tempRoot, 'global-excludes');
     fs.mkdirSync(repoRoot);
     fs.mkdirSync(templateRoot);
+    fs.writeFileSync(globalExcludesPath, '');
     fs.writeFileSync(path.join(repoRoot, '.gitignore'), text);
     const init = spawnSync('git', ['init', '--quiet', `--template=${templateRoot}`, repoRoot], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5000,
     });
-    if (init.error || init.status !== 0) return false;
+    if (init.error || init.status !== 0) {
+      process.stderr.write('[harness-audit] Unable to initialize isolated gitignore check\n');
+      return false;
+    }
 
     const result = spawnSync(
       'git',
-      ['-C', repoRoot, '-c', `core.excludesFile=${os.devNull}`, 'check-ignore', '--no-index', '--stdin'],
+      ['-C', repoRoot, '-c', `core.excludesFile=${globalExcludesPath}`, 'check-ignore', '--no-index', '--stdin'],
       {
         input: `${candidates.join('\n')}\n`,
         encoding: 'utf8',
@@ -416,9 +420,16 @@ function gitignoreIgnoresEnvFiles(text) {
         timeout: 5000,
       }
     );
-    return !result.error && result.status === 0 && Boolean(result.stdout.trim());
+    if (result.error || ![0, 1].includes(result.status)) {
+      process.stderr.write('[harness-audit] Unable to evaluate gitignore rules with git\n');
+      return false;
+    }
+    return result.status === 0 && Boolean(result.stdout.trim());
+  } catch (_error) {
+    process.stderr.write('[harness-audit] Unable to prepare isolated gitignore check\n');
+    return false;
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    if (tempRoot) fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
 
