@@ -128,6 +128,35 @@ function runTests() {
     const result = run(['--profile', 'core', 'typescript']);
     assert.strictEqual(result.code, 1);
     assert.ok(result.stderr.includes('cannot be combined'));
+    assert.ok(result.stderr.includes('Usage:'));
+  })) passed++; else failed++;
+
+  if (test('omits usage text for missing runtime dependency errors', () => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'install-apply-missing-ajv-'));
+    const scriptsDir = path.join(sandbox, 'scripts');
+    const libDir = path.join(scriptsDir, 'lib');
+    const configPath = path.join(sandbox, 'ecc-install.json');
+
+    try {
+      fs.mkdirSync(libDir, { recursive: true });
+      fs.cpSync(SCRIPT, path.join(scriptsDir, 'install-apply.js'));
+      fs.cpSync(path.join(__dirname, '..', '..', 'scripts', 'lib'), libDir, { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'manifests'), path.join(sandbox, 'manifests'), { recursive: true });
+      fs.cpSync(path.join(__dirname, '..', '..', 'schemas'), path.join(sandbox, 'schemas'), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ version: 1, profile: 'core' }, null, 2));
+
+      const result = spawnSync('node', [path.join(scriptsDir, 'install-apply.js'), '--config', configPath, '--dry-run'], {
+        encoding: 'utf8',
+        cwd: sandbox,
+      });
+
+      assert.strictEqual(result.status, 1);
+      assert.ok(result.stderr.includes("Missing runtime dependency 'ajv'"));
+      assert.ok(result.stderr.includes('npm install'));
+      assert.ok(!result.stderr.includes('Usage:'));
+    } finally {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
   })) passed++; else failed++;
 
   if (test('installs Claude rules and writes install-state', () => {

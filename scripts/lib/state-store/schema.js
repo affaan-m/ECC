@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const Ajv = require('ajv');
+const { requireRuntime } = require('../require-runtime');
 
 const SCHEMA_PATH = path.join(__dirname, '..', '..', '..', 'schemas', 'state-store.schema.json');
 
@@ -34,7 +34,7 @@ function getAjv() {
     return cachedAjv;
   }
 
-  cachedAjv = new Ajv({
+  cachedAjv = new (requireRuntime('ajv'))({
     allErrors: true,
     strict: false,
   });

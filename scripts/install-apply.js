@@ -200,7 +200,10 @@ async function main() {
       printHumanPlan(result, false);
     }
   } catch (error) {
-    process.stderr.write(`Error: ${error.message}${getHelpText()}`);
+    const suffix = error.code === 'ECC_RUNTIME_DEPENDENCY_MISSING'
+      ? '\n'
+      : getHelpText();
+    process.stderr.write(`Error: ${error.message}${suffix}`);
     process.exit(1);
   }
 }
