@@ -125,6 +125,7 @@ skills:
   - quarkus-security
   - quarkus-tdd
   - quarkus-verification
+  - rails-patterns
   - ralphinho-rfc-pipeline
   - react-patterns
   - react-performance
