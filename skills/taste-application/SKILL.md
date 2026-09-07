@@ -29,6 +29,15 @@ python scripts/pipeline.py --genre example --root stylepacks \
   --out out/review-v1.mp4
 ```
 
+`--duration` is a **best-effort cadence target**, not an exact runtime. Complete
+shots may produce a shorter or longer edit; the assembler does not duplicate
+clips or add padding to meet the target. The output manifest retains actual
+`duration` and adds `duration_contract` with requested and actual seconds,
+shortfall, overrun, and the `cadence_target` policy. Differences of at least
+one output frame are warned explicitly. No exact-duration mode is provided;
+when an exact runtime is required, inspect the receipt and revise or reject
+the cut before delivery.
+
 The pipeline keeps each run's graded shot files because the editable FCPXML
 and EDL reference them. It refuses output collisions and reports timeline
 export failures. A completed render is not a saved editor project or creative

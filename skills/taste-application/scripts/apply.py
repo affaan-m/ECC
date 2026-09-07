@@ -566,7 +566,7 @@ def main() -> None:
                     help="WHAT HAPPENS: subject and action, e.g. 'a courier weaves "
                          "through night traffic'")
     ap.add_argument("--duration", type=float, default=20.0,
-                    help="target total seconds; shot lengths are drawn from the pack's cadence")
+                    help="best-effort target seconds, not exact; shot lengths follow the pack's cadence and actual assembly duration is reported")
     ap.add_argument("--base-video",
                     help="optional existing footage; each shot is conditioned on the frame "
                          "at its own timecode so generated shots supplement the edit")

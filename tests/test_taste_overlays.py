@@ -1,11 +1,13 @@
 """Requested image overlays must fail closed if compositing fails."""
 
 import importlib.util
+import io
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -172,6 +174,85 @@ class OverlayFailureTests(unittest.TestCase):
                 self.assertFalse(out.exists())
                 self.assertEqual(take.read_bytes(), b"original video")
                 self.assertEqual(plate.read_bytes(), b"original image")
+
+
+class DurationContractTests(unittest.TestCase):
+    def test_cadence_target_records_actual_duration_and_warns_on_frame_difference(self):
+        for requested, shortfall, overrun, warning in (
+            (2.0, 0.7, 0.0, True),
+            (1.3, 0.0, 0.0, False),
+            (1.3 + 1 / 30, 0.033333, 0.0, True),
+            (1.31, 0.01, 0.0, False),
+            (1.0, 0.0, 0.3, True),
+            (None, 0.0, 0.0, False),
+        ):
+            with (
+                self.subTest(requested=requested),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                take, out = root / "take.mp4", root / "out.mp4"
+                take.write_bytes(b"original")
+                info = SimpleNamespace(width=320, height=180, fps=30, duration=1.3)
+                stats = SimpleNamespace(contrast=1, black_point=0, white_point=1)
+                stdout = io.StringIO()
+
+                def timeline(*args, **kwargs):
+                    path = kwargs["out_path"]
+                    path.touch()
+                    return path
+
+                with (
+                    patch.object(
+                        forge.pack_mod,
+                        "load",
+                        return_value=SimpleNamespace(
+                            grade_path="grade", cadence_path="cadence"
+                        ),
+                    ),
+                    patch.object(forge.grade_mod, "load_stats", return_value=stats),
+                    patch.object(
+                        forge.cad_mod,
+                        "load",
+                        return_value=SimpleNamespace(
+                            mean_shot=1, cuts_per_min=60, rhythm_variance=0
+                        ),
+                    ),
+                    patch.object(forge.frame_mod, "probe", return_value=info),
+                    patch.object(forge.asm, "normalize", return_value=take),
+                    patch.object(forge.grade_mod, "grade_clip_direct"),
+                    patch.object(forge.asm, "cut_take", return_value=[take]),
+                    patch.object(forge.asm, "concat"),
+                    patch.object(forge.tl_mod, "write_timeline", side_effect=timeline),
+                    patch.object(forge.asm, "write_manifest") as manifest,
+                    redirect_stdout(stdout),
+                ):
+                    forge.forge(
+                        "look",
+                        [str(take)],
+                        str(out),
+                        duration=requested,
+                        work=str(root / "work"),
+                        fps=30,
+                        plan=[{"shots": [{"start": 0, "duration": 1.3}]}],
+                    )
+                receipt = manifest.call_args.args[1]
+                self.assertEqual(receipt["duration"], 1.3)
+                self.assertEqual(
+                    receipt["duration_contract"],
+                    {
+                        "policy": "cadence_target",
+                        "requested_seconds": requested,
+                        "actual_seconds": 1.3,
+                        "shortfall_seconds": shortfall,
+                        "overrun_seconds": overrun,
+                    },
+                )
+                self.assertEqual(
+                    "WARNING: cadence target" in stdout.getvalue(), warning
+                )
+                self.assertNotIn("to hit", stdout.getvalue())
+                self.assertEqual(take.read_bytes(), b"original")
 
 
 if __name__ == "__main__":

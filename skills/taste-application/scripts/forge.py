@@ -240,12 +240,25 @@ def forge(
                 break
             kept.append(c); acc += d
         if kept:
-            print(f"  trimmed {len(order)} -> {len(kept)} shots to hit {duration:.1f}s")
+            print(f"  trimmed {len(order)} -> {len(kept)} shots toward target {duration:.1f}s")
             order = kept
 
     out_path = Path(out)
     asm.concat(order, out_path, fps=FPS)
     final = frame_mod.probe(out_path)
+    duration_delta = final.duration - duration if duration is not None else 0.0
+    duration_contract = {
+        "policy": "cadence_target",
+        "requested_seconds": duration,
+        "actual_seconds": round(final.duration, 6),
+        "shortfall_seconds": round(max(0.0, -duration_delta), 6),
+        "overrun_seconds": round(max(0.0, duration_delta), 6),
+    }
+    if duration is not None and abs(duration_delta) + 1e-9 >= 1.0 / FPS:
+        print(f"  WARNING: cadence target {duration:.3f}s produced {final.duration:.3f}s "
+              f"(shortfall {duration_contract['shortfall_seconds']:.3f}s, "
+              f"overrun {duration_contract['overrun_seconds']:.3f}s); "
+              "whole cadence shots are preserved without padding or duplication")
 
     # Ship an EDITABLE timeline beside the flattened mp4.
     #
@@ -288,6 +301,7 @@ def forge(
         "generated_shots": len(gen_shots),
         "base_shots": len(base_shots),
         "duration": round(final.duration, 3),
+        "duration_contract": duration_contract,
         "grade_strength": strength,
         "timelines": timelines,
         "shot_files": [str(Path(c).resolve()) for c in order],
@@ -311,7 +325,8 @@ def main() -> None:
     ap.add_argument("--overlays", nargs="*", default=None, help="overlay image paths")
     ap.add_argument("--overlay-every", type=int, default=4)
     ap.add_argument("--overlay-opacity", type=float, default=0.3)
-    ap.add_argument("--duration", type=float, default=None)
+    ap.add_argument("--duration", type=float, default=None,
+                    help="best-effort cadence target in seconds, not an exact output duration")
     ap.add_argument("--strength", type=float, default=1.0, help="0-1 grade intensity")
     ap.add_argument("--width", type=int, default=None)
     ap.add_argument("--take-len", type=float, default=5.0)

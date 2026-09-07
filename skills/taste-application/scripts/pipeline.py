@@ -58,7 +58,8 @@ def main() -> None:
     ap.add_argument("--fps", type=float, default=None, help="output frame rate")
     ap.add_argument("--brief", default="", help="WHAT HAPPENS in the new piece")
     ap.add_argument("--style-steer", default="", help="HOW IT LOOKS, per-run nudge")
-    ap.add_argument("--duration", type=float, default=12.0)
+    ap.add_argument("--duration", type=float, default=12.0,
+                    help="best-effort cadence target in seconds, not an exact duration; actual result is reported")
     ap.add_argument("--base-video", default=None, help="existing footage to supplement")
     ap.add_argument("--base-ratio", type=float, default=0.35)
     ap.add_argument("--out", default=None)
