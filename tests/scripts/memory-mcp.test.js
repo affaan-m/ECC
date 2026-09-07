@@ -138,6 +138,7 @@ async function withClient(fn, options = {}) {
       { name, arguments: toolArguments }
     ),
     callToolRaw: params => request('tools/call', params),
+    ping: params => request('ping', params),
   };
 
   try {
@@ -224,6 +225,38 @@ async function main() {
         client.listToolsRaw({ unexpected: true }),
         /-32602/
       );
+    });
+  });
+
+  await test('accepts the reserved _meta param on ping and rejects malformed values (#2810)', async () => {
+    await withClient(async client => {
+      // A client that attaches `_meta` to every request — Codex does — got
+      // -32602 on its keepalive, because `ping` refused every parameter while
+      // tools/list and tools/call already admit the reserved member.
+      assert.deepStrictEqual(await client.ping({ _meta: { progressToken: 'progress-1' } }), {});
+
+      // Baselines: params absent and params `{}` are two different wire shapes
+      // and the server decides them on the same branch; both must still work.
+      assert.deepStrictEqual(await client.ping(), {});
+      assert.deepStrictEqual(await client.ping({}), {});
+
+      // Same shape rule as tools/list and tools/call: present means it must be
+      // a metadata object, never null, an array, or a scalar.
+      for (const badMeta of [null, ['not', 'an', 'object'], 'string', 42, true]) {
+        await assert.rejects(
+          client.ping({ _meta: badMeta }),
+          /-32602/,
+          `expected ping _meta=${JSON.stringify(badMeta)} to be rejected`
+        );
+      }
+
+      // `_meta` is an exemption, not an opening.
+      await assert.rejects(client.ping({ unexpected: true }), /-32602/);
+      await assert.rejects(client.ping({ _meta: {}, unexpected: true }), /-32602/);
+      // A non-object `params` never reaches the ping branch: the envelope check
+      // above rejects it with -32600 and `id: null`, which this client cannot
+      // correlate back to a request. The handler still guards it, for the same
+      // reason tools/call does, but it is not observable from out here.
     });
   });
 

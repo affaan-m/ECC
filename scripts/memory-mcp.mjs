@@ -417,8 +417,18 @@ function createMemoryMcpService(options = {}) {
         return jsonRpcError(message.id, -32002, 'Server is not initialized.');
       }
       if (message.method === 'ping') {
-        if (message.params && Object.keys(message.params).length > 0) {
-          return jsonRpcError(message.id, -32602, 'ping does not accept parameters.');
+        const params = message.params ?? {};
+        // `_meta` is reserved by MCP for request metadata (e.g. progressToken) and
+        // may ride on any request, which is why `tools/list` and `tools/call` below
+        // both admit it. `ping` rejected every parameter, so a client that attaches
+        // `_meta` to everything — Codex does — got -32602 on its keepalive. Present
+        // means it must be a metadata object; nothing else is accepted. (#2810)
+        if (
+          !isRecord(params)
+          || (Object.prototype.hasOwnProperty.call(params, '_meta') && !isRecord(params._meta))
+          || Object.keys(params).some(key => key !== '_meta')
+        ) {
+          return jsonRpcError(message.id, -32602, 'ping accepts no parameters other than _meta.');
         }
         return jsonRpcResult(message.id, {});
       }
