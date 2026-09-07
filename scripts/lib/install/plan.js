@@ -7,6 +7,7 @@ const { execFileSync } = require('child_process');
 const { resolveInstallPlan } = require('../install-manifests');
 const { getInstallTargetAdapter } = require('../install-targets/registry');
 const { resolveInvocationEnvironment } = require('../invocation-environment');
+const { disableUnselectedOpenCodeHooks } = require('./hook-consent');
 
 const EXCLUDED_GENERATED_SOURCE_SUFFIXES = ['/ecc-install-state.json', '/ecc/install-state.json'];
 const IGNORED_DIRECTORY_NAMES = new Set([
@@ -285,7 +286,7 @@ function createManifestInstallPlan(options = {}) {
     source
   });
 
-  return {
+  return disableUnselectedOpenCodeHooks({
     mode: options.mode || 'manifest',
     sourceRoot,
     target,
@@ -311,7 +312,7 @@ function createManifestInstallPlan(options = {}) {
     excludedModuleIds: plan.excludedModuleIds,
     operations,
     statePreview
-  };
+  });
 }
 
 module.exports = {

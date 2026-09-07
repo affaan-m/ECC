@@ -1869,6 +1869,55 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('doctor dispatches the OpenCode hook-disable content transform consistently', () => {
+    const projectRoot = createTempDir('install-lifecycle-opencode-transform-');
+
+    try {
+      const targetRoot = path.join(projectRoot, '.cursor');
+      const installStatePath = path.join(targetRoot, 'ecc-install-state.json');
+      const destinationPath = path.join(targetRoot, 'opencode.json');
+      const sourceConfig = JSON.parse(fs.readFileSync(
+        path.join(REPO_ROOT, '.opencode', 'opencode.json'),
+        'utf8'
+      ));
+      const expectedContent = `${JSON.stringify({
+        ...sourceConfig,
+        plugin: sourceConfig.plugin.filter(plugin => plugin !== './plugins'),
+      }, null, 2)}\n`;
+      fs.mkdirSync(targetRoot, { recursive: true });
+      fs.writeFileSync(destinationPath, expectedContent, 'utf8');
+      writeState(installStatePath, createCursorStateOptions(projectRoot, {
+        targetRoot,
+        installStatePath,
+        operations: [{
+          kind: 'copy-file',
+          moduleId: 'platform-configs',
+          sourceRelativePath: '.opencode/opencode.json',
+          destinationPath,
+          strategy: 'preserve-relative-path',
+          ownership: 'managed',
+          scaffoldOnly: false,
+          contentTransform: 'opencode-disable-ecc-hooks',
+        }],
+      }));
+
+      const report = buildDoctorReport({
+        repoRoot: REPO_ROOT,
+        homeDir: projectRoot,
+        projectRoot,
+        targets: ['cursor'],
+      });
+
+      assert.strictEqual(report.results.length, 1);
+      assert.ok(!report.results[0].issues.some(issue => (
+        issue.code === 'drifted-managed-files'
+        || issue.code === 'unverified-managed-operations'
+      )));
+    } finally {
+      cleanup(projectRoot);
+    }
+  })) passed++; else failed++;
+
   if (test('doctor infers enabled hooks from older manifest install-state records', () => {
     const homeDir = createTempDir('install-lifecycle-home-');
     const projectRoot = createTempDir('install-lifecycle-project-');

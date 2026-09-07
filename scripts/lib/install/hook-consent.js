@@ -38,14 +38,50 @@ const HOOK_CAPABILITY_GROUPS = Object.freeze([
 
 const HOOK_CONSENT_DECISIONS = Object.freeze(['enabled', 'declined']);
 const HOOK_RUNTIME_MODULE_ID = 'hooks-runtime';
+const OPENCODE_DISABLE_ECC_HOOKS_TRANSFORM = 'opencode-disable-ecc-hooks';
 
 function normalizeOperationPath(value) {
   return String(value || '').replace(/\\/g, '/').toLowerCase();
 }
 
+function disableOpenCodeHookPluginRegistration(content, sourceRelativePath) {
+  let config;
+  try {
+    config = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`Failed to parse ${sourceRelativePath}: ${error.message}`);
+  }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`Invalid ${sourceRelativePath}: expected a JSON object`);
+  }
+  if (config.plugin !== undefined && !Array.isArray(config.plugin)) {
+    throw new Error(`Invalid ${sourceRelativePath}: plugin must be an array`);
+  }
+
+  if (!Array.isArray(config.plugin)) {
+    return `${JSON.stringify(config, null, 2)}\n`;
+  }
+
+  return `${JSON.stringify({
+    ...config,
+    plugin: config.plugin.filter(plugin => plugin !== './plugins'),
+  }, null, 2)}\n`;
+}
+
+function isOpenCodeHookActivationOperation(operation = {}) {
+  return normalizeOperationPath(operation.sourceRelativePath) === '.opencode/opencode.json';
+}
+
 function isHookRuntimeOperation(operation = {}) {
   if (operation.moduleId === HOOK_RUNTIME_MODULE_ID) {
     return true;
+  }
+
+  if (isOpenCodeHookActivationOperation(operation)) {
+    return !(
+      operation.kind === 'copy-file'
+      && operation.contentTransform === OPENCODE_DISABLE_ECC_HOOKS_TRANSFORM
+    );
   }
 
   const source = normalizeOperationPath(operation.sourceRelativePath);
@@ -90,6 +126,50 @@ function withoutHookRuntimeId(values) {
   return (Array.isArray(values) ? values : []).filter(value => value !== HOOK_RUNTIME_MODULE_ID);
 }
 
+function withoutOpenCodeHookActivation(operation) {
+  if (
+    !isOpenCodeHookActivationOperation(operation)
+    || operation.kind !== 'copy-file'
+  ) {
+    return operation;
+  }
+  return {
+    ...operation,
+    contentTransform: OPENCODE_DISABLE_ECC_HOOKS_TRANSFORM,
+  };
+}
+
+function transformOpenCodeHookActivationOperations(operations) {
+  return (Array.isArray(operations) ? operations : []).map(withoutOpenCodeHookActivation);
+}
+
+function planSelectsHookRuntime(plan = {}) {
+  return (
+    Array.isArray(plan.selectedModuleIds)
+    && plan.selectedModuleIds.includes(HOOK_RUNTIME_MODULE_ID)
+  ) || (
+    Array.isArray(plan.operations)
+    && plan.operations.some(operation => operation.moduleId === HOOK_RUNTIME_MODULE_ID)
+  );
+}
+
+function disableUnselectedOpenCodeHooks(plan) {
+  if (plan.target !== 'opencode' || planSelectsHookRuntime(plan)) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    operations: transformOpenCodeHookActivationOperations(plan.operations),
+    statePreview: plan.statePreview
+      ? {
+        ...plan.statePreview,
+        operations: transformOpenCodeHookActivationOperations(plan.statePreview.operations),
+      }
+      : plan.statePreview,
+  };
+}
+
 function setStatePreviewHookConsent(statePreview, hookConsent) {
   if (!statePreview || !statePreview.request) {
     return statePreview;
@@ -131,11 +211,17 @@ function stripHookRuntimeFromPlan(plan) {
   const hadHookRuntimeModule = Array.isArray(plan.selectedModuleIds)
     && plan.selectedModuleIds.includes('hooks-runtime');
   const operations = (Array.isArray(plan.operations) ? plan.operations : [])
+    .map(operation => (
+      plan.target === 'opencode' ? withoutOpenCodeHookActivation(operation) : operation
+    ))
     .filter(operation => !isHookRuntimeOperation(operation));
   const statePreview = plan.statePreview
     ? {
       ...plan.statePreview,
       operations: (Array.isArray(plan.statePreview.operations) ? plan.statePreview.operations : [])
+        .map(operation => (
+          plan.target === 'opencode' ? withoutOpenCodeHookActivation(operation) : operation
+        ))
         .filter(operation => !isHookRuntimeOperation(operation)),
       resolution: plan.statePreview.resolution
         ? {
@@ -164,10 +250,11 @@ function withHookConsent(plan, hookConsent = null) {
   if (hookConsent === 'declined') {
     return { ...stripHookRuntimeFromPlan(plan), hookConsent };
   }
+  const effectivePlan = disableUnselectedOpenCodeHooks(plan);
   return {
-    ...plan,
+    ...effectivePlan,
     hookConsent,
-    statePreview: setStatePreviewHookConsent(plan.statePreview, hookConsent),
+    statePreview: setStatePreviewHookConsent(effectivePlan.statePreview, hookConsent),
   };
 }
 
@@ -190,6 +277,8 @@ function assertHookConsentReady(plan = {}) {
 module.exports = {
   HOOK_CAPABILITY_GROUPS,
   assertHookConsentReady,
+  disableUnselectedOpenCodeHooks,
+  disableOpenCodeHookPluginRegistration,
   formatHookCapabilityDisclosure,
   getRecordedHookConsent,
   isHookRuntimeOperation,

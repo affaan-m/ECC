@@ -7,6 +7,7 @@ const assert = require('assert');
 const {
   HOOK_CAPABILITY_GROUPS,
   assertHookConsentReady,
+  disableOpenCodeHookPluginRegistration,
   formatHookCapabilityDisclosure,
   isHookRuntimeOperation,
   planMaterializesHookRuntime,
@@ -80,6 +81,23 @@ function runTests() {
       }),
       false
     );
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'copy-file',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+    }), true);
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'copy-file',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+      contentTransform: 'opencode-disable-ecc-hooks',
+    }), false);
+    assert.strictEqual(isHookRuntimeOperation({
+      kind: 'merge-json',
+      moduleId: 'platform-configs',
+      sourceRelativePath: '.opencode/opencode.json',
+      contentTransform: 'opencode-disable-ecc-hooks',
+    }), true);
     assert.strictEqual(isHookRuntimeOperation({ sourceRelativePath: 'rules/common.md' }), false);
     assert.strictEqual(
       isHookRuntimeOperation({ sourceRelativePath: 'skills/webhooks-guide.md' }),
@@ -94,6 +112,23 @@ function runTests() {
       selectedModuleIds: ['rules-core'],
     }), false);
     assert.strictEqual(planMaterializesHookRuntime({}), false);
+  })) passed++; else failed++;
+
+  if (test('removes only ECC hook activation from OpenCode config', () => {
+    const transformed = disableOpenCodeHookPluginRegistration(JSON.stringify({
+      plugin: ['./plugins', 'example-plugin'],
+      instructions: ['AGENTS.md'],
+    }), '.opencode/opencode.json');
+    assert.deepStrictEqual(JSON.parse(transformed), {
+      plugin: ['example-plugin'],
+      instructions: ['AGENTS.md'],
+    });
+    assert.deepStrictEqual(JSON.parse(disableOpenCodeHookPluginRegistration(
+      JSON.stringify({ instructions: ['AGENTS.md'] }),
+      '.opencode/opencode.json'
+    )), {
+      instructions: ['AGENTS.md'],
+    });
   })) passed++; else failed++;
 
   if (test('formats one numbered disclosure line per capability group', () => {

@@ -19,6 +19,8 @@ const {
   listAvailableLanguages,
 } = require('../../scripts/lib/install-executor');
 const { applyInstallPlan: applyInstallPlanDirect } = require('../../scripts/lib/install/apply');
+const { normalizeInstallRequest } = require('../../scripts/lib/install/request');
+const { createInstallPlanFromRequest } = require('../../scripts/lib/install/runtime');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -637,6 +639,106 @@ function runTests() {
       assert.strictEqual(fs.readFileSync(hooksPath, 'utf8'), before);
     } finally {
       cleanup(tempDir);
+    }
+  })) passed++; else failed++;
+
+  if (test('OpenCode profile keeps plugin source dormant until hook opt-in is consented', () => {
+    const homeDir = createTempDir('install-executor-opencode-boundary-');
+    try {
+      const planOptions = {
+        sourceRoot: REPO_ROOT,
+        homeDir,
+        projectRoot: homeDir,
+        exemptValidationCodes: ['opencode-plugin-not-built'],
+      };
+      const rawDefaultPlan = createManifestInstallPlan({
+        ...planOptions,
+        target: 'opencode',
+        profileId: 'opencode',
+      });
+      assert.strictEqual(
+        rawDefaultPlan.operations.find(operation => (
+          operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+        )).contentTransform,
+        'opencode-disable-ecc-hooks'
+      );
+      const defaultPlan = createInstallPlanFromRequest(
+        normalizeInstallRequest({ target: 'opencode', profileId: 'opencode' }),
+        planOptions
+      );
+      const defaultConfig = defaultPlan.operations.find(operation => (
+        operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+      ));
+      const defaultStateConfig = defaultPlan.statePreview.operations.find(operation => (
+        operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+      ));
+
+      assert.strictEqual(defaultConfig.contentTransform, 'opencode-disable-ecc-hooks');
+      assert.strictEqual(defaultStateConfig.contentTransform, 'opencode-disable-ecc-hooks');
+      assert.ok(defaultPlan.operations.some(operation => (
+        operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/plugins/ecc-hooks.ts'
+      )), 'Default plan should still copy dormant plugin source');
+
+      applyInstallPlanDirect(defaultPlan, { writeInstallState() {} });
+      const installedConfig = JSON.parse(fs.readFileSync(
+        path.join(homeDir, '.config', 'opencode', 'opencode.json'),
+        'utf8'
+      ));
+      assert.ok(!installedConfig.plugin.includes('./plugins'));
+
+      const enabledWithoutRuntime = createInstallPlanFromRequest(
+        normalizeInstallRequest({
+          target: 'opencode',
+          profileId: 'opencode',
+          enableHooks: true,
+        }),
+        planOptions
+      );
+      assert.strictEqual(
+        enabledWithoutRuntime.operations.find(operation => (
+          operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+        )).contentTransform,
+        'opencode-disable-ecc-hooks'
+      );
+
+      const declinedPlan = createInstallPlanFromRequest(
+        normalizeInstallRequest({ target: 'opencode', profileId: 'core', noHooks: true }),
+        planOptions
+      );
+      assert.strictEqual(
+        declinedPlan.operations.find(operation => (
+          operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+        )).contentTransform,
+        'opencode-disable-ecc-hooks'
+      );
+      assert.ok(!declinedPlan.operations.some(operation => operation.moduleId === 'hooks-runtime'));
+
+      const pendingPlan = createInstallPlanFromRequest(
+        normalizeInstallRequest({
+          target: 'opencode',
+          moduleIds: ['platform-configs', 'hooks-runtime'],
+        }),
+        planOptions
+      );
+      assert.throws(
+        () => applyInstallPlanDirect(pendingPlan, { writeInstallState() {} }),
+        /automatic hook runtime/
+      );
+
+      const enabledPlan = createInstallPlanFromRequest(
+        normalizeInstallRequest({
+          target: 'opencode',
+          moduleIds: ['platform-configs', 'hooks-runtime'],
+          enableHooks: true,
+        }),
+        planOptions
+      );
+      const enabledConfig = enabledPlan.operations.find(operation => (
+        operation.sourceRelativePath.split(path.sep).join('/') === '.opencode/opencode.json'
+      ));
+      assert.strictEqual(enabledConfig.contentTransform, undefined);
+    } finally {
+      cleanup(homeDir);
     }
   })) passed++; else failed++;
 
