@@ -63,7 +63,53 @@ class OverlayFailureTests(unittest.TestCase):
                 frames.append(frame)
             cap.release()
             self.assertEqual(len(frames), 15)
-            self.assertTrue(all(frame.max() > 100 for frame in frames))
+            self.assertTrue(all(frame.max() > 30 for frame in frames))
+
+    @unittest.skipUnless(
+        shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg required"
+    )
+    def test_rgba_overlay_preserves_background_and_respects_alpha_opacity(self):
+        import cv2
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            take, plate, out = (
+                root / name for name in ("take.mp4", "plate.png", "out.mp4")
+            )
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=64x64:r=30:d=0.1",
+                    "-c:v",
+                    "libx264",
+                    str(take),
+                ],
+                check=True,
+                timeout=20,
+            )
+            # Nonzero RGB underneath zero alpha must remain invisible.
+            image = forge.np.full((16, 16, 4), 255, dtype=forge.np.uint8)
+            image[:, :, 3] = 0
+            image[4:12, 4:12, 3] = 128
+            self.assertTrue(cv2.imwrite(str(plate), image))
+            forge.asm.overlay(
+                take, plate, out, width=64, height=64, scale=0.5, opacity=0.5
+            )
+            cap = cv2.VideoCapture(str(out))
+            ok, frame = cap.read()
+            cap.release()
+            self.assertTrue(ok)
+            self.assertLess(int(frame[:8, :8].max()), 8)
+            self.assertLess(int(frame[17:20, 17:20].max()), 8)
+            # Half-alpha white at half opacity over black is about 64/255.
+            self.assertGreater(float(frame[29:35, 29:35].mean()), 50)
+            self.assertLess(float(frame[29:35, 29:35].mean()), 80)
 
     def test_failed_requested_overlay_prevents_final_video_and_manifest(self):
         with tempfile.TemporaryDirectory() as directory:

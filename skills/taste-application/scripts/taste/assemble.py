@@ -156,8 +156,11 @@ def overlay(
         f"[1:v]format=rgba,scale={ew}:{eh},{rot}"
         f"colorchannelmixer=aa={a:.3f},"
         f"pad={width}:{height}:{ox}:{oy}:black@0,"
-        f"format=rgba[ov];"
-        f"[0:v]format=rgba[base];"
+        # Blend RGB planes explicitly: screening neutral YUV chroma produces
+        # a magenta cast even where the overlay is transparent. Premultiply
+        # alpha after applying opacity so transparent RGB stays invisible.
+        f"format=gbrap,premultiply=inplace=1,format=gbrp[ov];"
+        f"[0:v]format=gbrp[base];"
         f"[base][ov]blend=all_mode={blend or 'screen'}:shortest=1,format=yuv420p"
     )
     _run([
