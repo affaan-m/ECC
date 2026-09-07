@@ -23,7 +23,7 @@ readStdin().then(raw => {
     hook_event_name: 'SessionStart',
     source: 'startup',
   };
-  const outputs = [];
+  let outputs = [];
   if (!hookEnabled('session:start', ['minimal', 'standard', 'strict'])) {
     process.stdout.write(JSON.stringify({}));
     return;
@@ -34,9 +34,9 @@ readStdin().then(raw => {
   });
   if (envResult && envResult.status === 0 && envResult.stdout) {
     try {
-      outputs.push(normalizeSessionStartOutput(envResult.stdout));
+      outputs = [...outputs, normalizeSessionStartOutput(envResult.stdout)];
     } catch {
-      // The shared session-start hook can still run without optional env output.
+      console.error('[Cursor Hook] Ignoring invalid Cursor session environment output');
     }
   }
 
@@ -52,9 +52,12 @@ readStdin().then(raw => {
   });
   if (sessionResult && sessionResult.status === 0 && sessionResult.stdout) {
     try {
-      outputs.push(normalizeSessionStartOutput(sessionResult.stdout, { shared: true }));
+      outputs = [
+        ...outputs,
+        normalizeSessionStartOutput(sessionResult.stdout, { shared: true }),
+      ];
     } catch {
-      // Invalid optional context output must not block Cursor startup.
+      console.error('[Cursor Hook] Ignoring invalid shared SessionStart output');
     }
   }
   process.stdout.write(JSON.stringify(mergeSessionStartOutputs(outputs)));

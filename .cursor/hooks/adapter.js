@@ -9,35 +9,46 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const MAX_STDIN = 1024 * 1024;
+const MAX_STDIN_BYTES = 1024 * 1024;
+const STOP_FORMAT_TYPECHECK_BUDGET_MS = 210000;
+const STOP_FORMAT_TYPECHECK_TIMEOUT_HEADROOM_MS = 15000;
 
-function readStdin() {
+function readStdin(options = {}) {
   return new Promise((resolve) => {
     let data = '';
+    let dataBytes = 0;
     let truncated = false;
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
-      if (data.length < MAX_STDIN) {
-        const remaining = MAX_STDIN - data.length;
-        data += chunk.substring(0, remaining);
-        if (chunk.length > remaining) truncated = true;
-      } else {
+      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
+      if (truncated || dataBytes + chunkBytes > MAX_STDIN_BYTES) {
         truncated = true;
+        return;
       }
+      data += chunk;
+      dataBytes += chunkBytes;
     });
     process.stdin.on('end', () => {
       if (truncated) {
-        process.stderr.write(
-          `[Cursor Hook] stdin exceeded ${MAX_STDIN} characters; suppressing truncated input\n`
-        );
-        resolve('');
+        if (options.includeMetadata !== true) {
+          process.stderr.write(
+            `[Cursor Hook] stdin exceeded ${MAX_STDIN_BYTES} bytes; suppressing truncated input\n`
+          );
+        }
+        resolve(options.includeMetadata === true
+          ? { raw: '', truncated: true }
+          : '');
         return;
       }
-      resolve(data);
+      resolve(options.includeMetadata === true
+        ? { raw: data, truncated: false }
+        : data);
     });
     process.stdin.on('error', error => {
       process.stderr.write(`[Cursor Hook] stdin read failed: ${error.message}\n`);
-      resolve('');
+      resolve(options.includeMetadata === true
+        ? { raw: '', truncated: false }
+        : '');
     });
   });
 }
@@ -150,6 +161,17 @@ function mergeSessionStartOutputs(outputs) {
   };
 }
 
+function createStopFormatTypecheckOptions(sessionEnv = {}) {
+  return {
+    timeout: STOP_FORMAT_TYPECHECK_BUDGET_MS + STOP_FORMAT_TYPECHECK_TIMEOUT_HEADROOM_MS,
+    forwardStderr: true,
+    env: {
+      ...sessionEnv,
+      ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: String(STOP_FORMAT_TYPECHECK_BUDGET_MS),
+    },
+  };
+}
+
 function runExistingHook(scriptName, stdinData, options = {}) {
   try {
     const scriptPath = resolveRuntimePath('scripts', 'hooks', scriptName);
@@ -222,6 +244,7 @@ module.exports = {
   transformToClaude,
   normalizeSessionStartOutput,
   mergeSessionStartOutputs,
+  createStopFormatTypecheckOptions,
   runExistingHook,
   hookEnabled,
 };

@@ -14,6 +14,7 @@ const path = require('path');
 
 const accumulator = require('../../scripts/hooks/post-edit-accumulator');
 const {
+  getPerBatchBudgetMs,
   getTotalBudgetMs,
   isPluginClonePath,
   parseAccumulator,
@@ -220,6 +221,12 @@ if (test('getTotalBudgetMs honors a bounded dispatcher budget', () => {
     getTotalBudgetMs({ ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: 'invalid' }),
     270000
   );
+})) passed++; else failed++;
+
+if (test('getPerBatchBudgetMs always returns a positive child timeout', () => {
+  assert.strictEqual(getPerBatchBudgetMs(210000, 2), 105000);
+  assert.strictEqual(getPerBatchBudgetMs(210000, 210001), 1);
+  assert.strictEqual(getPerBatchBudgetMs(210000, 0), 60000);
 })) passed++; else failed++;
 
 if (test('stop hook clears accumulator after processing duplicates', () => {

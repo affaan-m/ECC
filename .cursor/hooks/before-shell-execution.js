@@ -6,8 +6,26 @@ const {
   transformToClaude,
 } = require('./adapter');
 
-readStdin()
-  .then(raw => {
+readStdin({ includeMetadata: true })
+  .then(({ raw, truncated }) => {
+    if (truncated) {
+      const hasBlockingGuard = (
+        hookEnabled('pre:bash:block-no-verify', ['minimal', 'standard', 'strict'])
+        || (
+          process.platform !== 'win32'
+          && hookEnabled('pre:bash:dev-server-block', ['standard', 'strict'])
+        )
+      );
+      if (hasBlockingGuard) {
+        console.error(
+          '[Cursor Hook] stdin exceeded the safety limit; blocking beforeShellExecution'
+        );
+        process.exit(2);
+      }
+      console.error('[Cursor Hook] stdin exceeded the safety limit; suppressing truncated input');
+      return;
+    }
+
     try {
       let input;
       let cmd;

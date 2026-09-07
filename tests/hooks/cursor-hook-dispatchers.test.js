@@ -30,6 +30,7 @@ const PRE_COMPACT = path.join(REPO_ROOT, '.cursor', 'hooks', 'pre-compact.js');
 const SUBAGENT_START = path.join(REPO_ROOT, '.cursor', 'hooks', 'subagent-start.js');
 const SUBAGENT_STOP = path.join(REPO_ROOT, '.cursor', 'hooks', 'subagent-stop.js');
 const AFTER_FILE_EDIT = path.join(REPO_ROOT, '.cursor', 'hooks', 'after-file-edit.js');
+const { createStopFormatTypecheckOptions } = require('../../.cursor/hooks/adapter');
 
 function test(name, fn) {
   try {
@@ -147,7 +148,17 @@ function createInstalledCursorFixture(options = {}) {
     [
       "'use strict';",
       "const fs = require('fs');",
-      "fs.appendFileSync(process.env.CURSOR_HOOK_LOG, 'stop-format-typecheck\\n');",
+      "fs.appendFileSync(process.env.CURSOR_HOOK_LOG, `stop-format-typecheck:${process.env.ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS}\\n`);",
+      "process.stdout.write(require('fs').readFileSync(0, 'utf8'));",
+      '',
+    ].join('\n')
+  );
+  writeFile(
+    path.join(scriptsRoot, 'hooks', 'session-end.js'),
+    [
+      "'use strict';",
+      "const fs = require('fs');",
+      "fs.appendFileSync(process.env.CURSOR_HOOK_LOG, 'session-end\\n');",
       "process.stdout.write(require('fs').readFileSync(0, 'utf8'));",
       '',
     ].join('\n')
@@ -264,6 +275,16 @@ if (test('Cursor-native security hooks honor the master hook switch', () => {
     assert.strictEqual(result.status, 0, result.stderr);
     assert.strictEqual(result.stderr, '', `${path.basename(scriptPath)} should be disabled`);
   }
+})) passed++; else failed++;
+
+if (test('Cursor-sensitive file hooks recognize the official file_path field', () => {
+  const warning = runHook(BEFORE_READ, { file_path: '.env' });
+  assert.strictEqual(warning.status, 0, warning.stderr);
+  assert.match(warning.stderr, /Reading sensitive file/);
+
+  const blocked = runHook(BEFORE_TAB_READ, { file_path: 'credentials.pem' });
+  assert.strictEqual(blocked.status, 2, blocked.stderr);
+  assert.match(blocked.stderr, /BLOCKED/);
 })) passed++; else failed++;
 
 if (test('Cursor-native audit hooks stay disabled in the minimal profile', () => {
@@ -403,14 +424,32 @@ if (test('afterFileEdit forwards user-visible console warnings', () => {
 })) passed++; else failed++;
 
 if (test('Stop reserves time for lifecycle hooks before the format batch', () => {
-  const source = fs.readFileSync(STOP, 'utf8');
-  assert.ok(
-    source.indexOf("runExistingHook('session-end.js'")
-      < source.indexOf("runExistingHook('stop-format-typecheck.js'"),
-    'Session persistence should run before the long format/typecheck batch'
-  );
-  assert.match(source, /timeout:\s*225000/);
-  assert.match(source, /ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS:\s*'210000'/);
+  const fixture = createInstalledCursorFixture();
+  try {
+    const result = runHook(fixture.stop, { conversation_id: 'ordered-stop' }, {
+      CURSOR_HOOK_LOG: fixture.logPath,
+      ECC_DISABLED_HOOKS: [
+        'stop:check-console-log',
+        'stop:evaluate-session',
+        'stop:cost-tracker',
+      ].join(','),
+    }, fixture.projectRoot);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.deepStrictEqual(
+      fs.readFileSync(fixture.logPath, 'utf8').trim().split('\n'),
+      ['session-end', 'stop-format-typecheck:210000']
+    );
+    assert.deepStrictEqual(createStopFormatTypecheckOptions({ CLAUDE_SESSION_ID: 'abc' }), {
+      timeout: 225000,
+      forwardStderr: true,
+      env: {
+        CLAUDE_SESSION_ID: 'abc',
+        ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '210000',
+      },
+    });
+  } finally {
+    fs.rmSync(fixture.projectRoot, { recursive: true, force: true });
+  }
 })) passed++; else failed++;
 
 if (test('Stop dispatcher leaves batch format/typecheck disabled in minimal profile', () => {
@@ -519,7 +558,10 @@ if (test('installed Stop dispatcher resolves hooks inside .cursor/scripts', () =
       fixture.projectRoot
     );
     assert.strictEqual(result.status, 0, result.stderr);
-    assert.strictEqual(fs.readFileSync(fixture.logPath, 'utf8'), 'stop-format-typecheck\n');
+    assert.strictEqual(
+      fs.readFileSync(fixture.logPath, 'utf8'),
+      'stop-format-typecheck:210000\n'
+    );
   } finally {
     fs.rmSync(fixture.projectRoot, { recursive: true, force: true });
   }
@@ -567,15 +609,56 @@ if (test('sessionStart dispatcher honors the master hook switch', () => {
   assert.deepStrictEqual(JSON.parse(result.stdout), {});
 })) passed++; else failed++;
 
-if (test('oversized Cursor input is never echoed as truncated JSON', () => {
+if (test('oversized beforeShellExecution input fails closed', () => {
+  const oversizedPayloads = [
+    JSON.stringify({
+      command: 'git commit --no-verify',
+      padding: 'x'.repeat(1024 * 1024),
+    }),
+    JSON.stringify({
+      command: 'git commit --no-verify',
+      padding: '界'.repeat(400000),
+    }),
+  ];
+  for (const oversized of oversizedPayloads) {
+    assert.ok(Buffer.byteLength(oversized, 'utf8') > 1024 * 1024);
+    const result = runHook(BEFORE_SHELL, oversized);
+    assert.strictEqual(result.status, 2, result.stderr);
+    assert.strictEqual(result.stdout, '');
+    assert.match(result.stderr, /stdin exceeded.*blocking/i);
+  }
+})) passed++; else failed++;
+
+if (test('oversized beforeShellExecution input honors explicit guard disablement', () => {
   const oversized = JSON.stringify({
-    command: 'echo safe',
+    command: 'git commit --no-verify',
     padding: 'x'.repeat(1024 * 1024),
   });
-  const result = runHook(BEFORE_SHELL, oversized);
-  assert.strictEqual(result.status, 0, result.stderr);
+  for (const env of [
+    { ECC_HOOKS_ENABLED: 'false' },
+    {
+      ECC_DISABLED_HOOKS: [
+        'pre:bash:block-no-verify',
+        'pre:bash:dev-server-block',
+      ].join(','),
+    },
+  ]) {
+    const result = runHook(BEFORE_SHELL, oversized, env);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout, '');
+    assert.match(result.stderr, /stdin exceeded.*suppressing/i);
+  }
+})) passed++; else failed++;
+
+if (test('oversized beforeTabFileRead input fails closed', () => {
+  const oversized = JSON.stringify({
+    file_path: '.env',
+    padding: '界'.repeat(400000),
+  });
+  const result = runHook(BEFORE_TAB_READ, oversized);
+  assert.strictEqual(result.status, 2, result.stderr);
   assert.strictEqual(result.stdout, '');
-  assert.match(result.stderr, /stdin exceeded/);
+  assert.match(result.stderr, /stdin exceeded.*blocking/i);
 })) passed++; else failed++;
 
 console.log('-'.repeat(55));

@@ -38,6 +38,12 @@ function getTotalBudgetMs(env = process.env) {
     : DEFAULT_TOTAL_BUDGET_MS;
 }
 
+function getPerBatchBudgetMs(totalBudgetMs, totalBatches) {
+  return totalBatches > 0
+    ? Math.max(1, Math.floor(totalBudgetMs / totalBatches))
+    : 60_000;
+}
+
 // Characters cmd.exe treats as separators/operators when shell: true is used.
 // Includes spaces and parentheses to guard paths like "C:\Users\John Doe\...".
 const UNSAFE_PATH_CHARS = /[&|<>^%!\s()]/;
@@ -208,7 +214,7 @@ function main() {
   // stays within the Stop hook wall-clock limit even in large monorepos.
   const totalBatches = byProjectRoot.size + byTsConfigDir.size;
   const totalBudgetMs = getTotalBudgetMs();
-  const perBatchMs = totalBatches > 0 ? Math.floor(totalBudgetMs / totalBatches) : 60_000;
+  const perBatchMs = getPerBatchBudgetMs(totalBudgetMs, totalBatches);
 
   for (const [root, batch] of byProjectRoot) formatBatch(root, batch, perBatchMs);
   for (const [tsDir, batch] of byTsConfigDir) typecheckBatch(tsDir, batch, perBatchMs);
@@ -264,4 +270,5 @@ module.exports = {
   parseAccumulator,
   isPluginClonePath,
   getTotalBudgetMs,
+  getPerBatchBudgetMs,
 };

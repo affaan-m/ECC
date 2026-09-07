@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-const { readStdin, runExistingHook, transformToClaude, hookEnabled } = require('./adapter');
+const {
+  createStopFormatTypecheckOptions,
+  hookEnabled,
+  readStdin,
+  runExistingHook,
+  transformToClaude,
+} = require('./adapter');
 readStdin().then(raw => {
   const input = JSON.parse(raw || '{}');
   const claudeInput = transformToClaude(input);
@@ -19,14 +25,11 @@ readStdin().then(raw => {
     runExistingHook('cost-tracker.js', claudeInput, sharedOptions);
   }
   if (hookEnabled('stop:format-typecheck', ['standard', 'strict'])) {
-    runExistingHook('stop-format-typecheck.js', claudeInput, {
-      timeout: 225000,
-      forwardStderr: true,
-      env: {
-        ...sharedOptions.env,
-        ECC_STOP_FORMAT_TYPECHECK_BUDGET_MS: '210000',
-      },
-    });
+    runExistingHook(
+      'stop-format-typecheck.js',
+      claudeInput,
+      createStopFormatTypecheckOptions(sharedOptions.env)
+    );
   }
   if (hookEnabled('stop:check-console-log', ['standard', 'strict'])) {
     runExistingHook('check-console-log.js', claudeInput, {

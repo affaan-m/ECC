@@ -26,6 +26,7 @@ function runWrapper(input, env = {}) {
     encoding: 'utf8',
     env: {
       ...process.env,
+      ECC_HOOKS_ENABLED: 'true',
       ECC_HOOK_PROFILE: 'standard',
       ECC_DISABLED_HOOKS: 'pre:bash:dev-server-block',
       ...env,
