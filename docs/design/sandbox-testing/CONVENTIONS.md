@@ -128,9 +128,9 @@ uses these decisions to preserve its stated safety and fidelity goals:
 21. Every Podman run verifies rootless mode immediately before image creation,
     drops all Linux capabilities, bounds processes/CPU/memory, and keeps the
     source mount read-only. First-party tests retain passwordless `sudo` only
-    inside that rootless user namespace so package installers behave normally;
-    untrusted Podman fallback additionally enables `no-new-privileges` and is
-    explicitly reported as degraded from the preferred Microsandbox backend.
+    inside that rootless user namespace so package installers behave normally.
+    Untrusted runs also enable `no-new-privileges` and explicitly report the
+    remaining isolation limitation; this PR does not claim stronger isolation.
 22. Layer-diff reports include directory entries and cap every normalized list
     at 1,000 paths. Executable and top-level home dotfile classifications include
     deleted paths; `services_registered` includes only added/changed services,
