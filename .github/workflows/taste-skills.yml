@@ -31,5 +31,14 @@ jobs:
           python-version: '3.12'
       - name: Install local media dependencies
         run: python -m pip install -r skills/taste-application/scripts/requirements.txt
-      - name: Test with no provider credentials
-        run: python -m unittest discover -s tests -p 'test_taste_*.py'
+      - name: Build and install the reusable ECC engine
+        run: |
+          python -m pip wheel --no-deps skills/taste-application/scripts --wheel-dir /tmp/ecc-wheels
+          python -m pip install /tmp/ecc-wheels/ecc_tasteforge-*.whl
+      - name: Test canonical engine and original creative scripts
+        run: |
+          python -m unittest discover -s skills/taste-application/tests
+          python -m unittest discover -s tests -p 'test_taste_*.py'
+          cd /tmp
+          python -I -c "from pathlib import Path; import sys, tasteforge; from tasteforge.pack import load; root = Path(tasteforge.__file__).resolve(); assert root.is_relative_to(Path(sys.prefix).resolve()); fixture = root.parent / 'fixtures/flashethereal'; assert load(fixture).inspect()['validation']['status'] == 'valid'"
+          python -m tasteforge --help

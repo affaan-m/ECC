@@ -20,11 +20,14 @@ submissions are not automatically repeated.
 
 `taste-distillation` retains its own `taste/` helpers so that skill can be
 installed independently, as the original bundle intended. The transport copies
-are checked for equality by regression tests. The standalone Resolve adapter
-shares the tested contract of the optional `ito-video` compatibility package;
-that package is not needed to run these skills.
+are checked for equality by regression tests. ECC owns the reusable `tasteforge` engine, including interview/schema
+contracts, workflow planning, asset receipts and the Resolve adapter. The
+legacy `taste.resolve` import delegates to that same adapter. `ito-video`
+consumes the packaged ECC engine as an example project.
 
 Verification uses `tests/test_taste_*.py` and the dedicated taste workflow CI.
 Actual application checks additionally exercised a full textured GLB in
 Blender 5.1 and overlay placement in Resolve Studio 21. These are distinct
 from the offline test suite and from artistic approval of a finished video.
+
+The metadata-only `tasteforge/fixtures/flashethereal` fixture comes from the earlier `tasteforge (4).zip` archive, SHA-256 `ef06a606d3b528fbd939b05fadc25bf6674073a1e05a01e3aa6b9c9416fd6284`. It includes no source media or `look.cube`; original source media stays outside the package.

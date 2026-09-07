@@ -11,15 +11,15 @@ For the complete standalone creative pipeline, use `taste-distillation` then
 `taste-application`. Those ECC skills ship their Python scripts directly:
 measure references, generate or pass through existing takes, grade, cut,
 composite, verify, and hand off to Blender and Resolve. No separate video
-repository is required for that flow. This skill documents the separately
-maintained offline compatibility package and its strict evidence contract.
+repository is required for that flow. This skill documents ECC's packaged offline engine and its strict evidence contract.
 
 TasteForge turns "make it feel like this reference" into a repeatable,
 inspectable workflow: interview taste, distill it into a structured style
 pack, validate the pack, apply its measured cadence and look to local media,
 and export an editable timeline. The canonical implementation is the
-`tasteforge` package in the Itô video repository; ECC orchestrates and
-explains it and does not vendor or duplicate its code.
+`tasteforge` package shipped inside ECC at
+`skills/taste-application/scripts/tasteforge/`. `Ito-Markets/ito-video` is an
+example project that consumes the packaged ECC engine.
 
 ## When to Use
 
@@ -77,9 +77,10 @@ dry-run/dry_run semantics — say "dry-run spec" or "deterministic plan", never
 
 ## Canonical Implementation
 
-- Repository: `Ito-Markets/ito-video` — find it under the workspace's
-  canonical local GitHub checkout root (never a hard-coded machine path);
-  package directory `tasteforge/`.
+- Repository: `affaan-m/ECC`; Python distribution `ecc-tasteforge`, package
+  directory `skills/taste-application/scripts/tasteforge/`. Install from the
+  extracted ECC package with `python3 -m pip install ./skills/taste-application/scripts`.
+  The example project `Ito-Markets/ito-video` pins a specific ECC commit.
 - CLI: `python3 -m tasteforge <command>` — `provenance`, `inspect`, `validate`,
   `interview`, `distill`, `apply`, `export`, `multimodal`. `--live` flags exit
   with code 2 and refuse.
@@ -87,16 +88,15 @@ dry-run/dry_run semantics — say "dry-run spec" or "deterministic plan", never
   spec, timeline events, application reports (`provider` is enum-locked to
   `"none"`; `dry_run` to `true`).
 - Recovered-source lineage and deliberate exclusions live in the repo's
-  `PROVENANCE.md`. Run `python3 -m tasteforge provenance` for the machine-
+  `skills/taste-application/SOURCE.md`. Run `python3 -m tasteforge provenance` for the machine-
   readable version.
 
-ECC's job is to route here, run the local deterministic commands, and
-interpret their JSON — not to reimplement cadence planning, LUT/grade
-statistics, or timeline emission. If the canonical package is absent, say so
-and stop; do not reconstruct its logic inline.
+Use the installed ECC engine for local deterministic commands and interpret
+its JSON. Install the packaged engine if absent; do not reconstruct its logic
+inline. `taste.resolve` is a compatibility import of `tasteforge.resolve`, so
+the creative scripts and example project share one verified Resolve adapter.
 
-The `python3 -m tasteforge` compatibility CLI requires that separate local
-Python package. The standalone `taste-distillation` and `taste-application`
+The `python3 -m tasteforge` CLI uses the installed `ecc-tasteforge` distribution. The standalone `taste-distillation` and `taste-application`
 scripts ship in ECC's opt-in media-generation module with their own Python
 requirements. Neither path requires publishing the user's repository or media.
 
@@ -241,7 +241,7 @@ weakening validation.
 ## Example Session
 
 ```bash
-# in the canonical ito-video checkout
+# after installing the ECC engine; paths below are your project inputs
 python3 -m tasteforge validate stylepacks/flashethereal
 python3 -m tasteforge interview --answers answers.json --genre flashethereal --out profile.json
 python3 -m tasteforge distill --profile profile.json --pack stylepacks/flashethereal --out spec.json
@@ -250,6 +250,7 @@ python3 -m tasteforge export --events events.json --out-dir out --title flasheth
 python3 -m tasteforge provenance
 ```
 
-If the user asks for the shots to actually be generated: stop, explain the
-fail-closed provider boundary, and deliver the deterministic plan, spec, and
-editable timeline instead.
+When shots must be generated, pass the reviewed brief and style direction to
+`taste-application` under the user's explicit provider authorization. The
+offline CLI remains fail-closed; its plans and editable timelines do not prove
+a provider job ran.
