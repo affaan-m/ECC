@@ -7,8 +7,8 @@ const {
 } = require('./adapter');
 
 readStdin({ includeMetadata: true })
-  .then(({ raw, truncated }) => {
-    if (truncated) {
+  .then(({ raw, truncated, readError }) => {
+    if (truncated || readError) {
       const hasBlockingGuard = (
         hookEnabled('pre:bash:block-no-verify', ['minimal', 'standard', 'strict'])
         || (
@@ -17,12 +17,14 @@ readStdin({ includeMetadata: true })
         )
       );
       if (hasBlockingGuard) {
-        console.error(
-          '[Cursor Hook] stdin exceeded the safety limit; blocking beforeShellExecution'
-        );
+        console.error(truncated
+          ? '[Cursor Hook] stdin exceeded the safety limit; blocking beforeShellExecution'
+          : '[Cursor Hook] stdin read failed; blocking beforeShellExecution');
         process.exit(2);
       }
-      console.error('[Cursor Hook] stdin exceeded the safety limit; suppressing truncated input');
+      console.error(truncated
+        ? '[Cursor Hook] stdin exceeded the safety limit; suppressing truncated input'
+        : '[Cursor Hook] stdin read failed; suppressing untrusted input');
       return;
     }
 

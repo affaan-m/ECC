@@ -15,11 +15,12 @@ const STOP_FORMAT_TYPECHECK_TIMEOUT_HEADROOM_MS = 15000;
 
 function readStdin(options = {}) {
   return new Promise((resolve) => {
+    const stream = options.stream || process.stdin;
     let data = '';
     let dataBytes = 0;
     let truncated = false;
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => {
+    stream.setEncoding('utf8');
+    stream.on('data', chunk => {
       const chunkBytes = Buffer.byteLength(chunk, 'utf8');
       if (truncated || dataBytes + chunkBytes > MAX_STDIN_BYTES) {
         truncated = true;
@@ -28,7 +29,7 @@ function readStdin(options = {}) {
       data += chunk;
       dataBytes += chunkBytes;
     });
-    process.stdin.on('end', () => {
+    stream.on('end', () => {
       if (truncated) {
         if (options.includeMetadata !== true) {
           process.stderr.write(
@@ -36,18 +37,18 @@ function readStdin(options = {}) {
           );
         }
         resolve(options.includeMetadata === true
-          ? { raw: '', truncated: true }
+          ? { raw: '', truncated: true, readError: false }
           : '');
         return;
       }
       resolve(options.includeMetadata === true
-        ? { raw: data, truncated: false }
+        ? { raw: data, truncated: false, readError: false }
         : data);
     });
-    process.stdin.on('error', error => {
+    stream.on('error', error => {
       process.stderr.write(`[Cursor Hook] stdin read failed: ${error.message}\n`);
       resolve(options.includeMetadata === true
-        ? { raw: '', truncated: false }
+        ? { raw: '', truncated: false, readError: true }
         : '');
     });
   });

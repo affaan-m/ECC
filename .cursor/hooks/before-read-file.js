@@ -7,7 +7,8 @@ readStdin().then(raw => {
   }
   try {
     const input = JSON.parse(raw);
-    const filePath = input.file_path || input.path || input.file || '';
+    const filePath = [input.file_path, input.path, input.file]
+      .find(value => typeof value === 'string' && value.trim()) || '';
     if (/\.(env|key|pem)$|\.env\.|credentials|secret/i.test(filePath)) {
       console.error('[ECC] WARNING: Reading sensitive file: ' + filePath);
       console.error('[ECC] Ensure this data is not exposed in outputs');

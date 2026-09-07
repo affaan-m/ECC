@@ -287,6 +287,17 @@ if (test('Cursor-sensitive file hooks recognize the official file_path field', (
   assert.match(blocked.stderr, /BLOCKED/);
 })) passed++; else failed++;
 
+if (test('invalid path field types cannot shadow a valid string fallback', () => {
+  const input = { file_path: {}, path: '.env' };
+  const warning = runHook(BEFORE_READ, input);
+  assert.strictEqual(warning.status, 0, warning.stderr);
+  assert.match(warning.stderr, /Reading sensitive file/);
+
+  const blocked = runHook(BEFORE_TAB_READ, input);
+  assert.strictEqual(blocked.status, 2, blocked.stderr);
+  assert.match(blocked.stderr, /BLOCKED/);
+})) passed++; else failed++;
+
 if (test('Cursor-native audit hooks stay disabled in the minimal profile', () => {
   const cases = [
     [BEFORE_MCP, { server: 'example', tool: 'read' }],
@@ -659,6 +670,27 @@ if (test('oversized beforeTabFileRead input fails closed', () => {
   assert.strictEqual(result.status, 2, result.stderr);
   assert.strictEqual(result.stdout, '');
   assert.match(result.stderr, /stdin exceeded.*blocking/i);
+})) passed++; else failed++;
+
+if (test('readStdin exposes stream failures to blocking dispatchers', () => {
+  const probe = [
+    "const { EventEmitter } = require('events');",
+    `const { readStdin } = require(${JSON.stringify(path.join(REPO_ROOT, '.cursor', 'hooks', 'adapter.js'))});`,
+    "const stream = new EventEmitter();",
+    "stream.setEncoding = () => {};",
+    "readStdin({ includeMetadata: true, stream }).then(result => process.stdout.write(JSON.stringify(result)));",
+    "setImmediate(() => stream.emit('error', new Error('synthetic read failure')));",
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['-e', probe], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    raw: '',
+    truncated: false,
+    readError: true,
+  });
 })) passed++; else failed++;
 
 console.log('-'.repeat(55));
