@@ -119,14 +119,50 @@ function buildEntry(type, name, relativePath, root) {
 }
 
 /**
+ * Guard against two entries publishing to the same site URL. This can only
+ * happen when two different source files declare the same `name` in
+ * frontmatter (the slug itself is already unique per directory listing), but
+ * if it does happen the generator must fail loudly rather than let the
+ * website silently overwrite one page with the other.
+ */
+function assertNoDuplicates(entries) {
+  const seenByUrl = new Map();
+
+  entries.forEach(entry => {
+    const previous = seenByUrl.get(entry.url);
+    if (previous) {
+      throw new Error(
+        `Duplicate catalog identifier: "${entry.name}" is declared by both `
+        + `${previous.source} and ${entry.source}, which both resolve to ${entry.url}. `
+        + 'Rename one of the "name" frontmatter fields so each surface has a unique identifier.'
+      );
+    }
+    seenByUrl.set(entry.url, entry);
+  });
+
+  const seenBySource = new Map();
+  entries.forEach(entry => {
+    const previous = seenBySource.get(entry.source);
+    if (previous) {
+      throw new Error(`Duplicate catalog source path: ${entry.source} was indexed twice.`);
+    }
+    seenBySource.set(entry.source, entry);
+  });
+}
+
+/**
  * Every catalog entry, sorted by type then slug so output never churns.
  */
 function buildCatalog(root = ROOT) {
-  return Object.freeze([
+  const entries = [
     ...listSkillEntries(root),
     ...listMarkdownEntries('agent', root),
     ...listMarkdownEntries('command', root),
-  ]);
+  ];
+
+  assertNoDuplicates(entries);
+
+  return Object.freeze(entries);
 }
 
 function countByType(entries) {
@@ -145,4 +181,5 @@ module.exports = {
   countByType,
   readFrontmatter,
   toSummary,
+  assertNoDuplicates,
 };

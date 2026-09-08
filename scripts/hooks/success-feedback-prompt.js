@@ -14,21 +14,39 @@
 const fs = require('fs');
 const path = require('path');
 
-const { getSessionsDir } = require('../lib/utils');
+const { getSessionsDir, getSessionSearchDirs } = require('../lib/utils');
+const { writeFileAtomic } = require('../lib/atomic-write');
 const { emptyState, isOptedOut, recordMilestone, selectMilestone, successFeedbackLines } = require('../lib/success-feedback');
 
 const STATE_FILENAME = '.ecc-success-feedback.json';
+
+// Real session records are written as `*-session.tmp` (see session-manager.js);
+// `.tmp` is a historical naming choice, not a transient file. Counting `.md`
+// files here would silently count zero sessions forever.
+const SESSION_FILE_SUFFIX = '-session.tmp';
 
 function stateFilePath() {
   return path.join(getSessionsDir(), STATE_FILENAME);
 }
 
-function countSessions(sessionsDir) {
-  try {
-    return fs.readdirSync(sessionsDir, { withFileTypes: true }).filter(entry => entry.isFile() && entry.name.endsWith('.md')).length;
-  } catch {
-    return 0;
-  }
+/**
+ * Count completed sessions across the canonical and legacy session
+ * directories (see getSessionSearchDirs), so an upgraded or migrated install
+ * does not lose credit for sessions run before the upgrade.
+ */
+function countSessions(sessionsDirs = getSessionSearchDirs()) {
+  const dirs = Array.isArray(sessionsDirs) ? sessionsDirs : [sessionsDirs];
+
+  return dirs.reduce((total, dir) => {
+    try {
+      const count = fs.readdirSync(dir, { withFileTypes: true })
+        .filter(entry => entry.isFile() && entry.name.endsWith(SESSION_FILE_SUFFIX))
+        .length;
+      return total + count;
+    } catch {
+      return total;
+    }
+  }, 0);
 }
 
 function readState(filePath) {
@@ -39,10 +57,11 @@ function readState(filePath) {
   }
 }
 
+// Atomic write (temp file + fsync + rename) so a crash or a concurrent
+// session can never leave a partially written or corrupt state file.
 function writeState(filePath, state) {
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    writeFileAtomic(filePath, `${JSON.stringify(state, null, 2)}\n`);
     return true;
   } catch {
     return false;
@@ -58,14 +77,14 @@ function run() {
     return { exitCode: 0 };
   }
 
-  const sessionsDir = getSessionsDir();
-  const milestone = selectMilestone(countSessions(sessionsDir), readState(stateFilePath()));
+  const currentState = readState(stateFilePath());
+  const milestone = selectMilestone(countSessions(), currentState);
   if (milestone === null) {
     return { exitCode: 0 };
   }
 
   // Record before printing: a failed write must not cause a repeat prompt loop.
-  if (!writeState(stateFilePath(), recordMilestone(readState(stateFilePath()), milestone))) {
+  if (!writeState(stateFilePath(), recordMilestone(currentState, milestone))) {
     return { exitCode: 0 };
   }
 

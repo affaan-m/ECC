@@ -28,16 +28,28 @@ function test(name, fn) {
   }
 }
 
-function makeHome(sessionCount) {
+function makeHome(sessionCount, { legacyCount = 0 } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-success-'));
   const sessionsDir = path.join(home, 'session-data');
   fs.mkdirSync(sessionsDir, { recursive: true });
 
+  // Real session records are named `YYYY-MM-DD-<id>-session.tmp` (see
+  // scripts/lib/session-manager.js). Fixtures must match this exactly, or
+  // tests pass while the hook silently counts zero real sessions.
   for (let index = 0; index < sessionCount; index += 1) {
-    fs.writeFileSync(path.join(sessionsDir, `session-${index}.md`), '# session\n', 'utf8');
+    fs.writeFileSync(path.join(sessionsDir, `2026-01-01-session-${index}-session.tmp`), 'session data', 'utf8');
   }
 
-  return { home, sessionsDir };
+  let legacyDir;
+  if (legacyCount > 0) {
+    legacyDir = path.join(home, 'sessions');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    for (let index = 0; index < legacyCount; index += 1) {
+      fs.writeFileSync(path.join(legacyDir, `2025-12-01-legacy-${index}-session.tmp`), 'session data', 'utf8');
+    }
+  }
+
+  return { home, sessionsDir, legacyDir };
 }
 
 function runHookCapturingStderr(home, extraEnv = {}) {
@@ -110,6 +122,42 @@ test('never blocks the session, even on unreadable state', () => {
 
   const result = runHookCapturingStderr(home);
   assert.strictEqual(result.code, 0);
+});
+
+test('counts real session record filenames (*-session.tmp), not markdown files', () => {
+  // Regression test: an earlier version filtered on `.md`, which matches no
+  // real session file and meant the milestone could never be reached.
+  const { home, sessionsDir } = makeHome(MILESTONES[0]);
+  const decoyMd = path.join(sessionsDir, 'not-a-real-session.md');
+  fs.writeFileSync(decoyMd, '# not a session record\n', 'utf8');
+
+  const { countSessions } = require(HOOK);
+  process.env.ECC_AGENT_DATA_HOME = home;
+  try {
+    assert.strictEqual(countSessions([sessionsDir]), MILESTONES[0], 'expected only *-session.tmp files to be counted');
+  } finally {
+    delete process.env.ECC_AGENT_DATA_HOME;
+  }
+});
+
+test('counts sessions from the legacy directory too, so upgraded installs keep credit', () => {
+  const { home } = makeHome(2, { legacyCount: MILESTONES[0] - 2 });
+
+  const result = runHookCapturingStderr(home);
+  assert.strictEqual(result.code, 0);
+  assert.ok(result.stderr.includes('quick-feedback.yml'), `expected prompt once legacy + current sessions clear the milestone, got: ${result.stderr}`);
+});
+
+test('state file is never left partially written (atomic write)', () => {
+  const { home, sessionsDir } = makeHome(MILESTONES[0]);
+  runHookCapturingStderr(home);
+
+  const statePath = path.join(sessionsDir, STATE_FILENAME);
+  const entries = fs.readdirSync(sessionsDir);
+  const leftoverTempFiles = entries.filter(name => name.includes(`.${STATE_FILENAME}.`) && name.endsWith('.tmp'));
+
+  assert.strictEqual(leftoverTempFiles.length, 0, 'atomic write left a temp file behind');
+  assert.doesNotThrow(() => JSON.parse(fs.readFileSync(statePath, 'utf8')), 'state file is not valid JSON');
 });
 
 if (failures > 0) {

@@ -111,6 +111,25 @@ test('rejects unknown arguments', () => {
   assert.ok(result.stderr.includes('Unknown argument'), result.stderr);
 });
 
+test('assertNoDuplicates throws a clear error for colliding identifiers', () => {
+  const { assertNoDuplicates } = require('../../scripts/lib/discovery-index');
+  const colliding = [
+    { type: 'skill', name: 'tdd-workflow', slug: 'tdd-workflow', source: 'skills/tdd-workflow/SKILL.md', url: 'https://ecc.tools/skills/tdd-workflow' },
+    { type: 'skill', name: 'tdd-workflow', slug: 'tdd-workflow-v2', source: 'skills/tdd-workflow-v2/SKILL.md', url: 'https://ecc.tools/skills/tdd-workflow' },
+  ];
+
+  assert.throws(
+    () => assertNoDuplicates(colliding),
+    /Duplicate catalog identifier/,
+    'expected a clear error when two entries resolve to the same url'
+  );
+});
+
+test('assertNoDuplicates allows distinct entries through untouched', () => {
+  const { assertNoDuplicates } = require('../../scripts/lib/discovery-index');
+  assert.doesNotThrow(() => assertNoDuplicates(entries));
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) failed`);
   process.exit(1);
