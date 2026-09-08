@@ -522,6 +522,8 @@ function buildDoctorReport(ctx: ExtensionContext): string {
   const commandsDir = path.join(ECC_ROOT, "commands")
   const skillCount = countDirectories(skillsDir)
   const commandCount = countMarkdownFiles(commandsDir)
+  const agentsDir = path.join(ECC_ROOT, "agents")
+  const agentCount = countMarkdownFiles(agentsDir)
 
   const lines = [
     "ECC adapter for Pi",
@@ -533,6 +535,7 @@ function buildDoctorReport(ctx: ExtensionContext): string {
     "Canonical resources",
     `  skills/        ${skillCount > 0 ? `${skillCount} skill(s)` : "NOT FOUND"} (${skillsDir})`,
     `  commands/      ${commandCount > 0 ? `${commandCount} command(s)` : "NOT FOUND"} (${commandsDir})`,
+    `  agents/        ${agentCount > 0 ? `${agentCount} agent(s) portable via scripts/agent-convert.js` : "NOT FOUND"} (${agentsDir})`,
     "",
     "Engineering rules (injected into the system prompt)",
     `  ${describeRulesStatus()}`,

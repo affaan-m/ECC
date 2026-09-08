@@ -133,27 +133,31 @@ const ADAPTER_RECORDS = Object.freeze([
       'canonical ECC engineering rules (rules/common/) injected into the system prompt',
       'session lifecycle hook adapter',
       '/ecc-doctor diagnostics command',
+      'canonical ECC agents (agents/) portable via scripts/agent-convert.js (claude -> pi)',
     ],
     unsupported_surfaces: [
-      'Subagents, chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter',
+      'Agent chains, approval prompts, and persistent todos require companion Pi packages and are not part of this adapter (individual agent definitions are portable via scripts/agent-convert.js)',
       'Pi core has no MCP surface, though ECC MCP configs load verbatim through the community pi-mcp-adapter package, which ECC neither installs nor depends on',
     ],
     install_or_onramp: ['`pi install git:github.com/affaan-m/ECC`', '`pi install /path/to/ECC` from a local checkout'],
     verification_commands: [
       '`node tests/pi/pi-package-manifest.test.js`',
       '`node tests/pi/pi-extension-adapter.test.js`',
+      '`node tests/pi/agent-convert.test.js`',
       '`npm run harness:adapters -- --check`',
     ],
     risk_notes: [
       'Pi extensions execute with full user permissions, and hooks run without a shell and resolve from the installed package rather than the user project',
       'Keep canonical skills and commands as the single source of truth, and never generate copies under .pi/',
     ],
-    last_verified_at: '2026-08-10',
+    last_verified_at: '2026-09-08',
     owner: 'ECC maintainers',
     source_docs: [
       '.pi/extensions/index.ts',
       '.pi/README.md',
       'package.json',
+      'schemas/agent.schema.json',
+      'scripts/agent-convert.js',
     ],
   },
   {
