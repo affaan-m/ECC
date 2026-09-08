@@ -34,26 +34,26 @@ function requireValue(argv, index, flag) {
 }
 
 function parseArgs(argv) {
-  const args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null };
+  let args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--from') {
-      args.from = requireValue(argv, i, '--from');
+      args = { ...args, from: requireValue(argv, i, '--from') };
       i++;
     } else if (a === '--to') {
-      args.to = requireValue(argv, i, '--to');
+      args = { ...args, to: requireValue(argv, i, '--to') };
       i++;
     } else if (a === '--json') {
-      args.json = true;
+      args = { ...args, json: true };
     } else if (a === '--dry-run') {
-      args.dryRun = true;
+      args = { ...args, dryRun: true };
     } else if (a === '--check') {
-      args.check = true;
+      args = { ...args, check: true };
     } else if (a === '--out') {
-      args.out = requireValue(argv, i, '--out');
+      args = { ...args, out: requireValue(argv, i, '--out') };
       i++;
     } else if (a === '--help' || a === '-h') {
-      args.help = true;
+      args = { ...args, help: true };
     } else {
       throw new Error(`unknown argument: ${a}`);
     }
