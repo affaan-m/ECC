@@ -131,11 +131,21 @@ def main():
             config = json.loads(args.config.read_text())
         if not isinstance(config, dict):
             raise ValueError('config must be a JSON object')
-        load_graph('apply' if args.kind == 'apply-bundle' else args.kind)
-        compile_input = compile_application_input if args.kind != 'distill' else prepare_distillation_input
-        payload = compile_input(config)
+        local_only = False
         if args.kind == 'apply-bundle':
-            payload = build_application_bundle(config.get('integration'), payload)
+            local_only = config.get('local_only', False)
+            if type(local_only) is not bool:
+                raise ValueError('local_only must be an exact boolean')
+        if local_only:
+            if set(config) != {'local_only', 'integration'}:
+                raise ValueError('local-only request permits only local_only and integration fields')
+            payload = build_application_bundle(config['integration'], None, local_only=True)
+        else:
+            load_graph('apply' if args.kind == 'apply-bundle' else args.kind)
+            compile_input = compile_application_input if args.kind != 'distill' else prepare_distillation_input
+            payload = compile_input(config)
+            if args.kind == 'apply-bundle':
+                payload = build_application_bundle(config.get('integration'), payload)
         with args.out.open('x') as output:
             output.write(json.dumps(payload, indent=2) + '\n')
     except (OSError, ValueError, KeyError) as error:

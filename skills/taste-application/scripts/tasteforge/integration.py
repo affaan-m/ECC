@@ -335,21 +335,29 @@ def _inserts(items: list, candidates: dict, config: dict, input_hash: str, edit_
         occupied.append(target)
 
 
-def build_application_bundle(config: dict, compiled_input: dict) -> dict:
+def build_application_bundle(config: dict, compiled_input: dict | None, *, local_only: bool = False) -> dict:
     """Validate resident evidence and return a new deterministic, offline bundle."""
+    if type(local_only) is not bool:
+        raise ValueError("local_only must be an exact boolean")
     _object(config, _REQUIRED, _OPTIONAL)
-    _object(compiled_input, {"source_video", "compiled_prompt"})
     if len(_canonical(config)) > _MAX_JSON:
         raise ValueError("application config exceeds local size limit")
-    url = urlsplit(_text(compiled_input["source_video"]))
-    if url.scheme != "https" or not url.hostname or url.username or url.password:
-        raise ValueError("source reference must be HTTPS without embedded credentials")
-    _text(compiled_input["compiled_prompt"])
+    if local_only:
+        if compiled_input is not None:
+            raise ValueError("local-only preservation cannot accept provider input")
+    else:
+        _object(compiled_input, {"source_video", "compiled_prompt"})
+        url = urlsplit(_text(compiled_input["source_video"]))
+        if url.scheme != "https" or not url.hostname or url.username or url.password:
+            raise ValueError("source reference must be HTTPS without embedded credentials")
+        _text(compiled_input["compiled_prompt"])
     cfg = copy.deepcopy(config)
     for key in ("audio", "candidates", "inserts", "historical_receipts"):
         cfg.setdefault(key, [])
         if not isinstance(cfg[key], list):
             raise ValueError("bundle collections must be lists")
+    if local_only and (cfg["candidates"] or cfg["inserts"]):
+        raise ValueError("local-only preservation cannot contain candidates or inserts")
     tracks = _snapshot(cfg["baseline"])
     _binding(cfg["source"], tracks, cfg["baseline"])
     audio_keys = [_binding(item, tracks, cfg["baseline"], audio=True) for item in cfg["audio"]]
@@ -358,11 +366,12 @@ def build_application_bundle(config: dict, compiled_input: dict) -> dict:
     if len(set(audio_keys)) != len(audio_keys) or set(audio_keys) != expected_audio:
         raise ValueError("every original audio clip must be preserved exactly once")
     stack = _preserved_stack(cfg["protected_intervals"], tracks, cfg["baseline"]["timeline_range"])
-    input_hash = _digest(compiled_input)
+    input_hash = None if local_only else _digest(compiled_input)
     edit_hash = _digest({key: cfg[key] for key in _REQUIRED})
-    candidates = _candidates(cfg["candidates"], cfg["source"]["media"]["sha256"],
-                             input_hash, compiled_input["source_video"])
-    _inserts(cfg["inserts"], candidates, cfg, input_hash, edit_hash)
+    if not local_only:
+        candidates = _candidates(cfg["candidates"], cfg["source"]["media"]["sha256"],
+                                 input_hash, compiled_input["source_video"])
+        _inserts(cfg["inserts"], candidates, cfg, input_hash, edit_hash)
     for receipt in cfg["historical_receipts"]:
         _artifact(receipt)
     result = {**cfg, "schema_version": 1, "mode": "preserve_native_timeline",
@@ -371,6 +380,9 @@ def build_application_bundle(config: dict, compiled_input: dict) -> dict:
               "edit_context_sha256": edit_hash,
               "protected_stack": stack, "insert_policy": "new_video_track_preserve_baseline_audio",
               "evidence_scope": "verified_local_bytes_and_supplied_metadata_only"}
+    if local_only:
+        result = {**result, "local_only": True, "provider_input_status": "not_prepared_local_only",
+                  "insert_policy": "none_preserve_baseline"}
     return {**result, "bundle_sha256": _digest(result)}
 
 
@@ -379,6 +391,7 @@ def validate_application_bundle(bundle: dict) -> None:
     if not isinstance(bundle, dict) or not (_REQUIRED | _OPTIONAL | {"provider_input"}) <= bundle.keys():
         raise ValueError("incomplete application bundle")
     cfg = {key: bundle[key] for key in _REQUIRED | _OPTIONAL}
-    expected = build_application_bundle(cfg, bundle["provider_input"])
+    expected = build_application_bundle(cfg, bundle["provider_input"],
+                                        local_only=bundle.get("local_only", False))
     if _canonical(bundle) != _canonical(expected):
         raise ValueError("application bundle differs from its bound evidence")

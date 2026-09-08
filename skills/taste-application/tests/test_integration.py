@@ -435,6 +435,108 @@ class ApplicationBundleTests(unittest.TestCase):
         self.assertEqual(bundle["provider_input"], plain)
         validate_application_bundle(bundle)
 
+    def run_local_cli(self, request, *, suffix="local"):
+        config = self.root / (suffix + "-request.json")
+        output = self.root / (suffix + "-bundle.json")
+        config.write_text(json.dumps(request))
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--kind", "apply-bundle",
+                               "--config", str(config), "--out", str(output)],
+                              capture_output=True, text=True)
+        return proc, output
+
+    def test_local_only_cli_compiles_preservation_without_hosted_source(self):
+        proc, output = self.run_local_cli({"local_only": True, "integration": self.config})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        bundle = json.loads(output.read_text())
+        self.assertIs(bundle["local_only"], True)
+        self.assertIsNone(bundle["provider_input"])
+        self.assertIsNone(bundle["compiled_input_sha256"])
+        self.assertEqual(bundle["provider_input_status"], "not_prepared_local_only")
+        self.assertEqual(bundle["insert_policy"], "none_preserve_baseline")
+        self.assertEqual(bundle["inserts"], [])
+        self.assertEqual(bundle["candidates"], [])
+        self.assertEqual(bundle["baseline"], self.config["baseline"])
+        self.assertEqual(bundle["source"], self.config["source"])
+        self.assertEqual(bundle["audio"], self.config["audio"])
+        self.assertEqual(len(bundle["protected_stack"]), 4)
+        self.assertIs(bundle["submit"], False)
+        self.assertIs(bundle["provider_execution"], False)
+        validate_application_bundle(bundle)
+
+    def test_local_only_flag_is_exact_boolean_in_cli_and_api(self):
+        for i, bad in enumerate([None, 0, 1, "true", "false", [], {}]):
+            with self.subTest(flag=bad), self.assertRaisesRegex(ValueError, "local_only"):
+                build_application_bundle(self.config, None, local_only=bad)
+            request = {"local_only": bad, "integration": self.config,
+                       "source_video": PAYLOAD["source_video"], "brief": "Synthetic",
+                       "style_steer": "Synthetic"}
+            proc, output = self.run_local_cli(request, suffix=f"flag-{i}")
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("local_only", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_local_only_rejects_mixed_provider_request_fields(self):
+        for i, extra in enumerate([
+            {"source_video": PAYLOAD["source_video"], "brief": "Synthetic", "style_steer": "Synthetic"},
+            {"source_video": None}, {"provider_input": PAYLOAD}, {"provider_input": None},
+            {"compiled_prompt": "Synthetic"}, {"brief": "Uncompiled provider brief"},
+        ]):
+            proc, output = self.run_local_cli(
+                {"local_only": True, "integration": self.config, **extra}, suffix=f"mixed-{i}")
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("local-only request", proc.stderr)
+            self.assertFalse(output.exists())
+        for supplied in [PAYLOAD, {}, "https://media.example/source.mov"]:
+            with self.subTest(supplied=supplied), self.assertRaisesRegex(ValueError, "provider input"):
+                build_application_bundle(self.config, supplied, local_only=True)
+
+    def test_local_only_rejects_candidates_and_inserts_before_reading_them(self):
+        for field in ["candidates", "inserts"]:
+            cfg = {**self.config, field: [{"unresolved": "https://media.example/old.mov"}]}
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "local-only.*candidates|local-only.*inserts"):
+                build_application_bundle(cfg, None, local_only=True)
+
+    def test_local_only_bundle_cannot_switch_modes_or_gain_provider_fields(self):
+        bundle = build_application_bundle(self.config, None, local_only=True)
+        for field, value in [("local_only", False), ("local_only", 1),
+                             ("provider_input", PAYLOAD), ("provider_input", {}),
+                             ("compiled_input_sha256", "0" * 64),
+                             ("provider_input_status", "prepared"),
+                             ("insert_policy", "new_video_track_preserve_baseline_audio")]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_application_bundle({**bundle, field: value})
+        without_flag = {k: v for k, v in bundle.items() if k != "local_only"}
+        with self.assertRaises(ValueError):
+            validate_application_bundle(without_flag)
+        normal = build_application_bundle(self.config, PAYLOAD)
+        with self.assertRaises(ValueError):
+            validate_application_bundle({**normal, "local_only": True})
+
+    def test_local_only_still_revalidates_native_evidence(self):
+        bundle = build_application_bundle(self.config, None, local_only=True)
+        before = copy.deepcopy(self.config)
+        self.assertEqual(build_application_bundle(self.config, None, local_only=True), bundle)
+        self.assertEqual(self.config, before)
+        Path(self.source["path"]).write_bytes(b"changed media")
+        with self.assertRaises(ValueError):
+            validate_application_bundle(bundle)
+
+    def test_normal_bundle_default_false_retains_legacy_behavior(self):
+        normal = build_application_bundle(self.config, PAYLOAD)
+        explicit = build_application_bundle(self.config, PAYLOAD, local_only=False)
+        self.assertEqual(normal, explicit)
+        self.assertNotIn("local_only", normal)
+        self.assertNotIn("provider_input_status", normal)
+        with self.assertRaises(ValueError):
+            build_application_bundle(self.config, None, local_only=False)
+        for local_only in [False, "omitted"]:
+            request = {"integration": self.config, "brief": "Synthetic", "style_steer": "Synthetic"}
+            if local_only is False:
+                request["local_only"] = False
+            proc, output = self.run_local_cli(request, suffix=f"normal-{local_only}")
+            self.assertEqual(proc.returncode, 2)
+            self.assertFalse(output.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

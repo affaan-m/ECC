@@ -171,6 +171,24 @@ The request retains `source_video`, `brief`, and `style_steer`, and adds an
 it is not itself a fal request or an EDL/FCPXML input. No upload, download,
 provider execution, media probing, grading, rendering or editor mutation occurs.
 
+For preservation without any hosted source, use the same CLI with a request
+containing **only** `{"local_only": true, "integration": {...}}`. This mode
+does not compile or prepare a provider request: the bundle has
+`local_only: true`, `provider_input: null`, `compiled_input_sha256: null`,
+`provider_input_status: not_prepared_local_only` and
+`insert_policy: none_preserve_baseline`. Candidates and inserts must be empty.
+Do not supply `source_video`, `provider_input`, `compiled_prompt`, provider
+brief/style fields, or a dummy URL. Local evidence and protected-stack checks
+still run in full; this bundle cannot be submitted to fal.
+
+The request's `local_only` flag must be an exact JSON boolean; omission defaults
+to false. With false/omitted, the original provider-input compilation still
+requires a real HTTPS source and its output shape remains unchanged. Existing
+normal bundles therefore have no `local_only` field. Revalidation rejects
+changed flags, mixed provider input or mode fields, and added candidates/inserts.
+At the API level use `build_application_bundle(integration, None, local_only=True)`;
+normal calls retain their existing two positional arguments.
+
 `integration` requires:
 
 | Field | Contract |
