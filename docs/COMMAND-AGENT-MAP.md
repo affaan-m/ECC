@@ -46,6 +46,12 @@ This document lists each slash command and the primary agent(s) or skills it inv
 | `/claw` | — | NanoClaw CLI (scripts/claw.js) |
 | `/pm2` | — | PM2 service lifecycle |
 | `/security-scan` | security-reviewer (skill) | AgentShield via security-scan skill |
+| `/governance` | docs-governor | Discover or update canonical documentation roles |
+| `/governance-init` | docs-governor | Initialize a minimum governance skeleton |
+| `/governance-audit` | docs-auditor | Deterministic checks followed by read-only semantic audit |
+| `/governance-sync` | docs-governor | Phase-close canonical-document synchronization |
+| `/governance-retro` | — (skill: docs-governance) | Read-only project-history retrospective |
+| `/regression-audit` | regression-auditor | Module and downstream executable regression audit |
 
 ## Non-Slash CLI Surfaces
 
@@ -71,6 +77,8 @@ This document lists each slash command and the primary agent(s) or skills it inv
 - **verification-loop**: `/checkpoint`, `/verify`
 - **eval-harness**: `/eval`
 - **security-scan**: `/security-scan` (runs AgentShield)
+- **docs-governance**: `/governance`, `/governance-init`, `/governance-audit`, `/governance-sync`, `/governance-retro`
+- **module-regression**: `/regression-audit`
 - **strategic-compact**: suggested at compaction points (hooks)
 - **unified-memory**: `ecc memory ...` and the opt-in `ecc-memory-mcp` server
 

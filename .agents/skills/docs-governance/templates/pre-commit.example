@@ -1,0 +1,88 @@
+#!/bin/sh
+# docs-governance optional pre-commit guard
+# One invariant only: a commit with staged code changes must also stage the mapped history artifact with at least one new event.
+# MAP/STATUS synchronization remains the responsibility of /governance-sync and /governance-audit.
+# Test-, documentation-, artifact-, and governance-only changes are exempt.
+# Install with: cp pre-commit.example .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -eu
+
+ROOT=$(git rev-parse --show-toplevel)
+MAP_REL=".governance/docs-map.json"
+LOG_PATH="PROJECT_LOG.md"
+HISTORY_ROLE_IS_MAPPED=0
+
+if git cat-file -e ":$MAP_REL" 2>/dev/null; then
+  if ! MAPPED=$(git show ":$MAP_REL" | python3 -c '
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1]).resolve()
+mapping = json.load(sys.stdin)
+if not isinstance(mapping, dict):
+    raise ValueError("documentation map must be an object")
+HISTORY_ROLE_IS_MAPPED = "history" in mapping
+value = mapping.get("history", "PROJECT_LOG.md")
+if not isinstance(value, str) or not value.strip():
+    raise ValueError("history must be a non-empty path")
+path = pathlib.Path(value)
+if path.is_absolute():
+    raise ValueError("history must be relative")
+resolved = (root / path).resolve()
+if resolved != root and root not in resolved.parents:
+    raise ValueError("history escapes project root")
+print("mapped" if HISTORY_ROLE_IS_MAPPED else "default")
+print(path.as_posix())
+' "$ROOT")
+  then
+    echo "docs-governance: invalid .governance/docs-map.json; refusing to bypass history enforcement" >&2
+    exit 1
+  fi
+  HISTORY_ROLE_MODE=$(printf '%s\n' "$MAPPED" | sed -n '1p')
+  MAPPED_PATH=$(printf '%s\n' "$MAPPED" | sed -n '2p')
+  [ "$HISTORY_ROLE_MODE" = "mapped" ] && HISTORY_ROLE_IS_MAPPED=1
+  [ -n "$MAPPED_PATH" ] && LOG_PATH="$MAPPED_PATH"
+elif git cat-file -e "HEAD:$MAP_REL" 2>/dev/null; then
+  echo "docs-governance: staged deletion of $MAP_REL requires explicit human review; refusing to bypass history enforcement" >&2
+  exit 1
+fi
+
+# Read the history role from the index too. A staged deletion fails closed.
+if ! git cat-file -e ":$LOG_PATH" 2>/dev/null; then
+  if git cat-file -e "HEAD:$LOG_PATH" 2>/dev/null; then
+    echo "docs-governance: staged deletion of the history artifact requires explicit human review: $LOG_PATH" >&2
+    exit 1
+  fi
+  if [ "$HISTORY_ROLE_IS_MAPPED" -eq 1 ]; then
+    echo "docs-governance: mapped history artifact is missing from the index: $LOG_PATH" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMRTD)
+[ -n "$STAGED" ] || exit 0
+
+# A staged history update satisfies the invariant only when it adds an event.
+if printf '%s\n' "$STAGED" | grep -Fxq "$LOG_PATH"; then
+  PREVIOUS_COUNT=$(git show "HEAD:$LOG_PATH" 2>/dev/null | grep -Ec '^## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' || true)
+  STAGED_COUNT=$(git show ":$LOG_PATH" 2>/dev/null | grep -Ec '^## \[[0-9]{4}-[0-9]{2}-[0-9]{2}\] ' || true)
+  if [ "$STAGED_COUNT" -gt "$PREVIOUS_COUNT" ]; then
+    exit 0
+  fi
+  echo "docs-governance: $LOG_PATH is staged but contains no new history event" >&2
+  exit 1
+fi
+
+# Treat everything outside these documentation/test/governance surfaces as code.
+CODE=$(printf '%s\n' "$STAGED" | grep -Ev '(^|/)(tests?|docs?|artifacts?|governance)(/|$)|(^|/)(CLAUDE|AGENTS|PROJECT_LOG|PROJECT_STATUS|CLAUDE_MAP|CONTEXT|CONTRACT|TESTS|REGRESSION)\.md$|\.(md|mdx|txt|rst)$' || true)
+[ -n "$CODE" ] || exit 0
+
+echo "docs-governance: this commit stages code but not the history artifact: $LOG_PATH" >&2
+echo "Staged code paths:" >&2
+printf '  %s\n' "$CODE" >&2
+echo "Append one concise event, stage the history artifact, and commit again, for example:" >&2
+echo "  echo '## [$(date +%Y-%m-%d)] fix | describe the change in one sentence' >> \"$LOG_PATH\" && git add \"$LOG_PATH\"" >&2
+echo "Emergency bypass: git commit --no-verify. A later /governance-audit must reconcile the missing event." >&2
+exit 1
