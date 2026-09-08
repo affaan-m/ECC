@@ -85,11 +85,29 @@ function main() {
 
     ["throws on a missing frontmatter block", () => {
       const badPath = path.join(__dirname, "..", "fixtures", "agent-no-frontmatter.md")
-      // Fixture is created here to keep the test self-contained (not committed).
       fs.mkdirSync(path.dirname(badPath), { recursive: true })
       fs.writeFileSync(badPath, "# no frontmatter here\n")
-      assert.throws(() => parseAgentFile(badPath), /missing frontmatter/)
-      fs.unlinkSync(badPath)
+      try {
+        assert.throws(() => parseAgentFile(badPath), /missing frontmatter/)
+      } finally {
+        fs.rmSync(badPath, { force: true })
+      }
+    }],
+
+    ["throws on an invalid model tier instead of silently dropping it", () => {
+      const badPath = path.join(__dirname, "..", "fixtures", "agent-invalid-model.md")
+      fs.mkdirSync(path.dirname(badPath), { recursive: true })
+      fs.writeFileSync(badPath, "---\nname: x\ndescription: x\ntools: Read\nmodel: sonnet4\n---\n\nbody\n")
+      try {
+        assert.throws(() => parseAgentFile(badPath), /invalid model tier 'sonnet4'/)
+      } finally {
+        fs.rmSync(badPath, { force: true })
+      }
+    }],
+
+    ["throws when the agents directory is absent", () => {
+      const missingDir = path.join(__dirname, "..", "fixtures", "agents-does-not-exist")
+      assert.throws(() => parseAllAgents(missingDir), /agents directory not found/)
     }],
   ]
 

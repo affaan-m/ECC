@@ -77,6 +77,18 @@ function main() {
     ["unknown flag exits non-zero", () => {
       assert.throws(() => runCli(["--bogus"]), /unknown argument/)
     }],
+
+    ["--json --out keeps stdout parseable JSON", () => {
+      const dir = tmpdir()
+      const out = runCli(["--from", "claude", "--to", "pi", "--out", dir, "--json"])
+      const summary = JSON.parse(out)
+      assert.strictEqual(summary.converted, 68)
+      assert.strictEqual(summary.schema, "ecc.agent-ir.v1")
+    }],
+
+    ["missing value for --out exits non-zero", () => {
+      assert.throws(() => runCli(["--from", "claude", "--to", "pi", "--out"]), /missing value for --out/)
+    }],
   ]
 
   for (const [name, fn] of tests) {

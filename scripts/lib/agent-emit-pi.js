@@ -70,7 +70,7 @@ function yamlScalar(value) {
   const s = String(value);
   // Quote when it contains a leading/trailing space, a colon followed by a
   // space, a leading special char, or a newline — otherwise keep it plain.
-  if (/^\s|\s$|: |\n|^[-?*&|>#@`"'\][{}!,]/.test(s)) {
+  if (/^\s|\s$|: |\n|\s#|^[-?*&|>#@`"'\][{}!,]/.test(s)) {
     return JSON.stringify(s);
   }
   return s;

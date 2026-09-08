@@ -10,6 +10,8 @@
  * Design constraints:
  *   - Deterministic: stable key order, no ambient state.
  *   - Lossless: the raw frontmatter is retained so emitters can round-trip.
+ *   - Strict: invalid model tiers and non-string tool entries are rejected,
+ *     never silently coerced or dropped.
  *   - No shell, no network, no new dependencies (uses `js-yaml` + `ajv`,
  *     which are already in `package.json`).
  */
@@ -23,6 +25,7 @@ const AGENTS_DIR = path.join(__dirname, '..', '..', 'agents');
 const SCHEMA_PATH = path.join(__dirname, '..', '..', 'schemas', 'agent.schema.json');
 
 const IR_SCHEMA_CONST = 'ecc.agent-ir.v1';
+const VALID_MODELS = ['haiku', 'sonnet', 'opus'];
 
 let _ajv = null;
 function ajv() {
@@ -47,14 +50,30 @@ function splitFrontmatter(content) {
 /**
  * Normalize a frontmatter `tools` value to a string[].
  * Claude agents use comma-separated strings (e.g. `Read, Grep, Glob`).
+ * Non-string scalars and non-string array entries are rejected.
  */
-function normalizeTools(value) {
+function normalizeTools(value, filename) {
   if (value === null || value === undefined) return [];
-  if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
-  return String(value)
-    .split(',')
-    .map(v => v.trim())
-    .filter(Boolean);
+
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : null;
+
+  if (entries === null) {
+    throw new Error(`${filename}: tools must be a comma-separated string or a list of strings`);
+  }
+
+  const tools = [];
+  for (const entry of entries) {
+    if (typeof entry !== 'string') {
+      throw new Error(`${filename}: tools must contain only strings`);
+    }
+    const trimmed = entry.trim();
+    if (trimmed) tools.push(trimmed);
+  }
+  return tools;
 }
 
 /** Parse one agent file into an IR object (throws on malformed input). */
@@ -84,25 +103,22 @@ function parseAgentFile(filePath) {
     throw new Error(`${filename}: frontmatter must be a YAML mapping`);
   }
 
+  const model = raw.model;
+  if (model !== undefined && !VALID_MODELS.includes(model)) {
+    throw new Error(`${filename}: invalid model tier '${model}' (expected haiku, sonnet, or opus)`);
+  }
+
   const ir = {
     schema: IR_SCHEMA_CONST,
     id,
     name: typeof raw.name === 'string' ? raw.name : id,
     description: typeof raw.description === 'string' ? raw.description : '',
-    model: raw.model,
-    tools: normalizeTools(raw.tools),
+    tools: normalizeTools(raw.tools, filename),
     body,
     frontmatter: raw,
+    ...(model !== undefined ? { model } : {}),
+    ...(raw.color !== undefined ? { color: String(raw.color) } : {}),
   };
-
-  // Optional, source-only metadata. Preserved but not emitted by Pi.
-  if (raw.color !== undefined) ir.color = String(raw.color);
-
-  // Only emit `model` when it is a recognized tier; otherwise drop the field
-  // rather than carry an invalid value into the validated IR.
-  if (ir.model !== undefined && !['haiku', 'sonnet', 'opus'].includes(ir.model)) {
-    delete ir.model;
-  }
 
   validateIr(ir, filename);
   return ir;
@@ -119,7 +135,9 @@ function validateIr(ir, filename) {
 
 /** Parse every agent under `agents/`, sorted for determinism. */
 function parseAllAgents(dir = AGENTS_DIR) {
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(dir)) {
+    throw new Error(`agents directory not found: ${dir}`);
+  }
   const files = fs
     .readdirSync(dir)
     .filter(f => f.endsWith('.md'))
@@ -131,6 +149,7 @@ module.exports = {
   AGENTS_DIR,
   SCHEMA_PATH,
   IR_SCHEMA_CONST,
+  VALID_MODELS,
   parseAgentFile,
   parseAllAgents,
   splitFrontmatter,

@@ -5,6 +5,11 @@
  * frontmatter shape, `ecc` package namespace, a strict tool allowlist that only
  * contains Pi tool names, no leaked Claude tool names, no model field, and a
  * lossless body.
+ *
+ * Also enforces the permission-boundary invariant: a converted agent must never
+ * gain a tool with more authority than its source allowlist. In particular,
+ * read-only agents (no `Bash` in source) must never emit `bash`, and `mcp__*`
+ * operations are never collapsed onto the shared `mcp` gateway.
  */
 
 const assert = require("assert")
@@ -13,10 +18,7 @@ const { parseAllAgents } = require("../../scripts/lib/agent-ir")
 const { emitAllPiAgents, PACKAGE } = require("../../scripts/lib/agent-emit-pi")
 const { CLAUDE_TO_PI_TOOLS } = require("../../scripts/lib/agent-tool-map")
 
-const VALID_PI_TOOLS = new Set([
-  ...Object.values(CLAUDE_TO_PI_TOOLS),
-  "mcp", // mcp__* family collapses onto Pi's single MCP gateway tool
-])
+const VALID_PI_TOOLS = new Set(Object.values(CLAUDE_TO_PI_TOOLS))
 
 function runTest(name, fn) {
   try {
@@ -49,6 +51,7 @@ function main() {
 
   const irs = parseAllAgents()
   const { results, warnings } = emitAllPiAgents(irs)
+  const byId = new Map(irs.map(ir => [ir.id, ir]))
 
   const tests = [
     ["emits all 68 agents", () => {
@@ -84,34 +87,55 @@ function main() {
       }
     }],
 
-    ["no tool is silently dropped (no 'unmapped tool' warnings)", () => {
-      const unmapped = warnings.filter(w => w.includes("unmapped tool"))
-      assert.strictEqual(unmapped.length, 0, `unmapped tools must not exist: ${unmapped.join("; ")}`)
+    ["read-only agents never gain bash (permission boundary)", () => {
+      for (const r of results) {
+        const source = byId.get(r.id)
+        const hadBash = source.tools.includes("Bash")
+        if (!hadBash) {
+          assert.ok(!r.tools.includes("bash"), `${r.id}: read-only agent must not emit 'bash'`)
+        }
+      }
+      // The canonical read-only example: planner has Read, Grep, Glob — no Bash.
+      const planner = results.find(r => r.id === "planner")
+      assert.ok(!planner.tools.includes("bash"), "planner must stay read-only")
+    }],
+
+    ["mcp__* operations are never auto-mapped onto the shared gateway", () => {
+      for (const r of results) {
+        assert.ok(!r.tools.includes("mcp"), `${r.id}: mcp__* must not collapse onto the 'mcp' gateway`)
+      }
+      assert.ok(
+        warnings.some(w => w.includes("docs-lookup") && w.includes("MCP tool")),
+        "docs-lookup (context7) must produce an explicit MCP warning"
+      )
+      assert.ok(
+        warnings.some(w => w.includes("gan-evaluator") && w.includes("MCP tool")),
+        "gan-evaluator (playwright) must produce an explicit MCP warning"
+      )
+    }],
+
+    ["no source tool is dropped without a warning", () => {
+      assert.ok(!warnings.some(w => w.includes("unmapped tool")), "no generic unmapped-tool warnings expected")
+      // Every unsupported source tool (mcp__*) must be surfaced as a warning.
+      const mcpToolCount = irs
+        .flatMap(ir => ir.tools)
+        .filter(t => t.startsWith("mcp__")).length
+      const mcpWarnings = warnings.filter(w => w.includes("MCP tool")).length
+      assert.strictEqual(mcpWarnings, mcpToolCount, "each mcp__* tool must warn exactly once")
     }],
 
     ["body is preserved losslessly", () => {
-      const byId = new Map(results.map(r => [r.id, r]))
       for (const ir of irs) {
-        const emitted = byId.get(ir.id)
+        const emitted = results.find(r => r.id === ir.id)
         assert.ok(emitted, `${ir.id}: missing emitted agent`)
         const body = ir.body.replace(/^\n+/, "").trimEnd()
         assert.ok(emitted.markdown.includes(body), `${ir.id}: body not preserved`)
       }
     }],
 
-    ["mcp__* family collapses onto the single mcp tool with a note", () => {
-      const docsLookup = results.find(r => r.id === "docs-lookup")
-      assert.ok(docsLookup, "docs-lookup agent must exist")
-      assert.ok(docsLookup.tools.includes("mcp"), "docs-lookup must map context7 -> mcp")
-      assert.ok(
-        warnings.some(w => w.startsWith("docs-lookup:") && w.includes("mcp")),
-        "mcp family mapping must produce a warning note"
-      )
-    }],
-
     ["a specific agent maps its tools as expected", () => {
       const planner = results.find(r => r.id === "planner")
-      assert.deepStrictEqual(planner.tools, ["read", "anchor_grep", "bash"], "planner tool map")
+      assert.deepStrictEqual(planner.tools, ["read", "anchor_grep"], "planner tool map (Read, Grep, Glob -> read, anchor_grep)")
     }],
   ]
 

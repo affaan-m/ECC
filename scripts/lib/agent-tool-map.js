@@ -8,13 +8,20 @@
  * names to its own harness primitives through a table. Unmapped tools are
  * never silently dropped: they are surfaced as `unsupported` so the emitter
  * can warn and the conformance test can assert the mapping is complete.
+ *
+ * Security invariant: a Claude tool must never map to a Pi tool with MORE
+ * authority than the source. Read-only Claude tools (Read, Grep, Glob) map to
+ * read-only Pi tools, never to `bash`.
  */
 
 /** Claude tool name -> Pi tool name. */
 const CLAUDE_TO_PI_TOOLS = Object.freeze({
   Read: 'read',
   Grep: 'anchor_grep',
-  Glob: 'bash', // Pi discovers files via bash (ls/find); anchor_grep also accepts globs
+  // Read-only: Pi surfaces glob/file patterns through anchor_grep's glob
+  // filter. Mapping Glob -> bash would give read-only agents shell execution,
+  // which would weaken the permission boundary, so it is intentionally not done.
+  Glob: 'anchor_grep',
   Bash: 'bash',
   Edit: 'replace',
   Write: 'write',
@@ -36,14 +43,13 @@ function mapToolToPi(claudeTool) {
     return { tool: CLAUDE_TO_PI_TOOLS[name], unsupported: false };
   }
   if (name.startsWith('mcp__')) {
-    // Pi exposes MCP servers through the single `mcp` gateway tool. The
-    // specific server tool (`mcp__playwright__browser_navigate`, etc.) resolves
-    // at call time once that server is connected; v1 maps the whole family to
-    // `mcp` and flags it so the operator knows to connect the server.
+    // Never collapse `mcp__server__operation` onto Pi's single `mcp` gateway:
+    // that would let an agent restricted to one operation invoke every enabled
+    // gateway operation. The operator must wire the server explicitly.
     return {
-      tool: 'mcp',
-      unsupported: false,
-      note: `mcp family (${name}) -> mcp (server must be connected)`,
+      tool: null,
+      unsupported: true,
+      note: `MCP tool ${name} not auto-mapped (shared gateway would over-grant); configure the MCP server explicitly`,
     };
   }
   return { tool: null, unsupported: true, note: `unmapped tool: ${name}` };

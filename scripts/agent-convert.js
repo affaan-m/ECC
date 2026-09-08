@@ -12,6 +12,10 @@
  *   node scripts/agent-convert.js --check
  *   node scripts/agent-convert.js --from claude --to pi [--json]
  *   node scripts/agent-convert.js --from claude --to pi --out <dir> [--dry-run]
+ *
+ * When `--json` is set, stdout carries only the machine-readable summary;
+ * progress lines (wrote / would-write) go to stderr so automation can parse
+ * stdout as JSON.
  */
 
 const fs = require('fs');
@@ -21,18 +25,38 @@ const { emitAllPiAgents } = require('./lib/agent-emit-pi');
 
 const SUPPORTED = { claude: ['pi'] };
 
+function requireValue(argv, index, flag) {
+  const value = argv[index + 1];
+  if (value === undefined || value === '') {
+    throw new Error(`missing value for ${flag}`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const args = { from: 'claude', to: 'pi', json: false, dryRun: false, check: false, out: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--from') args.from = argv[++i];
-    else if (a === '--to') args.to = argv[++i];
-    else if (a === '--json') args.json = true;
-    else if (a === '--dry-run') args.dryRun = true;
-    else if (a === '--check') args.check = true;
-    else if (a === '--out') args.out = argv[++i];
-    else if (a === '--help' || a === '-h') args.help = true;
-    else throw new Error(`unknown argument: ${a}`);
+    if (a === '--from') {
+      args.from = requireValue(argv, i, '--from');
+      i++;
+    } else if (a === '--to') {
+      args.to = requireValue(argv, i, '--to');
+      i++;
+    } else if (a === '--json') {
+      args.json = true;
+    } else if (a === '--dry-run') {
+      args.dryRun = true;
+    } else if (a === '--check') {
+      args.check = true;
+    } else if (a === '--out') {
+      args.out = requireValue(argv, i, '--out');
+      i++;
+    } else if (a === '--help' || a === '-h') {
+      args.help = true;
+    } else {
+      throw new Error(`unknown argument: ${a}`);
+    }
   }
   return args;
 }
@@ -88,16 +112,22 @@ function main() {
 
   const { results, warnings } = emitAllPiAgents(irs);
 
+  // Progress lines must never corrupt machine-readable stdout.
+  const progress = msg => {
+    if (args.json) process.stderr.write(`${msg}\n`);
+    else console.log(msg);
+  };
+
   if (args.out) {
     const dir = path.resolve(args.out);
     if (!args.dryRun) fs.mkdirSync(dir, { recursive: true });
     for (const r of results) {
       const target = path.join(dir, `${r.id}.md`);
       if (args.dryRun) {
-        console.log(`[dry-run] would write ${target}`);
+        progress(`[dry-run] would write ${target}`);
       } else {
         fs.writeFileSync(target, r.markdown);
-        console.log(`wrote ${target}`);
+        progress(`wrote ${target}`);
       }
     }
   }
