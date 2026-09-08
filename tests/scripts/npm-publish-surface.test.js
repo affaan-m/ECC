@@ -44,6 +44,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "manifests",
     "scripts/ecc.js",
     "scripts/feedback.js",
+    "scripts/agent-convert.js",
     "scripts/catalog.js",
     "scripts/ci/scan-supply-chain-iocs.js",
     "scripts/ci/supply-chain-advisory-sources.js",
@@ -205,6 +206,11 @@ function main() {
         "skills/backend-patterns/SKILL.md",
         "skills/skill-comply/SKILL.md",
         "skills/unified-memory/SKILL.md",
+        "scripts/agent-convert.js",
+        "scripts/lib/agent-ir.js",
+        "scripts/lib/agent-tool-map.js",
+        "scripts/lib/agent-emit-pi.js",
+        "schemas/agent.schema.json",
       ]) {
         assert.ok(
           packagedPaths.has(requiredPath),
