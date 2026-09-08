@@ -52,7 +52,7 @@ function emitPiAgent(ir) {
 
   const frontmatter = [
     '---',
-    `name: ${ir.name}`,
+    `name: ${yamlScalar(ir.name)}`,
     `package: ${PACKAGE}`,
     `description: ${yamlScalar(ir.description)}`,
     `tools: ${tools.join(', ')}`,

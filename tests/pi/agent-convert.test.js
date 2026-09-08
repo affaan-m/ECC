@@ -89,6 +89,13 @@ function main() {
     ["missing value for --out exits non-zero", () => {
       assert.throws(() => runCli(["--from", "claude", "--to", "pi", "--out"]), /missing value for --out/)
     }],
+
+    ["--check --json emits JSON", () => {
+      const out = runCli(["--check", "--json"])
+      const summary = JSON.parse(out)
+      assert.strictEqual(summary.ok, true)
+      assert.strictEqual(summary.checked, 68)
+    }],
   ]
 
   for (const [name, fn] of tests) {

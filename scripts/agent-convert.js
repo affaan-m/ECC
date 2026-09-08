@@ -103,10 +103,20 @@ function main() {
     process.exit(2);
   }
 
-  const irs = parseAllAgents();
+  let irs;
+  try {
+    irs = parseAllAgents();
+  } catch (err) {
+    console.error(`error: ${err.message}`);
+    process.exit(1);
+  }
 
   if (args.check) {
-    console.log(`OK: ${irs.length} agents parsed and validated against ecc.agent-ir.v1`);
+    if (args.json) {
+      console.log(JSON.stringify({ schema: 'ecc.agent-ir.v1', checked: irs.length, ok: true }, null, 2));
+    } else {
+      console.log(`OK: ${irs.length} agents parsed and validated against ecc.agent-ir.v1`);
+    }
     process.exit(0);
   }
 

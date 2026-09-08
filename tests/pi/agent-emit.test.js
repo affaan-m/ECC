@@ -17,6 +17,7 @@ const assert = require("assert")
 const { parseAllAgents } = require("../../scripts/lib/agent-ir")
 const { emitAllPiAgents, PACKAGE } = require("../../scripts/lib/agent-emit-pi")
 const { CLAUDE_TO_PI_TOOLS } = require("../../scripts/lib/agent-tool-map")
+const yaml = require("js-yaml")
 
 const VALID_PI_TOOLS = new Set(Object.values(CLAUDE_TO_PI_TOOLS))
 
@@ -136,6 +137,24 @@ function main() {
     ["a specific agent maps its tools as expected", () => {
       const planner = results.find(r => r.id === "planner")
       assert.deepStrictEqual(planner.tools, ["read", "anchor_grep"], "planner tool map (Read, Grep, Glob -> read, anchor_grep)")
+    }],
+
+    ["emission is deterministic", () => {
+      const a = emitAllPiAgents(irs).results.map(r => r.markdown).join("\n")
+      const b = emitAllPiAgents(irs).results.map(r => r.markdown).join("\n")
+      assert.strictEqual(a, b, "emit must be deterministic")
+    }],
+
+    ["emitted frontmatter is valid YAML and round-trips key fields", () => {
+      for (const r of results) {
+        const match = r.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+        assert.ok(match, `${r.id}: missing frontmatter`)
+        const fm = yaml.load(match[1])
+        assert.strictEqual(fm.name, r.name, `${r.id}: name round-trip`)
+        assert.strictEqual(fm.package, PACKAGE, `${r.id}: package round-trip`)
+        assert.strictEqual(fm.systemPromptMode, "replace", `${r.id}: systemPromptMode round-trip`)
+        assert.deepStrictEqual(String(fm.tools).split(", "), r.tools, `${r.id}: tools round-trip`)
+      }
     }],
   ]
 
