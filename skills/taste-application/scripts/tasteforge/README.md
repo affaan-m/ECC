@@ -157,6 +157,82 @@ partial edits in the new target; discard/restore that target instead of
 retrying blindly. Its receipt proves in-memory placement only. Save and verify
 the editor checkpoint separately before rendering or reporting delivery.
 
+## Preserve an existing edit with an application bundle
+
+From `skills/taste-application/scripts/`, compile a **local proposal**:
+
+```bash
+python3 workflow_graphs.py --kind apply-bundle --config /private/work/request.json --out /private/work/new-bundle.json
+```
+
+The request retains `source_video`, `brief`, and `style_steer`, and adds an
+`integration` object. The existing `--kind apply` still produces exactly
+`source_video` and `compiled_prompt`. The bundle embeds that unchanged payload;
+it is not itself a fal request or an EDL/FCPXML input. No upload, download,
+provider execution, media probing, grading, rendering or editor mutation occurs.
+
+`integration` requires:
+
+| Field | Contract |
+|---|---|
+| `baseline` | `project_file`, `snapshot_file`, `project_name`, `timeline_name`, `fps`, `timeline_range` |
+| `source` | `media`, `track`, `clip_index`, `media_frames`, `fps`, `source_range`, `timeline_range` |
+| `audio` | One source-shaped binding for **every** original audio clip, retaining its complete placement and trim |
+| `protected_intervals` | Nonempty list of `{range: [start, end], reason: text}` |
+
+File records are `{path, bytes, sha256}`: canonical absolute path, positive
+integer byte count, lowercase SHA-256 of resident regular bytes. Paths and
+parents must not be symlinks. Requests and JSON evidence are limited to 8 MiB;
+duplicate JSON keys and nonfinite values fail. Missing/offloaded files fail
+without hydration. Use a private output directory outside any public repository;
+bundles contain local paths, prompts and hosted media URLs. Existing output
+files are never overwritten.
+
+FPS is a reduced `{numerator, denominator}` pair of positive exact integers.
+Every range is half-open in integer frames; booleans and decimal frame counts
+are invalid. Audio source offsets/capacity are expressed at the timeline FPS,
+not in audio samples. Bindings must match the snapshot path, track/index and
+trim geometry exactly; source subsets must retain the same time mapping.
+
+The native snapshot contains `project`, `timeline`,
+`settings.timelineFrameRate`, and `timeline_readback: {video1: [...], audio1: [...]}`.
+Each clip supplies `name`, `path`, `start`, `end`, `left_offset`, `right_offset`,
+`enabled` and `properties`. Preserve all original entries, including disabled
+clips; native generators may have `path: null` but cannot serve as a file-bound
+source/audio reference. Native FPS must agree; Resolve labels `23.976`, `29.97`
+and `59.94` map explicitly to the corresponding `/1001` rates. Other native
+FPS labels must be short decimal/rational forms, never exponent notation.
+Capture each timeline while active; do not rewrite state using inactive reads.
+
+Optional `candidates`, `inserts` and `historical_receipts` default to empty.
+The result uses `preserve_native_timeline`, derives the full protected stack,
+and proposes zero inserts by default. Pending/rejected candidates cannot be
+inserted. A resolved candidate requires local `media`, `media_frames`, `fps`,
+unique `id`, `origin: provider_generated`, `relationship: generated_variation`,
+`review_status`, source/input hashes, and a hash-bound `generation_receipt`.
+That receipt names `request_id`, `source_url`, `source_sha256`,
+`candidate_sha256` and `compiled_input_sha256`. Unresolved historical URLs may
+remain in separate local historical receipts; they never become candidates.
+
+An insert supplies `candidate_id`, `candidate_range`, `timeline_range`,
+`retime: none` and an `approval_file`. The approval must state `status: approved`
+and match candidate/source/input hashes, both ranges, and `edit_context_sha256`
+from a zero-insert bundle. This context hashes the complete baseline, source,
+audio and protection configuration, preventing approval reuse on another edit
+or timebase. Only after actual review should that approval evidence be supplied.
+The insert policy permits a new video track and preserves baseline audio;
+overlaps with protected intervals or other inserts, mismatched FPS, and retiming
+are rejected. Original clips are never removed or rewritten by this module.
+
+API: `tasteforge.integration.build_application_bundle(integration, compiled_input)`
+returns an independent object; `validate_application_bundle(bundle)` rereads and
+checks its evidence. Revalidate immediately before any separately implemented
+editor operation. These checks prove local bytes and supplied metadata only:
+they do not authenticate a reviewer, prove remote upload identity, probe actual
+media timing, prove the snapshot was honestly captured, or establish visual
+approval. Source/candidate timing must already have been independently measured.
+The synthetic cases in `tests/test_integration.py` are executable format examples.
+
 ## Tests, lint, types
 
 ```bash

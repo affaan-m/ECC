@@ -119,17 +119,23 @@ def load_graph(kind):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--kind', choices=('apply', 'distill'), required=True)
+    parser.add_argument('--kind', choices=('apply', 'apply-bundle', 'distill'), required=True)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     try:
-        config = json.loads(args.config.read_text())
+        if args.kind == 'apply-bundle':
+            from tasteforge.integration import build_application_bundle, load_application_request
+            config = load_application_request(args.config)
+        else:
+            config = json.loads(args.config.read_text())
         if not isinstance(config, dict):
             raise ValueError('config must be a JSON object')
-        load_graph(args.kind)
-        compile_input = compile_application_input if args.kind == 'apply' else prepare_distillation_input
+        load_graph('apply' if args.kind == 'apply-bundle' else args.kind)
+        compile_input = compile_application_input if args.kind != 'distill' else prepare_distillation_input
         payload = compile_input(config)
+        if args.kind == 'apply-bundle':
+            payload = build_application_bundle(config.get('integration'), payload)
         with args.out.open('x') as output:
             output.write(json.dumps(payload, indent=2) + '\n')
     except (OSError, ValueError, KeyError) as error:
