@@ -48,7 +48,7 @@ Use an allowlist for identifiers that become filenames, keys, selectors, or comm
 ```python
 import re
 
-SAFE_AGENT_ID_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
+SAFE_AGENT_ID_CHARS = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_-]*$")
 
 def require_agent_id(value: object, *, max_length: int) -> str:
     if isinstance(max_length, bool) or not isinstance(max_length, int) or max_length < 1:
@@ -61,6 +61,8 @@ def require_agent_id(value: object, *, max_length: int) -> str:
         raise ValueError("invalid agent identifier")
     return value
 ```
+
+When an identifier becomes a CLI argument, pass it through an argv API and place it after the command's end-of-options marker where supported. Character validation is not a substitute for argument separation.
 
 Reject missing and whitespace-only environment values before constructing a client:
 
