@@ -423,6 +423,7 @@
       "kind": "skills",
       "description": "Security review and security-focused framework guidance.",
       "paths": [
+        "skills/agent-security-hardening",
         "skills/defi-amm-security",
         "skills/django-security",
         "skills/healthcare-phi-compliance",
