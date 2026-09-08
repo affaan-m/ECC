@@ -14,6 +14,10 @@ Contract (agent/shell_hooks.py):
 
 Blocks ONLY file-editing tools, ONLY when the target already exists on disk.
 Creating a config from scratch is allowed (new project), and so is reading.
+
+Error handling: the hook is fail-open BY DESIGN (a broken hook must not
+brick the agent), but it never fails silently — every swallowed path writes
+a one-line diagnostic to stderr.
 """
 import json
 import os
@@ -35,11 +39,19 @@ PROTECTED = {
 EDIT_TOOLS = {"patch", "write_file", "edit", "write", "apply_patch", "str_replace_editor"}
 
 
+def _warn(msg: str) -> None:
+    sys.stderr.write(f"[ecc-config-protection] {msg}\n")
+
+
 def main() -> int:
+    raw = sys.stdin.read()
     try:
-        raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
-    except Exception:
+        if not isinstance(payload, dict):
+            _warn(f"payload is {type(payload).__name__}, not an object — allowing")
+            return 0
+    except ValueError as exc:
+        _warn(f"unparseable payload ({exc}) — allowing")
         return 0  # unparseable payload never blocks
 
     tool = str(payload.get("tool_name") or "")
@@ -47,6 +59,9 @@ def main() -> int:
         return 0
 
     ti = payload.get("tool_input") or {}
+    if not isinstance(ti, dict):
+        _warn("tool_input is not an object — allowing")
+        return 0
     # Every Hermes/CLI editing tool puts the target somewhere obvious.
     candidates = []
     for key in ("path", "file_path", "filePath", "target", "filename", "notebook_path"):
@@ -63,24 +78,38 @@ def main() -> int:
                         if isinstance(v, str) and v.strip():
                             candidates.append(v.strip())
     if not candidates:
+        _warn(f"no path found in tool_input for tool {tool!r} — allowing")
         return 0
 
     for p in candidates:
+        # Case-insensitive filesystems (macOS default, Windows) resolve
+        # ESLINT.CONFIG.JS to the protected eslint.config.js; compare the
+        # basename lowercased so a case variant cannot slip past.
         base = os.path.basename(p)
-        if base in PROTECTED and os.path.exists(p):
-            print(
-                json.dumps(
-                    {
-                        "decision": "block",
-                        "reason": (
-                            f"BLOCKED: modifying {base} is not allowed. Fix the source code so the "
-                            "linter/formatter passes instead of weakening the config. For a legitimate "
-                            "config change, ask the owner to edit it directly."
-                        ),
-                    }
+        if base.lower() in PROTECTED:
+            # os.path.exists() is False for a dangling symlink, yet editing
+            # tools happily follow/replace the link target — use lstat so a
+            # dangling symlink to a protected name still counts as existing.
+            try:
+                os.lstat(p)
+                exists = True
+            except OSError:
+                exists = False
+            if exists:
+                sys.stdout.write(
+                    json.dumps(
+                        {
+                            "decision": "block",
+                            "reason": (
+                                f"BLOCKED: modifying {base} is not allowed. Fix the source code so the "
+                                "linter/formatter passes instead of weakening the config. For a legitimate "
+                                "config change, ask the owner to edit it directly."
+                            ),
+                        }
+                    )
+                    + "\n"
                 )
-            )
-            return 0
+                return 0
     return 0
 
 

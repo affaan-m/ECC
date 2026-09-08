@@ -37,16 +37,22 @@ cp hooks/hermes/config-protection.py ~/.hermes/hooks/ecc-config-protection.py
 cp hooks/hermes/check-console-log.py  ~/.hermes/hooks/ecc-check-console-log.py
 chmod +x ~/.hermes/hooks/ecc-*.py
 
-# 2. Append to ~/.hermes/config.yaml (Hermes wants the mapping keyed by event):
+# 2. Point the commands at the copies you just made. Substitute YOUR absolute
+#    home path — Hermes resolves hook commands verbatim, without ~ expansion.
+HOOK_DIR="$HOME/.hermes/hooks"
+
+# 3. Append to ~/.hermes/config.yaml (Hermes wants the mapping keyed by event):
+cat >> ~/.hermes/config.yaml <<EOF
 hooks:
   pre_tool_call:
     - matcher: "patch|write_file|edit|write|apply_patch|str_replace_editor"
-      command: "python3 /Users/YOU/.hermes/hooks/ecc-config-protection.py"
+      command: "python3 $HOOK_DIR/ecc-config-protection.py"
       timeout: 10
   post_tool_call:
     - matcher: "patch|write_file|edit|write|apply_patch|str_replace_editor"
-      command: "python3 /Users/YOU/.hermes/hooks/ecc-check-console-log.py"
+      command: "python3 $HOOK_DIR/ecc-check-console-log.py"
       timeout: 10
+EOF
 ```
 
 Restart Hermes (hooks are registered at session start), then approve the
@@ -64,12 +70,21 @@ hermes hooks list     # both hooks, with consent status
 hermes hooks doctor   # exec bit, allowlist, timing
 ```
 
-Payload-level proof (block case must print a JSON decision; allow cases stay silent):
+Payload-level proof — create a protected file first, so the block case has a
+real target (the hook only blocks edits to configs that already exist):
 
 ```bash
-echo '{"hook_event_name":"pre_tool_call","tool_name":"patch","tool_input":{"path":"/repo/eslint.config.mjs","old_string":"a","new_string":"b"}}' \
+T=$(mktemp -d) && touch "$T/eslint.config.mjs"
+echo "{\"hook_event_name\":\"pre_tool_call\",\"tool_name\":\"patch\",\"tool_input\":{\"path\":\"$T/eslint.config.mjs\",\"old_string\":\"a\",\"new_string\":\"b\"}}" \
   | python3 ~/.hermes/hooks/ecc-config-protection.py
 # {"decision": "block", "reason": "BLOCKED: modifying eslint.config.mjs ..."}
+```
+
+Or run the committed suite, which exercises block, allow, case variants,
+dangling symlinks, multi-edit inputs, and fail-open diagnostics:
+
+```bash
+node tests/hermes-hooks.test.js
 ```
 
 ## Notes
