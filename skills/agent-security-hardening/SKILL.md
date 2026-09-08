@@ -42,15 +42,21 @@ This step is complete when every write, command, network mutation, and credentia
 
 ### 2. Validate Identifiers, Environment Values, and URLs
 
-Use an allowlist for identifiers that become filenames, keys, selectors, or command arguments:
+Use an allowlist for identifiers that become filenames, keys, selectors, or command arguments. Pass the maximum length from verified deployment configuration instead of embedding a sample policy:
 
 ```python
 import re
 
-SAFE_AGENT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+SAFE_AGENT_ID_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
 
-def require_agent_id(value: object) -> str:
-    if not isinstance(value, str) or not SAFE_AGENT_ID.fullmatch(value):
+def require_agent_id(value: object, *, max_length: int) -> str:
+    if isinstance(max_length, bool) or not isinstance(max_length, int) or max_length < 1:
+        raise RuntimeError("configured agent ID limit must be a positive integer")
+    if (
+        not isinstance(value, str)
+        or len(value) > max_length
+        or not SAFE_AGENT_ID_CHARS.fullmatch(value)
+    ):
         raise ValueError("invalid agent identifier")
     return value
 ```
