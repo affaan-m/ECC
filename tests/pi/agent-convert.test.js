@@ -96,6 +96,12 @@ function main() {
       assert.strictEqual(summary.ok, true)
       assert.strictEqual(summary.checked, 68)
     }],
+
+    ["--out followed by a flag is rejected (no unintended write)", () => {
+      const dir = tmpdir()
+      assert.throws(() => runCli(["--from", "claude", "--to", "pi", "--out", "--dry-run"]), /missing value for --out/)
+      assert.strictEqual(fs.readdirSync(dir).length, 0, "must not write anything")
+    }],
   ]
 
   for (const [name, fn] of tests) {

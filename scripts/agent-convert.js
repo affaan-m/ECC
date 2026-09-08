@@ -27,7 +27,7 @@ const SUPPORTED = { claude: ['pi'] };
 
 function requireValue(argv, index, flag) {
   const value = argv[index + 1];
-  if (value === undefined || value === '') {
+  if (value === undefined || value === '' || value.startsWith('--')) {
     throw new Error(`missing value for ${flag}`);
   }
   return value;
