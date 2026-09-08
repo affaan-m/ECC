@@ -237,5 +237,28 @@ run('unreadable file: skips AND reports on stderr', () => {
   assert.ok(/not a regular file|skipping/.test(stderr), 'diagnostic required');
 });
 
+
+// --- installer integration: the hermes-hooks module installs and the landed copy runs ---
+run('hermes-hooks module installs via the real installer and the landed guard blocks', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-mod-'));
+  const inst = spawnSync('node', ['scripts/install-apply.js', '--target', 'hermes', '--modules', 'hermes-hooks', '--enable-hooks'], {
+    cwd: repoRoot, encoding: 'utf8', env: { ...process.env, HOME: home }, timeout: 60000,
+  });
+  assert.strictEqual(inst.status, 0, 'installer must exit 0');
+  const landed = path.join(home, '.hermes', 'hooks', 'hermes', 'config-protection.py');
+  assert.ok(fs.existsSync(landed), 'guard must land under ~/.hermes/hooks/hermes/');
+  assert.ok(fs.existsSync(path.join(home, '.hermes', 'docs', 'HERMES-HOOKS.md')), 'doc must land');
+  const t = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-guard-'));
+  const target = path.join(t, 'eslint.config.mjs');
+  fs.writeFileSync(target, 'export default {}\n');
+  const g = spawnSync('python3', [landed], {
+    input: JSON.stringify({ hook_event_name: 'pre_tool_call', tool_name: 'patch', tool_input: { path: target, old_string: 'a', new_string: 'b' } }),
+    encoding: 'utf8', timeout: 15000,
+  });
+  assert.ok((g.stdout || '').includes('"decision": "block"'), 'landed guard must block');
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(t, { recursive: true, force: true });
+});
+
 console.log(`\nResults: Passed: ${passed}, Failed: ${failed}`);
 if (failed > 0) process.exit(1);

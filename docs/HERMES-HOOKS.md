@@ -30,18 +30,23 @@ These two are harness-independent policy:
 
 ## Install
 
+Preferred — through the ECC installer (module `hermes-hooks`):
+
 ```bash
-# 1. Put the scripts anywhere stable (they are referenced by absolute path):
-mkdir -p ~/.hermes/hooks
-cp hooks/hermes/config-protection.py ~/.hermes/hooks/ecc-config-protection.py
-cp hooks/hermes/check-console-log.py  ~/.hermes/hooks/ecc-check-console-log.py
-chmod +x ~/.hermes/hooks/ecc-*.py
+./install.sh --target hermes --modules hermes-hooks --enable-hooks
+# or: node scripts/install-apply.js --target hermes --modules hermes-hooks --enable-hooks
+```
 
-# 2. Point the commands at the copies you just made. Substitute YOUR absolute
-#    home path — Hermes resolves hook commands verbatim, without ~ expansion.
-HOOK_DIR="$HOME/.hermes/hooks"
+This lands `hooks/hermes/*.py` under `~/.hermes/hooks/hermes/` and this guide
+under `~/.hermes/docs/`. Then register the hooks (the installer deliberately
+never edits your `config.yaml`):
 
-# 3. Append to ~/.hermes/config.yaml (Hermes wants the mapping keyed by event):
+```bash
+# Scripts are already at ~/.hermes/hooks/hermes/. Point the commands at them —
+# Hermes resolves hook commands verbatim, without ~ expansion.
+HOOK_DIR="$HOME/.hermes/hooks/hermes"
+
+# Append to ~/.hermes/config.yaml (Hermes wants the mapping keyed by event):
 cat >> ~/.hermes/config.yaml <<EOF
 hooks:
   pre_tool_call:
