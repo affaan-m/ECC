@@ -65,15 +65,21 @@ test('process collection uses metadata-only argv, bounded timeout and no shell',
 });
 test('unavailable, empty, malformed and unsupported process snapshots remain explicit', () => {
   const tasks = [task('a', [], { pid: 12 })];
-  assert.equal(collectResources(tasks, { platform: 'win32' }).processStatus, 'unsupported');
-  assert.equal(collectResources(tasks, { execFileSync: () => { throw new Error('SECRET'); } }).processStatus, 'unavailable');
-  assert.equal(collectResources(tasks, { execFileSync: () => '' }).processStatus, 'ok');
-  assert.equal(collectResources(tasks, { execFileSync: () => 'bad row' }).processStatus, 'unavailable');
-  assert.equal(collectResources([], { execFileSync: () => { throw new Error('must not execute'); } }).processStatus, 'not-requested');
+  let runnerCalls = 0;
+  const unsupportedDeps = { platform: 'win32', execFileSync: () => { runnerCalls += 1; return ''; } };
+  const unsupported = collectResources(tasks, unsupportedDeps);
+  assert.equal(unsupported.processStatus, 'unsupported');
+  assert.equal(buildInventory({ ...fixture(), tasks }, { now, resources: unsupported }).tasks[0].process.state, 'unknown');
+  // Runner fixtures must select a supported platform independently of the host.
+  assert.equal(collectResources(tasks, { platform: 'darwin', execFileSync: () => { throw new Error('SECRET'); } }).processStatus, 'unavailable');
+  assert.equal(collectResources(tasks, { platform: 'darwin', execFileSync: () => '' }).processStatus, 'ok');
+  assert.equal(collectResources(tasks, { platform: 'darwin', execFileSync: () => 'bad row' }).processStatus, 'unavailable');
+  assert.equal(collectResources([], unsupportedDeps).processStatus, 'not-requested');
+  assert.equal(runnerCalls, 0);
 });
 test('live process snapshot enriches matching tasks and marks missing PID as unobserved', () => {
   const f = fixture(); f.tasks[0].pid = 12; f.tasks[1].pid = 13;
-  const resources = collectResources(f.tasks, { execFileSync: () => '12 1 32 01:30 S\n' });
+  const resources = collectResources(f.tasks, { platform: 'linux', execFileSync: () => '12 1 32 01:30 S\n' });
   const r = buildInventory(f, { now, resources });
   assert.equal(r.tasks[0].process.state, 'observed'); assert.equal(r.tasks[1].process.state, 'not-observed');
 });
