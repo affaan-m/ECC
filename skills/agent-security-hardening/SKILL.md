@@ -16,7 +16,7 @@ Harden the boundaries where an agent turns untrusted data into filesystem, netwo
 - Validate at the action boundary even when an upstream prompt or schema already validated the value.
 - Fail closed before a side effect when identity, destination, ownership, or containment cannot be proven.
 - Before a delete, publish, credential rotation, or other irreversible action, the real tool entry point must authorize the authenticated principal for that exact operation and resource scope, then require explicit confirmation or a valid scoped pre-approval. Missing or invalid evidence blocks the action.
-- Use limits, schemes, domains, and retention periods verified from the deployment configuration. When a value is absent, mark it as a required decision and test that the implementation rejects an unbounded configuration; do not invent a plausible value.
+- Use hard bounds defined by the governing requirement and stricter values verified from deployment configuration. When neither defines a value, mark it as a required decision and test that the implementation rejects an unbounded configuration; do not invent a plausible value.
 
 ## When to Activate
 
@@ -43,16 +43,21 @@ This step is complete when every write, command, network mutation, and credentia
 
 ### 2. Validate Identifiers, Environment Values, and URLs
 
-Use an allowlist for identifiers that become filenames, keys, selectors, or command arguments. Pass the maximum length from verified deployment configuration instead of embedding a sample policy:
+Use an allowlist for identifiers that become filenames, keys, selectors, or command arguments. Agent IDs have the issue-defined hard maximum of 64 characters; deployment configuration may choose a stricter positive limit but cannot raise that boundary:
 
 ```python
 import re
 
 SAFE_AGENT_ID_CHARS = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_-]*$")
+HARD_MAX_AGENT_ID_LENGTH = 64
 
 def require_agent_id(value: object, *, max_length: int) -> str:
-    if isinstance(max_length, bool) or not isinstance(max_length, int) or max_length < 1:
-        raise RuntimeError("configured agent ID limit must be a positive integer")
+    if (
+        isinstance(max_length, bool)
+        or not isinstance(max_length, int)
+        or not 1 <= max_length <= HARD_MAX_AGENT_ID_LENGTH
+    ):
+        raise RuntimeError("configured agent ID limit must be between 1 and 64")
     if (
         not isinstance(value, str)
         or len(value) > max_length
