@@ -464,6 +464,11 @@ How you tested this.
 - [ ] Clear descriptions
 ```
 
+Before you create a pull request, run every new or changed test with the
+repository's test command. Include the exact command and result in the `Testing`
+section. ECC Git hooks do not run pytest. Continuous integration (CI) is the
+authoritative automated Python test gate.
+
 ### 3. Before You Push (avoid red CI)
 
 Run `npm test` locally. It is the same gauntlet CI runs, and it catches almost everything below.
@@ -489,7 +494,7 @@ Run `npm test` locally. It is the same gauntlet CI runs, and it catches almost e
 ### Do
 - Keep contributions focused and modular
 - Include clear descriptions
-- Test before submitting
+- Run every new or changed test before creating a pull request
 - Follow existing patterns
 - Document dependencies
 

@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # - Merges ECC AGENTS.md into existing AGENTS.md (marker-based, preserves user content)
 # - Generates prompt files from commands/*.md
 # - Generates Codex QA wrappers and optional language rule-pack prompts
-# - Installs global git safety hooks (pre-commit and pre-push)
+# - Installs global git safety hooks (pre-commit and pre-push; no pytest execution)
 # - Runs a post-sync global regression sanity check
 # - Merges ECC MCP servers into config.toml (add-only via Node TOML parser)
 

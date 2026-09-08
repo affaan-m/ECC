@@ -100,6 +100,10 @@ Use parallel execution for independent operations — launch multiple agents sim
 
 **Minimum coverage: 80%**
 
+ECC Git hooks do not run pytest. CI is the authoritative automated Python test
+gate. Before you create a pull request, run every new or changed test with the
+repository's test command. Put the exact commands and results in the pull request.
+
 Test types (all required):
 1. **Unit tests** — Individual functions, utilities, components
 2. **Integration tests** — API endpoints, database operations

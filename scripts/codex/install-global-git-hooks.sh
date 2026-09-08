@@ -61,5 +61,6 @@ fi
 run_or_echo git config --global core.hooksPath "$DEST_DIR"
 
 log "Installed ECC global git hooks."
+log "Python test suites are CI-owned and are not run by these hooks."
 log "Disable per repo by creating .ecc-hooks-disable in project root."
 log "Temporary bypass: ECC_SKIP_PRECOMMIT=1 or ECC_SKIP_PREPUSH=1"

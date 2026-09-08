@@ -8,6 +8,7 @@
 <!-- Describe the testing you performed to validate your changes -->
 - [ ] Manual testing completed
 - [ ] Automated tests pass locally (`node tests/run-all.js`)
+- [ ] Every new or changed test was run before this pull request was created
 - [ ] Edge cases considered and tested
 
 ## Type of Change
@@ -23,7 +24,7 @@
 - [ ] No secrets or API keys committed (ghp_, sk-, AKIA, xoxb, xoxp patterns checked)
 - [ ] JSON files validate cleanly
 - [ ] Shell scripts pass shellcheck (if applicable)
-- [ ] Pre-commit hooks pass locally (if configured)
+- [ ] Pre-commit and pre-push hooks pass locally (if configured); pytest is enforced by CI
 - [ ] No sensitive data exposed in logs or output
 - [ ] Follows conventional commits format
 

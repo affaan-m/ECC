@@ -1719,6 +1719,16 @@ npm install && bash scripts/sync-ecc-to-codex.sh
 cp .codex/config.toml ~/.codex/config.toml
 ```
 
+The compatibility sync installs Git safety hooks. The pre-commit hook scans
+staged additions for high-signal secrets. The pre-push hook can run supported
+fast checks, but it does not run pytest. Project CI is the authoritative
+automated Python test gate.
+
+Before you create a pull request, run every new or changed test with the
+project-native test command. Record the commands and results in the pull request.
+Do not use the absence of a local pytest hook as a reason to submit unvalidated
+tests.
+
 The sync script safely merges ECC MCP servers into your existing `~/.codex/config.toml` using an **add-only** strategy: it never removes or modifies your existing servers. Run with `--dry-run` to preview changes, or `--update-mcp` to force-refresh ECC servers to the latest recommended config.
 
 For Context7, ECC uses the canonical Codex section name `[mcp_servers.context7]` while still launching the `@upstash/context7-mcp` package. If you already have a legacy `[mcp_servers.context7-mcp]` entry, `--update-mcp` migrates it to the canonical section name.

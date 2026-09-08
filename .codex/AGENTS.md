@@ -103,3 +103,10 @@ Codex supports a narrower native hook subset than Claude Code, with explicit tru
 3. Run `npm audit` / `pip audit` before committing
 4. Review `git diff` before every push
 5. Use `sandbox_mode = "workspace-write"` in config
+
+## Python Test Validation
+
+ECC Git hooks do not run pytest. Continuous integration (CI) is the authoritative
+automated Python test gate. Before you create a pull request, run every new or
+changed test with the repository's test command. Put the exact commands and
+results in the pull request.

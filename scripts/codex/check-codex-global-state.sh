@@ -211,6 +211,11 @@ fi
 
 if [[ -x "$HOOKS_DIR_EXPECT/pre-push" ]]; then
   ok "Global pre-push hook is installed and executable"
+  if rg -n 'pytest' "$HOOKS_DIR_EXPECT/pre-push" >/dev/null 2>&1; then
+    fail "Global pre-push hook must leave pytest execution to CI"
+  else
+    ok "Global pre-push hook leaves pytest execution to CI"
+  fi
 else
   fail "Global pre-push hook missing or not executable"
 fi

@@ -117,16 +117,6 @@ if [[ -f "go.mod" ]] && command -v go >/dev/null 2>&1; then
   go test ./... || fail "go test failed"
 fi
 
-if [[ -f "pyproject.toml" || -f "requirements.txt" ]]; then
-  if command -v pytest >/dev/null 2>&1; then
-    ran_any_check=1
-    log "Python project detected. Running: pytest -q"
-    pytest -q || fail "pytest failed"
-  else
-    log "Python project detected but pytest is not installed. Skipping."
-  fi
-fi
-
 if [[ "$ran_any_check" -eq 0 ]]; then
   log "No supported checks found in this repository. Skipping."
 else
