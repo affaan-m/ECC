@@ -15,6 +15,7 @@ Harden the boundaries where an agent turns untrusted data into filesystem, netwo
 - Default external integrations to read-only and grant each write capability separately.
 - Validate at the action boundary even when an upstream prompt or schema already validated the value.
 - Fail closed before a side effect when identity, destination, ownership, or containment cannot be proven.
+- Before a delete, publish, credential rotation, or other irreversible action, the real tool entry point must authorize the authenticated principal for that exact operation and resource scope, then require explicit confirmation or a valid scoped pre-approval. Missing or invalid evidence blocks the action.
 - Use limits, schemes, domains, and retention periods verified from the deployment configuration. When a value is absent, mark it as a required decision and test that the implementation rejects an unbounded configuration; do not invent a plausible value.
 
 ## When to Activate
@@ -71,9 +72,9 @@ def require_env(name: str, environ: dict[str, str]) -> str:
     return value
 ```
 
-Parse URLs, allow only schemes required by the deployment, require a host, reject embedded credentials, and resolve or block private-network destinations when the URL is attacker-controlled. Revalidate redirects because they can cross the original trust boundary.
+Parse URLs, allow only schemes required by the deployment, require a host, reject embedded credentials, and block private-network destinations when the URL is attacker-controlled. For every outbound connection and redirect hop, pin the connection to a validated public address or verify the connected peer address at connection time so DNS rebinding cannot cross the boundary. A credential-bearing request must use HTTPS with certificate verification before credentials are attached. Disable automatic cross-origin credential forwarding; when the scheme or origin changes, strip the credentials and reauthorize the new destination or reject the redirect. Re-run destination, connected-address, and transport validation on every hop.
 
-This step is complete when tests reject empty, oversized, malformed, traversal-shaped, credential-bearing, and unauthorized-destination values before any side effect.
+This step is complete when tests reject empty, oversized, malformed, traversal-shaped, credential-bearing, and unauthorized-destination values before any side effect, and prove that DNS rebinding and cross-origin redirects cannot carry credentials to an unapproved peer.
 
 ### 3. Contain Filesystem Access
 
@@ -123,10 +124,11 @@ This step is complete when oversized output, invalid encoding, terminal-control 
 Before calling the framework hardened, verify all of these behaviors through its real entry point:
 
 1. Untrusted instructions remain data and cannot trigger a tool or write.
-2. Cross-tenant and cross-workspace identifiers are rejected at the action boundary.
-3. Traversal and symlink escape attempts leave the filesystem unchanged.
-4. Forced failures leave no credential-bearing temp files or logs.
-5. Oversized or malformed tool output returns an explicit bounded error.
+2. An irreversible action without operation-and-resource authorization plus confirmation or scoped pre-approval leaves no side effect.
+3. Cross-tenant and cross-workspace identifiers are rejected at the action boundary.
+4. Traversal and symlink escape attempts leave the filesystem unchanged.
+5. Forced failures leave no credential-bearing temp files or logs.
+6. Oversized or malformed tool output returns an explicit bounded error.
 
 Report the command used, exit status, rejected input, and observed absence of the side effect. Mock-only tests do not prove operating-system permissions, symlink handling, subprocess isolation, or network egress controls.
 
