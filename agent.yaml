@@ -149,6 +149,9 @@ skills:
   - swift-concurrency-6-2
   - swift-protocol-di-testing
   - swiftui-patterns
+  - taste-application
+  - taste-distillation
+  - tasteforge-video
   - tdd-workflow
   - team-builder
   - token-budget-advisor
