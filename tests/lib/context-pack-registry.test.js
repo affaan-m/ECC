@@ -86,6 +86,17 @@ test('dependency cycles and duplicate ownership fail closed', () => withFixture(
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /owner|claimed|duplicate/i);
 }));
 
+test('directory link fixtures choose unprivileged Windows junctions', context => {
+  const { createDirectoryLink } = require('./helpers/context-fixture');
+  const calls = [];
+  context.mock.method(fs, 'symlinkSync', (...args) => calls.push(args));
+  createDirectoryLink('/source', '/destination', 'win32');
+  createDirectoryLink('/source', '/destination', 'darwin');
+  assert.deepEqual(calls, [
+    ['/source', '/destination', 'junction'], ['/source', '/destination', 'dir'],
+  ]);
+});
+
 test('unowned skills and symlink resources fail closed', () => withFixture(root => {
   write(root, 'skills/unowned/SKILL.md', '---\nname: unowned\ndescription: Unowned.\n---\n');
   assert.throws(() => loadContextRegistry({ repoRoot: root }), /owner|unowned/i);
