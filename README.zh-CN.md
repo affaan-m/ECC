@@ -517,7 +517,7 @@ npx ecc-agentshield scan
 # 自动修复安全问题
 npx ecc-agentshield scan --fix
 
-# 调用 3 个 Opus 4.6 智能体进行深度分析
+# 调用 3 个 Opus 5 智能体进行深度分析
 npx ecc-agentshield scan --opus --stream
 
 # 从零生成安全配置
@@ -526,7 +526,7 @@ npx ecc-agentshield init
 
 **扫描范围：** CLAUDE.md、settings.json、MCP 配置、钩子、智能体定义与技能模块，覆盖 5 大类别 —— 密钥检测（14 种模式）、权限审计、钩子注入分析、MCP 服务风险评估、智能体配置审查。
 
-**`--opus` 参数**：启动 3 个 Claude Opus 4.6 智能体组成红队/蓝队/审计管道。攻击者寻找利用链，防御者评估防护机制，审计者综合生成优先级风险报告。采用对抗推理，而非单纯模式匹配。
+**`--opus` 参数**：启动 3 个 Claude Opus 5 智能体组成红队/蓝队/审计管道。攻击者寻找利用链，防御者评估防护机制，审计者综合生成优先级风险报告。采用对抗推理，而非单纯模式匹配。
 
 **输出格式：** 终端（彩色等级 A-F）、JSON（CI 流水线）、Markdown、HTML。发现严重问题时返回退出码 2，可用于构建门禁。
 

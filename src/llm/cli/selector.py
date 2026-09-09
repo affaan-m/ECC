@@ -123,8 +123,8 @@ def interactive_select(
     if models_per_provider is None:
         models_per_provider = {
             "claude": [
-                ("claude-opus-4-8", "Claude Opus 4.8 - Most capable"),
-                ("claude-sonnet-4-6", "Claude Sonnet 4.6 - Balanced"),
+                ("claude-opus-5", "Claude Opus 5 - Most capable"),
+                ("claude-sonnet-5", "Claude Sonnet 5 - Balanced"),
                 ("claude-haiku-4-5", "Claude Haiku 4.5 - Fast"),
             ],
             "openai": [

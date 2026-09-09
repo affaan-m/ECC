@@ -147,7 +147,7 @@ You are an expert planning specialist...
     "planner": {
       "description": "Expert planning specialist...",
       "mode": "subagent",
-      "model": "anthropic/claude-opus-4-5",
+      "model": "anthropic/claude-opus-5",
       "prompt": "{file:prompts/agents/planner.txt}",
       "tools": { "read": true, "bash": true }
     }
@@ -224,8 +224,8 @@ Create a detailed implementation plan for: $ARGUMENTS
 
 | Claude Code | OpenCode |
 |-------------|----------|
-| `opus` | `anthropic/claude-opus-4-5` |
-| `sonnet` | `anthropic/claude-sonnet-4-5` |
+| `opus` | `anthropic/claude-opus-5` |
+| `sonnet` | `anthropic/claude-sonnet-5` |
 | `haiku` | `anthropic/claude-haiku-4-5` |
 
 ## Available Commands

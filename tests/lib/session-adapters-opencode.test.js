@@ -64,7 +64,7 @@ function writeOpencodeFixture({ title = 'rebuild the basket trader rebalancer', 
   fs.writeFileSync(path.join(messageDir, 'msg_asst01.json'), JSON.stringify({
     id: 'msg_asst01', sessionID: sessionId, role: 'assistant',
     time: { created: updated - 8000, completed: updated - 7000 },
-    modelID: 'claude-sonnet-4-5-20250929', providerID: 'anthropic'
+    modelID: 'claude-sonnet-5', providerID: 'anthropic'
   }), 'utf8');
 
   return { storageDir, repoRoot, sessionId, sessionInfoPath: path.join(sessionDir, `${sessionId}.json`) };
@@ -73,7 +73,7 @@ function writeOpencodeFixture({ title = 'rebuild the basket trader rebalancer', 
 test('normalizeOpencodeSession produces a valid ecc.session.v1 snapshot', () => {
   const snapshot = normalizeOpencodeSession({
     sessionId: 'ses_x', sessionPath: '/tmp/s.json', cwd: '/repo', branch: 'main',
-    objective: 'do the thing', title: 'do the thing', model: 'claude-sonnet-4-5-20250929',
+    objective: 'do the thing', title: 'do the thing', model: 'claude-sonnet-5',
     provider: 'anthropic', version: '0.12.1', projectId: 'proj', createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:05:00Z', messageCount: 2, active: false
   }, { type: 'opencode', value: 'ses_x' });
@@ -106,7 +106,7 @@ test('adapter reads latest session, extracts model from messages, derives object
   assert.strictEqual(snapshot.session.state, 'active');
   assert.strictEqual(snapshot.workers[0].worktree, repoRoot);
   assert.strictEqual(snapshot.workers[0].branch, 'main');
-  assert.strictEqual(snapshot.workers[0].artifacts.model, 'claude-sonnet-4-5-20250929');
+  assert.strictEqual(snapshot.workers[0].artifacts.model, 'claude-sonnet-5');
   assert.strictEqual(snapshot.workers[0].artifacts.provider, 'anthropic');
   assert.strictEqual(snapshot.workers[0].artifacts.messageCount, 2);
   assert.strictEqual(snapshot.workers[0].intent.objective, 'rebuild the basket trader rebalancer');
@@ -198,10 +198,10 @@ test('parseOpencodeSession: model from later assistant message, missing-time => 
     // no time block => updatedMs null => recorded/inactive
   }, [
     { id: 'm0', role: 'user' },
-    { id: 'm1', role: 'assistant', modelID: 'claude-sonnet-4-5-20250929', providerID: 'anthropic' }
+    { id: 'm1', role: 'assistant', modelID: 'claude-sonnet-5', providerID: 'anthropic' }
   ]);
   const parsed = parseOpencodeSession(fp, { storageDir, resolveBranchImpl: () => null });
-  assert.strictEqual(parsed.model, 'claude-sonnet-4-5-20250929');
+  assert.strictEqual(parsed.model, 'claude-sonnet-5');
   assert.strictEqual(parsed.provider, 'anthropic');
   assert.strictEqual(parsed.active, false);
 });

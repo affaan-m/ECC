@@ -567,7 +567,7 @@ npx ecc-agentshield scan
 # Auto-fix safe issues
 npx ecc-agentshield scan --fix
 
-# Deep analysis with three Opus 4.6 agents
+# Deep analysis with three Opus 5 agents
 npx ecc-agentshield scan --opus --stream
 
 # Generate secure config from scratch
@@ -576,7 +576,7 @@ npx ecc-agentshield init
 
 **它扫描什么：** CLAUDE.md、settings.json、MCP 配置、钩子、代理定义以及 5 个类别的技能 —— 密钥检测（14 种模式）、权限审计、钩子注入分析、MCP 服务器风险剖析和代理配置审查。
 
-**`--opus` 标志** 在红队/蓝队/审计员管道中运行三个 Claude Opus 4.6 代理。攻击者寻找利用链，防御者评估保护措施，审计员将两者综合成优先风险评估。对抗性推理，而不仅仅是模式匹配。
+**`--opus` 标志** 在红队/蓝队/审计员管道中运行三个 Claude Opus 5 代理。攻击者寻找利用链，防御者评估保护措施，审计员将两者综合成优先风险评估。对抗性推理，而不仅仅是模式匹配。
 
 **输出格式：** 终端（按颜色分级的 A-F）、JSON（CI 管道）、Markdown、HTML。在关键发现时退出代码 2，用于构建门控。
 

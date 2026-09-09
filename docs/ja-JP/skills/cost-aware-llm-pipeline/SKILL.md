@@ -158,8 +158,7 @@ def process(text: str, config: Config, tracker: CostTracker) -> tuple[Result, Co
 | Haiku 3.5 (legacy) | $0.80 | $4.00 | 0.8x |
 | Haiku 4.5 | $1.00 | $5.00 | 1x |
 | Sonnet 5 | $2.00 | $10.00 | 2x |
-| Sonnet 4.6 | $3.00 | $15.00 | 3x |
-| Opus 4.8 | $5.00 | $25.00 | 5x |
+| Opus 5 | $5.00 | $25.00 | 5x |
 | Fable 5 / Mythos 5 | $10.00 | $50.00 | 10x |
 | Opus 4.0 / 4.1 (legacy) | $15.00 | $75.00 | 15x |
 

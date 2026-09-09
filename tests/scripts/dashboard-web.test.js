@@ -238,7 +238,7 @@ test('readFrontmatter parses simple frontmatter', () => {
     '---',
     'name: test-agent',
     'description: A test agent description',
-    'model: claude-sonnet-4-6',
+    'model: claude-sonnet-5',
     '---',
     '# Body content',
     'This is the body.',
@@ -247,7 +247,7 @@ test('readFrontmatter parses simple frontmatter', () => {
   const fm = readFrontmatter(path.join(testRoot, 'test.md'));
   assert.strictEqual(fm.name, 'test-agent');
   assert.strictEqual(fm.description, 'A test agent description');
-  assert.strictEqual(fm.model, 'claude-sonnet-4-6');
+  assert.strictEqual(fm.model, 'claude-sonnet-5');
   assert.ok(fm._body.includes('# Body content'));
   cleanup(testRoot);
 });
@@ -383,7 +383,7 @@ test('loadAgents loads agent markdown files', () => {
     '---',
     'name: typescript-reviewer',
     'description: Reviews TypeScript code',
-    'model: claude-sonnet-4-6',
+    'model: claude-sonnet-5',
     'tools: Bash, Read, Write, Grep',
     '---',
     '# TypeScript Reviewer',
@@ -393,7 +393,7 @@ test('loadAgents loads agent markdown files', () => {
     '---',
     'name: python-reviewer',
     'description: Reviews Python code',
-    'model: claude-opus-4-8',
+    'model: claude-opus-5',
     'tools: Bash, Read',
     '---',
     '# Python Reviewer',
@@ -403,7 +403,7 @@ test('loadAgents loads agent markdown files', () => {
   assert.strictEqual(agents.length, 2);
   assert.strictEqual(agents[0].n, 'python-reviewer'); // alphabetical sort
   assert.strictEqual(agents[1].n, 'typescript-reviewer');
-  assert.strictEqual(agents[1].m, 'claude-sonnet-4-6');
+  assert.strictEqual(agents[1].m, 'claude-sonnet-5');
   assert.strictEqual(agents[1].d, 'Reviews TypeScript code');
   assert.deepStrictEqual(agents[1].t, ['Bash', 'Read', 'Write', 'Grep']);
   assert.ok(agents[1].b.length > 0);
@@ -795,7 +795,7 @@ test('renderHTML returns valid HTML string', () => {
 test('renderHTML includes agent data as JSON', () => {
   const { renderHTML } = require(SCRIPT);
   const data = {
-    agents: [{ n: 'test-agent', d: 'Test desc', m: 'claude-sonnet-4-6', t: ['Bash'], b: 'body', f: 'test.md' }],
+    agents: [{ n: 'test-agent', d: 'Test desc', m: 'claude-sonnet-5', t: ['Bash'], b: 'body', f: 'test.md' }],
     skills: [],
     commands: [],
     rules: [],
@@ -804,7 +804,7 @@ test('renderHTML includes agent data as JSON', () => {
   };
   const html = renderHTML(data);
   assert.ok(html.includes('test-agent'));
-  assert.ok(html.includes('claude-sonnet-4-6'));
+  assert.ok(html.includes('claude-sonnet-5'));
 });
 
 test('renderHTML escapes HTML in data values', () => {
