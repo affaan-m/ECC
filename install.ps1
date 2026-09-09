@@ -35,14 +35,20 @@ $scriptDir = Split-Path -Parent $scriptPath
 $installerScript = Join-Path -Path (Join-Path -Path $scriptDir -ChildPath 'scripts') -ChildPath 'install-apply.js'
 
 # ponytail: preflight Node.js presence and version (>= 18)
+$minimumNodeMajor = 18
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine('[ECC] Node.js is required but was not found in PATH. Please install Node.js 18 or newer: https://nodejs.org')
+    [Console]::Error.WriteLine("[ECC] Node.js is required but was not found in PATH. Please install Node.js $minimumNodeMajor or newer: https://nodejs.org")
     exit 1
 }
 
 $nodeVersion = (& node -v 2>$null | Select-Object -First 1)
-if ($nodeVersion -match '^\s*v?(\d+)\.' -and [int]$Matches[1] -lt 18) {
-    [Console]::Error.WriteLine("[ECC] Node.js 18 or newer is required (found $nodeVersion). Please update Node.js: https://nodejs.org")
+if (-not $nodeVersion -or $nodeVersion -notmatch '^\s*v?(\d+)\.') {
+    [Console]::Error.WriteLine("[ECC] Failed to determine Node.js version (found '$nodeVersion'). Node.js $minimumNodeMajor or newer is required: https://nodejs.org")
+    exit 1
+}
+
+if ([int]$Matches[1] -lt $minimumNodeMajor) {
+    [Console]::Error.WriteLine("[ECC] Node.js $minimumNodeMajor or newer is required (found $nodeVersion). Please update Node.js: https://nodejs.org")
     exit 1
 }
 

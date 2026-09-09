@@ -68,24 +68,21 @@ function resolvePowerShellCommand() {
 }
 
 function run(powerShellCommand, args = [], options = {}) {
-  const env = {
+  const baseEnv = {
     ...process.env,
     HOME: options.homeDir || process.env.HOME,
     USERPROFILE: options.homeDir || process.env.USERPROFILE,
   };
 
-  if (options.env) {
-    for (const [key, val] of Object.entries(options.env)) {
-      if (key.toLowerCase() === 'path') {
-        for (const k of Object.keys(env)) {
-          if (k.toLowerCase() === 'path') {
-            delete env[k];
-          }
-        }
-      }
-      env[key] = val;
-    }
-  }
+  const env = options.env
+    ? Object.fromEntries([
+        ...Object.entries(baseEnv).filter(([k]) => {
+          const lowerKey = k.toLowerCase();
+          return !Object.keys(options.env).some((overrideKey) => overrideKey.toLowerCase() === lowerKey);
+        }),
+        ...Object.entries(options.env),
+      ])
+    : baseEnv;
 
   try {
     const stdout = execFileSync(powerShellCommand, ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, ...args], {
@@ -215,13 +212,14 @@ function runTests() {
   if (!powerShellCommand) {
     console.log('  - skipped outdated Node.js preflight test; PowerShell is not available in PATH');
   } else if (test('rejects execution when Node.js version is older than 18', () => {
+    const UNSUPPORTED_NODE_VERSION = 'v16.20.0';
     const mockBinDir = createTempDir('install-ps1-mock-node-');
     try {
       if (process.platform === 'win32') {
-        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), '@echo v16.20.0\r\n');
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), `@echo ${UNSUPPORTED_NODE_VERSION}\r\n`);
       } else {
         const mockNode = path.join(mockBinDir, 'node');
-        fs.writeFileSync(mockNode, '#!/bin/sh\necho v16.20.0\n');
+        fs.writeFileSync(mockNode, `#!/bin/sh\necho ${UNSUPPORTED_NODE_VERSION}\n`);
         fs.chmodSync(mockNode, 0o755);
       }
 
@@ -241,8 +239,45 @@ function runTests() {
       assert.notStrictEqual(result.code, 0, 'installer should fail when node version is < 18');
       const combinedOutput = `${result.stdout}\n${result.stderr}`;
       assert.ok(
-        combinedOutput.includes('[ECC] Node.js 18 or newer is required (found v16.20.0)'),
+        combinedOutput.includes(`[ECC] Node.js 18 or newer is required (found ${UNSUPPORTED_NODE_VERSION})`),
         `error output should explain Node.js version requirement:\n${combinedOutput}`
+      );
+    } finally {
+      cleanup(mockBinDir);
+    }
+  })) passed++; else failed++;
+
+  if (!powerShellCommand) {
+    console.log('  - skipped unparseable Node.js preflight test; PowerShell is not available in PATH');
+  } else if (test('rejects execution when Node.js version is unparseable', () => {
+    const mockBinDir = createTempDir('install-ps1-invalid-node-');
+    try {
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(mockBinDir, 'node.cmd'), '@echo unexpected-node-output\r\n');
+      } else {
+        const mockNode = path.join(mockBinDir, 'node');
+        fs.writeFileSync(mockNode, '#!/bin/sh\necho unexpected-node-output\n');
+        fs.chmodSync(mockNode, 0o755);
+      }
+
+      const pPath = [
+        mockBinDir,
+        process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : '',
+      ].filter(Boolean).join(path.delimiter);
+
+      const result = run(powerShellCommand, ['--help'], {
+        env: {
+          PATH: pPath,
+          PATHEXT: process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+          SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+        },
+      });
+
+      assert.notStrictEqual(result.code, 0, 'installer should fail when node version is unparseable');
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      assert.ok(
+        combinedOutput.includes("Failed to determine Node.js version (found 'unexpected-node-output')"),
+        `error output should explain unparseable Node.js version:\n${combinedOutput}`
       );
     } finally {
       cleanup(mockBinDir);
