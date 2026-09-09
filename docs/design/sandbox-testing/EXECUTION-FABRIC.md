@@ -6,8 +6,10 @@ Status: experimental foundation for the next sandbox releases. Existing
 are opt-in.
 
 The [September 8 approved direction](#approved-direction-isolated-software-work)
-extends this existing design for future implementation. It is separate from
-the current v1 schema, adapter behavior, and acceptance evidence below.
+now has an additive v2 execution-plan and fabric-envelope slice. It records the
+execution class, placement, operator, shell-only coverage, excluded surfaces,
+enforced and missing controls, evidence limits, and resource monitoring. The
+stable v1 sandbox manifest and numeric report remain unchanged.
 
 ## Product Goal
 
@@ -166,16 +168,19 @@ receipts are implemented and tested.
 
 ## Approved Direction: Isolated Software Work
 
-Status: approved direction on September 8, 2026; implementation and acceptance
-remain future work. The first showcase is an isolated build and verification
-workflow. A whole-agent environment follows only after its broader containment
-and evidence contracts pass. This section extends the existing sandbox design;
-it creates no additional task, orchestration, or policy authority.
+Status: approved direction on September 8, 2026. The versioned execution
+boundary and controller resource-monitoring slice is implemented in the opt-in
+fabric. The first showcase remains an isolated build and verification workflow.
+A whole-agent environment follows only after its broader containment and
+evidence contracts pass. This section creates no additional task,
+orchestration, or policy authority.
 
 ### Execution Class And Placement
 
-Describe the execution boundary separately from where it runs. These are design
-terms for a future versioned contract, not accepted v1 manifest keys.
+The v2 execution plan describes the execution boundary separately from where it
+runs. These are controller-derived claims, not accepted manifest keys. A v1
+plan remains valid without them; every newly emitted v2 plan and fabric job must
+carry the strict `execution` object.
 
 | Execution class | Intended work | Required claim |
 | --- | --- | --- |
@@ -192,8 +197,9 @@ Preserve the existing numeric report contract: Tier 0 is SRT, Tier 1 is rootless
 Podman, Tier 2 is the supported native VM route, and terminal hosted CI remains
 `tier: 3`. Current `ci-native` still requires first-party trust and explicit
 `network:*`. Current `services` and `gui` retain their native-routing meaning.
-New class, placement, or capability fields need schema versioning, migration,
-and adapter fixtures before examples or runtime claims change.
+The execution-plan and fabric-envelope schemas accept retained v1 evidence and
+require the new claims for v2. Adapter fixtures bind each current backend to its
+class and placement. Capability expansion remains separately versioned.
 
 ### Policy Owns Trust And Admission
 
@@ -217,8 +223,9 @@ the current `services` or `gui` vocabulary is broadened.
 
 ### State The Coverage Of The Boundary
 
-Every future run must distinguish shell-only coverage from whole-agent
-coverage. Sandboxing a shell command leaves the outside agent's file tools,
+Every v2 fabric run distinguishes shell-only coverage from whole-agent
+coverage. Current adapters emit `shell-only`. Sandboxing a shell command leaves
+the outside agent's file tools,
 plugins, MCP connections, and network clients outside that command boundary.
 The report must list those excluded surfaces and the brokered interfaces used.
 
@@ -258,15 +265,18 @@ separate recorded outcomes.
 
 ### Monitor Resources Throughout The Run
 
-The current host admission checks are point-in-time observations. The future
-runtime must also bound CPU, memory, processes, storage growth, output, runtime,
-and permitted spend throughout execution, using hard limits where supported
-and explicitly labeled monitoring elsewhere. Account for host memory pressure,
-swap growth, disk headroom, and competing workloads; a successful preflight
-does not reserve resources against unrelated applications.
+Host admission checks remain point-in-time observations. Fabric v2 adds bounded
+sampling throughout execution for CPU, memory, process count, controller
+workspace growth, output, runtime, and permitted spend. It identifies each
+signal as a hard limit, monitored value, reported value, local zero, or
+unavailable. Backend CPU and memory settings, bounded output, and the
+controller deadline remain hard limits where supported. Missing telemetry is a
+warning and stays visible; stale telemetry or an observed limit breach stops the
+worker and triggers exact-receipt cleanup. A successful preflight does not
+reserve resources against unrelated applications.
 
-Use bounded sampling and controller-owned deadlines, with explicit warning,
-stop, and cleanup behavior. Report stale or missing telemetry. A runaway worker
+Sampling is bounded to 10,000 records and a 50 ms to 60 second interval, with
+explicit warning, stop, and cleanup behavior. A runaway worker
 or service must be stopped through its exact resource receipts, with descendant
 cleanup verified and the interrupted result preserved. Automatic recovery may
 not silently lower the required workload or increase its resource allowance.

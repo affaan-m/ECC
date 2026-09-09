@@ -9,8 +9,32 @@
     "report", "workspace", "artifact", "evaluation", "promotion", "trajectory",
     "trajectory_digest", "cleanup"
   ],
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": 2 } } },
+      "then": {
+        "type": "object",
+        "required": ["execution", "resource_monitoring"],
+        "properties": { "execution": {}, "resource_monitoring": {} }
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "type": "object", "required": ["execution"],
+              "properties": { "execution": {} }
+            },
+            {
+              "type": "object", "required": ["resource_monitoring"],
+              "properties": { "resource_monitoring": {} }
+            }
+          ]
+        }
+      }
+    }
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "enum": [1, 2] },
     "kind": { "const": "ecc.sandbox.fabric-job" },
     "run_id": { "$ref": "#/definitions/id" },
     "job_id": { "$ref": "#/definitions/id" },
@@ -40,7 +64,13 @@
     },
     "trajectory": { "$ref": "https://ecc.tools/schemas/sandbox-trajectory.schema.json" },
     "trajectory_digest": { "$ref": "#/definitions/sha256" },
-    "cleanup": { "$ref": "#/definitions/cleanup" }
+    "cleanup": { "$ref": "#/definitions/cleanup" },
+    "execution": {
+      "$ref": "https://ecc.tools/schemas/sandbox-execution-boundary.schema.json"
+    },
+    "resource_monitoring": {
+      "$ref": "https://ecc.tools/schemas/sandbox-resource-monitoring.schema.json"
+    }
   },
   "definitions": {
     "id": {

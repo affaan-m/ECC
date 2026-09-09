@@ -228,6 +228,7 @@ console.log('\n=== ECC sandbox fabric controller tests ===\n');
 
       assert.strictEqual(peak, 2);
       assert.strictEqual(outcome.kind, 'ecc.sandbox.fabric-run');
+      assert.strictEqual(outcome.schema_version, 2);
       assert.strictEqual(outcome.result, 'pass');
       assert.strictEqual(validateFabricRun(outcome), outcome);
       assert.ok(outcome.jobs.every(job => validateFabricJob(job) === job));
@@ -253,6 +254,13 @@ console.log('\n=== ECC sandbox fabric controller tests ===\n');
         entry.options.cwd.startsWith(`${outcome.run_directory}${path.sep}`)
       )));
       assert.ok(outcome.jobs.every(job => job.cleanup.pass));
+      assert.ok(outcome.jobs.every(job => job.resource_monitoring.status === 'warn'));
+      assert.ok(outcome.jobs.every(job => job.resource_monitoring.telemetry !== 'complete'));
+      assert.ok(outcome.jobs.every(job => job.resource_monitoring.samples[0].phase === 'initial'));
+      assert.ok(outcome.jobs.every(job => job.resource_monitoring.samples.at(-1).phase === 'final'));
+      assert.ok(outcome.jobs.every((job, index) => (
+        job.execution.execution_class === outcome.plan.jobs[index].execution.execution_class
+      )));
       assert.ok(outcome.jobs.every(job => validateTrajectory(job.trajectory) === job.trajectory));
       assert.deepStrictEqual(
         Object.values(outcome.scheduler.state.tasks).map(task => task.status).sort(),
@@ -399,6 +407,46 @@ console.log('\n=== ECC sandbox fabric controller tests ===\n');
       );
       assert.strictEqual(fs.existsSync(path.join(root, 'drifted.txt')), false);
       fs.rmSync(failure.fabric.run_directory, { recursive: true, force: true });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  await test('resource pressure aborts execution and cleans the owned workspace', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-fabric-resource-stop-'));
+    const srtRoute = route('srt', 'macos', 'arm64', 0);
+    const fixtureData = fixture(root, [srtRoute]);
+    let workspacePath;
+    try {
+      await assert.rejects(runFabric({
+        manifestPath: fixtureData.resolved.manifestPath,
+        workspaceMode: 'isolated-copy',
+      }, {
+        sourcePath: root,
+        resolveRun: () => fixtureData.resolved,
+        resourceSampleIntervalMs: 50,
+        sampleApprovedRouteResources: () => ({
+          observed_ms: Date.now(),
+          cpu_cores: 1,
+          memory_bytes: 128 * 1024 * 1024,
+          processes: 3,
+          output_bytes: 0,
+          spend: { amount: 0, currency: 'USD' },
+        }),
+        runApprovedRoute: (_resolved, _approvedRoute, options) => {
+          workspacePath = options.cwd;
+          return new Promise((resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+          });
+        },
+      }), error => {
+        assert.strictEqual(error.code, 'FABRIC_RESOURCE_LIMIT_EXCEEDED');
+        assert.strictEqual(error.fabric.cleanup.pass, true);
+        assert.strictEqual(error.fabric.resource_monitoring.status, 'stopped');
+        assert.strictEqual(error.fabric.resource_monitoring.cleanup_triggered, true);
+        return true;
+      });
+      assert.strictEqual(fs.existsSync(workspacePath), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -582,6 +630,7 @@ console.log('\n=== ECC sandbox fabric controller tests ===\n');
         },
       },
       job: { job_id: 'job_1_podman_linux_arm64' },
+      manifest: manifest(),
       ownerToken: 'c'.repeat(64),
       ownershipReceipt: ownershipReceipt('podman', 'c'),
       resolved: {},

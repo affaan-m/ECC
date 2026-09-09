@@ -1,8 +1,8 @@
 # Tiered Sandbox Progress
 
-Last updated: 2026-09-08 (approved design direction only).
-The execution evidence and existing acceptance gate below retain their recorded
-scope; this documentation update records no new runtime pass.
+Last updated: 2026-09-08.
+The execution evidence below retains its recorded scope. New rows identify the
+fresh Podman repair and execution-fabric v2 verification separately.
 
 ## September 8 Approved Direction
 
@@ -11,12 +11,15 @@ The approved follow-on work is recorded in the existing
 Begin with an isolated build and verification showcase, then earn whole-agent
 coverage through tool containment, independent evidence, resource monitoring,
 credential revocation, and safe artifact export. Process/container/VM execution
-classes and local/hosted placement are separate future concepts; current v1
-numeric tiers, capability meanings, escalation bounds, and operational examples
-remain unchanged.
+classes and local/hosted placement are now separate, controller-derived v2
+execution-fabric claims. Current v1 numeric tiers, capability meanings,
+escalation bounds, and operational examples remain unchanged.
 
-This is a documentation milestone, with implementation and real acceptance
-still pending. M2 supplies the runtime handle and cleanup evidence; M3 owns
+The v2 plan and fabric envelopes now record execution boundaries, shell-only
+coverage, excluded agent surfaces, control limits, and bounded resource
+observations. Stale telemetry and measured limit breaches abort execution and
+trigger workspace cleanup. Whole-agent containment and its acceptance remain
+pending. M2 supplies the runtime handle and cleanup evidence; M3 owns
 durable task, attempt, and ExecutionCapsule authority, consumed by Feature Fleet.
 The existing acceptance work below remains required. M1 profile development can
 proceed using independently verified fixtures without waiting for these future
@@ -149,16 +152,15 @@ acceptance requires rootless Podman and does not probe or route Docker.
 | User-facing Tier 1 acceptance | Product contract and local implementation | Agent offers a purpose-specific `y/n` launch, user chooses WezTerm or macOS Terminal.app, user interacts with the tailored environment, agent follows output and iterates, and owned resources are cleaned | Implemented with a manifest-first `launch` command, no-state decline, manifest-bound proposal IDs, immutable consent records, truthful launching state, direct non-evidence exploration, shared listener, a bounded atomic terminal check-in watchdog, both terminal adapters, 46/46 terminal tests, 33/33 session tests, 15/15 exploration tests, 47/47 contract and router tests, 4,094/4,094 repository tests, and real detection of both terminal clients; a fresh user-approved visible Podman launch remains required for end-to-end acceptance evidence |
 | Execution fabric | local contracts and adversarial suite | Strict plans and public envelopes, isolated copies, hardened worktrees, scheduler/reducer, environment receipts, snapshot quarantine, credential leases, route ranking, patch evaluation/promotion, trajectories, visual evidence, and event-log race tests | Pass; 105/105 focused fabric checks and 11/11 sandbox skill checks |
 | Execution fabric | local meta-harness controller | Parallel three-target mock run, exact approved-route binding, unified run IDs, per-job deadlines and workspace cleanup, stable aggregate order, and candidate-only promotion | Pass; route drift is rejected before artifact creation; hung workers terminate, expire their leases, clean owned workspaces, and cancel dependents |
-| Execution fabric | real host sanity | Tier 0 SRT worktree and candidate ref, conditional Tier 1 Podman, and Tier 2 Lume through the fabric controller | Tier 0 pass; Tier 1 blocked truthfully because the Podman machine stops; Tier 2 pass with verified guest cleanup and no clone retained |
-| Execution fabric | combined repository train | `npm test`, `npm run test:sandbox:fast`, focused ESLint, workflow YAML parse, Markdown lint, and `git diff --check` | Pass after final controller hardening with 4,018/4,018 repository tests; fast sandbox, focused lint, workflow, Markdown, and diff gates pass |
+| Execution fabric | real host sanity | Tier 0 SRT worktree and candidate ref, conditional Tier 1 Podman, and Tier 2 Lume through the fabric controller | Tier 0 and Tier 2 pass with verified cleanup; the earlier Tier 1 block is superseded by the fresh Podman 6.1.1 run below |
+| Execution fabric v2 | local contract and fault suite | Versioned class, placement, operator, shell-only coverage, excluded surfaces, control disclosures, bounded sampling, missing/stale telemetry, resource-limit abort, and cleanup trigger | Pass; v1 evidence remains valid, v2 claims are required on new plans/jobs, stale or over-limit samples stop, and owned workspaces are removed |
+| Podman repair | local Apple Silicon rootless Podman 6.1.1 | Fresh libkrun machine, Ubuntu image build, real `install-ecc-clean-user.yaml` run, schema validation, layer diff, empty container inventory, and safe machine stop | Pass; rootless Linux arm64 execution completed in 12.86 seconds with a complete diff, then the VM and helpers stopped |
+| Execution fabric | combined repository train | `npm test`, `npm run test:sandbox:fast`, focused ESLint, workflow YAML parse, Markdown lint, and `git diff --check` | Pending refresh on the separated PR train |
 
 ## Current gate
 
-S0 through S8 are historical. Gate 1 hardening and the opt-in execution-fabric
-foundation now have real Tier 0 and Tier 2 evidence plus complete mock coverage.
-The current host's stopped Podman machine blocks a fresh real Tier 1 fabric
-acceptance. The user-facing Tier 1 flow is also incomplete until the consent-first
-agent behavior and a selected terminal are demonstrated in a fresh user-approved
-visible Podman launch. The code and focused mock acceptance now cover both
-WezTerm and Terminal.app. No new commit or push is authorized until the user
-approves Gate 2.
+S0 through S8 are historical. Gate 1 hardening and the opt-in execution fabric
+have real Tier 0, Tier 1, and Tier 2 evidence plus mock Linux, macOS, and Windows
+coverage. Podman is stopped safely after the fresh Tier 1 run. The three stacked
+PR lanes and fresh hosted Linux and Windows checks remain the current release
+gate. Whole-agent coverage remains outside this M2 slice.

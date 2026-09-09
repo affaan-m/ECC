@@ -6,6 +6,7 @@ const {
   contractDigest,
   validateCredentialRequest,
   validateEvaluation,
+  validateExecutionBoundary,
   validateExecutionPlan,
   validateFabricJob,
   validateFabricRun,
@@ -14,6 +15,7 @@ const {
   validatePromotion,
   validateTrajectory,
 } = require('../../scripts/sandbox/fabric/contracts');
+const { buildExecutionBoundary } = require('../../scripts/sandbox/fabric/execution-boundary');
 
 let passed = 0;
 let failed = 0;
@@ -250,6 +252,33 @@ test('execution plans bind hosted CI as a Tier 3 route', () => {
   });
   ciPlan.jobs[0].credential_request_ids = [];
   assert.strictEqual(validateExecutionPlan(ciPlan), ciPlan);
+});
+
+test('version two plans require truthful execution boundary claims', () => {
+  const versionTwo = plan();
+  versionTwo.schema_version = 2;
+  versionTwo.jobs = versionTwo.jobs.map(job => ({
+    ...job,
+    execution: buildExecutionBoundary(job.route),
+  }));
+  assert.strictEqual(validateExecutionPlan(versionTwo), versionTwo);
+  assert.strictEqual(validateExecutionBoundary(versionTwo.jobs[0].execution).coverage.scope, 'shell-only');
+
+  const missing = clone(versionTwo);
+  delete missing.jobs[0].execution;
+  assert.throws(() => validateExecutionPlan(missing), /execution/i);
+
+  const mislabeledV1 = plan();
+  mislabeledV1.jobs[0].execution = buildExecutionBoundary(mislabeledV1.jobs[0].route);
+  assert.throws(() => validateExecutionPlan(mislabeledV1), /execution/i);
+
+  const drifted = clone(versionTwo);
+  drifted.jobs[0].execution.execution_class = 'disposable-vm';
+  assert.throws(() => validateExecutionPlan(drifted), /does not match route backend/i);
+
+  const overstated = clone(versionTwo.jobs[0].execution);
+  overstated.coverage.scope = 'whole-agent';
+  assert.throws(() => validateExecutionBoundary(overstated), /whole-agent|excluded_surfaces/i);
 });
 
 test('rejects unknown properties across public contracts', () => {

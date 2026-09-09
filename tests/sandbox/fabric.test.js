@@ -69,11 +69,16 @@ test('plans all eight meta-harness controls for a routable decision', () => {
   assert.strictEqual(executionFabric.contracts.validateExecutionPlan(plan), plan);
   assert.strictEqual(plan.plan_id, 'plan_fabric_test');
   assert.strictEqual(plan.max_parallel, 4);
+  assert.strictEqual(plan.schema_version, 2);
   assert.strictEqual(plan.jobs[0].workspace.mode, 'worktree');
   assert.strictEqual(plan.jobs[0].manifest, 'examples/sandbox/fabric-test.yaml');
   assert.deepStrictEqual(plan.jobs[0].route, {
     backend: 'podman', tier: 1, os: 'linux', arch: 'arm64',
   });
+  assert.strictEqual(plan.jobs[0].execution.execution_class, 'disposable-container');
+  assert.strictEqual(plan.jobs[0].execution.placement, 'local');
+  assert.strictEqual(plan.jobs[0].execution.coverage.scope, 'shell-only');
+  assert.ok(plan.jobs[0].execution.coverage.excluded_surfaces.includes('mcp-servers'));
   assert.deepStrictEqual(plan.credential_requests, []);
 });
 
@@ -85,8 +90,10 @@ test('exports the hardened execution-fabric building blocks through one facade',
     'environment',
     'evaluation',
     'events',
+    'execution',
     'patches',
     'promotion',
+    'resources',
     'routing',
     'scheduler',
     'snapshots',
@@ -98,6 +105,8 @@ test('exports the hardened execution-fabric building blocks through one facade',
   assert.strictEqual(typeof executionFabric.scheduler.createScheduler, 'function');
   assert.strictEqual(typeof executionFabric.credentials.CredentialBroker, 'function');
   assert.strictEqual(typeof executionFabric.promotion.promoteCandidate, 'function');
+  assert.strictEqual(typeof executionFabric.execution.buildExecutionBoundary, 'function');
+  assert.strictEqual(typeof executionFabric.resources.createResourceMonitor, 'function');
   assert.strictEqual(typeof executionFabric.visual.normalizeVisualEvidence, 'function');
   for (const removed of [
     'credentialEnvironment',

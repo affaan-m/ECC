@@ -10,6 +10,7 @@ const {
   validateFabricJob,
   validateFabricRun,
   validateFabricWorkspaceReceipt,
+  validateResourceMonitoring,
 } = require('./fabric/contracts');
 const { reduceSchedulerEvent } = require('./fabric/reducer');
 const { buildAggregateReport } = require('./report');
@@ -281,7 +282,29 @@ async function runApprovedRouteUntilDeadline(context, approvedRoute, cwd) {
   let executionAttempt;
   let deadlineTimer;
   let forcedSettlementTimer;
+  let rejectInterruption;
+  const interruption = new Promise((_, reject) => { rejectInterruption = reject; });
+  const abortExecution = error => {
+    if (controller.signal.aborted) return;
+    controller.abort(error);
+    if (executionAttempt?.ownedCleanupHandshake === true) return;
+    forcedSettlementTimer = setTimeout(
+      () => rejectInterruption(error),
+      JOB_ABORT_SETTLE_GRACE_MS
+    );
+  };
+  const resourceMonitor = executionFabric.resources.createResourceMonitor({
+    abort: abortExecution,
+    backend: approvedRoute.backend,
+    intervalMs: context.dependencies.resourceSampleIntervalMs,
+    jobId: context.job.job_id,
+    manifest: context.manifest,
+    ownershipReceipt: context.ownershipReceipt,
+    sampler: context.dependencies.sampleApprovedRouteResources,
+    workspacePath: cwd,
+  });
   const execution = Promise.resolve().then(() => {
+    if (controller.signal.aborted) throw controller.signal.reason;
     executionAttempt = context.dependencies.runApprovedRoute(
       context.resolved,
       approvedRoute,
@@ -304,41 +327,40 @@ async function runApprovedRouteUntilDeadline(context, approvedRoute, cwd) {
     return executionAttempt;
   }).then(
     value => {
-      if (controller.signal.aborted) throw deadlineError;
+      if (controller.signal.aborted) throw controller.signal.reason || deadlineError;
       return value;
     },
     error => {
       if (controller.signal.aborted) {
-        deadlineError.cause = error;
-        throw deadlineError;
+        const abortReason = controller.signal.reason || deadlineError;
+        abortReason.cause = error;
+        throw abortReason;
       }
       throw error;
     }
   );
-  const deadline = new Promise((_, reject) => {
-    const expire = () => {
-      controller.abort(deadlineError);
-      if (executionAttempt?.ownedCleanupHandshake === true) return;
-      forcedSettlementTimer = setTimeout(
-        () => reject(deadlineError),
-        JOB_ABORT_SETTLE_GRACE_MS
-      );
-    };
-    const remainingMs = deadlineAt - Date.now();
-    if (remainingMs <= 0) expire();
-    else deadlineTimer = setTimeout(expire, remainingMs);
-  });
+  const remainingMs = deadlineAt - Date.now();
+  deadlineTimer = setTimeout(() => abortExecution(deadlineError), Math.max(0, remainingMs));
   try {
-    return await Promise.race([execution, deadline]);
+    await resourceMonitor.start();
+    const result = await Promise.race([execution, interruption]);
+    const monitoring = validateResourceMonitoring(await resourceMonitor.finish(result.report));
+    return { execution: result, resourceMonitoring: monitoring };
+  } catch (error) {
+    error.resourceMonitoring = validateResourceMonitoring(
+      await resourceMonitor.finish(null, controller.signal.aborted)
+    );
+    throw error;
   } finally {
     clearTimeout(deadlineTimer);
     clearTimeout(forcedSettlementTimer);
   }
 }
 
-function resultPass(report, cleanup, evaluation, promotion, candidateRef) {
+function resultPass(report, cleanup, evaluation, promotion, candidateRef, resourceMonitoring) {
   return report.result === 'pass'
     && cleanup.pass
+    && resourceMonitoring?.status !== 'stopped'
     && (!evaluation || evaluation.verdict === 'accepted')
     && (!candidateRef || promotion?.result === 'promoted');
 }
@@ -366,6 +388,7 @@ async function executeFabricJob(context) {
   let receipt;
   let artifactCopy;
   let cleanup = { attempted: false, pass: false, retained: false };
+  let resourceMonitoring = null;
   try {
     receipt = executionFabric.workspace.prepareWorkspace({
       mode: job.workspace.mode,
@@ -375,11 +398,13 @@ async function executeFabricJob(context) {
       trust: manifest.needs.trust,
     });
     const approvedRoute = Object.freeze({ ...job.route });
-    const execution = await runApprovedRouteUntilDeadline({
+    const monitored = await runApprovedRouteUntilDeadline({
       ...context,
       ownerToken,
       ownershipReceipt,
     }, approvedRoute, receipt.path);
+    const execution = monitored.execution;
+    resourceMonitoring = monitored.resourceMonitoring;
     const report = approvedSingleReport(execution.report, approvedRoute);
     if (ownershipReceipt) {
       if (typeof dependencies.verifyApprovedRouteOwnership !== 'function') {
@@ -446,7 +471,14 @@ async function executeFabricJob(context) {
         throw new Error('--candidate-ref requires an owned worktree or isolated-copy workspace');
       }
     }
-    const pass = resultPass(report, cleanup, evaluation, promotion, options.candidateRef);
+    const pass = resultPass(
+      report,
+      cleanup,
+      evaluation,
+      promotion,
+      options.candidateRef,
+      resourceMonitoring
+    );
     const trajectory = buildRunTrajectory({
       artifact,
       cleanup,
@@ -462,7 +494,7 @@ async function executeFabricJob(context) {
         : `trajectory_${crypto.randomBytes(16).toString('hex')}`,
     });
     return validateFabricJob({
-      schema_version: 1,
+      schema_version: 2,
       kind: 'ecc.sandbox.fabric-job',
       run_id: runIdentity.runId,
       job_id: job.job_id,
@@ -476,8 +508,11 @@ async function executeFabricJob(context) {
       trajectory,
       trajectory_digest: executionFabric.trajectory.trajectoryDigest(trajectory),
       cleanup,
+      execution: job.execution,
+      resource_monitoring: resourceMonitoring,
     });
   } catch (error) {
+    resourceMonitoring = error.resourceMonitoring || resourceMonitoring;
     if (artifactCopy) {
       try { executionFabric.workspace.cleanupWorkspace(artifactCopy, { ownerToken }); } catch { /* exact best effort */ }
     }
@@ -490,6 +525,7 @@ async function executeFabricJob(context) {
       run_directory: jobDirectory,
       deadline_at: context.deadlineAt,
       cleanup,
+      ...(resourceMonitoring ? { resource_monitoring: resourceMonitoring } : {}),
     };
     throw error;
   }
@@ -674,7 +710,7 @@ async function runFabric(options, dependencies = {}) {
       notes: [],
     });
     return validateFabricRun({
-      schema_version: 1,
+      schema_version: 2,
       kind: 'ecc.sandbox.fabric-run',
       run_id: runIdentity.runId,
       result: scheduled.outcomes.every(outcome => outcome.result === 'pass') ? 'pass' : 'fail',

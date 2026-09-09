@@ -14,6 +14,7 @@ const repoRoot = path.join(__dirname, '..', '..', '..');
 const schemaPaths = Object.freeze({
   credentialRequest: path.join(repoRoot, 'schemas', 'sandbox-credential-request.schema.json'),
   evaluation: path.join(repoRoot, 'schemas', 'sandbox-evaluation.schema.json'),
+  executionBoundary: path.join(repoRoot, 'schemas', 'sandbox-execution-boundary.schema.json'),
   executionPlan: path.join(repoRoot, 'schemas', 'sandbox-execution-plan.schema.json'),
   fabricJob: path.join(repoRoot, 'schemas', 'sandbox-fabric-job.schema.json'),
   fabricRun: path.join(repoRoot, 'schemas', 'sandbox-fabric-run.schema.json'),
@@ -25,6 +26,7 @@ const schemaPaths = Object.freeze({
   patchArtifact: path.join(repoRoot, 'schemas', 'sandbox-patch-artifact.schema.json'),
   promotion: path.join(repoRoot, 'schemas', 'sandbox-promotion.schema.json'),
   report: path.join(repoRoot, 'schemas', 'sandbox-report.schema.json'),
+  resourceMonitoring: path.join(repoRoot, 'schemas', 'sandbox-resource-monitoring.schema.json'),
   trajectory: path.join(repoRoot, 'schemas', 'sandbox-trajectory.schema.json'),
 });
 
@@ -80,6 +82,86 @@ function duplicateValues(values) {
   return [...duplicates];
 }
 
+const EXECUTION_SURFACES = Object.freeze([
+  'shell', 'child-processes', 'filesystem-tools', 'hooks', 'plugins', 'browsers',
+  'mcp-servers', 'model-api-clients', 'network-clients',
+]);
+
+function semanticExecutionBoundaryErrors(boundary) {
+  const errors = [];
+  const contained = new Set(boundary.coverage.contained_surfaces);
+  const excluded = new Set(boundary.coverage.excluded_surfaces);
+  for (const surface of contained) {
+    if (excluded.has(surface)) errors.push(`/coverage surface ${surface} cannot be contained and excluded`);
+  }
+  for (const surface of EXECUTION_SURFACES) {
+    if (!contained.has(surface) && !excluded.has(surface)) {
+      errors.push(`/coverage surface ${surface} must be contained or excluded`);
+    }
+  }
+  if (boundary.coverage.scope === 'whole-agent' && contained.size !== EXECUTION_SURFACES.length) {
+    errors.push('/coverage whole-agent coverage must contain every supported surface');
+  }
+  for (const statement of boundary.enforced_controls) {
+    if (boundary.missing_controls.includes(statement)) {
+      errors.push(`/missing_controls ${statement} cannot also be enforced`);
+    }
+  }
+  return errors;
+}
+
+function semanticResourceMonitoringErrors(receipt) {
+  const errors = [];
+  const started = Date.parse(receipt.started_at);
+  const completed = Date.parse(receipt.completed_at);
+  if (completed < started) errors.push('/completed_at cannot precede started_at');
+  if (receipt.samples[0]?.phase !== 'initial') errors.push('/samples first sample must be initial');
+  if (receipt.samples.at(-1)?.phase !== 'final') errors.push('/samples last sample must be final');
+  let previousRecorded = started;
+  receipt.samples.forEach((sample, index) => {
+    if (sample.sequence !== index) errors.push(`/samples/${index}/sequence must be contiguous`);
+    const recorded = Date.parse(sample.recorded_at);
+    if (recorded < started || recorded > completed) {
+      errors.push(`/samples/${index}/recorded_at must be within the monitoring interval`);
+    }
+    if (recorded < previousRecorded) errors.push(`/samples/${index}/recorded_at cannot move backward`);
+    previousRecorded = recorded;
+    const measured = [
+      [sample.cpu_cores, receipt.limits.cpu_cores],
+      [sample.memory_bytes, receipt.limits.memory_bytes],
+      [sample.processes, receipt.limits.processes],
+      [sample.storage_growth_bytes, receipt.limits.storage_growth_bytes],
+      [sample.output_bytes, receipt.limits.output_bytes],
+      [sample.elapsed_ms, receipt.limits.runtime_ms],
+      [sample.spend?.amount ?? null, receipt.limits.spend.amount],
+    ];
+    const exceeds = measured.some(([value, limit]) => value !== null && value > limit);
+    const mustStop = exceeds || sample.telemetry === 'stale';
+    const mustWarn = !mustStop && sample.telemetry !== 'complete';
+    const expectedDecision = mustStop ? 'stop' : (mustWarn ? 'warn' : 'continue');
+    if (sample.decision !== expectedDecision) {
+      errors.push(`/samples/${index}/decision must be ${expectedDecision} for its telemetry and limits`);
+    }
+    if (sample.decision === 'stop' && sample.reasons.length === 0) {
+      errors.push(`/samples/${index}/reasons a stop decision requires a reason`);
+    }
+  });
+  const stopped = receipt.samples.some(sample => sample.decision === 'stop');
+  if (receipt.status === 'stopped' && (!stopped || !receipt.stop_reason || !receipt.cleanup_triggered)) {
+    errors.push('/status stopped monitoring requires a stop sample, reason, and cleanup trigger');
+  }
+  if (receipt.status !== 'stopped' && receipt.stop_reason !== null) {
+    errors.push('/stop_reason is available only for stopped monitoring');
+  }
+  if (receipt.status === 'warn' && receipt.warnings.length === 0) {
+    errors.push('/warnings warning monitoring requires a disclosed warning');
+  }
+  if (receipt.status === 'pass' && (receipt.telemetry !== 'complete' || receipt.warnings.length > 0)) {
+    errors.push('/status pass requires complete telemetry without warnings');
+  }
+  return errors;
+}
+
 function dependencyCycle(jobs) {
   const dependencies = new Map(jobs.map(job => [job.job_id, job.depends_on]));
   const visited = new Set();
@@ -114,6 +196,21 @@ function semanticExecutionPlanErrors(plan) {
     errors.push(`/jobs duplicate job_id ${duplicate}`);
   }
   for (const job of plan.jobs) {
+    if (job.execution) {
+      const { buildExecutionBoundary } = require('./execution-boundary');
+      const expected = buildExecutionBoundary(job.route);
+      try {
+        validateExecutionBoundary(job.execution);
+      } catch (error) {
+        errors.push(...error.errors.map(item => `/jobs/${job.job_id}/execution${item}`));
+      }
+      if (job.execution.execution_class !== expected.execution_class) {
+        errors.push(`/jobs/${job.job_id}/execution/execution_class does not match route backend`);
+      }
+      if (job.execution.placement !== expected.placement) {
+        errors.push(`/jobs/${job.job_id}/execution/placement does not match route backend`);
+      }
+    }
     if (!jobsById.has(job.job_id)) jobsById.set(job.job_id, job);
   }
 
@@ -308,6 +405,26 @@ function semanticFabricJobErrors(job) {
   if (job.trajectory.cleanup.verified !== job.cleanup.pass) {
     errors.push('/trajectory/cleanup/verified does not match cleanup pass');
   }
+  if (job.execution) {
+    const { buildExecutionBoundary } = require('./execution-boundary');
+    const expected = buildExecutionBoundary(job.report);
+    if (job.execution.execution_class !== expected.execution_class) {
+      errors.push('/execution/execution_class does not match report backend');
+    }
+    if (job.execution.placement !== expected.placement) {
+      errors.push('/execution/placement does not match report backend');
+    }
+  }
+  if (job.resource_monitoring?.status === 'stopped' && job.result === 'pass') {
+    errors.push('/resource_monitoring stopped resource monitoring cannot produce a passing job');
+  }
+  if (job.resource_monitoring) {
+    try {
+      validateResourceMonitoring(job.resource_monitoring);
+    } catch (error) {
+      errors.push(...error.errors.map(item => `/resource_monitoring${item}`));
+    }
+  }
 
   if (!job.workspace.owned && (job.artifact || job.evaluation || job.promotion)) {
     errors.push('/workspace unowned workspaces cannot emit patch, evaluation, or promotion receipts');
@@ -367,6 +484,9 @@ function semanticFabricRunErrors(run) {
   const errors = [];
   try { validateExecutionPlan(run.plan); } catch (error) { errors.push(...error.errors.map(item => `/plan${item}`)); }
   try { validateReport(run.report); } catch (error) { errors.push(...error.errors.map(item => `/report${item}`)); }
+  if (run.schema_version !== run.plan.schema_version) {
+    errors.push('/schema_version must match the execution plan schema version');
+  }
   const planJobIds = run.plan.jobs.map(job => job.job_id);
   if (run.jobs) {
     const runJobIds = run.jobs.map(job => job.job_id);
@@ -376,6 +496,15 @@ function semanticFabricRunErrors(run) {
     run.jobs.forEach((job, index) => {
       for (const error of semanticFabricJobErrors(job)) errors.push(`/jobs/${index}${error}`);
       if (job.run_id !== run.run_id) errors.push(`/jobs/${index}/run_id does not match run_id`);
+      if (job.schema_version !== run.schema_version) {
+        errors.push(`/jobs/${index}/schema_version does not match run schema version`);
+      }
+      if (
+        run.plan.jobs[index]?.execution
+        && contractDigest(job.execution) !== contractDigest(run.plan.jobs[index].execution)
+      ) {
+        errors.push(`/jobs/${index}/execution does not match plan execution boundary`);
+      }
       if (job.trajectory.plan_id !== run.plan.plan_id) {
         errors.push(`/jobs/${index}/trajectory/plan_id does not match plan`);
       }
@@ -412,6 +541,12 @@ function semanticFabricRunErrors(run) {
   if (planJobIds.length !== 1 || planJobIds[0] !== run.job_id) {
     errors.push('/job_id single-job run must correspond to its only plan job');
   }
+  if (
+    run.plan.jobs[0]?.execution
+    && contractDigest(run.execution) !== contractDigest(run.plan.jobs[0].execution)
+  ) {
+    errors.push('/execution does not match plan execution boundary');
+  }
   for (const error of semanticFabricJobErrors({ ...run, kind: 'ecc.sandbox.fabric-job' })) {
     errors.push(error);
   }
@@ -437,6 +572,24 @@ function validateCredentialRequest(request) {
 
 function validateExecutionPlan(plan) {
   return validateWith('executionPlan', 'sandbox execution plan', plan, semanticExecutionPlanErrors);
+}
+
+function validateExecutionBoundary(boundary) {
+  return validateWith(
+    'executionBoundary',
+    'sandbox execution boundary',
+    boundary,
+    semanticExecutionBoundaryErrors
+  );
+}
+
+function validateResourceMonitoring(receipt) {
+  return validateWith(
+    'resourceMonitoring',
+    'sandbox resource monitoring receipt',
+    receipt,
+    semanticResourceMonitoringErrors
+  );
 }
 
 function validatePatchArtifact(artifact) {
@@ -479,19 +632,23 @@ module.exports = {
   schemaPaths,
   semanticCredentialRequestErrors,
   semanticEvaluationErrors,
+  semanticExecutionBoundaryErrors,
   semanticExecutionPlanErrors,
   semanticFabricJobErrors,
   semanticFabricRunErrors,
   semanticPatchArtifactErrors,
   semanticPromotionErrors,
+  semanticResourceMonitoringErrors,
   semanticTrajectoryErrors,
   validateCredentialRequest,
   validateEvaluation,
+  validateExecutionBoundary,
   validateExecutionPlan,
   validateFabricJob,
   validateFabricRun,
   validateFabricWorkspaceReceipt,
   validatePatchArtifact,
   validatePromotion,
+  validateResourceMonitoring,
   validateTrajectory,
 };

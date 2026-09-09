@@ -7,10 +7,12 @@ const executionFabric = Object.freeze({
   contracts: require('./fabric/contracts'),
   credentials: require('./fabric/credential-broker'),
   environment: require('./fabric/environment-receipt'),
+  execution: require('./fabric/execution-boundary'),
   evaluation: require('./fabric/evaluator'),
   events: require('./fabric/event-store'),
   patches: require('./fabric/patch-artifact'),
   promotion: require('./fabric/promoter'),
+  resources: require('./fabric/resource-monitor'),
   routing: require('./fabric/route-policy'),
   scheduler: require('./fabric/scheduler'),
   snapshots: require('./fabric/snapshot-store'),
@@ -72,12 +74,13 @@ function createFabricPlan(manifest, decision, options = {}) {
       os: route.os,
       arch: route.arch,
     },
+    execution: executionFabric.execution.buildExecutionBoundary(route),
     credential_request_ids: credentialRequests
       .filter(request => request.job_id === routeJobId(route, index))
       .map(request => request.request_id),
   }));
   return executionFabric.contracts.validateExecutionPlan({
-    schema_version: 1,
+    schema_version: 2,
     plan_id: options.planId || `plan_${crypto.randomBytes(12).toString('hex')}`,
     created_at: options.createdAt || new Date().toISOString(),
     max_parallel: Math.max(1, Math.min(32, Math.floor(options.maxParallel || 1))),

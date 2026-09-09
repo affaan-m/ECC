@@ -8,8 +8,40 @@
     "schema_version", "plan_id", "created_at", "max_parallel", "jobs",
     "credential_requests"
   ],
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": 2 } } },
+      "then": {
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["execution"],
+              "properties": { "execution": {} }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "not": {
+                "type": "object",
+                "required": ["execution"],
+                "properties": { "execution": {} }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "enum": [1, 2] },
     "plan_id": { "$ref": "#/definitions/id" },
     "created_at": { "$ref": "#/definitions/timestamp" },
     "max_parallel": { "type": "integer", "minimum": 1, "maximum": 32 },
@@ -97,6 +129,9 @@
         },
         "workspace": { "$ref": "#/definitions/workspace" },
         "route": { "$ref": "#/definitions/route" },
+        "execution": {
+          "$ref": "https://ecc.tools/schemas/sandbox-execution-boundary.schema.json"
+        },
         "credential_request_ids": {
           "type": "array",
           "maxItems": 32,

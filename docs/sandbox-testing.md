@@ -15,19 +15,22 @@ detached supervisor owns each sandbox, streams the same redacted events to the
 window and agent listeners, records phase timings, preserves any verification
 evidence, and cleans the resource.
 
-## Planned Build And Verification Workflow
+## Build And Verification Workflow
 
 The September 8, 2026 approved direction starts with an isolated build and
 verification workflow: stage the required source, run in a disposable workspace,
 verify the result outside the worker, export a bounded candidate, and clean up.
 A whole-agent environment follows only after its file tools, shell, network,
 plugins, and external connections have explicit containment or broker coverage.
-See the existing
+The opt-in execution fabric now emits a version 2 plan and job envelope with a
+controller-derived execution class, placement, operator, shell-only coverage,
+excluded agent surfaces, enforced and missing controls, and bounded resource
+observations. Stale telemetry or an observed limit breach stops the worker and
+triggers cleanup. See the existing
 [execution-fabric design](design/sandbox-testing/EXECUTION-FABRIC.md#approved-direction-isolated-software-work)
-for the future execution classes, placement, trust, resource monitoring,
-credential revocation, and evidence gates. This is approved future development;
-the v1 manifest fields, tier meanings, and operational examples below remain
-the current interface.
+for the implemented slice and the remaining trust, credential revocation, and
+whole-agent gates. The v1 manifest fields, tier meanings, and operational
+examples below remain the current interface.
 
 ## Tier 1 User Experience
 
@@ -116,8 +119,10 @@ For advanced agent harnesses, the opt-in execution-fabric modules add strict
 plans, owned candidate workspaces, quota-aware parallel scheduling, digest-bound
 environment reuse, scoped credential leases, normalized trajectories,
 independent evaluation, candidate-ref promotion, shadow route ranking, and
-deterministic visual-evidence records. They do not change the default single-run
-router or apply changes to the caller's branch. See
+deterministic visual-evidence records. Version 2 fabric receipts also state the
+execution class separately from placement, enumerate shell-only exclusions,
+and disclose resource limits and missing telemetry. They do not change the
+default single-run router or apply changes to the caller's branch. See
 [`docs/design/sandbox-testing/EXECUTION-FABRIC.md`](design/sandbox-testing/EXECUTION-FABRIC.md).
 
 ## Claude Code, Codex, And Kimi Code Agents

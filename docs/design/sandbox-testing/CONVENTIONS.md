@@ -7,12 +7,13 @@ must mirror.
 
 The September 8, 2026 approved direction lives in the existing
 [execution-fabric design](EXECUTION-FABRIC.md#approved-direction-isolated-software-work).
-Its execution classes, orthogonal hosted placement, policy-owned trust,
-task-local services, and whole-agent coverage are future contract work. The v1
-numeric tiers, closed manifest vocabulary, and routing decisions below remain
-the current operational contract. Add versioned schemas and conformance tests
-before accepting new fields or broadening `services` or `gui`. M2 runtime
-handles must compose with M3 durable task/attempt authority and Feature Fleet.
+Its execution classes, orthogonal hosted placement, operator identity,
+shell-only coverage, and resource observations now live in strict v2
+execution-fabric contracts. The v1 numeric tiers, closed manifest vocabulary,
+and routing decisions below remain the current operational contract.
+Whole-agent coverage and broader `services` or `gui` meanings still require
+separate versioned contracts and conformance evidence. M2 runtime handles must
+compose with M3 durable task/attempt authority and Feature Fleet.
 
 ## Repository shape
 

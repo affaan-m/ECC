@@ -136,6 +136,10 @@ The strict execution plan and additive receipts provide:
 - shadow route ranking that can reorder only statically eligible routes;
 - fixed native visual evidence whose action transcript, screenshots,
   environment identity, and cleanup are hash-bound.
+- versioned execution boundary claims that separate process, container, or VM
+  isolation from local or hosted placement and enumerate shell-only exclusions;
+- bounded resource observations that stop on stale telemetry or measured limit
+  breaches, trigger cleanup, and disclose unsupported signals.
 
 Keep adaptive routing in shadow mode until real, passing, cleanup-complete
 history is representative. Never let history create a route or widen authority.
@@ -156,7 +160,9 @@ ecc-sandbox fabric sandbox.yaml --workspace-mode isolated-copy --max-parallel 3
 Tier 0 file writes, and selects an isolated copy for untrusted Tier 0 work.
 Tier 1 and Tier 2 retain their disposable backend state. The controller emits a
 strict plan, normalized sandbox report, workspace receipt, optional patch and
-evaluation, trajectory, and cleanup receipt. An explicit `--candidate-ref` may
+evaluation, trajectory, resource monitoring, and cleanup receipt. Current
+version 2 plans and job receipts explicitly claim `shell-only` coverage. An
+explicit `--candidate-ref` may
 create only a separately named candidate branch after accepted evaluation. It
 never applies a patch to the source branch. Multi-target runs use per-job owned
 workspaces and the validated scheduler; promotion remains single-target because
