@@ -9,9 +9,12 @@ From the repository root, with Node 18 or newer and no dependency install:
 
 ```sh
 node scripts/coordination-inventory.js --manifest examples/coordination-inventory/manifest.json --now 2026-09-08T06:30:00.000Z
+node scripts/coordination-inventory.js --manifest examples/coordination-inventory/goals.json --now 2026-09-08T06:30:00.000Z
 node scripts/coordination-inventory.js --coordination /path/to/coordination --live
 node examples/coordination-inventory/evaluate.js
 node --test tests/scripts/coordination-inventory.test.js
+node --test tests/scripts/coordination-goals.test.js
+node examples/coordination-inventory/benchmark.js
 ```
 
 The first command uses a **synthetic** fixed-time fixture. It demonstrates a
@@ -63,6 +66,54 @@ prove the owner is alive or authorized. The caller supplies those declarations;
 the inventory never acquires, renews or releases leases. No lease records means
 ownership is unknown. No pause, steer, kill, settings change or allocation occurs.
 
+## Declared goals and sessions
+
+Optional `goals` and `sessions` collections add observations to the v1 manifest.
+Each accepts at most 64 records, within the same 1 MiB total input budget. IDs
+are unique within each collection. A goal accepts `id`, optional `taskId`,
+`kind` (`native` or `unknown`), `status` (`active`, `complete`, `blocked` or
+`unknown`), and optional UTC `updatedAt`. A session accepts `id`, optional
+`taskId`/`goalId`, `status` (`open`, `closed` or `unknown`) and optional UTC
+`updatedAt`. Omitted kind/status defaults to `unknown`; invalid supplied enum
+values and scalar collection types are rejected. Supplied non-null links must
+reference a supplied task or goal. These are associations, not exclusive owners;
+multiple sessions may reference one goal without counting that goal twice.
+
+`goals.json` is synthetic: three open sessions reference one active goal, one
+completed goal and one missing goal declaration. At its fixed example time the
+report has one `freshActiveNativeGoalDeclarations` and one
+`openSessionsWithoutGoalDeclaration`. An open session linked to a completed goal
+stays open while the goal stays complete. Neither status overwrites the other.
+
+Every goal/session record has `authority: "declared-only"`. Even `kind: "native"`
+is the caller's claim, not a native goal-tool verification. Supply a nonsensitive
+observation derived from an authorized tool receipt; do not paste raw tool blobs,
+objective text, transcripts or credentials. Unrecognized fields are omitted from
+reports. The inventory never reads private thread stores or automatically imports
+GOAL-STATE files. The caller retains the receipt and its provenance separately.
+
+`coverage.goals` and `coverage.sessions` distinguish `missing` collections from
+`declared-only` collections, including explicitly empty arrays. Neither proves
+global absence. `activity` contains declaration counts by status, native-kind
+declaration counts, open sessions without goal links and the number of fresh
+active native-kind declarations. These count records, not task associations or
+verified running processes. No goal is inferred from a terminal, task `status`,
+heartbeat, PID, resource lease or status-file modification time.
+
+Freshness uses the existing five-minute observation threshold: exactly five
+minutes old is fresh, older is stale, future observations are `clock-skew`, and
+missing timestamps are unknown. It does not rewrite declared state, and even a
+fresh active declaration does not prove current execution. Goal/session state
+never suppresses overlap warnings or expands process probing. Ownership remains
+in declared paths and resource leases; no pause, message, steer or permission
+grant is triggered by any count or warning.
+
+Existing task, warning, resource and lease outputs are unchanged. The new arrays,
+activity summary and coverage keys are additive v1 output; consumers that reject
+unknown fields need updating. Older consumers will ignore these declarations.
+This remains a source-checkout example; these commands/examples are not claimed
+to be shipped in the npm package.
+
 ## Evaluation and limitations
 
 Eight authored synthetic pairs compare an exact-path baseline with ECC's
@@ -87,3 +138,13 @@ alerts per pair and p50/p95 overhead against exact-path and isolation-only
 baselines. After that, randomize warning display and measure conflict/rework
 rate with the same task mix. No automatic pause until warning usefulness and
 ownership enforcement are separately established.
+
+The dependency-free `benchmark.js` characterizes the legacy fixture, declared
+fixture and 64-goal/64-session limit with five warmup batches and 31 measured
+batches of ten inventory builds each. It reports median/p95 batch-average
+milliseconds, sample counts, fixed input hashes and the same eight overlap
+controls. It excludes process startup and CLI I/O; the declaration-limit workload
+is not a worst-case graph benchmark. Compare identical input hashes, Node runtime
+and parameters before/after on the same machine. Historical one-shot elapsed
+time is not a comparable speedup baseline. No performance improvement or conflict
+reduction is asserted from merely adding these observations.

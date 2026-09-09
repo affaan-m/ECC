@@ -60,6 +60,37 @@ function normalizeTask(value) {
     statusFileModifiedAt: missing(t.statusFileModifiedAt) ? null : timestamp(t.statusFileModifiedAt)
   };
 }
+function declarationStatus(value, allowed) {
+  if (value === undefined) return 'unknown';
+  if (!allowed.includes(value)) invalid();
+  return value;
+}
+function normalizeDeclarations(manifest, tasks) {
+  const taskIds = new Set(tasks.map(t => t.id));
+  const link = (value, ids) => {
+    if (missing(value)) return null;
+    const id = identifier(value);
+    if (!ids.has(id)) invalid();
+    return id;
+  };
+  const common = value => ({ id: identifier(value.id), taskId: link(value.taskId, taskIds),
+    updatedAt: missing(value.updatedAt) ? null : timestamp(value.updatedAt) });
+  const goals = unique(list(manifest.goals === undefined ? [] : manifest.goals).map(value => {
+    const g = record(value);
+    return { ...common(g), kind: declarationStatus(g.kind, ['native', 'unknown']),
+      status: declarationStatus(g.status, ['active', 'complete', 'blocked', 'unknown']) };
+  }), 'id');
+  const goalIds = new Set(goals.map(g => g.id));
+  const sessions = unique(list(manifest.sessions === undefined ? [] : manifest.sessions).map(value => {
+    const s = record(value);
+    return { ...common(s), goalId: link(s.goalId, goalIds),
+      status: declarationStatus(s.status, ['open', 'closed', 'unknown']) };
+  }), 'id');
+  return { goals, sessions, declarationCoverage: {
+    goals: manifest.goals === undefined ? 'missing' : 'declared-only',
+    sessions: manifest.sessions === undefined ? 'missing' : 'declared-only'
+  } };
+}
 function normalizeManifest(value) {
   const m = record(value);
   if (m.version !== 1 || Buffer.byteLength(JSON.stringify(m)) > MAX_BYTES) invalid();
@@ -84,13 +115,29 @@ function normalizeManifest(value) {
     const l = record(value);
     return { resource: identifier(l.resource), owner: identifier(l.owner), expiresAt: timestamp(l.expiresAt) };
   });
-  return { version: 1, repositories, tasks, leases };
+  return { version: 1, repositories, tasks, leases, ...normalizeDeclarations(m, tasks) };
 }
 
 function heartbeat(value, nowMs) {
   if (!value) return { state: 'unknown', ageMs: null };
   const ageMs = nowMs - Date.parse(value);
   return { state: ageMs < 0 ? 'clock-skew' : ageMs > STALE_MS ? 'stale' : 'fresh', ageMs };
+}
+function declarationInventory(manifest, nowMs) {
+  const observe = item => ({ ...item, authority: 'declared-only', freshness: heartbeat(item.updatedAt, nowMs) });
+  const goals = manifest.goals.map(observe);
+  const sessions = manifest.sessions.map(observe);
+  const counts = (items, statuses) => Object.fromEntries(statuses.map(status =>
+    [status, items.filter(item => item.status === status).length]));
+  const statuses = ['active', 'complete', 'blocked', 'unknown'];
+  const native = goals.filter(g => g.kind === 'native');
+  return { goals, sessions, activity: {
+    declaredGoalsByStatus: counts(goals, statuses),
+    declaredNativeGoalsByStatus: counts(native, statuses),
+    declaredSessionsByStatus: counts(sessions, ['open', 'closed', 'unknown']),
+    openSessionsWithoutGoalDeclaration: sessions.filter(s => s.status === 'open' && s.goalId === null).length,
+    freshActiveNativeGoalDeclarations: native.filter(g => g.status === 'active' && g.freshness.state === 'fresh').length
+  } };
 }
 function proximityWarnings(manifest) {
   const warnings = [];
@@ -137,9 +184,13 @@ function buildInventory(input, options = {}) {
     .map(([resource,owners]) => ({ resource, owners: [...owners].sort() })).sort((a,b) => a.resource < b.resource ? -1 : 1);
   return {
     version: 1, mode: 'read-only', observedAt: now, tasks, leases, leaseConflicts,
+    ...declarationInventory(m, nowMs),
     resources, warnings: proximityWarnings(m),
-    coverage: { tasks: 'declared-or-status-files-only', workingSets: 'declared-paths-only', imports: 'provided-source-map-relative-js-ts-only', leases: 'declared-only', processes: 'declared-pids-only' },
+    coverage: { tasks: 'declared-or-status-files-only', workingSets: 'declared-paths-only', imports: 'provided-source-map-relative-js-ts-only', leases: 'declared-only', processes: 'declared-pids-only', ...m.declarationCoverage },
     limits: ['Score is a heuristic, not a calibrated probability.', 'No warning does not establish collision-free work.',
+      'Goal/session states and native kind are caller declarations, not verified execution or authority.',
+      'Open sessions, task status and observed PIDs do not establish an active native goal.',
+      'Missing declarations and empty lists do not establish global absence; fresh declarations do not prove current execution.',
       'Stale heartbeat is not proof of a stuck process; PID reuse is not resolved.',
       'Import regex may match comments and misses aliases, nonliteral and non-JS imports.',
       'No semantic/PCA proximity or conflict-reduction claim is validated.',
