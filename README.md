@@ -315,10 +315,24 @@ You can also open the ECC repository directly in Codex for a project-local setup
 
 For repo navigation, surface ownership, and PR diff packet guidance, read the [Codex ECC Navigation Map](docs/CODEX-NAVIGATION-GUIDE.md). See the [.codex plugin notes](.codex-plugin/README.md) for native lifecycle details.
 
+### Grok Build
+
+Grok Build does not yet have a native ECC plugin target. `scripts/sync-ecc-to-grok.sh` is the copied-configuration path into `~/.grok`, parallel to the legacy Codex sync. It preserves existing Codex `source-command-*` skills in `~/.agents/skills`, copies missing native skills from repo `.agents/skills`, and installs slash commands into `~/.grok/commands` using the unprefixed command name unless a Grok builtin or a different preexisting skill already owns that name. Run Grok once first so `~/.grok/config.toml` exists, then:
+
+```bash
+git clone https://github.com/affaan-m/ECC.git
+cd ECC
+npm install
+bash scripts/sync-ecc-to-grok.sh --dry-run
+bash scripts/sync-ecc-to-grok.sh
+```
+
+For repo navigation after that sync, read the [Grok ECC Navigation Map](docs/GROK-NAVIGATION-GUIDE.md).
+
 ### Other agents and editors
 
 <details>
-<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode, Copilot</strong></summary>
+<summary><strong>Cursor, OpenCode, Gemini, Zed, Antigravity, Qwen, Hermes, OpenClaw, Kimi, CodeBuddy, JoyCode, Copilot, Grok Build</strong></summary>
 
 Clone ECC once, then choose the target that matches your harness:
 
@@ -340,6 +354,7 @@ cd ECC
 | Kimi Code CLI | `./install.sh --profile minimal --target kimi` | Project-local `.kimi-code/` install |
 | CodeBuddy | `./install.sh --profile minimal --target codebuddy` | Project-local `.codebuddy/` install |
 | JoyCode | `./install.sh --profile minimal --target joycode` | Project-local `.joycode/` install |
+| Grok Build | `bash scripts/sync-ecc-to-grok.sh` | Copied config into `~/.grok`; run Grok once first so `config.toml` exists |
 
 GitHub Copilot support is already included in this repository. `.github/copilot-instructions.md` provides the instruction layer, `.github/prompts/` contains the reusable `/plan`, `/tdd`, `/security-review`, `/build-fix`, and `/refactor` prompts, and `.vscode/settings.json` enables `chat.promptFiles`.
 
