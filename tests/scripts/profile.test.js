@@ -44,6 +44,7 @@ function withFixture(fn) {
           XDG_STATE_HOME: path.join(userDirectory, 'state'),
           CLAUDE_CONFIG_DIR: path.join(userDirectory, '.claude'),
           CODEX_HOME: path.join(userDirectory, '.codex'),
+          ...(process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {}),
         },
       });
     fn(run);
@@ -110,6 +111,13 @@ const tests = [
     assert.match(result.stdout, /estimate/i);
     assert.match(result.stdout, /unobserved/i);
   })],
+  ['text error output renders terminal controls inert', () => withFixture(run => {
+    const control = String.fromCharCode(27);
+    const result = run(['explain', `skill:unknown${control}]52;c;example${String.fromCharCode(7)}`]);
+    assert.strictEqual(result.status, 1);
+    assert.ok(!result.stderr.includes(control), 'terminal escape must not reach the text output');
+    assert.match(result.stderr, /\\u001b/);
+  })],
   ['global dry-run remains compatible with profile inspection', () => withFixture(run => {
     success(run(['preview', '--target', 'codex', '--dry-run', '--json']));
   })],
@@ -142,6 +150,8 @@ for (const args of [
     assert.notStrictEqual(result.status, 0);
     const payload = JSON.parse(result.stdout);
     assert.strictEqual(payload.status, 'error');
+    assert.doesNotMatch(payload.summary, /Cannot find module|Require stack/,
+      'validation must fail for the request, not a missing implementation');
     assert.ok(payload.next_actions.length > 0);
     assert.strictEqual(payload.activation, 'unobserved');
   })]);
