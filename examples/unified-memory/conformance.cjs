@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const { encodeEvidence, verifyEvidence } = require('./evidence.cjs');
 
 const repo = path.resolve(__dirname, '../..');
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -23,6 +24,7 @@ const sourcePaths = [
   'scripts/memory.js', 'scripts/memory-mcp.mjs', 'scripts/lib/memory-vault.js',
   'scripts/lib/memory-vault-format.js', 'scripts/lib/path-safety.js',
   'scripts/lib/missing-dependency.js', 'schemas/memory.schema.json', 'package.json',
+  'examples/unified-memory/evidence.cjs',
 ];
 function snapshot() {
   return Object.fromEntries(sourcePaths.map(file => [file, sha256(fs.readFileSync(path.join(repo, file)))]));
@@ -94,9 +96,11 @@ function save(title, scope = 'project', target = 'all', partition = 'alpha', bod
 
 try {
   const sourceText = 'Synthetic fixture only: orbit project uses scoped memory.';
-  const evidence = { source: 'fixture:orbit', sha256: sha256(sourceText),
-    observedAt: startedAt, sessionId: 'fixture-session', checkpointId: 'fixture-checkpoint' };
-  const body = `${sourceText}\n\nEvidence (unverified attribution):\n${JSON.stringify(evidence)}`;
+  // Kept separately from recalled content; memory cannot supply its own source catalog.
+  const sources = new Map([['fixture:orbit', Object.freeze({ workspace: 'alpha', scope: 'project', text: sourceText,
+    observedAt: startedAt, sessionId: 'fixture-session', checkpointId: 'fixture-checkpoint' })]]);
+  const evidenceContext = { workspace: 'alpha', scope: 'project' };
+  const body = encodeEvidence('fixture:orbit', sources, evidenceContext);
   const shared = save('orbit shared evidence', 'project', 'all', 'alpha', body);
   const team = save('orbit team context', 'team');
   const targeted = save('orbit codex context', 'project', 'codex');
@@ -130,6 +134,9 @@ try {
         assert.deepEqual(read[field], shared[field]);
       }
       assert.equal(read.trust, 'unreviewed');
+      const cliRead = cli(['read', shared.id]).memory;
+      assert.deepEqual(verifyEvidence(read.body, sources, { workspace: 'alpha', scope: read.scope }),
+        verifyEvidence(cliRead.body, sources, { workspace: 'alpha', scope: cliRead.scope }));
     });
     check(`${harness}: direct target visibility enforced by MCP`, () => {
       if (harness === 'codex') assert.equal(payload(result[2]).memory.id, targeted.id);
@@ -142,13 +149,22 @@ try {
       assert.deepEqual(payload(mcp(harness, [['memory_search', { query: 'orbit' }]])[0]), payload(result[0]));
     });
   }
-  check('MCP write identity bound to configured Hermes process', () => {
-    const saved = payload(mcp('hermes', [['memory_save', { title: 'handoff fixture', body: 'Synthetic handoff.',
+  check('MCP write identity and evidence survive CLI handoff read', () => {
+    sources.set('fixture:handoff', Object.freeze({ workspace: 'alpha', scope: 'project', text: 'Synthetic handoff.',
+      observedAt: startedAt, sessionId: 'fixture-hermes-session', checkpointId: 'fixture-handoff' }));
+    const handoffBody = encodeEvidence('fixture:handoff', sources, evidenceContext);
+    const saved = payload(mcp('hermes', [['memory_save', { title: 'handoff fixture', body: handoffBody,
       kind: 'handoff', targetHarnesses: ['codex'], links: [shared.id] }]])[0]).memory;
     assert.equal(saved.sourceHarness, 'hermes');
     assert.equal(saved.trust, 'unreviewed');
     const read = payload(mcp('codex', [['memory_read', { id: saved.id }]])[0]).memory;
     assert.deepEqual(read.links, [shared.id]);
+    const cliRead = cli(['read', saved.id]).memory;
+    assert.equal(cliRead.body, handoffBody);
+    assert.equal(cliRead.sourceHarness, 'hermes');
+    assert.equal(cliRead.trust, 'unreviewed');
+    assert.deepEqual(verifyEvidence(cliRead.body, sources, { workspace: 'alpha', scope: cliRead.scope }),
+      verifyEvidence(read.body, sources, { workspace: 'alpha', scope: read.scope }));
   });
   check('operator opt-in enables only explicit user recall', () => {
     const result = mcp('hermes', [['memory_search', { query: 'orbit', scopes: ['user'] }],
@@ -168,6 +184,45 @@ try {
     const result = run('scripts/memory-mcp.mjs', [], '', envFor('alpha', null));
     assert.equal(result.status, 1);
     assert.match(result.stderr, /ECC_MEMORY_HARNESS/);
+  });
+  check('recalled evidence rejects tamper, unavailable source and foreign context', () => {
+    const read = payload(mcp('codex', [['memory_read', { id: shared.id }]])[0]).memory;
+    const altered = JSON.stringify({ ...JSON.parse(read.body), text: 'Synthetic altered evidence.' });
+    assert.throws(() => verifyEvidence(altered, sources, evidenceContext), { code: 'SOURCE_MISMATCH' });
+    assert.throws(() => verifyEvidence(read.body, new Map(), evidenceContext), { code: 'SOURCE_UNAVAILABLE' });
+    assert.throws(() => verifyEvidence(read.body, sources, { ...evidenceContext, workspace: 'beta' }),
+      { code: 'CONTEXT_MISMATCH' });
+    assert.throws(() => verifyEvidence(read.body, sources, { ...evidenceContext, scope: 'user' }),
+      { code: 'CONTEXT_MISMATCH' });
+  });
+  check('stored altered content and digest fail evidence verification after MCP recall', () => {
+    for (const change of [{ text: 'Synthetic altered content.' }, { sha256: '0'.repeat(64) }]) {
+      const altered = JSON.stringify({ ...JSON.parse(body), ...change });
+      const saved = save('evidence rejection fixture', 'project', 'all', 'alpha', altered);
+      const read = payload(mcp('hermes', [['memory_read', { id: saved.id }]])[0]).memory;
+      assert.equal(read.id, saved.id);
+      assert.equal(read.body, altered);
+      assert.equal(read.trust, 'unreviewed');
+      assert.throws(() => verifyEvidence(read.body, sources, { workspace: 'alpha', scope: read.scope }),
+        { code: 'SOURCE_MISMATCH' });
+    }
+  });
+  check('synthetic private-key marker rejected without changing recalled dataset', () => {
+    // Deliberately incomplete synthetic marker; never a real key or private input.
+    const marker = '-----BEGIN PRIVATE KEY-----\nSynthetic non-key fixture.';
+    const beforePrivacy = cli(['search', 'orbit', '--target-harness', 'codex']).results;
+    const cliDenied = run('scripts/memory.js', ['save', '--title', 'orbit rejected fixture', '--stdin', '--json'],
+      marker, envFor());
+    assert.equal(cliDenied.status, 1, 'Synthetic sensitive write must be rejected');
+    assert.equal(cliDenied.error, undefined, 'CLI rejection must not be a subprocess failure');
+    assert.match(cliDenied.stderr, /suspected secret/i);
+    const mcpDenied = mcp('codex', [['memory_save', { title: 'orbit rejected fixture', body: marker }]])[0];
+    assert.equal(mcpDenied.result.isError, true, 'Synthetic sensitive write must be a tool rejection');
+    const rejection = JSON.parse(mcpDenied.result.content.find(item => item.type === 'text').text);
+    assert.equal(rejection.error.code, 'MEMORY_WRITE_REJECTED');
+    assert.equal(rejection.error.message, 'Memory operation rejected a suspected secret.');
+    assert.deepEqual(cli(['search', 'orbit', '--target-harness', 'codex']).results, beforePrivacy);
+    assert.deepEqual(payload(mcp('codex', [['memory_search', { query: 'orbit' }]])[0]).results, beforePrivacy);
   });
   check('source files and HEAD unchanged after execution', () => {
     assert.deepEqual(snapshot(), before);
