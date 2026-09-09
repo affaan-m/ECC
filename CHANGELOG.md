@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Managed Claude settings writes (`install-apply.js --enable-hooks`, `/auto-update`) failed closed on Windows under Node 22.12-22.16 and 24.0-24.1 with `Refusing to read changed Claude settings`, then left a stale `settings.json.ecc.lock` behind because the lock release hit the same guard. Both guards compared `fstat()` `dev` against a path-based `lstat()` `dev` that libuv 1.49.0-1.50.x reports as `0` on Windows. They now compare `dev` only when both stats report one, matching the memory vault guard; the inode, regular-file, and symlink checks still fail closed.
+
 ## 2.2.0 - 2026-08-25
 
 ### Added

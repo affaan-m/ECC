@@ -453,6 +453,59 @@ function runTests() {
     }
   })) passed++; else failed++;
 
+  if (test('atomic settings updates tolerate path stats that omit the device id', () => {
+    // Node 22.12-22.16 and 24.0-24.1 on Windows report dev = 0 from path-based
+    // lstat() while fstat() on the open descriptor reports the volume serial.
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-zero-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalLstat = fs.lstatSync;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
+      fs.lstatSync = function(target, options) {
+        const stats = originalLstat.call(fs, target, options);
+        stats.dev = options && options.bigint ? 0n : 0;
+        return stats;
+      };
+      const result = updateSettingsAtomic(
+        settingsPath,
+        settings => ({ settings: { ...settings, managed: true } })
+      );
+      assert.deepStrictEqual(result.settings, { theme: 'initial', managed: true });
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), result.settings);
+      assert.strictEqual(fs.existsSync(`${settingsPath}.ecc.lock`), false);
+    } finally {
+      fs.lstatSync = originalLstat;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
+  if (test('atomic settings updates still reject a path stat on a different device', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-settings-other-dev-'));
+    const settingsPath = path.join(tempDir, 'settings.json');
+    const originalLstat = fs.lstatSync;
+    try {
+      fs.writeFileSync(settingsPath, '{"theme":"initial"}\n');
+      fs.lstatSync = function(target, options) {
+        const stats = originalLstat.call(fs, target, options);
+        if (path.resolve(String(target)) === settingsPath) {
+          stats.dev = options && options.bigint ? stats.dev + 1n : stats.dev + 1;
+        }
+        return stats;
+      };
+      assert.throws(
+        () => updateSettingsAtomic(
+          settingsPath,
+          settings => ({ settings: { ...settings, managed: true } })
+        ),
+        error => error.code === 'ECC_SETTINGS_CHANGED'
+      );
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), { theme: 'initial' });
+    } finally {
+      fs.lstatSync = originalLstat;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  })) passed++; else failed++;
+
   if (test('fresh merge appends managed entries while preserving unrelated settings and hooks', () => {
     const userEntry = { matcher: 'Bash', hooks: [{ type: 'command', command: 'user-hook' }] };
     const settings = {

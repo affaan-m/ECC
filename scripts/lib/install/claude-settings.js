@@ -327,6 +327,17 @@ function readSettings(settingsPath, fileSystem = fs) {
   return parseSettings(rawSettings, `Claude settings at ${settingsPath}`);
 }
 
+// libuv 1.49.0 through 1.50.x (Node 22.12-22.16 and 24.0-24.1) resolve
+// path-based lstat() on Windows without setting the volume serial, while
+// fstat() on the open descriptor reports it, so a strict dev comparison can
+// never pass there. Compare dev only when both sides report one; the inode,
+// regular-file and symlink checks still fail closed. POSIX always reports dev,
+// so the strict behaviour is preserved on those platforms.
+function sameDeviceId(left, right) {
+  if (!left.dev || !right.dev) return true;
+  return left.dev === right.dev;
+}
+
 function readSettingsSnapshot(settingsPath) {
   const flags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
   let descriptor;
@@ -354,7 +365,7 @@ function readSettingsSnapshot(settingsPath) {
       !descriptorStat.isFile()
       || !pathStat.isFile()
       || pathStat.isSymbolicLink()
-      || descriptorStat.dev !== pathStat.dev
+      || !sameDeviceId(descriptorStat, pathStat)
       || descriptorStat.ino !== pathStat.ino
     ) {
       const error = new Error(`Refusing to read changed Claude settings at ${settingsPath}`);

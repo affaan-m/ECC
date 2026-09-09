@@ -7,7 +7,13 @@ const path = require('path');
 const INVALID_LOCK_STALE_MS = 5 * 60 * 1000;
 
 function sameFileIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
+  if (left.ino !== right.ino) return false;
+  // libuv 1.49.0 through 1.50.x (Node 22.12-22.16 and 24.0-24.1) resolve
+  // path-based lstat() on Windows without setting the volume serial, while
+  // fstat() on the open descriptor reports it. Compare dev only when both
+  // sides report one so the lock can still be released on those runtimes.
+  if (!left.dev || !right.dev) return true;
+  return left.dev === right.dev;
 }
 
 function createSettingsLock(lockPath) {
