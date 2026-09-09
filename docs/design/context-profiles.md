@@ -142,7 +142,7 @@ These related PRs are integration inputs, not claims that their proposed behavio
 | [#3030](https://github.com/affaan-m/ECC/pull/3030) | Contributor skill-quality validation | Content-quality checks complement inventory validation; they do not prove runtime activation or workflow outcomes |
 | [#3032](https://github.com/affaan-m/ECC/pull/3032) | Existing js-yaml dependency security update | Verify contributor integration before release; retain both lockfiles and rerun dependency and regression checks |
 
-The September 8 dependency baseline pins js-yaml 4.3.1, affected by [GHSA-2883-xcg3-v3hh](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh). This registry explicitly uses `JSON_SCHEMA`, which excludes the advisory's merge behavior; other repository parsers still use the default schema. That narrow distinction does not clear the repository-wide finding. The contributor's 4.3.2 upgrade remains a release gate, independent of this read-only feature's passing tests.
+The original September 8 dependency baseline pinned js-yaml 4.3.1, affected by [GHSA-2883-xcg3-v3hh](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh). PR preparation exposed that existing finding in hosted CI. This branch now includes Myles Agnew's exact 4.3.2 upgrade from #3032 as an attributed prerequisite commit, updating the runtime pin, overrides, resolutions, and both lockfiles. Runtime audit reports zero vulnerabilities after installation. The original contributor PR remains independently reviewable. This registry's `JSON_SCHEMA` excludes the advisory's merge behavior, but upgrading also protects existing default-schema parsers.
 
 ## Follow-on gates and verification
 

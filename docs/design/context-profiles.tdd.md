@@ -73,3 +73,9 @@ Independent exact-head review approved the read-only implementation and identifi
 Final local focused checks now pass 30 library, 25 CLI, and 3 CI cases. A bounded simulation of Windows file-link denial, keeping the local temporary directory fixed and emulating directory junctions, passes 17 registry cases and explicitly skips 1 real file-link case. It is a test-policy simulation, not native Windows evidence. The source-read substitution and zero-byte-read assertions remain mandatory.
 
 An isolated Git archive passed `YARN_ENABLE_HARDENED_MODE=1 YARN_ENABLE_SCRIPTS=false yarn install --immutable --mode=skip-build`; both package manifest and Yarn lockfile remained byte-identical. The initially attempted immutable/update-lockfile combination was rejected by Yarn as incompatible before installation; the immutable skip-build run is the applicable successful CI check. Dependency declarations remain unchanged. Source-only evidence/test links in the shipped contract are now labeled explicitly.
+
+### Contributor security prerequisite
+
+Hosted CI for PR #3037 at `78cbd01c` reproduced the existing js-yaml high-severity advisory in its runtime audit. The branch incorporated contributor Myles Agnew's exact commit `5674661fc30ab1d3f3fcae22d72bfb4ab3059822` from #3032 using an attributed cherry-pick (`77872972`). No contributor PR was merged or closed. A fresh dependency install resolved js-yaml 4.3.2, and `npm audit --omit=dev --audit-level=high` reports zero vulnerabilities.
+
+The local npm 11 install unexpectedly rewrote the Yarn lock into its legacy format. Only that task-induced rewrite was restored to the committed contributor bytes before subsequent validation. This is installation-tool behavior, not an intended lockfile change. The full test run started on the preceding revision overlapped the dependency update and is excluded from exact-final-head evidence; final PR checks must bind to the updated head.
