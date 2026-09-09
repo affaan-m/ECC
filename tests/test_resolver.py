@@ -1,11 +1,13 @@
 import pytest
 
+from llm.cli.selector import interactive_select
 from llm.core.types import ProviderType
 from llm.providers import (
     AstraflowCNProvider,
     AstraflowProvider,
     AtlasProvider,
     ClaudeProvider,
+    MiniMaxProvider,
     OllamaProvider,
     OpenAIProvider,
     get_provider,
@@ -42,6 +44,11 @@ class TestGetProvider:
         provider = get_provider("atlas")
         assert isinstance(provider, AtlasProvider)
         assert provider.provider_type == ProviderType.ATLAS
+
+    def test_get_minimax_provider(self):
+        provider = get_provider("minimax")
+        assert isinstance(provider, MiniMaxProvider)
+        assert provider.provider_type == ProviderType.MINIMAX
 
     def test_get_provider_by_enum(self):
         provider = get_provider(ProviderType.CLAUDE)
@@ -100,3 +107,13 @@ class TestGetProvider:
         provider = get_provider()
 
         assert isinstance(provider, AstraflowCNProvider)
+
+
+def test_default_selector_includes_minimax(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    answers = iter(["2", "1"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    monkeypatch.chdir(tmp_path)
+
+    assert interactive_select() == ("minimax", "MiniMax-M2.7")
