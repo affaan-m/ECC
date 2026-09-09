@@ -265,7 +265,7 @@ jobs:
         run: python -m mypy src
 
       - name: Run Python tests
-        run: python -m pytest tests/test_*.py -m "not integration"
+        run: python -m pytest tests -m "not integration"
 
   security:
     name: Security Scan
